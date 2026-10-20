@@ -1006,8 +1006,8 @@ export function Studio() {
                     onChange={(e) => setConsent(e.target.checked)}
                     disabled={busy}
                   />{" "}
-                  Tengo permiso para usar esta foto y enviarla a OpenAI para
-                  generar el diseño.
+                  Tengo permiso para usar esta foto y enviarla a nuestro
+                  proveedor de inteligencia artificial para generar el diseño.
                 </label>
               )}
               <div className="generate-area">

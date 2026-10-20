@@ -16,8 +16,9 @@ export default function Privacy() {
       <h2>Procesamiento con IA</h2>
       <p>
         Al generar con una foto propia, enviamos la imagen, el ambiente, el
-        estilo y tus indicaciones a OpenAI. Usamos esa información para crear el
-        resultado solicitado. Debés tener permiso para procesar la fotografía.
+        estilo y tus indicaciones a un proveedor externo de inteligencia
+        artificial, que las procesa por cuenta nuestra para crear el resultado
+        solicitado. Debés tener permiso para procesar la fotografía.
         Evitá incluir personas, documentos, direcciones visibles u otros datos
         innecesarios. El tratamiento del proveedor se rige también por sus
         políticas.
