@@ -1,14 +1,14 @@
 import { requireUser, failure } from "@/lib/commerce/http";
 import { adminClient } from "@/lib/supabase/server";
 import { signPath } from "@/lib/commerce/jobs";
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const user = await requireUser();
     const db = adminClient();
     const { data: projects, error } = await db
       .from("projects")
       .select(
-        "id,name,created_at,original_path,generations(id,room,style,mode,notes,status,result_path,created_at)",
+        "id,name,created_at,original_path,folder_id,trashed_at,generations(id,room,style,mode,notes,status,result_path,created_at,is_free)",
       )
       .eq("user_id", user.id)
       .is("deleted_at", null)
@@ -24,6 +24,7 @@ export async function GET() {
         const variants = await Promise.all(
           done.map(async (g) => ({
             id: g.id,
+            free: g.is_free,
             result: await signPath(g.result_path!),
             room: g.room,
             style: g.style,
@@ -45,6 +46,8 @@ export async function GET() {
         };
         return {
           projectId: p.id,
+          folderId: p.folder_id,
+          trashedAt: p.trashed_at,
           name: p.name,
           original,
           ...latest,
@@ -57,7 +60,13 @@ export async function GET() {
       }),
     );
     return Response.json(
-      { projects: rows.filter(Boolean) },
+      {
+        projects: rows.filter(
+          (p) =>
+            new URL(request.url).searchParams.get("includeTrash") === "1" ||
+            !p.trashedAt,
+        ),
+      },
       { headers: { "Cache-Control": "private, no-store" } },
     );
   } catch (e) {

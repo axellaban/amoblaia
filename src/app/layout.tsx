@@ -1,20 +1,13 @@
 import type { Metadata, Viewport } from "next";
-import { Fraunces, Manrope } from "next/font/google";
+import { Outfit } from "next/font/google";
 import { Header, Footer } from "@/components/shell";
 import "./globals.css";
-const manrope = Manrope({
+const outfit = Outfit({
   subsets: ["latin"],
   display: "swap",
-  variable: "--font-manrope",
+  variable: "--font-outfit",
 });
-const fraunces = Fraunces({
-  subsets: ["latin"],
-  display: "swap",
-  style: ["normal", "italic"],
-  axes: ["SOFT", "WONK", "opsz"],
-  variable: "--font-fraunces",
-});
-export const viewport: Viewport = { themeColor: "#14271f" };
+export const viewport: Viewport = { themeColor: "#151a2d" };
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.APP_URL || "https://amoblaia.vercel.app"),
   title: {
@@ -39,23 +32,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html
-      lang="es"
-      className={`${manrope.variable} ${fraunces.variable}`}
-    >
+    <html lang="es" className={outfit.variable}>
       <body>
         <a href="#contenido" className="skip-link">
           Saltar al contenido
         </a>
         <Header />
         <main id="contenido">{children}</main>
-        <Footer
-          seller={
-            process.env.SELLER_NAME && process.env.SELLER_CUIT
-              ? `${process.env.SELLER_NAME} · CUIT ${process.env.SELLER_CUIT}`
-              : ""
-          }
-        />
+        <Footer />
       </body>
     </html>
   );

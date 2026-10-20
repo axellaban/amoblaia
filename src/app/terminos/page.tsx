@@ -1,7 +1,5 @@
 import Link from "next/link";
 export default function Terms() {
-  const name = process.env.SELLER_NAME,
-    cuit = process.env.SELLER_CUIT;
   return (
     <article className="legal-page container">
       <span className="eyebrow">ANTES DE PUBLICAR</span>
@@ -9,22 +7,30 @@ export default function Terms() {
       <p>Actualización: 20 de octubre de 2026.</p>
       <h2>Prestador y alcance</h2>
       <p>
-        {name
-          ? `El servicio es prestado por ${name}${cuit ? `, CUIT ${cuit}` : ""}. `
-          : "El servicio se encuentra en preparación comercial. "}
         amoblaIA permite amoblar, rediseñar o vaciar fotografías de propiedades
-        con inteligencia artificial. Los productos con cobro solo están
-        disponibles cuando su precio y el checkout están habilitados. Los
-        canales de contacto están en <Link href="/ayuda">Soporte</Link>.
+        con inteligencia artificial. También incluye herramientas pagas para
+        mejorar exposición y color o convertir iluminación diurna a atardecer.
+        Los productos con cobro solo están disponibles cuando su precio y el
+        checkout están habilitados. Los canales de contacto están en{" "}
+        <Link href="/ayuda">Soporte</Link>.
       </p>
-      <h2>Qué incluye una foto</h2>
+      <h2>Versión gratuita</h2>
       <p>
-        Cada foto original incluye hasta tres resultados en total, combinando
-        estilos y operaciones. Las descargas no consumen fotos. Una falla
-        técnica confirmada devuelve la foto reservada cuando corresponde. Si el
-        proveedor pudo haber procesado una solicitud pero no recibimos su
-        resultado, la generación queda en revisión; no se vuelve a enviar
-        automáticamente.
+        La cuenta verificada incluye hasta 25 resultados gratuitos en total, en
+        tandas de hasta tres, para living y dormitorio. Se entregan con marca de
+        agua y resolución reducida. Las fallas técnicas confirmadas no consumen
+        ese límite. Borrar un proyecto o volver a ingresar no reinicia el cupo.
+      </p>
+      <h2>Qué incluye una foto de un plan pago</h2>
+      <p>
+        Cada foto original consume una foto del plan. Podés generar nuevas
+        propuestas sobre ese original durante la vigencia del período pago, sin
+        descontar otra foto. Las regeneraciones están sujetas a uso razonable y
+        a los límites diarios de capacidad y almacenamiento. Las descargas no
+        consumen fotos. Una falla técnica confirmada devuelve la foto reservada
+        cuando corresponde. Si el proveedor pudo haber procesado una solicitud
+        pero no recibimos su resultado, la generación queda en revisión; no se
+        vuelve a enviar automáticamente.
       </p>
       <h2>Packs, suscripciones y renovaciones</h2>
       <p>

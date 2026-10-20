@@ -11,11 +11,14 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { formatARS } from "@/lib/commerce/catalog";
+import { clearDraft } from "@/lib/studio-draft";
 import { browserClient } from "@/lib/supabase/client";
 type Account = {
   email: string;
   admin: boolean;
   credits: number;
+  free: boolean;
+  freeRemaining: number;
   blocked: boolean;
   subscriptions: {
     id: string;
@@ -37,6 +40,7 @@ type Account = {
   }[];
   grants: {
     id: string;
+    source_key: string;
     remaining: number;
     total: number;
     expires_at: string | null;
@@ -136,6 +140,7 @@ export function AccountDashboard() {
                 setError("No pudimos cerrar la sesión.");
                 return;
               }
+              await clearDraft().catch(() => {});
               window.location.assign("/acceso");
             }}
           >
@@ -165,9 +170,19 @@ export function AccountDashboard() {
           <div className="account-summary">
             <article className="balance-card">
               <Camera size={24} />
-              <span>FOTOS DISPONIBLES</span>
-              <strong>{account.credits}</strong>
-              <p>Hasta 3 resultados por foto original.</p>
+              <span>
+                {account.free
+                  ? "DISEÑOS GRATIS DISPONIBLES"
+                  : "FOTOS DISPONIBLES"}
+              </span>
+              <strong>
+                {account.free ? account.freeRemaining : account.credits}
+              </strong>
+              <p>
+                {account.free
+                  ? "25 diseños en total. Creá hasta 3 por tanda, sin tarjeta."
+                  : "Regeneraciones incluidas durante tu período pago."}
+              </p>
               <Link href="/estudio" className="button button-primary">
                 Crear un diseño
                 <ArrowUpRight size={17} />
@@ -180,7 +195,7 @@ export function AccountDashboard() {
                 Encontrá tus originales y variantes en Mis proyectos. Las
                 descargas no consumen tu cupo.
               </p>
-              <Link className="text-link" href="/estudio?view=projects">
+              <Link className="text-link" href="/proyectos">
                 Ver mis proyectos
                 <ArrowUpRight size={16} />
               </Link>
@@ -272,6 +287,7 @@ export function AccountDashboard() {
           <section className="account-panel">
             <h2>Fotos y vencimientos</h2>
             {account.grants
+              .filter((g) => !g.source_key.startsWith("trial:"))
               .filter(
                 (g) =>
                   g.remaining > 0 &&

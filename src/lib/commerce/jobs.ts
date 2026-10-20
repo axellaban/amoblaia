@@ -7,6 +7,7 @@ import { freeAllows } from "@/lib/catalog";
 export const BUCKET = "property-images";
 export type Job = {
   id: string;
+  is_free: boolean;
   user_id: string;
   project_id: string;
   status: string;
@@ -19,7 +20,7 @@ export type Job = {
   created_at: string;
   error_code: string | null;
 };
-/** True while the account has no paid photos left to spend (only the free one, or none). */
+/** Paid photos take priority; the lifetime free allowance is counted per result. */
 export async function onFreeTier(userId: string) {
   const now = new Date().toISOString();
   const { data, error } = await adminClient()
@@ -59,19 +60,25 @@ export async function enqueuePhoto(request: Request, userId: string) {
   const path = `${userId}/${hash}/original.jpg`;
   let lookup = db
     .from("projects")
-    .select("id,grant_id")
+    .select("id,grant_id,trashed_at")
     .eq("user_id", userId)
     .is("deleted_at", null);
   lookup = photo.projectId
     ? lookup.eq("id", photo.projectId)
     : lookup.eq("original_hash", hash);
   let { data: project, error } = await lookup.maybeSingle();
+  if (project?.trashed_at)
+    throw new HttpError(
+      409,
+      "Esta foto está en la papelera. Restaurala desde Mis proyectos para seguir creando.",
+    );
   if (photo.projectId && !project)
     throw new HttpError(404, "No encontramos la foto original.");
   if (error) throw new Error("PROJECT_LOOKUP_FAILED");
-  const free = project?.grant_id
-    ? await grantIsTrial(project.grant_id)
-    : await onFreeTier(userId);
+  const free =
+    project?.grant_id && !(await grantIsTrial(project.grant_id))
+      ? false
+      : await onFreeTier(userId);
   if (free && !freeAllows(photo.room, photo.mode))
     throw new HttpError(
       403,
@@ -82,7 +89,7 @@ export async function enqueuePhoto(request: Request, userId: string) {
       p_user: userId,
       p_trial: false,
     });
-    if (account.credits < 1)
+    if (account.credits < 1 && !free)
       throw new HttpError(
         402,
         "No te quedan fotos disponibles. Elegí un plan.",
@@ -122,12 +129,12 @@ export async function enqueuePhoto(request: Request, userId: string) {
         original_bytes: photo.image.length,
         name: photo.name,
       })
-      .select("id,grant_id")
+      .select("id,grant_id,trashed_at")
       .single());
     if (error?.code === "23505")
       ({ data: project, error } = await db
         .from("projects")
-        .select("id,grant_id")
+        .select("id,grant_id,trashed_at")
         .eq("user_id", userId)
         .eq("original_hash", hash)
         .is("deleted_at", null)
@@ -158,7 +165,7 @@ export async function runJob(id: string) {
       .eq("id", job.project_id)
       .single();
     if (error || !project) throw new Error("PROJECT_NOT_FOUND");
-    const free = await grantIsTrial(project.grant_id);
+    const free = job.is_free;
     const file = await db.storage.from(BUCKET).download(project.original_path);
     if (file.error || !file.data) throw new Error("ORIGINAL_NOT_FOUND");
     sent = true;

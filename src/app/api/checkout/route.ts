@@ -47,17 +47,19 @@ export async function POST(request: Request) {
         "Tu cuenta necesita una revisión antes de realizar otra compra.",
       );
     const db = adminClient();
+    const email =
+      typeof payerEmail === "string" ? payerEmail.trim().toLowerCase() : "";
     if (
-      payerEmail !== undefined &&
-      (typeof payerEmail !== "string" ||
-        payerEmail.length > 254 ||
-        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payerEmail))
+      !email ||
+      typeof payerEmail !== "string" ||
+      payerEmail.length > 254 ||
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
     )
       throw new HttpError(400, "Ingresá un email válido de Mercado Pago.");
     // An abandoned checkout for the same plan is reopened instead of blocking a new attempt.
     const open = await db
       .from("orders")
-      .select("checkout_url")
+      .select("id,checkout_url,provider_subscription_id,payer_email,snapshot")
       .eq("user_id", user.id)
       .eq("sku", sku)
       .eq("status", "checkout_ready")
@@ -65,11 +67,53 @@ export async function POST(request: Request) {
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
-    if (open.data?.checkout_url)
-      return Response.json(
-        { url: open.data.checkout_url },
-        { headers: { "Cache-Control": "no-store" } },
-      );
+    if (open.error) throw new Error("CHECKOUT_LOOKUP_FAILED");
+    if (open.data?.checkout_url) {
+      const previous = open.data;
+      if (previous.payer_email === email)
+        return Response.json(
+          { url: previous.checkout_url },
+          { headers: { "Cache-Control": "no-store" } },
+        );
+      if (previous.provider_subscription_id) {
+        // A legacy checkout can be tied to the sign-in email. Replace only a still-pending subscription.
+        const sub = await mp<{
+          status: string;
+          external_reference: string;
+          collector_id: number;
+        }>(
+          `/preapproval/${encodeURIComponent(previous.provider_subscription_id)}`,
+        );
+        if (
+          sub.external_reference !== previous.id ||
+          String(sub.collector_id) !== process.env.MERCADOPAGO_COLLECTOR_ID
+        )
+          throw new Error("SUBSCRIPTION_OWNERSHIP_MISMATCH");
+        if (sub.status !== "pending" && sub.status !== "cancelled")
+          throw new HttpError(
+            409,
+            "Tu suscripción ya está activa o en revisión. Revisala desde Mi cuenta antes de cambiar el email.",
+          );
+        if (sub.status === "pending")
+          await mp(
+            `/preapproval/${encodeURIComponent(previous.provider_subscription_id)}`,
+            "PUT",
+            { status: "cancelled" },
+          );
+        const ended = await db
+          .from("subscriptions")
+          .update({ status: "cancelled" })
+          .eq("id", previous.provider_subscription_id)
+          .eq("user_id", user.id);
+        if (ended.error) throw new Error("SUBSCRIPTION_UPDATE_FAILED");
+      }
+      const replaced = await db
+        .from("orders")
+        .update({ status: "superseded" })
+        .eq("id", previous.id)
+        .eq("user_id", user.id);
+      if (replaced.error) throw new Error("CHECKOUT_REPLACE_FAILED");
+    }
     const created = await rpc<{
       order: { snapshot: Product; checkout_url: string | null };
       dispatch: boolean;
@@ -105,7 +149,7 @@ export async function POST(request: Request) {
               },
             ],
             external_reference: key,
-            payer: { email: user.email },
+            payer: { email },
             back_urls: {
               success: `${base}/cuenta?pago=retorno`,
               pending: `${base}/cuenta?pago=pendiente`,
@@ -118,13 +162,6 @@ export async function POST(request: Request) {
           key,
         );
       } else {
-        const email =
-          typeof payerEmail === "string" ? payerEmail.trim() : user.email!;
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254)
-          throw new HttpError(
-            400,
-            "Ingresá el email de tu cuenta de Mercado Pago.",
-          );
         checkout = await mp(
           "/preapproval",
           "POST",
@@ -165,6 +202,7 @@ export async function POST(request: Request) {
       .from("orders")
       .update({
         checkout_id: checkout.id,
+        payer_email: email,
         checkout_url: url,
         ...(snapshot.kind !== "pack"
           ? { provider_subscription_id: checkout.id }

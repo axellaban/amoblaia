@@ -1,64 +1,42 @@
-# Sistema visual de amoblaIA
+# Referencia visual y adaptación de amoblaIA
 
-La primera versión del MVP tomaba colores, tipografía y jerarquía de un competidor (Virtual Staging AI). Desde octubre de 2026 amoblaIA tiene identidad propia: los tokens viven en `:root` de `src/app/globals.css` y el logo en `src/components/shell.tsx`.
+Auditoría: 20/10/2026. Fuente: https://www.virtualstagingai.app/ . Capturas públicas de escritorio (1280 px) y móvil (390 px), más cuenta y biblioteca autenticadas. La marca amoblaIA y las escenas propias se conservan.
 
-## Concepto
+## Evidencia y decisiones
 
-**La puerta a tu próximo hogar.** El isotipo es un arco de puerta, presente en la arquitectura de toda Latinoamérica, con un banco adentro (un espacio ya amoblado) y una chispa que representa la IA. El 404 retoma la idea: «Esta puerta no lleva a ningún ambiente».
+Firecrawl identifica **Outfit** como familia principal y de titulares. Reporta acciones azules, superficies blancas, tarjetas grises y una cabecera azul noche. Las capturas visuales muestran acentos verde claro en la oferta destacada y checks. Los tokens de abajo son valores de implementación contrastados visualmente, no una afirmación de extracción exacta de todo el CSS del competidor.
 
-Tono: cálido, editorial y concreto, como una revista de casas, no como una herramienta técnica. Las fotos de propiedades son las protagonistas; la interfaz las enmarca con colores de materiales reales (terracota, revoque y vegetación).
+| Rol | Implementación |
+| --- | --- |
+| Tipografía | Outfit, cargada con next/font |
+| Fondo oscuro | #151a2d |
+| Superficie secundaria oscura | #232940 |
+| Acción principal | #3c59bf |
+| Acción al pasar el cursor | #3046aa |
+| Destacado | #cbff9a |
+| Superficie de tarjeta | #eef0f8 |
+| Texto principal | #161b26 |
+| Texto secundario | #5c6170 |
+| Borde | #e3e5ed |
+| Fondo general | Blanco |
 
-## Logo
+Contenedor de 1200 px incluyendo padding de 40 px. En móvil: 16 px laterales. Botones con radio de 12 px; fotos de 14–18 px; tarjetas grandes de 18–24 px. Titular del hero de 56 px en escritorio y 32 px en móvil. Estos tamaños se eligieron para reproducir la jerarquía y permitir texto en español.
 
-| Pieza                        | Uso                                                       |
-| ---------------------------- | --------------------------------------------------------- |
-| `LogoMark` (SVG en código)   | Header, footer y cualquier lugar de la app                |
-| `src/app/icon.svg`           | Favicon                                                   |
-| `src/app/apple-icon.png`     | Ícono al agregar a pantalla de inicio en iOS              |
-| `public/brand/*-oscuro.png`  | Logo horizontal sobre fondos oscuros                      |
-| `public/brand/*-claro.png`   | Logo horizontal sobre fondos claros                       |
-| `public/brand/*-isotipo-512` | Avatar para redes, WhatsApp Business, Mercado Pago, Google |
+## Recorridos observados y aplicados
 
-Wordmark: «amobla» en Fraunces 600 (SOFT 100, WONK 1) y «IA» en Manrope 800, en arcilla sobre oscuro o en terracota sobre claro. Mantener un margen libre alrededor del isotipo igual a la altura de la chispa. No rotar, no cambiar los colores del isotipo y no usarlo sobre fotos sin una superficie sólida.
+- **Inicio:** cabecera oscura, hero en dos columnas, foto con selectores de ambiente/estilo, CTA de carga y ventajas. En móvil la foto aparece antes del texto. El CTA abre el estudio dentro del hero.
+- **Estudio:** tarjeta blanca sobre fondo oscuro; opciones a la izquierda e imagen a la derecha en escritorio. Selectores compactos, foto original, miniaturas de resultados, comparación y descarga. La versión gratuita explica el acceso completo en una columna adicional.
+- **Precios:** banda oscura, selector mensual/anual, cuatro tarjetas y plan destacado verde claro. El anual se muestra inicialmente, indicando importe completo. En móvil se puede expandir la lista de beneficios. Antes de salir a Mercado Pago se confirma plan, importe, renovación y email de pago.
+- **Galería:** ambiente seleccionado, una imagen principal, pestañas de estilo y miniaturas. El deslizador antes/después es una opción adicional accesible.
+- **Biblioteca:** cabecera clara, navegación por todas las fotos/sin carpeta/papelera y carpetas propias. Búsqueda, nombre, asignación, restauración y eliminación definitiva con confirmación.
+- **FAQ:** buscador, filtros por categoría, acordeones y enlaces directos a preguntas.
+- **Blog y recursos:** índice con tarjetas, artículos y páginas comerciales informativas.
+- **Pie:** newsletter con consentimiento, enlaces principales y soporte. No expone nombre, CUIT ni email personal del titular.
 
-## Paleta
+## Adaptación argentina
 
-| Token               | Valor     | Uso                                                        |
-| ------------------- | --------- | ---------------------------------------------------------- |
-| `--terracotta`      | `#B4472A` | Única acción principal, acentos sobre claro, isotipo       |
-| `--terracotta-dark` | `#983A21` | Hover de la acción principal                               |
-| `--forest`          | `#14271F` | Header, hero, secciones oscuras, footer                    |
-| `--forest-light`    | `#1D3229` | Superficies sobre verde (barras, tarjetas)                 |
-| `--clay`            | `#F2B39A` | Acentos sobre verde: remates de titulares, «IA», detalles  |
-| `--paper`           | `#FAF6F0` | Fondo general, revoque cálido                              |
-| `--sand`            | `#EFE6DA` | Bandas y superficies secundarias                           |
-| `--ink`             | `#1F1C19` | Texto principal                                            |
-| `--muted`           | `#6E655C` | Texto secundario                                           |
-| `--line`            | `#E8DFD3` | Bordes                                                     |
+Voseo, cobro en ARS con Mercado Pago, ocho ambientes (incluidos monoambiente y quincho) y diez estilos diversos. Sin estadísticas comerciales, reseñas, logos de prensa o afiliaciones del competidor. Los ejemplos son seis imágenes originales de dos ambientes; no se presentan como trabajos de clientes. No se promete el tiempo de 10 segundos ni almacenamiento perpetuo de la referencia.
 
-Contrastes verificados (WCAG): blanco sobre terracota 5,4:1; terracota sobre papel 5,0:1; arcilla sobre verde 8,7:1; texto secundario sobre papel 5,3:1. Hay **un solo color de acción**: todo botón principal es terracota. Los botones oscuros u outline quedan para acciones secundarias.
+## Límites observados
 
-## Tipografía
-
-- **Fraunces** (display, variable con ejes SOFT, WONK y opsz): `h1`, `h2`, logo y títulos destacados.
-- **Manrope** (interfaz y lectura): texto, botones, formularios y etiquetas.
-- **Firma de marca:** la frase de cierre de cada titular va en Fraunces itálica, en terracota sobre claro o en arcilla sobre verde. Se marca con un `<span>` dentro del `h1`/`h2` («Mostrá *un hogar.*»).
-- Texto base 16 px. Ningún texto baja de 11 px; las etiquetas en mayúsculas usan 11–12 px con tracking de 0,14 em.
-
-## Forma
-
-- Botones tipo píldora, con sombra cálida suave en la acción principal.
-- Tarjetas con radio de 10–12 px y bordes de 1 px en `--line`.
-- La banda de cierre usa dos arcos de línea fina que repiten el isotipo.
-
-## Experiencia
-
-- Header con una sola acción principal («Ir al estudio»); menú compacto en mobile.
-- En mobile, el titular del hero ocupa tres líneas para que el comparador antes/después asome en la primera pantalla, y el CTA ocupa el ancho completo.
-- En el estudio, el botón de generar queda fijo al pie de la pantalla en mobile mientras se recorren las opciones.
-- Precios: cuatro planes a lo ancho del contenedor, cinta «Para tu cartera» sobre la tarjeta destacada y estado «Próximamente» discreto mientras no haya precio.
-- Comparador accesible con teclado, foco visible en terracota y respeto de `prefers-reduced-motion`.
-
-## Imágenes
-
-`src/app/opengraph-image.png` es la imagen al compartir enlaces (1200 × 630): hero con titular y antes/después del living de ejemplo. Las escenas de `public/ejemplos/` son ficticias, creadas con IA e identificadas como ilustrativas; ver ASSETS.md.
+La cuenta de referencia utilizada no tiene un plan activo. Se observaron biblioteca, carpetas, papelera, configuración, páginas públicas y resultados gratuitos; el editor pago y sus pantallas posteriores a la contratación no pudieron validarse de extremo a extremo. El resultado implementado tiene su propio backend y no utiliza APIs privadas de la referencia. El blog contiene guías originales para Argentina, no una reproducción de todos los artículos del competidor.

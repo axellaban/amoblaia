@@ -31,6 +31,11 @@ export async function GET() {
         .not("last_error", "is", null)
         .limit(20),
       db.auth.admin.listUsers({ page: 1, perPage: 100 }),
+      db
+        .from("contact_requests")
+        .select("id,kind,email,message,status,created_at")
+        .order("created_at", { ascending: false })
+        .limit(100),
     ]);
     if (r.some((v) => v.error)) throw new Error("ADMIN_LOOKUP_FAILED");
     return Response.json(
@@ -42,6 +47,7 @@ export async function GET() {
         events: r[4].data,
         users: r[5].data.users.map((u) => ({ id: u.id, email: u.email })),
         billing: billingStatus(),
+        requests: r[6].data,
       },
       { headers: { "Cache-Control": "private, no-store" } },
     );
@@ -82,6 +88,19 @@ export async function POST(request: Request) {
           .eq("sku", body.sku.replace(/-month$/, "-year"));
         if (annual.error) throw new Error("ANNUAL_PRICE_UPDATE_FAILED");
       }
+    } else if (body.action === "request") {
+      if (
+        typeof body.id !== "string" ||
+        !["new", "in_progress", "resolved"].includes(body.status)
+      )
+        throw new HttpError(400, "Solicitud inválida.");
+      const updated = await db
+        .from("contact_requests")
+        .update({ status: body.status })
+        .eq("id", body.id)
+        .select("id")
+        .single();
+      if (updated.error) throw new Error("CONTACT_UPDATE_FAILED");
     } else if (body.action === "credit") {
       await rpc("amobla_admin_credit", {
         p_actor: actor.id,
@@ -133,14 +152,12 @@ export async function POST(request: Request) {
         .eq("id", body.userId);
       if (r.error) throw new Error("UNBLOCK_FAILED");
     } else throw new HttpError(400, "Acción inválida.");
-    const audit = await db
-      .from("admin_audit")
-      .insert({
-        actor_id: actor.id,
-        action: body.action,
-        subject_id: body.id || body.userId || body.sku,
-        details: { ...body },
-      });
+    const audit = await db.from("admin_audit").insert({
+      actor_id: actor.id,
+      action: body.action,
+      subject_id: body.id || body.userId || body.sku,
+      details: { ...body },
+    });
     if (audit.error) throw new Error("AUDIT_SAVE_FAILED");
     return Response.json({ saved: true });
   } catch (e) {

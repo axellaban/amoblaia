@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useState } from "react";
+import { Studio } from "./studio";
 import {
   ArrowUpRight,
   Check,
@@ -19,9 +20,7 @@ import { rooms, styles } from "@/lib/catalog";
 import { exampleRooms, exampleStyles, examplePath } from "@/lib/examples";
 const roomName = (id: string) => rooms.find((r) => r.id === id)?.name || id;
 const styleName = (id: string) =>
-  id === "original"
-    ? "Original"
-    : styles.find((s) => s.id === id)?.name || id;
+  id === "original" ? "Original" : styles.find((s) => s.id === id)?.name || id;
 const highlights = [
   "Precio accesible",
   "Listo en minutos",
@@ -61,10 +60,10 @@ export function Landing({
   scenes: string[];
   trial: boolean;
 }) {
-  // "Free" is only promised while the one-photo trial is enabled.
+  // The allowance is enforced per verified account, including earlier free results.
   const cta = trial ? "Subí tu foto gratis" : "Probá el estudio";
   const ctaNote = trial
-    ? "1 foto gratis · Sin tarjeta de crédito"
+    ? "25 diseños gratis · Sin tarjeta de crédito"
     : "Explorá ejemplos sin registrarte";
   const has = (room: string, style: string) =>
     scenes.includes(`${room}-${style === "original" ? "before" : style}`);
@@ -78,68 +77,73 @@ export function Landing({
   const [style, setStyle] = useState("modern");
   const [scene, setScene] = useState<string>(heroRooms[1] || room);
   const [sceneStyle, setSceneStyle] = useState("original");
+  const [uploading, setUploading] = useState(false);
   const [faq, setFaq] = useState<number | null>(0);
   const heroStyle = has(room, style) ? style : optionsFor(room)[1];
   return (
     <>
       <section className="hero">
-        <div className="container hero-grid">
-          <div className="hero-copy">
-            <div className="eyebrow-pill">
-              <span className="live-dot" /> HECHO PARA INMOBILIARIAS DE
-              ARGENTINA
-            </div>
-            <h1>
-              No vendas un
-              <br />
-              espacio vacío.
-              <br />
-              <span>Mostrá un hogar.</span>
-            </h1>
-            <p>
-              Subí una foto y la inteligencia artificial la amobla en minutos.
-            </p>
-            <Link href="/estudio" className="button button-primary button-large">
-              {cta} <ArrowUpRight size={20} />
-            </Link>
-            <div className="hero-micro">{ctaNote}</div>
+        {uploading ? (
+          <div className="container">
+            <Studio embedded onClose={() => setUploading(false)} />
           </div>
-          <div className="hero-visual">
-            <div className="hero-stage">
-              <img
-                key={`${room}-${heroStyle}`}
-                src={examplePath(room, heroStyle)}
-                alt={`${roomName(room)}, ${styleName(heroStyle)}`}
-              />
-              <label className="stage-select stage-room">
-                <span className="visually-hidden">Ambiente</span>
-                <select value={room} onChange={(e) => setRoom(e.target.value)}>
-                  {heroRooms.map((r) => (
-                    <option key={r} value={r}>
-                      {roomName(r)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="stage-select stage-style">
-                <span className="visually-hidden">Estilo</span>
-                <select
-                  value={heroStyle}
-                  onChange={(e) => setStyle(e.target.value)}
-                >
-                  {optionsFor(room).map((s) => (
-                    <option key={s} value={s}>
-                      {styleName(s)}
-                    </option>
-                  ))}
-                </select>
-              </label>
+        ) : (
+          <div className="container hero-grid">
+            <div className="hero-copy">
+              <div className="eyebrow-pill">
+                <span className="live-dot" /> HECHO PARA INMOBILIARIAS DE
+                ARGENTINA
+              </div>
+              <h1>Amoblá tu propiedad con un clic</h1>
+              <p>Subí una foto y nuestra IA le suma muebles en minutos.</p>
+              <button
+                className="button button-primary button-large"
+                onClick={() => setUploading(true)}
+              >
+                {cta} <ArrowUpRight size={20} />
+              </button>
+              <div className="hero-micro">{ctaNote}</div>
             </div>
-            <p className="image-caption">
-              Escenas ilustrativas creadas con IA.
-            </p>
+            <div className="hero-visual">
+              <div className="hero-stage">
+                <img
+                  key={`${room}-${heroStyle}`}
+                  src={examplePath(room, heroStyle)}
+                  alt={`${roomName(room)}, ${styleName(heroStyle)}`}
+                />
+                <label className="stage-select stage-room">
+                  <span className="visually-hidden">Ambiente</span>
+                  <select
+                    value={room}
+                    onChange={(e) => setRoom(e.target.value)}
+                  >
+                    {heroRooms.map((r) => (
+                      <option key={r} value={r}>
+                        {roomName(r)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="stage-select stage-style">
+                  <span className="visually-hidden">Estilo</span>
+                  <select
+                    value={heroStyle}
+                    onChange={(e) => setStyle(e.target.value)}
+                  >
+                    {optionsFor(room).map((s) => (
+                      <option key={s} value={s}>
+                        {styleName(s)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <p className="image-caption">
+                Escenas ilustrativas creadas con IA.
+              </p>
+            </div>
           </div>
-        </div>
+        )}
         <div className="container highlights">
           {highlights.map((h) => (
             <span key={h}>
@@ -244,7 +248,10 @@ export function Landing({
               <br />
               <span>listos para habitar.</span>
             </h2>
-            <Link href="/estudio" className="button button-primary button-large">
+            <Link
+              href="/estudio"
+              className="button button-primary button-large"
+            >
               {cta} <ArrowUpRight size={20} />
             </Link>
             <small>{ctaNote}</small>
@@ -268,8 +275,8 @@ export function Landing({
               ],
               [
                 RefreshCw,
-                "Tres variantes por foto",
-                "¿Esperabas otra cosa? Probá otro estilo sobre la misma foto sin costo extra.",
+                "Regeneraciones incluidas",
+                "Probá nuevas propuestas sobre la misma foto durante tu período pago, sin consumir otro original.",
               ],
             ].map(([Icon, title, text]) => {
               const I = Icon as typeof Eye;
@@ -341,7 +348,7 @@ export function Landing({
                   ["Rápido", "listo en minutos"],
                   ["Simple", "subís, elegís y listo"],
                   ["Accesible", "planes mensuales en pesos"],
-                  ["Flexible", "hasta tres variantes por foto"],
+                  ["Flexible", "regeneraciones incluidas"],
                   ["Fiel", "respeta la arquitectura de la foto"],
                   ["Transparente", "etiqueta de amoblamiento virtual"],
                 ].map(([b, t]) => (

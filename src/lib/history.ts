@@ -3,6 +3,8 @@ import type { ModeId, RoomId, StyleId } from "./catalog";
 export type Project = {
   id: string;
   name: string;
+  folderId?: string | null;
+  trashedAt?: string | null;
   createdAt: number;
   original: string;
   result: string;
@@ -15,6 +17,7 @@ export type Project = {
   projectId?: string;
   variants?: {
     id: string;
+    free?: boolean;
     result: string;
     room: RoomId;
     style: StyleId;

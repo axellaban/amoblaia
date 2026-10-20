@@ -54,6 +54,15 @@ export async function rpc<T>(
   const { data, error } = await adminClient().rpc(name, args);
   if (error) {
     const messages: Record<string, [number, string]> = {
+      CONTACT_LIMIT: [
+        429,
+        "Ya recibimos varias consultas. Esperá un rato antes de enviar otra.",
+      ],
+      PROJECT_NOT_FOUND: [
+        404,
+        "No encontramos la foto. Revisá también la papelera.",
+      ],
+      FOLDER_NOT_FOUND: [404, "No encontramos esa carpeta."],
       PRODUCT_UNAVAILABLE: [409, "Este plan todavía no está disponible."],
       SUBSCRIPTION_EXISTS: [
         409,
@@ -64,11 +73,20 @@ export async function rpc<T>(
         503,
         "El almacenamiento está al límite de capacidad. Contactá al equipo antes de continuar.",
       ],
-      NO_CREDITS: [
-        402,
-        "No te quedan fotos disponibles. Elegí un plan.",
-      ],
+      NO_CREDITS: [402, "No te quedan fotos disponibles. Elegí un plan."],
       BUSY: [409, "Ya tenés una generación en curso. Esperá su resultado."],
+      ENTITLEMENT_EXPIRED: [
+        402,
+        "El período pago venció. Elegí un plan para crear más propuestas de esta foto.",
+      ],
+      FREE_LIMIT: [
+        402,
+        "Usaste tus 25 diseños gratis. Elegí un plan para seguir creando.",
+      ],
+      FREE_FEATURE_LOCKED: [
+        403,
+        "Este ambiente o función está incluido en los planes pagos.",
+      ],
       VERSION_LIMIT: [409, "Esta foto ya usó sus tres variantes incluidas."],
       DAILY_LIMIT: [
         429,

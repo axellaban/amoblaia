@@ -33,3 +33,7 @@ La referencia entrega una aplicación Next.js con recursos de imagen para ambien
 El analizador informó cobertura incompleta y límites de memoria/presupuesto en algunos chunks grandes. Las importaciones y relaciones estáticas no prueban que un código se ejecute. No se obtuvo el backend privado, el modelo propietario, sus prompts, controles de facturación o una licencia de sus assets. No se afirma haber reconstruido esos sistemas.
 
 El MVP usa un motor propio por API (OpenAI Images), no los endpoints de la referencia. La selección de Sunburst se basó en la documentación oficial vigente de edición precisa y calidad; no en una extracción del modelo original.
+
+## Segunda pasada: páginas y cuenta autenticada
+
+Se capturaron 22 rutas HTML actuales y se ejecutó REA 6.7.0 sobre ese contenedor sin ejecutar los scripts. Evidence: `ev_e912df00477b969f31d353f51eb15701eeda9276c4875476cb76c6d4dbd04ee1`; SHA-256 `3c7dbdd7c5b05fda7524a961f3f835fa658e423f1bdbe9e56a00726845374f1e`. Resumen: `rea-pages-summary.json`. Se contrastó con navegación real en escritorio/móvil y la sesión autenticada que facilitó el usuario. Cobertura y límites en `AUDIT_2026-10-20.md`. Los scripts inline no analizados y el backend privado siguen fuera de la evidencia estática.

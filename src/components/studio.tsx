@@ -16,14 +16,6 @@ import {
   ShieldCheck,
   LockKeyhole,
   ChevronRight,
-  Sofa,
-  BedDouble,
-  UtensilsCrossed,
-  CookingPot,
-  Monitor,
-  Trees,
-  House,
-  Flame,
   Images,
   RotateCcw,
   LogOut,
@@ -53,18 +45,17 @@ import {
 } from "@/lib/history";
 import { optimizePhoto, blobToDataURL, downloadDesign } from "@/lib/images";
 import { Comparison } from "./comparison";
-const roomIcons = {
-  living: Sofa,
-  bedroom: BedDouble,
-  dining: UtensilsCrossed,
-  kitchen: CookingPot,
-  office: Monitor,
-  outdoor: Trees,
-  studio: House,
-  quincho: Flame,
-};
-export function Studio() {
+import { clearDraft, loadDraft, saveDraft } from "@/lib/studio-draft";
+import { FREE_RESULT_LIMIT, freeBatchSize } from "@/lib/free-tier";
+export function Studio({
+  embedded = false,
+  onClose,
+}: {
+  embedded?: boolean;
+  onClose?: () => void;
+}) {
   const searchParams = useSearchParams();
+  const [openingProject, setOpeningProject] = useState(false);
   const [view, setView] = useState<"create" | "projects">("create");
   const [room, setRoom] = useState<RoomId>("living");
   const [style, setStyle] = useState<StyleId>("modern");
@@ -91,6 +82,9 @@ export function Studio() {
   const [variants, setVariants] = useState<Project["variants"]>([]);
   const [credits, setCredits] = useState<number | null>(null);
   const [free, setFree] = useState(false);
+  const [freeRemaining, setFreeRemaining] = useState(0);
+  const [draftReady, setDraftReady] = useState(false);
+  const [roundTotal, setRoundTotal] = useState(3);
   const [round, setRound] = useState(0);
   const requestKey = useRef<string | null>(null);
   const [showLogin, setShowLogin] = useState(false);
@@ -99,7 +93,7 @@ export function Studio() {
   const [loginError, setLoginError] = useState("");
   const [consent, setConsent] = useState(false);
   const [label, setLabel] = useState(true);
-  const [comparison, setComparison] = useState(true);
+  const [comparison, setComparison] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const resultRef = useRef<HTMLDivElement>(null);
@@ -108,6 +102,29 @@ export function Studio() {
   const generateLock = useRef(false);
   useEffect(() => {
     let active = true;
+    void loadDraft()
+      .then(async (draft) => {
+        if (!active || !draft) return;
+        const restored = new File([draft.file], draft.filename, {
+          type: draft.file.type || "image/jpeg",
+        });
+        const url = await blobToDataURL(restored);
+        if (!active) return;
+        setFile(restored);
+        setSource(url);
+        setFilename(draft.filename);
+        setRoom(draft.room);
+        setStyle(draft.style);
+        setMode(draft.mode);
+        setNotes(draft.notes);
+        setConsent(draft.consent);
+        setProjectId(draft.projectId);
+        setNotice("Recuperamos tu foto. Podés continuar donde estabas.");
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (active) setDraftReady(true);
+      });
     fetch("/api/session")
       .then((r) => r.json())
       .then(async (state) => {
@@ -135,6 +152,7 @@ export function Studio() {
             if (typeof account.credits === "number")
               setCredits(account.credits);
             setFree(account.free === true);
+            setFreeRemaining(account.freeRemaining ?? 0);
           }
         } else setProjects(local);
       })
@@ -149,7 +167,34 @@ export function Studio() {
     };
   }, []);
   useEffect(() => {
-    setView(searchParams.get("view") === "projects" ? "projects" : "create");
+    if (!draftReady || !file || demo) return;
+    void saveDraft({
+      file,
+      filename,
+      room,
+      style,
+      mode,
+      notes,
+      consent,
+      projectId,
+      savedAt: Date.now(),
+    }).catch(() => {});
+  }, [
+    draftReady,
+    file,
+    filename,
+    room,
+    style,
+    mode,
+    notes,
+    consent,
+    projectId,
+    demo,
+  ]);
+  useEffect(() => {
+    if (searchParams.get("view") === "projects")
+      window.location.replace("/proyectos");
+    else setView("create");
   }, [searchParams]);
   useEffect(() => {
     if (!busy) return;
@@ -190,6 +235,7 @@ export function Studio() {
     }
   }, [showLogin]);
   function reset() {
+    void clearDraft().catch(() => {});
     setSource("");
     setProjectId(null);
     setVariants([]);
@@ -210,6 +256,17 @@ export function Studio() {
     setNotice("");
     try {
       const photo = await optimizePhoto(selected);
+      await saveDraft({
+        file: photo.file,
+        filename: selected.name,
+        room,
+        style,
+        mode,
+        notes,
+        consent: false,
+        projectId: null,
+        savedAt: Date.now(),
+      });
       setProjectId(null);
       setVariants([]);
       requestKey.current = null;
@@ -230,6 +287,7 @@ export function Studio() {
     }
   }
   function useExample(r: RoomId) {
+    void clearDraft().catch(() => {});
     setProjectId(null);
     setVariants([]);
     requestKey.current = null;
@@ -290,6 +348,7 @@ export function Studio() {
     setProjects([...(remote.projects || []), ...local.filter((p) => p.demo)]);
     if (typeof account.credits === "number") setCredits(account.credits);
     setFree(account.free === true);
+    setFreeRemaining(account.freeRemaining ?? 0);
     return remote.projects as Project[];
   }
   async function watchJob(id: string) {
@@ -343,8 +402,20 @@ export function Studio() {
       });
     // A job is resumed once per navigation; its work is persisted on the server.
   }, [searchParams, status?.authenticated, status?.mode]);
+  useEffect(() => {
+    const id = searchParams.get("project");
+    if (!id || openingProject || !projects.length) return;
+    const project = projects.find((p) => p.id === id);
+    if (!project) return;
+    setOpeningProject(true);
+    void openProject(project);
+  }, [searchParams, projects, openingProject]);
   const freeTier =
-    status?.mode === "cloud" && status.authenticated && free && !demo;
+    status?.mode === "cloud" &&
+    status.authenticated &&
+    free &&
+    !demo &&
+    !(projectId && variants?.some((v) => v.free === false));
   async function generate() {
     if (generateLock.current || !source) return;
     setError("");
@@ -371,9 +442,31 @@ export function Studio() {
       return;
     }
     if (!status.authenticated) {
-      if (status.mode === "cloud")
-        window.location.assign("/acceso?next=%2Festudio");
-      else setShowLogin(true);
+      if (status.mode === "cloud") {
+        try {
+          if (file)
+            await saveDraft({
+              file,
+              filename,
+              room,
+              style,
+              mode,
+              notes,
+              consent,
+              projectId,
+              savedAt: Date.now(),
+            });
+          window.location.assign("/acceso?next=%2Festudio");
+        } catch {
+          setError(
+            "No pudimos conservar la foto en este navegador. Habilitá su almacenamiento antes de ingresar.",
+          );
+        }
+      } else setShowLogin(true);
+      return;
+    }
+    if (freeTier && freeRemaining <= 0) {
+      window.location.assign("/precios");
       return;
     }
     if (!consent) {
@@ -400,16 +493,21 @@ export function Studio() {
       data.set("mode", mode);
       data.set("notes", notes);
       if (status.mode === "cloud") {
-        // The free photo delivers its three proposals in one go, like the reference.
+        // Free results are batched, but the database enforces the lifetime account limit.
         const done = variants?.length || 0;
-        const runs = freeTier ? Math.max(1, 3 - done) : 1;
+        const runs = freeTier ? freeBatchSize(freeRemaining) : 1;
+        if (!runs)
+          throw new Error(
+            "Usaste tus 25 diseños gratis. Elegí un plan para seguir creando.",
+          );
+        setRoundTotal(runs);
         let pid = projectId;
         for (let i = 0; i < runs; i++) {
           setRound(runs > 1 ? i + 1 : 0);
           setElapsed(0);
           requestKey.current ||= crypto.randomUUID();
           data.set("requestKey", requestKey.current);
-          data.set("variant", String(done + i + 1));
+          data.set("variant", String(((done + i) % 3) + 1));
           if (pid) data.set("projectId", pid);
           const response = await fetch("/api/jobs", {
             method: "POST",
@@ -539,7 +637,16 @@ export function Studio() {
     }
   }
   return (
-    <div className="studio-page">
+    <div className={`studio-page ${embedded ? "studio-embedded" : ""}`}>
+      {embedded && (
+        <button
+          className="embedded-close icon-button"
+          onClick={onClose}
+          aria-label="Cerrar estudio"
+        >
+          <X size={20} />
+        </button>
+      )}
       <div className="container">
         <div className="studio-breadcrumb">
           <Link href="/">Inicio</Link>
@@ -564,7 +671,9 @@ export function Studio() {
             {status?.mode === "cloud" ? (
               <Link href="/cuenta">
                 {status.authenticated
-                  ? `${credits ?? "…"} fotos · Mi cuenta`
+                  ? free
+                    ? `${freeRemaining} diseños gratis · Mi cuenta`
+                    : `${credits ?? "…"} fotos · Mi cuenta`
                   : "Ingresar a mi cuenta"}
               </Link>
             ) : status?.configured ? (
@@ -593,7 +702,7 @@ export function Studio() {
           </button>
           <button
             className={view === "projects" ? "selected" : ""}
-            onClick={() => setView("projects")}
+            onClick={() => window.location.assign("/proyectos")}
           >
             <FolderOpen size={17} /> Mis proyectos{" "}
             <span>{projects.length}</span>
@@ -644,7 +753,7 @@ export function Studio() {
                           : p.pendingJobId
                             ? "Generando…"
                             : p.variants
-                              ? `${p.variants.length} de 3 variantes`
+                              ? `${p.variants.length} diseños`
                               : "Diseño con IA"}
                       </span>
                     </button>
@@ -664,7 +773,13 @@ export function Studio() {
                                 if (p.cloud) {
                                   const response = await fetch(
                                     `/api/projects/${p.id}`,
-                                    { method: "DELETE" },
+                                    {
+                                      method: "PATCH",
+                                      headers: {
+                                        "Content-Type": "application/json",
+                                      },
+                                      body: JSON.stringify({ action: "trash" }),
+                                    },
                                   );
                                   const payload = await response.json();
                                   if (!response.ok)
@@ -708,7 +823,9 @@ export function Studio() {
             )}
           </div>
         ) : (
-          <div className="workspace">
+          <div
+            className={`workspace ${result ? "has-results" : ""} ${freeTier && result ? "with-upsell" : ""}`}
+          >
             <div className="studio-canvas">
               <div className="canvas-heading">
                 <h2>
@@ -801,7 +918,7 @@ export function Studio() {
                       </div>
                       <h3>
                         {round
-                          ? `Creando el diseño ${round} de 3…`
+                          ? `Creando el diseño ${round} de ${roundTotal}…`
                           : "Tu espacio está tomando forma."}
                       </h3>
                       <p>
@@ -839,7 +956,8 @@ export function Studio() {
                         setNotes(v.notes);
                       }}
                     >
-                      Variante {variants.length - i}
+                      <img src={v.result} alt="" />
+                      Diseño {variants.length - i}
                     </button>
                   ))}
                 </div>
@@ -891,29 +1009,6 @@ export function Studio() {
                   </label>
                 </div>
               )}
-              {freeTier && (result || busy) && (
-                <div className="free-upsell">
-                  <span className="free-pill">
-                    Planes desde 6 fotos por mes
-                  </span>
-                  <h3>La versión completa incluye</h3>
-                  <ul>
-                    {[
-                      "Sin marca de agua",
-                      "Alta resolución",
-                      "Todos los ambientes y estilos",
-                      "Retiro de muebles incluido",
-                    ].map((t) => (
-                      <li key={t}>
-                        <Check size={16} /> {t}
-                      </li>
-                    ))}
-                  </ul>
-                  <Link href="/precios" className="button button-primary">
-                    <LockKeyhole size={17} /> Desbloquear todo
-                  </Link>
-                </div>
-              )}
               <div className="examples">
                 <div className="examples-heading">
                   <span>¿SOLO ESTÁS EXPLORANDO?</span>
@@ -951,6 +1046,19 @@ export function Studio() {
               </div>
             </div>
             <aside className="settings-panel">
+              {source && (
+                <div className="input-preview">
+                  <h3>Tu foto original</h3>
+                  <img src={source} alt="Foto original" />
+                  <button
+                    className="subtle-button"
+                    onClick={reset}
+                    disabled={busy}
+                  >
+                    Probar otra foto
+                  </button>
+                </div>
+              )}
               <div className="settings-heading">
                 <h2>
                   <span className="section-number">02</span> Diseñá a tu manera
@@ -966,13 +1074,16 @@ export function Studio() {
                       className={mode === m.id ? "selected" : ""}
                       onClick={() => chooseMode(m.id)}
                       title={
-                        freeTier && m.id === "remove"
+                        freeTier && !["furnish", "redesign"].includes(m.id)
                           ? "Incluido en los planes pagos"
                           : m.description
                       }
-                      disabled={freeTier && m.id === "remove"}
+                      disabled={
+                        (freeTier && !["furnish", "redesign"].includes(m.id)) ||
+                        (demo && ["enhance", "dusk"].includes(m.id))
+                      }
                     >
-                      {freeTier && m.id === "remove" && (
+                      {freeTier && !["furnish", "redesign"].includes(m.id) && (
                         <LockKeyhole size={12} />
                       )}{" "}
                       {m.name}
@@ -985,59 +1096,65 @@ export function Studio() {
               </fieldset>
               <fieldset disabled={busy || reading}>
                 <legend>Elegí el ambiente</legend>
-                <div className="room-options">
-                  {rooms.map((r) => {
-                    const Icon = roomIcons[r.id];
-                    const locked = freeTier && !freeRooms.includes(r.id);
-                    return (
-                      <button
-                        key={r.id}
-                        disabled={
-                          locked ||
-                          (demo &&
-                            !(demoRooms as readonly string[]).includes(r.id))
-                        }
-                        title={locked ? "Incluido en los planes pagos" : ""}
-                        onClick={() => chooseRoom(r.id)}
-                        className={room === r.id ? "selected" : ""}
-                      >
-                        {locked ? (
-                          <LockKeyhole size={18} strokeWidth={1.5} />
-                        ) : (
-                          <Icon size={20} strokeWidth={1.5} />
-                        )}
-                        {r.name}
-                        {room === r.id && <Check size={11} />}
-                      </button>
-                    );
-                  })}
-                </div>
+                <select
+                  className="studio-select"
+                  aria-label="Tipo de ambiente"
+                  value={room}
+                  onChange={(e) => chooseRoom(e.target.value as RoomId)}
+                >
+                  {rooms.map((r) => (
+                    <option
+                      key={r.id}
+                      value={r.id}
+                      disabled={
+                        (freeTier && !freeRooms.includes(r.id)) ||
+                        (demo &&
+                          !(demoRooms as readonly string[]).includes(r.id))
+                      }
+                    >
+                      {r.name}
+                      {freeTier && !freeRooms.includes(r.id)
+                        ? " · Plan pago"
+                        : ""}
+                    </option>
+                  ))}
+                </select>
               </fieldset>
-              <fieldset disabled={busy || reading || mode === "remove"}>
+              <fieldset
+                disabled={
+                  busy ||
+                  reading ||
+                  ["remove", "enhance", "dusk"].includes(mode)
+                }
+              >
                 <legend>
                   Encontrá tu estilo <span>{styles.length} opciones</span>
                 </legend>
-                <div className="style-options">
+                <select
+                  className="studio-select"
+                  aria-label="Estilo de muebles"
+                  value={style}
+                  onChange={(e) => {
+                    setStyle(e.target.value as StyleId);
+                    setResult("");
+                  }}
+                >
                   {styles.map((s) => (
-                    <button
+                    <option
                       key={s.id}
+                      value={s.id}
                       disabled={
                         demo &&
                         !(demoStyles as readonly string[]).includes(s.id)
                       }
-                      onClick={() => {
-                        setStyle(s.id);
-                        setResult("");
-                      }}
-                      className={style === s.id ? "selected" : ""}
-                      title={s.description}
                     >
-                      <span style={{ background: s.color }} />
                       {s.name}
-                      {style === s.id && <Check size={12} />}
-                    </button>
+                    </option>
                   ))}
-                </div>
+                </select>
+                <p className="field-hint">
+                  {styles.find((s) => s.id === style)?.description}
+                </p>
                 {demo && (
                   <p className="field-hint">
                     Los ejemplos incluyen 2 estilos precargados. Con tu foto
@@ -1087,8 +1204,10 @@ export function Studio() {
                     ? "Creando tu diseño…"
                     : demo
                       ? "Ver transformación de ejemplo"
-                      : freeTier && !variants?.length
-                        ? "Generar 3 diseños gratis"
+                      : freeTier
+                        ? freeRemaining > 0
+                          ? `Crear ${freeBatchSize(freeRemaining)} diseños gratis`
+                          : "Ver planes"
                         : result
                           ? "Generar otra variante"
                           : "Generar mi diseño"}
@@ -1098,10 +1217,10 @@ export function Studio() {
                   {demo
                     ? "Demo precargada · No consume API"
                     : freeTier
-                      ? "Versión gratuita · Con marca de agua"
+                      ? `${freeRemaining} de ${FREE_RESULT_LIMIT} diseños gratis disponibles · Con marca de agua`
                       : status?.configured
                         ? status.mode === "cloud"
-                          ? "Calidad alta · Hasta 3 variantes por foto"
+                          ? "Calidad alta · Regeneraciones incluidas"
                           : "Calidad alta · Acceso de piloto"
                         : "Explorá gratis los ejemplos precargados"}
                 </p>
@@ -1118,6 +1237,27 @@ export function Studio() {
                   </button>
                 )}
             </aside>
+            {freeTier && result && (
+              <aside className="free-upsell">
+                <span className="free-pill">Planes desde 6 fotos por mes</span>
+                <h3>La versión completa incluye</h3>
+                <ul>
+                  {[
+                    "Sin marca de agua",
+                    "Alta resolución",
+                    "Todos los ambientes y estilos",
+                    "Retiro de muebles incluido",
+                  ].map((t) => (
+                    <li key={t}>
+                      <Check size={16} /> {t}
+                    </li>
+                  ))}
+                </ul>
+                <Link href="/precios" className="button button-primary">
+                  <LockKeyhole size={17} /> Desbloquear todo
+                </Link>
+              </aside>
+            )}
           </div>
         )}
         {error && (

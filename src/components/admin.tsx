@@ -3,6 +3,14 @@ import { useState, useEffect } from "react";
 import { formatARS, type Product } from "@/lib/commerce/catalog";
 type AdminData = {
   products: Product[];
+  requests: {
+    id: string;
+    kind: string;
+    email: string;
+    message: string;
+    status: string;
+    created_at: string;
+  }[];
   users: { id: string; email: string }[];
   profiles: { id: string; blocked: boolean }[];
   generations: {
@@ -81,6 +89,44 @@ export function AdminDashboard() {
       )}
       {data && (
         <>
+          <section className="account-panel">
+            <h2>Consultas y solicitudes</h2>
+            <p>
+              Solicitudes de soporte, reembolso, afiliados y acceso comercial.
+              Cambiar el estado no envía emails ni ejecuta reembolsos.
+            </p>
+            {!data.requests.length && <p>Todavía no hay solicitudes.</p>}
+            {data.requests.map((r) => (
+              <article className="request-row" key={r.id}>
+                <div>
+                  <span className="category-chip">{r.kind}</span>
+                  <strong> {r.id.slice(0, 8).toUpperCase()}</strong>
+                  <p>
+                    {r.email} · {new Date(r.created_at).toLocaleString("es-AR")}
+                  </p>
+                  <p style={{ whiteSpace: "pre-wrap" }}>{r.message}</p>
+                </div>
+                <label>
+                  Estado
+                  <select
+                    value={r.status}
+                    disabled={busy}
+                    onChange={(e) =>
+                      void action({
+                        action: "request",
+                        id: r.id,
+                        status: e.target.value,
+                      })
+                    }
+                  >
+                    <option value="new">Nueva</option>
+                    <option value="in_progress">En seguimiento</option>
+                    <option value="resolved">Resuelta</option>
+                  </select>
+                </label>
+              </article>
+            ))}
+          </section>
           <section className="account-panel">
             <h2>Precios en pesos argentinos</h2>
             <p>

@@ -140,3 +140,18 @@ El administrador puede recuperar un resultado ya guardado, o confirmar una falla
 8. Activar productos desde Administración y, al final, `BILLING_ENABLED=true`.
 
 No hay promesa de funcionamiento de pagos en producción hasta completar esta homologación con las credenciales del titular.
+
+
+## Actualización de la auditoría del 20/10/2026
+
+Aplicar en orden las migraciones 006 a 009: email de checkout y 25 resultados gratuitos, consultas registradas, carpetas/papelera y regeneraciones pagas durante cobertura vigente. Se aplicaron al proyecto existente desde SQL Editor sin cambiar el plan Free. No volver a ejecutar la migración 008 completa si ya está aplicada.
+
+El login usa el botón nativo de Google Identity Services. `NEXT_PUBLIC_GOOGLE_CLIENT_ID` es público; el secreto sigue en Supabase. Debe estar autorizado `https://amoblaia.vercel.app` como origen JavaScript en el cliente de Google. Se conserva el callback PKCE para otros accesos existentes.
+
+Los cobros piden el email de Mercado Pago al comprador. `orders.payer_email` controla la reutilización del enlace; no se debe volver a utilizar un enlace antiguo con otro email. El precio se vuelve a mostrar completo antes de ir a Mercado Pago, incluyendo frecuencia y renovación.
+
+Los resultados gratuitos históricos se marcan `is_free` antes de contar el límite 25. `credit_grants` mantiene el saldo de originales pagos separado. `projects.trashed_at` conserva archivos recuperables; `deleted_at` identifica eliminaciones definitivas anteriores o nuevas. La papelera no restituye créditos.
+
+Los formularios guardan solicitudes en `contact_requests`, solo legible por el backend y Administración. Hay deduplicación y un máximo de cinco solicitudes nuevas por origen/hora. No hay envío automático de emails ni reembolsos automáticos desde esos formularios.
+
+Ver `AUDIT_2026-10-20.md` para cobertura y diferencias con la referencia.

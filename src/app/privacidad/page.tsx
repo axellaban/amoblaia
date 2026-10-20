@@ -18,10 +18,20 @@ export default function Privacy() {
         Al generar con una foto propia, enviamos la imagen, el ambiente, el
         estilo y tus indicaciones a un proveedor externo de inteligencia
         artificial, que las procesa por cuenta nuestra para crear el resultado
-        solicitado. Debés tener permiso para procesar la fotografía.
-        Evitá incluir personas, documentos, direcciones visibles u otros datos
+        solicitado. Debés tener permiso para procesar la fotografía. Evitá
+        incluir personas, documentos, direcciones visibles u otros datos
         innecesarios. El tratamiento del proveedor se rige también por sus
         políticas.
+      </p>
+      <h2>Borradores y consultas</h2>
+      <p>
+        La foto seleccionada y tus opciones pueden guardarse temporalmente en tu
+        navegador para conservarlas durante el acceso. El borrador vence a las
+        24 horas y se elimina al descartarlo o cerrar sesión. Las consultas de
+        soporte, solicitudes comerciales y suscripciones voluntarias al
+        newsletter guardan el email, el contenido enviado, el consentimiento y
+        un identificador de seguimiento. Usamos una huella del origen de las
+        solicitudes para limitar el abuso; no publicamos esos datos.
       </p>
       <h2>Pagos y créditos</h2>
       <p>

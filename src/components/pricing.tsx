@@ -9,6 +9,7 @@ import {
   Plus,
   Minus,
   BadgeCheck,
+  X,
 } from "lucide-react";
 import {
   offers,
@@ -17,9 +18,10 @@ import {
   type Product,
 } from "@/lib/commerce/catalog";
 const features = [
-  "Hasta 3 resultados por foto",
+  "Regeneraciones incluidas",
   "Todos los ambientes y estilos",
   "Retiro de muebles incluido",
+  "Mejora de foto y día a atardecer",
   "Sin marca de agua",
   "Descargas sin límite",
   "Proyectos privados en tu cuenta",
@@ -27,7 +29,7 @@ const features = [
 const faqs = [
   [
     "¿Qué cuenta como una foto?",
-    "Cada foto original que subís. Incluye hasta tres resultados entre estilos y operaciones, y descargarlos no consume fotos. Si una generación falla por un problema técnico, la foto no se descuenta.",
+    "Cada foto original que subís consume una foto de tu plan. Podés generar nuevas propuestas sobre ese original durante la vigencia paga sin consumir otra foto. Las descargas no consumen cupo. Si una generación falla por un problema técnico, la foto no se descuenta.",
   ],
   [
     "¿Qué pasa con las fotos que no uso en el mes?",
@@ -60,12 +62,16 @@ export function PricingPlans({
   trial: boolean;
 }) {
   const checkoutKeys = useRef<Record<string, string>>({});
-  const [annual, setAnnual] = useState(false),
+  const [annual, setAnnual] = useState(true),
     [busy, setBusy] = useState(""),
     [error, setError] = useState(""),
     [payerEmail, setPayerEmail] = useState(""),
-    [otherEmail, setOtherEmail] = useState(false),
+    [selectedSku, setSelectedSku] = useState(""),
     [faq, setFaq] = useState<number | null>(null);
+  const [expandedPlans, setExpandedPlans] = useState<Record<string, boolean>>(
+    {},
+  );
+  const selectedProduct = products.find((p) => p.sku === selectedSku);
   const price = (sku: string) =>
     products.find((p) => p.sku === sku && p.active)?.price_cents || 0;
   // Largest annual saving across plans, rounded down to a multiple of 5.
@@ -88,8 +94,10 @@ export function PricingPlans({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           sku,
-          key: (checkoutKeys.current[sku] ||= crypto.randomUUID()),
-          payerEmail: payerEmail || undefined,
+          key: (checkoutKeys.current[
+            `${sku}:${payerEmail.trim().toLowerCase()}`
+          ] ||= crypto.randomUUID()),
+          payerEmail: payerEmail.trim().toLowerCase() || undefined,
         }),
       });
       if (response.status === 401) {
@@ -151,7 +159,10 @@ export function PricingPlans({
           <button
             className="button button-primary"
             disabled={!ready || Boolean(busy)}
-            onClick={() => buy(sku)}
+            onClick={() => {
+              setSelectedSku(sku);
+              setError("");
+            }}
           >
             {busy === sku ? (
               <LoaderCircle size={18} className="spin" />
@@ -161,7 +172,7 @@ export function PricingPlans({
             {ready ? "Empezar" : "Disponible pronto"}
           </button>
         </div>
-        <ul>
+        <ul className={`plan-features ${expandedPlans[sku] ? "expanded" : ""}`}>
           {features.map((t) => (
             <li key={t}>
               <Check size={16} />
@@ -169,6 +180,14 @@ export function PricingPlans({
             </li>
           ))}
         </ul>
+        <button
+          className="plan-expand"
+          aria-expanded={Boolean(expandedPlans[sku])}
+          onClick={() => setExpandedPlans((v) => ({ ...v, [sku]: !v[sku] }))}
+        >
+          {expandedPlans[sku] ? "Mostrar menos" : "Ver todo lo que incluye"}{" "}
+          {expandedPlans[sku] ? <Minus size={15} /> : <Plus size={15} />}
+        </button>
       </article>
     );
   }
@@ -208,8 +227,11 @@ export function PricingPlans({
           <div className="trial-banner">
             <Sparkles size={24} />
             <div>
-              <h2>Probá con una foto propia, gratis.</h2>
-              <p>Una foto por cuenta verificada, una sola vez. Sin tarjeta.</p>
+              <h2>Probá con tus fotos: 25 diseños gratis.</h2>
+              <p>
+                Hasta 3 diseños por tanda. 25 en total por cuenta, con marca de
+                agua. Sin tarjeta.
+              </p>
             </div>
             <Link className="button button-dark" href="/acceso">
               Empezar <ArrowUpRight size={17} />
@@ -222,26 +244,98 @@ export function PricingPlans({
             {error}
           </p>
         )}
-        {enabled &&
-          (otherEmail ? (
-            <label className="mp-email">
-              Email de tu cuenta de Mercado Pago
-              <input
-                type="email"
-                placeholder="tu@email.com"
-                value={payerEmail}
-                onChange={(e) => setPayerEmail(e.target.value)}
-                maxLength={254}
-              />
-            </label>
-          ) : (
-            <button
-              className="mp-email-toggle"
-              onClick={() => setOtherEmail(true)}
+        {selectedSku && (
+          <div
+            className="modal-backdrop"
+            onClick={(e) => {
+              if (e.target === e.currentTarget && !busy) setSelectedSku("");
+            }}
+          >
+            <section
+              className="modal checkout-modal"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="checkout-title"
             >
-              ¿Tu cuenta de Mercado Pago usa otro email?
-            </button>
-          ))}
+              <button
+                className="modal-close icon-button"
+                aria-label="Cerrar pago"
+                disabled={Boolean(busy)}
+                onClick={() => setSelectedSku("")}
+              >
+                <X size={20} />
+              </button>
+              <span className="eyebrow">PAGO SEGURO CON MERCADO PAGO</span>
+              <h2 id="checkout-title">Confirmá tu email de Mercado Pago</h2>
+              {selectedProduct && (
+                <div className="checkout-summary">
+                  <strong>{selectedProduct.name}</strong>
+                  <p>
+                    {formatARS(selectedProduct.price_cents || 0)}{" "}
+                    {selectedProduct.kind === "year"
+                      ? "por año, en un solo cobro"
+                      : selectedProduct.kind === "month"
+                        ? "por mes"
+                        : "por única vez"}
+                  </p>
+                  <p>
+                    {selectedProduct.photos} fotos originales por mes ·
+                    Regeneraciones incluidas
+                  </p>
+                  <small>
+                    Renovación automática. Podés cancelar futuras renovaciones
+                    desde Mi cuenta.
+                  </small>
+                </div>
+              )}
+              <p>
+                Usá el email con el que vas a pagar en Mercado Pago. Puede ser
+                distinto al que usás para entrar a amoblaIA.
+              </p>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void buy(selectedSku);
+                }}
+              >
+                <label htmlFor="mp-payer-email">
+                  Email de tu cuenta de Mercado Pago
+                </label>
+                <input
+                  id="mp-payer-email"
+                  type="email"
+                  required
+                  autoFocus
+                  autoComplete="email"
+                  maxLength={254}
+                  value={payerEmail}
+                  onChange={(e) => setPayerEmail(e.target.value)}
+                  placeholder="tu-email@ejemplo.com"
+                />
+                <p className="field-hint">
+                  Al abrir Mercado Pago, ingresá con esa misma cuenta. Así
+                  evitás el error de emails diferentes.
+                </p>
+                {error && (
+                  <p className="inline-error" role="alert">
+                    {error}
+                  </p>
+                )}
+                <button
+                  className="button button-primary"
+                  disabled={Boolean(busy)}
+                >
+                  {busy ? (
+                    <LoaderCircle size={18} className="spin" />
+                  ) : (
+                    <ArrowUpRight size={18} />
+                  )}{" "}
+                  Ir a Mercado Pago
+                </button>
+              </form>
+            </section>
+          </div>
+        )}
         <section className="faq-layout pricing-faq">
           <div>
             <span className="eyebrow">PREGUNTAS FRECUENTES</span>

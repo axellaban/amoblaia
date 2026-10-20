@@ -2,12 +2,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+import { ContactForm } from "./contact-form";
 import { ArrowUpRight, Menu, X } from "lucide-react";
 /** Brand mark: an arched doorway with a bench inside, plus the spark of AI. */
 export function LogoMark({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 40 40" aria-hidden="true" className={className}>
-      <rect width="40" height="40" rx="11" fill="#b4472a" />
+      <rect width="40" height="40" rx="11" fill="#3c59bf" />
       <g
         fill="none"
         stroke="#fbf1e8"
@@ -20,7 +21,7 @@ export function LogoMark({ className }: { className?: string }) {
       </g>
       <path
         d="M31.5 4.5l1.3 3.7 3.7 1.3-3.7 1.3-1.3 3.7-1.3-3.7-3.7-1.3 3.7-1.3z"
-        fill="#f2b39a"
+        fill="#cbff9a"
       />
     </svg>
   );
@@ -38,8 +39,11 @@ export function Logo() {
 export function Header() {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
+  const privatePage = ["/proyectos", "/cuenta", "/administracion"].includes(
+    pathname,
+  );
   return (
-    <header className="header">
+    <header className={`header ${privatePage ? "header-private" : ""}`}>
       <div className="container nav">
         <Link href="/" aria-label="amoblaIA, inicio">
           <Logo />
@@ -55,8 +59,8 @@ export function Header() {
           >
             Galería
           </Link>
-          <Link href="/#como-funciona" onClick={() => setOpen(false)}>
-            Cómo funciona
+          <Link href="/" onClick={() => setOpen(false)}>
+            Inicio
           </Link>
           <Link
             className={pathname === "/precios" ? "active" : ""}
@@ -65,8 +69,8 @@ export function Header() {
           >
             Precios
           </Link>
-          <Link href="/estudio?view=projects" onClick={() => setOpen(false)}>
-            Mis proyectos
+          <Link href="/blog" onClick={() => setOpen(false)}>
+            Blog
           </Link>
           <Link
             className="mobile-account-nav"
@@ -81,7 +85,7 @@ export function Header() {
             Mi cuenta
           </Link>
           <Link href="/estudio" className="button button-small">
-            Ir al estudio <ArrowUpRight size={16} />
+            Empezar gratis <ArrowUpRight size={16} />
           </Link>
           <button
             className="menu-toggle icon-button"
@@ -96,10 +100,18 @@ export function Header() {
     </header>
   );
 }
-export function Footer({ seller }: { seller: string }) {
+export function Footer() {
   return (
     <footer className="footer">
       <div className="container">
+        <div className="footer-newsletter">
+          <div>
+            <span className="footer-label">NOVEDADES</span>
+            <h2>Sigamos en contacto</h2>
+            <p>Ideas para mostrar tus propiedades y novedades de amoblaIA.</p>
+          </div>
+          <ContactForm kind="newsletter" compact />
+        </div>
         <div className="footer-top">
           <div>
             <Link href="/">
@@ -115,22 +127,29 @@ export function Footer({ seller }: { seller: string }) {
             <span className="footer-label">EXPLORÁ</span>
             <Link href="/galeria">Galería de ambientes</Link>
             <Link href="/estudio">Estudio de diseño</Link>
+            <Link href="/proyectos">Mis fotos y carpetas</Link>
             <Link href="/precios">Acceso y precios</Link>
           </div>
           <div>
             <span className="footer-label">AMOBLAIA</span>
-            <Link href="/#preguntas">Preguntas frecuentes</Link>
+            <Link href="/faq">Preguntas frecuentes</Link>
             <Link href="/privacidad">Privacidad</Link>
             <Link href="/terminos">Términos de uso</Link>
+            <Link href="/reembolsos">Reembolsos</Link>
             <Link href="/ayuda">Soporte</Link>
             <Link href="/ayuda#arrepentimiento">Botón de arrepentimiento</Link>
             <Link href="/ayuda#baja">Botón de baja</Link>
           </div>
+          <div>
+            <span className="footer-label">TRABAJEMOS JUNTOS</span>
+            <Link href="/afiliados">Programa de afiliados</Link>
+            <Link href="/marca-blanca">Marca blanca</Link>
+            <Link href="/api">Acceso API</Link>
+            <Link href="/trabaja-con-nosotros">Trabajá con nosotros</Link>
+          </div>
         </div>
         <div className="footer-bottom">
-          <span>
-            © {new Date().getFullYear()} amoblaIA{seller && ` · ${seller}`}
-          </span>
+          <span>© {new Date().getFullYear()} amoblaIA</span>
           <a
             href="https://www.argentina.gob.ar/produccion/defensadelconsumidor/formulario"
             target="_blank"

@@ -1,8 +1,18 @@
 import type { MetadataRoute } from "next";
+import { resources, articles } from "@/lib/content";
 const base = process.env.APP_URL || "https://amoblaia.vercel.app";
-const pages = ["", "/precios", "/galeria", "/estudio", "/ayuda"];
 export default function sitemap(): MetadataRoute.Sitemap {
-  return [...pages, "/terminos", "/privacidad"].map((path) => ({
-    url: `${base}${path}`,
-  }));
+  return [
+    "",
+    "/precios",
+    "/galeria",
+    "/estudio",
+    "/ayuda",
+    "/faq",
+    "/blog",
+    "/terminos",
+    "/privacidad",
+    ...resources.map((r) => `/${r.slug}`),
+    ...articles.map((a) => `/blog/${a.slug}`),
+  ].map((path) => ({ url: `${base}${path}` }));
 }
