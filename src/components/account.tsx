@@ -185,7 +185,7 @@ export function AccountDashboard() {
                 <ArrowUpRight size={16} />
               </Link>
               <Link className="text-link" href="/precios">
-                Sumar un pack o elegir un plan
+                Elegir un plan
                 <ArrowUpRight size={16} />
               </Link>
             </article>
@@ -201,7 +201,7 @@ export function AccountDashboard() {
             {!account.subscriptions.length ? (
               <p>
                 Todavía no tenés una suscripción. Podés{" "}
-                <Link href="/precios">elegir un plan o un pack</Link>.
+                <Link href="/precios">elegir un plan</Link>.
               </p>
             ) : (
               account.subscriptions.map((s) => (

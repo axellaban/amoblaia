@@ -66,7 +66,7 @@ export async function rpc<T>(
       ],
       NO_CREDITS: [
         402,
-        "No te quedan fotos disponibles. Elegí un pack o un plan.",
+        "No te quedan fotos disponibles. Elegí un plan.",
       ],
       BUSY: [409, "Ya tenés una generación en curso. Esperá su resultado."],
       VERSION_LIMIT: [409, "Esta foto ya usó sus tres variantes incluidas."],

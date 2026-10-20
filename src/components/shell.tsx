@@ -96,7 +96,7 @@ export function Header() {
     </header>
   );
 }
-export function Footer() {
+export function Footer({ seller }: { seller: string }) {
   return (
     <footer className="footer">
       <div className="container">
@@ -122,21 +122,22 @@ export function Footer() {
             <Link href="/#preguntas">Preguntas frecuentes</Link>
             <Link href="/privacidad">Privacidad</Link>
             <Link href="/terminos">Términos de uso</Link>
-            <Link href="/ayuda">Soporte y bajas</Link>
-          </div>
-          <div className="footer-note">
-            <span className="live-dot" /> Hecho para imaginar posibilidades.
-            <p>Fotos que invitan a dar el próximo paso.</p>
+            <Link href="/ayuda">Soporte</Link>
+            <Link href="/ayuda#arrepentimiento">Botón de arrepentimiento</Link>
+            <Link href="/ayuda#baja">Botón de baja</Link>
           </div>
         </div>
         <div className="footer-bottom">
           <span>
-            © {new Date().getFullYear()} amoblaIA. Todos los derechos
-            reservados.
+            © {new Date().getFullYear()} amoblaIA{seller && ` · ${seller}`}
           </span>
-          <span>
-            Diseñado para LATAM <span className="accent">↗</span>
-          </span>
+          <a
+            href="https://www.argentina.gob.ar/produccion/defensadelconsumidor/formulario"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Defensa de las y los consumidores. Para reclamos ingresá acá
+          </a>
         </div>
       </div>
     </footer>

@@ -49,7 +49,13 @@ export default function RootLayout({
         </a>
         <Header />
         <main id="contenido">{children}</main>
-        <Footer />
+        <Footer
+          seller={
+            process.env.SELLER_NAME && process.env.SELLER_CUIT
+              ? `${process.env.SELLER_NAME} · CUIT ${process.env.SELLER_CUIT}`
+              : ""
+          }
+        />
       </body>
     </html>
   );

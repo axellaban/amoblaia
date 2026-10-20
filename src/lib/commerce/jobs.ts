@@ -51,7 +51,7 @@ export async function enqueuePhoto(request: Request, userId: string) {
     if (account.credits < 1)
       throw new HttpError(
         402,
-        "No te quedan fotos disponibles. Elegí un pack o un plan.",
+        "No te quedan fotos disponibles. Elegí un plan.",
       );
   }
   if (!project) {

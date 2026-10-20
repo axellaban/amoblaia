@@ -889,7 +889,7 @@ fieldset {
 }
 .footer-top {
   display: grid;
-  grid-template-columns: 1.3fr 1fr 1fr 1.3fr;
+  grid-template-columns: 1.6fr 1fr 1fr;
   gap: 45px;
   padding-bottom: 45px;
 }
@@ -922,21 +922,12 @@ fieldset {
 .footer-top > div > a:hover {
   color: var(--clay);
 }
-.footer-note {
-  font-size: 12px;
-  padding-top: 7px;
-}
-.footer-note .live-dot {
-  width: 4px;
-  height: 4px;
-  margin-right: 5px;
-}
-.footer-note p {
-  margin-top: 10px !important;
-  font-size: 12px !important;
+.footer-bottom a:hover {
+  color: var(--clay);
 }
 .footer-bottom {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: 20px;
   border-top: 1px solid #ffffff10;
@@ -2326,9 +2317,6 @@ fieldset {
     font-size: 12px;
   }
 
-  .footer-note {
-    font-size: 11.5px;
-  }
   .local-label {
     font-size: 11px;
   }
@@ -2531,15 +2519,6 @@ fieldset {
   }
   .footer-top {
     grid-template-columns: 1.4fr 1fr 1fr;
-  }
-  .footer-note {
-    grid-column: 1/-1;
-    border-top: 1px solid #ffffff10;
-    padding-top: 20px;
-  }
-  .footer-note p {
-    display: inline;
-    margin-left: 8px;
   }
   .footer-top > div > a:not(:first-child) {
     font-size: 12px;
@@ -2979,15 +2958,6 @@ fieldset {
     width: 28px;
     height: 28px;
     margin-right: 7px;
-  }
-  .footer-note {
-    font-size: 11.5px;
-    padding-top: 18px;
-  }
-  .footer-note p {
-    display: block;
-    margin-left: 0;
-    font-size: 11.5px !important;
   }
   .footer-bottom {
     font-size: 11px;

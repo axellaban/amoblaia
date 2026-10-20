@@ -88,12 +88,18 @@ describe("Mercado Pago notification ingress", () => {
       "123456",
     );
   });
-  it("never lets the callback token override a bad supplied signature", async () => {
+  it("accepts a checkout callback by its private token even if MP signed it with another secret", async () => {
     const response = await POST(
       notification({
         authenticated: true,
         signature: `ts=123,v1=${"0".repeat(64)}`,
       }),
+    );
+    expect(response.status).toBe(200);
+  });
+  it("rejects a bad signature that comes without the private token", async () => {
+    const response = await POST(
+      notification({ signature: `ts=123,v1=${"0".repeat(64)}` }),
     );
     expect(response.status).toBe(401);
     expect(mocks.upsert).not.toHaveBeenCalled();

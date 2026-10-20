@@ -10,6 +10,35 @@ export default function Help() {
         Podés gestionar tu suscripción, consultar pagos y ver el estado de una
         generación desde <Link href="/cuenta">Mi cuenta</Link>.
       </p>
+      <h2 id="arrepentimiento">Botón de arrepentimiento</h2>
+      <p>
+        Tenés 10 días corridos desde la contratación para revocarla, sin costo
+        y sin explicar el motivo. Escribinos con el email de tu cuenta y la
+        fecha de la compra; te respondemos con un número de trámite dentro de
+        las 24 horas.
+      </p>
+      {email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && (
+        <p>
+          <a
+            className="button button-primary"
+            href={`mailto:${email}?subject=${encodeURIComponent("Arrepentimiento de compra")}`}
+          >
+            Me arrepiento de mi compra
+          </a>
+        </p>
+      )}
+      {!email && contact && /^https:\/\//.test(contact) && (
+        <p>
+          <a
+            className="button button-primary"
+            href={contact}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Me arrepiento de mi compra
+          </a>
+        </p>
+      )}
       <h2>Soporte, bajas y solicitudes</h2>
       <p>
         Para pedir ayuda, un reembolso, ejercer un derecho sobre tus datos o
@@ -39,7 +68,7 @@ export default function Help() {
           ventas.
         </p>
       )}
-      <h2>Cancelar renovación</h2>
+      <h2 id="baja">Botón de baja</h2>
       <p>
         Entrá a <Link href="/cuenta">Mi cuenta</Link>, buscá tu suscripción y
         elegí «Cancelar renovación». Conservás el período ya pagado. Si no podés

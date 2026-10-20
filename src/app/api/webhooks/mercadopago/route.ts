@@ -48,14 +48,10 @@ export async function POST(request: Request) {
     const signatureValid = Boolean(
       secret && validWebhookSignature(request.headers, id, secret),
     );
-    // Some subscription notification flows do not sign callbacks, and the signing secret only exists once the
-    // Webhooks panel is configured. Those use a server-generated URL token; every event is subsequently
-    // verified through MP's API, including seller, order, amount and currency.
-    if (
-      secret && request.headers.has("x-signature")
-        ? !signatureValid
-        : !tokenValid
-    )
+    // Panel webhooks are signed; checkout notifications carry the server-generated URL token and may be
+    // signed with another mode's secret. Either proof is enough: every event is then verified through
+    // MP's API, including seller, order, amount and currency, so a callback alone never grants credits.
+    if (!tokenValid && !signatureValid)
       return new Response("Unauthorized", { status: 401 });
     const key = `${topic}:${id}:${String(body.id || body.date_created || request.headers.get("x-request-id") || "event").slice(0, 100)}`;
     const saved = await adminClient()
