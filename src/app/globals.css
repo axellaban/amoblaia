@@ -349,57 +349,17 @@ fieldset {
   background: #768b81;
   margin: 0 3px;
 }
-.hero-for {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  border-top: 1px solid #ffffff12;
-  margin-top: 35px;
-  padding-top: 23px;
-}
-.hero-for strong {
-  display: block;
-  font-size: 12px;
-  font-weight: 450;
-}
-.hero-for > div > span {
-  display: block;
-  color: #93ab9f;
-  font-size: 12px;
-  margin-top: 3px;
-}
-.tiny-rooms {
-  display: flex;
-  padding-left: 3px;
-}
-.tiny-rooms img {
-  width: 29px;
-  height: 29px;
-  border: 2px solid var(--forest);
-  border-radius: 50%;
-  object-fit: cover;
-  margin-left: -4px;
-}
+
+
+
+
+
 .hero-visual {
   min-width: 0;
 }
-.visual-topline {
-  display: flex;
-  justify-content: space-between;
-  font-size: 11px;
-  letter-spacing: 0.11em;
-  color: #a1baae;
-  margin-bottom: 12px;
-}
-.visual-topline > span:first-child {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-.visual-topline .live-dot {
-  width: 4px;
-  height: 4px;
-}
+
+
+
 .comparison {
   position: relative;
   aspect-ratio: 1.34;
@@ -483,53 +443,55 @@ fieldset {
   outline: 3px solid var(--terracotta);
   outline-offset: 3px;
 }
-.hero-visual .comparison {
-  border-radius: 11px 11px 0 0;
-  aspect-ratio: 1.32;
+
+
+
+
+
+
+
+
+.hero-stage {
+  position: relative;
+  aspect-ratio: 1.5;
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--forest-light);
 }
-.visual-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 22px;
-  padding: 14px 20px;
-  background: #244133;
-  border: 1px solid #ffffff09;
-  border-top: 0;
-  border-radius: 0 0 11px 11px;
+.hero-stage > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  animation: stage-in 0.35s ease;
 }
-.visual-toolbar label {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 95px;
+@keyframes stage-in {
+  from {
+    opacity: 0.4;
+  }
 }
-.visual-toolbar label > span {
-  font-size: 11px;
-  letter-spacing: 0.13em;
-  color: #91ac9e;
+.stage-select {
+  position: absolute;
+  bottom: 16px;
 }
-.visual-toolbar select {
-  color: #fff;
-  background: none;
+.stage-room {
+  left: 16px;
+}
+.stage-style {
+  right: 16px;
+}
+.stage-select select {
+  appearance: none;
+  min-height: 46px;
+  padding: 10px 40px 10px 18px;
   border: 0;
-  font-size: 14px;
-  padding: 2px 20px 2px 0;
-  max-width: 180px;
-  outline-offset: 2px;
-}
-.visual-toolbar option {
+  border-radius: 12px;
+  background: #fbf7f1
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%231f1c19' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m3 4.5 3-3 3 3M3 7.5l3 3 3-3'/%3E%3C/svg%3E")
+    no-repeat right 14px center;
   color: var(--ink);
-  background: white;
-}
-.toolbar-divider {
-  height: 26px;
-  width: 1px;
-  background: #ffffff16;
-}
-.demo-caption {
-  font-size: 11px;
-  color: #a0baad;
-  margin-left: auto;
+  font-size: 15px;
+  font-weight: 650;
+  box-shadow: 0 6px 20px #0000002e;
 }
 .image-caption {
   display: flex;
@@ -2108,6 +2070,92 @@ fieldset {
   color: #fff;
   padding: 6px 12px;
 }
+.pricing-page .plans-heading {
+  margin: 0 0 40px;
+  align-items: flex-end;
+}
+.pricing-page .plans-heading h1 {
+  font-size: clamp(40px, 5vw, 60px);
+  line-height: 1.05;
+  margin: 6px 0 12px;
+}
+.pricing-page .plans-heading h1 > span {
+  color: var(--terracotta);
+}
+.cancel-anytime {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--terracotta);
+}
+.billing-toggle em {
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 700;
+  margin-left: 6px;
+  padding: 3px 8px;
+  border-radius: 20px;
+  background: var(--clay);
+  color: var(--ink);
+}
+.commercial-plans .price-card .button {
+  width: 100%;
+  margin: 18px 0 4px;
+}
+.commercial-plans .price-card ul {
+  margin: 22px 0 0;
+}
+.price-card .price {
+  font-size: 30px;
+  font-weight: 650;
+  margin: 10px 0 2px;
+}
+.price-card .price > span {
+  display: inline;
+  font-size: 14px;
+  font-weight: 500;
+}
+.per-photo,
+.annual-hint {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+}
+.annual-hint {
+  margin-top: 10px;
+  padding: 5px 10px;
+  border-radius: 20px;
+  background: var(--sand);
+  color: var(--ink);
+  font-weight: 600;
+}
+.price-card.featured .per-photo {
+  color: #c9c0b6;
+}
+.price-card.featured .annual-hint {
+  background: #ffffff14;
+  color: var(--clay);
+}
+.mp-email-toggle {
+  display: block;
+  margin: 22px auto 0;
+  background: none;
+  color: var(--muted);
+  font-size: 14px;
+  text-decoration: underline;
+}
+.pricing-page .mp-email {
+  margin: 22px auto 0;
+}
+.pricing-faq {
+  margin-top: 90px;
+}
+.pricing-faq h2 {
+  font-size: clamp(32px, 3.3vw, 45px);
+}
+.pricing-faq h2 > span {
+  color: var(--terracotta);
+}
 .price-pending {
   font-family: var(--font-display);
   font-style: italic;
@@ -2185,9 +2233,7 @@ fieldset {
   .hero-copy > p {
     font-size: 16px;
   }
-  .hero-visual .comparison {
-    aspect-ratio: 1.4;
-  }
+
   .section {
     padding: 110px 0;
   }
@@ -2227,26 +2273,14 @@ fieldset {
   .hero-micro {
     font-size: 11px;
   }
-  .hero-for strong,
-  .hero-for > div > span {
-    font-size: 11.5px;
-  }
+
   .eyebrow-pill {
     font-size: 11px;
   }
-  .visual-toolbar {
-    gap: 15px;
-    padding: 12px 14px;
-  }
-  .visual-toolbar label {
-    min-width: 80px;
-  }
-  .visual-toolbar select {
-    font-size: 13px;
-  }
-  .demo-caption {
-    font-size: 11px;
-  }
+
+
+
+
   .feature-strip span {
     font-size: 12px;
   }
@@ -2291,10 +2325,7 @@ fieldset {
   .dropzone p {
     font-size: 12px;
   }
-  .hero-for {
-    margin-top: 28px;
-    padding-top: 20px;
-  }
+
   .footer-note {
     font-size: 11.5px;
   }
@@ -2373,9 +2404,7 @@ fieldset {
     padding: 14px 16px;
     min-height: 48px;
   }
-  .hero-for {
-    display: none;
-  }
+
   .hero-micro {
     flex-wrap: wrap;
     line-height: 1.8;
@@ -2396,32 +2425,16 @@ fieldset {
     width: 4px;
     height: 4px;
   }
-  .visual-topline {
-    font-size: 11px;
-  }
-  .hero-visual .comparison {
-    aspect-ratio: 1.05;
-  }
+
+
   .image-caption > span {
     display: none;
   }
-  .visual-toolbar {
-    gap: 10px;
-  }
-  .visual-toolbar label {
-    min-width: 68px;
-  }
-  .visual-toolbar select {
-    font-size: 12px;
-    max-width: 88px;
-    padding-right: 5px;
-  }
-  .visual-toolbar label > span {
-    font-size: 11px;
-  }
-  .demo-caption {
-    display: none;
-  }
+
+
+
+
+
   .hero-micro > span {
     display: none;
   }
@@ -2711,31 +2724,13 @@ fieldset {
   .hero-micro > span {
     display: block;
   }
-  .hero-visual .comparison {
-    aspect-ratio: 1.37;
-  }
-  .visual-topline {
-    font-size: 11px;
-    margin-bottom: 10px;
-  }
-  .visual-toolbar {
-    padding: 12px 17px;
-    gap: 25px;
-  }
-  .visual-toolbar label {
-    min-width: 86px;
-  }
-  .visual-toolbar label > span {
-    font-size: 11px;
-  }
-  .visual-toolbar select {
-    font-size: 14px;
-    max-width: 150px;
-  }
-  .demo-caption {
-    display: block;
-    font-size: 11px;
-  }
+
+
+
+
+
+
+
   .image-caption {
     font-size: 11px;
   }
@@ -3642,7 +3637,11 @@ fieldset {
   font-size: 32px;
 }
 .commercial-plans .price-card > p {
-  min-height: 46px;
+  min-height: 52px;
+  margin-bottom: 0;
+}
+.commercial-plans .photo-allowance {
+  margin: 14px 0 4px;
 }
 .commercial-plans .price-card ul {
   margin-top: 25px;

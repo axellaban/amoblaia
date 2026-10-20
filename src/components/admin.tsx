@@ -141,7 +141,7 @@ export function AdminDashboard() {
                     type="number"
                     step="1"
                     min="1"
-                    max="1000000"
+                    max="10000000"
                     defaultValue={p.price_cents ? p.price_cents / 100 : ""}
                     required
                   />
@@ -156,8 +156,8 @@ export function AdminDashboard() {
                 </label>
                 {p.kind === "month" && (
                   <label className="checkbox-label">
-                    <input name="annual" type="checkbox" defaultChecked />
-                    Anual = 10 meses
+                    <input name="annual" type="checkbox" />
+                    Anual = 10 meses (reemplaza el precio anual)
                   </label>
                 )}
                 <button className="button button-outline" disabled={busy}>

@@ -16,7 +16,6 @@ import {
   ShieldCheck,
   Sofa,
   Layers,
-  MousePointer2,
 } from "lucide-react";
 import {
   rooms,
@@ -57,7 +56,7 @@ const faqs = [
 ];
 export function Landing() {
   const [room, setRoom] = useState<RoomId>("living");
-  const [style, setStyle] = useState<StyleId>("modern");
+  const [style, setStyle] = useState<StyleId | "original">("modern");
   const [faq, setFaq] = useState<number | null>(0);
   return (
     <>
@@ -87,38 +86,18 @@ export function Landing() {
               <Check size={14} /> Probá los ejemplos gratis <span /> Sin tarjeta
               de crédito
             </div>
-            <div className="hero-for">
-              <div className="tiny-rooms">
-                <img src="/ejemplos/living-modern.webp" alt="Living amoblado" />
-                <img
-                  src="/ejemplos/bedroom-modern.webp"
-                  alt="Dormitorio amoblado"
-                />
-                <img
-                  src="/ejemplos/living-eclectic.webp"
-                  alt="Living ecléctico"
-                />
-              </div>
-              <div>
-                <strong>Pensado para quienes venden espacios.</strong>
-                <span>Inmobiliarias, agentes y propietarios.</span>
-              </div>
-            </div>
           </div>
           <div className="hero-visual">
-            <div className="visual-topline">
-              <span>
-                <span className="live-dot" /> DE VACÍO A INCREÍBLE
-              </span>
-              <span>01 / 04</span>
-            </div>
-            <Comparison
-              before={beforeImage(room)}
-              after={afterImage(room, style)}
-            />
-            <div className="visual-toolbar">
-              <label>
-                <span>AMBIENTE</span>
+            <div className="hero-stage">
+              <img
+                key={`${room}-${style}`}
+                src={
+                  style === "original" ? beforeImage(room) : afterImage(room, style)
+                }
+                alt={`${rooms.find((r) => r.id === room)?.name}${style === "original" ? " vacío" : ` amoblado, estilo ${styles.find((s) => s.id === style)?.name}`}`}
+              />
+              <label className="stage-select stage-room">
+                <span className="visually-hidden">Ambiente</span>
                 <select
                   value={room}
                   onChange={(e) => setRoom(e.target.value as RoomId)}
@@ -134,13 +113,15 @@ export function Landing() {
                     ))}
                 </select>
               </label>
-              <div className="toolbar-divider" />
-              <label>
-                <span>ESTILO</span>
+              <label className="stage-select stage-style">
+                <span className="visually-hidden">Estilo</span>
                 <select
                   value={style}
-                  onChange={(e) => setStyle(e.target.value as StyleId)}
+                  onChange={(e) =>
+                    setStyle(e.target.value as StyleId | "original")
+                  }
                 >
+                  <option value="original">Original</option>
                   {styles
                     .filter((s) =>
                       (demoStyles as readonly string[]).includes(s.id),
@@ -152,12 +133,10 @@ export function Landing() {
                     ))}
                 </select>
               </label>
-              <span className="demo-caption">Ejemplo ilustrativo</span>
             </div>
-            <div className="image-caption">
-              <MousePointer2 size={13} /> Deslizá para ver la transformación{" "}
-              <span>Tu espacio. Todo su potencial.</span>
-            </div>
+            <p className="image-caption">
+              Escenas ilustrativas creadas con IA.
+            </p>
           </div>
         </div>
       </section>
@@ -281,7 +260,9 @@ export function Landing() {
             <img
               src={afterImage(
                 "bedroom",
-                style === "industrial" ? "modern" : style,
+                style === "industrial" || style === "original"
+                  ? "modern"
+                  : style,
               )}
               alt={`Dormitorio en estilo ${styles.find((s) => s.id === style)?.name}`}
               loading="lazy"

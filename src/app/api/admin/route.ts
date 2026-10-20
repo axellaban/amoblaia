@@ -62,7 +62,7 @@ export async function POST(request: Request) {
         typeof body.sku !== "string" ||
         !Number.isSafeInteger(body.cents) ||
         body.cents < 100 ||
-        body.cents > 100000000
+        body.cents > 1000000000
       )
         throw new HttpError(400, "Importe inválido.");
       const r = await db
