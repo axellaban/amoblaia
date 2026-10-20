@@ -68,19 +68,31 @@ export function validWebhookSignature(
     Buffer.from(parts.v1, "hex"),
   );
 }
+/** Names (never values) of the settings that still block checkout. */
+export function billingStatus() {
+  const env = process.env;
+  const checks: [string, unknown][] = [
+    ["BILLING_ENABLED", env.BILLING_ENABLED === "true"],
+    ["MERCADOPAGO_ACCESS_TOKEN", env.MERCADOPAGO_ACCESS_TOKEN],
+    ["MERCADOPAGO_COLLECTOR_ID", env.MERCADOPAGO_COLLECTOR_ID],
+    ["MERCADOPAGO_NOTIFICATION_TOKEN", env.MERCADOPAGO_NOTIFICATION_TOKEN],
+    ["APP_URL", env.APP_URL],
+    ["SELLER_NAME", env.SELLER_NAME],
+    ["SELLER_CUIT", env.SELLER_CUIT],
+    [
+      "SUPPORT_EMAIL o NEXT_PUBLIC_CONTACT_URL",
+      env.SUPPORT_EMAIL || env.NEXT_PUBLIC_CONTACT_URL,
+    ],
+  ];
+  const missing = checks.filter(([, ok]) => !ok).map(([name]) => name);
+  return {
+    ready: missing.length === 0,
+    mode: env.MERCADOPAGO_MODE === "production" ? "production" : "test",
+    missing,
+  };
+}
 export function billingConfigured() {
-  return (
-    process.env.BILLING_ENABLED === "true" &&
-    Boolean(
-      process.env.MERCADOPAGO_ACCESS_TOKEN &&
-        process.env.MERCADOPAGO_COLLECTOR_ID &&
-        process.env.MERCADOPAGO_NOTIFICATION_TOKEN &&
-        process.env.APP_URL &&
-        process.env.SELLER_NAME &&
-        process.env.SELLER_CUIT &&
-        (process.env.SUPPORT_EMAIL || process.env.NEXT_PUBLIC_CONTACT_URL),
-    )
-  );
+  return billingStatus().ready;
 }
 export async function mp<T>(
   path: string,

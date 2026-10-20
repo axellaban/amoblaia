@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { createHmac } from "node:crypto";
 vi.mock("server-only", () => ({}));
 import {
+  billingStatus,
   moneyCents,
   validWebhookSignature,
   validatePayment,
@@ -72,6 +73,40 @@ describe("Payment boundary", () => {
       { external_reference: "another-order" },
     ])
       expect(() => validatePayment({ ...payment, ...patch }, order)).toThrow();
+  });
+});
+describe("Billing diagnostics", () => {
+  const complete = {
+    BILLING_ENABLED: "true",
+    MERCADOPAGO_ACCESS_TOKEN: "provider-token-for-tests",
+    MERCADOPAGO_COLLECTOR_ID: "123",
+    MERCADOPAGO_NOTIFICATION_TOKEN: "notification-token-for-tests",
+    APP_URL: "https://amobla.example",
+    SELLER_NAME: "Seller",
+    SELLER_CUIT: "20-00000000-0",
+    SUPPORT_EMAIL: "soporte@amobla.example",
+    MERCADOPAGO_MODE: "production",
+  };
+  it("is ready only when every requirement is present", () => {
+    for (const [k, v] of Object.entries(complete)) vi.stubEnv(k, v);
+    expect(billingStatus()).toEqual({
+      ready: true,
+      mode: "production",
+      missing: [],
+    });
+  });
+  it("names missing settings without exposing configured values", () => {
+    for (const [k, v] of Object.entries(complete)) vi.stubEnv(k, v);
+    vi.stubEnv("BILLING_ENABLED", "false");
+    vi.stubEnv("SELLER_CUIT", "");
+    vi.stubEnv("MERCADOPAGO_MODE", "");
+    const status = billingStatus();
+    expect(status).toEqual({
+      ready: false,
+      mode: "test",
+      missing: ["BILLING_ENABLED", "SELLER_CUIT"],
+    });
+    expect(JSON.stringify(status)).not.toContain("provider-token-for-tests");
   });
 });
 describe("Safe auth redirects", () => {

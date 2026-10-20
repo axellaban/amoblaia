@@ -20,6 +20,7 @@ type AdminData = {
     amount_cents: number;
   }[];
   events: { event_key: string; last_error: string }[];
+  billing: { ready: boolean; mode: "test" | "production"; missing: string[] };
 };
 export function AdminDashboard() {
   const [data, setData] = useState<AdminData | null>(null),
@@ -83,10 +84,29 @@ export function AdminDashboard() {
           <section className="account-panel">
             <h2>Precios en pesos argentinos</h2>
             <p>
-              El switch de cobros de Vercel también debe estar habilitado.
-              Activar un producto acá lo publica cuando la integración esté
-              lista.
+              Un producto muestra su botón de compra cuando los cobros están
+              activos y tiene precio y la casilla Publicado marcada.
             </p>
+            <ul className="billing-status">
+              <li className={data.billing.ready ? "ok" : "warn"}>
+                {data.billing.ready
+                  ? data.billing.mode === "production"
+                    ? "Cobros activos en producción: todos los clientes ven los botones."
+                    : "Cobros en modo prueba: solo los emails de ADMIN_EMAILS ven los botones."
+                  : `Cobros apagados. Falta en Vercel: ${data.billing.missing.join(", ")}.`}
+              </li>
+              <li
+                className={
+                  data.products.some((p) => p.active && p.price_cents)
+                    ? "ok"
+                    : "warn"
+                }
+              >
+                {data.products.some((p) => p.active && p.price_cents)
+                  ? `${data.products.filter((p) => p.active && p.price_cents).length} de ${data.products.length} productos publicados.`
+                  : "Ningún producto publicado: cargá un precio, marcá Publicado y guardá."}
+              </li>
+            </ul>
             {data.products.map((p) => (
               <form
                 key={p.sku}

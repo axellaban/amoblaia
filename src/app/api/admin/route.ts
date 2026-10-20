@@ -1,6 +1,7 @@
 import { requireAdmin, failure, HttpError, rpc } from "@/lib/commerce/http";
 import { adminClient } from "@/lib/supabase/server";
 import { BUCKET } from "@/lib/commerce/jobs";
+import { billingStatus } from "@/lib/commerce/mercadopago";
 export async function GET() {
   try {
     await requireAdmin();
@@ -40,6 +41,7 @@ export async function GET() {
         payments: r[3].data,
         events: r[4].data,
         users: r[5].data.users.map((u) => ({ id: u.id, email: u.email })),
+        billing: billingStatus(),
       },
       { headers: { "Cache-Control": "private, no-store" } },
     );
