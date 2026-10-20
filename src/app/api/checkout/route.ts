@@ -54,6 +54,22 @@ export async function POST(request: Request) {
         !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payerEmail))
     )
       throw new HttpError(400, "Ingresá un email válido de Mercado Pago.");
+    // An abandoned checkout for the same plan is reopened instead of blocking a new attempt.
+    const open = await db
+      .from("orders")
+      .select("checkout_url")
+      .eq("user_id", user.id)
+      .eq("sku", sku)
+      .eq("status", "checkout_ready")
+      .not("checkout_url", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (open.data?.checkout_url)
+      return Response.json(
+        { url: open.data.checkout_url },
+        { headers: { "Cache-Control": "no-store" } },
+      );
     const created = await rpc<{
       order: { snapshot: Product; checkout_url: string | null };
       dispatch: boolean;

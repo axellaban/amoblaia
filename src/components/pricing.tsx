@@ -118,47 +118,49 @@ export function PricingPlans({
         className={`price-card ${featured ? "featured" : ""}`}
         key={offer.id}
       >
-        {featured && <span className="price-ribbon">MÁS ELEGIDO</span>}
-        <h2>{offer.name}</h2>
-        <p>{offer.description}</p>
-        <div className="photo-allowance">
-          <strong>{offer.photos}</strong> fotos / mes
-        </div>
-        {cents > 0 ? (
-          <>
-            <div className="price">
-              {formatARS(monthly)} <span>por mes</span>
-            </div>
-            <small className="per-photo">
-              {formatARS(monthly / offer.photos)} por foto
-            </small>
-            {annual ? (
-              <small className="annual-hint">
-                Se cobra {formatARS(cents)} por año
+        {featured && <span className="price-ribbon">Más elegido</span>}
+        <div className="price-panel">
+          <h2>{offer.name}</h2>
+          <p>{offer.description}</p>
+          <div className="photo-allowance">
+            <strong>{offer.photos}</strong> fotos / mes
+          </div>
+          {cents > 0 ? (
+            <>
+              <div className="price">
+                {formatARS(monthly)} <span>por mes</span>
+              </div>
+              <small className="per-photo">
+                {formatARS(monthly / offer.photos)} por foto
               </small>
-            ) : (
-              yearlyMonthly > 0 && (
+              {annual ? (
                 <small className="annual-hint">
-                  Solo {formatARS(yearlyMonthly)}/mes con pago anual
+                  Se cobra {formatARS(cents)} por año
                 </small>
-              )
-            )}
-          </>
-        ) : (
-          <div className="price price-pending">Próximamente</div>
-        )}
-        <button
-          className={`button ${featured ? "button-primary" : "button-dark"}`}
-          disabled={!ready || Boolean(busy)}
-          onClick={() => buy(sku)}
-        >
-          {busy === sku ? (
-            <LoaderCircle size={18} className="spin" />
+              ) : (
+                yearlyMonthly > 0 && (
+                  <small className="annual-hint">
+                    {formatARS(yearlyMonthly)}/mes con plan anual
+                  </small>
+                )
+              )}
+            </>
           ) : (
-            <ArrowUpRight size={18} />
-          )}{" "}
-          {ready ? "Empezar" : "Disponible pronto"}
-        </button>
+            <div className="price price-pending">Próximamente</div>
+          )}
+          <button
+            className="button button-primary"
+            disabled={!ready || Boolean(busy)}
+            onClick={() => buy(sku)}
+          >
+            {busy === sku ? (
+              <LoaderCircle size={18} className="spin" />
+            ) : (
+              <ArrowUpRight size={18} />
+            )}{" "}
+            {ready ? "Empezar" : "Disponible pronto"}
+          </button>
+        </div>
         <ul>
           {features.map((t) => (
             <li key={t}>
@@ -172,6 +174,7 @@ export function PricingPlans({
   }
   return (
     <div className="pricing-page">
+      <div className="pricing-band" aria-hidden="true" />
       <div className="container">
         <div className="plans-heading">
           <div>

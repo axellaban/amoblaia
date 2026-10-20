@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { browserClient } from "@/lib/supabase/client";
 import { safeNext } from "@/lib/commerce/redirect";
-import { ArrowUpRight, LoaderCircle, ShieldCheck } from "lucide-react";
+import { ArrowUpRight, Check, LoaderCircle, ShieldCheck } from "lucide-react";
 declare global {
   interface Window {
     turnstile?: {
@@ -67,6 +67,28 @@ function Captcha({
   }, [reset, onToken]);
   return key ? <div className="captcha" ref={ref} /> : null;
 }
+function GoogleLogo() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 48 48" aria-hidden="true">
+      <path
+        fill="#FFC107"
+        d="M43.6 20.1H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.6-.4-3.9z"
+      />
+      <path
+        fill="#FF3D00"
+        d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"
+      />
+      <path
+        fill="#4CAF50"
+        d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.6 16.2 44 24 44z"
+      />
+      <path
+        fill="#1976D2"
+        d="M43.6 20.1H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.6-.4-3.9z"
+      />
+    </svg>
+  );
+}
 export function AuthForm() {
   const params = useSearchParams();
   const [mode, setMode] = useState<"login" | "signup" | "reset" | "update">(
@@ -92,11 +114,6 @@ export function AuthForm() {
     if (!client) return;
     setBusy(true);
     setError("");
-    if (!accepted) {
-      setError("Aceptá las condiciones para continuar.");
-      setBusy(false);
-      return;
-    }
     const { error } = await client.auth.signInWithOAuth({
       provider: "google",
       options: {
@@ -197,9 +214,17 @@ export function AuthForm() {
             Guardá tus fotos, compará variantes y prepará tu próxima
             publicación.
           </p>
-          <p className="field-hint">
-            <ShieldCheck size={18} /> Tus proyectos son privados.
-          </p>
+          <ul className="auth-points">
+            <li>
+              <Check size={18} /> Tus fotos y resultados, siempre a mano
+            </li>
+            <li>
+              <ShieldCheck size={18} /> Proyectos privados: solo los ves vos
+            </li>
+            <li>
+              <Check size={18} /> Cancelás tu plan cuando quieras
+            </li>
+          </ul>
         </div>
         <div className="auth-card">
           {emailEnabled && mode !== "reset" && mode !== "update" && (
@@ -228,13 +253,18 @@ export function AuthForm() {
           )}
           <h2>
             {mode === "login"
-              ? "Qué bueno verte de nuevo."
+              ? "Entrá a amoblaIA"
               : mode === "signup"
                 ? "Tu próxima publicación empieza acá."
                 : mode === "reset"
                   ? "Recuperá tu acceso."
                   : "Elegí una nueva contraseña."}
           </h2>
+          {mode === "login" && available && (
+            <p className="auth-sub">
+              Si es tu primera vez, tu cuenta se crea en el momento.
+            </p>
+          )}
           {!available ? (
             <p>
               Estamos preparando las cuentas. Mientras tanto, podés{" "}
@@ -244,25 +274,24 @@ export function AuthForm() {
             <>
               {googleEnabled && mode !== "update" && (
                 <div className="google-access">
-                  <label className="checkbox-label">
-                    <input
-                      type="checkbox"
-                      checked={accepted}
-                      onChange={(e) => setAccepted(e.target.checked)}
-                    />
-                    <span>
-                      Acepto los <Link href="/terminos">términos</Link> y la{" "}
-                      <Link href="/privacidad">política de privacidad</Link>.
-                    </span>
-                  </label>
                   <button
                     type="button"
-                    className="button button-outline"
+                    className="google-button"
                     disabled={busy}
                     onClick={googleLogin}
                   >
-                    Ingresar con Google <ArrowUpRight size={18} />
+                    {busy ? (
+                      <LoaderCircle className="spin" size={20} />
+                    ) : (
+                      <GoogleLogo />
+                    )}
+                    Continuar con Google
                   </button>
+                  <p className="auth-legal">
+                    Al continuar aceptás los{" "}
+                    <Link href="/terminos">términos</Link> y la{" "}
+                    <Link href="/privacidad">política de privacidad</Link>.
+                  </p>
                 </div>
               )}
               {!googleEnabled && !emailEnabled && (

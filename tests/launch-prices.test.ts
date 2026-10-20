@@ -44,6 +44,47 @@ describe("Launch catalog", () => {
       "select amobla_create_order($1,$2,$3)",
       [user, "00000000-0000-4000-8000-0000000000aa", "standard-month"],
     );
-    expect(JSON.stringify(order.rows[0])).toContain("5390000");
+    expect(JSON.stringify(order.rows[0])).toContain("2700000");
+  });
+  it("grants each plan's monthly quota without stacking renewals", async () => {
+    const buyer = "00000000-0000-4000-8000-000000000004";
+    const order = "00000000-0000-4000-8000-0000000000bb";
+    await db.exec(`insert into auth.users values('${buyer}')`);
+    await db.query("select amobla_account($1,false)", [buyer]);
+    await db.query("select amobla_create_order($1,$2,$3)", [
+      buyer,
+      order,
+      "professional-month",
+    ]);
+    await db.query(
+      "update orders set provider_subscription_id='sub-pro' where id=$1",
+      [order],
+    );
+    const credits = async () =>
+      (
+        await db.query<{ amobla_account: { credits: number } }>(
+          "select amobla_account($1,false)",
+          [buyer],
+        )
+      ).rows[0].amobla_account.credits;
+    const pay = (id: string) =>
+      db.query(
+        "select amobla_apply_payment($1,$2,'approved',6000000,now(),'sub-pro')",
+        [id, order],
+      );
+    await pay("pay-1");
+    expect(await credits()).toBe(60);
+    // An early renewal covers the next month instead of adding photos now.
+    await pay("pay-2");
+    expect(await credits()).toBe(60);
+    await pay("pay-2");
+    expect(await credits()).toBe(60);
+    // A renewal for another amount is rejected.
+    await expect(
+      db.query(
+        "select amobla_apply_payment('pay-3',$1,'approved',100,now(),'sub-pro')",
+        [order],
+      ),
+    ).rejects.toThrow(/AMOUNT_MISMATCH/);
   });
 });
