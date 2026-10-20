@@ -87,4 +87,36 @@ describe("Launch catalog", () => {
       ),
     ).rejects.toThrow(/AMOUNT_MISMATCH/);
   });
+  it("spends paid photos before the free one", async () => {
+    const buyer = "00000000-0000-4000-8000-000000000005";
+    const order = "00000000-0000-4000-8000-0000000000cc";
+    const project = "00000000-0000-4000-8000-0000000000dd";
+    await db.exec(`insert into auth.users values('${buyer}')`);
+    await db.query("select amobla_account($1,true)", [buyer]);
+    await db.query("select amobla_create_order($1,$2,'basic-month')", [
+      buyer,
+      order,
+    ]);
+    await db.query(
+      "update orders set provider_subscription_id='sub-basic' where id=$1",
+      [order],
+    );
+    await db.query(
+      "select amobla_apply_payment('pay-basic',$1,'approved',2000000,now(),'sub-basic')",
+      [order],
+    );
+    await db.query(
+      "insert into projects(id,user_id,original_hash,original_path,name,original_bytes) values($1,$2,'h','p','n',1)",
+      [project, buyer],
+    );
+    await db.query(
+      "select amobla_reserve_generation($1,$2,gen_random_uuid(),'living','modern','furnish','','prompt')",
+      [buyer, project],
+    );
+    const { rows } = await db.query<{ source_key: string }>(
+      "select g.source_key from projects p join credit_grants g on g.id=p.grant_id where p.id=$1",
+      [project],
+    );
+    expect(rows[0].source_key).not.toMatch(/^trial:/);
+  });
 });

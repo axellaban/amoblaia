@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { adminClient } from "@/lib/supabase/server";
 import { HttpError, rpc } from "./http";
 import { ProviderError, readPhoto, renderPhoto } from "./images";
+import { freeAllows } from "@/lib/catalog";
 export const BUCKET = "property-images";
 export type Job = {
   id: string;
@@ -18,6 +19,31 @@ export type Job = {
   created_at: string;
   error_code: string | null;
 };
+/** True while the account has no paid photos left to spend (only the free one, or none). */
+export async function onFreeTier(userId: string) {
+  const now = new Date().toISOString();
+  const { data, error } = await adminClient()
+    .from("credit_grants")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("revoked", false)
+    .gt("remaining", 0)
+    .not("source_key", "like", "trial:%")
+    .lte("starts_at", now)
+    .or(`expires_at.is.null,expires_at.gt.${now}`)
+    .limit(1);
+  if (error) throw new Error("GRANT_LOOKUP_FAILED");
+  return data.length === 0;
+}
+async function grantIsTrial(grantId: string | null) {
+  if (!grantId) return false;
+  const { data } = await adminClient()
+    .from("credit_grants")
+    .select("source_key")
+    .eq("id", grantId)
+    .maybeSingle();
+  return Boolean(data?.source_key.startsWith("trial:"));
+}
 export async function enqueuePhoto(request: Request, userId: string) {
   if (!process.env.OPENAI_API_KEY)
     throw new HttpError(503, "La generación todavía no está habilitada.");
@@ -43,6 +69,14 @@ export async function enqueuePhoto(request: Request, userId: string) {
   if (photo.projectId && !project)
     throw new HttpError(404, "No encontramos la foto original.");
   if (error) throw new Error("PROJECT_LOOKUP_FAILED");
+  const free = project?.grant_id
+    ? await grantIsTrial(project.grant_id)
+    : await onFreeTier(userId);
+  if (free && !freeAllows(photo.room, photo.mode))
+    throw new HttpError(
+      403,
+      "Este ambiente y el retiro de muebles están incluidos en los planes pagos.",
+    );
   if (!project?.grant_id) {
     const account = await rpc<{ credits: number }>("amobla_account", {
       p_user: userId,
@@ -120,16 +154,18 @@ export async function runJob(id: string) {
   try {
     const { data: project, error } = await db
       .from("projects")
-      .select("original_path")
+      .select("original_path,grant_id")
       .eq("id", job.project_id)
       .single();
     if (error || !project) throw new Error("PROJECT_NOT_FOUND");
+    const free = await grantIsTrial(project.grant_id);
     const file = await db.storage.from(BUCKET).download(project.original_path);
     if (file.error || !file.data) throw new Error("ORIGINAL_NOT_FOUND");
     sent = true;
     const rendered = await renderPhoto(
       Buffer.from(await file.data.arrayBuffer()),
       job.prompt,
+      free,
     );
     await db
       .from("generations")

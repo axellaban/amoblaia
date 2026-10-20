@@ -2,6 +2,7 @@ import "server-only";
 import sharp from "sharp";
 import { buildPrompt } from "@/lib/catalog";
 import { HttpError } from "./http";
+import { WATERMARK_PNG } from "./watermark";
 export const MAX_BYTES = 3 * 1024 * 1024;
 export async function readPhoto(request: Request) {
   if (Number(request.headers.get("content-length") || 0) > MAX_BYTES + 16384)
@@ -19,9 +20,10 @@ export async function readPhoto(request: Request) {
   const room = String(data.get("room")),
     style = String(data.get("style")),
     mode = String(data.get("mode")),
-    notes = String(data.get("notes") || "");
+    notes = String(data.get("notes") || ""),
+    variant = Math.min(3, Math.max(0, Number(data.get("variant")) || 0));
   try {
-    prompt = buildPrompt(room, style, mode, notes);
+    prompt = buildPrompt(room, style, mode, notes, variant);
   } catch {
     throw new HttpError(400, "Elegí un ambiente, estilo y operación válidos.");
   }
@@ -63,7 +65,18 @@ export class ProviderError extends Error {
     super(code);
   }
 }
-export async function renderPhoto(image: Buffer, prompt: string) {
+// Free-tier results: smaller and marked, so the full version is clearly worth paying for.
+async function watermark(image: Buffer) {
+  const { width = 1280 } = await sharp(image).metadata();
+  const mark = await sharp(WATERMARK_PNG)
+    .resize({ width: Math.round(width * 0.62) })
+    .toBuffer();
+  return sharp(image)
+    .composite([{ input: mark, gravity: "center", blend: "over" }])
+    .jpeg({ quality: 88 })
+    .toBuffer();
+}
+export async function renderPhoto(image: Buffer, prompt: string, free = false) {
   const model = process.env.OPENAI_IMAGE_MODEL || "gpt-image-2.5-sunburst";
   const body = new FormData();
   body.set("model", model);
@@ -74,7 +87,7 @@ export async function renderPhoto(image: Buffer, prompt: string) {
   );
   body.set("prompt", prompt);
   body.set("n", "1");
-  body.set("quality", "high");
+  body.set("quality", free ? "medium" : "high");
   body.set("size", "auto");
   body.set("output_format", "jpeg");
   body.set("output_compression", "94");
@@ -103,17 +116,18 @@ export async function renderPhoto(image: Buffer, prompt: string) {
   const b64 = payload.data?.[0]?.b64_json;
   if (!b64 || b64.length > 24000000)
     throw new ProviderError("INVALID_PROVIDER_RESULT", true);
-  const result = await sharp(Buffer.from(b64, "base64"), {
+  const resized = await sharp(Buffer.from(b64, "base64"), {
     limitInputPixels: 40000000,
   })
     .resize({
-      width: 2048,
-      height: 2048,
+      width: free ? 1280 : 2048,
+      height: free ? 1280 : 2048,
       fit: "inside",
       withoutEnlargement: true,
     })
     .jpeg({ quality: 94 })
     .toBuffer();
+  const result = free ? await watermark(resized) : resized;
   // Keep raw usage. A cost is only estimated with explicitly configured per-token rates.
   const usage = payload.usage || null;
   const inputRate = Number(process.env.IMAGE_INPUT_USD_PER_MILLION),

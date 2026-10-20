@@ -4194,3 +4194,48 @@ fieldset {
     font-size: 30px;
   }
 }
+/* Free tier: what the full version unlocks, shown next to watermarked results. */
+.free-upsell {
+  margin-top: 22px;
+  padding: 24px;
+  border-radius: 18px;
+  background: var(--forest);
+  color: #fbf1e8;
+}
+.free-pill {
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: 20px;
+  background: var(--clay);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+.free-upsell h3 {
+  font-family: var(--font-display);
+  font-size: 24px;
+  margin: 16px 0 12px;
+}
+.free-upsell ul {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 20px;
+  display: grid;
+  gap: 10px;
+}
+.free-upsell li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+}
+.free-upsell li svg {
+  color: var(--clay);
+}
+.free-upsell .button {
+  width: 100%;
+}
+.room-options > button:disabled,
+.mode-options > button:disabled {
+  opacity: 0.45;
+}

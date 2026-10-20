@@ -1,5 +1,6 @@
 import { adminClient } from "@/lib/supabase/server";
 import { requireUser, failure, rpc, isAdmin } from "@/lib/commerce/http";
+import { onFreeTier } from "@/lib/commerce/jobs";
 export const dynamic = "force-dynamic";
 export async function GET() {
   try {
@@ -40,6 +41,7 @@ export async function GET() {
       {
         ...account,
         email: user.email,
+        free: await onFreeTier(user.id),
         admin: isAdmin(user.email),
         subscriptions: results[0].data,
         grants: results[1].data,

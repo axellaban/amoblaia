@@ -40,6 +40,7 @@ import {
   rooms,
   styles,
   modes,
+  freeRooms,
   type RoomId,
   type StyleId,
   type ModeId,
@@ -89,6 +90,8 @@ export function Studio() {
   const [projectId, setProjectId] = useState<string | null>(null);
   const [variants, setVariants] = useState<Project["variants"]>([]);
   const [credits, setCredits] = useState<number | null>(null);
+  const [free, setFree] = useState(false);
+  const [round, setRound] = useState(0);
   const requestKey = useRef<string | null>(null);
   const [showLogin, setShowLogin] = useState(false);
   const [password, setPassword] = useState("");
@@ -131,6 +134,7 @@ export function Studio() {
               ]);
             if (typeof account.credits === "number")
               setCredits(account.credits);
+            setFree(account.free === true);
           }
         } else setProjects(local);
       })
@@ -285,6 +289,7 @@ export function Studio() {
     const local = await listProjects().catch(() => [] as Project[]);
     setProjects([...(remote.projects || []), ...local.filter((p) => p.demo)]);
     if (typeof account.credits === "number") setCredits(account.credits);
+    setFree(account.free === true);
     return remote.projects as Project[];
   }
   async function watchJob(id: string) {
@@ -305,7 +310,7 @@ export function Studio() {
         setVariants(project?.variants || []);
         setNotice("Diseño guardado en tu cuenta.");
         requestKey.current = null;
-        return;
+        return job.projectId as string;
       }
       if (job.status === "failed" || job.status === "needs_review") {
         requestKey.current = null;
@@ -317,6 +322,7 @@ export function Studio() {
     setNotice(
       "Tu diseño sigue en proceso. Podés consultar su estado desde Mi cuenta.",
     );
+    return null;
   }
   useEffect(() => {
     const id = searchParams.get("job");
@@ -337,6 +343,8 @@ export function Studio() {
       });
     // A job is resumed once per navigation; its work is persisted on the server.
   }, [searchParams, status?.authenticated, status?.mode]);
+  const freeTier =
+    status?.mode === "cloud" && status.authenticated && free && !demo;
   async function generate() {
     if (generateLock.current || !source) return;
     setError("");
@@ -392,16 +400,26 @@ export function Studio() {
       data.set("mode", mode);
       data.set("notes", notes);
       if (status.mode === "cloud") {
-        requestKey.current ||= crypto.randomUUID();
-        data.set("requestKey", requestKey.current);
-        if (projectId) data.set("projectId", projectId);
-        const response = await fetch("/api/jobs", {
-          method: "POST",
-          body: data,
-        });
-        const job = await response.json();
-        if (!response.ok) throw new Error(job.error);
-        await watchJob(job.id);
+        // The free photo delivers its three proposals in one go, like the reference.
+        const done = variants?.length || 0;
+        const runs = freeTier ? Math.max(1, 3 - done) : 1;
+        let pid = projectId;
+        for (let i = 0; i < runs; i++) {
+          setRound(runs > 1 ? i + 1 : 0);
+          setElapsed(0);
+          requestKey.current ||= crypto.randomUUID();
+          data.set("requestKey", requestKey.current);
+          data.set("variant", String(done + i + 1));
+          if (pid) data.set("projectId", pid);
+          const response = await fetch("/api/jobs", {
+            method: "POST",
+            body: data,
+          });
+          const job = await response.json();
+          if (!response.ok) throw new Error(job.error);
+          pid = await watchJob(job.id);
+          if (!pid) break;
+        }
         return;
       }
       const response = await fetch("/api/generate", {
@@ -428,6 +446,7 @@ export function Studio() {
     } finally {
       generateLock.current = false;
       setBusy(false);
+      setRound(0);
     }
   }
   async function login(e: React.FormEvent) {
@@ -780,7 +799,11 @@ export function Studio() {
                       <div className="generating-icon">
                         <Sparkles size={32} />
                       </div>
-                      <h3>Tu espacio está tomando forma.</h3>
+                      <h3>
+                        {round
+                          ? `Creando el diseño ${round} de 3…`
+                          : "Tu espacio está tomando forma."}
+                      </h3>
                       <p>
                         {elapsed < 20
                           ? "Analizando la foto y su perspectiva…"
@@ -868,6 +891,29 @@ export function Studio() {
                   </label>
                 </div>
               )}
+              {freeTier && (result || busy) && (
+                <div className="free-upsell">
+                  <span className="free-pill">
+                    Planes desde 6 fotos por mes
+                  </span>
+                  <h3>La versión completa incluye</h3>
+                  <ul>
+                    {[
+                      "Sin marca de agua",
+                      "Alta resolución",
+                      "Todos los ambientes y estilos",
+                      "Retiro de muebles incluido",
+                    ].map((t) => (
+                      <li key={t}>
+                        <Check size={16} /> {t}
+                      </li>
+                    ))}
+                  </ul>
+                  <Link href="/precios" className="button button-primary">
+                    <LockKeyhole size={17} /> Desbloquear todo
+                  </Link>
+                </div>
+              )}
               <div className="examples">
                 <div className="examples-heading">
                   <span>¿SOLO ESTÁS EXPLORANDO?</span>
@@ -919,8 +965,16 @@ export function Studio() {
                       key={m.id}
                       className={mode === m.id ? "selected" : ""}
                       onClick={() => chooseMode(m.id)}
-                      title={m.description}
+                      title={
+                        freeTier && m.id === "remove"
+                          ? "Incluido en los planes pagos"
+                          : m.description
+                      }
+                      disabled={freeTier && m.id === "remove"}
                     >
+                      {freeTier && m.id === "remove" && (
+                        <LockKeyhole size={12} />
+                      )}{" "}
                       {m.name}
                     </button>
                   ))}
@@ -934,17 +988,24 @@ export function Studio() {
                 <div className="room-options">
                   {rooms.map((r) => {
                     const Icon = roomIcons[r.id];
+                    const locked = freeTier && !freeRooms.includes(r.id);
                     return (
                       <button
                         key={r.id}
                         disabled={
-                          demo &&
-                          !(demoRooms as readonly string[]).includes(r.id)
+                          locked ||
+                          (demo &&
+                            !(demoRooms as readonly string[]).includes(r.id))
                         }
+                        title={locked ? "Incluido en los planes pagos" : ""}
                         onClick={() => chooseRoom(r.id)}
                         className={room === r.id ? "selected" : ""}
                       >
-                        <Icon size={20} strokeWidth={1.5} />
+                        {locked ? (
+                          <LockKeyhole size={18} strokeWidth={1.5} />
+                        ) : (
+                          <Icon size={20} strokeWidth={1.5} />
+                        )}
                         {r.name}
                         {room === r.id && <Check size={11} />}
                       </button>
@@ -1026,19 +1087,23 @@ export function Studio() {
                     ? "Creando tu diseño…"
                     : demo
                       ? "Ver transformación de ejemplo"
-                      : result
-                        ? "Generar otra variante"
-                        : "Generar mi diseño"}
+                      : freeTier && !variants?.length
+                        ? "Generar 3 diseños gratis"
+                        : result
+                          ? "Generar otra variante"
+                          : "Generar mi diseño"}
                   {!busy && <ArrowUpRight size={19} />}
                 </button>
                 <p>
                   {demo
                     ? "Demo precargada · No consume API"
-                    : status?.configured
-                      ? status.mode === "cloud"
-                        ? "Calidad alta · Hasta 3 variantes por foto"
-                        : "Calidad alta · Acceso de piloto"
-                      : "Explorá gratis los ejemplos precargados"}
+                    : freeTier
+                      ? "Versión gratuita · Con marca de agua"
+                      : status?.configured
+                        ? status.mode === "cloud"
+                          ? "Calidad alta · Hasta 3 variantes por foto"
+                          : "Calidad alta · Acceso de piloto"
+                        : "Explorá gratis los ejemplos precargados"}
                 </p>
               </div>
               {status?.configured &&

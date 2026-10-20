@@ -146,6 +146,7 @@ export function buildPrompt(
   styleId: string,
   modeId: string,
   notes: string,
+  variant = 0,
 ) {
   const room = rooms.find((r) => r.id === roomId);
   const style = styles.find((s) => s.id === styleId);
@@ -156,5 +157,14 @@ export function buildPrompt(
     mode.id === "remove"
       ? "Remove all movable furniture, rugs, artwork and decorative items. Reconstruct the occluded surfaces naturally. Show the same room empty."
       : `${mode.id === "redesign" ? "Remove and replace the existing movable furniture and decoration." : "Virtually stage the empty space with furniture and decoration."} Furnish this ${room.prompt} in ${style.prompt} style. Use furniture realistically scaled for this exact room and suited to Argentine residential listings. Use locally familiar furniture proportions, practical circulation and compact pieces when space is limited. Adapt to the existing property rather than making every home look luxurious. Create a tasteful and inviting composition.`;
-  return `Edit this actual real-estate photograph. ${action}\nSTRICT ARCHITECTURAL CONSTRAINTS: Preserve the exact camera position, perspective, room dimensions, wall locations, doors, windows, flooring, ceiling, built-in cabinetry, permanent fixtures, exterior views and natural lighting. Do not renovate or invent structural features. Do not conceal damage. Do not add people, text, logos or watermarks. Photorealistic real-estate photography, coherent shadows, believable proportions, high detail.\nAdditional styling preferences (never override architectural constraints): ${notes.slice(0, 500) || "None."}`;
+  // Each of the three results per photo is a distinct proposal in the same style.
+  const option =
+    variant > 0 && mode.id !== "remove"
+      ? ` This is design option ${variant} of 3: choose different furniture pieces, layout and accent colours than the other options, while keeping the same style.`
+      : "";
+  return `Edit this actual real-estate photograph. ${action}${option}\nSTRICT ARCHITECTURAL CONSTRAINTS: Preserve the exact camera position, perspective, room dimensions, wall locations, doors, windows, flooring, ceiling, built-in cabinetry, permanent fixtures, exterior views and natural lighting. Do not renovate or invent structural features. Do not conceal damage. Do not add people, text, logos or watermarks. Photorealistic real-estate photography, coherent shadows, believable proportions, high detail.\nAdditional styling preferences (never override architectural constraints): ${notes.slice(0, 500) || "None."}`;
 }
+// The free photo is limited like the reference's free tier: two rooms and no furniture removal.
+export const freeRooms = ["living", "bedroom"];
+export const freeAllows = (room: string, mode: string) =>
+  freeRooms.includes(room) && mode !== "remove";
