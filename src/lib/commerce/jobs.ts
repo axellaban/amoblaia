@@ -1,0 +1,177 @@
+import "server-only";
+import { createHash } from "node:crypto";
+import { adminClient } from "@/lib/supabase/server";
+import { HttpError, rpc } from "./http";
+import { ProviderError, readPhoto, renderPhoto } from "./images";
+export const BUCKET = "property-images";
+export type Job = {
+  id: string;
+  user_id: string;
+  project_id: string;
+  status: string;
+  room: string;
+  style: string;
+  mode: string;
+  notes: string;
+  prompt: string;
+  result_path: string | null;
+  created_at: string;
+  error_code: string | null;
+};
+export async function enqueuePhoto(request: Request, userId: string) {
+  if (!process.env.OPENAI_API_KEY)
+    throw new HttpError(503, "La generación todavía no está habilitada.");
+  const photo = await readPhoto(request);
+  if (
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      photo.requestKey,
+    )
+  )
+    throw new HttpError(400, "Identificador de solicitud inválido.");
+  const db = adminClient();
+  const hash = createHash("sha256").update(photo.image).digest("hex");
+  const path = `${userId}/${hash}/original.jpg`;
+  let lookup = db
+    .from("projects")
+    .select("id,grant_id")
+    .eq("user_id", userId)
+    .is("deleted_at", null);
+  lookup = photo.projectId
+    ? lookup.eq("id", photo.projectId)
+    : lookup.eq("original_hash", hash);
+  let { data: project, error } = await lookup.maybeSingle();
+  if (photo.projectId && !project)
+    throw new HttpError(404, "No encontramos la foto original.");
+  if (error) throw new Error("PROJECT_LOOKUP_FAILED");
+  if (!project?.grant_id) {
+    const account = await rpc<{ credits: number }>("amobla_account", {
+      p_user: userId,
+      p_trial: false,
+    });
+    if (account.credits < 1)
+      throw new HttpError(
+        402,
+        "No te quedan fotos disponibles. Elegí un pack o un plan.",
+      );
+  }
+  if (!project) {
+    // Keep photos below the free bucket's 1 GB limit; the provider enforces a hard quota too.
+    const { count: activeCount, error: capacityError } = await db
+      .from("projects")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .is("deleted_at", null);
+    if (capacityError) throw new Error("PROJECT_CAPACITY_LOOKUP_FAILED");
+    if ((activeCount || 0) >= Number(process.env.MAX_PROJECTS_PER_USER || 150))
+      throw new HttpError(
+        409,
+        "Llegaste al límite de proyectos guardados. Borrá alguno para continuar.",
+      );
+    const upload = await db.storage
+      .from(BUCKET)
+      .upload(path, photo.image, { contentType: "image/jpeg", upsert: false });
+    if (
+      upload.error &&
+      !["409", "Duplicate"].includes(String(upload.error.statusCode)) &&
+      !/already exists/i.test(upload.error.message)
+    )
+      throw new HttpError(
+        503,
+        "No pudimos guardar la foto. Revisá el almacenamiento disponible.",
+      );
+    ({ data: project, error } = await db
+      .from("projects")
+      .insert({
+        user_id: userId,
+        original_hash: hash,
+        original_path: path,
+        original_bytes: photo.image.length,
+        name: photo.name,
+      })
+      .select("id,grant_id")
+      .single());
+    if (error?.code === "23505")
+      ({ data: project, error } = await db
+        .from("projects")
+        .select("id,grant_id")
+        .eq("user_id", userId)
+        .eq("original_hash", hash)
+        .is("deleted_at", null)
+        .single());
+    if (error || !project) throw new Error("PROJECT_CREATE_FAILED");
+  }
+  return rpc<string>("amobla_reserve_generation", {
+    p_user: userId,
+    p_project: project.id,
+    p_key: photo.requestKey,
+    p_room: photo.room,
+    p_style: photo.style,
+    p_mode: photo.mode,
+    p_notes: photo.notes,
+    p_prompt: photo.prompt,
+    p_daily_limit: Number(process.env.MAX_GENERATIONS_PER_DAY || 100),
+  });
+}
+export async function runJob(id: string) {
+  const job = await rpc<Job | null>("amobla_claim_generation", { p_job: id });
+  if (!job) return;
+  const db = adminClient();
+  let sent = false;
+  try {
+    const { data: project, error } = await db
+      .from("projects")
+      .select("original_path")
+      .eq("id", job.project_id)
+      .single();
+    if (error || !project) throw new Error("PROJECT_NOT_FOUND");
+    const file = await db.storage.from(BUCKET).download(project.original_path);
+    if (file.error || !file.data) throw new Error("ORIGINAL_NOT_FOUND");
+    sent = true;
+    const rendered = await renderPhoto(
+      Buffer.from(await file.data.arrayBuffer()),
+      job.prompt,
+    );
+    await db
+      .from("generations")
+      .update({
+        model: rendered.model,
+        usage: rendered.usage,
+        estimated_usd: rendered.cost,
+        provider_request_id: rendered.requestId,
+      })
+      .eq("id", id);
+    const resultPath = `${job.user_id}/${job.project_id}/${job.id}.jpg`;
+    const stored = await db.storage
+      .from(BUCKET)
+      .upload(resultPath, rendered.result, {
+        contentType: "image/jpeg",
+        upsert: true,
+      });
+    if (stored.error) throw new ProviderError("RESULT_STORAGE_FAILED", true);
+    await rpc("amobla_finish_generation", {
+      p_job: id,
+      p_status: "succeeded",
+      p_result: resultPath,
+      p_bytes: rendered.result.length,
+      p_model: rendered.model,
+      p_usage: rendered.usage,
+      p_cost: rendered.cost,
+      p_request: rendered.requestId,
+    });
+  } catch (error) {
+    const uncertain = error instanceof ProviderError ? error.uncertain : sent;
+    await rpc("amobla_finish_generation", {
+      p_job: id,
+      p_status: uncertain ? "needs_review" : "failed",
+      p_error:
+        error instanceof ProviderError ? error.code : "INTERNAL_JOB_FAILURE",
+    });
+  }
+}
+export async function signPath(path: string) {
+  const { data, error } = await adminClient()
+    .storage.from(BUCKET)
+    .createSignedUrl(path, 3600);
+  if (error || !data) throw new Error("IMAGE_SIGNING_FAILED");
+  return data.signedUrl;
+}

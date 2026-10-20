@@ -22,6 +22,8 @@ import {
   CookingPot,
   Monitor,
   Trees,
+  House,
+  Flame,
   Images,
   RotateCcw,
   LogOut,
@@ -32,6 +34,8 @@ import {
 import Link from "next/link";
 import {
   beforeImage,
+  demoRooms,
+  demoStyles,
   afterImage,
   rooms,
   styles,
@@ -55,6 +59,8 @@ const roomIcons = {
   kitchen: CookingPot,
   office: Monitor,
   outdoor: Trees,
+  studio: House,
+  quincho: Flame,
 };
 export function Studio() {
   const searchParams = useSearchParams();
@@ -76,9 +82,14 @@ export function Studio() {
   const [notes, setNotes] = useState("");
   const [projects, setProjects] = useState<Project[]>([]);
   const [status, setStatus] = useState<{
+    mode?: "cloud";
     configured: boolean;
     authenticated: boolean;
   } | null>(null);
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [variants, setVariants] = useState<Project["variants"]>([]);
+  const [credits, setCredits] = useState<number | null>(null);
+  const requestKey = useRef<string | null>(null);
   const [showLogin, setShowLogin] = useState(false);
   const [password, setPassword] = useState("");
   const [loginBusy, setLoginBusy] = useState(false);
@@ -96,20 +107,37 @@ export function Studio() {
     let active = true;
     fetch("/api/session")
       .then((r) => r.json())
-      .then((s) => {
-        if (active) setStatus(s);
-      })
-      .catch(() => {
-        if (active) setStatus({ configured: false, authenticated: false });
-      });
-    listProjects()
-      .then((p) => {
-        if (active) setProjects(p);
+      .then(async (state) => {
+        if (!active) return;
+        setStatus(state);
+        const local = await listProjects().catch(() => [] as Project[]);
+        if (state.mode === "cloud") {
+          setProjects(local.filter((p) => p.demo));
+          if (state.authenticated) {
+            const [remote, account] = await Promise.all([
+              fetch("/api/projects", { cache: "no-store" }).then((r) =>
+                r.json(),
+              ),
+              fetch("/api/account", { cache: "no-store" }).then((r) =>
+                r.json(),
+              ),
+            ]);
+            if (!active) return;
+            if (remote.error) setNotice(remote.error);
+            else
+              setProjects([
+                ...(remote.projects || []),
+                ...local.filter((p) => p.demo),
+              ]);
+            if (typeof account.credits === "number")
+              setCredits(account.credits);
+          }
+        } else setProjects(local);
       })
       .catch(() => {
         if (active)
           setNotice(
-            "El historial no está disponible en este navegador. Todavía podés generar y descargar.",
+            "No pudimos cargar tu cuenta. Actualizá la página para volver a intentar.",
           );
       });
     return () => {
@@ -159,6 +187,9 @@ export function Studio() {
   }, [showLogin]);
   function reset() {
     setSource("");
+    setProjectId(null);
+    setVariants([]);
+    requestKey.current = null;
     setFile(null);
     setResult("");
     setFilename("");
@@ -175,6 +206,9 @@ export function Studio() {
     setNotice("");
     try {
       const photo = await optimizePhoto(selected);
+      setProjectId(null);
+      setVariants([]);
+      requestKey.current = null;
       setSource(photo.url);
       setFile(photo.file);
       setFilename(selected.name);
@@ -192,6 +226,9 @@ export function Studio() {
     }
   }
   function useExample(r: RoomId) {
+    setProjectId(null);
+    setVariants([]);
+    requestKey.current = null;
     setRoom(r);
     setStyle("modern");
     setMode("furnish");
@@ -209,7 +246,6 @@ export function Studio() {
     setResult("");
     if (demo) {
       setSource(mode === "furnish" ? beforeImage(r) : afterImage(r));
-      if (r !== "bedroom") setStyle("modern");
     }
   }
   function chooseMode(m: ModeId) {
@@ -231,7 +267,8 @@ export function Studio() {
     };
     try {
       await saveProject(p);
-      setProjects(await listProjects());
+      if (status?.mode === "cloud") await refreshCloud();
+      else setProjects(await listProjects());
       setNotice("Diseño guardado en este navegador.");
     } catch {
       setNotice(
@@ -239,6 +276,67 @@ export function Studio() {
       );
     }
   }
+  async function refreshCloud() {
+    const [remote, account] = await Promise.all([
+      fetch("/api/projects", { cache: "no-store" }).then((r) => r.json()),
+      fetch("/api/account", { cache: "no-store" }).then((r) => r.json()),
+    ]);
+    if (remote.error) throw new Error(remote.error);
+    const local = await listProjects().catch(() => [] as Project[]);
+    setProjects([...(remote.projects || []), ...local.filter((p) => p.demo)]);
+    if (typeof account.credits === "number") setCredits(account.credits);
+    return remote.projects as Project[];
+  }
+  async function watchJob(id: string) {
+    for (let i = 0; i < 85; i++) {
+      const response = await fetch(`/api/jobs/${encodeURIComponent(id)}`, {
+        cache: "no-store",
+      });
+      const job = await response.json();
+      if (!response.ok) throw new Error(job.error);
+      if (job.status === "succeeded") {
+        const complete = await refreshCloud();
+        const project = complete.find((p) => p.id === job.projectId);
+        if (project) await openProject(project);
+        setResult(
+          project?.variants?.find((v) => v.id === id)?.result || job.result,
+        );
+        setProjectId(job.projectId);
+        setVariants(project?.variants || []);
+        setNotice("Diseño guardado en tu cuenta.");
+        requestKey.current = null;
+        return;
+      }
+      if (job.status === "failed" || job.status === "needs_review") {
+        requestKey.current = null;
+        await refreshCloud();
+        throw new Error(job.error);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 4000));
+    }
+    setNotice(
+      "Tu diseño sigue en proceso. Podés consultar su estado desde Mi cuenta.",
+    );
+  }
+  useEffect(() => {
+    const id = searchParams.get("job");
+    if (
+      !id ||
+      !status?.authenticated ||
+      status.mode !== "cloud" ||
+      generateLock.current
+    )
+      return;
+    generateLock.current = true;
+    setBusy(true);
+    void watchJob(id)
+      .catch((e) => setError(e.message))
+      .finally(() => {
+        generateLock.current = false;
+        setBusy(false);
+      });
+    // A job is resumed once per navigation; its work is persisted on the server.
+  }, [searchParams, status?.authenticated, status?.mode]);
   async function generate() {
     if (generateLock.current || !source) return;
     setError("");
@@ -265,7 +363,9 @@ export function Studio() {
       return;
     }
     if (!status.authenticated) {
-      setShowLogin(true);
+      if (status.mode === "cloud")
+        window.location.assign("/acceso?next=%2Festudio");
+      else setShowLogin(true);
       return;
     }
     if (!consent) {
@@ -291,6 +391,19 @@ export function Studio() {
       data.set("style", style);
       data.set("mode", mode);
       data.set("notes", notes);
+      if (status.mode === "cloud") {
+        requestKey.current ||= crypto.randomUUID();
+        data.set("requestKey", requestKey.current);
+        if (projectId) data.set("projectId", projectId);
+        const response = await fetch("/api/jobs", {
+          method: "POST",
+          body: data,
+        });
+        const job = await response.json();
+        if (!response.ok) throw new Error(job.error);
+        await watchJob(job.id);
+        return;
+      }
       const response = await fetch("/api/generate", {
         method: "POST",
         body: data,
@@ -347,7 +460,10 @@ export function Studio() {
       const response = await fetch("/api/session", { method: "DELETE" });
       if (!response.ok) throw new Error();
       setStatus((s) => (s ? { ...s, authenticated: false } : s));
-      setNotice("Cerraste la sesión del piloto.");
+      setProjects([]);
+      setCredits(null);
+      reset();
+      setNotice("Cerraste la sesión.");
     } catch {
       setError("No pudimos cerrar la sesión. Intentá de nuevo.");
     }
@@ -365,6 +481,9 @@ export function Studio() {
     }
   }
   async function openProject(p: Project) {
+    setProjectId(p.cloud ? p.id : null);
+    setVariants(p.variants || []);
+    requestKey.current = null;
     setRoom(p.room);
     setStyle(p.style);
     setMode(p.mode);
@@ -376,6 +495,16 @@ export function Studio() {
     setView("create");
     setError("");
     setConsent(false);
+    if (p.pendingJobId && !generateLock.current) {
+      generateLock.current = true;
+      setBusy(true);
+      void watchJob(p.pendingJobId)
+        .catch((e) => setError(e.message))
+        .finally(() => {
+          generateLock.current = false;
+          setBusy(false);
+        });
+    }
     setNotice(
       p.demo
         ? "Ejemplo precargado."
@@ -413,7 +542,17 @@ export function Studio() {
           </div>
           <div className="status-badge">
             <span className="live-dot" />
-            {status?.configured ? "Piloto de IA" : "Modo demo"}
+            {status?.mode === "cloud" ? (
+              <Link href="/cuenta">
+                {status.authenticated
+                  ? `${credits ?? "…"} fotos · Mi cuenta`
+                  : "Ingresar a mi cuenta"}
+              </Link>
+            ) : status?.configured ? (
+              "Piloto de IA"
+            ) : (
+              "Modo demo"
+            )}
             {status?.authenticated && (
               <button
                 className="icon-button"
@@ -441,7 +580,10 @@ export function Studio() {
             <span>{projects.length}</span>
           </button>
           <span className="local-label">
-            <ShieldCheck size={14} /> Tus proyectos quedan en este navegador
+            <ShieldCheck size={14} />{" "}
+            {status?.mode === "cloud"
+              ? "Tus diseños con IA quedan en tu cuenta"
+              : "Tus proyectos quedan en este navegador"}
           </span>
         </div>
         {view === "projects" ? (
@@ -449,7 +591,11 @@ export function Studio() {
             <div className="projects-header">
               <div>
                 <h2>Tu colección de espacios</h2>
-                <p>Los últimos 20 diseños que guardaste en este dispositivo.</p>
+                <p>
+                  {status?.mode === "cloud"
+                    ? "Tus fotos originales, con sus variantes. Los ejemplos demo quedan en este dispositivo."
+                    : "Los últimos 20 diseños que guardaste en este dispositivo."}
+                </p>
               </div>
               <button className="button button-dark" onClick={reset}>
                 <ImagePlus size={17} /> Nuevo diseño
@@ -472,8 +618,16 @@ export function Studio() {
                       className="project-image"
                       onClick={() => openProject(p)}
                     >
-                      <img src={p.result} alt={p.name} />
-                      <span>{p.demo ? "Demo" : "Diseño con IA"}</span>
+                      <img src={p.result || p.original} alt={p.name} />
+                      <span>
+                        {p.demo
+                          ? "Demo"
+                          : p.pendingJobId
+                            ? "Generando…"
+                            : p.variants
+                              ? `${p.variants.length} de 3 variantes`
+                              : "Diseño con IA"}
+                      </span>
                     </button>
                     <div className="project-info">
                       <button onClick={() => openProject(p)}>
@@ -488,11 +642,28 @@ export function Studio() {
                           <button
                             onClick={async () => {
                               try {
-                                await deleteProject(p.id);
-                                setProjects(await listProjects());
+                                if (p.cloud) {
+                                  const response = await fetch(
+                                    `/api/projects/${p.id}`,
+                                    { method: "DELETE" },
+                                  );
+                                  const payload = await response.json();
+                                  if (!response.ok)
+                                    throw new Error(payload.error);
+                                  await refreshCloud();
+                                } else {
+                                  await deleteProject(p.id);
+                                  if (status?.mode === "cloud")
+                                    await refreshCloud();
+                                  else setProjects(await listProjects());
+                                }
                                 setDeleteId(null);
-                              } catch {
-                                setError("No pudimos borrar el proyecto.");
+                              } catch (e) {
+                                setError(
+                                  e instanceof Error
+                                    ? e.message
+                                    : "No pudimos borrar el proyecto.",
+                                );
                               }
                             }}
                           >
@@ -628,6 +799,28 @@ export function Studio() {
                   )}
                 </div>
               )}
+              {variants && variants.length > 0 && !busy && (
+                <div
+                  className="variant-picker"
+                  aria-label="Variantes de esta foto"
+                >
+                  {variants.map((v, i) => (
+                    <button
+                      key={v.id}
+                      className={result === v.result ? "selected" : ""}
+                      onClick={() => {
+                        setResult(v.result);
+                        setRoom(v.room);
+                        setStyle(v.style);
+                        setMode(v.mode);
+                        setNotes(v.notes);
+                      }}
+                    >
+                      Variante {variants.length - i}
+                    </button>
+                  ))}
+                </div>
+              )}
               {result && (
                 <div className="result-actions">
                   <div className="result-success">
@@ -683,25 +876,23 @@ export function Studio() {
                   </p>
                 </div>
                 <div className="example-grid">
-                  {(["living", "bedroom", "dining", "office"] as RoomId[]).map(
-                    (r) => (
-                      <button
-                        key={r}
-                        onClick={() => useExample(r)}
-                        disabled={busy || reading}
-                        aria-label={`Usar ejemplo de ${rooms.find((x) => x.id === r)?.name}`}
-                        className={demo && room === r ? "selected" : ""}
-                      >
-                        <img src={beforeImage(r)} alt="" />
-                        <span>{rooms.find((x) => x.id === r)?.name}</span>
-                        {demo && room === r && (
-                          <span className="example-check">
-                            <Check size={13} />
-                          </span>
-                        )}
-                      </button>
-                    ),
-                  )}
+                  {demoRooms.map((r) => (
+                    <button
+                      key={r}
+                      onClick={() => useExample(r)}
+                      disabled={busy || reading}
+                      aria-label={`Usar ejemplo de ${rooms.find((x) => x.id === r)?.name}`}
+                      className={demo && room === r ? "selected" : ""}
+                    >
+                      <img src={beforeImage(r)} alt="" />
+                      <span>{rooms.find((x) => x.id === r)?.name}</span>
+                      {demo && room === r && (
+                        <span className="example-check">
+                          <Check size={13} />
+                        </span>
+                      )}
+                    </button>
+                  ))}
                 </div>
               </div>
               <div className="studio-tip">
@@ -746,6 +937,10 @@ export function Studio() {
                     return (
                       <button
                         key={r.id}
+                        disabled={
+                          demo &&
+                          !(demoRooms as readonly string[]).includes(r.id)
+                        }
                         onClick={() => chooseRoom(r.id)}
                         className={room === r.id ? "selected" : ""}
                       >
@@ -759,7 +954,7 @@ export function Studio() {
               </fieldset>
               <fieldset disabled={busy || reading || mode === "remove"}>
                 <legend>
-                  Encontrá tu estilo <span>7 opciones</span>
+                  Encontrá tu estilo <span>{styles.length} opciones</span>
                 </legend>
                 <div className="style-options">
                   {styles.map((s) => (
@@ -767,8 +962,7 @@ export function Studio() {
                       key={s.id}
                       disabled={
                         demo &&
-                        (s.id === "industrial" ||
-                          (room !== "bedroom" && s.id !== "modern"))
+                        !(demoStyles as readonly string[]).includes(s.id)
                       }
                       onClick={() => {
                         setStyle(s.id);
@@ -785,8 +979,8 @@ export function Studio() {
                 </div>
                 {demo && (
                   <p className="field-hint">
-                    Los ejemplos incluyen estilos precargados. En Dormitorio
-                    podés explorar 6; con tu foto, los 7.
+                    Los ejemplos incluyen 2 estilos precargados. Con tu foto
+                    podés explorar los {styles.length}.
                   </p>
                 )}
               </fieldset>
@@ -841,18 +1035,23 @@ export function Studio() {
                   {demo
                     ? "Demo precargada · No consume API"
                     : status?.configured
-                      ? "Calidad alta · Acceso de piloto"
+                      ? status.mode === "cloud"
+                        ? "Calidad alta · Hasta 3 variantes por foto"
+                        : "Calidad alta · Acceso de piloto"
                       : "Explorá gratis los ejemplos precargados"}
                 </p>
               </div>
-              {status?.configured && !status.authenticated && !demo && (
-                <button
-                  className="pilot-link"
-                  onClick={() => setShowLogin(true)}
-                >
-                  <LockKeyhole size={13} /> Tengo una clave de acceso
-                </button>
-              )}
+              {status?.configured &&
+                !status.authenticated &&
+                !demo &&
+                status.mode !== "cloud" && (
+                  <button
+                    className="pilot-link"
+                    onClick={() => setShowLogin(true)}
+                  >
+                    <LockKeyhole size={13} /> Tengo una clave de acceso
+                  </button>
+                )}
             </aside>
           </div>
         )}

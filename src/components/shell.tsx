@@ -47,8 +47,18 @@ export function Header() {
           <Link href="/estudio?view=projects" onClick={() => setOpen(false)}>
             Mis proyectos
           </Link>
+          <Link
+            className="mobile-account-nav"
+            href="/cuenta"
+            onClick={() => setOpen(false)}
+          >
+            Mi cuenta
+          </Link>
         </nav>
         <div className="nav-actions">
+          <Link href="/cuenta" className="account-nav">
+            Mi cuenta
+          </Link>
           <Link href="/estudio" className="button button-small">
             Ir al estudio <ArrowUpRight size={16} />
           </Link>
@@ -91,6 +101,7 @@ export function Footer() {
             <Link href="/#preguntas">Preguntas frecuentes</Link>
             <Link href="/privacidad">Privacidad</Link>
             <Link href="/terminos">Términos de uso</Link>
+            <Link href="/ayuda">Soporte y bajas</Link>
           </div>
           <div className="footer-note">
             <span className="live-dot" /> Hecho para imaginar posibilidades.

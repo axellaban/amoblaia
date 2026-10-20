@@ -10,6 +10,18 @@ export type Project = {
   style: StyleId;
   mode: ModeId;
   demo: boolean;
+  cloud?: boolean;
+  pendingJobId?: string;
+  projectId?: string;
+  variants?: {
+    id: string;
+    result: string;
+    room: RoomId;
+    style: StyleId;
+    mode: ModeId;
+    notes: string;
+    createdAt: number;
+  }[];
 };
 async function db() {
   return openDB("amoblaia-studio", 1, {

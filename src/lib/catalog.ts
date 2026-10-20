@@ -6,23 +6,38 @@ export const rooms = [
   { id: "office", name: "Home office", prompt: "home office", icon: "office" },
   {
     id: "outdoor",
-    name: "Exterior",
-    prompt: "outdoor terrace",
+    name: "Patio o balcón",
+    prompt:
+      "outdoor patio, balcony or terrace matching the photograph, weather-resistant outdoor furniture",
     icon: "outdoor",
+  },
+  {
+    id: "studio",
+    name: "Monoambiente",
+    prompt:
+      "compact studio apartment, sleeping and living zones defined by movable furniture only, clear circulation, no new walls",
+    icon: "studio",
+  },
+  {
+    id: "quincho",
+    name: "Quincho",
+    prompt:
+      "Argentine quincho for casual shared meals, practical dining furniture, preserve the existing parrilla and keep access clear, never invent a grill or chimney",
+    icon: "quincho",
   },
 ] as const;
 export const styles = [
   {
     id: "modern",
-    name: "Moderno",
+    name: "Contemporáneo cálido",
     description: "Líneas simples. Mucha personalidad.",
     prompt:
-      "contemporary modern, clean lines, neutral palette, sophisticated comfortable furniture",
+      "warm contemporary Argentine residential interior, clean lines, comfortable textured fabric sofas, natural wood, warm neutrals and restrained earthy accents",
     color: "#c6b09a",
   },
   {
     id: "scandinavian",
-    name: "Escandinavo",
+    name: "Nórdico",
     description: "Luz, madera y calidez.",
     prompt:
       "Scandinavian, light oak, cozy textiles, soft warm neutrals, airy minimal furnishings",
@@ -54,10 +69,10 @@ export const styles = [
   },
   {
     id: "farmhouse",
-    name: "Rústico",
+    name: "Campo contemporáneo",
     description: "Texturas naturales. Espíritu de hogar.",
     prompt:
-      "modern farmhouse, natural timber, earthy ceramics, warm linen, rustic sophistication",
+      "contemporary Argentine country home, natural timber, woven fibers, earthy ceramics, linen and restrained rural accents, no American farmhouse signs",
     color: "#b5a58b",
   },
   {
@@ -68,7 +83,33 @@ export const styles = [
       "industrial loft, matte black metal, leather, reclaimed wood, urban sophisticated furniture",
     color: "#696b6a",
   },
+  {
+    id: "minimalist",
+    name: "Minimalista",
+    description: "Pocas piezas, espacio para vivir.",
+    prompt:
+      "warm minimalism, essential low-profile furniture, ivory and stone palette, subtle texture, clear circulation, no clutter",
+    color: "#ddd7ca",
+  },
+  {
+    id: "classic",
+    name: "Clásico renovado",
+    description: "Elegancia familiar, con una mirada actual.",
+    prompt:
+      "updated classic Argentine apartment, timeless upholstered furniture, warm wood, restrained antique accents combined with contemporary pieces, respect existing moldings without inventing any",
+    color: "#bdb5a7",
+  },
+  {
+    id: "eclectic",
+    name: "Ecléctico",
+    description: "Mezclá épocas, colores y piezas con carácter.",
+    prompt:
+      "curated eclectic Argentine interior, harmonious contemporary and vintage furniture, balanced expressive colors, tactile textiles, abstract artwork, coherent proportions, no clutter or national stereotypes",
+    color: "#bb7d79",
+  },
 ] as const;
+export const demoRooms = ["living", "bedroom"] as const;
+export const demoStyles = ["modern", "eclectic"] as const;
 export const modes = [
   {
     id: "furnish",
@@ -89,11 +130,16 @@ export const modes = [
 export type RoomId = (typeof rooms)[number]["id"];
 export type StyleId = (typeof styles)[number]["id"];
 export type ModeId = (typeof modes)[number]["id"];
-export const beforeImage = (room: RoomId) => `/demo/${room}-before.webp`;
+export const beforeImage = (room: RoomId) =>
+  `/ejemplos/${(demoRooms as readonly string[]).includes(room) ? room : "living"}-before.webp`;
 export function afterImage(room: RoomId, style: StyleId = "modern") {
-  const available =
-    room === "bedroom" && style !== "industrial" ? style : "modern";
-  return `/demo/${room}-${available}.webp`;
+  const availableRoom = (demoRooms as readonly string[]).includes(room)
+    ? room
+    : "living";
+  const availableStyle = (demoStyles as readonly string[]).includes(style)
+    ? style
+    : "modern";
+  return `/ejemplos/${availableRoom}-${availableStyle}.webp`;
 }
 export function buildPrompt(
   roomId: string,
@@ -109,6 +155,6 @@ export function buildPrompt(
   const action =
     mode.id === "remove"
       ? "Remove all movable furniture, rugs, artwork and decorative items. Reconstruct the occluded surfaces naturally. Show the same room empty."
-      : `${mode.id === "redesign" ? "Remove and replace the existing movable furniture and decoration." : "Virtually stage the empty space with furniture and decoration."} Furnish this ${room.prompt} in ${style.prompt} style. Use furniture realistically scaled for this exact room and suitable for residential real estate in Latin America. Create a tasteful and inviting composition.`;
+      : `${mode.id === "redesign" ? "Remove and replace the existing movable furniture and decoration." : "Virtually stage the empty space with furniture and decoration."} Furnish this ${room.prompt} in ${style.prompt} style. Use furniture realistically scaled for this exact room and suited to Argentine residential listings. Use locally familiar furniture proportions, practical circulation and compact pieces when space is limited. Adapt to the existing property rather than making every home look luxurious. Create a tasteful and inviting composition.`;
   return `Edit this actual real-estate photograph. ${action}\nSTRICT ARCHITECTURAL CONSTRAINTS: Preserve the exact camera position, perspective, room dimensions, wall locations, doors, windows, flooring, ceiling, built-in cabinetry, permanent fixtures, exterior views and natural lighting. Do not renovate or invent structural features. Do not conceal damage. Do not add people, text, logos or watermarks. Photorealistic real-estate photography, coherent shadows, believable proportions, high detail.\nAdditional styling preferences (never override architectural constraints): ${notes.slice(0, 500) || "None."}`;
 }

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ArrowUpRight, SlidersHorizontal, ArrowRight } from "lucide-react";
 import {
   rooms,
+  demoRooms,
   styles,
   beforeImage,
   afterImage,
@@ -13,14 +14,9 @@ import {
 import { Comparison } from "./comparison";
 const examples: { room: RoomId; style: StyleId }[] = [
   { room: "living", style: "modern" },
-  { room: "bedroom", style: "scandinavian" },
-  { room: "dining", style: "modern" },
-  { room: "bedroom", style: "luxury" },
-  { room: "office", style: "modern" },
-  { room: "kitchen", style: "modern" },
-  { room: "bedroom", style: "coastal" },
-  { room: "outdoor", style: "modern" },
-  { room: "bedroom", style: "midcentury" },
+  { room: "living", style: "eclectic" },
+  { room: "bedroom", style: "modern" },
+  { room: "bedroom", style: "eclectic" },
 ];
 export function Gallery() {
   const [filter, setFilter] = useState("all");
@@ -48,15 +44,17 @@ export function Gallery() {
           >
             Todos los ambientes
           </button>
-          {rooms.map((r) => (
-            <button
-              key={r.id}
-              className={filter === r.id ? "selected" : ""}
-              onClick={() => setFilter(r.id)}
-            >
-              {r.name}
-            </button>
-          ))}
+          {rooms
+            .filter((r) => (demoRooms as readonly string[]).includes(r.id))
+            .map((r) => (
+              <button
+                key={r.id}
+                className={filter === r.id ? "selected" : ""}
+                onClick={() => setFilter(r.id)}
+              >
+                {r.name}
+              </button>
+            ))}
         </div>
         <div className="gallery-grid full-gallery">
           {examples
@@ -79,8 +77,8 @@ export function Gallery() {
             ))}
         </div>
         <p className="gallery-disclaimer">
-          Galería ilustrativa con imágenes públicas de la referencia. No son
-          resultados generados por este MVP.
+          Escenas originales creadas con IA para ilustrar estilos. Son espacios
+          ficticios; no son fotos de clientes ni una garantía de resultado.
         </p>
         <div className="gallery-invite">
           <div>

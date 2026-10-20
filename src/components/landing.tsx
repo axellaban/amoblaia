@@ -20,6 +20,8 @@ import {
 } from "lucide-react";
 import {
   rooms,
+  demoRooms,
+  demoStyles,
   styles,
   afterImage,
   beforeImage,
@@ -34,7 +36,7 @@ const faqs = [
   ],
   [
     "¿Puedo probarlo antes de usar la IA?",
-    "Sí. El estudio incluye ejemplos precargados para explorar ambientes, estilos, la comparación y las descargas sin registrarte. Están identificados como demo. Para generar con tus propias fotos necesitás acceso al piloto.",
+    "Sí. El estudio incluye ejemplos precargados para explorar ambientes, estilos, la comparación y las descargas sin registrarte. Están identificados como demo. Para generar con tus propias fotos necesitás iniciar sesión y tener fotos disponibles.",
   ],
   [
     "¿La IA cambia la estructura de la propiedad?",
@@ -42,7 +44,7 @@ const faqs = [
   ],
   [
     "¿Puedo cambiar o retirar los muebles existentes?",
-    "Sí. Elegí Amoblar para espacios vacíos, Rediseñar para reemplazar el mobiliario o Vaciar para retirar muebles. Estas operaciones se ejecutan con IA sobre tu foto cuando el piloto está habilitado.",
+    "Sí. Elegí Amoblar para espacios vacíos, Rediseñar para reemplazar el mobiliario o Vaciar para retirar muebles. Estas operaciones se ejecutan con IA sobre tu foto cuando tenés fotos disponibles.",
   ],
   [
     "¿Qué formatos puedo subir?",
@@ -50,7 +52,7 @@ const faqs = [
   ],
   [
     "¿Dónde se guardan mis proyectos?",
-    "En este navegador, en tu dispositivo. Conservamos los últimos 20 diseños. Las fotos propias se envían a OpenAI únicamente al generar. Podés borrar cada proyecto desde Mis proyectos.",
+    "Con una cuenta, tus originales y resultados se guardan de forma privada y podés verlos en tus dispositivos. Los ejemplos demo quedan en el navegador. Al generar, enviamos la foto al proveedor de IA. Podés borrar tus proyectos desde el estudio.",
   ],
 ];
 export function Landing() {
@@ -87,12 +89,15 @@ export function Landing() {
             </div>
             <div className="hero-for">
               <div className="tiny-rooms">
-                <img src="/demo/living-modern.webp" alt="Living amoblado" />
+                <img src="/ejemplos/living-modern.webp" alt="Living amoblado" />
                 <img
-                  src="/demo/bedroom-modern.webp"
+                  src="/ejemplos/bedroom-modern.webp"
                   alt="Dormitorio amoblado"
                 />
-                <img src="/demo/office-modern.webp" alt="Oficina amoblada" />
+                <img
+                  src="/ejemplos/living-eclectic.webp"
+                  alt="Living ecléctico"
+                />
               </div>
               <div>
                 <strong>Pensado para quienes venden espacios.</strong>
@@ -105,7 +110,7 @@ export function Landing() {
               <span>
                 <span className="live-dot" /> DE VACÍO A INCREÍBLE
               </span>
-              <span>01 / 06</span>
+              <span>01 / 04</span>
             </div>
             <Comparison
               before={beforeImage(room)}
@@ -118,25 +123,27 @@ export function Landing() {
                   value={room}
                   onChange={(e) => setRoom(e.target.value as RoomId)}
                 >
-                  {rooms.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name}
-                    </option>
-                  ))}
+                  {rooms
+                    .filter((r) =>
+                      (demoRooms as readonly string[]).includes(r.id),
+                    )
+                    .map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.name}
+                      </option>
+                    ))}
                 </select>
               </label>
               <div className="toolbar-divider" />
               <label>
                 <span>ESTILO</span>
                 <select
-                  value={room === "bedroom" ? style : "modern"}
+                  value={style}
                   onChange={(e) => setStyle(e.target.value as StyleId)}
                 >
                   {styles
                     .filter((s) =>
-                      room === "bedroom"
-                        ? s.id !== "industrial"
-                        : s.id === "modern",
+                      (demoStyles as readonly string[]).includes(s.id),
                     )
                     .map((s) => (
                       <option key={s.id} value={s.id}>
@@ -163,7 +170,7 @@ export function Landing() {
             <ScanLine /> Conservá la perspectiva
           </span>
           <span>
-            <Sofa /> 7 estilos de decoración
+            <Sofa /> 10 estilos de decoración
           </span>
           <span>
             <RotateCcw /> Amoblá, rediseñá o vaciá
@@ -193,7 +200,7 @@ export function Landing() {
             </div>
           </div>
           <div className="gallery-grid">
-            {(["living", "bedroom", "dining"] as RoomId[]).map((r, i) => (
+            {(["living", "bedroom"] as RoomId[]).map((r, i) => (
               <article className="gallery-card" key={r}>
                 <Comparison
                   before={beforeImage(r)}
@@ -206,14 +213,14 @@ export function Landing() {
                     <h3>{rooms.find((x) => x.id === r)?.name}</h3>
                   </div>
                   <span>
-                    Moderno <ArrowUpRight size={15} />
+                    Contemporáneo cálido <ArrowUpRight size={15} />
                   </span>
                 </div>
               </article>
             ))}
           </div>
           <p className="gallery-disclaimer">
-            Ejemplos de la referencia de producto. Las imágenes de tus
+            Escenas ficticias originales creadas con IA. Las imágenes de tus
             propiedades se generan individualmente.
           </p>
         </div>
@@ -236,21 +243,21 @@ export function Landing() {
                 Icon: Upload,
                 title: "Subí tu espacio",
                 text: "Elegí una foto de tu propiedad. Puede estar vacía o tener muebles.",
-                img: "/demo/living-before.webp",
+                img: "/ejemplos/living-before.webp",
               },
               {
                 n: "02",
                 Icon: Sparkles,
                 title: "Dale tu estilo",
                 text: "Elegí el ambiente y la decoración. La IA se ocupa de los detalles.",
-                img: "/demo/bedroom-scandinavian.webp",
+                img: "/ejemplos/bedroom-eclectic.webp",
               },
               {
                 n: "03",
                 Icon: Download,
                 title: "Descargá y compartí",
                 text: "Compará el resultado y descargá la imagen para tu próxima publicación.",
-                img: "/demo/living-modern.webp",
+                img: "/ejemplos/living-modern.webp",
               },
             ].map(({ n, Icon, title, text, img }) => (
               <article className="step" key={n}>
@@ -291,12 +298,13 @@ export function Landing() {
               <span>la hace brillar.</span>
             </h2>
             <p>
-              Del minimalismo escandinavo a la calidez de lo rústico. Explorá
-              distintas personalidades para el mismo espacio.
+              Diez estilos para distintos gustos: nórdico, clásico renovado,
+              industrial, ecléctico y más. Acá podés comparar dos ejemplos; con
+              tu foto, elegí entre todas las opciones.
             </p>
             <div className="style-pills">
               {styles
-                .filter((s) => s.id !== "industrial")
+                .filter((s) => (demoStyles as readonly string[]).includes(s.id))
                 .map((s) => (
                   <button
                     key={s.id}

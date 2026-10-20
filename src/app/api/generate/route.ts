@@ -1,3 +1,4 @@
+import { cloudEnabled } from "@/lib/supabase/config";
 import { cookies } from "next/headers";
 import sharp from "sharp";
 import { buildPrompt } from "@/lib/catalog";
@@ -11,6 +12,11 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 const MAX_BYTES = 3 * 1024 * 1024;
 export async function POST(request: Request) {
+  if (cloudEnabled())
+    return Response.json(
+      { error: "Ingresá a tu cuenta para generar desde el estudio." },
+      { status: 401 },
+    );
   if (!validOrigin(request))
     return Response.json({ error: "Origen inválido." }, { status: 403 });
   if (!configured())

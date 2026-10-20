@@ -1,43 +1,57 @@
+import Link from "next/link";
 export default function Privacy() {
   return (
     <article className="legal-page container">
       <span className="eyebrow">TUS FOTOS, CON CLARIDAD</span>
-      <h1>Privacidad del piloto</h1>
+      <h1>Privacidad</h1>
       <p>Actualización: 20 de octubre de 2026.</p>
-      <h2>Qué guardamos</h2>
+      <h2>Cuenta y proyectos</h2>
       <p>
-        Los proyectos, las fotos originales optimizadas y los resultados se
-        guardan en IndexedDB en este navegador. Se conservan hasta 20 proyectos.
-        No se sincronizan entre dispositivos. Podés borrar un proyecto desde Mis
-        proyectos o eliminar los datos del sitio desde tu navegador.
+        Cuando las cuentas están habilitadas, guardamos tu identificador, email,
+        fotos originales optimizadas, indicaciones de diseño, variantes y
+        registros de uso en Supabase. Las imágenes están en un espacio privado y
+        se entregan mediante enlaces temporales. Los ejemplos demo y el
+        historial del piloto pueden guardarse localmente en tu navegador.
       </p>
-      <h2>Qué se envía al generar</h2>
+      <h2>Procesamiento con IA</h2>
       <p>
-        Cuando usás una foto propia y confirmás la generación, el servidor envía
-        la imagen optimizada, el ambiente, el estilo y tus indicaciones a
-        OpenAI. La foto se procesa en memoria y este MVP no la almacena en una
-        base de datos del servidor. Los ejemplos demo se procesan localmente y
-        no llaman a la API de imágenes.
+        Al generar con una foto propia, enviamos la imagen, el ambiente, el
+        estilo y tus indicaciones a OpenAI. Usamos esa información para crear el
+        resultado solicitado. Debés tener permiso para procesar la fotografía.
+        Evitá incluir personas, documentos, direcciones visibles u otros datos
+        innecesarios. El tratamiento del proveedor se rige también por sus
+        políticas.
       </p>
-      <h2>El proveedor y la infraestructura</h2>
+      <h2>Pagos y créditos</h2>
       <p>
-        El procesamiento del proveedor está sujeto a las condiciones y políticas
-        de OpenAI. El proveedor de hosting puede conservar registros técnicos de
-        las solicitudes, como IP y fecha. Evitá subir imágenes con personas,
-        documentos, direcciones visibles u otros datos que no sean necesarios.
+        Mercado Pago procesa los pagos. No guardamos datos completos de
+        tarjetas. Conservamos referencias, importes, estados de pago,
+        suscripciones y movimientos de fotos para prestar el servicio, atender
+        reclamos y cumplir las obligaciones aplicables.
       </p>
-      <h2>Acceso al piloto</h2>
+      <h2>Acceso y seguridad</h2>
       <p>
-        El acceso a la generación usa una cookie técnica HttpOnly, con SameSite
-        estricto, que vence a las 8 horas. No incluimos herramientas
-        publicitarias, analítica ni cookies de seguimiento en esta versión.
+        El acceso a las cuentas usa cookies técnicas de sesión. Si elegís
+        ingresar con Google, se solicitan datos básicos de identidad, email y
+        perfil. No solicitamos acceso a tu correo ni a tus archivos de Google.
+        La versión de piloto usa una cookie de acceso compartido que vence a las
+        ocho horas.
       </p>
-      <h2>Tu control</h2>
+      <h2>Conservación y eliminación</h2>
       <p>
-        Subí únicamente imágenes que tengas permiso de procesar. Podés descargar
-        tus resultados, borrar proyectos y cerrar la sesión. Esta política
-        describe el MVP; el operador debe completar sus datos de contacto antes
-        de abrir un servicio comercial.
+        Podés descargar y borrar tus proyectos desde el estudio. No se pueden
+        borrar imágenes mientras haya una generación en curso o en revisión. Los
+        registros de pagos y movimientos pueden conservarse durante los plazos
+        legales aplicables. Los enlaces de imágenes ya emitidos pueden seguir
+        funcionando hasta su vencimiento. Los datos locales se eliminan desde el
+        navegador.
+      </p>
+      <h2>Tu control y contacto</h2>
+      <p>
+        Para consultar, corregir o solicitar la eliminación de datos de tu
+        cuenta, usá el canal publicado en <Link href="/ayuda">Soporte</Link>.
+        Los datos identificatorios del responsable y su contacto comercial deben
+        estar completos antes de habilitar ventas.
       </p>
     </article>
   );

@@ -1,3 +1,5 @@
+import { cloudEnabled, cloudConfigured } from "@/lib/supabase/config";
+import { currentUser, userClient } from "@/lib/supabase/server";
 import { cookies } from "next/headers";
 import {
   configured,
@@ -12,6 +14,19 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export async function GET() {
+  if (cloudEnabled()) {
+    const user = cloudConfigured() ? await currentUser() : null;
+    return Response.json(
+      {
+        mode: "cloud",
+        configured: cloudConfigured() && Boolean(process.env.OPENAI_API_KEY),
+        authenticated: Boolean(user?.email_confirmed_at),
+        email: user?.email ?? null,
+        revision: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? "local",
+      },
+      { headers: { "Cache-Control": "private, no-store" } },
+    );
+  }
   const jar = await cookies();
   return Response.json(
     {
@@ -27,6 +42,11 @@ export async function GET() {
   );
 }
 export async function POST(request: Request) {
+  if (cloudEnabled())
+    return Response.json(
+      { error: "Usá el acceso de tu cuenta." },
+      { status: 409 },
+    );
   if (!validOrigin(request))
     return Response.json({ error: "Origen inválido." }, { status: 403 });
   if (!configured())
@@ -67,6 +87,10 @@ export async function POST(request: Request) {
 export async function DELETE(request: Request) {
   if (!validOrigin(request))
     return Response.json({ error: "Origen inválido." }, { status: 403 });
+  if (cloudEnabled() && cloudConfigured()) {
+    const client = await userClient();
+    await client.auth.signOut();
+  }
   (await cookies()).delete(COOKIE_NAME);
   return Response.json({ authenticated: false });
 }
