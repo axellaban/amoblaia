@@ -1,0 +1,100 @@
+"use client";
+import Link from "next/link";
+import { useState } from "react";
+import { ArrowUpRight, SlidersHorizontal, ArrowRight } from "lucide-react";
+import {
+  rooms,
+  styles,
+  beforeImage,
+  afterImage,
+  type RoomId,
+  type StyleId,
+} from "@/lib/catalog";
+import { Comparison } from "./comparison";
+const examples: { room: RoomId; style: StyleId }[] = [
+  { room: "living", style: "modern" },
+  { room: "bedroom", style: "scandinavian" },
+  { room: "dining", style: "modern" },
+  { room: "bedroom", style: "luxury" },
+  { room: "office", style: "modern" },
+  { room: "kitchen", style: "modern" },
+  { room: "bedroom", style: "coastal" },
+  { room: "outdoor", style: "modern" },
+  { room: "bedroom", style: "midcentury" },
+];
+export function Gallery() {
+  const [filter, setFilter] = useState("all");
+  return (
+    <div className="gallery-page">
+      <div className="container">
+        <div className="page-intro">
+          <span className="eyebrow">IMAGINAR ES EL PRIMER PASO</span>
+          <h1>
+            Mucho más que
+            <br />
+            <span>cuatro paredes.</span>
+          </h1>
+          <p>
+            Explorá lo que puede pasar cuando le das vida a un espacio.
+            <br />
+            Deslizá cada imagen y descubrí el antes y el después.
+          </p>
+        </div>
+        <div className="gallery-filters">
+          <SlidersHorizontal size={17} />
+          <button
+            className={filter === "all" ? "selected" : ""}
+            onClick={() => setFilter("all")}
+          >
+            Todos los ambientes
+          </button>
+          {rooms.map((r) => (
+            <button
+              key={r.id}
+              className={filter === r.id ? "selected" : ""}
+              onClick={() => setFilter(r.id)}
+            >
+              {r.name}
+            </button>
+          ))}
+        </div>
+        <div className="gallery-grid full-gallery">
+          {examples
+            .filter((e) => filter === "all" || filter === e.room)
+            .map((e, i) => (
+              <article className="gallery-card" key={`${e.room}-${e.style}`}>
+                <Comparison
+                  before={beforeImage(e.room)}
+                  after={afterImage(e.room, e.style)}
+                  compact
+                />
+                <div className="gallery-card-caption">
+                  <div>
+                    <span>0{i + 1} /</span>
+                    <h2>{rooms.find((r) => r.id === e.room)?.name}</h2>
+                  </div>
+                  <span>{styles.find((s) => s.id === e.style)?.name}</span>
+                </div>
+              </article>
+            ))}
+        </div>
+        <p className="gallery-disclaimer">
+          Galería ilustrativa con imágenes públicas de la referencia. No son
+          resultados generados por este MVP.
+        </p>
+        <div className="gallery-invite">
+          <div>
+            <span className="eyebrow">AHORA TE TOCA A VOS</span>
+            <h2>Tu espacio también puede sorprender.</h2>
+          </div>
+          <Link className="button button-lime" href="/estudio">
+            Probar con mi foto <ArrowUpRight size={19} />
+          </Link>
+        </div>
+        <Link href="/#como-funciona" className="text-link">
+          Conocé cómo funciona <ArrowRight size={16} />
+        </Link>
+      </div>
+    </div>
+  );
+}

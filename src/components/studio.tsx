@@ -1,0 +1,958 @@
+"use client";
+import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import {
+  ArrowRight,
+  ArrowUpRight,
+  Upload,
+  ImagePlus,
+  Sparkles,
+  Check,
+  LoaderCircle,
+  Download,
+  X,
+  FolderOpen,
+  Trash2,
+  ShieldCheck,
+  LockKeyhole,
+  ChevronRight,
+  Sofa,
+  BedDouble,
+  UtensilsCrossed,
+  CookingPot,
+  Monitor,
+  Trees,
+  Images,
+  RotateCcw,
+  LogOut,
+  Info,
+  Eye,
+  SplitSquareHorizontal,
+} from "lucide-react";
+import Link from "next/link";
+import {
+  beforeImage,
+  afterImage,
+  rooms,
+  styles,
+  modes,
+  type RoomId,
+  type StyleId,
+  type ModeId,
+} from "@/lib/catalog";
+import {
+  listProjects,
+  saveProject,
+  deleteProject,
+  type Project,
+} from "@/lib/history";
+import { optimizePhoto, blobToDataURL, downloadDesign } from "@/lib/images";
+import { Comparison } from "./comparison";
+const roomIcons = {
+  living: Sofa,
+  bedroom: BedDouble,
+  dining: UtensilsCrossed,
+  kitchen: CookingPot,
+  office: Monitor,
+  outdoor: Trees,
+};
+export function Studio() {
+  const searchParams = useSearchParams();
+  const [view, setView] = useState<"create" | "projects">("create");
+  const [room, setRoom] = useState<RoomId>("living");
+  const [style, setStyle] = useState<StyleId>("modern");
+  const [mode, setMode] = useState<ModeId>("furnish");
+  const [source, setSource] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [filename, setFilename] = useState("");
+  const [demo, setDemo] = useState(false);
+  const [result, setResult] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [reading, setReading] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [dragging, setDragging] = useState(false);
+  const [notes, setNotes] = useState("");
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [status, setStatus] = useState<{
+    configured: boolean;
+    authenticated: boolean;
+  } | null>(null);
+  const [showLogin, setShowLogin] = useState(false);
+  const [password, setPassword] = useState("");
+  const [loginBusy, setLoginBusy] = useState(false);
+  const [loginError, setLoginError] = useState("");
+  const [consent, setConsent] = useState(false);
+  const [label, setLabel] = useState(true);
+  const [comparison, setComparison] = useState(true);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const input = useRef<HTMLInputElement>(null);
+  const resultRef = useRef<HTMLDivElement>(null);
+  const loginInput = useRef<HTMLInputElement>(null);
+  const loginTrigger = useRef<HTMLButtonElement>(null);
+  const generateLock = useRef(false);
+  useEffect(() => {
+    let active = true;
+    fetch("/api/session")
+      .then((r) => r.json())
+      .then((s) => {
+        if (active) setStatus(s);
+      })
+      .catch(() => {
+        if (active) setStatus({ configured: false, authenticated: false });
+      });
+    listProjects()
+      .then((p) => {
+        if (active) setProjects(p);
+      })
+      .catch(() => {
+        if (active)
+          setNotice(
+            "El historial no está disponible en este navegador. Todavía podés generar y descargar.",
+          );
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+  useEffect(() => {
+    setView(searchParams.get("view") === "projects" ? "projects" : "create");
+  }, [searchParams]);
+  useEffect(() => {
+    if (!busy) return;
+    const start = Date.now();
+    const timer = setInterval(
+      () => setElapsed(Math.floor((Date.now() - start) / 1000)),
+      1000,
+    );
+    return () => clearInterval(timer);
+  }, [busy]);
+  useEffect(() => {
+    if (showLogin) {
+      loginInput.current?.focus();
+      const listener = (e: KeyboardEvent) => {
+        if (e.key === "Escape") {
+          setShowLogin(false);
+          loginTrigger.current?.focus();
+        }
+        if (e.key === "Tab") {
+          const items = Array.from(
+            document.querySelectorAll<HTMLElement>(
+              ".modal button,.modal input,.modal a",
+            ),
+          );
+          const first = items[0],
+            last = items[items.length - 1];
+          if (e.shiftKey && document.activeElement === first) {
+            e.preventDefault();
+            last?.focus();
+          } else if (!e.shiftKey && document.activeElement === last) {
+            e.preventDefault();
+            first?.focus();
+          }
+        }
+      };
+      document.addEventListener("keydown", listener);
+      return () => document.removeEventListener("keydown", listener);
+    }
+  }, [showLogin]);
+  function reset() {
+    setSource("");
+    setFile(null);
+    setResult("");
+    setFilename("");
+    setDemo(false);
+    setError("");
+    setNotice("");
+    setConsent(false);
+    setView("create");
+  }
+  async function acceptFile(selected?: File) {
+    if (!selected || busy || reading) return;
+    setReading(true);
+    setError("");
+    setNotice("");
+    try {
+      const photo = await optimizePhoto(selected);
+      setSource(photo.url);
+      setFile(photo.file);
+      setFilename(selected.name);
+      setResult("");
+      setDemo(false);
+      setConsent(false);
+      setView("create");
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "No pudimos abrir esta imagen.",
+      );
+    } finally {
+      setReading(false);
+      if (input.current) input.current.value = "";
+    }
+  }
+  function useExample(r: RoomId) {
+    setRoom(r);
+    setStyle("modern");
+    setMode("furnish");
+    setDemo(true);
+    setSource(beforeImage(r));
+    setFile(null);
+    setFilename(`${rooms.find((x) => x.id === r)?.name} de ejemplo`);
+    setResult("");
+    setError("");
+    setNotice("");
+    setView("create");
+  }
+  function chooseRoom(r: RoomId) {
+    setRoom(r);
+    setResult("");
+    if (demo) {
+      setSource(mode === "furnish" ? beforeImage(r) : afterImage(r));
+      if (r !== "bedroom") setStyle("modern");
+    }
+  }
+  function chooseMode(m: ModeId) {
+    setMode(m);
+    setResult("");
+    if (demo) setSource(m === "furnish" ? beforeImage(room) : afterImage(room));
+  }
+  async function persist(image: string) {
+    const p: Project = {
+      id: crypto.randomUUID(),
+      name: filename.replace(/\.[^.]+$/, "") || "Mi espacio",
+      original: source,
+      result: image,
+      createdAt: Date.now(),
+      room,
+      style,
+      mode,
+      demo,
+    };
+    try {
+      await saveProject(p);
+      setProjects(await listProjects());
+      setNotice("Diseño guardado en este navegador.");
+    } catch {
+      setNotice(
+        "El diseño está listo. No pudimos guardarlo en este navegador; descargalo para conservarlo.",
+      );
+    }
+  }
+  async function generate() {
+    if (generateLock.current || !source) return;
+    setError("");
+    setNotice("");
+    if (demo) {
+      const image =
+        mode === "remove" ? beforeImage(room) : afterImage(room, style);
+      setResult(image);
+      await persist(image);
+      setTimeout(
+        () =>
+          resultRef.current?.scrollIntoView({
+            behavior: "smooth",
+            block: "nearest",
+          }),
+        50,
+      );
+      return;
+    }
+    if (!status?.configured) {
+      setError(
+        "La generación con tus fotos todavía no está habilitada en este piloto. Mientras tanto, podés explorar todos los ejemplos precargados.",
+      );
+      return;
+    }
+    if (!status.authenticated) {
+      setShowLogin(true);
+      return;
+    }
+    if (!consent) {
+      setError(
+        "Confirmá que podés usar esta foto y enviarla al proveedor de IA.",
+      );
+      return;
+    }
+    if (!file) {
+      setError(
+        "Volvé a cargar la foto original para generar una nueva variante.",
+      );
+      return;
+    }
+    generateLock.current = true;
+    setBusy(true);
+    setElapsed(0);
+    setResult("");
+    try {
+      const data = new FormData();
+      data.set("image", file);
+      data.set("room", room);
+      data.set("style", style);
+      data.set("mode", mode);
+      data.set("notes", notes);
+      const response = await fetch("/api/generate", {
+        method: "POST",
+        body: data,
+      });
+      if (!response.ok) {
+        const payload = await response
+          .json()
+          .catch(() => ({ error: "No pudimos completar la generación." }));
+        if (response.status === 401)
+          setStatus((s) => (s ? { ...s, authenticated: false } : s));
+        throw new Error(payload.error);
+      }
+      const url = await blobToDataURL(await response.blob());
+      setResult(url);
+      await persist(url);
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : "Hubo un problema de conexión. Intentá de nuevo.",
+      );
+    } finally {
+      generateLock.current = false;
+      setBusy(false);
+    }
+  }
+  async function login(e: React.FormEvent) {
+    e.preventDefault();
+    setLoginBusy(true);
+    setLoginError("");
+    try {
+      const response = await fetch("/api/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error);
+      setStatus({ configured: true, authenticated: true });
+      setShowLogin(false);
+      setPassword("");
+      setNotice("Acceso habilitado. Ya podés generar tu diseño.");
+      loginTrigger.current?.focus();
+    } catch (e) {
+      setLoginError(
+        e instanceof Error ? e.message : "No pudimos validar el acceso.",
+      );
+    } finally {
+      setLoginBusy(false);
+    }
+  }
+  async function logout() {
+    try {
+      const response = await fetch("/api/session", { method: "DELETE" });
+      if (!response.ok) throw new Error();
+      setStatus((s) => (s ? { ...s, authenticated: false } : s));
+      setNotice("Cerraste la sesión del piloto.");
+    } catch {
+      setError("No pudimos cerrar la sesión. Intentá de nuevo.");
+    }
+  }
+  async function download(sideBySide = false) {
+    try {
+      await downloadDesign(
+        result,
+        `${room}-${style}`,
+        sideBySide ? source : undefined,
+        label,
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No pudimos descargar.");
+    }
+  }
+  async function openProject(p: Project) {
+    setRoom(p.room);
+    setStyle(p.style);
+    setMode(p.mode);
+    setSource(p.original);
+    setResult(p.result);
+    setFilename(p.name);
+    setDemo(p.demo);
+    setFile(null);
+    setView("create");
+    setError("");
+    setConsent(false);
+    setNotice(
+      p.demo
+        ? "Ejemplo precargado."
+        : "Proyecto recuperado. Podés descargarlo o generar otra variante.",
+    );
+    if (!p.demo) {
+      try {
+        const blob = await fetch(p.original).then((r) => r.blob());
+        setFile(new File([blob], "room.jpg", { type: "image/jpeg" }));
+      } catch {
+        setError("No pudimos recuperar el original. Volvé a cargarlo.");
+      }
+    }
+  }
+  return (
+    <div className="studio-page">
+      <div className="container">
+        <div className="studio-breadcrumb">
+          <Link href="/">Inicio</Link>
+          <ChevronRight size={13} />
+          <span>Estudio de diseño</span>
+        </div>
+        <div className="studio-heading">
+          <div>
+            <span className="eyebrow">TU ESPACIO, SU MEJOR VERSIÓN</span>
+            <h1>
+              Un gran antes.
+              <br className="mobile-break" /> Un mejor después
+              <span className="lime">.</span>
+            </h1>
+            <p>
+              Subí una foto, elegí el estilo y dejá que aparezcan las
+              posibilidades.
+            </p>
+          </div>
+          <div className="status-badge">
+            <span className="live-dot" />
+            {status?.configured ? "Piloto de IA" : "Modo demo"}
+            {status?.authenticated && (
+              <button
+                className="icon-button"
+                onClick={logout}
+                title="Cerrar sesión"
+                aria-label="Cerrar sesión"
+              >
+                <LogOut size={15} />
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="studio-tabs">
+          <button
+            className={view === "create" ? "selected" : ""}
+            onClick={() => setView("create")}
+          >
+            <Sparkles size={17} /> Nuevo diseño
+          </button>
+          <button
+            className={view === "projects" ? "selected" : ""}
+            onClick={() => setView("projects")}
+          >
+            <FolderOpen size={17} /> Mis proyectos{" "}
+            <span>{projects.length}</span>
+          </button>
+          <span className="local-label">
+            <ShieldCheck size={14} /> Tus proyectos quedan en este navegador
+          </span>
+        </div>
+        {view === "projects" ? (
+          <div className="projects-view">
+            <div className="projects-header">
+              <div>
+                <h2>Tu colección de espacios</h2>
+                <p>Los últimos 20 diseños que guardaste en este dispositivo.</p>
+              </div>
+              <button className="button button-dark" onClick={reset}>
+                <ImagePlus size={17} /> Nuevo diseño
+              </button>
+            </div>
+            {projects.length === 0 ? (
+              <div className="empty-projects">
+                <FolderOpen size={42} />
+                <h3>Acá empieza tu colección.</h3>
+                <p>Creá tu primer diseño y lo vas a encontrar acá.</p>
+                <button className="button button-dark" onClick={reset}>
+                  Crear mi primer diseño <ArrowUpRight size={17} />
+                </button>
+              </div>
+            ) : (
+              <div className="projects-grid">
+                {projects.map((p) => (
+                  <article className="project-card" key={p.id}>
+                    <button
+                      className="project-image"
+                      onClick={() => openProject(p)}
+                    >
+                      <img src={p.result} alt={p.name} />
+                      <span>{p.demo ? "Demo" : "Diseño con IA"}</span>
+                    </button>
+                    <div className="project-info">
+                      <button onClick={() => openProject(p)}>
+                        <h3>{p.name}</h3>
+                        <p>
+                          {styles.find((s) => s.id === p.style)?.name} ·{" "}
+                          {new Date(p.createdAt).toLocaleDateString("es-AR")}
+                        </p>
+                      </button>
+                      {deleteId === p.id ? (
+                        <div className="delete-confirm">
+                          <button
+                            onClick={async () => {
+                              try {
+                                await deleteProject(p.id);
+                                setProjects(await listProjects());
+                                setDeleteId(null);
+                              } catch {
+                                setError("No pudimos borrar el proyecto.");
+                              }
+                            }}
+                          >
+                            Borrar
+                          </button>
+                          <button onClick={() => setDeleteId(null)}>
+                            Cancelar
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          className="icon-button"
+                          aria-label={`Borrar ${p.name}`}
+                          onClick={() => setDeleteId(p.id)}
+                        >
+                          <Trash2 size={17} />
+                        </button>
+                      )}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="workspace">
+            <div className="studio-canvas">
+              <div className="canvas-heading">
+                <h2>
+                  <span className="section-number">01</span>{" "}
+                  {result
+                    ? "Tu espacio, transformado"
+                    : "La foto de tu espacio"}
+                </h2>
+                {source && !busy && (
+                  <button className="subtle-button" onClick={reset}>
+                    <RotateCcw size={14} /> Cambiar foto
+                  </button>
+                )}
+              </div>
+              <input
+                ref={input}
+                className="visually-hidden"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                aria-label="Subir foto de la propiedad"
+                onChange={(e) => acceptFile(e.target.files?.[0])}
+              />
+              {!source ? (
+                <div
+                  className={`dropzone ${dragging ? "dragging" : ""}`}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setDragging(true);
+                  }}
+                  onDragLeave={() => setDragging(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setDragging(false);
+                    void acceptFile(e.dataTransfer.files[0]);
+                  }}
+                >
+                  <div className="upload-illustration">
+                    <span className="upload-sheet one" />
+                    <span className="upload-sheet two" />
+                    <div>
+                      <ImagePlus size={34} strokeWidth={1.4} />
+                    </div>
+                    <span className="upload-spark">
+                      <Sparkles size={16} />
+                    </span>
+                  </div>
+                  <h3>
+                    {reading
+                      ? "Preparando tu foto…"
+                      : "Todo empieza con una foto."}
+                  </h3>
+                  <p>Arrastrala hasta acá o elegila desde tu dispositivo.</p>
+                  <button
+                    className="button button-dark"
+                    onClick={() => input.current?.click()}
+                    disabled={reading}
+                  >
+                    {reading ? (
+                      <LoaderCircle className="spin" size={17} />
+                    ) : (
+                      <Upload size={17} />
+                    )}{" "}
+                    Subir mi foto <ArrowUpRight size={16} />
+                  </button>
+                  <span className="upload-meta">
+                    JPG, PNG o WebP · Hasta 10 MB
+                  </span>
+                </div>
+              ) : (
+                <div className="canvas-photo" ref={resultRef}>
+                  {result && comparison ? (
+                    <Comparison before={source} after={result} />
+                  ) : (
+                    <img
+                      src={result || source}
+                      alt={
+                        result
+                          ? "Diseño de tu ambiente"
+                          : "Foto original de tu propiedad"
+                      }
+                    />
+                  )}
+                  <span className="photo-name">
+                    {demo ? "EJEMPLO DEMO" : filename}
+                  </span>
+                  {busy && (
+                    <div className="generating-overlay">
+                      <div className="generating-icon">
+                        <Sparkles size={32} />
+                      </div>
+                      <h3>Tu espacio está tomando forma.</h3>
+                      <p>
+                        {elapsed < 20
+                          ? "Analizando la foto y su perspectiva…"
+                          : elapsed < 60
+                            ? "Diseñando muebles, materiales y luz…"
+                            : "Cuidando los últimos detalles del ambiente…"}
+                      </p>
+                      <span>
+                        <LoaderCircle size={14} className="spin" /> {elapsed} s
+                        · Puede demorar varios minutos
+                      </span>
+                      <p className="generation-hint">
+                        Mantené esta página abierta para recibir el resultado.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+              {result && (
+                <div className="result-actions">
+                  <div className="result-success">
+                    <Check size={17} />
+                    <span>
+                      {demo
+                        ? "Ejemplo listo para explorar"
+                        : "Tu diseño está listo"}
+                    </span>
+                    <button
+                      className="icon-button"
+                      aria-label={
+                        comparison ? "Ver solo el resultado" : "Ver comparación"
+                      }
+                      onClick={() => setComparison(!comparison)}
+                    >
+                      {comparison ? (
+                        <Eye size={17} />
+                      ) : (
+                        <SplitSquareHorizontal size={17} />
+                      )}
+                    </button>
+                  </div>
+                  <div className="download-actions">
+                    <button
+                      className="button button-dark"
+                      onClick={() => download()}
+                    >
+                      <Download size={16} /> Descargar JPG
+                    </button>
+                    <button
+                      className="button button-outline"
+                      onClick={() => download(true)}
+                    >
+                      <Images size={16} /> Antes y después
+                    </button>
+                  </div>
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={label}
+                      onChange={(e) => setLabel(e.target.checked)}
+                    />{" "}
+                    Incluir etiqueta «Amoblamiento virtual»
+                  </label>
+                </div>
+              )}
+              <div className="examples">
+                <div className="examples-heading">
+                  <span>¿SOLO ESTÁS EXPLORANDO?</span>
+                  <p>
+                    Probá con un espacio de ejemplo <ArrowRight size={14} />
+                  </p>
+                </div>
+                <div className="example-grid">
+                  {(["living", "bedroom", "dining", "office"] as RoomId[]).map(
+                    (r) => (
+                      <button
+                        key={r}
+                        onClick={() => useExample(r)}
+                        disabled={busy || reading}
+                        aria-label={`Usar ejemplo de ${rooms.find((x) => x.id === r)?.name}`}
+                        className={demo && room === r ? "selected" : ""}
+                      >
+                        <img src={beforeImage(r)} alt="" />
+                        <span>{rooms.find((x) => x.id === r)?.name}</span>
+                        {demo && room === r && (
+                          <span className="example-check">
+                            <Check size={13} />
+                          </span>
+                        )}
+                      </button>
+                    ),
+                  )}
+                </div>
+              </div>
+              <div className="studio-tip">
+                <ShieldCheck size={18} />
+                <p>
+                  <strong>La arquitectura es el punto de partida.</strong>{" "}
+                  Comprobá que el resultado conserve las características reales
+                  antes de publicar.
+                </p>
+              </div>
+            </div>
+            <aside className="settings-panel">
+              <div className="settings-heading">
+                <h2>
+                  <span className="section-number">02</span> Diseñá a tu manera
+                </h2>
+                <span>Un poco de vos. Un poco de IA.</span>
+              </div>
+              <fieldset disabled={busy || reading}>
+                <legend>¿Qué querés hacer?</legend>
+                <div className="mode-options">
+                  {modes.map((m) => (
+                    <button
+                      key={m.id}
+                      className={mode === m.id ? "selected" : ""}
+                      onClick={() => chooseMode(m.id)}
+                      title={m.description}
+                    >
+                      {m.name}
+                    </button>
+                  ))}
+                </div>
+                <p className="field-hint">
+                  {modes.find((m) => m.id === mode)?.description}
+                </p>
+              </fieldset>
+              <fieldset disabled={busy || reading}>
+                <legend>Elegí el ambiente</legend>
+                <div className="room-options">
+                  {rooms.map((r) => {
+                    const Icon = roomIcons[r.id];
+                    return (
+                      <button
+                        key={r.id}
+                        onClick={() => chooseRoom(r.id)}
+                        className={room === r.id ? "selected" : ""}
+                      >
+                        <Icon size={20} strokeWidth={1.5} />
+                        {r.name}
+                        {room === r.id && <Check size={11} />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </fieldset>
+              <fieldset disabled={busy || reading || mode === "remove"}>
+                <legend>
+                  Encontrá tu estilo <span>7 opciones</span>
+                </legend>
+                <div className="style-options">
+                  {styles.map((s) => (
+                    <button
+                      key={s.id}
+                      disabled={
+                        demo &&
+                        (s.id === "industrial" ||
+                          (room !== "bedroom" && s.id !== "modern"))
+                      }
+                      onClick={() => {
+                        setStyle(s.id);
+                        setResult("");
+                      }}
+                      className={style === s.id ? "selected" : ""}
+                      title={s.description}
+                    >
+                      <span style={{ background: s.color }} />
+                      {s.name}
+                      {style === s.id && <Check size={12} />}
+                    </button>
+                  ))}
+                </div>
+                {demo && (
+                  <p className="field-hint">
+                    Los ejemplos incluyen estilos precargados. En Dormitorio
+                    podés explorar 6; con tu foto, los 7.
+                  </p>
+                )}
+              </fieldset>
+              <div className="notes-field">
+                <label htmlFor="design-notes">
+                  Un toque personal <span>opcional</span>
+                </label>
+                <textarea
+                  id="design-notes"
+                  placeholder="Ej.: tonos cálidos, sofá de lino, detalles en madera…"
+                  maxLength={500}
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  disabled={busy || demo || mode === "remove"}
+                />
+                <span>{notes.length}/500</span>
+              </div>
+              {source && !demo && (
+                <label className="checkbox-label consent">
+                  <input
+                    type="checkbox"
+                    checked={consent}
+                    onChange={(e) => setConsent(e.target.checked)}
+                    disabled={busy}
+                  />{" "}
+                  Tengo permiso para usar esta foto y enviarla a OpenAI para
+                  generar el diseño.
+                </label>
+              )}
+              <div className="generate-area">
+                <button
+                  ref={loginTrigger}
+                  className="button button-lime generate-button"
+                  onClick={generate}
+                  disabled={!source || busy || reading}
+                >
+                  {busy ? (
+                    <LoaderCircle size={19} className="spin" />
+                  ) : (
+                    <Sparkles size={19} />
+                  )}{" "}
+                  {busy
+                    ? "Creando tu diseño…"
+                    : demo
+                      ? "Ver transformación de ejemplo"
+                      : result
+                        ? "Generar otra variante"
+                        : "Generar mi diseño"}
+                  {!busy && <ArrowUpRight size={19} />}
+                </button>
+                <p>
+                  {demo
+                    ? "Demo precargada · No consume API"
+                    : status?.configured
+                      ? "Calidad alta · Acceso de piloto"
+                      : "Explorá gratis los ejemplos precargados"}
+                </p>
+              </div>
+              {status?.configured && !status.authenticated && !demo && (
+                <button
+                  className="pilot-link"
+                  onClick={() => setShowLogin(true)}
+                >
+                  <LockKeyhole size={13} /> Tengo una clave de acceso
+                </button>
+              )}
+            </aside>
+          </div>
+        )}
+        {error && (
+          <div className="feedback error" role="alert">
+            <Info size={18} />
+            <p>{error}</p>
+            <button
+              className="icon-button"
+              aria-label="Cerrar error"
+              onClick={() => setError("")}
+            >
+              <X size={16} />
+            </button>
+          </div>
+        )}
+        {notice && (
+          <div className="feedback notice" role="status">
+            <Check size={18} />
+            <p>{notice}</p>
+            <button
+              className="icon-button"
+              aria-label="Cerrar aviso"
+              onClick={() => setNotice("")}
+            >
+              <X size={16} />
+            </button>
+          </div>
+        )}
+        <div className="studio-bottom">
+          <span>
+            <LockKeyhole size={13} /> Las fotos se procesan solo cuando generás.
+          </span>
+          <Link href="/privacidad">
+            Cómo cuidamos tus fotos <ArrowUpRight size={13} />
+          </Link>
+        </div>
+      </div>
+      {showLogin && (
+        <div
+          className="modal-backdrop"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowLogin(false);
+              loginTrigger.current?.focus();
+            }
+          }}
+        >
+          <section
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="login-title"
+          >
+            <button
+              className="modal-close icon-button"
+              aria-label="Cerrar acceso"
+              onClick={() => {
+                setShowLogin(false);
+                loginTrigger.current?.focus();
+              }}
+            >
+              <X size={20} />
+            </button>
+            <span className="modal-icon">
+              <LockKeyhole size={25} />
+            </span>
+            <span className="eyebrow">ACCESO AL PILOTO</span>
+            <h2 id="login-title">Tu estudio te espera.</h2>
+            <p>
+              Ingresá la clave que te compartió el equipo de amoblaIA para crear
+              diseños con tus fotos.
+            </p>
+            <form onSubmit={login}>
+              <label htmlFor="pilot-password">Clave de acceso</label>
+              <input
+                ref={loginInput}
+                id="pilot-password"
+                type="password"
+                autoComplete="current-password"
+                placeholder="Tu clave del piloto"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                maxLength={256}
+              />
+              {loginError && (
+                <p className="form-error" role="alert">
+                  {loginError}
+                </p>
+              )}
+              <button className="button button-dark" disabled={loginBusy}>
+                {loginBusy ? <LoaderCircle className="spin" size={17} /> : null}{" "}
+                Entrar al estudio <ArrowRight size={17} />
+              </button>
+            </form>
+            <span>Acceso seguro durante 8 horas en este dispositivo.</span>
+          </section>
+        </div>
+      )}
+    </div>
+  );
+}
