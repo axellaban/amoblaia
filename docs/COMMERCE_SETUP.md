@@ -8,7 +8,7 @@ La base elegida es **Supabase Free**, conectada directamente por variables a Ver
 - Se aplicó la instalación inicial: once tablas, permisos RLS por cliente, RPCs financieras solo para el servidor y bucket privado `property-images`.
 - Los diez productos se crean **sin precio y desactivados**. No se inventan importes rentables en pesos.
 - Se comprobaron contra la base real la lectura de una foto propia y el rechazo de otra cuenta, y el bloqueo de mutaciones financieras con la clave pública.
-- Google OAuth configurado en el proyecto Cloud `amoblaia`, audiencia externa en producción, únicamente openid/email/perfil. Credencial privada guardada en Supabase.
+- Google OAuth configurado en el proyecto Cloud `amoblaia`, audiencia externa en producción, únicamente openid/email/perfil. Credencial privada guardada en Supabase. El titular confirmó su ingreso y la base registra una cuenta Google verificada con sesión iniciada.
 - Variables Supabase y secretos de servidor guardados en Vercel. `SAAS_ENABLED=true` y `NEXT_PUBLIC_GOOGLE_AUTH_ENABLED=true` para el nuevo despliegue. Cobros y prueba real automática siguen desactivados.
 - Actualización de presupuesto de almacenamiento aplicada: `202610200002_storage_budget.sql`.
 
@@ -73,7 +73,9 @@ Referencias: [SMTP](https://supabase.com/docs/guides/auth/auth-smtp), [CAPTCHA](
 
 ## Mercado Pago
 
-Elegir **Suscripciones** al crear la integración principal. El backend usa la API de Suscripciones para mensual/anual y Checkout Pro para packs; no maneja números de tarjeta. Verificar la disponibilidad de ambos flujos para la aplicación/cuenta utilizada durante la homologación.
+Aplicación indicada por el titular: `4931907475590636`, creada como **Checkout Pro**. El backend usa Checkout Pro para packs y la API de Suscripciones para mensual/anual; no maneja números de tarjeta. La configuración y homologación del proveedor sigue pendiente: el panel solicitó verificación de la cuenta antes de abrir Webhooks. No se habilitaron ventas ni se efectuaron pagos.
+
+El modo de prueba solo permite iniciar checkouts al administrador y mantiene desactivados los botones públicos de compra. No habilitar pruebas financieras abiertas a clientes. La variable `MERCADOPAGO_MODE=production` y los demás controles comerciales deben estar completos antes de vender.
 
 Cargar en Vercel:
 
@@ -83,7 +85,7 @@ Cargar en Vercel:
 - `MERCADOPAGO_MODE`: `test` para pruebas y `production` cuando se hayan validado los cobros reales.
 - `MERCADOPAGO_NOTIFICATION_TOKEN`: token aleatorio para las notificaciones de suscripciones que no incluyan firma.
 
-Notificaciones: `/api/webhooks/mercadopago`. La creación de cada checkout agrega una notification_url con el token de servidor. No publicar esa URL completa. Configurar los eventos `payment`, `subscription_preapproval` y `subscription_authorized_payment` según la configuración que admita el producto. Consultar la documentación de Suscripciones para notificaciones por notification_url; no asumir que la configuración genérica del panel aplica a todos los flujos.
+Notificaciones: `/api/webhooks/mercadopago`. La creación de cada checkout agrega una notification_url con el token de servidor. No publicar esa URL completa. Configurar los eventos `payment`, `subscription_preapproval` y `subscription_authorized_payment` según la configuración que admita el producto. La documentación de Suscripciones indica que sus avisos se configuran durante la creación del pago mediante notification_url; la configuración genérica del panel no aplica a ese flujo. Los packs sí utilizan el panel Webhooks.
 
 Las notificaciones se guardan antes de responder. Luego se consulta la API de Mercado Pago y se validan vendedor, moneda, importe, ambiente, orden y relación de la factura con la suscripción. La firma se verifica cuando viene presente; los callbacks sin firma requieren el token aleatorio. La acreditación tiene claves únicas y transacciones, por lo que los reintentos no duplican fotos. Un retorno `success` o una suscripción `authorized` sin pago aprobado no habilitan saldo.
 

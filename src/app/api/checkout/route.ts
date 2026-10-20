@@ -1,4 +1,10 @@
-import { requireUser, failure, HttpError, rpc } from "@/lib/commerce/http";
+import {
+  requireUser,
+  failure,
+  HttpError,
+  rpc,
+  isAdmin,
+} from "@/lib/commerce/http";
 import { adminClient } from "@/lib/supabase/server";
 import { billingConfigured, mp } from "@/lib/commerce/mercadopago";
 import type { Product } from "@/lib/commerce/catalog";
@@ -9,6 +15,11 @@ export async function POST(request: Request) {
       throw new HttpError(
         503,
         "Estamos preparando los pagos. Podés explorar el estudio.",
+      );
+    if (process.env.MERCADOPAGO_MODE !== "production" && !isAdmin(user.email))
+      throw new HttpError(
+        403,
+        "Los pagos de prueba están reservados al equipo.",
       );
     const base = process.env.APP_URL!.replace(/\/$/, "");
     if (new URL(base).origin !== new URL(request.url).origin)
@@ -147,14 +158,12 @@ export async function POST(request: Request) {
       .eq("id", key);
     if (saved.error) throw new Error("CHECKOUT_SAVE_FAILED");
     if (snapshot.kind !== "pack") {
-      const sub = await db
-        .from("subscriptions")
-        .insert({
-          id: checkout.id,
-          order_id: key,
-          user_id: user.id,
-          status: "pending",
-        });
+      const sub = await db.from("subscriptions").insert({
+        id: checkout.id,
+        order_id: key,
+        user_id: user.id,
+        status: "pending",
+      });
       if (sub.error) throw new Error("SUBSCRIPTION_SAVE_FAILED");
     }
     return Response.json({ url }, { headers: { "Cache-Control": "no-store" } });

@@ -19,7 +19,11 @@ export default async function Pricing() {
   return (
     <PricingPlans
       products={products}
-      enabled={cloudEnabled() && billingConfigured()}
+      enabled={
+        cloudEnabled() &&
+        billingConfigured() &&
+        process.env.MERCADOPAGO_MODE === "production"
+      }
       trial={cloudEnabled() && process.env.LIVE_TRIAL_ENABLED === "true"}
     />
   );
