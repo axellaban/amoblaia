@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import {
   configured,
+  configurationIssues,
   COOKIE_NAME,
   createSession,
   sameSecret,
@@ -15,6 +16,8 @@ export async function GET() {
   return Response.json(
     {
       configured: configured(),
+      configurationIssues: configurationIssues(),
+      revision: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? "local",
       authenticated: verifySession(
         jar.get(COOKIE_NAME)?.value,
         process.env.STUDIO_ACCESS_PASSWORD,

@@ -1,12 +1,38 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   createSession,
   verifySession,
   validOrigin,
   SESSION_SECONDS,
+  configurationIssues,
+  configured,
 } from "../src/lib/session";
 import { buildPrompt } from "../src/lib/catalog";
 const password = "a-strong-pilot-password-for-tests";
+afterEach(() => vi.unstubAllEnvs());
+describe("Diagnóstico de configuración", () => {
+  it("identifica variables ausentes sin exponer valores", () => {
+    vi.stubEnv("OPENAI_API_KEY", "");
+    vi.stubEnv("STUDIO_ACCESS_PASSWORD", "");
+    expect(configurationIssues()).toEqual([
+      "OPENAI_API_KEY_MISSING",
+      "STUDIO_ACCESS_PASSWORD_MISSING",
+    ]);
+    expect(configured()).toBe(false);
+  });
+  it("distingue una contraseña corta y mantiene cerrado el acceso", () => {
+    vi.stubEnv("OPENAI_API_KEY", "test-key-never-real");
+    vi.stubEnv("STUDIO_ACCESS_PASSWORD", "short");
+    expect(configurationIssues()).toEqual(["STUDIO_ACCESS_PASSWORD_TOO_SHORT"]);
+    expect(configured()).toBe(false);
+  });
+  it("habilita el piloto con ambas variables válidas", () => {
+    vi.stubEnv("OPENAI_API_KEY", "test-key-never-real");
+    vi.stubEnv("STUDIO_ACCESS_PASSWORD", password);
+    expect(configurationIssues()).toEqual([]);
+    expect(configured()).toBe(true);
+  });
+});
 describe("Acceso al piloto", () => {
   it("acepta una sesión firmada y rechaza otra clave o una firma alterada", () => {
     const token = createSession(password, 1000000);

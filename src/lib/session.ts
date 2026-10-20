@@ -1,11 +1,18 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 export const COOKIE_NAME = "amoblaia-pilot";
 export const SESSION_SECONDS = 8 * 60 * 60;
+export function configurationIssues() {
+  const issues: string[] = [];
+  if (!process.env.OPENAI_API_KEY?.trim()) issues.push("OPENAI_API_KEY_MISSING");
+  if (!process.env.STUDIO_ACCESS_PASSWORD) {
+    issues.push("STUDIO_ACCESS_PASSWORD_MISSING");
+  } else if (process.env.STUDIO_ACCESS_PASSWORD.length < 16) {
+    issues.push("STUDIO_ACCESS_PASSWORD_TOO_SHORT");
+  }
+  return issues;
+}
 export function configured() {
-  return Boolean(
-    process.env.OPENAI_API_KEY &&
-    (process.env.STUDIO_ACCESS_PASSWORD?.length ?? 0) >= 16,
-  );
+  return configurationIssues().length === 0;
 }
 export function sameSecret(a: string, b: string) {
   const hash = (s: string) =>
