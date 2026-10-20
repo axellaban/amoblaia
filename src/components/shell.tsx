@@ -2,15 +2,36 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { ArrowUpRight, Menu, X, Armchair } from "lucide-react";
+import { ArrowUpRight, Menu, X } from "lucide-react";
+/** Brand mark: an arched doorway with a bench inside, plus the spark of AI. */
+export function LogoMark({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 40 40" aria-hidden="true" className={className}>
+      <rect width="40" height="40" rx="11" fill="#b4472a" />
+      <g
+        fill="none"
+        stroke="#fbf1e8"
+        strokeWidth="2.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M12 31V19a8 8 0 0 1 16 0v12M8.5 31h23" />
+        <path d="M15.5 27.5v-2A1.5 1.5 0 0 1 17 24h6a1.5 1.5 0 0 1 1.5 1.5v2" />
+      </g>
+      <path
+        d="M31.5 4.5l1.3 3.7 3.7 1.3-3.7 1.3-1.3 3.7-1.3-3.7-3.7-1.3 3.7-1.3z"
+        fill="#f2b39a"
+      />
+    </svg>
+  );
+}
 export function Logo() {
   return (
     <span className="logo">
       <span className="logo-icon">
-        <Armchair size={23} strokeWidth={1.8} />
+        <LogoMark />
       </span>
       amobla<span className="logo-ai">IA</span>
-      <span className="logo-dot">.</span>
     </span>
   );
 }
@@ -114,7 +135,7 @@ export function Footer() {
             reservados.
           </span>
           <span>
-            Diseñado para LATAM <span className="lime">↗</span>
+            Diseñado para LATAM <span className="accent">↗</span>
           </span>
         </div>
       </div>

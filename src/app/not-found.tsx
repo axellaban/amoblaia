@@ -8,7 +8,7 @@ export default function NotFound() {
         <br />a ningún ambiente.
       </h1>
       <p>Volvamos al inicio para imaginar nuevas posibilidades.</p>
-      <Link href="/" className="button button-lime">
+      <Link href="/" className="button button-primary">
         Volver al inicio ↗
       </Link>
     </div>

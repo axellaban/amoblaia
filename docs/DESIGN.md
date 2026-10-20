@@ -1,47 +1,64 @@
 # Sistema visual de amoblaIA
 
-Referencia: https://www.virtualstagingai.app/ — observada el 20 de octubre de 2026 con navegador, HTML público y Firecrawl (branding, markdown, HTML y screenshot). La inspección visual del navegador prevalece sobre la clasificación automática de Firecrawl, que describía la página como clara pese al hero oscuro observado.
+La primera versión del MVP tomaba colores, tipografía y jerarquía de un competidor (Virtual Staging AI). Desde octubre de 2026 amoblaIA tiene identidad propia: los tokens viven en `:root` de `src/app/globals.css` y el logo en `src/components/shell.tsx`.
 
-## Extraído de la referencia
+## Concepto
 
-- Familia tipográfica **Outfit**: reportada por branding y comprobada en el HTML servido.
-- Hero y navegación azul noche, titulares blancos y detalles verdes suaves: observados en screenshot.
-- CTA principal azul (`#2E5FCB` reportado por branding), imágenes de propiedades protagonistas y selectores de ambiente/estilo sobre la presentación.
-- Jerarquía: navegación → propuesta de valor y ejemplo → atributos → galería → beneficios → pasos → comparación de servicio → FAQ → CTA → footer.
-- Imágenes con esquinas redondeadas, botones compactos, espacios amplios y contraste alto en el hero.
+**La puerta a tu próximo hogar.** El isotipo es un arco de puerta, presente en la arquitectura de toda Latinoamérica, con un banco adentro (un espacio ya amoblado) y una chispa que representa la IA. El 404 retoma la idea: «Esta puerta no lleva a ningún ambiente».
 
-## Adaptación implementada
+Tono: cálido, editorial y concreto, como una revista de casas, no como una herramienta técnica. Las fotos de propiedades son las protagonistas; la interfaz las enmarca con colores de materiales reales (terracota, revoque y vegetación).
 
-La experiencia y la jerarquía parten de esa referencia; los textos, la marca, el código y el estudio de trabajo se implementaron para amoblaIA. No se afirma equivalencia píxel a píxel ni se reutilizan afirmaciones de Harvard, testimonios, logos de medios o cifras comerciales del producto original.
+## Logo
 
-| Token                | Valor implementado       | Procedencia                               |
-| -------------------- | ------------------------ | ----------------------------------------- |
-| Fondo oscuro         | `#161C2E`                | Aproximación visual al hero de referencia |
-| Texto                | `#171D30`                | Elección de implementación                |
-| Verde de acento      | `#C4ED9A`                | Aproximación visual al acento observado   |
-| CTA azul             | `#3766D2`                | Adaptación del azul reportado             |
-| Fondo claro          | `#FAFBF8`                | Elección de implementación                |
-| Fondo estudio        | `#F5F6F2`                | Elección de implementación                |
-| Fuente               | Outfit                   | Extraída                                  |
-| Contenedor           | 1260 px, padding 40 px   | Elección de implementación                |
-| Bordes               | 5–12 px de radio         | Elección inspirada en la referencia       |
-| Puntos de adaptación | 600, 800, 1050 y 1450 px | Elección de implementación                |
+| Pieza                        | Uso                                                       |
+| ---------------------------- | --------------------------------------------------------- |
+| `LogoMark` (SVG en código)   | Header, footer y cualquier lugar de la app                |
+| `src/app/icon.svg`           | Favicon                                                   |
+| `src/app/apple-icon.png`     | Ícono al agregar a pantalla de inicio en iOS              |
+| `public/brand/*-oscuro.png`  | Logo horizontal sobre fondos oscuros                      |
+| `public/brand/*-claro.png`   | Logo horizontal sobre fondos claros                       |
+| `public/brand/*-isotipo-512` | Avatar para redes, WhatsApp Business, Mercado Pago, Google |
 
-## Componentes
+Wordmark: «amobla» en Fraunces 600 (SOFT 100, WONK 1) y «IA» en Manrope 800, en arcilla sobre oscuro o en terracota sobre claro. Mantener un margen libre alrededor del isotipo igual a la altura de la chispa. No rotar, no cambiar los colores del isotipo y no usarlo sobre fotos sin una superficie sólida.
 
-- Header azul noche con marca amoblaIA, navegación y CTA al estudio. Menú compacto en móvil.
-- Hero de dos columnas con comparador manipulable y selectores; apilado en pantallas pequeñas.
-- Galería de tres columnas en desktop, una en móvil. Cada tarjeta tiene comparador y caption.
-- Estudio de trabajo claro con canvas y controles laterales. En móvil se apilan foto y configuración.
-- Modos de edición en selector segmentado; ambientes en grilla de iconos; estilos con muestras de color.
-- Modal de acceso con foco inicial, captura de tabulación y cierre por Escape.
-- Estados de espera y error legibles. La demo está separada explícitamente de generación real.
-- Rango nativo accesible para el comparador, etiquetas en formularios, foco visible y respeto de `prefers-reduced-motion`.
+## Paleta
+
+| Token               | Valor     | Uso                                                        |
+| ------------------- | --------- | ---------------------------------------------------------- |
+| `--terracotta`      | `#B4472A` | Única acción principal, acentos sobre claro, isotipo       |
+| `--terracotta-dark` | `#983A21` | Hover de la acción principal                               |
+| `--forest`          | `#14271F` | Header, hero, secciones oscuras, footer                    |
+| `--forest-light`    | `#1D3229` | Superficies sobre verde (barras, tarjetas)                 |
+| `--clay`            | `#F2B39A` | Acentos sobre verde: remates de titulares, «IA», detalles  |
+| `--paper`           | `#FAF6F0` | Fondo general, revoque cálido                              |
+| `--sand`            | `#EFE6DA` | Bandas y superficies secundarias                           |
+| `--ink`             | `#1F1C19` | Texto principal                                            |
+| `--muted`           | `#6E655C` | Texto secundario                                           |
+| `--line`            | `#E8DFD3` | Bordes                                                     |
+
+Contrastes verificados (WCAG): blanco sobre terracota 5,4:1; terracota sobre papel 5,0:1; arcilla sobre verde 8,7:1; texto secundario sobre papel 5,3:1. Hay **un solo color de acción**: todo botón principal es terracota. Los botones oscuros u outline quedan para acciones secundarias.
+
+## Tipografía
+
+- **Fraunces** (display, variable con ejes SOFT, WONK y opsz): `h1`, `h2`, logo y títulos destacados.
+- **Manrope** (interfaz y lectura): texto, botones, formularios y etiquetas.
+- **Firma de marca:** la frase de cierre de cada titular va en Fraunces itálica, en terracota sobre claro o en arcilla sobre verde. Se marca con un `<span>` dentro del `h1`/`h2` («Mostrá *un hogar.*»).
+- Texto base 16 px. Ningún texto baja de 11 px; las etiquetas en mayúsculas usan 11–12 px con tracking de 0,14 em.
+
+## Forma
+
+- Botones tipo píldora, con sombra cálida suave en la acción principal.
+- Tarjetas con radio de 10–12 px y bordes de 1 px en `--line`.
+- La banda de cierre usa dos arcos de línea fina que repiten el isotipo.
+
+## Experiencia
+
+- Header con una sola acción principal («Ir al estudio»); menú compacto en mobile.
+- En mobile, el titular del hero ocupa tres líneas para que el comparador antes/después asome en la primera pantalla, y el CTA ocupa el ancho completo.
+- En el estudio, el botón de generar queda fijo al pie de la pantalla en mobile mientras se recorren las opciones.
+- Precios: cuatro planes a lo ancho del contenedor, cinta «Para tu cartera» sobre la tarjeta destacada y estado «Próximamente» discreto mientras no haya precio.
+- Comparador accesible con teclado, foco visible en terracota y respeto de `prefers-reduced-motion`.
 
 ## Imágenes
 
-Los archivos locales y sus fuentes están en ASSETS.md. Se preserva la pareja antes/después sin inventar variantes: solo el dormitorio tiene seis estilos de ejemplo; el resto muestra el estilo moderno. Los siete estilos se ofrecen para generación real con fotos propias.
-
-## Límites de fidelidad
-
-No se inspeccionó una cuenta privada ni se accedió al historial de usuarios del sitio original. El estudio, el acceso de piloto y la persistencia local son decisiones del MVP. Los estados privados del producto original no se presentan como reconstruidos.
+`src/app/opengraph-image.png` es la imagen al compartir enlaces (1200 × 630): hero con titular y antes/después del living de ejemplo. Las escenas de `public/ejemplos/` son ficticias, creadas con IA e identificadas como ilustrativas; ver ASSETS.md.

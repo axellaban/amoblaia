@@ -114,7 +114,7 @@ export function AccountDashboard() {
         <div>
           <span className="eyebrow">TODO EN SU LUGAR</span>
           <h1>
-            Mi cuenta<span className="lime">.</span>
+            Mi cuenta<span className="accent">.</span>
           </h1>
           <p>{account?.email || "Tus fotos, planes y pagos."}</p>
         </div>
@@ -168,7 +168,7 @@ export function AccountDashboard() {
               <span>FOTOS DISPONIBLES</span>
               <strong>{account.credits}</strong>
               <p>Hasta 3 resultados por foto original.</p>
-              <Link href="/estudio" className="button button-lime">
+              <Link href="/estudio" className="button button-primary">
                 Crear un diseño
                 <ArrowUpRight size={17} />
               </Link>

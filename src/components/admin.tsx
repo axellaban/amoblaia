@@ -62,7 +62,7 @@ export function AdminDashboard() {
     <div className="account-page container">
       <span className="eyebrow">OPERACIÓN DE AMOBLAIA</span>
       <h1>
-        Administración<span className="lime">.</span>
+        Administración<span className="accent">.</span>
       </h1>
       <p>
         Acceso del equipo. Los cambios de precios se aplican a nuevas compras;

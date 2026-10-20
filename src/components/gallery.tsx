@@ -85,7 +85,7 @@ export function Gallery() {
             <span className="eyebrow">AHORA TE TOCA A VOS</span>
             <h2>Tu espacio también puede sorprender.</h2>
           </div>
-          <Link className="button button-lime" href="/estudio">
+          <Link className="button button-primary" href="/estudio">
             Probar con mi foto <ArrowUpRight size={19} />
           </Link>
         </div>

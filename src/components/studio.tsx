@@ -533,7 +533,7 @@ export function Studio() {
             <h1>
               Un gran antes.
               <br className="mobile-break" /> Un mejor después
-              <span className="lime">.</span>
+              <span className="accent">.</span>
             </h1>
             <p>
               Subí una foto, elegí el estilo y dejá que aparezcan las
@@ -743,7 +743,7 @@ export function Studio() {
                   </h3>
                   <p>Arrastrala hasta acá o elegila desde tu dispositivo.</p>
                   <button
-                    className="button button-dark"
+                    className="button button-primary"
                     onClick={() => input.current?.click()}
                     disabled={reading}
                   >
@@ -1013,7 +1013,7 @@ export function Studio() {
               <div className="generate-area">
                 <button
                   ref={loginTrigger}
-                  className="button button-lime generate-button"
+                  className="button button-primary generate-button"
                   onClick={generate}
                   disabled={!source || busy || reading}
                 >

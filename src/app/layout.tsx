@@ -1,13 +1,22 @@
-import type { Metadata } from "next";
-import { Outfit } from "next/font/google";
+import type { Metadata, Viewport } from "next";
+import { Fraunces, Manrope } from "next/font/google";
 import { Header, Footer } from "@/components/shell";
 import "./globals.css";
-const outfit = Outfit({
+const manrope = Manrope({
   subsets: ["latin"],
   display: "swap",
-  variable: "--font-outfit",
+  variable: "--font-manrope",
 });
+const fraunces = Fraunces({
+  subsets: ["latin"],
+  display: "swap",
+  style: ["normal", "italic"],
+  axes: ["SOFT", "WONK", "opsz"],
+  variable: "--font-fraunces",
+});
+export const viewport: Viewport = { themeColor: "#14271f" };
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.APP_URL || "https://amoblaia.vercel.app"),
   title: {
     default: "amoblaIA — De espacio vacío a próximo hogar",
     template: "%s · amoblaIA",
@@ -20,6 +29,7 @@ export const metadata: Metadata = {
     description:
       "Dale vida a tus propiedades con virtual staging e inteligencia artificial.",
     locale: "es_AR",
+    siteName: "amoblaIA",
     type: "website",
   },
 };
@@ -29,8 +39,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="es">
-      <body className={outfit.variable}>
+    <html
+      lang="es"
+      className={`${manrope.variable} ${fraunces.variable}`}
+    >
+      <body>
         <a href="#contenido" className="skip-link">
           Saltar al contenido
         </a>

@@ -80,7 +80,7 @@ export function Landing() {
               <br className="desktop-break" /> Fotos reales. Nuevas
               posibilidades. En pocos clics.
             </p>
-            <Link href="/estudio" className="button button-lime button-large">
+            <Link href="/estudio" className="button button-primary button-large">
               Amoblar mi primera foto <ArrowUpRight size={20} />
             </Link>
             <div className="hero-micro">
@@ -411,9 +411,9 @@ export function Landing() {
           <h2>
             Tu propiedad tiene potencial.
             <br />
-            Hagamos que se vea.
+            <span>Hagamos que se vea.</span>
           </h2>
-          <Link href="/estudio" className="button button-dark button-large">
+          <Link href="/estudio" className="button button-light button-large">
             Empezar a amoblar <ArrowUpRight size={21} />
           </Link>
           <p>Explorá los ejemplos gratis. Sin tarjeta.</p>

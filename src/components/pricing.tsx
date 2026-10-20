@@ -70,7 +70,9 @@ export function PricingPlans({
           <strong>{offer.photos}</strong> fotos
           {offer.kind !== "pack" && " / mes"}
         </div>
-        <div className="price">
+        <div
+          className={product?.price_cents ? "price" : "price price-pending"}
+        >
           {product?.price_cents
             ? formatARS(product.price_cents)
             : "Próximamente"}
@@ -108,7 +110,7 @@ export function PricingPlans({
           ))}
         </ul>
         <button
-          className={`button ${offer.id === "standard" ? "button-lime" : "button-outline"}`}
+          className={`button ${offer.id === "standard" ? "button-primary" : "button-outline"}`}
           disabled={!ready || Boolean(busy)}
           onClick={() => buy(sku)}
         >

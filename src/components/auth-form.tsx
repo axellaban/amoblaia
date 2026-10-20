@@ -191,7 +191,7 @@ export function AuthForm() {
           <h1>
             Un espacio para
             <br />
-            <span className="lime">tus espacios.</span>
+            <span className="accent">tus espacios.</span>
           </h1>
           <p>
             Guardá tus fotos, compará variantes y prepará tu próxima
@@ -322,7 +322,7 @@ export function AuthForm() {
                   {mode !== "update" && (
                     <Captcha onToken={setToken} reset={captchaReset} />
                   )}
-                  <button className="button button-lime" disabled={busy}>
+                  <button className="button button-primary" disabled={busy}>
                     {busy ? (
                       <LoaderCircle className="spin" size={18} />
                     ) : (
