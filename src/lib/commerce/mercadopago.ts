@@ -74,7 +74,6 @@ export function billingConfigured() {
     Boolean(
       process.env.MERCADOPAGO_ACCESS_TOKEN &&
         process.env.MERCADOPAGO_COLLECTOR_ID &&
-        process.env.MERCADOPAGO_WEBHOOK_SECRET &&
         process.env.MERCADOPAGO_NOTIFICATION_TOKEN &&
         process.env.APP_URL &&
         process.env.SELLER_NAME &&

@@ -75,17 +75,32 @@ Referencias: [SMTP](https://supabase.com/docs/guides/auth/auth-smtp), [CAPTCHA](
 
 Aplicación indicada por el titular: `4931907475590636`, creada como **Checkout Pro**. El backend usa Checkout Pro para packs y la API de Suscripciones para mensual/anual; no maneja números de tarjeta. La configuración y homologación del proveedor sigue pendiente: el panel solicitó verificación de la cuenta antes de abrir Webhooks. No se habilitaron ventas ni se efectuaron pagos.
 
-El modo de prueba solo permite iniciar checkouts al administrador y mantiene desactivados los botones públicos de compra. No habilitar pruebas financieras abiertas a clientes. La variable `MERCADOPAGO_MODE=production` y los demás controles comerciales deben estar completos antes de vender.
+El modo de prueba solo permite iniciar checkouts al administrador: los botones de compra en `/precios` aparecen únicamente para los emails de `ADMIN_EMAILS` y siguen ocultos para el público. No habilitar pruebas financieras abiertas a clientes. La variable `MERCADOPAGO_MODE=production` y los demás controles comerciales deben estar completos antes de vender.
 
 Cargar en Vercel:
 
 - `MERCADOPAGO_ACCESS_TOKEN`: credencial privada del vendedor.
 - `MERCADOPAGO_COLLECTOR_ID`: ID del vendedor. El servidor rechaza pagos de otro vendedor.
-- `MERCADOPAGO_WEBHOOK_SECRET`: firma secreta del panel de Webhooks.
+- `MERCADOPAGO_WEBHOOK_SECRET`: opcional mientras la cuenta no esté verificada. Es la firma secreta del panel de Webhooks; cuando está cargada, toda notificación firmada debe validar esa firma.
 - `MERCADOPAGO_MODE`: `test` para pruebas y `production` cuando se hayan validado los cobros reales.
 - `MERCADOPAGO_NOTIFICATION_TOKEN`: token aleatorio para las notificaciones de suscripciones que no incluyan firma.
 
-Notificaciones: `/api/webhooks/mercadopago`. La creación de cada checkout agrega una notification_url con el token de servidor. No publicar esa URL completa. Configurar los eventos `payment`, `subscription_preapproval` y `subscription_authorized_payment` según la configuración que admita el producto. La documentación de Suscripciones indica que sus avisos se configuran durante la creación del pago mediante notification_url; la configuración genérica del panel no aplica a ese flujo. Los packs sí utilizan el panel Webhooks.
+### Probar sin el panel de Webhooks
+
+La verificación de la cuenta solo bloquea el panel de Webhooks; no impide probar. Cada checkout ya envía su propia `notification_url` con el token privado, así que las notificaciones de packs y suscripciones llegan sin configurar el panel. Mientras falte `MERCADOPAGO_WEBHOOK_SECRET`, el servidor autentica con ese token e ignora la firma. También acepta el formato IPN (`?topic=payment&id=...`) que Mercado Pago envía a la misma URL y responde 200 a `merchant_order` sin procesarlo.
+
+1. En Mercado Pago Developers → Tus integraciones → amoblaIA → **Cuentas de prueba**, crear un vendedor y un comprador de prueba.
+2. Copiar en Vercel las credenciales del vendedor de prueba: `MERCADOPAGO_ACCESS_TOKEN` y su ID de usuario como `MERCADOPAGO_COLLECTOR_ID`. Dejar `MERCADOPAGO_MODE=test`.
+3. Cargar `MERCADOPAGO_NOTIFICATION_TOKEN`, `SELLER_NAME`, `SELLER_CUIT`, `SUPPORT_EMAIL` o `NEXT_PUBLIC_CONTACT_URL` y `BILLING_ENABLED=true`. Redeploy.
+4. En Administración, fijar un precio de prueba y activar un pack.
+5. Ingresar con un email de `ADMIN_EMAILS`, abrir `/precios`, comprar el pack e iniciar sesión en el checkout con el comprador de prueba. Usar las tarjetas de prueba de la documentación de Mercado Pago.
+6. Confirmar en Mi cuenta que el saldo sube una sola vez y en la tabla `webhook_events` que el evento tenga `processed_at` sin `last_error`. Si `last_error` dice `SELLER_MISMATCH` o `PAYMENT_MODE_MISMATCH`, revisar el collector ID y el modo.
+
+Cuando la cuenta esté verificada, configurar el panel de Webhooks y cargar `MERCADOPAGO_WEBHOOK_SECRET` antes de pasar a producción.
+
+### Notificaciones
+
+Ruta: `/api/webhooks/mercadopago`. La creación de cada checkout agrega una notification_url con el token de servidor. No publicar esa URL completa. Configurar los eventos `payment`, `subscription_preapproval` y `subscription_authorized_payment` según la configuración que admita el producto. La documentación de Suscripciones indica que sus avisos se configuran durante la creación del pago mediante notification_url; la configuración genérica del panel no aplica a ese flujo. Los packs sí utilizan el panel Webhooks.
 
 Las notificaciones se guardan antes de responder. Luego se consulta la API de Mercado Pago y se validan vendedor, moneda, importe, ambiente, orden y relación de la factura con la suscripción. La firma se verifica cuando viene presente; los callbacks sin firma requieren el token aleatorio. La acreditación tiene claves únicas y transacciones, por lo que los reintentos no duplican fotos. Un retorno `success` o una suscripción `authorized` sin pago aprobado no habilitan saldo.
 

@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { PricingPlans } from "@/components/pricing";
 import { cloudConfigured, cloudEnabled } from "@/lib/supabase/config";
-import { adminClient } from "@/lib/supabase/server";
+import { adminClient, currentUser } from "@/lib/supabase/server";
+import { isAdmin } from "@/lib/commerce/http";
 import { billingConfigured } from "@/lib/commerce/mercadopago";
 import type { Product } from "@/lib/commerce/catalog";
 export const metadata: Metadata = { title: "Planes y packs de fotos" };
@@ -16,14 +17,14 @@ export default async function Pricing() {
       /* Plans stay unavailable when the catalog cannot be loaded. */
     }
   }
+  // Sandbox checkouts stay reserved to the team, so only admins see the buttons outside production.
+  let canBuy = cloudEnabled() && billingConfigured();
+  if (canBuy && process.env.MERCADOPAGO_MODE !== "production")
+    canBuy = isAdmin((await currentUser().catch(() => null))?.email);
   return (
     <PricingPlans
       products={products}
-      enabled={
-        cloudEnabled() &&
-        billingConfigured() &&
-        process.env.MERCADOPAGO_MODE === "production"
-      }
+      enabled={canBuy}
       trial={cloudEnabled() && process.env.LIVE_TRIAL_ENABLED === "true"}
     />
   );

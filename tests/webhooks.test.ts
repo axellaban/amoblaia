@@ -116,6 +116,42 @@ describe("Mercado Pago notification ingress", () => {
     );
     expect(mocks.after).not.toHaveBeenCalled();
   });
+  it("relies on the callback token while the Webhooks panel secret is not configured", async () => {
+    vi.stubEnv("MERCADOPAGO_WEBHOOK_SECRET", "");
+    const signed = notification({
+      authenticated: true,
+      signature: `ts=123,v1=${"0".repeat(64)}`,
+    });
+    expect((await POST(signed)).status).toBe(200);
+    expect((await POST(notification())).status).toBe(401);
+  });
+  it("accepts legacy IPN payment callbacks sent to the notification URL", async () => {
+    const response = await POST(
+      new Request(
+        `https://amobla.example/api/webhooks/mercadopago?topic=payment&id=123456&token=${token}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ resource: "123456", topic: "payment" }),
+        },
+      ),
+    );
+    expect(response.status).toBe(200);
+    expect(mocks.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ topic: "payment", resource_id: "123456" }),
+      expect.anything(),
+    );
+  });
+  it("acknowledges legacy merchant_order callbacks without retries", async () => {
+    const response = await POST(
+      new Request(
+        "https://amobla.example/api/webhooks/mercadopago?topic=merchant_order&id=987",
+        { method: "POST", body: JSON.stringify({ topic: "merchant_order" }) },
+      ),
+    );
+    expect(response.status).toBe(200);
+    expect(mocks.upsert).not.toHaveBeenCalled();
+  });
   it("ignores unrelated event topics without performing financial work", async () => {
     expect((await POST(notification({ topic: "mp-connect" }))).status).toBe(
       200,
