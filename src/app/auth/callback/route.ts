@@ -2,8 +2,7 @@ import { cookies } from "next/headers";
 import { GUEST_COOKIE } from "@/lib/guest-token";
 import { NextResponse } from "next/server";
 import { userClient } from "@/lib/supabase/server";
-import { guestId } from "@/lib/commerce/guest";
-import { rpc } from "@/lib/commerce/http";
+import { claimGuest, guestId } from "@/lib/commerce/guest";
 import { safeNext } from "@/lib/commerce/redirect";
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -15,10 +14,7 @@ export async function GET(request: Request) {
       const { data } = await supabase.auth.getUser();
       const guest = await guestId();
       if (guest && data.user?.email_confirmed_at && guest !== data.user.id)
-        await rpc("amobla_claim_guest", {
-          p_guest: guest,
-          p_user: data.user.id,
-        });
+        await claimGuest(guest, data.user.id);
       (await cookies()).delete(GUEST_COOKIE);
       return NextResponse.redirect(
         new URL(
