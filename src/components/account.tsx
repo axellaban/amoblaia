@@ -77,7 +77,7 @@ export function AccountDashboard() {
     try {
       const r = await fetch("/api/account", { cache: "no-store" });
       if (r.status === 401) {
-        window.location.assign("/acceso");
+        window.location.assign("/acceso?next=%2Fcuenta");
         return;
       }
       const p = await r.json();
@@ -96,7 +96,33 @@ export function AccountDashboard() {
   }, []);
   useEffect(() => {
     void load();
+    // Arriving from a card payment: confirm it, then drop the flag from the URL.
+    const done = new URLSearchParams(window.location.search).get("suscripcion");
+    if (done) {
+      setNotice(
+        done === "cambiada"
+          ? "Cambiaste de plan. Cancelamos la renovación del anterior y conservás sus fotos hasta su vencimiento."
+          : "¡Listo! Tu suscripción está activa. El primer cobro se confirma en unos minutos y ahí se habilitan tus fotos.",
+      );
+      window.history.replaceState(null, "", "/cuenta");
+    }
   }, [load]);
+  // Until Mercado Pago confirms the first charge, refresh on its own so the
+  // photos appear without reloading (for at most ten minutes).
+  const awaitingPayment = Boolean(
+    account?.subscriptions.some(
+      (s) => s.status === "authorized" && !s.paid_until,
+    ),
+  );
+  useEffect(() => {
+    if (!awaitingPayment) return;
+    let rounds = 0;
+    const timer = setInterval(() => {
+      if (++rounds > 40) clearInterval(timer);
+      else if (document.visibilityState === "visible") void load();
+    }, 15000);
+    return () => clearInterval(timer);
+  }, [awaitingPayment, load]);
   async function cancelSubscription(id: string) {
     setBusy(true);
     try {
@@ -208,7 +234,11 @@ export function AccountDashboard() {
                 <ArrowUpRight size={16} />
               </Link>
               <Link className="text-link" href="/precios">
-                Elegir un plan
+                {account.subscriptions.some((s) =>
+                  ["authorized", "pending", "paused"].includes(s.status),
+                )
+                  ? "Cambiar de plan"
+                  : "Elegir un plan"}
                 <ArrowUpRight size={16} />
               </Link>
             </article>
@@ -238,7 +268,9 @@ export function AccountDashboard() {
                     <p>
                       {s.paid_until
                         ? `Período pagado hasta ${date(s.paid_until)}`
-                        : "Esperando la confirmación del primer pago."}
+                        : s.status === "cancelled"
+                          ? "Sin cobros."
+                          : "Esperando la confirmación del primer pago."}
                     </p>
                   </div>
                   {["authorized", "pending", "paused"].includes(s.status) &&
@@ -260,13 +292,18 @@ export function AccountDashboard() {
                         </button>
                       </div>
                     ) : (
-                      <button
-                        className="button button-outline"
-                        disabled={busy}
-                        onClick={() => setCancel(s.id)}
-                      >
-                        Cancelar renovación
-                      </button>
+                      <div className="subscription-actions">
+                        <Link className="button button-primary" href="/precios">
+                          Cambiar de plan
+                        </Link>
+                        <button
+                          className="button button-outline"
+                          disabled={busy}
+                          onClick={() => setCancel(s.id)}
+                        >
+                          Cancelar renovación
+                        </button>
+                      </div>
                     ))}
                 </div>
               ))

@@ -7043,3 +7043,12 @@ h2 .accent {
     padding: 28px 16px 20px;
   }
 }
+.google-native .google-main {
+  width: 100%;
+  max-width: 400px;
+}
+.subscription-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}

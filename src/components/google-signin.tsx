@@ -56,6 +56,7 @@ export function GoogleSignIn({ next }: { next: string | null }) {
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
   const [redirecting, setRedirecting] = useState(false);
+  const [slow, setSlow] = useState(false);
   const redirect = async () => {
     setRedirecting(true);
     setError("");
@@ -68,6 +69,11 @@ export function GoogleSignIn({ next }: { next: string | null }) {
   };
   useEffect(() => {
     let active = true;
+    // A blocked or hanging Google script never settles; after a few seconds
+    // the same-tab sign-in becomes the main path instead of an endless wait.
+    const slow = setTimeout(() => {
+      if (active) setSlow(true);
+    }, 6000);
     async function init() {
       try {
         await loadGoogle();
@@ -136,12 +142,17 @@ export function GoogleSignIn({ next }: { next: string | null }) {
     void init();
     return () => {
       active = false;
+      clearTimeout(slow);
     };
   }, [next]);
+  // Without a working Google button, the same-tab sign-in is the main action.
+  const fallbackFirst = !ready && (slow || Boolean(error));
   return (
     <div className="google-native" aria-busy={busy}>
       <div ref={ref} />
-      {!ready && !error && <p role="status">Cargando acceso con Google…</p>}
+      {!ready && !error && !slow && (
+        <p role="status">Cargando acceso con Google…</p>
+      )}
       {busy && <p role="status">Ingresando a amoblaIA…</p>}
       {error && (
         <p className="inline-error" role="alert">
@@ -150,7 +161,11 @@ export function GoogleSignIn({ next }: { next: string | null }) {
       )}
       <button
         type="button"
-        className="google-fallback"
+        className={
+          fallbackFirst
+            ? "button button-primary google-main"
+            : "google-fallback"
+        }
         onClick={redirect}
         disabled={redirecting || busy}
       >
@@ -158,7 +173,7 @@ export function GoogleSignIn({ next }: { next: string | null }) {
           ? "Abriendo Google…"
           : ready
             ? "¿No se abre? Ingresá con Google en esta pestaña"
-            : "Continuar con Google en esta pestaña"}
+            : "Continuar con Google"}
       </button>
     </div>
   );
