@@ -594,7 +594,7 @@ export function Landing({
               {ctaBlock("hx-desktop")}
             </div>
             <div className="hx-final-visual">
-              <img src={examplePath("living", "scandinavian")} alt="" />
+              <img src="/home/cierre.webp" alt="" loading="lazy" />
               <div className="hx-includes">
                 <p>Incluye</p>
                 {highlights.slice(0, 4).map((h) => (
