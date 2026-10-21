@@ -6,7 +6,11 @@ import {
   isAdmin,
 } from "@/lib/commerce/http";
 import { adminClient } from "@/lib/supabase/server";
-import { billingConfigured, mp } from "@/lib/commerce/mercadopago";
+import {
+  billingConfigured,
+  isDuplicateSubscription,
+  mp,
+} from "@/lib/commerce/mercadopago";
 import type { Product } from "@/lib/commerce/catalog";
 export async function POST(request: Request) {
   try {
@@ -130,10 +134,40 @@ export async function POST(request: Request) {
         .eq("user_id", user.id);
       if (replaced.error) throw new Error("CHECKOUT_REPLACE_FAILED");
     }
+    // Plan change: a new plan replaces the open subscription. It is only
+    // cancelled once Mercado Pago has authorized the new one, below.
+    let replacing: { id: string; order_id: string } | null = null;
+    if (!sku.startsWith("pack-")) {
+      const current = await db
+        .from("subscriptions")
+        .select("id,order_id,status,orders(sku)")
+        .eq("user_id", user.id)
+        .in("status", ["authorized", "pending", "paused"])
+        .limit(1)
+        .maybeSingle();
+      if (current.error) throw new Error("SUBSCRIPTION_LOOKUP_FAILED");
+      if (current.data) {
+        const order = current.data.orders as unknown as { sku: string } | null;
+        if (order?.sku === sku) throw new HttpError(409, "Ya tenés este plan.");
+        if (!card)
+          throw new HttpError(
+            409,
+            "Para cambiar de plan, elegilo desde Precios y pagalo con tarjeta.",
+          );
+        replacing = { id: current.data.id, order_id: current.data.order_id };
+      }
+    }
     const created = await rpc<{
       order: { snapshot: Product; checkout_url: string | null };
       dispatch: boolean;
-    }>("amobla_create_order", { p_user: user.id, p_id: key, p_sku: sku });
+    }>("amobla_create_order", {
+      p_user: user.id,
+      p_id: key,
+      p_sku: sku,
+      // Only sent for changes, so purchases keep working before the
+      // plan-change migration is applied.
+      ...(replacing ? { p_replace: true } : {}),
+    });
     const snapshot = created.order.snapshot;
     if (!created.dispatch) {
       if (created.order.checkout_url)
@@ -222,8 +256,11 @@ export async function POST(request: Request) {
     } catch (e) {
       // A 4xx answer means Mercado Pago created nothing (for example, a
       // declined card); the order is closed so the buyer can retry.
+      // Timeouts, conflicts and rate limits (408/409/429) are not answers.
       const refused =
-        card && e instanceof Error && /^MERCADOPAGO_4\d\d$/.test(e.message);
+        card &&
+        e instanceof Error &&
+        /^MERCADOPAGO_4(?!08|09|29)\d\d$/.test(e.message);
       await db
         .from("orders")
         .update({
@@ -238,6 +275,39 @@ export async function POST(request: Request) {
       throw e;
     }
     if (card) {
+      if (replacing) {
+        // Stop the old plan's renewals. If that fails, the new subscription
+        // is cancelled too, so the buyer is never billed for two plans.
+        try {
+          await mp(`/preapproval/${encodeURIComponent(replacing.id)}`, "PUT", {
+            status: "cancelled",
+          });
+        } catch {
+          await mp(`/preapproval/${encodeURIComponent(checkout.id)}`, "PUT", {
+            status: "cancelled",
+          }).catch(() =>
+            console.error("plan_change_rollback_failed", checkout.id),
+          );
+          await db
+            .from("orders")
+            .update({ status: "checkout_failed" })
+            .eq("id", key);
+          throw new HttpError(
+            502,
+            "No pudimos cambiar tu plan y no activamos el nuevo. Tu plan actual sigue igual; probá de nuevo en unos minutos.",
+          );
+        }
+        await db
+          .from("subscriptions")
+          .update({ status: "cancelled" })
+          .eq("id", replacing.id);
+        await db
+          .from("orders")
+          .update({ status: "cancelled" })
+          .eq("id", replacing.order_id);
+      }
+      // Mercado Pago has already authorized the subscription: a failed write
+      // here must not tell the buyer that it failed. The webhook reconciles it.
       const saved = await db
         .from("orders")
         .update({
@@ -247,17 +317,19 @@ export async function POST(request: Request) {
           status: "checkout_ready",
         })
         .eq("id", key);
-      if (saved.error) throw new Error("CHECKOUT_SAVE_FAILED");
-      const sub = await db.from("subscriptions").insert({
-        id: checkout.id,
-        order_id: key,
-        user_id: user.id,
-        status: "authorized",
-      });
-      if (sub.error && sub.error.code !== "23505")
-        throw new Error("SUBSCRIPTION_SAVE_FAILED");
+      if (saved.error) console.error("card_order_save_deferred", key);
+      else {
+        const sub = await db.from("subscriptions").insert({
+          id: checkout.id,
+          order_id: key,
+          user_id: user.id,
+          status: "authorized",
+        });
+        if (sub.error && !isDuplicateSubscription(sub.error))
+          console.error("card_subscription_save_deferred", checkout.id);
+      }
       return Response.json(
-        { subscribed: true },
+        { subscribed: true, changed: Boolean(replacing) },
         { headers: { "Cache-Control": "no-store" } },
       );
     }

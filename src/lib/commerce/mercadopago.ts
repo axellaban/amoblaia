@@ -9,6 +9,7 @@ export type Order = {
   snapshot: Product;
   provider_subscription_id: string | null;
   checkout_url: string | null;
+  status: string;
 };
 type Subscription = {
   id: string;
@@ -114,7 +115,19 @@ export async function mp<T>(
     signal: AbortSignal.timeout(15000),
     cache: "no-store",
   });
-  if (!response.ok) throw new Error(`MERCADOPAGO_${response.status}`);
+  if (!response.ok) {
+    // Mercado Pago's reason (e.g. a card or payer error) is kept for support;
+    // its body holds no credentials.
+    const reason = await response.text().catch(() => "");
+    console.error(
+      "mercadopago_error",
+      method,
+      path.split("?")[0].replace(/\/[^/]*\d[^/]*$/, "/:id"),
+      response.status,
+      reason.slice(0, 300),
+    );
+    throw new Error(`MERCADOPAGO_${response.status}`);
+  }
   return response.json() as Promise<T>;
 }
 function verifySeller(id: number | string) {
@@ -136,6 +149,15 @@ export function validatePayment(payment: Payment, order: Order) {
   if (order.snapshot.kind === "pack" && payment.external_reference !== order.id)
     throw new Error("PAYMENT_ORDER_MISMATCH");
 }
+/** True only when this very subscription row already exists. A clash with
+ * another open subscription of the user (subscriptions_one_open) is an error:
+ * ignoring it would leave a paid subscription without its row. */
+export function isDuplicateSubscription(error: {
+  code?: string;
+  message?: string;
+}) {
+  return error.code === "23505" && !/one_open/.test(error.message || "");
+}
 async function getOrder(id: string) {
   const { data, error } = await adminClient()
     .from("orders")
@@ -148,7 +170,29 @@ async function getOrder(id: string) {
 export async function syncSubscription(id: string) {
   const sub = await mp<Subscription>(`/preapproval/${encodeURIComponent(id)}`);
   verifySeller(sub.collector_id);
-  const order = await getOrder(String(sub.external_reference));
+  let order = await getOrder(String(sub.external_reference));
+  // Mercado Pago may have created the subscription while saving its id
+  // failed (timeout, crash). The verified seller and our own order id in
+  // external_reference identify it, so the order adopts it instead of the
+  // payment being stranded.
+  if (
+    !order.provider_subscription_id &&
+    ["creating", "checkout_needs_review", "checkout_failed"].includes(
+      order.status,
+    )
+  ) {
+    const adopted = await adminClient()
+      .from("orders")
+      .update({
+        provider_subscription_id: sub.id,
+        checkout_id: sub.id,
+        status: "checkout_ready",
+      })
+      .eq("id", order.id)
+      .is("provider_subscription_id", null);
+    if (adopted.error) throw new Error("ORDER_ADOPT_FAILED");
+    order = await getOrder(order.id);
+  }
   const a = sub.auto_recurring;
   if (
     order.provider_subscription_id !== sub.id ||
@@ -168,15 +212,13 @@ export async function syncSubscription(id: string) {
     .maybeSingle();
   if (saved.error) throw new Error("SUBSCRIPTION_SAVE_FAILED");
   if (!saved.data) {
-    const created = await db
-      .from("subscriptions")
-      .insert({
-        id: sub.id,
-        order_id: order.id,
-        user_id: order.user_id,
-        status: sub.status,
-      });
-    if (created.error && created.error.code !== "23505")
+    const created = await db.from("subscriptions").insert({
+      id: sub.id,
+      order_id: order.id,
+      user_id: order.user_id,
+      status: sub.status,
+    });
+    if (created.error && !isDuplicateSubscription(created.error))
       throw new Error("SUBSCRIPTION_SAVE_FAILED");
   }
   if (sub.status === "cancelled")

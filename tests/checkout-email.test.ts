@@ -4,13 +4,16 @@ const state = vi.hoisted(() => ({
   status: "pending",
   calls: [] as unknown[],
   fail: "",
+  current: null as null | Record<string, unknown>,
+  cancelFails: false,
+  rpcArgs: [] as unknown[],
 }));
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/commerce/http", async (original) => ({
   ...(await original<typeof import("../src/lib/commerce/http")>()),
   requireUser: async () => ({ id: "user-id", email: "google@example.com" }),
-  rpc: vi.fn(async (name: string) =>
-    name === "amobla_account"
+  rpc: vi.fn(async (name: string, args: unknown) =>
+    (state.rpcArgs.push({ name, args }), name === "amobla_account")
       ? { blocked: false }
       : {
           dispatch: true,
@@ -29,7 +32,11 @@ vi.mock("@/lib/supabase/server", () => ({
         not: () => q,
         order: () => q,
         limit: () => q,
-        maybeSingle: async () => ({ data: state.open, error: null }),
+        in: () => q,
+        maybeSingle: async () => ({
+          data: table === "subscriptions" ? state.current : state.open,
+          error: null,
+        }),
         update: (data: unknown) => {
           state.calls.push({ table, data });
           return q;
@@ -46,6 +53,7 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 vi.mock("@/lib/commerce/mercadopago", () => ({
   billingConfigured: () => true,
+  isDuplicateSubscription: () => false,
   mp: vi.fn(async (path: string, method = "GET", body?: unknown) => {
     state.calls.push({ path, method, body });
     if (method === "GET")
@@ -54,7 +62,11 @@ vi.mock("@/lib/commerce/mercadopago", () => ({
         external_reference: "old-order",
         collector_id: 123,
       };
-    if (method === "PUT") return { status: "cancelled" };
+    if (method === "PUT") {
+      if (state.cancelFails && path.includes("current-sub"))
+        throw new Error("MERCADOPAGO_500");
+      return { status: "cancelled" };
+    }
     if (state.fail) throw new Error(state.fail);
     return {
       id: "new-sub",
@@ -69,6 +81,9 @@ beforeEach(() => {
   state.status = "pending";
   state.calls = [];
   state.fail = "";
+  state.current = null;
+  state.cancelFails = false;
+  state.rpcArgs = [];
   vi.stubEnv("MERCADOPAGO_MODE", "production");
   vi.stubEnv("MERCADOPAGO_COLLECTOR_ID", "123");
   vi.stubEnv("APP_URL", "https://amobla.example");
@@ -166,7 +181,7 @@ describe("Card subscriptions", () => {
   it("creates an authorized subscription with the account email, no Mercado Pago login", async () => {
     const r = await POST(cardRequest("a1b2c3d4e5f60718293a4b5c6d7e8f90"));
     expect(r.status).toBe(200);
-    expect(await r.json()).toEqual({ subscribed: true });
+    expect(await r.json()).toEqual({ subscribed: true, changed: false });
     expect(state.calls).toContainEqual(
       expect.objectContaining({
         path: "/preapproval",
@@ -209,5 +224,73 @@ describe("Card subscriptions", () => {
   it("rejects a malformed card token before calling Mercado Pago", async () => {
     expect((await POST(cardRequest("<script>"))).status).toBe(400);
     expect(state.calls).toEqual([]);
+  });
+  it("does not open a checkout when Mercado Pago only rate-limits the request", async () => {
+    state.fail = "MERCADOPAGO_429";
+    expect(
+      (await POST(cardRequest("a1b2c3d4e5f60718293a4b5c6d7e8f90"))).status,
+    ).toBe(500);
+    expect(state.calls).toContainEqual({
+      table: "orders",
+      data: { status: "checkout_needs_review" },
+    });
+  });
+});
+describe("Plan changes", () => {
+  const token = "a1b2c3d4e5f60718293a4b5c6d7e8f90";
+  beforeEach(() => {
+    state.current = {
+      id: "current-sub",
+      order_id: "current-order",
+      status: "authorized",
+      orders: { sku: "standard-month" },
+    };
+  });
+  it("replaces the current plan and cancels it only after the new one is authorized", async () => {
+    const r = await POST(cardRequest(token));
+    expect(await r.json()).toEqual({ subscribed: true, changed: true });
+    expect(state.rpcArgs).toContainEqual({
+      name: "amobla_create_order",
+      args: expect.objectContaining({ p_replace: true }),
+    });
+    const created = state.calls.findIndex(
+      (c) => (c as { path?: string }).path === "/preapproval",
+    );
+    const cancelled = state.calls.findIndex(
+      (c) => (c as { path?: string }).path === "/preapproval/current-sub",
+    );
+    expect(created).toBeGreaterThanOrEqual(0);
+    expect(cancelled).toBeGreaterThan(created);
+    expect(state.calls).toContainEqual({
+      table: "subscriptions",
+      data: { status: "cancelled" },
+    });
+  });
+  it("rolls back the new plan when the old one cannot be cancelled", async () => {
+    state.cancelFails = true;
+    const r = await POST(cardRequest(token));
+    expect(r.status).toBe(502);
+    expect(state.calls).toContainEqual({
+      path: "/preapproval/new-sub",
+      method: "PUT",
+      body: { status: "cancelled" },
+    });
+    expect(state.calls).not.toContainEqual({
+      table: "subscriptions",
+      data: { status: "cancelled" },
+    });
+  });
+  it("refuses to buy the plan the user already has", async () => {
+    state.current = { ...state.current, orders: { sku: "basic-month" } };
+    expect((await POST(cardRequest(token))).status).toBe(409);
+    expect(state.calls).toEqual([]);
+  });
+  it("keeps a first purchase compatible with the database before the migration", async () => {
+    state.current = null;
+    await POST(cardRequest(token));
+    const call = state.rpcArgs.find(
+      (c) => (c as { name: string }).name === "amobla_create_order",
+    ) as { args: Record<string, unknown> };
+    expect(call.args).not.toHaveProperty("p_replace");
   });
 });

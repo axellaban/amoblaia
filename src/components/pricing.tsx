@@ -42,7 +42,7 @@ const faqs = [
   ],
   [
     "¿Puedo cambiar de plan?",
-    "Sí. Cancelá tu plan actual desde Mi cuenta y elegí el nuevo. No hacemos prorrateos automáticos.",
+    "Sí, cuando quieras: elegí el nuevo plan acá y pagalo con tarjeta. Se activa en el momento, cancelamos la renovación del anterior y conservás las fotos que ya pagaste hasta su vencimiento. No hacemos prorrateos.",
   ],
   [
     "¿Hacen reembolsos?",
@@ -58,15 +58,18 @@ export function PricingPlans({
   enabled,
   trial,
   email,
+  currentSku,
 }: {
   products: Product[];
   enabled: boolean;
   trial: boolean;
   /** Signed-in email, used as the subscriber email for card payments. */
   email?: string;
+  /** The plan the user is subscribed to, if any. */
+  currentSku?: string;
 }) {
   const checkoutKeys = useRef<Record<string, string>>({});
-  const [annual, setAnnual] = useState(true),
+  const [annual, setAnnual] = useState(!currentSku?.endsWith("-month")),
     [busy, setBusy] = useState(""),
     [error, setError] = useState(""),
     [payerEmail, setPayerEmail] = useState(""),
@@ -172,7 +175,9 @@ export function PricingPlans({
       }
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error);
-      window.location.assign("/cuenta");
+      window.location.assign(
+        `/cuenta?suscripcion=${payload.changed ? "cambiada" : "activa"}`,
+      );
     } catch (e) {
       setError(
         e instanceof Error && e.message
@@ -230,7 +235,7 @@ export function PricingPlans({
           )}
           <button
             className="button button-primary"
-            disabled={!ready || Boolean(busy)}
+            disabled={!ready || Boolean(busy) || sku === currentSku}
             onClick={() => {
               setError("");
               // Packs go straight to Checkout Pro, which takes any account.
@@ -244,7 +249,13 @@ export function PricingPlans({
             ) : (
               <ArrowUpRight size={18} />
             )}{" "}
-            {ready ? "Empezar" : "Disponible pronto"}
+            {!ready
+              ? "Disponible pronto"
+              : sku === currentSku
+                ? "Tu plan actual"
+                : currentSku
+                  ? "Cambiar a este plan"
+                  : "Empezar"}
           </button>
         </div>
         <ul className={`plan-features ${expandedPlans[sku] ? "expanded" : ""}`}>
@@ -344,7 +355,9 @@ export function PricingPlans({
               <span className="eyebrow">PAGO SEGURO CON MERCADO PAGO</span>
               <h2 id="checkout-title">
                 {cardCheckout
-                  ? "Completá tu suscripción"
+                  ? currentSku
+                    ? "Cambiá de plan"
+                    : "Completá tu suscripción"
                   : "Confirmá tu email de Mercado Pago"}
               </h2>
               {selectedProduct && (
@@ -375,6 +388,13 @@ export function PricingPlans({
                     tarjeta los procesa Mercado Pago; no necesitás una cuenta de
                     Mercado Pago.
                   </p>
+                  {currentSku && (
+                    <p className="field-hint">
+                      El nuevo plan se activa en el momento. Cancelamos la
+                      renovación de tu plan actual y conservás sus fotos hasta
+                      su vencimiento.
+                    </p>
+                  )}
                   {error && (
                     <p className="inline-error" role="alert">
                       {error}

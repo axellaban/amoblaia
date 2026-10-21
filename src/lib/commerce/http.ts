@@ -30,11 +30,11 @@ export async function requireUser(request?: Request, allowGuest = false) {
 export function isAdmin(email?: string) {
   return Boolean(
     email &&
-      (process.env.ADMIN_EMAILS || "")
-        .split(",")
-        .map((s) => s.trim().toLowerCase())
-        .filter(Boolean)
-        .includes(email.toLowerCase()),
+    (process.env.ADMIN_EMAILS || "")
+      .split(",")
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean)
+      .includes(email.toLowerCase()),
   );
 }
 export async function requireAdmin(request?: Request) {
@@ -46,9 +46,10 @@ export async function requireAdmin(request?: Request) {
 export function failure(error: unknown) {
   if (error instanceof HttpError)
     return Response.json({ error: error.message }, { status: error.status });
+  // Internal messages are short codes (e.g. MERCADOPAGO_400), never secrets.
   console.error(
     "commerce_error",
-    error instanceof Error ? error.name : "unknown",
+    error instanceof Error ? error.message.slice(0, 120) : "unknown",
   );
   return Response.json(
     { error: "No pudimos completar la operación. Intentá nuevamente." },

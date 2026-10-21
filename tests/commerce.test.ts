@@ -43,6 +43,7 @@ describe("Payment boundary", () => {
       user_id: "user-1",
       provider_subscription_id: null,
       checkout_url: null,
+      status: "checkout_ready",
       snapshot: {
         sku: "pack-10",
         name: "Pack",
