@@ -11,7 +11,8 @@ Producción: https://amoblaia.vercel.app/
 - Home y pie de página rehechos sobre la referencia, con traducción fiel y datos propios (minutos, 10 estilos, precios en pesos). Se omitieron las citas de prensa y las redes sociales de la referencia porque amoblaIA no las tiene.
 - Ejemplos: 79 escenas para 8 ambientes y 10 estilos. Faltan Clásico y Estándar en comedor, cocina, home office, patio, monoambiente y quincho (Estándar en comedor también); se generan con `scripts/generate-examples.ts` al recargar crédito. Falta también la foto propia de personas del bloque final; hoy usa un living de ejemplo.
 - Cierre de sesión con alcance local y modal de email de pago con Escape y foco: hechos.
-- Siguen pendientes los puntos 4 a 8 de «Siguiente pasada técnica».
+- Puntos 4 y 5 de «Siguiente pasada técnica» resueltos: un rechazo de tanda ya no deja proyecto ni original, y los originales duplicados del invitado se borran al convertir. **Aplicar en Supabase la migración `202610210001_claim_guest_orphans.sql`** (SQL Editor); hasta entonces la app funciona como antes y no borra esos originales.
+- Siguen pendientes los puntos 1, 6, 7 y 8: requieren sesión real, crédito de imágenes o servicios externos.
 
 ## Prioridad inmediata: bloqueos para el lanzamiento
 
