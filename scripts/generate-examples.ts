@@ -7,8 +7,10 @@
 // Needs OPENAI_API_KEY. Existing files are skipped, so a run can be resumed.
 import { existsSync, writeFileSync } from "node:fs";
 import sharp from "sharp";
-import { buildPrompt } from "../src/lib/catalog.ts";
-import { exampleRooms, exampleStyles } from "../src/lib/examples.ts";
+import { buildPrompt, rooms, styles } from "../src/lib/catalog.ts";
+
+const exampleRooms = rooms.map((r) => r.id);
+const exampleStyles = styles.map((s) => s.id);
 
 const model = process.env.OPENAI_IMAGE_MODEL || "gpt-image-2.5-sunburst";
 const key = process.env.OPENAI_API_KEY;
@@ -27,6 +29,10 @@ const emptyRooms: Record<string, string> = {
     "an empty covered terrace of an Argentine house with ceramic floor tiles, a white parapet and trees in the background",
   dining:
     "an empty dining area of an Argentine apartment with porcelain floor tiles, white walls, a window and a ceiling light point",
+  studio:
+    "an empty compact studio apartment (monoambiente) in Buenos Aires with oak parquet floor, white walls, a small open kitchenette along one wall and a balcony door",
+  quincho:
+    "an empty Argentine quincho with a built-in brick parrilla on the back wall, terracotta floor tiles, a wooden beam ceiling and large windows to a garden",
 };
 
 const only = process.argv.find((a) => a.startsWith("--room="))?.slice(7);
