@@ -117,6 +117,10 @@ describe("Safe auth redirects", () => {
       "https://other.example",
       "//other.example",
       "/\\other.example",
+      // Dot segments that normalize into a protocol-relative URL.
+      "/.//other.example",
+      "/%2e//other.example",
+      "/a/..//other.example",
       null,
     ])
       expect(safeNext(v)).toBe("/cuenta");

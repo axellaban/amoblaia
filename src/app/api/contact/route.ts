@@ -32,8 +32,10 @@ export async function POST(request: Request) {
         400,
         "Revisá el email y completá la consulta y el consentimiento.",
       );
+    // Vercel sets this header at the edge; a client-sent x-forwarded-for
+    // could rotate per request and slip past the rate limit.
     const ip =
-      request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+      request.headers.get("x-vercel-forwarded-for")?.split(",")[0]?.trim() ||
       "unknown";
     const rateKey = createHash("sha256")
       .update(
