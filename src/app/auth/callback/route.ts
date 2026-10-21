@@ -28,5 +28,13 @@ export async function GET(request: Request) {
       );
     }
   }
-  return NextResponse.redirect(new URL("/acceso?error=enlace", url.origin));
+  // A Google sign-in that was cancelled or failed returns here without a code.
+  const failed = new URL("/acceso", url.origin);
+  failed.searchParams.set(
+    "error",
+    url.searchParams.has("error") || code ? "google" : "enlace",
+  );
+  const next = url.searchParams.get("next");
+  if (next) failed.searchParams.set("next", safeNext(next, "/proyectos"));
+  return NextResponse.redirect(failed);
 }

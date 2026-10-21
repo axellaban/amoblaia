@@ -34,11 +34,38 @@ function loadGoogle() {
     });
   return scriptPromise;
 }
+// Full-page OAuth through Supabase. It needs no popup or FedCM, so it works
+// when the browser blocks those and the Google button does nothing.
+async function redirectToGoogle(next: string | null) {
+  const client = browserClient();
+  if (!client) throw new Error("AUTH_UNAVAILABLE");
+  const callback = new URL("/auth/callback", window.location.origin);
+  callback.searchParams.set("next", safeNext(next, "/proyectos"));
+  const { error } = await client.auth.signInWithOAuth({
+    provider: "google",
+    options: {
+      redirectTo: callback.toString(),
+      queryParams: { prompt: "select_account" },
+    },
+  });
+  if (error) throw error;
+}
 export function GoogleSignIn({ next }: { next: string | null }) {
   const ref = useRef<HTMLDivElement>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
+  const [redirecting, setRedirecting] = useState(false);
+  const redirect = async () => {
+    setRedirecting(true);
+    setError("");
+    try {
+      await redirectToGoogle(next);
+    } catch {
+      setRedirecting(false);
+      setError("No pudimos abrir Google. Volvé a intentarlo en unos segundos.");
+    }
+  };
   useEffect(() => {
     let active = true;
     async function init() {
@@ -121,6 +148,18 @@ export function GoogleSignIn({ next }: { next: string | null }) {
           {error}
         </p>
       )}
+      <button
+        type="button"
+        className="google-fallback"
+        onClick={redirect}
+        disabled={redirecting || busy}
+      >
+        {redirecting
+          ? "Abriendo Google…"
+          : ready
+            ? "¿No se abre? Ingresá con Google en esta pestaña"
+            : "Continuar con Google en esta pestaña"}
+      </button>
     </div>
   );
 }

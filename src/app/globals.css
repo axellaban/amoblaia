@@ -4436,6 +4436,22 @@ h2 .accent {
 .google-native p {
   font-size: 14px;
 }
+.google-fallback {
+  border: 0;
+  background: none;
+  padding: 4px;
+  color: var(--terracotta);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.google-fallback:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
 .page-intro h1 {
   font-size: 48px;
   line-height: 1.15;

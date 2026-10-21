@@ -77,9 +77,11 @@ export function AuthForm() {
     [password, setPassword] = useState(""),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(
-      params.get("error")
-        ? "El enlace venció o no es válido. Pedí uno nuevo."
-        : "",
+      params.get("error") === "google"
+        ? "No se completó el acceso con Google. Volvé a intentarlo."
+        : params.get("error")
+          ? "El enlace venció o no es válido. Pedí uno nuevo."
+          : "",
     ),
     [notice, setNotice] = useState(""),
     [accepted, setAccepted] = useState(false),
