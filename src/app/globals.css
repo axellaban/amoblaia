@@ -7019,3 +7019,27 @@ h2 .accent {
     grid-auto-rows: 1fr;
   }
 }
+/* Tall dialogs (the card form) scroll inside the backdrop instead of being
+   clipped; auto margins keep short dialogs centered. */
+.modal-backdrop {
+  align-items: flex-start;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.modal-backdrop > .modal {
+  margin: auto 0;
+}
+.checkout-modal {
+  width: 480px;
+}
+.card-brick {
+  margin-top: 16px;
+}
+@media (max-width: 600px) {
+  .modal-backdrop {
+    padding: 12px;
+  }
+  .checkout-modal {
+    padding: 28px 16px 20px;
+  }
+}
