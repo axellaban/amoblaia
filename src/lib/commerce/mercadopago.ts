@@ -225,6 +225,54 @@ export async function syncSubscription(id: string) {
     await db.from("orders").update({ status: "cancelled" }).eq("id", order.id);
   return { sub, order };
 }
+/**
+ * Orders left half-way (a timeout, a crash, a redirect checkout that never
+ * opened) would block every new purchase forever. After ten minutes, an
+ * order without a subscription is checked against Mercado Pago: one that
+ * exists there is adopted, otherwise nothing was created and it is closed.
+ */
+export async function settleStaleOrders(userId: string, emails: string[]) {
+  const db = adminClient();
+  const { data, error } = await db
+    .from("orders")
+    .select("id,snapshot,payer_email")
+    .eq("user_id", userId)
+    .in("status", ["creating", "checkout_needs_review"])
+    .is("provider_subscription_id", null)
+    .lt("created_at", new Date(Date.now() - 10 * 60 * 1000).toISOString());
+  if (error) throw new Error("ORDER_LOOKUP_FAILED");
+  for (const order of data || []) {
+    // A pack payment carries the order id and is credited from its webhook
+    // whatever this status, so closing a pack checkout loses nothing.
+    if ((order.snapshot as Product).kind !== "pack") {
+      const searched = new Set(
+        [order.payer_email, ...emails]
+          .filter((e): e is string => Boolean(e))
+          .map((e) => e.toLowerCase()),
+      );
+      let found: string | null = null;
+      for (const email of searched) {
+        const { results } = await mp<{
+          results: { id: string; external_reference: string | null }[];
+        }>(
+          `/preapproval/search?payer_email=${encodeURIComponent(email)}&limit=100`,
+        );
+        found =
+          results.find((s) => s.external_reference === order.id)?.id || null;
+        if (found) break;
+      }
+      if (found) {
+        await syncSubscription(found);
+        continue;
+      }
+    }
+    await db
+      .from("orders")
+      .update({ status: "checkout_failed" })
+      .eq("id", order.id)
+      .is("provider_subscription_id", null);
+  }
+}
 export async function syncPayment(id: string, subscriptionId?: string) {
   const payment = await mp<Payment>(`/v1/payments/${encodeURIComponent(id)}`);
   let order: Order;

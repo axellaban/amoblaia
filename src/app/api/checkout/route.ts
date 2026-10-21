@@ -10,6 +10,7 @@ import {
   billingConfigured,
   isDuplicateSubscription,
   mp,
+  settleStaleOrders,
 } from "@/lib/commerce/mercadopago";
 import type { Product } from "@/lib/commerce/catalog";
 export async function POST(request: Request) {
@@ -134,6 +135,12 @@ export async function POST(request: Request) {
         .eq("user_id", user.id);
       if (replaced.error) throw new Error("CHECKOUT_REPLACE_FAILED");
     }
+    // A half-finished earlier checkout must not block this purchase. If
+    // Mercado Pago cannot be checked now, the order keeps blocking.
+    await settleStaleOrders(user.id, [
+      user.email || "",
+      process.env.MERCADOPAGO_TEST_PAYER_EMAIL || "",
+    ]).catch(() => console.error("stale_orders_not_settled", user.id));
     // Plan change: a new plan replaces the open subscription. It is only
     // cancelled once Mercado Pago has authorized the new one, below.
     let replacing: { id: string; order_id: string } | null = null;

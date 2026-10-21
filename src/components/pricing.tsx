@@ -170,8 +170,14 @@ export function PricingPlans({
         body: JSON.stringify({ sku, key: crypto.randomUUID(), cardToken }),
       });
       if (response.status === 401) {
-        window.location.assign("/acceso?next=%2Fprecios");
-        return;
+        // Say it plainly before leaving: the card was not charged.
+        setTimeout(
+          () => window.location.assign("/acceso?next=%2Fprecios"),
+          3000,
+        );
+        throw new Error(
+          "Tu sesión venció y no se hizo ningún cobro. Te llevamos a entrar de nuevo…",
+        );
       }
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error);
@@ -238,6 +244,11 @@ export function PricingPlans({
             disabled={!ready || Boolean(busy) || sku === currentSku}
             onClick={() => {
               setError("");
+              // Sign in before the card form, not after the card is typed.
+              if (!email) {
+                window.location.assign("/acceso?next=%2Fprecios");
+                return;
+              }
               // Packs go straight to Checkout Pro, which takes any account.
               if (mercadoPagoPublicKey && sku.startsWith("pack-"))
                 void buy(sku);

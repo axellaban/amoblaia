@@ -54,6 +54,7 @@ vi.mock("@/lib/supabase/server", () => ({
 vi.mock("@/lib/commerce/mercadopago", () => ({
   billingConfigured: () => true,
   isDuplicateSubscription: () => false,
+  settleStaleOrders: vi.fn(async () => {}),
   mp: vi.fn(async (path: string, method = "GET", body?: unknown) => {
     state.calls.push({ path, method, body });
     if (method === "GET")
