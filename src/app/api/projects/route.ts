@@ -1,9 +1,12 @@
 import { requireUser, failure } from "@/lib/commerce/http";
 import { adminClient } from "@/lib/supabase/server";
 import { signPath } from "@/lib/commerce/jobs";
+import { adoptGuest } from "@/lib/commerce/guest";
 export async function GET(request: Request) {
   try {
     const user = await requireUser(undefined, true);
+    // Retries a trial hand-over that failed at sign-in, before listing.
+    await adoptGuest(user);
     const db = adminClient();
     const { data: projects, error } = await db
       .from("projects")

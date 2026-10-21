@@ -53,7 +53,9 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const user = await requireUser(request);
+    // Trial users manage their own photos too (the studio offers trashing);
+    // the RPC only touches projects owned by this id.
+    const user = await requireUser(request, true);
     const { id } = await params;
     if (Number(request.headers.get("content-length") || 0) > 2048)
       throw new HttpError(413, "Solicitud inválida.");

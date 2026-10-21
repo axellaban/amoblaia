@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { AuthForm } from "@/components/auth-form";
 import { currentUser } from "@/lib/supabase/server";
+import { cloudConfigured, cloudEnabled } from "@/lib/supabase/config";
 import { safeNext } from "@/lib/commerce/redirect";
 export const metadata: Metadata = {
   title: "Tu cuenta",
@@ -16,7 +17,9 @@ export default async function Access({
   const params = await searchParams;
   // A signed-in account goes straight to where it was heading instead of
   // seeing the sign-in page again (password updates still need the form).
-  if (params.modo !== "actualizar") {
+  // Same condition as the rest of the account features: with cloud accounts
+  // off, /proyectos would send the user back here in a loop.
+  if (params.modo !== "actualizar" && cloudEnabled() && cloudConfigured()) {
     const user = await currentUser().catch(() => null);
     if (user && !user.is_anonymous && user.email_confirmed_at) {
       const next = safeNext(

@@ -41,6 +41,7 @@ async function redirectToGoogle(next: string | null) {
   if (!client) throw new Error("AUTH_UNAVAILABLE");
   const callback = new URL("/auth/callback", window.location.origin);
   callback.searchParams.set("next", safeNext(next, "/proyectos"));
+  callback.searchParams.set("flow", "google");
   const { error } = await client.auth.signInWithOAuth({
     provider: "google",
     options: {
@@ -109,10 +110,11 @@ export function GoogleSignIn({ next }: { next: string | null }) {
                 nonce,
               });
               if (error) throw error;
-              const claimed = await fetch("/api/guest/claim", {
-                method: "POST",
-              });
-              if (!claimed.ok) throw new Error("GUEST_CLAIM_FAILED");
+              // The session already exists: a failed trial hand-over must
+              // not look like a failed sign-in. The server retries it.
+              await fetch("/api/guest/claim", { method: "POST" }).catch(
+                () => null,
+              );
               window.location.assign(safeNext(next, "/proyectos"));
             } catch {
               setError(
@@ -145,10 +147,27 @@ export function GoogleSignIn({ next }: { next: string | null }) {
       clearTimeout(slow);
     };
   }, [next]);
+  // Google refuses sign-in inside apps' built-in browsers (Instagram,
+  // Facebook, TikTok…): say how to get out instead of failing silently.
+  const [inApp, setInApp] = useState(false);
+  useEffect(() => {
+    setInApp(
+      /FBAN|FBAV|FB_IAB|Instagram|TikTok|musical_ly|Line\/|LinkedInApp|Twitter|; wv\)/i.test(
+        navigator.userAgent,
+      ),
+    );
+  }, []);
   // Without a working Google button, the same-tab sign-in is the main action.
   const fallbackFirst = !ready && (slow || Boolean(error));
   return (
     <div className="google-native" aria-busy={busy}>
+      {inApp && (
+        <p className="inline-notice" role="status">
+          Estás en el navegador de una app y Google no permite iniciar sesión
+          desde acá. Abrí esta página en Safari o Chrome (menú ··· → «Abrir en
+          el navegador»).
+        </p>
+      )}
       <div ref={ref} />
       {!ready && !error && !slow && (
         <p role="status">Cargando acceso con Google…</p>

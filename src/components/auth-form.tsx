@@ -117,11 +117,8 @@ export function AuthForm() {
           throw new Error(
             "Revisá el email, la contraseña y la confirmación de tu cuenta.",
           );
-        const claimed = await fetch("/api/guest/claim", { method: "POST" });
-        if (!claimed.ok)
-          throw new Error(
-            "No pudimos recuperar los diseños de la prueba. Intentá nuevamente.",
-          );
+        // Signed in already; the server retries a failed trial hand-over.
+        await fetch("/api/guest/claim", { method: "POST" }).catch(() => null);
         window.location.assign(safeNext(params.get("next"), "/proyectos"));
       } else if (mode === "signup") {
         if (!accepted)

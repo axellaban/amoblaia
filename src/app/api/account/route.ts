@@ -1,10 +1,13 @@
 import { adminClient } from "@/lib/supabase/server";
 import { requireUser, failure, rpc, isAdmin } from "@/lib/commerce/http";
 import { onFreeTier } from "@/lib/commerce/jobs";
+import { adoptGuest } from "@/lib/commerce/guest";
 export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const user = await requireUser(undefined, true);
+    // Retries a trial hand-over that failed at sign-in.
+    await adoptGuest(user);
     const account = await rpc<{ credits: number; blocked: boolean }>(
       "amobla_account",
       { p_user: user.id, p_trial: process.env.LIVE_TRIAL_ENABLED === "true" },

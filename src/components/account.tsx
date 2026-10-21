@@ -179,11 +179,14 @@ export function AccountDashboard() {
             className="icon-button"
             aria-label="Cerrar sesión"
             onClick={async () => {
-              const r = await browserClient()?.auth.signOut({ scope: "local" });
-              if (r?.error) {
-                setError("No pudimos cerrar la sesión.");
-                return;
-              }
+              // Same path as the header: the server clears the session and
+              // the trial cookie. The local session is dropped regardless.
+              await fetch("/api/session", { method: "DELETE" }).catch(
+                () => null,
+              );
+              await browserClient()
+                ?.auth.signOut({ scope: "local" })
+                .catch(() => null);
               await clearDraft().catch(() => {});
               window.location.assign("/acceso");
             }}

@@ -39,3 +39,29 @@ export async function claimGuest(guest: string, user: string) {
     if (error) console.error("guest_orphans_not_removed", orphans.length);
   }
 }
+/**
+ * Hands a free trial over to the account that just signed in. It never
+ * fails the sign-in: if the claim fails, the guest cookie stays so the next
+ * account or library load retries it (the claim is idempotent).
+ */
+export async function adoptGuest(user: {
+  id: string;
+  email_confirmed_at?: string | null;
+  is_anonymous?: boolean;
+}) {
+  if (user.is_anonymous || !user.email_confirmed_at) return false;
+  const guest = await guestId().catch(() => null);
+  const jar = await cookies();
+  if (!guest || guest === user.id) {
+    if (jar.get(GUEST_COOKIE)) jar.delete(GUEST_COOKIE);
+    return true;
+  }
+  try {
+    await claimGuest(guest, user.id);
+    jar.delete(GUEST_COOKIE);
+    return true;
+  } catch {
+    console.error("guest_claim_deferred", user.id);
+    return false;
+  }
+}

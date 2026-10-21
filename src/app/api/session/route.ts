@@ -1,6 +1,7 @@
 import { cloudEnabled, cloudConfigured } from "@/lib/supabase/config";
 import { currentUser, userClient } from "@/lib/supabase/server";
 import { cookies } from "next/headers";
+import { GUEST_COOKIE } from "@/lib/guest-token";
 import {
   configured,
   configurationIssues,
@@ -92,8 +93,13 @@ export async function DELETE(request: Request) {
   if (cloudEnabled() && cloudConfigured()) {
     const client = await userClient();
     // Local scope: signing out here must not end the user's other devices.
-    await client.auth.signOut({ scope: "local" });
+    // The local cookies are cleared even if revoking the token fails.
+    const { error } = await client.auth.signOut({ scope: "local" });
+    if (error) console.error("sign_out_revoke_failed", error.status);
   }
-  (await cookies()).delete(COOKIE_NAME);
+  const jar = await cookies();
+  jar.delete(COOKIE_NAME);
+  // A leftover trial must not silently become the identity after sign-out.
+  jar.delete(GUEST_COOKIE);
   return Response.json({ authenticated: false });
 }
