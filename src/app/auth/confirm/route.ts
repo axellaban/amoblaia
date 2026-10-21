@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { userClient } from "@/lib/supabase/server";
 import { adoptGuest } from "@/lib/commerce/guest";
-import { safeNext } from "@/lib/commerce/redirect";
+import { cookies } from "next/headers";
+import { EMAIL_FLOW_COOKIE, safeNext } from "@/lib/commerce/redirect";
+import { GUEST_COOKIE } from "@/lib/guest-token";
 import { validOrigin } from "@/lib/session";
 const types = ["email", "signup", "recovery"] as const;
 type LinkType = (typeof types)[number];
@@ -29,7 +31,13 @@ export async function POST(request: Request) {
   const supabase = await userClient();
   const { data, error } = await supabase.auth.verifyOtp({ token_hash, type });
   if (error) return go("/acceso?error=enlace");
-  if (data.user) await adoptGuest(data.user);
+  // Only the browser that asked for this email hands its trial over; any
+  // other one forgets its trial instead of giving it to this account.
+  const jar = await cookies();
+  if (jar.get(EMAIL_FLOW_COOKIE)) {
+    if (data.user) await adoptGuest(data.user);
+  } else jar.delete(GUEST_COOKIE);
+  jar.delete(EMAIL_FLOW_COOKIE);
   return go(
     type === "recovery"
       ? "/acceso?modo=actualizar"

@@ -1,7 +1,12 @@
 import "server-only";
 import { cookies } from "next/headers";
 import { createHmac } from "node:crypto";
-import { GUEST_COOKIE, verifyGuestToken } from "@/lib/guest-token";
+import {
+  GUEST_COOKIE,
+  GUEST_SECONDS,
+  guestToken,
+  verifyGuestToken,
+} from "@/lib/guest-token";
 import { adminClient } from "@/lib/supabase/server";
 import { rpc } from "./http";
 import { BUCKET } from "./jobs";
@@ -16,6 +21,37 @@ export async function guestId() {
     (await cookies()).get(GUEST_COOKIE)?.value,
     guestSecret(),
   );
+}
+/** Issues (or renews for another 30 days) this browser's trial cookie. */
+export async function setGuestCookie(id: string) {
+  (await cookies()).set(GUEST_COOKIE, guestToken(id, guestSecret()), {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: GUEST_SECONDS,
+  });
+}
+/**
+ * The trial this browser is using, if any: its anonymous session, or only
+ * its cookie when the session was lost. The cookie is what hands the trial
+ * over at sign-in and lasts 30 days while the anonymous session lasts far
+ * longer, so every visit renews it.
+ */
+export async function currentGuest(
+  user: { id: string; is_anonymous?: boolean } | null,
+) {
+  const id = user ? (user.is_anonymous ? user.id : null) : await guestId();
+  if (!id) return null;
+  const { data, error } = await adminClient()
+    .from("guest_sessions")
+    .select("user_id")
+    .eq("user_id", id)
+    .is("claimed_by", null)
+    .maybeSingle();
+  if (error || !data) return null;
+  await setGuestCookie(id);
+  return id;
 }
 export function guestFingerprint(request: Request) {
   // Vercel overwrites this header at the edge; do not use client-supplied forwarding headers.

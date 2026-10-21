@@ -47,6 +47,7 @@ import {
   type Project,
 } from "@/lib/history";
 import { optimizePhoto, blobToDataURL, downloadDesign } from "@/lib/images";
+import { Captcha } from "./captcha";
 import { Comparison } from "./comparison";
 import { clearDraft, loadDraft, saveDraft } from "@/lib/studio-draft";
 import { FREE_RESULT_LIMIT, freeBatchSize } from "@/lib/free-tier";
@@ -96,6 +97,11 @@ export function Studio({
   // Bumped whenever another photo is opened: results that arrive late for an
   // earlier photo must not replace what is on screen (nor its project id).
   const photoSession = useRef(0);
+  // The trial is (re)registered once per visit: it renews the cookie that
+  // hands it over at sign-in and repairs a registration that failed.
+  const guestChecked = useRef(false);
+  const [captcha, setCaptcha] = useState("");
+  const [captchaReset, setCaptchaReset] = useState(0);
   const [showLogin, setShowLogin] = useState(false);
   const [password, setPassword] = useState("");
   const [loginBusy, setLoginBusy] = useState(false);
@@ -553,14 +559,31 @@ export function Studio({
     let activeProjectId = projectId;
     let availableFree = freeRemaining;
     let activeFreeTier = freeTier;
-    if (!status.authenticated && !status.anonymous) {
+    if (
+      !status.authenticated &&
+      (!status.anonymous || (status.mode === "cloud" && !guestChecked.current))
+    ) {
       if (status.mode === "cloud") {
+        // A new trial session needs the CAPTCHA when Supabase enforces one.
+        if (
+          !status.anonymous &&
+          process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY &&
+          !captcha
+        ) {
+          setError("Completá la verificación para continuar.");
+          return;
+        }
         generateLock.current = true;
         setBusy(true);
         try {
-          const response = await fetch("/api/guest", { method: "POST" });
+          const response = await fetch("/api/guest", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ captchaToken: captcha || undefined }),
+          });
           const guest = await response.json();
           if (!response.ok) throw new Error(guest.error);
+          guestChecked.current = true;
           if (guest.newSession) {
             activeProjectId = null;
             setProjectId(null);
@@ -583,6 +606,8 @@ export function Studio({
         } finally {
           generateLock.current = false;
           setBusy(false);
+          // A Turnstile token is single-use.
+          if (captcha) setCaptchaReset((v) => v + 1);
         }
       } else {
         setShowLogin(true);
@@ -1481,6 +1506,12 @@ export function Studio({
                           : "Generar mi diseño"}
                   {!busy && <ArrowUpRight size={19} />}
                 </button>
+                {!demo &&
+                  status?.mode === "cloud" &&
+                  !status.authenticated &&
+                  !status.anonymous && (
+                    <Captcha onToken={setCaptcha} reset={captchaReset} />
+                  )}
                 <p>
                   {demo
                     ? "Demo precargada · No consume API"

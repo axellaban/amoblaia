@@ -4,8 +4,16 @@ const state = vi.hoisted(() => ({
   exchangeError: null as null | { message: string },
   verified: [] as unknown[],
   adoptFails: false,
+  jar: new Map<string, string>(),
 }));
 vi.mock("server-only", () => ({}));
+vi.mock("next/headers", () => ({
+  cookies: async () => ({
+    get: (name: string) =>
+      state.jar.has(name) ? { name, value: state.jar.get(name) } : undefined,
+    delete: (name: string) => state.jar.delete(name),
+  }),
+}));
 vi.mock("@/lib/supabase/server", () => ({
   userClient: async () => ({
     auth: {
@@ -29,6 +37,7 @@ vi.mock("@/lib/commerce/guest", () => ({
     return true;
   }),
 }));
+import { adoptGuest } from "@/lib/commerce/guest";
 import { GET as callback } from "../src/app/auth/callback/route";
 import {
   GET as confirmLink,
@@ -39,6 +48,7 @@ beforeEach(() => {
   state.exchangeError = null;
   state.verified = [];
   state.adoptFails = false;
+  state.jar = new Map();
 });
 const origin = "https://amobla.example";
 
@@ -108,4 +118,34 @@ it("signs in only from the confirmation button on this site", async () => {
   expect(own.status).toBe(303);
   expect(own.headers.get("location")).toBe(`${origin}/estudio`);
   expect(state.verified).toEqual([{ token_hash: "t1", type: "signup" }]);
+});
+
+const confirmed = () => {
+  const f = new FormData();
+  f.set("token_hash", "t1");
+  f.set("type", "signup");
+  return confirm(
+    new Request(`${origin}/auth/confirm`, {
+      method: "POST",
+      headers: { Origin: origin },
+      body: f,
+    }),
+  );
+};
+it("hands the trial over when this browser asked for the email", async () => {
+  vi.mocked(adoptGuest).mockClear();
+  state.jar.set("amoblaia-email-flow", "1");
+  state.jar.set("amoblaia-guest", "guest-token");
+  await confirmed();
+  expect(adoptGuest).toHaveBeenCalled();
+  expect(state.jar.has("amoblaia-email-flow")).toBe(false);
+});
+
+it("never moves a visitor's trial into an account whose link was forwarded to them", async () => {
+  vi.mocked(adoptGuest).mockClear();
+  state.jar.set("amoblaia-guest", "guest-token");
+  await confirmed();
+  expect(adoptGuest).not.toHaveBeenCalled();
+  // Forgotten, or the next account load would hand it over anyway.
+  expect(state.jar.has("amoblaia-guest")).toBe(false);
 });

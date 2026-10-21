@@ -1,73 +1,12 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { browserClient } from "@/lib/supabase/client";
-import { safeNext } from "@/lib/commerce/redirect";
+import { EMAIL_FLOW_COOKIE, safeNext } from "@/lib/commerce/redirect";
 import { GoogleSignIn } from "./google-signin";
+import { Captcha } from "./captcha";
 import { ArrowUpRight, Check, LoaderCircle, ShieldCheck } from "lucide-react";
-declare global {
-  interface Window {
-    turnstile?: {
-      render: (
-        element: HTMLElement,
-        options: Record<string, unknown>,
-      ) => string;
-      remove: (id: string) => void;
-      reset: (id: string) => void;
-    };
-  }
-}
-function Captcha({
-  onToken,
-  reset,
-}: {
-  onToken: (token: string) => void;
-  reset: number;
-}) {
-  const ref = useRef<HTMLDivElement>(null),
-    id = useRef<string | null>(null);
-  const key = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
-  useEffect(() => {
-    if (!key) return;
-    let alive = true;
-    function render() {
-      if (alive && ref.current && window.turnstile && !id.current)
-        id.current = window.turnstile.render(ref.current, {
-          sitekey: key,
-          theme: "light",
-          callback: onToken,
-          "expired-callback": () => onToken(""),
-        });
-    }
-    let script = document.querySelector<HTMLScriptElement>(
-      "script[data-amobla-captcha]",
-    );
-    if (!script) {
-      script = document.createElement("script");
-      script.src =
-        "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
-      script.async = true;
-      script.dataset.amoblaCaptcha = "true";
-      document.head.appendChild(script);
-    }
-    script.addEventListener("load", render);
-    render();
-    return () => {
-      alive = false;
-      script?.removeEventListener("load", render);
-      if (id.current) window.turnstile?.remove(id.current);
-      id.current = null;
-    };
-  }, [key, onToken]);
-  useEffect(() => {
-    if (id.current) {
-      window.turnstile?.reset(id.current);
-      onToken("");
-    }
-  }, [reset, onToken]);
-  return key ? <div className="captcha" ref={ref} /> : null;
-}
 export function AuthForm() {
   const params = useSearchParams();
   const [mode, setMode] = useState<"login" | "signup" | "reset" | "update">(
@@ -105,6 +44,8 @@ export function AuthForm() {
       return;
     }
     setBusy(true);
+    if (mode === "signup" || mode === "reset")
+      document.cookie = `${EMAIL_FLOW_COOKIE}=1; Max-Age=604800; Path=/; SameSite=Lax${location.protocol === "https:" ? "; Secure" : ""}`;
     try {
       const redirect = `${window.location.origin}/auth/callback?next=${encodeURIComponent(mode === "reset" ? "/acceso?modo=actualizar" : safeNext(params.get("next")))}`;
       if (mode === "login") {

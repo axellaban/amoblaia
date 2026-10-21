@@ -145,6 +145,11 @@ end $$;
 -- payment's photos; under these it keeps them.
 update public.credit_grants set revoked=false where revoked
  and payment_id in (select id from public.payments where status in ('in_mediation','partially_refunded'));
+-- The old rules also blocked a partial refund's account; these don't.
+update public.profiles pr set blocked=(
+ exists(select 1 from public.payments where user_id=pr.id and status in ('charged_back','in_mediation')) or
+ exists(select 1 from public.credit_grants where user_id=pr.id and revoked and remaining<total)
+) where pr.blocked and pr.id in (select user_id from public.payments where status='partially_refunded');
 
 create or replace function public.amobla_inbox_failed(p_key text,p_error text) returns void language sql security definer set search_path=public as $$
  update webhook_events set attempts=attempts+1,last_error=left(p_error,80) where event_key=p_key;

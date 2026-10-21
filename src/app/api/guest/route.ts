@@ -1,9 +1,11 @@
-import { cookies } from "next/headers";
 import { currentUser, userClient, adminClient } from "@/lib/supabase/server";
 import { validOrigin } from "@/lib/session";
 import { failure, HttpError, rpc } from "@/lib/commerce/http";
-import { guestFingerprint, guestId, guestSecret } from "@/lib/commerce/guest";
-import { GUEST_COOKIE, GUEST_SECONDS, guestToken } from "@/lib/guest-token";
+import {
+  guestFingerprint,
+  guestId,
+  setGuestCookie,
+} from "@/lib/commerce/guest";
 export async function POST(request: Request) {
   try {
     if (!validOrigin(request)) throw new HttpError(403, "Origen inválido.");
@@ -21,8 +23,19 @@ export async function POST(request: Request) {
     }
     if (!user) {
       await rpc("amobla_guest_capacity", { p_ip: guestFingerprint(request) });
+      // Required by Supabase when its CAPTCHA protection is on.
+      const body = await request
+        .json()
+        .catch(() => ({}) as { captchaToken?: unknown });
+      const captchaToken =
+        typeof body?.captchaToken === "string" &&
+        body.captchaToken.length <= 4096
+          ? body.captchaToken
+          : undefined;
       const client = await userClient();
-      const response = await client.auth.signInAnonymously();
+      const response = await client.auth.signInAnonymously({
+        options: { captchaToken },
+      });
       if (response.error || !response.data.user)
         throw new HttpError(
           503,
@@ -47,13 +60,8 @@ export async function POST(request: Request) {
       p_user: user.id,
       p_ip: guestFingerprint(request),
     });
-    (await cookies()).set(GUEST_COOKIE, guestToken(user.id, guestSecret()), {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-      maxAge: GUEST_SECONDS,
-    });
+    // Also renews the cookie of a trial that is already registered.
+    await setGuestCookie(user.id);
     const account = await rpc<Record<string, unknown>>("amobla_account", {
       p_user: user.id,
       p_trial: true,

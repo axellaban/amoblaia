@@ -20,3 +20,10 @@ export function safeNext(value: string | null, fallback = "/cuenta") {
     return fallback;
   }
 }
+/**
+ * Set by the browser that asks for a sign-up or recovery email. Only that
+ * browser hands its free trial over when the link is confirmed: a link
+ * forwarded by someone else must not move the visitor's photos into the
+ * sender's account.
+ */
+export const EMAIL_FLOW_COOKIE = "amoblaia-email-flow";

@@ -166,6 +166,9 @@ begin
  if jobs is not null then return jobs; end if;
  n:=coalesce(array_length(p_prompts,1),0);
  if n<1 or n>3 then raise exception 'INVALID_BATCH'; end if;
+ -- The photo is locked before the sweep touches its jobs, in the same order
+ -- as finish_generation (project, then jobs): no deadlock between them.
+ perform 1 from projects where id=p_project and user_id=p_user for update;
  -- A dead worker must not lock the account until the daily cron.
  perform amobla_sweep_stale(p_user);
  perform pg_advisory_xact_lock(20261020);

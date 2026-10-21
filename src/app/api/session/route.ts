@@ -2,6 +2,7 @@ import { cloudEnabled, cloudConfigured } from "@/lib/supabase/config";
 import { currentUser, userClient } from "@/lib/supabase/server";
 import { cookies } from "next/headers";
 import { GUEST_COOKIE } from "@/lib/guest-token";
+import { currentGuest } from "@/lib/commerce/guest";
 import {
   configured,
   configurationIssues,
@@ -17,12 +18,18 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   if (cloudEnabled()) {
     const user = cloudConfigured() ? await currentUser() : null;
+    // A trial known only by its cookie (its anonymous session was lost) is
+    // still a trial: the other endpoints accept it, so the studio must too.
+    const guest =
+      cloudConfigured() && !user?.email_confirmed_at
+        ? await currentGuest(user).catch(() => null)
+        : null;
     return Response.json(
       {
         mode: "cloud",
         configured: cloudConfigured() && Boolean(process.env.OPENAI_API_KEY),
         authenticated: Boolean(user?.email_confirmed_at),
-        anonymous: user?.is_anonymous === true,
+        anonymous: user?.is_anonymous === true || Boolean(guest),
         userId: user?.email_confirmed_at ? user.id : null,
         email: user?.email ?? null,
         revision: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? "local",

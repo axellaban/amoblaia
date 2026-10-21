@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { ConfirmForm } from "@/components/confirm-form";
 export const metadata: Metadata = {
   title: "Confirmá tu acceso",
   robots: { index: false, follow: false },
@@ -23,14 +24,11 @@ export default async function Confirm({
             ? "Continuá para cambiar la contraseña de tu cuenta de amoblaIA."
             : "Continuá para activar tu cuenta de amoblaIA. Si no pediste este enlace, cerrá esta página."}
         </p>
-        <form method="post" action="/auth/confirm">
-          <input type="hidden" name="token_hash" value={value("token_hash")} />
-          <input type="hidden" name="type" value={value("type")} />
-          <input type="hidden" name="next" value={value("next")} />
-          <button className="button button-primary" type="submit">
-            Continuar
-          </button>
-        </form>
+        <ConfirmForm
+          tokenHash={value("token_hash")}
+          type={value("type")}
+          next={value("next")}
+        />
       </div>
     </div>
   );
