@@ -95,6 +95,8 @@ export async function enqueuePhoto(request: Request, userId: string) {
         "No te quedan fotos disponibles. Elegí un plan.",
       );
   }
+  // Set when this request stored the original, so a rejected batch can undo it.
+  let created: { id: string; uploaded: boolean } | null = null;
   if (!project) {
     // Keep photos below the free bucket's 1 GB limit; the provider enforces a hard quota too.
     const { count: activeCount, error: capacityError } = await db
@@ -131,6 +133,8 @@ export async function enqueuePhoto(request: Request, userId: string) {
       })
       .select("id,grant_id,trashed_at")
       .single());
+    if (!error && project)
+      created = { id: project.id, uploaded: !upload.error };
     if (error?.code === "23505")
       ({ data: project, error } = await db
         .from("projects")
@@ -141,22 +145,52 @@ export async function enqueuePhoto(request: Request, userId: string) {
         .single());
     if (error || !project) throw new Error("PROJECT_CREATE_FAILED");
   }
-  const ids = await rpc<string[]>("amobla_reserve_batch", {
-    p_user: userId,
-    p_project: project.id,
-    p_key: photo.requestKey,
-    p_room: photo.room,
-    p_style: photo.style,
-    p_mode: photo.mode,
-    p_notes: photo.notes,
-    p_prompts: Array.from({ length: photo.batchSize }, (_, i) =>
-      photo.batchSize === 1
-        ? photo.prompt
-        : buildPrompt(photo.room, photo.style, photo.mode, photo.notes, i + 1),
-    ),
-    p_daily_limit: Number(process.env.MAX_GENERATIONS_PER_DAY || 100),
-  });
+  let ids: string[];
+  try {
+    ids = await rpc<string[]>("amobla_reserve_batch", {
+      p_user: userId,
+      p_project: project.id,
+      p_key: photo.requestKey,
+      p_room: photo.room,
+      p_style: photo.style,
+      p_mode: photo.mode,
+      p_notes: photo.notes,
+      p_prompts: Array.from({ length: photo.batchSize }, (_, i) =>
+        photo.batchSize === 1
+          ? photo.prompt
+          : buildPrompt(
+              photo.room,
+              photo.style,
+              photo.mode,
+              photo.notes,
+              i + 1,
+            ),
+      ),
+      p_daily_limit: Number(process.env.MAX_GENERATIONS_PER_DAY || 100),
+    });
+  } catch (rejected) {
+    // A batch refused for quota, capacity or an active batch must not leave an
+    // empty project behind: it would count against the storage budget.
+    if (created)
+      await discardProject(created.id, created.uploaded ? path : null);
+    throw rejected;
+  }
   return { ids, projectId: project.id };
+}
+async function discardProject(id: string, path: string | null) {
+  const db = adminClient();
+  try {
+    // Only an empty project is removed; a concurrent batch may have used it.
+    const { count } = await db
+      .from("generations")
+      .select("id", { count: "exact", head: true })
+      .eq("project_id", id);
+    if (count !== 0) return;
+    const { error } = await db.from("projects").delete().eq("id", id);
+    if (!error && path) await db.storage.from(BUCKET).remove([path]);
+  } catch {
+    console.error("project_discard_failed", id);
+  }
 }
 export async function runJob(id: string) {
   const job = await rpc<Job | null>("amobla_claim_generation", { p_job: id });
