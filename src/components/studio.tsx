@@ -732,7 +732,9 @@ export function Studio({
           <span className="local-label">
             <ShieldCheck size={14} />{" "}
             {status?.mode === "cloud"
-              ? "Tus diseños con IA quedan en tu cuenta"
+              ? status.anonymous
+                ? "Tus diseños quedan en esta sesión"
+                : "Tus diseños con IA quedan en tu cuenta"
               : "Tus proyectos quedan en este navegador"}
           </span>
         </div>

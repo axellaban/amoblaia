@@ -75,6 +75,11 @@ describe("Anonymous trial and account conversion", () => {
     );
     expect(p.rows[0].user_id).toBe(user);
     expect(p.rows[0].original_path).toBe("guest/original.jpg");
+    const quota = await db.query<{ a: { freeRemaining: number } }>(
+      "select amobla_account($1,true) as a",
+      [second],
+    );
+    expect(quota.rows[0].a.freeRemaining).toBe(0);
     await expect(
       db.query(
         "select amobla_reserve_generation($1,$2,gen_random_uuid(),'living','modern','furnish','','prompt')",

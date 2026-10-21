@@ -3,7 +3,7 @@ import { adminClient } from "@/lib/supabase/server";
 import { signPath } from "@/lib/commerce/jobs";
 export async function GET(request: Request) {
   try {
-    const user = await requireUser();
+    const user = await requireUser(undefined, true);
     const db = adminClient();
     const { data: projects, error } = await db
       .from("projects")

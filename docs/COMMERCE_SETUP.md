@@ -157,7 +157,7 @@ Ver `AUDIT_2026-10-20.md` para cobertura y diferencias con la referencia.
 
 ### Prueba sin registro y recorrido inicial
 
-Aplicar `202610200010_guest_trial.sql` después de 009. Habilitar `Allow anonymous sign-ins` en Supabase Auth → Sign In / Providers (aplicado el 20/10/2026). No se habilita manual linking ni se desactiva confirmación de email. RLS solo permite lectura de filas propias y los RPC de mutación continúan reservados al servidor. Las compras requieren una cuenta verificada.
+Aplicar `202610200010_guest_trial.sql` y `202610200011_guest_origin_usage.sql` después de 009. Habilitar `Allow anonymous sign-ins` en Supabase Auth → Sign In / Providers (aplicado el 20/10/2026). No se habilita manual linking ni se desactiva confirmación de email. RLS solo permite lectura de filas propias y los RPC de mutación continúan reservados al servidor. Las compras requieren una cuenta verificada.
 
 `POST /api/guest` crea/reutiliza una sesión anónima y conserva una cookie HttpOnly firmada para trasladar fotos al iniciar sesión con Google. La firma usa la credencial existente del servidor; no requiere nuevas variables. El merge es idempotente y bloquea el invitado anterior. El cupo de 25 cuenta toda su historia, incluso papelera. Se agrega un límite de 25 resultados por origen en 24 horas y cinco altas anónimas por origen; la huella usa HMAC del encabezado de origen de Vercel. No es una prueba de identidad ni impide a una persona cambiar de red/dispositivo. Mantener los topes globales de IA y almacenamiento.
 
