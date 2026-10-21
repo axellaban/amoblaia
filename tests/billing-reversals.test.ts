@@ -155,3 +155,79 @@ it("unblocks when a mediation that came first is resolved for the seller", async
   expect(await isBlocked()).toBe(false);
   expect(await liveGrants("pay-first-mediation")).toBe(1);
 });
+
+async function buyer(n: number, sku = "basic-month") {
+  const person = `00000000-0000-4000-8000-0000000001${String(n).padStart(2, "0")}`,
+    order = `00000000-0000-4000-8000-0000000002${String(n).padStart(2, "0")}`;
+  await db.exec(`insert into auth.users values('${person}')`);
+  await db.query("select amobla_account($1,false)", [person]);
+  await db.query("select amobla_create_order($1,$2,$3)", [person, order, sku]);
+  await db.exec(
+    `update orders set provider_subscription_id='sub-${n}' where id='${order}'`,
+  );
+  const price = (await one<{ p: string }>(
+    "select snapshot->>'price_cents' as p from orders where id=$1",
+    [order],
+  ))!.p;
+  const pay = (id: string, status: string) =>
+    db.query("select amobla_apply_payment($1,$2,$3,$4,now(),$5)", [
+      id,
+      order,
+      status,
+      price,
+      `sub-${n}`,
+    ]);
+  const isBlocked = async () =>
+    (await one<{ b: boolean }>(
+      "select blocked as b from profiles where id=$1",
+      [person],
+    ))!.b;
+  return { person, order, pay, isBlocked };
+}
+
+it("keeps granting an annual plan's monthly photos after a partial refund", async () => {
+  const { person, pay } = await buyer(1, "basic-year");
+  await pay("pay-year", "approved");
+  await pay("pay-year", "partially_refunded");
+  // A month later the second month's photos still arrive.
+  await db.exec(
+    "update payments set coverage_start=now()-interval '32 days',coverage_end=now()+interval '330 days' where id='pay-year'",
+  );
+  await db.query("select amobla_refresh_annual($1)", [person]);
+  expect(
+    await one(
+      "select count(*)::int as n from credit_grants where source_key='pay-year:1' and not revoked",
+    ),
+  ).toEqual({ n: 1 });
+});
+
+it("ignores a stale 'in_process' that arrives after the approval", async () => {
+  const { pay } = await buyer(2);
+  await pay("pay-late", "approved");
+  await pay("pay-late", "in_process");
+  expect(
+    (await one<{ s: string }>(
+      "select status as s from payments where id='pay-late'",
+    ))!.s,
+  ).toBe("approved");
+  expect(await liveGrants("pay-late")).toBe(1);
+});
+
+it("unblocks when a mediation ends in a partial refund", async () => {
+  const { pay, isBlocked } = await buyer(3);
+  await pay("pay-mp", "approved");
+  await pay("pay-mp", "in_mediation");
+  expect(await isBlocked()).toBe(true);
+  await pay("pay-mp", "partially_refunded");
+  expect(await isBlocked()).toBe(false);
+  expect(await liveGrants("pay-mp")).toBe(1);
+});
+
+it("unblocks when a mediation ends in a full refund of unused photos", async () => {
+  const { pay, isBlocked } = await buyer(4);
+  await pay("pay-mr", "approved");
+  await pay("pay-mr", "in_mediation");
+  await pay("pay-mr", "refunded");
+  expect(await isBlocked()).toBe(false);
+  expect(await liveGrants("pay-mr")).toBe(0);
+});

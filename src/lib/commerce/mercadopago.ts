@@ -364,9 +364,11 @@ export async function syncPayment(id: string, subscriptionId?: string) {
     }
   }
   validatePayment(payment, order);
+  // Only an approved payment can be partially refunded: a chargeback or a
+  // dispute after a partial refund keeps its own status.
   const status =
     (payment.transaction_amount_refunded || 0) > 0 &&
-    payment.status !== "refunded"
+    payment.status === "approved"
       ? "partially_refunded"
       : payment.status;
   await rpc("amobla_apply_payment", {

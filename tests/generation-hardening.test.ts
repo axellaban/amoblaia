@@ -192,3 +192,32 @@ it("does not treat an exhausted pack as a live plan for regenerations", async ()
   );
   await expect(batch(user, p, 1)).rejects.toThrow("ENTITLEMENT_EXPIRED");
 });
+
+it("gives nothing back from a purchase refunded while its job was under review", async () => {
+  const user = await account();
+  await paid(user, 1);
+  const p = await project(user);
+  const [job] = (await batch(user, p, 1)).rows[0].ids;
+  await finish(job, "needs_review");
+  await db.query("update credit_grants set revoked=true where user_id=$1", [
+    user,
+  ]);
+  await db.query("select amobla_finish_generation($1,'failed')", [job]);
+  expect(
+    await count(
+      "select count(*)::int as n from credit_grants where user_id=$1 and not revoked and source_key not like 'trial:%'",
+      [user],
+    ),
+  ).toBe(0);
+});
+
+it("refunds a paid batch that failed even if the photo had a free result", async () => {
+  const user = await account({ trial: true });
+  const p = await project(user);
+  const [free] = (await batch(user, p, 1)).rows[0].ids;
+  await finish(free, "succeeded");
+  await paid(user, 1);
+  const jobs = (await batch(user, p, 3)).rows[0].ids;
+  for (const j of jobs) await finish(j, "failed");
+  expect(await balance(user)).toBe(1);
+});

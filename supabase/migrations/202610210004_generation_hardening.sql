@@ -16,7 +16,8 @@ begin
  update generations set status='needs_review',error_code='WORKER_INTERRUPTED',finished_at=now()
   where user_id=p_user and status='running' and started_at<now()-interval '10 minutes';
  -- Never started: the provider was not called, so it fails and refunds.
- for stale in select id from generations where user_id=p_user and status='queued' and created_at<now()-interval '15 minutes' loop
+ -- A row a worker is claiming right now is skipped, never failed under it.
+ for stale in select id from generations where user_id=p_user and status='queued' and created_at<now()-interval '15 minutes' for update skip locked loop
   perform amobla_finish_generation(stale,'failed',p_error=>'NEVER_STARTED');
  end loop;
 end $$;
@@ -34,18 +35,24 @@ begin
  update generations set status=p_status,result_path=p_result,result_bytes=p_bytes,model=coalesce(p_model,model),usage=coalesce(p_usage,usage),estimated_usd=coalesce(p_cost,estimated_usd),provider_request_id=coalesce(p_request,provider_request_id),error_code=p_error,finished_at=now() where id=p_job;
  if p_status='failed' and j.reserved_credit then
   select * into p from projects where id=j.project_id for update;
-  select id into sibling from generations where project_id=j.project_id and id<>j.id and status in ('queued','running','needs_review') order by created_at,id limit 1;
+  -- Locked: a sibling failing at the same moment is waited for and then
+  -- skipped, instead of being handed a reservation it will never return.
+  -- Free (watermarked) results neither carry nor keep a paid reservation.
+  select id into sibling from generations where project_id=j.project_id and id<>j.id and not is_free and status in ('queued','running','needs_review') order by created_at,id limit 1 for update;
   if sibling is not null then
    -- Another proposal may still deliver: it carries the reservation now.
    update generations set reserved_credit=false where id=j.id;
    update generations set reserved_credit=true where id=sibling;
-  elsif exists(select 1 from generations where project_id=j.project_id and id<>j.id and status='succeeded') then
-   -- The photo already produced results: it stays paid.
+  elsif exists(select 1 from generations where project_id=j.project_id and id<>j.id and not is_free and status='succeeded') then
+   -- The photo already produced paid results: it stays paid.
    update generations set reserved_credit=false where id=j.id;
   elsif p.grant_id is not null then
    -- Back to the same grant while it is usable; otherwise (it expired while
-   -- the job was under review) as a fresh one-photo grant.
-   if exists(select 1 from credit_grants where id=p.grant_id and not revoked and (expires_at is null or expires_at>now())) then
+   -- the job was under review) as a fresh one-photo grant. A grant revoked
+   -- by a refund or chargeback gives nothing back.
+   if exists(select 1 from credit_grants where id=p.grant_id and revoked) then
+    null;
+   elsif exists(select 1 from credit_grants where id=p.grant_id and (expires_at is null or expires_at>now())) then
     update credit_grants set remaining=least(total,remaining+1) where id=p.grant_id;
     insert into credit_ledger(user_id,grant_id,generation_id,delta,reason) values(j.user_id,p.grant_id,j.id,1,'technical_failure');
    else
