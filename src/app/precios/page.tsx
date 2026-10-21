@@ -19,13 +19,15 @@ export default async function Pricing() {
   }
   // Sandbox checkouts stay reserved to the team, so only admins see the buttons outside production.
   let canBuy = cloudEnabled() && billingConfigured();
+  const user = canBuy ? await currentUser().catch(() => null) : null;
   if (canBuy && process.env.MERCADOPAGO_MODE !== "production")
-    canBuy = isAdmin((await currentUser().catch(() => null))?.email);
+    canBuy = isAdmin(user?.email);
   return (
     <PricingPlans
       products={products}
       enabled={canBuy}
       trial={cloudEnabled() && process.env.LIVE_TRIAL_ENABLED === "true"}
+      email={user?.email || undefined}
     />
   );
 }

@@ -3,6 +3,7 @@ const state = vi.hoisted(() => ({
   open: null as null | Record<string, unknown>,
   status: "pending",
   calls: [] as unknown[],
+  fail: "",
 }));
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/commerce/http", async (original) => ({
@@ -54,6 +55,7 @@ vi.mock("@/lib/commerce/mercadopago", () => ({
         collector_id: 123,
       };
     if (method === "PUT") return { status: "cancelled" };
+    if (state.fail) throw new Error(state.fail);
     return {
       id: "new-sub",
       init_point:
@@ -66,6 +68,7 @@ beforeEach(() => {
   state.open = null;
   state.status = "pending";
   state.calls = [];
+  state.fail = "";
   vi.stubEnv("MERCADOPAGO_MODE", "production");
   vi.stubEnv("MERCADOPAGO_COLLECTOR_ID", "123");
   vi.stubEnv("APP_URL", "https://amobla.example");
@@ -144,5 +147,67 @@ describe("Mercado Pago payer identity", () => {
     expect(
       state.calls.some((c) => (c as { method?: string }).method === "PUT"),
     ).toBe(false);
+  });
+});
+const cardRequest = (cardToken: unknown) =>
+  new Request("https://amobla.example/api/checkout", {
+    method: "POST",
+    headers: {
+      Origin: "https://amobla.example",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      sku: "basic-month",
+      key: "00000000-0000-4000-8000-000000000002",
+      cardToken,
+    }),
+  });
+describe("Card subscriptions", () => {
+  it("creates an authorized subscription with the account email, no Mercado Pago login", async () => {
+    const r = await POST(cardRequest("a1b2c3d4e5f60718293a4b5c6d7e8f90"));
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual({ subscribed: true });
+    expect(state.calls).toContainEqual(
+      expect.objectContaining({
+        path: "/preapproval",
+        method: "POST",
+        body: expect.objectContaining({
+          status: "authorized",
+          card_token_id: "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+          payer_email: "google@example.com",
+          auto_recurring: expect.objectContaining({
+            transaction_amount: 20000,
+            currency_id: "ARS",
+          }),
+        }),
+      }),
+    );
+    expect(state.calls).toContainEqual({
+      table: "subscriptions",
+      data: expect.objectContaining({ id: "new-sub", status: "authorized" }),
+    });
+  });
+  it("closes the order and asks for another card when Mercado Pago declines it", async () => {
+    state.fail = "MERCADOPAGO_400";
+    const r = await POST(cardRequest("a1b2c3d4e5f60718293a4b5c6d7e8f90"));
+    expect(r.status).toBe(402);
+    expect(state.calls).toContainEqual({
+      table: "orders",
+      data: { status: "checkout_failed" },
+    });
+  });
+  it("keeps an uncertain provider error for review instead of retrying", async () => {
+    state.fail = "MERCADOPAGO_500";
+    expect(
+      (await POST(cardRequest("a1b2c3d4e5f60718293a4b5c6d7e8f90"))).status,
+    ).toBe(500);
+    expect(state.calls).toContainEqual({
+      table: "orders",
+      data: { status: "checkout_needs_review" },
+    });
+  });
+  it("rejects a malformed card token before calling Mercado Pago", async () => {
+    expect((await POST(cardRequest("<script>"))).status).toBe(400);
+    expect(state.calls).toEqual([]);
   });
 });

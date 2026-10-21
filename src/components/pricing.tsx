@@ -11,6 +11,7 @@ import {
   BadgeCheck,
   X,
 } from "lucide-react";
+import { CardBrick, mercadoPagoPublicKey } from "./card-brick";
 import {
   offers,
   skuFor,
@@ -56,10 +57,13 @@ export function PricingPlans({
   products,
   enabled,
   trial,
+  email,
 }: {
   products: Product[];
   enabled: boolean;
   trial: boolean;
+  /** Signed-in email, used as the subscriber email for card payments. */
+  email?: string;
 }) {
   const checkoutKeys = useRef<Record<string, string>>({});
   const [annual, setAnnual] = useState(true),
@@ -150,6 +154,38 @@ export function PricingPlans({
       setBusy("");
     }
   }
+  // Subscriptions paid with a card on this page: no Mercado Pago login, so
+  // the buyer's Mercado Pago email does not matter.
+  async function subscribeWithCard(sku: string, cardToken: string) {
+    setBusy(sku);
+    setError("");
+    try {
+      const response = await fetch("/api/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // A card token is single-use, so every attempt is a new order.
+        body: JSON.stringify({ sku, key: crypto.randomUUID(), cardToken }),
+      });
+      if (response.status === 401) {
+        window.location.assign("/acceso?next=%2Fprecios");
+        return;
+      }
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error);
+      window.location.assign("/cuenta");
+    } catch (e) {
+      setError(
+        e instanceof Error && e.message
+          ? e.message
+          : "No pudimos completar la suscripción.",
+      );
+      setBusy("");
+      throw e;
+    }
+  }
+  const cardCheckout = Boolean(
+    mercadoPagoPublicKey && selectedProduct && selectedProduct.kind !== "pack",
+  );
   function card(offer: (typeof offers)[number]) {
     const sku = skuFor(offer.id, annual),
       cents = price(sku),
@@ -196,8 +232,11 @@ export function PricingPlans({
             className="button button-primary"
             disabled={!ready || Boolean(busy)}
             onClick={() => {
-              setSelectedSku(sku);
               setError("");
+              // Packs go straight to Checkout Pro, which takes any account.
+              if (mercadoPagoPublicKey && sku.startsWith("pack-"))
+                void buy(sku);
+              else setSelectedSku(sku);
             }}
           >
             {busy === sku ? (
@@ -303,7 +342,11 @@ export function PricingPlans({
                 <X size={20} />
               </button>
               <span className="eyebrow">PAGO SEGURO CON MERCADO PAGO</span>
-              <h2 id="checkout-title">Confirmá tu email de Mercado Pago</h2>
+              <h2 id="checkout-title">
+                {cardCheckout
+                  ? "Completá tu suscripción"
+                  : "Confirmá tu email de Mercado Pago"}
+              </h2>
               {selectedProduct && (
                 <div className="checkout-summary">
                   <strong>{selectedProduct.name}</strong>
@@ -325,51 +368,73 @@ export function PricingPlans({
                   </small>
                 </div>
               )}
-              <p>
-                Usá el email con el que vas a pagar en Mercado Pago. Puede ser
-                distinto al que usás para entrar a amoblaIA.
-              </p>
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  void buy(selectedSku);
-                }}
-              >
-                <label htmlFor="mp-payer-email">
-                  Email de tu cuenta de Mercado Pago
-                </label>
-                <input
-                  id="mp-payer-email"
-                  type="email"
-                  required
-                  autoFocus
-                  autoComplete="email"
-                  maxLength={254}
-                  value={payerEmail}
-                  onChange={(e) => setPayerEmail(e.target.value)}
-                  placeholder="tu-email@ejemplo.com"
-                />
-                <p className="field-hint">
-                  Al abrir Mercado Pago, ingresá con esa misma cuenta. Así
-                  evitás el error de emails diferentes.
-                </p>
-                {error && (
-                  <p className="inline-error" role="alert">
-                    {error}
+              {cardCheckout && selectedProduct ? (
+                <>
+                  <p>
+                    Pagá con tarjeta de crédito o débito. Los datos de la
+                    tarjeta los procesa Mercado Pago; no necesitás una cuenta de
+                    Mercado Pago.
                   </p>
-                )}
-                <button
-                  className="button button-primary"
-                  disabled={Boolean(busy)}
-                >
-                  {busy ? (
-                    <LoaderCircle size={18} className="spin" />
-                  ) : (
-                    <ArrowUpRight size={18} />
-                  )}{" "}
-                  Ir a Mercado Pago
-                </button>
-              </form>
+                  {error && (
+                    <p className="inline-error" role="alert">
+                      {error}
+                    </p>
+                  )}
+                  <CardBrick
+                    amount={(selectedProduct.price_cents || 0) / 100}
+                    email={email}
+                    onToken={(token) => subscribeWithCard(selectedSku, token)}
+                  />
+                </>
+              ) : (
+                <>
+                  <p>
+                    Usá el email con el que vas a pagar en Mercado Pago. Puede
+                    ser distinto al que usás para entrar a amoblaIA.
+                  </p>
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      void buy(selectedSku);
+                    }}
+                  >
+                    <label htmlFor="mp-payer-email">
+                      Email de tu cuenta de Mercado Pago
+                    </label>
+                    <input
+                      id="mp-payer-email"
+                      type="email"
+                      required
+                      autoFocus
+                      autoComplete="email"
+                      maxLength={254}
+                      value={payerEmail}
+                      onChange={(e) => setPayerEmail(e.target.value)}
+                      placeholder="tu-email@ejemplo.com"
+                    />
+                    <p className="field-hint">
+                      Al abrir Mercado Pago, ingresá con esa misma cuenta. Así
+                      evitás el error de emails diferentes.
+                    </p>
+                    {error && (
+                      <p className="inline-error" role="alert">
+                        {error}
+                      </p>
+                    )}
+                    <button
+                      className="button button-primary"
+                      disabled={Boolean(busy)}
+                    >
+                      {busy ? (
+                        <LoaderCircle size={18} className="spin" />
+                      ) : (
+                        <ArrowUpRight size={18} />
+                      )}{" "}
+                      Ir a Mercado Pago
+                    </button>
+                  </form>
+                </>
+              )}
             </section>
           </div>
         )}

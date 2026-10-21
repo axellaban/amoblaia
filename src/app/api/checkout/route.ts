@@ -29,7 +29,7 @@ export async function POST(request: Request) {
       );
     if (Number(request.headers.get("content-length") || 0) > 2048)
       throw new HttpError(413, "Solicitud inválida.");
-    const { sku, key, payerEmail } = await request.json();
+    const { sku, key, payerEmail, cardToken } = await request.json();
     if (
       typeof sku !== "string" ||
       !/^[-a-z0-9]{3,40}$/.test(sku) ||
@@ -47,12 +47,28 @@ export async function POST(request: Request) {
         "Tu cuenta necesita una revisión antes de realizar otra compra.",
       );
     const db = adminClient();
-    const email =
-      typeof payerEmail === "string" ? payerEmail.trim().toLowerCase() : "";
+    // A card tokenized on our page needs no Mercado Pago login, so the
+    // subscription uses the account email and nobody has to match emails.
+    const card =
+      typeof cardToken === "string" && /^[A-Za-z0-9_-]{16,128}$/.test(cardToken)
+        ? cardToken
+        : null;
+    if (cardToken !== undefined && !card)
+      throw new HttpError(400, "Revisá los datos de la tarjeta.");
+    const email = card
+      ? (process.env.MERCADOPAGO_MODE !== "production" &&
+          process.env.MERCADOPAGO_TEST_PAYER_EMAIL) ||
+        (user.email || "").toLowerCase()
+      : typeof payerEmail === "string"
+        ? payerEmail.trim().toLowerCase()
+        : // Checkout Pro takes any account; a redirect subscription must not
+          // silently use the sign-in email, since Mercado Pago binds it.
+          sku.startsWith("pack-")
+          ? (user.email || "").toLowerCase()
+          : "";
     if (
       !email ||
-      typeof payerEmail !== "string" ||
-      payerEmail.length > 254 ||
+      email.length > 254 ||
       !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
     )
       throw new HttpError(400, "Ingresá un email válido de Mercado Pago.");
@@ -70,7 +86,7 @@ export async function POST(request: Request) {
     if (open.error) throw new Error("CHECKOUT_LOOKUP_FAILED");
     if (open.data?.checkout_url) {
       const previous = open.data;
-      if (previous.payer_email === email)
+      if (!card && previous.payer_email === email)
         return Response.json(
           { url: previous.checkout_url },
           { headers: { "Cache-Control": "no-store" } },
@@ -161,6 +177,27 @@ export async function POST(request: Request) {
           },
           key,
         );
+      } else if (card) {
+        checkout = await mp(
+          "/preapproval",
+          "POST",
+          {
+            reason: `amoblaIA · ${snapshot.name}`,
+            external_reference: key,
+            payer_email: email,
+            card_token_id: card,
+            status: "authorized",
+            auto_recurring: {
+              frequency: snapshot.kind === "year" ? 12 : 1,
+              frequency_type: "months",
+              transaction_amount: snapshot.price_cents! / 100,
+              currency_id: "ARS",
+            },
+            back_url: `${base}/cuenta?pago=retorno`,
+            notification_url,
+          },
+          key,
+        );
       } else {
         checkout = await mp(
           "/preapproval",
@@ -183,11 +220,46 @@ export async function POST(request: Request) {
         );
       }
     } catch (e) {
+      // A 4xx answer means Mercado Pago created nothing (for example, a
+      // declined card); the order is closed so the buyer can retry.
+      const refused =
+        card && e instanceof Error && /^MERCADOPAGO_4\d\d$/.test(e.message);
       await db
         .from("orders")
-        .update({ status: "checkout_needs_review" })
+        .update({
+          status: refused ? "checkout_failed" : "checkout_needs_review",
+        })
         .eq("id", key);
+      if (refused)
+        throw new HttpError(
+          402,
+          "Mercado Pago no aprobó la tarjeta. Revisá los datos o probá con otra.",
+        );
       throw e;
+    }
+    if (card) {
+      const saved = await db
+        .from("orders")
+        .update({
+          checkout_id: checkout.id,
+          payer_email: email,
+          provider_subscription_id: checkout.id,
+          status: "checkout_ready",
+        })
+        .eq("id", key);
+      if (saved.error) throw new Error("CHECKOUT_SAVE_FAILED");
+      const sub = await db.from("subscriptions").insert({
+        id: checkout.id,
+        order_id: key,
+        user_id: user.id,
+        status: "authorized",
+      });
+      if (sub.error && sub.error.code !== "23505")
+        throw new Error("SUBSCRIPTION_SAVE_FAILED");
+      return Response.json(
+        { subscribed: true },
+        { headers: { "Cache-Control": "no-store" } },
+      );
     }
     const url =
       snapshot.kind === "pack" && process.env.MERCADOPAGO_MODE !== "production"
