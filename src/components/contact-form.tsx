@@ -14,6 +14,9 @@ export function ContactForm({
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [ticket, setTicket] = useState("");
+  // The footer newsletter mirrors the reference: one field with the button
+  // inside it. Pressing "Suscribirme" is the explicit opt-in.
+  const inline = kind === "newsletter" && compact;
   return (
     <form
       className={`contact-form ${compact ? "compact" : ""}`}
@@ -25,7 +28,12 @@ export function ContactForm({
           const r = await fetch("/api/contact", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ kind, email, message, consent }),
+            body: JSON.stringify({
+              kind,
+              email,
+              message,
+              consent: inline || consent,
+            }),
           });
           const p = await r.json();
           if (!r.ok) throw new Error(p.error);
@@ -48,6 +56,22 @@ export function ContactForm({
             ? "Te anotamos para recibir novedades."
             : `Recibimos tu solicitud. Número de seguimiento: ${ticket.slice(0, 8).toUpperCase()}.`}
         </p>
+      ) : inline ? (
+        <div className="newsletter-inline">
+          <input
+            type="email"
+            required
+            autoComplete="email"
+            maxLength={254}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Ingresá tu email"
+            aria-label="Email"
+          />
+          <button disabled={busy}>
+            {busy && <LoaderCircle className="spin" size={17} />} Suscribirme
+          </button>
+        </div>
       ) : (
         <>
           <label>

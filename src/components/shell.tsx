@@ -3,7 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { ContactForm } from "./contact-form";
-import { ArrowUpRight, Menu, X, LogOut } from "lucide-react";
+import { Menu, X, LogOut } from "lucide-react";
 /** Brand mark: an arched doorway with a bench inside, plus the spark of AI. */
 export function LogoMark({ className }: { className?: string }) {
   return (
@@ -110,7 +110,7 @@ export function Header() {
                 Entrar
               </Link>
               <Link href="/acceso" className="button button-small">
-                Crear cuenta <ArrowUpRight size={16} />
+                Crear cuenta
               </Link>
             </>
           )}
@@ -132,51 +132,63 @@ export function Footer() {
     <footer className="footer">
       <div className="container">
         <div className="footer-newsletter">
-          <div>
-            <span className="footer-label">NOVEDADES</span>
-            <h2>Sigamos en contacto</h2>
-            <p>Ideas para mostrar tus propiedades y novedades de amoblaIA.</p>
-          </div>
+          <span className="footer-label">Newsletter</span>
+          <h2>Mantenete conectado</h2>
+          <p>
+            Recibí las novedades del mercado inmobiliario y de amoblaIA
+            directamente en tu email.
+          </p>
           <ContactForm kind="newsletter" compact />
         </div>
         <div className="footer-top">
           <div>
-            <Link href="/">
-              <Logo />
+            <Link href="/" className="footer-brand">
+              <b>amobla</b>IA
             </Link>
             <p>
-              De espacio vacío a próximo hogar.
-              <br />
-              Virtual staging para Latinoamérica.
+              Escribinos cuando quieras desde <Link href="/ayuda">Soporte</Link>
+              .
             </p>
           </div>
           <div>
-            <span className="footer-label">EXPLORÁ</span>
-            <Link href="/galeria">Galería de ambientes</Link>
-            <Link href="/estudio">Estudio de diseño</Link>
-            <Link href="/proyectos">Mis fotos y carpetas</Link>
-            <Link href="/precios">Acceso y precios</Link>
+            <span className="footer-label">Links rápidos</span>
+            <Link href="/">Inicio</Link>
+            <Link href="/galeria">Galería</Link>
+            <Link href="/precios">Precios</Link>
+            <Link href="/acceso">Entrar</Link>
+            <Link href="/trabaja-con-nosotros">Trabajá con nosotros</Link>
+            <Link href="/faq">Preguntas frecuentes</Link>
           </div>
           <div>
-            <span className="footer-label">AMOBLAIA</span>
-            <Link href="/faq">Preguntas frecuentes</Link>
-            <Link href="/privacidad">Privacidad</Link>
-            <Link href="/terminos">Términos de uso</Link>
-            <Link href="/reembolsos">Reembolsos</Link>
-            <Link href="/ayuda">Soporte</Link>
+            <span className="footer-label">Términos y condiciones</span>
+            <Link href="/terminos">Términos del servicio</Link>
+            <Link href="/reembolsos">Política de reembolsos</Link>
+            <Link href="/privacidad">Política de privacidad</Link>
             <Link href="/ayuda#arrepentimiento">Botón de arrepentimiento</Link>
             <Link href="/ayuda#baja">Botón de baja</Link>
           </div>
           <div>
-            <span className="footer-label">TRABAJEMOS JUNTOS</span>
+            <span className="footer-label">Trabajá con nosotros</span>
             <Link href="/afiliados">Programa de afiliados</Link>
-            <Link href="/marca-blanca">Marca blanca</Link>
-            <Link href="/api">Acceso API</Link>
-            <Link href="/trabaja-con-nosotros">Trabajá con nosotros</Link>
+            <Link href="/marca-blanca">Programa de marca blanca</Link>
+            <Link href="/api">Acceso a la API</Link>
+          </div>
+          <div>
+            <span className="footer-label">Blog</span>
+            <Link href="/como-hacer-virtual-staging">
+              Cómo hacer virtual staging
+            </Link>
+            <Link href="/precios-virtual-staging">
+              Precios de virtual staging
+            </Link>
+            <Link href="/virtual-staging-con-ia">Virtual staging con IA</Link>
+            <Link href="/alternativas-virtual-staging">
+              Alternativas de virtual staging
+            </Link>
+            <Link href="/amoblar-departamentos">Amoblar departamentos</Link>
           </div>
         </div>
         <div className="footer-bottom">
-          <span>© {new Date().getFullYear()} amoblaIA</span>
           <a
             href="https://www.argentina.gob.ar/produccion/defensadelconsumidor/formulario"
             target="_blank"
@@ -184,6 +196,7 @@ export function Footer() {
           >
             Defensa de las y los consumidores. Para reclamos ingresá acá
           </a>
+          <span>© {new Date().getFullYear()} amoblaIA™</span>
         </div>
       </div>
     </footer>
