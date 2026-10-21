@@ -1,0 +1,114 @@
+import { PGlite } from "@electric-sql/pglite";
+import { readFileSync, readdirSync } from "node:fs";
+import { afterAll, beforeAll, expect, it } from "vitest";
+let db: PGlite;
+const user = "00000000-0000-4000-8000-000000000071",
+  sub = "00000000-0000-4000-8000-000000000072",
+  pack = "00000000-0000-4000-8000-000000000073";
+const one = async <T>(sql: string, params: unknown[] = []) =>
+  (await db.query<T>(sql, params)).rows[0];
+const apply = (id: string, status: string, order = sub, s = "sub-r") =>
+  db.query("select amobla_apply_payment($1,$2,$3,2000000,now(),$4)", [
+    id,
+    order,
+    status,
+    s,
+  ]);
+const blocked = async () =>
+  (await one<{ b: boolean }>("select blocked as b from profiles where id=$1", [
+    user,
+  ]))!.b;
+const liveGrants = async (payment: string) =>
+  (await one<{ n: number }>(
+    "select count(*)::int as n from credit_grants where payment_id=$1 and not revoked",
+    [payment],
+  ))!.n;
+beforeAll(async () => {
+  db = new PGlite();
+  await db.exec(`create role anon; create role authenticated; create role service_role bypassrls; create schema auth; create schema storage;
+ create table auth.users(id uuid primary key); create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
+ create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
+ create table storage.objects(id uuid,name text,bucket_id text); alter table storage.objects enable row level security;
+ create function storage.foldername(text) returns text[] language sql immutable as $$select string_to_array($1,'/')$$;
+ insert into auth.users values('${user}');`);
+  for (const file of readdirSync("supabase/migrations").sort())
+    await db.exec(readFileSync(`supabase/migrations/${file}`, "utf8"));
+  await db.query("select amobla_account($1,false)", [user]);
+  await db.query("select amobla_create_order($1,$2,'basic-month')", [
+    user,
+    sub,
+  ]);
+  await db.exec(
+    `update orders set provider_subscription_id='sub-r' where id='${sub}'`,
+  );
+}, 30000);
+afterAll(async () => await db?.close());
+
+it("blocks during a mediation and restores everything when the seller wins it", async () => {
+  await apply("pay-m", "approved");
+  await apply("pay-m", "in_mediation");
+  expect(await blocked()).toBe(true);
+  // The photos are kept while the dispute is open.
+  expect(await liveGrants("pay-m")).toBe(1);
+  await apply("pay-m", "approved");
+  expect(await blocked()).toBe(false);
+  expect(
+    (await one<{ s: string }>(
+      "select status as s from payments where id='pay-m'",
+    ))!.s,
+  ).toBe("approved");
+});
+
+it("keeps photos and access after a goodwill partial refund", async () => {
+  await apply("pay-m", "partially_refunded");
+  expect(await blocked()).toBe(false);
+  expect(await liveGrants("pay-m")).toBe(1);
+  // An older 'approved' notification does not undo the partial refund.
+  await apply("pay-m", "approved");
+  expect(
+    (await one<{ s: string }>(
+      "select status as s from payments where id='pay-m'",
+    ))!.s,
+  ).toBe("partially_refunded");
+});
+
+it("still revokes and blocks on a chargeback, for good", async () => {
+  await apply("pay-m", "charged_back");
+  expect(await blocked()).toBe(true);
+  expect(await liveGrants("pay-m")).toBe(0);
+  await apply("pay-m", "approved");
+  expect(await blocked()).toBe(true);
+});
+
+it("records a second payment on the same pack instead of losing it", async () => {
+  await db.exec(
+    `update profiles set blocked=false where id='${user}'; update products set active=true,price_cents=2000000 where sku='pack-10'`,
+  );
+  await db.query("select amobla_create_order($1,$2,'pack-10')", [user, pack]);
+  await apply("pay-p1", "approved", pack, null as unknown as string);
+  await apply("pay-p2", "approved", pack, null as unknown as string);
+  const rows = (
+    await db.query<{ id: string; status: string }>(
+      "select id,status from payments where order_id=$1 order by id",
+      [pack],
+    )
+  ).rows;
+  expect(rows).toEqual([
+    { id: "pay-p1", status: "approved" },
+    { id: "pay-p2", status: "duplicate" },
+  ]);
+  expect(await liveGrants("pay-p2")).toBe(0);
+});
+
+it("counts failed notification attempts", async () => {
+  await db.exec(
+    "insert into webhook_events(event_key,topic,resource_id) values('k','payment','1')",
+  );
+  await db.query("select amobla_inbox_failed('k','MERCADOPAGO_500')");
+  await db.query("select amobla_inbox_failed('k','MERCADOPAGO_500')");
+  expect(
+    await one(
+      "select attempts,last_error from webhook_events where event_key='k'",
+    ),
+  ).toEqual({ attempts: 2, last_error: "MERCADOPAGO_500" });
+});

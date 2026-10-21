@@ -12,6 +12,7 @@ import {
   isDuplicateSubscription,
   MercadoPagoError,
   mp,
+  retireSubscription,
   settleStaleOrders,
 } from "@/lib/commerce/mercadopago";
 import type { Product } from "@/lib/commerce/catalog";
@@ -91,7 +92,9 @@ export async function POST(request: Request) {
       .limit(1)
       .maybeSingle();
     if (open.error) throw new Error("CHECKOUT_LOOKUP_FAILED");
-    if (open.data?.checkout_url) {
+    // A pack checkout is never reopened: paying the same link twice would be
+    // a second payment on one order.
+    if (open.data?.checkout_url && !sku.startsWith("pack-")) {
       const previous = open.data;
       if (!card && previous.payer_email === email)
         return Response.json(
@@ -189,9 +192,25 @@ export async function POST(request: Request) {
         "Estamos verificando el checkout anterior. Consultá Mi cuenta antes de volver a comprar.",
       );
     }
+    // Saved before Mercado Pago is called: a stale order can then be looked
+    // up by the email it was really created with.
+    const noted = await db
+      .from("orders")
+      .update({ payer_email: email })
+      .eq("id", key);
+    if (noted.error) throw new Error("ORDER_SAVE_FAILED");
+    if (replacing) {
+      // Lets the webhook retire the old plan if this request dies midway.
+      const linked = await db
+        .from("orders")
+        .update({ replaces_subscription_id: replacing.id })
+        .eq("id", key);
+      if (linked.error) console.error("plan_change_link_pending_migration");
+    }
     const notification_url = `${base}/api/webhooks/mercadopago?token=${encodeURIComponent(process.env.MERCADOPAGO_NOTIFICATION_TOKEN!)}`;
     let checkout: {
       id: string;
+      status?: string;
       init_point: string;
       sandbox_init_point?: string;
     };
@@ -270,9 +289,7 @@ export async function POST(request: Request) {
       // declined card); the order is closed so the buyer can retry.
       // Timeouts, conflicts and rate limits (408/409/429) are not answers.
       const refused =
-        card &&
-        e instanceof Error &&
-        /^MERCADOPAGO_4(?!08|09|29)\d\d$/.test(e.message);
+        e instanceof Error && /^MERCADOPAGO_4(?!08|09|29)\d\d$/.test(e.message);
       await db
         .from("orders")
         .update({
@@ -284,7 +301,9 @@ export async function POST(request: Request) {
         // Admins also see Mercado Pago's own words, to diagnose without logs.
         throw new HttpError(
           402,
-          cardRefusalMessage(reason) +
+          (card
+            ? cardRefusalMessage(reason)
+            : "Mercado Pago rechazó el pedido. Revisá el email e intentá de nuevo.") +
             (isAdmin(user.email) && reason
               ? ` (Detalle para el equipo: ${reason.slice(0, 200)})`
               : ""),
@@ -293,13 +312,25 @@ export async function POST(request: Request) {
       throw e;
     }
     if (card) {
+      // Anything but 'authorized' means the card was not accepted: nothing
+      // must change, least of all the current plan.
+      if (checkout.status !== "authorized") {
+        await mp(`/preapproval/${encodeURIComponent(checkout.id)}`, "PUT", {
+          status: "cancelled",
+        }).catch(() =>
+          console.error("unauthorized_rollback_failed", checkout.id),
+        );
+        await db
+          .from("orders")
+          .update({ status: "checkout_failed" })
+          .eq("id", key);
+        throw new HttpError(402, cardRefusalMessage(""));
+      }
       if (replacing) {
-        // Stop the old plan's renewals. If that fails, the new subscription
-        // is cancelled too, so the buyer is never billed for two plans.
+        // Stop the old plan's renewals. If that truly fails, the new
+        // subscription is cancelled too: never two plans billed.
         try {
-          await mp(`/preapproval/${encodeURIComponent(replacing.id)}`, "PUT", {
-            status: "cancelled",
-          });
+          await retireSubscription(replacing.id);
         } catch {
           await mp(`/preapproval/${encodeURIComponent(checkout.id)}`, "PUT", {
             status: "cancelled",
@@ -315,14 +346,6 @@ export async function POST(request: Request) {
             "No pudimos cambiar tu plan y no activamos el nuevo. Tu plan actual sigue igual; probá de nuevo en unos minutos.",
           );
         }
-        await db
-          .from("subscriptions")
-          .update({ status: "cancelled" })
-          .eq("id", replacing.id);
-        await db
-          .from("orders")
-          .update({ status: "cancelled" })
-          .eq("id", replacing.order_id);
       }
       // Mercado Pago has already authorized the subscription: a failed write
       // here must not tell the buyer that it failed. The webhook reconciles it.

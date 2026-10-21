@@ -1,4 +1,3 @@
-import { after } from "next/server";
 import { sameSecret } from "@/lib/session";
 import { adminClient } from "@/lib/supabase/server";
 import {
@@ -41,8 +40,8 @@ export async function POST(request: Request) {
     const token = process.env.MERCADOPAGO_NOTIFICATION_TOKEN;
     const tokenValid = Boolean(
       token &&
-        token.length >= 32 &&
-        sameSecret(url.searchParams.get("token") || "", token),
+      token.length >= 32 &&
+      sameSecret(url.searchParams.get("token") || "", token),
     );
     const secret = process.env.MERCADOPAGO_WEBHOOK_SECRET;
     const signatureValid = Boolean(
@@ -54,20 +53,21 @@ export async function POST(request: Request) {
     if (!tokenValid && !signatureValid)
       return new Response("Unauthorized", { status: 401 });
     const key = `${topic}:${id}:${String(body.id || body.date_created || request.headers.get("x-request-id") || "event").slice(0, 100)}`;
-    const saved = await adminClient()
-      .from("webhook_events")
-      .upsert(
-        {
-          event_key: key,
-          topic,
-          resource_id: id,
-          processed_at: null,
-          last_error: null,
-        },
-        { onConflict: "event_key" },
-      );
+    const saved = await adminClient().from("webhook_events").upsert(
+      {
+        event_key: key,
+        topic,
+        resource_id: id,
+        processed_at: null,
+        last_error: null,
+      },
+      { onConflict: "event_key" },
+    );
     if (saved.error) return new Response("Retry", { status: 503 });
-    after(() => processInbox(key, topic, id));
+    // Processed before answering: a failure returns 500 so Mercado Pago
+    // retries it on its own schedule, instead of waiting for the daily cron.
+    if (!(await processInbox(key, topic, id)))
+      return new Response("Retry", { status: 500 });
     return new Response("OK");
   } catch {
     return new Response("Invalid", { status: 400 });

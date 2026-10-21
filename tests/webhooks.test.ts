@@ -44,7 +44,7 @@ beforeEach(() => {
   vi.stubEnv("MERCADOPAGO_WEBHOOK_SECRET", secret);
   mocks.upsert.mockReset().mockResolvedValue({ error: null });
   mocks.after.mockReset();
-  mocks.processInbox.mockReset();
+  mocks.processInbox.mockReset().mockResolvedValue(true);
 });
 afterEach(() => vi.unstubAllEnvs());
 
@@ -61,7 +61,7 @@ describe("Mercado Pago notification ingress", () => {
     expect(mocks.upsert).not.toHaveBeenCalled();
     expect(mocks.after).not.toHaveBeenCalled();
   });
-  it("persists an authenticated subscription callback before scheduling reconciliation", async () => {
+  it("persists an authenticated subscription callback, then reconciles it before answering", async () => {
     const response = await POST(
       notification({
         authenticated: true,
@@ -78,14 +78,18 @@ describe("Mercado Pago notification ingress", () => {
       expect.anything(),
     );
     expect(mocks.upsert.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.after.mock.invocationCallOrder[0],
+      mocks.processInbox.mock.invocationCallOrder[0],
     );
-    expect(mocks.processInbox).not.toHaveBeenCalled();
-    await mocks.after.mock.calls[0][0]();
     expect(mocks.processInbox).toHaveBeenCalledWith(
       "subscription_authorized_payment:123456:42",
       "subscription_authorized_payment",
       "123456",
+    );
+  });
+  it("asks Mercado Pago to retry when reconciliation fails", async () => {
+    mocks.processInbox.mockResolvedValue(false);
+    expect((await POST(notification({ authenticated: true }))).status).toBe(
+      500,
     );
   });
   it("accepts a checkout callback by its private token even if MP signed it with another secret", async () => {

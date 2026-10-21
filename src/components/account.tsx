@@ -58,6 +58,7 @@ const statuses: Record<string, string> = {
   charged_back: "Contracargo",
   partially_refunded: "Reembolso parcial",
   in_mediation: "En revisión",
+  duplicate: "Duplicado, se reintegra",
   cancelled: "Cancelada",
   authorized: "Activa",
   paused: "Pausada",

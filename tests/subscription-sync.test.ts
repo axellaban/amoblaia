@@ -4,6 +4,7 @@ const state = vi.hoisted(() => ({
   order: {} as Record<string, unknown>,
   writes: [] as { table: string; data: unknown }[],
   insertError: null as null | { code: string; message: string },
+  oldStatus: null as null | string,
 }));
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/supabase/server", () => ({
@@ -15,7 +16,13 @@ vi.mock("@/lib/supabase/server", () => ({
         eq: () => q,
         is: () => q,
         single: async () => ({ data: { ...state.order }, error: null }),
-        maybeSingle: async () => ({ data: null, error: null }),
+        maybeSingle: async () => ({
+          data:
+            table === "subscriptions" && state.oldStatus
+              ? { status: state.oldStatus }
+              : null,
+          error: null,
+        }),
         update: (data: Record<string, unknown>) => {
           state.writes.push({ table, data });
           if (table === "orders") Object.assign(state.order, data);
@@ -39,6 +46,7 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 import {
   isDuplicateSubscription,
+  retireSubscription,
   syncSubscription,
 } from "../src/lib/commerce/mercadopago";
 
@@ -47,6 +55,7 @@ beforeEach(() => {
   vi.stubEnv("MERCADOPAGO_COLLECTOR_ID", "123");
   state.writes = [];
   state.insertError = null;
+  state.oldStatus = null;
   state.order = {
     id: "order-1",
     user_id: "user-1",
@@ -127,4 +136,67 @@ it("tells a repeated insert apart from a second open subscription", () => {
       message: "subscriptions_one_open",
     }),
   ).toBe(false);
+});
+
+it("treats a cancellation that timed out but was applied as done", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (_url: string, init?: RequestInit) =>
+      init?.method === "PUT"
+        ? new Response("timeout", { status: 504 })
+        : Response.json({ status: "cancelled" }),
+    ),
+  );
+  await expect(retireSubscription("sub-old")).resolves.toBeUndefined();
+  expect(state.writes).toContainEqual({
+    table: "subscriptions",
+    data: { status: "cancelled" },
+  });
+});
+
+it("reports a cancellation that really did not happen", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (_url: string, init?: RequestInit) =>
+      init?.method === "PUT"
+        ? new Response("down", { status: 503 })
+        : Response.json({ status: "authorized" }),
+    ),
+  );
+  await expect(retireSubscription("sub-old")).rejects.toThrow(
+    "MERCADOPAGO_503",
+  );
+  expect(state.writes).toEqual([]);
+});
+
+it("retires the replaced plan when the new one is first seen authorized", async () => {
+  state.order.provider_subscription_id = "sub-1";
+  state.order.status = "checkout_ready";
+  state.order.replaces_subscription_id = "sub-old";
+  state.oldStatus = "authorized";
+  const calls: string[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push(`${init?.method || "GET"} ${url}`);
+      return init?.method === "PUT"
+        ? Response.json({ status: "cancelled" })
+        : Response.json({
+            id: "sub-1",
+            collector_id: 123,
+            external_reference: "order-1",
+            status: "authorized",
+            auto_recurring: {
+              currency_id: "ARS",
+              frequency: 1,
+              frequency_type: "months",
+              transaction_amount: 20000,
+            },
+          });
+    }),
+  );
+  await syncSubscription("sub-1");
+  expect(calls).toContain(
+    "PUT https://api.mercadopago.com/preapproval/sub-old",
+  );
 });

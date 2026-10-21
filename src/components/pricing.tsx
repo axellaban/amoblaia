@@ -131,15 +131,14 @@ export function PricingPlans({
   async function buy(sku: string) {
     setBusy(sku);
     setError("");
+    const slot = `${sku}:${payerEmail.trim().toLowerCase()}`;
     try {
       const response = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           sku,
-          key: (checkoutKeys.current[
-            `${sku}:${payerEmail.trim().toLowerCase()}`
-          ] ||= crypto.randomUUID()),
+          key: (checkoutKeys.current[slot] ||= crypto.randomUUID()),
           payerEmail: payerEmail.trim().toLowerCase() || undefined,
         }),
       });
@@ -148,6 +147,10 @@ export function PricingPlans({
         return;
       }
       const payload = await response.json();
+      // A definite refusal closed that order: the next try is a new one.
+      // Uncertain errors (5xx) keep the key so a retry cannot duplicate it.
+      if (response.status >= 400 && response.status < 500)
+        delete checkoutKeys.current[slot];
       if (!response.ok) throw new Error(payload.error);
       window.location.assign(payload.url);
     } catch (e) {

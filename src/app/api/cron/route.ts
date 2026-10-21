@@ -34,8 +34,10 @@ export async function GET(request: Request) {
       .from("webhook_events")
       .select("event_key,topic,resource_id")
       .is("processed_at", null)
+      // Events that keep failing go behind fresh ones instead of blocking them.
+      .order("attempts")
       .order("received_at")
-      .limit(10),
+      .limit(25),
   ]);
   if (jobs.error || events.error) return new Response("Retry", { status: 503 });
   after(async () => {

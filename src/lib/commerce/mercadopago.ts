@@ -10,6 +10,8 @@ export type Order = {
   provider_subscription_id: string | null;
   checkout_url: string | null;
   status: string;
+  /** Subscription this order replaces in a plan change (2026-10-21 migration). */
+  replaces_subscription_id?: string | null;
 };
 type Subscription = {
   id: string;
@@ -188,6 +190,33 @@ async function getOrder(id: string) {
   if (error || !data) throw new Error("ORDER_NOT_FOUND");
   return data as Order;
 }
+/**
+ * Cancels a subscription in Mercado Pago and in our records. When the
+ * cancellation call fails or times out, the real state is read back: it may
+ * well have been applied.
+ */
+export async function retireSubscription(id: string) {
+  const path = `/preapproval/${encodeURIComponent(id)}`;
+  try {
+    await mp(path, "PUT", { status: "cancelled" });
+  } catch (e) {
+    const now = await mp<{ status: string }>(path).catch(() => null);
+    if (now?.status !== "cancelled") throw e;
+  }
+  const db = adminClient();
+  const ended = await db
+    .from("subscriptions")
+    .update({ status: "cancelled" })
+    .eq("id", id)
+    .select("order_id")
+    .maybeSingle();
+  if (ended.error) throw new Error("SUBSCRIPTION_UPDATE_FAILED");
+  if (ended.data)
+    await db
+      .from("orders")
+      .update({ status: "cancelled" })
+      .eq("id", ended.data.order_id);
+}
 export async function syncSubscription(id: string) {
   const sub = await mp<Subscription>(`/preapproval/${encodeURIComponent(id)}`);
   verifySeller(sub.collector_id);
@@ -225,6 +254,18 @@ export async function syncSubscription(id: string) {
   )
     throw new Error("SUBSCRIPTION_MISMATCH");
   const db = adminClient();
+  // A plan change whose checkout could not finish (timeout, crash) leaves
+  // the old plan open: whichever path first sees the new one authorized
+  // retires it, so the buyer is never billed for both.
+  if (sub.status === "authorized" && order.replaces_subscription_id) {
+    const old = await db
+      .from("subscriptions")
+      .select("status")
+      .eq("id", order.replaces_subscription_id)
+      .maybeSingle();
+    if (old.data && old.data.status !== "cancelled")
+      await retireSubscription(order.replaces_subscription_id);
+  }
   const saved = await db
     .from("subscriptions")
     .update({ status: sub.status })
@@ -336,6 +377,18 @@ export async function syncPayment(id: string, subscriptionId?: string) {
     p_paid_at: payment.date_approved || payment.date_created,
     p_subscription: subscriptionId || null,
   });
+  // A full refund or a chargeback undoes the purchase: renewals must stop,
+  // or a blocked account would keep being charged every month. A failure is
+  // thrown so the notification is retried.
+  if (subscriptionId && ["refunded", "charged_back"].includes(status)) {
+    const { data } = await adminClient()
+      .from("subscriptions")
+      .select("status")
+      .eq("id", subscriptionId)
+      .maybeSingle();
+    if (data && data.status !== "cancelled")
+      await retireSubscription(subscriptionId);
+  }
 }
 export async function processBillingEvent(topic: string, id: string) {
   if (topic === "payment") return syncPayment(id);
@@ -352,6 +405,7 @@ export async function processBillingEvent(topic: string, id: string) {
       await syncPayment(String(invoice.payment.id), invoice.preapproval_id);
   }
 }
+/** Processes a stored notification; false means it failed and must be retried. */
 export async function processInbox(key: string, topic: string, id: string) {
   const db = adminClient();
   try {
@@ -361,13 +415,21 @@ export async function processInbox(key: string, topic: string, id: string) {
       .update({ processed_at: new Date().toISOString(), last_error: null })
       .eq("event_key", key);
     if (r.error) throw new Error("INBOX_SAVE_FAILED");
+    return true;
   } catch (e) {
-    await db
-      .from("webhook_events")
-      .update({
-        last_error:
-          e instanceof Error ? e.message.slice(0, 80) : "PROCESSING_FAILED",
-      })
-      .eq("event_key", key);
+    const code =
+      e instanceof Error ? e.message.slice(0, 80) : "PROCESSING_FAILED";
+    // Counting attempts lets the retry queue put events that keep failing
+    // behind fresh ones (amobla_inbox_failed needs the 20261021 migration).
+    const counted = await db.rpc("amobla_inbox_failed", {
+      p_key: key,
+      p_error: code,
+    });
+    if (counted.error)
+      await db
+        .from("webhook_events")
+        .update({ last_error: code })
+        .eq("event_key", key);
+    return false;
   }
 }
