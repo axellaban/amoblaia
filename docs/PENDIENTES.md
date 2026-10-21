@@ -12,7 +12,10 @@ Producción: https://amoblaia.vercel.app/
 - Ejemplos: 79 escenas para 8 ambientes y 10 estilos. Faltan Clásico y Estándar en comedor, cocina, home office, patio, monoambiente y quincho (Estándar en comedor también); se generan con `scripts/generate-examples.ts` al recargar crédito. Falta también la foto propia de personas del bloque final; hoy usa un living de ejemplo.
 - Cierre de sesión con alcance local y modal de email de pago con Escape y foco: hechos.
 - Puntos 4 y 5 de «Siguiente pasada técnica» resueltos: un rechazo de tanda ya no deja proyecto ni original, y los originales duplicados del invitado se borran al convertir. **Aplicar en Supabase la migración `202610210001_claim_guest_orphans.sql`** (SQL Editor); hasta entonces la app funciona como antes y no borra esos originales.
-- Siguen pendientes los puntos 1, 6, 7 y 8: requieren sesión real, crédito de imágenes o servicios externos.
+- Migración `202610210001_claim_guest_orphans.sql` aplicada en Supabase y verificada (devuelve `text[]`, solo `service_role` puede ejecutarla).
+- Con crédito recargado: completas las 88 escenas de ejemplo (8 ambientes × 10 estilos + vacías) y la foto propia del bloque final.
+- Evaluación visual de modos pagos con el prompt y los parámetros de producción, sobre ocho casos: Mejorar foto (living, quincho) cambia exposición y color sin alterar el ambiente; Día a atardecer (terraza vacía y living amoblado) da un atardecer creíble y enciende solo las luces existentes; Vaciar (dormitorio y home office) deja el ambiente vacío y conserva aberturas y placard, aunque en el home office dejó una estantería exenta; Rediseñar living a Industrial y Amoblar monoambiente Minimalista respetan la arquitectura. No reemplaza una prueba con fotos reales de clientes.
+- Siguen pendientes los puntos 1, 6 y 8: requieren sesión real o servicios externos. Para el punto 1 hay un prompt de prueba para la extensión de navegador.
 
 ## Prioridad inmediata: bloqueos para el lanzamiento
 
