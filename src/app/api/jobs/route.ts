@@ -10,16 +10,16 @@ export async function POST(request: Request) {
       p_user: user.id,
       p_trial: process.env.LIVE_TRIAL_ENABLED === "true",
     });
-    const id = await enqueuePhoto(request, user.id);
+    const batch = await enqueuePhoto(request, user.id);
     after(async () => {
       try {
-        await runJob(id);
+        await Promise.allSettled(batch.ids.map((id) => runJob(id)));
       } catch {
-        console.error("job_dispatch_failed", id);
+        console.error("job_dispatch_failed", batch.projectId);
       }
     });
     return Response.json(
-      { id },
+      { id: batch.ids[0], ids: batch.ids, projectId: batch.projectId },
       { status: 202, headers: { "Cache-Control": "no-store" } },
     );
   } catch (e) {

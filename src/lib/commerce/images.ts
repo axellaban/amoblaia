@@ -55,6 +55,10 @@ export async function readPhoto(request: Request) {
     name: file.name.replace(/\.[^.]+$/, "").slice(0, 100) || "Mi espacio",
     requestKey: String(data.get("requestKey") || ""),
     projectId: String(data.get("projectId") || ""),
+    batchSize: Math.min(
+      3,
+      Math.max(1, Math.trunc(Number(data.get("batchSize")) || 1)),
+    ),
   };
 }
 export class ProviderError extends Error {

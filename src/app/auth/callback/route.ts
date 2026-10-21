@@ -1,3 +1,5 @@
+import { cookies } from "next/headers";
+import { GUEST_COOKIE } from "@/lib/guest-token";
 import { NextResponse } from "next/server";
 import { userClient } from "@/lib/supabase/server";
 import { guestId } from "@/lib/commerce/guest";
@@ -17,6 +19,7 @@ export async function GET(request: Request) {
           p_guest: guest,
           p_user: data.user.id,
         });
+      (await cookies()).delete(GUEST_COOKIE);
       return NextResponse.redirect(
         new URL(
           safeNext(url.searchParams.get("next"), "/proyectos"),

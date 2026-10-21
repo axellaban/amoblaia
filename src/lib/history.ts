@@ -14,6 +14,7 @@ export type Project = {
   demo: boolean;
   cloud?: boolean;
   pendingJobId?: string;
+  pendingJobIds?: string[];
   projectId?: string;
   variants?: {
     id: string;

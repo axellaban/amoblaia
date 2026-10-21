@@ -13,6 +13,7 @@ export async function POST(request: Request) {
         "La prueba gratuita no está disponible en este momento.",
       );
     let user = await currentUser();
+    let newSession = false;
     const previousId = await guestId();
     if (!user && previousId) {
       const previous = await adminClient().auth.admin.getUserById(previousId);
@@ -28,15 +29,19 @@ export async function POST(request: Request) {
           "No pudimos iniciar la prueba gratuita. Intentá nuevamente en unos minutos.",
         );
       user = response.data.user;
+      newSession = true;
     }
     if (!user.is_anonymous) {
-      const account = await rpc("amobla_account", {
+      const account = await rpc<Record<string, unknown>>("amobla_account", {
         p_user: user.id,
         p_trial: true,
       });
-      return Response.json(account, {
-        headers: { "Cache-Control": "private, no-store" },
-      });
+      return Response.json(
+        { ...account, newSession },
+        {
+          headers: { "Cache-Control": "private, no-store" },
+        },
+      );
     }
     await rpc("amobla_register_guest", {
       p_user: user.id,
@@ -49,13 +54,16 @@ export async function POST(request: Request) {
       path: "/",
       maxAge: GUEST_SECONDS,
     });
-    const account = await rpc("amobla_account", {
+    const account = await rpc<Record<string, unknown>>("amobla_account", {
       p_user: user.id,
       p_trial: true,
     });
-    return Response.json(account, {
-      headers: { "Cache-Control": "private, no-store" },
-    });
+    return Response.json(
+      { ...account, newSession },
+      {
+        headers: { "Cache-Control": "private, no-store" },
+      },
+    );
   } catch (e) {
     return failure(e);
   }

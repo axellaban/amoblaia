@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { adminClient } from "@/lib/supabase/server";
 import { HttpError, rpc } from "./http";
 import { ProviderError, readPhoto, renderPhoto } from "./images";
-import { freeAllows } from "@/lib/catalog";
+import { freeAllows, buildPrompt } from "@/lib/catalog";
 export const BUCKET = "property-images";
 export type Job = {
   id: string;
@@ -141,7 +141,7 @@ export async function enqueuePhoto(request: Request, userId: string) {
         .single());
     if (error || !project) throw new Error("PROJECT_CREATE_FAILED");
   }
-  return rpc<string>("amobla_reserve_generation", {
+  const ids = await rpc<string[]>("amobla_reserve_batch", {
     p_user: userId,
     p_project: project.id,
     p_key: photo.requestKey,
@@ -149,9 +149,14 @@ export async function enqueuePhoto(request: Request, userId: string) {
     p_style: photo.style,
     p_mode: photo.mode,
     p_notes: photo.notes,
-    p_prompt: photo.prompt,
+    p_prompts: Array.from({ length: photo.batchSize }, (_, i) =>
+      photo.batchSize === 1
+        ? photo.prompt
+        : buildPrompt(photo.room, photo.style, photo.mode, photo.notes, i + 1),
+    ),
     p_daily_limit: Number(process.env.MAX_GENERATIONS_PER_DAY || 100),
   });
+  return { ids, projectId: project.id };
 }
 export async function runJob(id: string) {
   const job = await rpc<Job | null>("amobla_claim_generation", { p_job: id });

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { ContactForm } from "./contact-form";
-import { ArrowUpRight, Menu, X } from "lucide-react";
+import { ArrowUpRight, Menu, X, LogOut } from "lucide-react";
 /** Brand mark: an arched doorway with a bench inside, plus the spark of AI. */
 export function LogoMark({ className }: { className?: string }) {
   return (
@@ -52,8 +52,11 @@ export function Header() {
           className={open ? "nav-links is-open" : "nav-links"}
           aria-label="Navegación principal"
         >
-          <Link href="/" onClick={() => setOpen(false)}>
-            Inicio
+          <Link
+            href={privatePage ? "/proyectos" : "/"}
+            onClick={() => setOpen(false)}
+          >
+            {privatePage ? "Mis fotos" : "Inicio"}
           </Link>
           <Link
             className={pathname === "/galeria" ? "active" : ""}
@@ -69,8 +72,11 @@ export function Header() {
           >
             Precios
           </Link>
-          <Link href="/blog" onClick={() => setOpen(false)}>
-            Blog
+          <Link
+            href={privatePage ? "/cuenta" : "/blog"}
+            onClick={() => setOpen(false)}
+          >
+            {privatePage ? "Mi cuenta" : "Blog"}
           </Link>
           <Link
             className="mobile-account-nav"
@@ -81,12 +87,33 @@ export function Header() {
           </Link>
         </nav>
         <div className="nav-actions">
-          <Link href="/cuenta" className="account-nav">
-            Mi cuenta
-          </Link>
-          <Link href="/estudio" className="button button-small">
-            Empezar gratis <ArrowUpRight size={16} />
-          </Link>
+          {privatePage ? (
+            <button
+              className="icon-button"
+              aria-label="Cerrar sesión"
+              onClick={async () => {
+                const response = await fetch("/api/session", {
+                  method: "DELETE",
+                });
+                if (response.ok) {
+                  const { clearDraft } = await import("@/lib/studio-draft");
+                  await clearDraft();
+                  window.location.assign("/");
+                }
+              }}
+            >
+              <LogOut size={20} />
+            </button>
+          ) : (
+            <>
+              <Link href="/acceso" className="account-nav">
+                Entrar
+              </Link>
+              <Link href="/acceso" className="button button-small">
+                Crear cuenta <ArrowUpRight size={16} />
+              </Link>
+            </>
+          )}
           <button
             className="menu-toggle icon-button"
             onClick={() => setOpen(!open)}

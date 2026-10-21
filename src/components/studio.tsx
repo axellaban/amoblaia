@@ -59,6 +59,7 @@ export function Studio({
 }) {
   const searchParams = useSearchParams();
   const [openingProject, setOpeningProject] = useState(false);
+  const [cloudReady, setCloudReady] = useState(false);
   const [view, setView] = useState<"create" | "projects">("create");
   const [room, setRoom] = useState<RoomId>("living");
   const [style, setStyle] = useState<StyleId>("modern");
@@ -105,11 +106,18 @@ export function Studio({
   const loginInput = useRef<HTMLInputElement>(null);
   const loginTrigger = useRef<HTMLButtonElement>(null);
   const generateLock = useRef(false);
+  const restoringProject = useRef<string | null>(null);
   useEffect(() => {
     let active = true;
     void loadDraft()
       .then(async (draft) => {
-        if (!active || !draft) return;
+        if (
+          !active ||
+          !draft ||
+          searchParams.get("project") ||
+          searchParams.get("job")
+        )
+          return;
         const restored = new File([draft.file], draft.filename, {
           type: draft.file.type || "image/jpeg",
         });
@@ -124,6 +132,7 @@ export function Studio({
         setNotes(draft.notes);
         setConsent(draft.consent);
         setProjectId(draft.projectId);
+        restoringProject.current = draft.projectId;
         setNotice("Recuperamos tu foto. Podés continuar donde estabas.");
       })
       .catch(() => {})
@@ -150,6 +159,7 @@ export function Studio({
               ),
             ]);
             if (!active) return;
+            if (account.error) throw new Error(account.error);
             if (remote.error) setNotice(remote.error);
             else
               setProjects([
@@ -160,6 +170,7 @@ export function Studio({
               setCredits(account.credits);
             setFree(account.free === true);
             setFreeRemaining(account.freeRemaining ?? 0);
+            setCloudReady(true);
           }
         } else setProjects(local);
       })
@@ -350,7 +361,8 @@ export function Studio({
       fetch("/api/projects", { cache: "no-store" }).then((r) => r.json()),
       fetch("/api/account", { cache: "no-store" }).then((r) => r.json()),
     ]);
-    if (remote.error) throw new Error(remote.error);
+    if (remote.error || account.error)
+      throw new Error(remote.error || account.error);
     const local = await listProjects().catch(() => [] as Project[]);
     setProjects([...(remote.projects || []), ...local.filter((p) => p.demo)]);
     if (typeof account.credits === "number") setCredits(account.credits);
@@ -359,13 +371,17 @@ export function Studio({
     return remote.projects as Project[];
   }
   async function watchJob(id: string) {
-    for (let i = 0; i < 85; i++) {
+    for (let i = 0; i < 105; i++) {
       const response = await fetch(`/api/jobs/${encodeURIComponent(id)}`, {
         cache: "no-store",
       });
       const job = await response.json();
       if (!response.ok) throw new Error(job.error);
       if (job.status === "succeeded") {
+        if (!job.result || !job.variant)
+          throw new Error(
+            "No pudimos recuperar esta imagen. Volvé a abrir la foto desde tus proyectos.",
+          );
         // Publish the finished image before fetching the rest of the library.
         setResult(job.result);
         setBatchCompleted((n) => n + 1);
@@ -392,33 +408,61 @@ export function Studio({
   }
   useEffect(() => {
     const id = searchParams.get("job");
-    if (
-      !id ||
-      !status?.authenticated ||
-      status.mode !== "cloud" ||
-      generateLock.current
-    )
-      return;
-    generateLock.current = true;
-    setBusy(true);
-    setRoundTotal(1);
-    setBatchCompleted(0);
-    void watchJob(id)
-      .catch((e) => setError(e.message))
-      .finally(() => {
-        generateLock.current = false;
-        setBusy(false);
-      });
-    // A job is resumed once per navigation; its work is persisted on the server.
-  }, [searchParams, status?.authenticated, status?.mode]);
+    if (!id || !cloudReady || openingProject) return;
+    const project = projects.find(
+      (p) =>
+        p.pendingJobId === id ||
+        p.pendingJobIds?.includes(id) ||
+        p.variants?.some((v) => v.id === id),
+    );
+    setOpeningProject(true);
+    if (project) void openProject(project);
+    else setError("No encontramos esa generación en tus fotos.");
+  }, [searchParams, cloudReady, projects, openingProject]);
   useEffect(() => {
     const id = searchParams.get("project");
-    if (!id || openingProject || !projects.length) return;
+    if (!id || openingProject || !cloudReady) return;
     const project = projects.find((p) => p.id === id);
-    if (!project) return;
     setOpeningProject(true);
-    void openProject(project);
-  }, [searchParams, projects, openingProject]);
+    if (project) void openProject(project);
+    else setError("No encontramos esa foto. Revisá también la papelera.");
+  }, [searchParams, projects, openingProject, cloudReady]);
+  useEffect(() => {
+    const id = restoringProject.current;
+    if (!draftReady || !id || !cloudReady) return;
+    const project = projects.find((p) => p.id === id);
+    if (!project) {
+      restoringProject.current = null;
+      setProjectId(null);
+      setVariants([]);
+      return;
+    }
+    restoringProject.current = null;
+    setResult(project.result);
+    setVariants(project.variants || []);
+    const pending = project.pendingJobIds?.length
+      ? project.pendingJobIds
+      : project.pendingJobId
+        ? [project.pendingJobId]
+        : [];
+    if (pending.length && !generateLock.current) {
+      generateLock.current = true;
+      setBusy(true);
+      setRoundTotal(pending.length);
+      setBatchCompleted(0);
+      void Promise.allSettled(pending.map((id) => watchJob(id)))
+        .then(() => refreshCloud())
+        .catch(() =>
+          setNotice(
+            "El proceso queda guardado. Volvé a abrir esta foto para consultar su estado.",
+          ),
+        )
+        .finally(() => {
+          generateLock.current = false;
+          setBusy(false);
+        });
+    }
+  }, [draftReady, projects, cloudReady]);
   const freeTier =
     status?.mode === "cloud" &&
     (!status.authenticated || free) &&
@@ -462,6 +506,7 @@ export function Studio({
       return;
     }
     let activeStatus = status;
+    let activeProjectId = projectId;
     let availableFree = freeRemaining;
     let activeFreeTier = freeTier;
     if (!status.authenticated && !status.anonymous) {
@@ -472,10 +517,16 @@ export function Studio({
           const response = await fetch("/api/guest", { method: "POST" });
           const guest = await response.json();
           if (!response.ok) throw new Error(guest.error);
+          if (guest.newSession) {
+            activeProjectId = null;
+            setProjectId(null);
+            setVariants([]);
+          }
           activeStatus = { ...status, anonymous: true };
           setStatus(activeStatus);
           availableFree = guest.freeRemaining;
           activeFreeTier = true;
+          setCredits(guest.credits ?? 0);
           setFree(true);
           setFreeRemaining(availableFree);
         } catch (e) {
@@ -518,23 +569,34 @@ export function Studio({
             "Usaste tus 25 diseños gratis. Elegí un plan para seguir creando.",
           );
         setRoundTotal(runs);
-        let pid = projectId;
-        for (let i = 0; i < runs; i++) {
-          setRound(runs > 1 ? i + 1 : 0);
-          setElapsed(0);
-          requestKey.current ||= crypto.randomUUID();
-          data.set("requestKey", requestKey.current);
-          data.set("variant", String(((done + i) % 3) + 1));
-          if (pid) data.set("projectId", pid);
-          const response = await fetch("/api/jobs", {
-            method: "POST",
-            body: data,
-          });
-          const job = await response.json();
-          if (!response.ok) throw new Error(job.error);
-          pid = await watchJob(job.id);
-          if (!pid) break;
-        }
+        setRound(runs > 1 ? 1 : 0);
+        requestKey.current ||= crypto.randomUUID();
+        data.set("requestKey", requestKey.current);
+        data.set("batchSize", String(runs));
+        data.set("variant", String((done % 3) + 1));
+        if (activeProjectId) data.set("projectId", activeProjectId);
+        const response = await fetch("/api/jobs", {
+          method: "POST",
+          body: data,
+        });
+        const batch = await response.json();
+        if (!response.ok) throw new Error(batch.error);
+        const ids: string[] = batch.ids || [batch.id];
+        setProjectId(batch.projectId);
+        setRoundTotal(ids.length);
+        setFreeRemaining((n) =>
+          activeFreeTier ? Math.max(0, n - ids.length) : n,
+        );
+        const outcomes = await Promise.allSettled(
+          ids.map((id) => watchJob(id)),
+        );
+        const rejected = outcomes.find((r) => r.status === "rejected");
+        if (rejected?.status === "rejected")
+          setError(
+            rejected.reason instanceof Error
+              ? rejected.reason.message
+              : "Una propuesta necesita revisión. Las otras se conservan.",
+          );
         await refreshCloud();
         return;
       }
@@ -633,9 +695,12 @@ export function Studio({
     if (p.pendingJobId && !generateLock.current) {
       generateLock.current = true;
       setBusy(true);
-      setRoundTotal(1);
+      const pending = p.pendingJobIds?.length
+        ? p.pendingJobIds
+        : [p.pendingJobId];
+      setRoundTotal(pending.length);
       setBatchCompleted(0);
-      void watchJob(p.pendingJobId)
+      void Promise.all(pending.map((id) => watchJob(id)))
         .catch((e) => setError(e.message))
         .finally(() => {
           generateLock.current = false;
@@ -942,7 +1007,7 @@ export function Studio({
                       </div>
                       <h3>
                         {round
-                          ? `Creando el diseño ${round} de ${roundTotal}…`
+                          ? `Creando ${roundTotal} propuestas…`
                           : "Tu espacio está tomando forma."}
                       </h3>
                       <p>
@@ -1000,7 +1065,7 @@ export function Studio({
                         >
                           <img src={source} alt="" />
                           <LoaderCircle className="spin" size={24} />
-                          <span>{i === 0 ? "Creando…" : "En espera"}</span>
+                          <span>Creando…</span>
                         </div>
                       ),
                     )}
@@ -1009,7 +1074,7 @@ export function Studio({
               {busy && result && (
                 <p className="batch-progress" role="status">
                   <LoaderCircle className="spin" size={17} />
-                  Creando el diseño {round || 1} de {roundTotal}. Ya podés
+                  {batchCompleted} de {roundTotal} propuestas listas. Ya podés
                   explorar y descargar los que están listos.
                 </p>
               )}
@@ -1289,7 +1354,16 @@ export function Studio({
                   ref={loginTrigger}
                   className="button button-primary generate-button"
                   onClick={generate}
-                  disabled={!source || busy || reading}
+                  disabled={
+                    !source ||
+                    busy ||
+                    reading ||
+                    !status ||
+                    (!demo &&
+                      status.mode === "cloud" &&
+                      (status.authenticated || status.anonymous) &&
+                      credits === null)
+                  }
                 >
                   {busy ? (
                     <LoaderCircle size={19} className="spin" />

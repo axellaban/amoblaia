@@ -56,6 +56,9 @@ export async function GET(request: Request) {
           demo: false,
           cloud: true,
           pendingJobId: pending?.id,
+          pendingJobIds: p.generations
+            .filter((g) => ["queued", "running"].includes(g.status))
+            .map((g) => g.id),
         };
       }),
     );
