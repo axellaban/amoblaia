@@ -4,7 +4,7 @@ import { cloudConfigured, cloudEnabled } from "@/lib/supabase/config";
 import { adminClient, currentUser } from "@/lib/supabase/server";
 import { isAdmin } from "@/lib/commerce/http";
 import { billingConfigured } from "@/lib/commerce/mercadopago";
-import type { Product } from "@/lib/commerce/catalog";
+import { firstChargeOverdue, type Product } from "@/lib/commerce/catalog";
 export const metadata: Metadata = { title: "Planes y packs de fotos" };
 export const dynamic = "force-dynamic";
 export default async function Pricing() {
@@ -23,18 +23,20 @@ export default async function Pricing() {
   if (canBuy && process.env.MERCADOPAGO_MODE !== "production")
     canBuy = isAdmin(user?.email);
   // The active subscription, so its plan is marked and the others offer a
-  // change. A pending one was never paid and is not anybody's plan.
+  // change. A pending one was never paid and is not anybody's plan, nor one
+  // whose first charge never went through.
   let currentSku: string | undefined;
   if (user) {
     const { data } = await adminClient()
       .from("subscriptions")
-      .select("orders(sku)")
+      .select("status,paid_until,created_at,orders(sku)")
       .eq("user_id", user.id)
       .in("status", ["authorized", "paused"])
       .limit(1)
       .maybeSingle();
-    currentSku =
-      (data?.orders as unknown as { sku: string } | null)?.sku || undefined;
+    if (data && !firstChargeOverdue(data))
+      currentSku =
+        (data.orders as unknown as { sku: string } | null)?.sku || undefined;
   }
   return (
     <PricingPlans

@@ -10,7 +10,7 @@ import {
   Camera,
   ShieldCheck,
 } from "lucide-react";
-import { formatARS } from "@/lib/commerce/catalog";
+import { firstChargeOverdue, formatARS } from "@/lib/commerce/catalog";
 import { clearDraft } from "@/lib/studio-draft";
 import { browserClient } from "@/lib/supabase/client";
 type Account = {
@@ -24,6 +24,7 @@ type Account = {
     id: string;
     status: string;
     paid_until: string | null;
+    created_at: string;
     orders: { snapshot: { name: string; kind: string; photos: number } };
   }[];
   payments: {
@@ -117,7 +118,8 @@ export function AccountDashboard() {
   // photos appear without reloading (for at most ten minutes).
   const awaitingPayment = Boolean(
     account?.subscriptions.some(
-      (s) => s.status === "authorized" && !s.paid_until,
+      (s) =>
+        s.status === "authorized" && !s.paid_until && !firstChargeOverdue(s),
     ),
   );
   useEffect(() => {
@@ -285,7 +287,9 @@ export function AccountDashboard() {
                         ? `Período pagado hasta ${date(s.paid_until)}`
                         : s.status === "pending"
                           ? "No se hizo ningún cobro. Para suscribirte, elegí un plan en Precios."
-                          : "Esperando la confirmación del primer pago."}
+                          : firstChargeOverdue(s)
+                            ? "Mercado Pago todavía no pudo cobrar el primer pago. Podés volver a elegir este plan en Precios con otra tarjeta."
+                            : "Esperando la confirmación del primer pago."}
                     </p>
                   </div>
                   {s.status === "pending" ? (

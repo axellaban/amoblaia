@@ -190,10 +190,17 @@ async function getOrder(id: string) {
   if (error || !data) throw new Error("ORDER_NOT_FOUND");
   return data as Order;
 }
+/** Mercado Pago confirmed that a subscription it was asked to cancel is still live. */
+export class SubscriptionStillActive extends Error {
+  constructor() {
+    super("SUBSCRIPTION_STILL_ACTIVE");
+  }
+}
 /**
  * Cancels a subscription in Mercado Pago and in our records. When the
  * cancellation call fails or times out, the real state is read back: it may
- * well have been applied.
+ * well have been applied. Only SubscriptionStillActive means it surely was
+ * not; any other error leaves the outcome unknown.
  */
 export async function retireSubscription(id: string) {
   const path = `/preapproval/${encodeURIComponent(id)}`;
@@ -201,7 +208,8 @@ export async function retireSubscription(id: string) {
     await mp(path, "PUT", { status: "cancelled" });
   } catch (e) {
     const now = await mp<{ status: string }>(path).catch(() => null);
-    if (now?.status !== "cancelled") throw e;
+    if (!now) throw e;
+    if (now.status !== "cancelled") throw new SubscriptionStillActive();
   }
   const db = adminClient();
   const ended = await db
@@ -379,17 +387,105 @@ export async function syncPayment(id: string, subscriptionId?: string) {
     p_paid_at: payment.date_approved || payment.date_created,
     p_subscription: subscriptionId || null,
   });
-  // A full refund or a chargeback undoes the purchase: renewals must stop,
-  // or a blocked account would keep being charged every month. A failure is
+  // A full refund or a chargeback undoes the purchase: its renewals stop.
+  // If it also blocked the account, every open subscription stops (after a
+  // plan change the reversed payment may belong to an older one), or a
+  // blocked account would keep being charged every month. A failure is
   // thrown so the notification is retried.
-  if (subscriptionId && ["refunded", "charged_back"].includes(status)) {
-    const { data } = await adminClient()
-      .from("subscriptions")
-      .select("status")
-      .eq("id", subscriptionId)
-      .maybeSingle();
-    if (data && data.status !== "cancelled")
-      await retireSubscription(subscriptionId);
+  if (["refunded", "charged_back"].includes(status)) {
+    const db = adminClient();
+    const [profile, open] = await Promise.all([
+      db.from("profiles").select("blocked").eq("id", order.user_id).single(),
+      db
+        .from("subscriptions")
+        .select("id")
+        .eq("user_id", order.user_id)
+        .in("status", ["authorized", "pending", "paused"]),
+    ]);
+    if (profile.error || open.error) throw new Error("REVERSAL_LOOKUP_FAILED");
+    for (const s of open.data)
+      if (profile.data.blocked || s.id === subscriptionId)
+        await retireSubscription(s.id);
+  }
+}
+/**
+ * Applies a subscription's charges by asking Mercado Pago for them, so a
+ * missed or late notification never leaves a paid plan without its photos.
+ * Charges already recorded are skipped.
+ */
+export async function syncSubscriptionPayments(id: string) {
+  const { results } = await mp<{
+    results: { preapproval_id: string; payment?: { id: number | string } }[];
+  }>(`/authorized_payments/search?preapproval_id=${encodeURIComponent(id)}`);
+  const charged = results
+    .filter((i) => i.preapproval_id === id && i.payment?.id)
+    .map((i) => String(i.payment!.id));
+  if (!charged.length) return;
+  const { data, error } = await adminClient()
+    .from("payments")
+    .select("id")
+    .in("id", charged)
+    .not("coverage_start", "is", null);
+  if (error) throw new Error("PAYMENT_LOOKUP_FAILED");
+  const known = new Set(data.map((p) => p.id));
+  for (const payment of charged)
+    if (!known.has(payment)) await syncPayment(payment, id);
+}
+/**
+ * Finishes plan changes whose checkout could not retire the old plan (Mercado
+ * Pago did not answer): syncing the new subscription retires the old one once
+ * the new one is authorized. Needs the 2026-10-21 billing migration.
+ */
+export async function finishPlanChanges(userId?: string) {
+  const db = adminClient();
+  let orders = db
+    .from("orders")
+    .select("replaces_subscription_id,provider_subscription_id")
+    .not("replaces_subscription_id", "is", null)
+    .not("provider_subscription_id", "is", null)
+    .in("status", ["checkout_ready", "paid"])
+    .order("created_at", { ascending: false })
+    .limit(50);
+  if (userId) orders = orders.eq("user_id", userId);
+  const { data, error } = await orders;
+  if (error || !data.length) return;
+  const open = await db
+    .from("subscriptions")
+    .select("id")
+    .in(
+      "id",
+      data.map((o) => o.replaces_subscription_id as string),
+    )
+    .in("status", ["authorized", "pending", "paused"]);
+  if (open.error) throw new Error("SUBSCRIPTION_LOOKUP_FAILED");
+  const stale = new Set(open.data.map((s) => s.id));
+  for (const o of data)
+    if (stale.has(o.replaces_subscription_id as string))
+      await syncSubscription(o.provider_subscription_id as string);
+}
+const refreshed = new Map<string, number>();
+/**
+ * Brings a buyer's billing up to date from Mercado Pago itself: finishes
+ * pending plan changes and applies charges of plans waiting for their first
+ * or their next payment. At most once a minute per subscription.
+ */
+export async function refreshBilling(userId: string) {
+  if (!process.env.MERCADOPAGO_ACCESS_TOKEN) return;
+  await finishPlanChanges(userId).catch(() =>
+    console.error("plan_change_not_finished", userId),
+  );
+  const { data } = await adminClient()
+    .from("subscriptions")
+    .select("id,paid_until")
+    .eq("user_id", userId)
+    .eq("status", "authorized");
+  for (const s of data || []) {
+    if (s.paid_until && Date.parse(s.paid_until) > Date.now()) continue;
+    if (Date.now() - (refreshed.get(s.id) || 0) < 60_000) continue;
+    refreshed.set(s.id, Date.now());
+    await syncSubscriptionPayments(s.id).catch(() =>
+      console.error("subscription_payments_not_synced", s.id),
+    );
   }
 }
 export async function processBillingEvent(topic: string, id: string) {

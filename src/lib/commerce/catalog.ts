@@ -33,3 +33,19 @@ export type Product = {
   price_cents: number | null;
   active: boolean;
 };
+/**
+ * An authorized subscription whose first charge has not arrived after an
+ * hour: Mercado Pago could not charge the card. It is not anybody's plan
+ * yet, and the buyer may retry it with another card.
+ */
+export function firstChargeOverdue(
+  s: { status: string; paid_until: string | null; created_at?: string },
+  now = Date.now(),
+) {
+  return (
+    s.status === "authorized" &&
+    !s.paid_until &&
+    Boolean(s.created_at) &&
+    now - Date.parse(s.created_at!) > 60 * 60 * 1000
+  );
+}

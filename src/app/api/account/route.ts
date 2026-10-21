@@ -1,7 +1,9 @@
+import { after } from "next/server";
 import { adminClient } from "@/lib/supabase/server";
 import { requireUser, failure, rpc, isAdmin } from "@/lib/commerce/http";
 import { onFreeTier } from "@/lib/commerce/jobs";
 import { adoptGuest } from "@/lib/commerce/guest";
+import { refreshBilling } from "@/lib/commerce/mercadopago";
 export const dynamic = "force-dynamic";
 export async function GET() {
   try {
@@ -16,7 +18,7 @@ export async function GET() {
     const results = await Promise.all([
       db
         .from("subscriptions")
-        .select("id,status,paid_until,orders(snapshot)")
+        .select("id,status,paid_until,created_at,orders(snapshot)")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false }),
       db
@@ -40,6 +42,15 @@ export async function GET() {
         .limit(20),
     ]);
     if (results.some((r) => r.error)) throw new Error("ACCOUNT_LOOKUP_FAILED");
+    // A plan waiting for a charge asks Mercado Pago directly, after
+    // answering: the account page's next refresh shows the result even if a
+    // notification never arrived.
+    if (!user.is_anonymous)
+      after(() =>
+        refreshBilling(user.id).catch(() =>
+          console.error("billing_refresh_failed", user.id),
+        ),
+      );
     return Response.json(
       {
         ...account,

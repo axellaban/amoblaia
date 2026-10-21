@@ -14,8 +14,9 @@ import {
   mp,
   retireSubscription,
   settleStaleOrders,
+  SubscriptionStillActive,
 } from "@/lib/commerce/mercadopago";
-import type { Product } from "@/lib/commerce/catalog";
+import { firstChargeOverdue, type Product } from "@/lib/commerce/catalog";
 export async function POST(request: Request) {
   try {
     const user = await requireUser(request);
@@ -148,11 +149,12 @@ export async function POST(request: Request) {
     ]).catch(() => console.error("stale_orders_not_settled", user.id));
     // Plan change: a new plan replaces the open subscription. It is only
     // cancelled once Mercado Pago has authorized the new one, below.
-    let replacing: { id: string; order_id: string } | null = null;
+    let replacing: { id: string; order_id: string; status: string } | null =
+      null;
     if (!sku.startsWith("pack-")) {
       const current = await db
         .from("subscriptions")
-        .select("id,order_id,status,orders(sku)")
+        .select("id,order_id,status,paid_until,created_at,orders(sku)")
         .eq("user_id", user.id)
         .in("status", ["authorized", "pending", "paused"])
         .limit(1)
@@ -160,29 +162,49 @@ export async function POST(request: Request) {
       if (current.error) throw new Error("SUBSCRIPTION_LOOKUP_FAILED");
       if (current.data) {
         const order = current.data.orders as unknown as { sku: string } | null;
-        // A pending subscription is a redirect checkout that was never paid:
-        // it is replaced like any other, even by the same plan.
-        if (order?.sku === sku && current.data.status !== "pending")
+        // A pending subscription is a redirect checkout that was never paid,
+        // and one whose first charge never went through was never paid
+        // either: they are replaced like any other, even by the same plan.
+        if (
+          order?.sku === sku &&
+          current.data.status !== "pending" &&
+          !firstChargeOverdue(current.data)
+        )
           throw new HttpError(409, "Ya tenés este plan.");
         if (!card)
           throw new HttpError(
             409,
             "Para cambiar de plan, elegilo desde Precios y pagalo con tarjeta.",
           );
-        replacing = { id: current.data.id, order_id: current.data.order_id };
+        replacing = {
+          id: current.data.id,
+          order_id: current.data.order_id,
+          status: current.data.status,
+        };
       }
     }
-    const created = await rpc<{
+    type Created = {
       order: { snapshot: Product; checkout_url: string | null };
       dispatch: boolean;
-    }>("amobla_create_order", {
-      p_user: user.id,
-      p_id: key,
-      p_sku: sku,
-      // Only sent for changes, so purchases keep working before the
-      // plan-change migration is applied.
-      ...(replacing ? { p_replace: true } : {}),
-    });
+    };
+    const order = { p_user: user.id, p_id: key, p_sku: sku };
+    // Only sent for changes, so purchases keep working before the
+    // plan-change migrations are applied. The replaced subscription is
+    // re-checked under the account lock: two tabs cannot both replace it.
+    const created = replacing
+      ? await rpc<Created>("amobla_create_order", {
+          ...order,
+          p_replace: true,
+          p_replaces: replacing.id,
+        }).catch((e) => {
+          if (e instanceof Error && e.message === "DATABASE_PGRST202")
+            return rpc<Created>("amobla_create_order", {
+              ...order,
+              p_replace: true,
+            });
+          throw e;
+        })
+      : await rpc<Created>("amobla_create_order", order);
     const snapshot = created.order.snapshot;
     if (!created.dispatch) {
       if (created.order.checkout_url)
@@ -199,13 +221,16 @@ export async function POST(request: Request) {
       .update({ payer_email: email })
       .eq("id", key);
     if (noted.error) throw new Error("ORDER_SAVE_FAILED");
+    // Lets the webhook or the account page retire the old plan if this
+    // request cannot.
+    let linked = false;
     if (replacing) {
-      // Lets the webhook retire the old plan if this request dies midway.
-      const linked = await db
+      const link = await db
         .from("orders")
         .update({ replaces_subscription_id: replacing.id })
         .eq("id", key);
-      if (linked.error) console.error("plan_change_link_pending_migration");
+      linked = !link.error;
+      if (link.error) console.error("plan_change_link_pending_migration");
     }
     const notification_url = `${base}/api/webhooks/mercadopago?token=${encodeURIComponent(process.env.MERCADOPAGO_NOTIFICATION_TOKEN!)}`;
     let checkout: {
@@ -327,24 +352,31 @@ export async function POST(request: Request) {
         throw new HttpError(402, cardRefusalMessage(""));
       }
       if (replacing) {
-        // Stop the old plan's renewals. If that truly fails, the new
-        // subscription is cancelled too: never two plans billed.
+        // Stop the old plan's renewals. If Mercado Pago confirms the old
+        // one is still live, the new subscription is cancelled too: never
+        // two plans billed. If the outcome is unknown, the new plan stays
+        // (cancelling it could leave the buyer with none) and the old one is
+        // retired later through the order's link.
         try {
           await retireSubscription(replacing.id);
-        } catch {
-          await mp(`/preapproval/${encodeURIComponent(checkout.id)}`, "PUT", {
-            status: "cancelled",
-          }).catch(() =>
-            console.error("plan_change_rollback_failed", checkout.id),
-          );
-          await db
-            .from("orders")
-            .update({ status: "checkout_failed" })
-            .eq("id", key);
-          throw new HttpError(
-            502,
-            "No pudimos cambiar tu plan y no activamos el nuevo. Tu plan actual sigue igual; probá de nuevo en unos minutos.",
-          );
+        } catch (e) {
+          if (linked && !(e instanceof SubscriptionStillActive))
+            console.error("plan_change_retire_deferred", replacing.id);
+          else {
+            await mp(`/preapproval/${encodeURIComponent(checkout.id)}`, "PUT", {
+              status: "cancelled",
+            }).catch(() =>
+              console.error("plan_change_rollback_failed", checkout.id),
+            );
+            await db
+              .from("orders")
+              .update({ status: "checkout_failed" })
+              .eq("id", key);
+            throw new HttpError(
+              502,
+              "No pudimos cambiar tu plan y no activamos el nuevo. Tu plan actual sigue igual; probá de nuevo en unos minutos.",
+            );
+          }
         }
       }
       // Mercado Pago has already authorized the subscription: a failed write
@@ -369,8 +401,12 @@ export async function POST(request: Request) {
         if (sub.error && !isDuplicateSubscription(sub.error))
           console.error("card_subscription_save_deferred", checkout.id);
       }
+      // Replacing a checkout that was never paid is a first purchase.
       return Response.json(
-        { subscribed: true, changed: Boolean(replacing) },
+        {
+          subscribed: true,
+          changed: Boolean(replacing) && replacing!.status !== "pending",
+        },
         { headers: { "Cache-Control": "no-store" } },
       );
     }
@@ -403,7 +439,9 @@ export async function POST(request: Request) {
         user_id: user.id,
         status: "pending",
       });
-      if (sub.error) throw new Error("SUBSCRIPTION_SAVE_FAILED");
+      // The notification may have saved it first.
+      if (sub.error && !isDuplicateSubscription(sub.error))
+        throw new Error("SUBSCRIPTION_SAVE_FAILED");
     }
     return Response.json({ url }, { headers: { "Cache-Control": "no-store" } });
   } catch (e) {

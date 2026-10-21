@@ -9,8 +9,45 @@
 --    instead of being lost with the rolled-back transaction.
 -- 4. Failed notifications count their attempts.
 -- 5. Annual plans keep their monthly photos after a partial refund.
+-- 6. A plan change names the subscription it replaces, re-checked under the
+--    account lock: two tabs cannot both replace the same plan.
 begin;
 alter table public.orders add column if not exists replaces_subscription_id text;
+
+drop function if exists public.amobla_create_order(uuid,uuid,text,boolean);
+create or replace function public.amobla_create_order(p_user uuid,p_id uuid,p_sku text,p_replace boolean default false,p_replaces text default null) returns jsonb language plpgsql security definer set search_path=public as $$
+declare o orders; product products;
+begin
+ perform 1 from profiles where id=p_user for update;
+ if not found or (select blocked from profiles where id=p_user) then raise exception 'ACCOUNT_BLOCKED'; end if;
+ select * into o from orders where id=p_id;
+ if found then
+  if o.user_id<>p_user or o.sku<>p_sku then raise exception 'ORDER_MISMATCH'; end if;
+  return jsonb_build_object('order',to_jsonb(o),'dispatch',false);
+ end if;
+ select * into product from products where sku=p_sku and active and price_cents>0;
+ if not found then raise exception 'PRODUCT_UNAVAILABLE'; end if;
+ if product.kind<>'pack' and (
+  exists(select 1 from orders where user_id=p_user and snapshot->>'kind'<>'pack' and status in ('creating','checkout_needs_review')) or
+  (not p_replace and (
+   exists(select 1 from subscriptions where user_id=p_user and status in ('pending','authorized','paused')) or
+   exists(select 1 from orders where user_id=p_user and snapshot->>'kind'<>'pack' and status='checkout_ready')
+  )) or
+  -- The plan being replaced must still be the only open one: another tab
+  -- may have replaced it a moment ago.
+  (p_replace and p_replaces is not null and (
+   not exists(select 1 from subscriptions where id=p_replaces and user_id=p_user and status in ('pending','authorized','paused')) or
+   exists(select 1 from subscriptions where user_id=p_user and id<>p_replaces and status in ('pending','authorized','paused')) or
+   exists(select 1 from orders x where x.user_id=p_user and x.snapshot->>'kind'<>'pack' and x.status='checkout_ready'
+    and x.id is distinct from (select order_id from subscriptions where id=p_replaces)
+    and not exists(select 1 from subscriptions s where s.order_id=x.id and s.status not in ('pending','authorized','paused')))
+  ))
+ ) then raise exception 'SUBSCRIPTION_EXISTS'; end if;
+ insert into orders(id,user_id,sku,snapshot,status) values(p_id,p_user,p_sku,to_jsonb(product),'creating') returning * into o;
+ return jsonb_build_object('order',to_jsonb(o),'dispatch',true);
+end $$;
+revoke all on function public.amobla_create_order(uuid,uuid,text,boolean,text) from public,anon,authenticated;
+grant execute on function public.amobla_create_order(uuid,uuid,text,boolean,text) to service_role;
 
 create or replace function public.amobla_refresh_annual(p_user uuid) returns void language plpgsql security definer set search_path=public as $$
 declare r record; i integer; a timestamptz; b timestamptz; g uuid;

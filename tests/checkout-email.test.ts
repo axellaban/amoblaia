@@ -8,6 +8,7 @@ const state = vi.hoisted(() => ({
   newStatus: "authorized",
   current: null as null | Record<string, unknown>,
   cancelFails: false,
+  stillActive: false,
   rpcArgs: [] as unknown[],
 }));
 vi.mock("server-only", () => ({}));
@@ -85,6 +86,7 @@ vi.mock("@/lib/commerce/mercadopago", async (original) => {
   );
   return {
     MercadoPagoError: real.MercadoPagoError,
+    SubscriptionStillActive: real.SubscriptionStillActive,
     cardRefusalMessage: real.cardRefusalMessage,
     billingConfigured: () => true,
     isDuplicateSubscription: () => false,
@@ -92,7 +94,12 @@ vi.mock("@/lib/commerce/mercadopago", async (original) => {
     mp,
     // Same contract as the real one: cancel in MP, then record it.
     retireSubscription: vi.fn(async (id: string) => {
-      await mp(`/preapproval/${id}`, "PUT", { status: "cancelled" });
+      await mp(`/preapproval/${id}`, "PUT", { status: "cancelled" }).catch(
+        (e) => {
+          // Read back: either confirmed live, or Mercado Pago did not answer.
+          throw state.stillActive ? new real.SubscriptionStillActive() : e;
+        },
+      );
       state.calls.push({
         table: "subscriptions",
         data: { status: "cancelled" },
@@ -110,6 +117,7 @@ beforeEach(() => {
   state.newStatus = "authorized";
   state.current = null;
   state.cancelFails = false;
+  state.stillActive = false;
   state.rpcArgs = [];
   vi.stubEnv("MERCADOPAGO_MODE", "production");
   vi.stubEnv("MERCADOPAGO_COLLECTOR_ID", "123");
@@ -338,7 +346,10 @@ describe("Plan changes", () => {
     expect(await r.json()).toEqual({ subscribed: true, changed: true });
     expect(state.rpcArgs).toContainEqual({
       name: "amobla_create_order",
-      args: expect.objectContaining({ p_replace: true }),
+      args: expect.objectContaining({
+        p_replace: true,
+        p_replaces: "current-sub",
+      }),
     });
     const created = state.calls.findIndex(
       (c) => (c as { path?: string }).path === "/preapproval",
@@ -353,8 +364,9 @@ describe("Plan changes", () => {
       data: { status: "cancelled" },
     });
   });
-  it("rolls back the new plan when the old one cannot be cancelled", async () => {
+  it("rolls back the new plan when Mercado Pago confirms the old one is still active", async () => {
     state.cancelFails = true;
+    state.stillActive = true;
     const r = await POST(cardRequest(token));
     expect(r.status).toBe(502);
     expect(state.calls).toContainEqual({
@@ -366,6 +378,31 @@ describe("Plan changes", () => {
       table: "subscriptions",
       data: { status: "cancelled" },
     });
+  });
+  it("keeps the new plan when the old one's cancellation has no known outcome", async () => {
+    // Cancelling the new one too could leave the buyer with no plan at all;
+    // the order's link retires the old one later.
+    state.cancelFails = true;
+    const r = await POST(cardRequest(token));
+    expect(await r.json()).toEqual({ subscribed: true, changed: true });
+    expect(state.calls).not.toContainEqual({
+      path: "/preapproval/new-sub",
+      method: "PUT",
+      body: { status: "cancelled" },
+    });
+    expect(state.calls).toContainEqual({
+      table: "orders",
+      data: { replaces_subscription_id: "current-sub" },
+    });
+  });
+  it("lets a plan whose first charge never went through be bought again", async () => {
+    state.current = {
+      ...state.current,
+      orders: { sku: "basic-month" },
+      paid_until: null,
+      created_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+    };
+    expect((await POST(cardRequest(token))).status).toBe(200);
   });
   it("refuses to buy the plan the user already has", async () => {
     state.current = { ...state.current, orders: { sku: "basic-month" } };
@@ -380,7 +417,8 @@ describe("Plan changes", () => {
       orders: { sku: "basic-month" },
     };
     const r = await POST(cardRequest(token));
-    expect(await r.json()).toEqual({ subscribed: true, changed: true });
+    // Nothing was ever paid: it is a first purchase, not a plan change.
+    expect(await r.json()).toEqual({ subscribed: true, changed: false });
     expect(state.calls).toContainEqual({
       path: "/preapproval/current-sub",
       method: "PUT",

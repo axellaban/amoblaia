@@ -47,7 +47,38 @@ it("never runs two plan changes at once", async () => {
 });
 it("is not callable by browser roles", async () => {
   const r = await db.query<{ allowed: boolean }>(
-    "select has_function_privilege('authenticated','amobla_create_order(uuid,uuid,text,boolean)','execute') as allowed",
+    "select has_function_privilege('authenticated','amobla_create_order(uuid,uuid,text,boolean,text)','execute') as allowed",
   );
   expect(r.rows[0].allowed).toBe(false);
+});
+
+it("refuses a second tab replacing a plan another tab already replaced", async () => {
+  const replace = (id: string) =>
+    db.query(
+      "select amobla_create_order($1,$2,'standard-month',true,'sub-basic')",
+      [user, id],
+    );
+  // The first change's order got its new, authorized subscription but has
+  // not retired the old plan yet: a second change of the old plan waits.
+  await db.exec(
+    `update orders set status='checkout_ready',provider_subscription_id='sub-pro' where id='00000000-0000-4000-8000-000000000064'`,
+  );
+  await expect(replace("00000000-0000-4000-8000-000000000066")).rejects.toThrow(
+    "SUBSCRIPTION_EXISTS",
+  );
+  // Once it retired the old plan, the old plan is no longer replaceable.
+  await db.exec(
+    `update subscriptions set status='cancelled' where id='sub-basic';
+     update orders set status='cancelled' where id='${current}';
+     insert into subscriptions(id,order_id,user_id,status) values('sub-pro','00000000-0000-4000-8000-000000000064','${user}','authorized');`,
+  );
+  await expect(replace("00000000-0000-4000-8000-000000000067")).rejects.toThrow(
+    "SUBSCRIPTION_EXISTS",
+  );
+  // Replacing the plan that is really current works.
+  const r = await db.query<{ r: { dispatch: boolean } }>(
+    "select amobla_create_order($1,$2,'standard-month',true,'sub-pro') as r",
+    [user, "00000000-0000-4000-8000-000000000068"],
+  );
+  expect(r.rows[0].r.dispatch).toBe(true);
 });

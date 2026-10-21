@@ -164,8 +164,19 @@ it("reports a cancellation that really did not happen", async () => {
     ),
   );
   await expect(retireSubscription("sub-old")).rejects.toThrow(
-    "MERCADOPAGO_503",
+    "SUBSCRIPTION_STILL_ACTIVE",
   );
+  expect(state.writes).toEqual([]);
+});
+
+it("reports an unknown outcome when Mercado Pago cannot be read back", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Response("down", { status: 503 })),
+  );
+  const error = await retireSubscription("sub-old").catch((e) => e);
+  expect(error.message).toBe("MERCADOPAGO_503");
+  expect(error.message).not.toBe("SUBSCRIPTION_STILL_ACTIVE");
   expect(state.writes).toEqual([]);
 });
 

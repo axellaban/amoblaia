@@ -3,7 +3,11 @@ import { sameSecret } from "@/lib/session";
 import { cloudConfigured, cloudEnabled } from "@/lib/supabase/config";
 import { adminClient } from "@/lib/supabase/server";
 import { runJob } from "@/lib/commerce/jobs";
-import { processInbox } from "@/lib/commerce/mercadopago";
+import {
+  finishPlanChanges,
+  processInbox,
+  syncSubscriptionPayments,
+} from "@/lib/commerce/mercadopago";
 export const maxDuration = 300;
 export async function GET(request: Request) {
   const deadline = Date.now() + maxDuration * 1000 - 5000;
@@ -24,7 +28,7 @@ export async function GET(request: Request) {
     .eq("status", "running")
     .lt("started_at", new Date(Date.now() - 10 * 60 * 1000).toISOString());
   if (stale.error) return new Response("Retry", { status: 503 });
-  const [jobs, events] = await Promise.all([
+  const [jobs, events, due] = await Promise.all([
     db
       .from("generations")
       .select("id")
@@ -39,11 +43,30 @@ export async function GET(request: Request) {
       .order("attempts")
       .order("received_at")
       .limit(25),
+    // Plans whose first or next charge is not recorded: asked to Mercado
+    // Pago directly, in case its notification never arrived.
+    db
+      .from("subscriptions")
+      .select("id")
+      .eq("status", "authorized")
+      .or(`paid_until.is.null,paid_until.lt.${new Date().toISOString()}`)
+      .order("created_at", { ascending: false })
+      .limit(20),
   ]);
-  if (jobs.error || events.error) return new Response("Retry", { status: 503 });
+  if (jobs.error || events.error || due.error)
+    return new Response("Retry", { status: 503 });
   after(async () => {
     for (const event of events.data || [])
       await processInbox(event.event_key, event.topic, event.resource_id);
+    if (process.env.MERCADOPAGO_ACCESS_TOKEN) {
+      await finishPlanChanges().catch(() =>
+        console.error("cron_plan_changes_failed"),
+      );
+      for (const s of due.data || [])
+        await syncSubscriptionPayments(s.id).catch(() =>
+          console.error("cron_subscription_sync_failed", s.id),
+        );
+    }
     for (const job of jobs.data || [])
       try {
         await runJob(job.id, deadline);
