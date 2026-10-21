@@ -4,6 +4,7 @@ const state = vi.hoisted(() => ({
   status: "pending",
   calls: [] as unknown[],
   fail: "",
+  reason: "",
   current: null as null | Record<string, unknown>,
   cancelFails: false,
   rpcArgs: [] as unknown[],
@@ -51,37 +52,48 @@ vi.mock("@/lib/supabase/server", () => ({
     },
   }),
 }));
-vi.mock("@/lib/commerce/mercadopago", () => ({
-  billingConfigured: () => true,
-  isDuplicateSubscription: () => false,
-  settleStaleOrders: vi.fn(async () => {}),
-  mp: vi.fn(async (path: string, method = "GET", body?: unknown) => {
-    state.calls.push({ path, method, body });
-    if (method === "GET")
+vi.mock("@/lib/commerce/mercadopago", async (original) => {
+  const real =
+    await original<typeof import("../src/lib/commerce/mercadopago")>();
+  return {
+    MercadoPagoError: real.MercadoPagoError,
+    cardRefusalMessage: real.cardRefusalMessage,
+    billingConfigured: () => true,
+    isDuplicateSubscription: () => false,
+    settleStaleOrders: vi.fn(async () => {}),
+    mp: vi.fn(async (path: string, method = "GET", body?: unknown) => {
+      state.calls.push({ path, method, body });
+      if (method === "GET")
+        return {
+          status: state.status,
+          external_reference: "old-order",
+          collector_id: 123,
+        };
+      if (method === "PUT") {
+        if (state.cancelFails && path.includes("current-sub"))
+          throw new Error("MERCADOPAGO_500");
+        return { status: "cancelled" };
+      }
+      if (state.fail)
+        throw new real.MercadoPagoError(
+          Number(state.fail.replace("MERCADOPAGO_", "")),
+          state.reason,
+        );
       return {
-        status: state.status,
-        external_reference: "old-order",
-        collector_id: 123,
+        id: "new-sub",
+        init_point:
+          "https://www.mercadopago.com.ar/subscriptions/checkout?preapproval_id=new-sub",
       };
-    if (method === "PUT") {
-      if (state.cancelFails && path.includes("current-sub"))
-        throw new Error("MERCADOPAGO_500");
-      return { status: "cancelled" };
-    }
-    if (state.fail) throw new Error(state.fail);
-    return {
-      id: "new-sub",
-      init_point:
-        "https://www.mercadopago.com.ar/subscriptions/checkout?preapproval_id=new-sub",
-    };
-  }),
-}));
+    }),
+  };
+});
 import { POST } from "../src/app/api/checkout/route";
 beforeEach(() => {
   state.open = null;
   state.status = "pending";
   state.calls = [];
   state.fail = "";
+  state.reason = "";
   state.current = null;
   state.cancelFails = false;
   state.rpcArgs = [];
@@ -211,6 +223,28 @@ describe("Card subscriptions", () => {
       table: "orders",
       data: { status: "checkout_failed" },
     });
+  });
+  it("explains a test card used against live credentials, with the detail for admins", async () => {
+    state.fail = "MERCADOPAGO_400";
+    state.reason =
+      '{"message":"Both payer and collector must be real or test users"}';
+    vi.stubEnv("ADMIN_EMAILS", "google@example.com");
+    const r = await POST(cardRequest("a1b2c3d4e5f60718293a4b5c6d7e8f90"));
+    const { error } = await r.json();
+    expect(error).toContain(
+      "las tarjetas de prueba solo funcionan en modo prueba",
+    );
+    expect(error).toContain("Detalle para el equipo");
+  });
+  it("never shows Mercado Pago's raw answer to a regular buyer", async () => {
+    state.fail = "MERCADOPAGO_400";
+    state.reason = '{"message":"CC_VAL_433 Credit card validation has failed"}';
+    const { error } = await (
+      await POST(cardRequest("a1b2c3d4e5f60718293a4b5c6d7e8f90"))
+    ).json();
+    expect(error).toBe(
+      "Mercado Pago no aprobó la tarjeta. Revisá los datos o probá con otra.",
+    );
   });
   it("keeps an uncertain provider error for review instead of retrying", async () => {
     state.fail = "MERCADOPAGO_500";

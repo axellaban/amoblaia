@@ -95,6 +95,27 @@ export function billingStatus() {
 export function billingConfigured() {
   return billingStatus().ready;
 }
+/** A Mercado Pago API refusal; `reason` is its response body, for support. */
+export class MercadoPagoError extends Error {
+  constructor(
+    public status: number,
+    public reason: string,
+  ) {
+    super(`MERCADOPAGO_${status}`);
+  }
+}
+/** Buyer-facing explanation of why Mercado Pago refused a card subscription. */
+export function cardRefusalMessage(reason: string) {
+  if (/real or test users|test user|live mode|livemode/i.test(reason))
+    return "Esta tarjeta no corresponde al modo de cobro: las tarjetas de prueba solo funcionan en modo prueba y las reales en modo real.";
+  if (/card_token|card token|token/i.test(reason))
+    return "Los datos de la tarjeta vencieron. Volvé a cargarlos e intentá de nuevo.";
+  if (/different countries|country/i.test(reason))
+    return "Mercado Pago no acepta esta tarjeta para cobros en Argentina. Probá con otra.";
+  if (/amount|transaction_amount/i.test(reason))
+    return "Mercado Pago no aceptó el importe de este plan. Escribinos desde Soporte.";
+  return "Mercado Pago no aprobó la tarjeta. Revisá los datos o probá con otra.";
+}
 export async function mp<T>(
   path: string,
   method = "GET",
@@ -126,7 +147,7 @@ export async function mp<T>(
       response.status,
       reason.slice(0, 300),
     );
-    throw new Error(`MERCADOPAGO_${response.status}`);
+    throw new MercadoPagoError(response.status, reason.slice(0, 300));
   }
   return response.json() as Promise<T>;
 }

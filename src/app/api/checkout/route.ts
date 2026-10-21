@@ -8,7 +8,9 @@ import {
 import { adminClient } from "@/lib/supabase/server";
 import {
   billingConfigured,
+  cardRefusalMessage,
   isDuplicateSubscription,
+  MercadoPagoError,
   mp,
   settleStaleOrders,
 } from "@/lib/commerce/mercadopago";
@@ -274,11 +276,17 @@ export async function POST(request: Request) {
           status: refused ? "checkout_failed" : "checkout_needs_review",
         })
         .eq("id", key);
-      if (refused)
+      if (refused) {
+        const reason = e instanceof MercadoPagoError ? e.reason : "";
+        // Admins also see Mercado Pago's own words, to diagnose without logs.
         throw new HttpError(
           402,
-          "Mercado Pago no aprobó la tarjeta. Revisá los datos o probá con otra.",
+          cardRefusalMessage(reason) +
+            (isAdmin(user.email) && reason
+              ? ` (Detalle para el equipo: ${reason.slice(0, 200)})`
+              : ""),
         );
+      }
       throw e;
     }
     if (card) {
