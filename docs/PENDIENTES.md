@@ -4,6 +4,15 @@ Se detiene el trabajo a pedido del usuario para conservar créditos. Los cambios
 
 Producción: https://amoblaia.vercel.app/
 
+## Actualización 21 de octubre de 2026 (rama `claude/gracious-volta-oavmeb`)
+
+- **Crédito de OpenAI agotado** durante la generación de ejemplos (`credit_balance_exhausted`). Si es la misma clave que usa producción, la generación de imágenes de los clientes también falla hasta recargar crédito.
+- Google: se agregó acceso por redirección en la misma pestaña (Supabase OAuth, ya registrado en Google) como alternativa visible y como reemplazo si el script de Google no carga. Falta probarlo con una cuenta real. Para que Google muestre el dominio de amoblaIA en lugar de `cmpfwuycxdleunuumlkm.supabase.co` habría que registrar una URI propia en Google Cloud.
+- Home y pie de página rehechos sobre la referencia, con traducción fiel y datos propios (minutos, 10 estilos, precios en pesos). Se omitieron las citas de prensa y las redes sociales de la referencia porque amoblaIA no las tiene.
+- Ejemplos: 79 escenas para 8 ambientes y 10 estilos. Faltan Clásico y Estándar en comedor, cocina, home office, patio, monoambiente y quincho (Estándar en comedor también); se generan con `scripts/generate-examples.ts` al recargar crédito. Falta también la foto propia de personas del bloque final; hoy usa un living de ejemplo.
+- Cierre de sesión con alcance local y modal de email de pago con Escape y foco: hechos.
+- Siguen pendientes los puntos 4 a 8 de «Siguiente pasada técnica».
+
 ## Prioridad inmediata: bloqueos para el lanzamiento
 
 ### 1. El botón de Google no inicia el acceso
