@@ -445,10 +445,10 @@ fieldset {
   position: relative;
   aspect-ratio: 1.5;
   border-radius: 16px;
-  overflow: hidden;
   background: var(--forest-light);
 }
 .hero-stage > img {
+  border-radius: inherit;
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -469,19 +469,65 @@ fieldset {
 .stage-style {
   right: 16px;
 }
-.stage-select select {
-  appearance: none;
+.stage-select-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   min-height: 46px;
-  padding: 10px 40px 10px 18px;
+  padding: 10px 14px 10px 18px;
   border: 0;
   border-radius: 12px;
-  background: #fbf7f1
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%231f1c19' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m3 4.5 3-3 3 3M3 7.5l3 3 3-3'/%3E%3C/svg%3E")
-    no-repeat right 14px center;
+  background: #fbf7f1;
   color: var(--ink);
+  font: inherit;
   font-size: 15px;
   font-weight: 650;
   box-shadow: 0 6px 20px #0000002e;
+  cursor: pointer;
+}
+.stage-select-button:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+.stage-select-list {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  min-width: 100%;
+  max-height: 280px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  border-radius: 12px;
+  background: #fff;
+  color: var(--ink);
+  box-shadow: 0 14px 40px #00000040;
+  z-index: 20;
+  outline: none;
+}
+.stage-room .stage-select-list {
+  left: 0;
+}
+.stage-style .stage-select-list {
+  right: 0;
+}
+.stage-select-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.stage-select-list li.active {
+  background: #eef0fb;
+}
+.stage-select-list li[aria-selected="true"] {
+  color: var(--terracotta);
 }
 .image-caption {
   display: flex;
@@ -1085,10 +1131,10 @@ fieldset {
   .simple-cards {
     grid-template-columns: 1fr;
   }
-  .stage-select select {
+  .stage-select-button {
     min-height: 40px;
     font-size: 14px;
-    padding: 8px 34px 8px 14px;
+    padding: 8px 12px 8px 14px;
   }
 }
 /* Studio */
@@ -4245,7 +4291,7 @@ h2 .accent {
 .hero-stage {
   aspect-ratio: 1.5;
 }
-.stage-select select {
+.stage-select-button {
   background-color: #fffffff0;
   font-size: 15px;
   max-width: 240px;
@@ -4958,11 +5004,18 @@ h2 .accent {
   .stage-style {
     right: 8px;
   }
-  .stage-select select {
+  .stage-select-button {
     min-height: 40px;
     font-size: 12px;
-    padding: 8px 30px 8px 12px;
+    padding: 8px 10px 8px 12px;
     max-width: 180px;
+  }
+  .stage-select-list {
+    max-height: 200px;
+  }
+  .stage-select-list li {
+    font-size: 13px;
+    padding: 8px 10px;
   }
   .image-caption {
     display: none;

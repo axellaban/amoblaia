@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { Studio } from "./studio";
+import { StagePicker } from "./stage-picker";
 import {
   ArrowUpRight,
   Check,
@@ -111,32 +112,26 @@ export function Landing({
                   src={examplePath(room, heroStyle)}
                   alt={`${roomName(room)}, ${styleName(heroStyle)}`}
                 />
-                <label className="stage-select stage-room">
-                  <span className="visually-hidden">Ambiente</span>
-                  <select
-                    value={room}
-                    onChange={(e) => setRoom(e.target.value)}
-                  >
-                    {heroRooms.map((r) => (
-                      <option key={r} value={r}>
-                        {roomName(r)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="stage-select stage-style">
-                  <span className="visually-hidden">Estilo</span>
-                  <select
-                    value={heroStyle}
-                    onChange={(e) => setStyle(e.target.value)}
-                  >
-                    {optionsFor(room).map((s) => (
-                      <option key={s} value={s}>
-                        {styleName(s)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <StagePicker
+                  className="stage-room"
+                  label="Ambiente"
+                  value={room}
+                  onChange={setRoom}
+                  options={heroRooms.map((r) => ({
+                    value: r,
+                    label: roomName(r),
+                  }))}
+                />
+                <StagePicker
+                  className="stage-style"
+                  label="Estilo"
+                  value={heroStyle}
+                  onChange={setStyle}
+                  options={optionsFor(room).map((s) => ({
+                    value: s,
+                    label: styleName(s),
+                  }))}
+                />
               </div>
               <p className="image-caption">
                 Escenas ilustrativas creadas con IA.
