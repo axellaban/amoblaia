@@ -13,6 +13,14 @@ export default function Privacy() {
         se entregan mediante enlaces temporales. Los ejemplos demo y el
         historial del piloto pueden guardarse localmente en tu navegador.
       </p>
+      <h2>Prueba sin registro</h2>
+      <p>
+        Podés generar sin ingresar email ni usar Google. Una sesión técnica
+        anónima conserva tus resultados y el uso del cupo en este navegador.
+        Guardamos una huella protegida del origen de las solicitudes para
+        limitar el abuso. Si ingresás a una cuenta, vinculamos esas fotos y el
+        consumo de la prueba. No se publica tu dirección IP.
+      </p>
       <h2>Procesamiento con IA</h2>
       <p>
         Al generar con una foto propia, enviamos la imagen, el ambiente, el

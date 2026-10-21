@@ -8,11 +8,13 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const user = await requireUser();
+    const user = await requireUser(undefined, true);
     const { id } = await params;
     const { data: job, error } = await adminClient()
       .from("generations")
-      .select("id,status,result_path,error_code,project_id")
+      .select(
+        "id,status,result_path,error_code,project_id,is_free,room,style,mode,notes,created_at",
+      )
       .eq("id", id)
       .eq("user_id", user.id)
       .maybeSingle();
@@ -26,12 +28,25 @@ export async function GET(
           console.error("job_dispatch_failed", id);
         }
       });
+    const result = job.result_path ? await signPath(job.result_path) : null;
     return Response.json(
       {
         id: job.id,
         status: job.status,
         projectId: job.project_id,
-        result: job.result_path ? await signPath(job.result_path) : null,
+        result,
+        variant: result
+          ? {
+              id: job.id,
+              result,
+              free: job.is_free,
+              room: job.room,
+              style: job.style,
+              mode: job.mode,
+              notes: job.notes,
+              createdAt: Date.parse(job.created_at),
+            }
+          : null,
         error:
           job.status === "needs_review"
             ? "Estamos revisando esta generación. No vuelvas a enviarla; el equipo puede recuperar el resultado."

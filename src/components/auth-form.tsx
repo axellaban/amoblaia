@@ -115,7 +115,12 @@ export function AuthForm() {
           throw new Error(
             "Revisá el email, la contraseña y la confirmación de tu cuenta.",
           );
-        window.location.assign(safeNext(params.get("next")));
+        const claimed = await fetch("/api/guest/claim", { method: "POST" });
+        if (!claimed.ok)
+          throw new Error(
+            "No pudimos recuperar los diseños de la prueba. Intentá nuevamente.",
+          );
+        window.location.assign(safeNext(params.get("next"), "/proyectos"));
       } else if (mode === "signup") {
         if (!accepted)
           throw new Error("Aceptá las condiciones para crear tu cuenta.");

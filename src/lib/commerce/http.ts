@@ -9,13 +9,21 @@ export class HttpError extends Error {
     super(message);
   }
 }
-export async function requireUser(request?: Request) {
+export async function requireUser(request?: Request, allowGuest = false) {
   if (!cloudEnabled() || !cloudConfigured())
     throw new HttpError(503, "Las cuentas todavía no están habilitadas.");
   if (request && !validOrigin(request))
     throw new HttpError(403, "Origen inválido.");
-  const user = await currentUser();
-  if (!user || !user.email_confirmed_at)
+  let user = await currentUser();
+  if (!user && allowGuest) {
+    const { guestId } = await import("./guest");
+    const id = await guestId();
+    if (id) {
+      const result = await adminClient().auth.admin.getUserById(id);
+      if (result.data.user?.is_anonymous) user = result.data.user;
+    }
+  }
+  if (!user || (!user.email_confirmed_at && !(allowGuest && user.is_anonymous)))
     throw new HttpError(401, "Ingresá a tu cuenta y verificá tu email.");
   return user;
 }
@@ -54,6 +62,10 @@ export async function rpc<T>(
   const { data, error } = await adminClient().rpc(name, args);
   if (error) {
     const messages: Record<string, [number, string]> = {
+      GUEST_LIMIT: [
+        429,
+        "Alcanzaste el límite de la prueba gratuita. Elegí un plan para continuar.",
+      ],
       CONTACT_LIMIT: [
         429,
         "Ya recibimos varias consultas. Esperá un rato antes de enviar otra.",

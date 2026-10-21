@@ -21,6 +21,8 @@ export async function GET() {
         mode: "cloud",
         configured: cloudConfigured() && Boolean(process.env.OPENAI_API_KEY),
         authenticated: Boolean(user?.email_confirmed_at),
+        anonymous: user?.is_anonymous === true,
+        userId: user?.email_confirmed_at ? user.id : null,
         email: user?.email ?? null,
         revision: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? "local",
       },

@@ -13,6 +13,7 @@ import {
   Pencil,
   Inbox,
 } from "lucide-react";
+import { TourButton } from "./product-tour";
 import type { Project } from "@/lib/history";
 type FolderRow = { id: string; name: string };
 export function ProjectLibrary() {
@@ -30,6 +31,13 @@ export function ProjectLibrary() {
     [purge, setPurge] = useState("");
   const load = useCallback(async () => {
     try {
+      const session = await fetch("/api/session", { cache: "no-store" }).then(
+        (r) => r.json(),
+      );
+      if (!session.authenticated) {
+        window.location.assign("/acceso?next=%2Fproyectos");
+        return;
+      }
       const responses = await Promise.all([
         fetch("/api/projects?includeTrash=1", { cache: "no-store" }),
         fetch("/api/folders", { cache: "no-store" }),
@@ -152,6 +160,7 @@ export function ProjectLibrary() {
             return (
               <button
                 key={id as string}
+                data-tour={id === "trash" ? "trash" : undefined}
                 className={filter === id ? "selected" : ""}
                 onClick={() => setFilter(id as string)}
               >
@@ -162,7 +171,7 @@ export function ProjectLibrary() {
             );
           })}
         </nav>
-        <div className="folder-heading">
+        <div className="folder-heading" data-tour="folders">
           <span>Carpetas</span>
           <button
             className="icon-button"
@@ -230,15 +239,16 @@ export function ProjectLibrary() {
           </div>
         ))}
       </aside>
-      <section className="library-main">
+      <section className="library-main" data-tour="photos">
         <div className="library-heading">
           <h1>{title}</h1>
+          <TourButton />
           <Link className="button button-primary" href="/estudio">
             <Plus size={17} />
             Subir foto
           </Link>
         </div>
-        <label className="library-search">
+        <label className="library-search" data-tour="search">
           <Search size={18} />
           <input
             type="search"

@@ -52,15 +52,15 @@ export function Header() {
           className={open ? "nav-links is-open" : "nav-links"}
           aria-label="Navegación principal"
         >
+          <Link href="/" onClick={() => setOpen(false)}>
+            Inicio
+          </Link>
           <Link
             className={pathname === "/galeria" ? "active" : ""}
             href="/galeria"
             onClick={() => setOpen(false)}
           >
             Galería
-          </Link>
-          <Link href="/" onClick={() => setOpen(false)}>
-            Inicio
           </Link>
           <Link
             className={pathname === "/precios" ? "active" : ""}

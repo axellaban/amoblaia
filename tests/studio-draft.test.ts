@@ -11,7 +11,7 @@ const draft = (): StudioDraft => ({
   file: new Blob(["original photo bytes"], { type: "image/jpeg" }),
   filename: "mi-living.jpg",
   room: "living",
-  style: "eclectic",
+  style: "scandinavian",
   mode: "redesign",
   notes: "Sofá azul",
   consent: true,
@@ -31,11 +31,18 @@ describe("Photo persistence across sign-in navigation", () => {
     expect(await restored?.file.text()).toBe("original photo bytes");
     expect(restored).toMatchObject({
       room: "living",
-      style: "eclectic",
+      style: "scandinavian",
       mode: "redesign",
       notes: "Sofá azul",
       consent: true,
     });
+  });
+  it("recovers a historical style without offering the retired category", async () => {
+    await saveDraft({
+      ...draft(),
+      style: "eclectic",
+    } as unknown as StudioDraft);
+    expect((await loadDraft())?.style).toBe("modern");
   });
   it("expires the draft after 24 hours and does not offer it again", async () => {
     await saveDraft(draft());

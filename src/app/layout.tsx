@@ -1,3 +1,4 @@
+import { ProductTour } from "@/components/product-tour";
 import type { Metadata, Viewport } from "next";
 import { Outfit } from "next/font/google";
 import { Header, Footer } from "@/components/shell";
@@ -40,6 +41,7 @@ export default function RootLayout({
         <Header />
         <main id="contenido">{children}</main>
         <Footer />
+        <ProductTour />
       </body>
     </html>
   );

@@ -60,10 +60,10 @@ export function Landing({
   scenes: string[];
   trial: boolean;
 }) {
-  // The allowance is enforced per verified account, including earlier free results.
+  // No registration is required for the free generation flow.
   const cta = trial ? "Subí tu foto gratis" : "Probá el estudio";
   const ctaNote = trial
-    ? "25 diseños gratis · Sin tarjeta de crédito"
+    ? "Sin registrarte · Sin tarjeta de crédito"
     : "Explorá ejemplos sin registrarte";
   const has = (room: string, style: string) =>
     scenes.includes(`${room}-${style === "original" ? "before" : style}`);
@@ -72,7 +72,7 @@ export function Landing({
     (r) => has(r, "original") && exampleStyles.some((s) => has(r, s)),
   );
   const optionsFor = (room: string) =>
-    ["original", ...exampleStyles, "eclectic"].filter((s) => has(room, s));
+    ["original", ...exampleStyles].filter((s) => has(room, s));
   const [room, setRoom] = useState<string>(heroRooms[0] || "living");
   const [style, setStyle] = useState("modern");
   const [scene, setScene] = useState<string>(heroRooms[1] || room);
@@ -94,7 +94,7 @@ export function Landing({
                 <span className="live-dot" /> HECHO PARA INMOBILIARIAS DE
                 ARGENTINA
               </div>
-              <h1>Amoblá tu propiedad con un clic</h1>
+              <h1>Amoblamiento virtual con un clic</h1>
               <p>Subí una foto y nuestra IA le suma muebles en minutos.</p>
               <button
                 className="button button-primary button-large"

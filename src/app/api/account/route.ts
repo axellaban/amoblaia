@@ -4,7 +4,7 @@ import { onFreeTier } from "@/lib/commerce/jobs";
 export const dynamic = "force-dynamic";
 export async function GET() {
   try {
-    const user = await requireUser();
+    const user = await requireUser(undefined, true);
     const account = await rpc<{ credits: number; blocked: boolean }>(
       "amobla_account",
       { p_user: user.id, p_trial: process.env.LIVE_TRIAL_ENABLED === "true" },
@@ -40,6 +40,7 @@ export async function GET() {
     return Response.json(
       {
         ...account,
+        anonymous: user.is_anonymous === true,
         email: user.email,
         free: await onFreeTier(user.id),
         admin: isAdmin(user.email),

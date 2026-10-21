@@ -22,6 +22,8 @@ import {
   Info,
   Eye,
   SplitSquareHorizontal,
+  CircleMinus,
+  CirclePlus,
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -32,6 +34,7 @@ import {
   rooms,
   styles,
   modes,
+  normalizeStyle,
   freeRooms,
   type RoomId,
   type StyleId,
@@ -77,6 +80,7 @@ export function Studio({
     mode?: "cloud";
     configured: boolean;
     authenticated: boolean;
+    anonymous?: boolean;
   } | null>(null);
   const [projectId, setProjectId] = useState<string | null>(null);
   const [variants, setVariants] = useState<Project["variants"]>([]);
@@ -86,6 +90,7 @@ export function Studio({
   const [draftReady, setDraftReady] = useState(false);
   const [roundTotal, setRoundTotal] = useState(3);
   const [round, setRound] = useState(0);
+  const [batchCompleted, setBatchCompleted] = useState(0);
   const requestKey = useRef<string | null>(null);
   const [showLogin, setShowLogin] = useState(false);
   const [password, setPassword] = useState("");
@@ -130,10 +135,12 @@ export function Studio({
       .then(async (state) => {
         if (!active) return;
         setStatus(state);
+        if (state.mode === "cloud" && !state.authenticated && !state.anonymous)
+          setFreeRemaining(FREE_RESULT_LIMIT);
         const local = await listProjects().catch(() => [] as Project[]);
         if (state.mode === "cloud") {
           setProjects(local.filter((p) => p.demo));
-          if (state.authenticated) {
+          if (state.authenticated || state.anonymous) {
             const [remote, account] = await Promise.all([
               fetch("/api/projects", { cache: "no-store" }).then((r) =>
                 r.json(),
@@ -359,15 +366,15 @@ export function Studio({
       const job = await response.json();
       if (!response.ok) throw new Error(job.error);
       if (job.status === "succeeded") {
-        const complete = await refreshCloud();
-        const project = complete.find((p) => p.id === job.projectId);
-        if (project) await openProject(project);
-        setResult(
-          project?.variants?.find((v) => v.id === id)?.result || job.result,
-        );
+        // Publish the finished image before fetching the rest of the library.
+        setResult(job.result);
+        setBatchCompleted((n) => n + 1);
         setProjectId(job.projectId);
-        setVariants(project?.variants || []);
-        setNotice("Diseño guardado en tu cuenta.");
+        setVariants((previous) => [
+          job.variant,
+          ...(previous || []).filter((v) => v.id !== id),
+        ]);
+        setNotice("Diseño listo y guardado.");
         requestKey.current = null;
         return job.projectId as string;
       }
@@ -376,7 +383,7 @@ export function Studio({
         await refreshCloud();
         throw new Error(job.error);
       }
-      await new Promise((resolve) => setTimeout(resolve, 4000));
+      await new Promise((resolve) => setTimeout(resolve, i < 20 ? 1500 : 3000));
     }
     setNotice(
       "Tu diseño sigue en proceso. Podés consultar su estado desde Mi cuenta.",
@@ -394,6 +401,8 @@ export function Studio({
       return;
     generateLock.current = true;
     setBusy(true);
+    setRoundTotal(1);
+    setBatchCompleted(0);
     void watchJob(id)
       .catch((e) => setError(e.message))
       .finally(() => {
@@ -412,8 +421,7 @@ export function Studio({
   }, [searchParams, projects, openingProject]);
   const freeTier =
     status?.mode === "cloud" &&
-    status.authenticated &&
-    free &&
+    (!status.authenticated || free) &&
     !demo &&
     !(projectId && variants?.some((v) => v.free === false));
   async function generate() {
@@ -441,34 +449,6 @@ export function Studio({
       );
       return;
     }
-    if (!status.authenticated) {
-      if (status.mode === "cloud") {
-        try {
-          if (file)
-            await saveDraft({
-              file,
-              filename,
-              room,
-              style,
-              mode,
-              notes,
-              consent,
-              projectId,
-              savedAt: Date.now(),
-            });
-          window.location.assign("/acceso?next=%2Festudio");
-        } catch {
-          setError(
-            "No pudimos conservar la foto en este navegador. Habilitá su almacenamiento antes de ingresar.",
-          );
-        }
-      } else setShowLogin(true);
-      return;
-    }
-    if (freeTier && freeRemaining <= 0) {
-      window.location.assign("/precios");
-      return;
-    }
     if (!consent) {
       setError(
         "Confirmá que podés usar esta foto y enviarla al proveedor de IA.",
@@ -481,10 +461,47 @@ export function Studio({
       );
       return;
     }
+    let activeStatus = status;
+    let availableFree = freeRemaining;
+    let activeFreeTier = freeTier;
+    if (!status.authenticated && !status.anonymous) {
+      if (status.mode === "cloud") {
+        generateLock.current = true;
+        setBusy(true);
+        try {
+          const response = await fetch("/api/guest", { method: "POST" });
+          const guest = await response.json();
+          if (!response.ok) throw new Error(guest.error);
+          activeStatus = { ...status, anonymous: true };
+          setStatus(activeStatus);
+          availableFree = guest.freeRemaining;
+          activeFreeTier = true;
+          setFree(true);
+          setFreeRemaining(availableFree);
+        } catch (e) {
+          setError(
+            e instanceof Error
+              ? e.message
+              : "No pudimos iniciar la prueba. Intentá nuevamente.",
+          );
+          return;
+        } finally {
+          generateLock.current = false;
+          setBusy(false);
+        }
+      } else {
+        setShowLogin(true);
+        return;
+      }
+    }
+    if (activeFreeTier && availableFree <= 0) {
+      window.location.assign("/precios");
+      return;
+    }
     generateLock.current = true;
     setBusy(true);
     setElapsed(0);
-    setResult("");
+    setBatchCompleted(0);
     try {
       const data = new FormData();
       data.set("image", file);
@@ -492,10 +509,10 @@ export function Studio({
       data.set("style", style);
       data.set("mode", mode);
       data.set("notes", notes);
-      if (status.mode === "cloud") {
+      if (activeStatus.mode === "cloud") {
         // Free results are batched, but the database enforces the lifetime account limit.
         const done = variants?.length || 0;
-        const runs = freeTier ? freeBatchSize(freeRemaining) : 1;
+        const runs = activeFreeTier ? freeBatchSize(availableFree) : 1;
         if (!runs)
           throw new Error(
             "Usaste tus 25 diseños gratis. Elegí un plan para seguir creando.",
@@ -518,6 +535,7 @@ export function Studio({
           pid = await watchJob(job.id);
           if (!pid) break;
         }
+        await refreshCloud();
         return;
       }
       const response = await fetch("/api/generate", {
@@ -602,7 +620,7 @@ export function Studio({
     setVariants(p.variants || []);
     requestKey.current = null;
     setRoom(p.room);
-    setStyle(p.style);
+    setStyle(normalizeStyle(p.style));
     setMode(p.mode);
     setSource(p.original);
     setResult(p.result);
@@ -615,6 +633,8 @@ export function Studio({
     if (p.pendingJobId && !generateLock.current) {
       generateLock.current = true;
       setBusy(true);
+      setRoundTotal(1);
+      setBatchCompleted(0);
       void watchJob(p.pendingJobId)
         .catch((e) => setError(e.message))
         .finally(() => {
@@ -670,11 +690,13 @@ export function Studio({
             <span className="live-dot" />
             {status?.mode === "cloud" ? (
               <Link href="/cuenta">
-                {status.authenticated
-                  ? free
-                    ? `${freeRemaining} diseños gratis · Mi cuenta`
-                    : `${credits ?? "…"} fotos · Mi cuenta`
-                  : "Ingresar a mi cuenta"}
+                {status.anonymous
+                  ? `${freeRemaining} diseños gratis · Sin registro`
+                  : status.authenticated
+                    ? free
+                      ? `${freeRemaining} diseños gratis · Mi cuenta`
+                      : `${credits ?? "…"} fotos · Mi cuenta`
+                    : "Ingresar a mi cuenta"}
               </Link>
             ) : status?.configured ? (
               "Piloto de IA"
@@ -826,7 +848,7 @@ export function Studio({
           <div
             className={`workspace ${result ? "has-results" : ""} ${freeTier && result ? "with-upsell" : ""}`}
           >
-            <div className="studio-canvas">
+            <div className="studio-canvas" data-tour="upload">
               <div className="canvas-heading">
                 <h2>
                   <span className="section-number">01</span>{" "}
@@ -911,7 +933,7 @@ export function Studio({
                   <span className="photo-name">
                     {demo ? "EJEMPLO DEMO" : filename}
                   </span>
-                  {busy && (
+                  {busy && !result && (
                     <div className="generating-overlay">
                       <div className="generating-icon">
                         <Sparkles size={32} />
@@ -939,28 +961,55 @@ export function Studio({
                   )}
                 </div>
               )}
-              {variants && variants.length > 0 && !busy && (
+              {((variants && variants.length > 0) || busy) && (
                 <div
                   className="variant-picker"
                   aria-label="Variantes de esta foto"
                 >
-                  {variants.map((v, i) => (
+                  {(variants || []).map((v, i) => (
                     <button
                       key={v.id}
                       className={result === v.result ? "selected" : ""}
                       onClick={() => {
                         setResult(v.result);
                         setRoom(v.room);
-                        setStyle(v.style);
+                        setStyle(normalizeStyle(v.style));
                         setMode(v.mode);
                         setNotes(v.notes);
                       }}
                     >
                       <img src={v.result} alt="" />
-                      Diseño {variants.length - i}
+                      Diseño {(variants?.length || 0) - i}
                     </button>
                   ))}
+                  {busy &&
+                    Array.from(
+                      { length: Math.max(0, roundTotal - batchCompleted) },
+                      (_, i) => (
+                        <div
+                          className="variant-pending"
+                          key={`pending-${i}`}
+                          role="status"
+                          aria-label={
+                            i === 0
+                              ? "Generando siguiente diseño"
+                              : "Diseño pendiente"
+                          }
+                        >
+                          <img src={source} alt="" />
+                          <LoaderCircle className="spin" size={24} />
+                          <span>{i === 0 ? "Creando…" : "En espera"}</span>
+                        </div>
+                      ),
+                    )}
                 </div>
+              )}
+              {busy && result && (
+                <p className="batch-progress" role="status">
+                  <LoaderCircle className="spin" size={17} />
+                  Creando el diseño {round || 1} de {roundTotal}. Ya podés
+                  explorar y descargar los que están listos.
+                </p>
               )}
               {result && (
                 <div className="result-actions">
@@ -1065,103 +1114,148 @@ export function Studio({
                 </h2>
                 <span>Un poco de vos. Un poco de IA.</span>
               </div>
-              <fieldset disabled={busy || reading}>
-                <legend>¿Qué querés hacer?</legend>
-                <div className="mode-options">
-                  {modes.map((m) => (
-                    <button
-                      key={m.id}
-                      className={mode === m.id ? "selected" : ""}
-                      onClick={() => chooseMode(m.id)}
-                      title={
-                        freeTier && !["furnish", "redesign"].includes(m.id)
-                          ? "Incluido en los planes pagos"
-                          : m.description
+              <div className="staging-controls" data-tour="operation">
+                <label
+                  className={`operation-toggle ${mode === "remove" || mode === "redesign" ? "active" : ""}`}
+                >
+                  <CircleMinus size={21} />
+                  <span>Quitar muebles existentes</span>
+                  {freeTier && (
+                    <LockKeyhole
+                      size={15}
+                      aria-label="Incluido en planes pagos"
+                    />
+                  )}
+                  <input
+                    type="checkbox"
+                    aria-label="Quitar muebles existentes"
+                    checked={mode === "remove" || mode === "redesign"}
+                    disabled={busy || reading || freeTier}
+                    onChange={(e) =>
+                      chooseMode(
+                        e.target.checked
+                          ? mode === "furnish"
+                            ? "redesign"
+                            : "remove"
+                          : "furnish",
+                      )
+                    }
+                  />
+                </label>
+                <div
+                  className={`furnish-card ${mode === "furnish" || mode === "redesign" ? "active" : ""}`}
+                >
+                  <label className="operation-toggle">
+                    <CirclePlus size={21} />
+                    <span>Agregar muebles</span>
+                    <input
+                      type="checkbox"
+                      aria-label="Agregar muebles"
+                      checked={mode === "furnish" || mode === "redesign"}
+                      disabled={busy || reading || freeTier}
+                      onChange={(e) =>
+                        chooseMode(
+                          e.target.checked
+                            ? mode === "remove"
+                              ? "redesign"
+                              : "furnish"
+                            : "remove",
+                        )
                       }
+                    />
+                  </label>
+                  <div className="staging-selects">
+                    <fieldset disabled={busy || reading}>
+                      <legend>Elegí el ambiente</legend>
+                      <select
+                        className="studio-select"
+                        aria-label="Tipo de ambiente"
+                        value={room}
+                        onChange={(e) => chooseRoom(e.target.value as RoomId)}
+                      >
+                        {rooms.map((r) => (
+                          <option
+                            key={r.id}
+                            value={r.id}
+                            disabled={
+                              (freeTier && !freeRooms.includes(r.id)) ||
+                              (demo &&
+                                !(demoRooms as readonly string[]).includes(
+                                  r.id,
+                                ))
+                            }
+                          >
+                            {r.name}
+                            {freeTier && !freeRooms.includes(r.id)
+                              ? " · Plan pago"
+                              : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </fieldset>
+                    <fieldset
                       disabled={
-                        (freeTier && !["furnish", "redesign"].includes(m.id)) ||
-                        (demo && ["enhance", "dusk"].includes(m.id))
+                        busy ||
+                        reading ||
+                        ["remove", "enhance", "dusk"].includes(mode)
                       }
                     >
-                      {freeTier && !["furnish", "redesign"].includes(m.id) && (
-                        <LockKeyhole size={12} />
-                      )}{" "}
-                      {m.name}
-                    </button>
-                  ))}
+                      <legend>Estilo de muebles</legend>
+                      <select
+                        className="studio-select"
+                        aria-label="Estilo de muebles"
+                        data-tour="style"
+                        value={style}
+                        onChange={(e) => {
+                          setStyle(e.target.value as StyleId);
+                          setResult("");
+                        }}
+                      >
+                        {styles.map((s) => (
+                          <option
+                            key={s.id}
+                            value={s.id}
+                            disabled={
+                              demo &&
+                              !(demoStyles as readonly string[]).includes(s.id)
+                            }
+                          >
+                            {s.name}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="field-hint">
+                        {styles.find((s) => s.id === style)?.description}
+                      </p>
+                      {demo && (
+                        <p className="field-hint">
+                          Los ejemplos muestran el estilo Moderno. Con tu foto
+                          podés explorar los {styles.length}.
+                        </p>
+                      )}
+                    </fieldset>
+                  </div>
                 </div>
-                <p className="field-hint">
-                  {modes.find((m) => m.id === mode)?.description}
-                </p>
-              </fieldset>
-              <fieldset disabled={busy || reading}>
-                <legend>Elegí el ambiente</legend>
-                <select
-                  className="studio-select"
-                  aria-label="Tipo de ambiente"
-                  value={room}
-                  onChange={(e) => chooseRoom(e.target.value as RoomId)}
-                >
-                  {rooms.map((r) => (
-                    <option
-                      key={r.id}
-                      value={r.id}
-                      disabled={
-                        (freeTier && !freeRooms.includes(r.id)) ||
-                        (demo &&
-                          !(demoRooms as readonly string[]).includes(r.id))
-                      }
-                    >
-                      {r.name}
-                      {freeTier && !freeRooms.includes(r.id)
-                        ? " · Plan pago"
-                        : ""}
-                    </option>
-                  ))}
-                </select>
-              </fieldset>
-              <fieldset
-                disabled={
-                  busy ||
-                  reading ||
-                  ["remove", "enhance", "dusk"].includes(mode)
-                }
-              >
-                <legend>
-                  Encontrá tu estilo <span>{styles.length} opciones</span>
-                </legend>
-                <select
-                  className="studio-select"
-                  aria-label="Estilo de muebles"
-                  value={style}
-                  onChange={(e) => {
-                    setStyle(e.target.value as StyleId);
-                    setResult("");
-                  }}
-                >
-                  {styles.map((s) => (
-                    <option
-                      key={s.id}
-                      value={s.id}
-                      disabled={
-                        demo &&
-                        !(demoStyles as readonly string[]).includes(s.id)
-                      }
-                    >
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-                <p className="field-hint">
-                  {styles.find((s) => s.id === style)?.description}
-                </p>
-                {demo && (
-                  <p className="field-hint">
-                    Los ejemplos incluyen 2 estilos precargados. Con tu foto
-                    podés explorar los {styles.length}.
-                  </p>
-                )}
-              </fieldset>
+                <details className="photo-tools">
+                  <summary>
+                    Herramientas de foto{freeTier ? " · Plan pago" : ""}
+                  </summary>
+                  <div className="mode-options">
+                    {modes
+                      .filter((m) => ["enhance", "dusk"].includes(m.id))
+                      .map((m) => (
+                        <button
+                          key={m.id}
+                          disabled={busy || reading || freeTier || demo}
+                          className={mode === m.id ? "selected" : ""}
+                          onClick={() => chooseMode(m.id)}
+                        >
+                          {freeTier && <LockKeyhole size={12} />} {m.name}
+                        </button>
+                      ))}
+                  </div>
+                </details>
+              </div>
               <div className="notes-field">
                 <label htmlFor="design-notes">
                   Un toque personal <span>opcional</span>
@@ -1188,7 +1282,7 @@ export function Studio({
                   proveedor de inteligencia artificial para generar el diseño.
                 </label>
               )}
-              <div className="generate-area">
+              <div className="generate-area" data-tour="generate">
                 <button
                   ref={loginTrigger}
                   className="button button-primary generate-button"

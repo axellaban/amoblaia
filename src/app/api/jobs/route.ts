@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 export async function POST(request: Request) {
   try {
-    const user = await requireUser(request);
+    const user = await requireUser(request, true);
     await rpc("amobla_account", {
       p_user: user.id,
       p_trial: process.env.LIVE_TRIAL_ENABLED === "true",

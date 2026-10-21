@@ -82,6 +82,10 @@ export function AccountDashboard() {
       }
       const p = await r.json();
       if (!r.ok) throw new Error(p.error);
+      if (p.anonymous) {
+        window.location.assign("/acceso?next=%2Fcuenta");
+        return;
+      }
       setAccount(p);
       setError("");
     } catch (e) {
@@ -103,6 +107,10 @@ export function AccountDashboard() {
       });
       const p = await r.json();
       if (!r.ok) throw new Error(p.error);
+      if (p.anonymous) {
+        window.location.assign("/acceso?next=%2Fcuenta");
+        return;
+      }
       setNotice("Cancelamos la renovación. Conservás el período ya pagado.");
       setCancel("");
       await load();

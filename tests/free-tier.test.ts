@@ -15,6 +15,13 @@ describe("Free tier rules", () => {
       buildPrompt("living", "modern", "furnish", "", n),
     );
     expect(new Set(options).size).toBe(3);
+    expect(options[0]).toContain("calm light palette");
+    expect(options[1]).toContain("darker wood");
+    expect(options[2]).toContain("blue or green accent");
+    for (const prompt of options) {
+      expect(prompt).toContain("Preserve the exact camera position");
+      expect(prompt).toContain("style takes priority");
+    }
     expect(options[1]).toContain("design option 2 of 3");
     expect(buildPrompt("living", "modern", "remove", "", 2)).not.toContain(
       "design option",

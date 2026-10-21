@@ -141,7 +141,6 @@ El administrador puede recuperar un resultado ya guardado, o confirmar una falla
 
 No hay promesa de funcionamiento de pagos en producción hasta completar esta homologación con las credenciales del titular.
 
-
 ## Actualización de la auditoría del 20/10/2026
 
 Aplicar en orden las migraciones 006 a 009: email de checkout y 25 resultados gratuitos, consultas registradas, carpetas/papelera y regeneraciones pagas durante cobertura vigente. Se aplicaron al proyecto existente desde SQL Editor sin cambiar el plan Free. No volver a ejecutar la migración 008 completa si ya está aplicada.
@@ -155,3 +154,11 @@ Los resultados gratuitos históricos se marcan `is_free` antes de contar el lím
 Los formularios guardan solicitudes en `contact_requests`, solo legible por el backend y Administración. Hay deduplicación y un máximo de cinco solicitudes nuevas por origen/hora. No hay envío automático de emails ni reembolsos automáticos desde esos formularios.
 
 Ver `AUDIT_2026-10-20.md` para cobertura y diferencias con la referencia.
+
+### Prueba sin registro y recorrido inicial
+
+Aplicar `202610200010_guest_trial.sql` después de 009. Habilitar `Allow anonymous sign-ins` en Supabase Auth → Sign In / Providers (aplicado el 20/10/2026). No se habilita manual linking ni se desactiva confirmación de email. RLS solo permite lectura de filas propias y los RPC de mutación continúan reservados al servidor. Las compras requieren una cuenta verificada.
+
+`POST /api/guest` crea/reutiliza una sesión anónima y conserva una cookie HttpOnly firmada para trasladar fotos al iniciar sesión con Google. La firma usa la credencial existente del servidor; no requiere nuevas variables. El merge es idempotente y bloquea el invitado anterior. El cupo de 25 cuenta toda su historia, incluso papelera. Se agrega un límite de 25 resultados por origen en 24 horas y cinco altas anónimas por origen; la huella usa HMAC del encabezado de origen de Vercel. No es una prueba de identidad ni impide a una persona cambiar de red/dispositivo. Mantener los topes globales de IA y almacenamiento.
+
+El tour guarda `profiles.onboarding_completed_at`; puede reabrirse desde Mis fotos. Los resultados de una tanda se muestran a medida que termina cada trabajo; no se envían tres solicitudes simultáneas al proveedor.

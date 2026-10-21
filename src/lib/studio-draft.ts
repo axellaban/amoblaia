@@ -1,5 +1,10 @@
 import { openDB } from "idb";
-import type { RoomId, StyleId, ModeId } from "./catalog";
+import {
+  normalizeStyle,
+  type RoomId,
+  type StyleId,
+  type ModeId,
+} from "./catalog";
 
 export type StudioDraft = {
   file: Blob;
@@ -36,7 +41,7 @@ export async function loadDraft(): Promise<StudioDraft | null> {
     await db.delete("drafts", "active");
     return null;
   }
-  return draft;
+  return { ...draft, style: normalizeStyle(draft.style) };
 }
 export async function clearDraft() {
   const db = await database();

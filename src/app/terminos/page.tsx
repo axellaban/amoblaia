@@ -16,10 +16,11 @@ export default function Terms() {
       </p>
       <h2>Versión gratuita</h2>
       <p>
-        La cuenta verificada incluye hasta 25 resultados gratuitos en total, en
-        tandas de hasta tres, para living y dormitorio. Se entregan con marca de
-        agua y resolución reducida. Las fallas técnicas confirmadas no consumen
-        ese límite. Borrar un proyecto o volver a ingresar no reinicia el cupo.
+        La prueba sin registro incluye hasta 25 resultados gratuitos en total,
+        en tandas de hasta tres, para living y dormitorio. Se entregan con marca
+        de agua y resolución reducida. Las fallas técnicas confirmadas no
+        consumen ese límite. Borrar un proyecto o volver a ingresar no reinicia
+        el cupo.
       </p>
       <h2>Qué incluye una foto de un plan pago</h2>
       <p>

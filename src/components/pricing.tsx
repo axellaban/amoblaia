@@ -227,7 +227,7 @@ export function PricingPlans({
           <div className="trial-banner">
             <Sparkles size={24} />
             <div>
-              <h2>Probá con tus fotos: 25 diseños gratis.</h2>
+              <h2>Probá con tus fotos, sin registrarte.</h2>
               <p>
                 Hasta 3 diseños por tanda. 25 en total por cuenta, con marca de
                 agua. Sin tarjeta.

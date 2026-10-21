@@ -76,7 +76,11 @@ export function GoogleSignIn({ next }: { next: string | null }) {
                 nonce,
               });
               if (error) throw error;
-              window.location.assign(safeNext(next));
+              const claimed = await fetch("/api/guest/claim", {
+                method: "POST",
+              });
+              if (!claimed.ok) throw new Error("GUEST_CLAIM_FAILED");
+              window.location.assign(safeNext(next, "/proyectos"));
             } catch {
               setError(
                 "No pudimos completar el acceso. Volvé a intentarlo con Google.",
