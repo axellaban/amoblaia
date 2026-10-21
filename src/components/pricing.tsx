@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   Check,
   ArrowUpRight,
@@ -72,6 +72,42 @@ export function PricingPlans({
     {},
   );
   const selectedProduct = products.find((p) => p.sku === selectedSku);
+  const modalRef = useRef<HTMLElement>(null);
+  const busyRef = useRef(busy);
+  busyRef.current = busy;
+  // Escape closes the payment dialog, Tab stays inside it, and focus returns
+  // to the plan button that opened it.
+  useEffect(() => {
+    if (!selectedSku) return;
+    const opener = document.activeElement as HTMLElement | null;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !busyRef.current) {
+        e.preventDefault();
+        setSelectedSku("");
+      } else if (e.key === "Tab" && modalRef.current) {
+        const items = [
+          ...modalRef.current.querySelectorAll<HTMLElement>(
+            "button:not([disabled]), input:not([disabled]), a[href]",
+          ),
+        ];
+        if (!items.length) return;
+        const first = items[0],
+          last = items[items.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      opener?.focus();
+    };
+  }, [selectedSku]);
   const price = (sku: string) =>
     products.find((p) => p.sku === sku && p.active)?.price_cents || 0;
   // Largest annual saving across plans, rounded down to a multiple of 5.
@@ -252,6 +288,7 @@ export function PricingPlans({
             }}
           >
             <section
+              ref={modalRef}
               className="modal checkout-modal"
               role="dialog"
               aria-modal="true"

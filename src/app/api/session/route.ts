@@ -91,7 +91,8 @@ export async function DELETE(request: Request) {
     return Response.json({ error: "Origen inválido." }, { status: 403 });
   if (cloudEnabled() && cloudConfigured()) {
     const client = await userClient();
-    await client.auth.signOut();
+    // Local scope: signing out here must not end the user's other devices.
+    await client.auth.signOut({ scope: "local" });
   }
   (await cookies()).delete(COOKIE_NAME);
   return Response.json({ authenticated: false });

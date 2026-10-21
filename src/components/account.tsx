@@ -143,7 +143,7 @@ export function AccountDashboard() {
             className="icon-button"
             aria-label="Cerrar sesión"
             onClick={async () => {
-              const r = await browserClient()?.auth.signOut();
+              const r = await browserClient()?.auth.signOut({ scope: "local" });
               if (r?.error) {
                 setError("No pudimos cerrar la sesión.");
                 return;
