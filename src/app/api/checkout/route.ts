@@ -157,7 +157,10 @@ export async function POST(request: Request) {
       if (current.error) throw new Error("SUBSCRIPTION_LOOKUP_FAILED");
       if (current.data) {
         const order = current.data.orders as unknown as { sku: string } | null;
-        if (order?.sku === sku) throw new HttpError(409, "Ya tenés este plan.");
+        // A pending subscription is a redirect checkout that was never paid:
+        // it is replaced like any other, even by the same plan.
+        if (order?.sku === sku && current.data.status !== "pending")
+          throw new HttpError(409, "Ya tenés este plan.");
         if (!card)
           throw new HttpError(
             409,

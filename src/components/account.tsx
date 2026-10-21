@@ -107,6 +107,11 @@ export function AccountDashboard() {
       window.history.replaceState(null, "", "/cuenta");
     }
   }, [load]);
+  // Subscriptions that ended without ever being charged (abandoned or
+  // replaced checkouts) are noise in the list.
+  const subscriptions = (account?.subscriptions || []).filter(
+    (s) => s.status !== "cancelled" || s.paid_until,
+  );
   // Until Mercado Pago confirms the first charge, refresh on its own so the
   // photos appear without reloading (for at most ten minutes).
   const awaitingPayment = Boolean(
@@ -137,7 +142,11 @@ export function AccountDashboard() {
         window.location.assign("/acceso?next=%2Fcuenta");
         return;
       }
-      setNotice("Cancelamos la renovación. Conservás el período ya pagado.");
+      setNotice(
+        account?.subscriptions.find((s) => s.id === id)?.status === "pending"
+          ? "Descartamos el pago sin completar. No se hizo ningún cobro."
+          : "Cancelamos la renovación. Conservás el período ya pagado.",
+      );
       setCancel("");
       await load();
     } catch (e) {
@@ -235,7 +244,7 @@ export function AccountDashboard() {
               </Link>
               <Link className="text-link" href="/precios">
                 {account.subscriptions.some((s) =>
-                  ["authorized", "pending", "paused"].includes(s.status),
+                  ["authorized", "paused"].includes(s.status),
                 )
                   ? "Cambiar de plan"
                   : "Elegir un plan"}
@@ -251,29 +260,45 @@ export function AccountDashboard() {
           )}
           <section className="account-panel">
             <h2>Mis suscripciones</h2>
-            {!account.subscriptions.length ? (
+            {!subscriptions.length ? (
               <p>
                 Todavía no tenés una suscripción. Podés{" "}
                 <Link href="/precios">elegir un plan</Link>.
               </p>
             ) : (
-              account.subscriptions.map((s) => (
+              subscriptions.map((s) => (
                 <div key={s.id} className="subscription-row">
                   <div>
                     <h3>{s.orders?.snapshot?.name || "Plan amoblaIA"}</h3>
                     <p>
-                      {statuses[s.status] || s.status} ·{" "}
-                      {s.orders?.snapshot?.photos} fotos por mes
+                      {s.status === "pending"
+                        ? "Pago sin completar"
+                        : statuses[s.status] || s.status}{" "}
+                      · {s.orders?.snapshot?.photos} fotos por mes
                     </p>
                     <p>
                       {s.paid_until
                         ? `Período pagado hasta ${date(s.paid_until)}`
-                        : s.status === "cancelled"
-                          ? "Sin cobros."
+                        : s.status === "pending"
+                          ? "No se hizo ningún cobro. Para suscribirte, elegí un plan en Precios."
                           : "Esperando la confirmación del primer pago."}
                     </p>
                   </div>
-                  {["authorized", "pending", "paused"].includes(s.status) &&
+                  {s.status === "pending" ? (
+                    <div className="subscription-actions">
+                      <Link className="button button-primary" href="/precios">
+                        Elegir un plan
+                      </Link>
+                      <button
+                        className="button button-outline"
+                        disabled={busy}
+                        onClick={() => cancelSubscription(s.id)}
+                      >
+                        Descartar
+                      </button>
+                    </div>
+                  ) : (
+                    ["authorized", "paused"].includes(s.status) &&
                     (cancel === s.id ? (
                       <div className="cancel-confirm">
                         <p>¿Querés detener los próximos cobros?</p>
@@ -304,7 +329,8 @@ export function AccountDashboard() {
                           Cancelar renovación
                         </button>
                       </div>
-                    ))}
+                    ))
+                  )}
                 </div>
               ))
             )}

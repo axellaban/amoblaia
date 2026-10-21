@@ -320,6 +320,21 @@ describe("Plan changes", () => {
     expect((await POST(cardRequest(token))).status).toBe(409);
     expect(state.calls).toEqual([]);
   });
+  it("lets a never-paid pending checkout of the same plan be replaced", async () => {
+    // The real case: an abandoned redirect checkout showed as 'your plan'.
+    state.current = {
+      ...state.current,
+      status: "pending",
+      orders: { sku: "basic-month" },
+    };
+    const r = await POST(cardRequest(token));
+    expect(await r.json()).toEqual({ subscribed: true, changed: true });
+    expect(state.calls).toContainEqual({
+      path: "/preapproval/current-sub",
+      method: "PUT",
+      body: { status: "cancelled" },
+    });
+  });
   it("keeps a first purchase compatible with the database before the migration", async () => {
     state.current = null;
     await POST(cardRequest(token));

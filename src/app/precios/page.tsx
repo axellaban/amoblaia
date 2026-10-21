@@ -22,14 +22,15 @@ export default async function Pricing() {
   const user = canBuy ? await currentUser().catch(() => null) : null;
   if (canBuy && process.env.MERCADOPAGO_MODE !== "production")
     canBuy = isAdmin(user?.email);
-  // The open subscription, so its plan is marked and the others offer a change.
+  // The active subscription, so its plan is marked and the others offer a
+  // change. A pending one was never paid and is not anybody's plan.
   let currentSku: string | undefined;
   if (user) {
     const { data } = await adminClient()
       .from("subscriptions")
       .select("orders(sku)")
       .eq("user_id", user.id)
-      .in("status", ["authorized", "pending", "paused"])
+      .in("status", ["authorized", "paused"])
       .limit(1)
       .maybeSingle();
     currentSku =
