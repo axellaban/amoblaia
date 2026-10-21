@@ -192,7 +192,19 @@ async function discardProject(id: string, path: string | null) {
     console.error("project_discard_failed", id);
   }
 }
-export async function runJob(id: string) {
+/** Time kept after the provider call to store, watermark and record a result. */
+const FINISH_MARGIN_MS = 25000;
+/**
+ * Runs a queued job. `deadline` is when the hosting function will be killed:
+ * the provider call is cut short to leave room to record the outcome, and a
+ * job that cannot fit is left queued for the next poll instead of dying
+ * mid-render (which would leave it 'running' with the provider maybe billed).
+ */
+export async function runJob(id: string, deadline?: number) {
+  const providerBudget = deadline
+    ? Math.min(240000, deadline - Date.now() - FINISH_MARGIN_MS)
+    : 240000;
+  if (providerBudget < 60000) return;
   const job = await rpc<Job | null>("amobla_claim_generation", { p_job: id });
   if (!job) return;
   const db = adminClient();
@@ -212,6 +224,7 @@ export async function runJob(id: string) {
       Buffer.from(await file.data.arrayBuffer()),
       job.prompt,
       free,
+      providerBudget,
     );
     await db
       .from("generations")
@@ -242,12 +255,23 @@ export async function runJob(id: string) {
     });
   } catch (error) {
     const uncertain = error instanceof ProviderError ? error.uncertain : sent;
-    await rpc("amobla_finish_generation", {
-      p_job: id,
-      p_status: uncertain ? "needs_review" : "failed",
-      p_error:
-        error instanceof ProviderError ? error.code : "INTERNAL_JOB_FAILURE",
-    });
+    // A job left 'running' locks the account until swept: retry recording it.
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await rpc("amobla_finish_generation", {
+          p_job: id,
+          p_status: uncertain ? "needs_review" : "failed",
+          p_error:
+            error instanceof ProviderError
+              ? error.code
+              : "INTERNAL_JOB_FAILURE",
+        });
+        return;
+      } catch {
+        if (attempt === 3) console.error("job_finish_failed", id);
+        else await new Promise((r) => setTimeout(r, attempt * 1000));
+      }
+    }
   }
 }
 export async function signPath(path: string) {

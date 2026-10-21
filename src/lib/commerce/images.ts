@@ -80,7 +80,12 @@ async function watermark(image: Buffer) {
     .jpeg({ quality: 88 })
     .toBuffer();
 }
-export async function renderPhoto(image: Buffer, prompt: string, free = false) {
+export async function renderPhoto(
+  image: Buffer,
+  prompt: string,
+  free = false,
+  timeoutMs = 240000,
+) {
   const model = process.env.OPENAI_IMAGE_MODEL || "gpt-image-2.5-sunburst";
   const body = new FormData();
   body.set("model", model);
@@ -103,7 +108,7 @@ export async function renderPhoto(image: Buffer, prompt: string, free = false) {
       method: "POST",
       headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
       body,
-      signal: AbortSignal.timeout(240000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch {
     throw new ProviderError("PROVIDER_CONNECTION_UNKNOWN", true);

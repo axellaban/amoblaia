@@ -24,10 +24,10 @@ begin
  -- Final reversals are never undone by an older notification; a partial
  -- refund is not undone by the 'approved' that preceded it.
  if previous.status in ('refunded','charged_back') and p_status not in ('refunded','charged_back') then return; end if;
- if previous.status='partially_refunded' and p_status='approved' then return; end if;
+ if previous.status='partially_refunded' and p_status='approved' and previous.coverage_start is not null then return; end if;
  if previous.status='duplicate' then return; end if;
  insert into payments(id,order_id,user_id,status,amount_cents,paid_at) values(p_id,p_order,o.user_id,p_status,p_amount,p_paid_at)
- on conflict(id) do update set status=excluded.status;
+ on conflict(id) do update set status=case when payments.status='partially_refunded' and excluded.status='approved' then payments.status else excluded.status end;
  if p_status in ('refunded','charged_back') then
   update credit_grants set revoked=true where payment_id=p_id;
   if p_status='charged_back' or exists(select 1 from credit_grants where payment_id=p_id and remaining<total) then
@@ -36,39 +36,40 @@ begin
   return;
  end if;
  if p_status='in_mediation' then update profiles set blocked=true where id=o.user_id; return; end if;
- if p_status<>'approved' then return; end if;
- if previous.coverage_start is not null then
-  -- 'approved' again after a mediation: resolved in the seller's favour.
-  if previous.status='in_mediation' then
-   update profiles set blocked=(
-    exists(select 1 from payments where user_id=o.user_id and status in ('charged_back','in_mediation')) or
-    exists(select 1 from credit_grants where user_id=o.user_id and revoked and remaining<total)
-   ) where id=o.user_id;
+ -- A partial refund still paid for the period: if it is the first status
+ -- seen for this payment, it grants like an approval.
+ if p_status not in ('approved','partially_refunded') then return; end if;
+ if previous.coverage_start is null then
+  -- Checkout Pro permits multiple payment attempts: a pack order grants once.
+  if o.snapshot->>'kind'='pack' and exists(select 1 from payments where order_id=o.id and id<>p_id and coverage_start is not null) then
+   update payments set status='duplicate' where id=p_id;
+   return;
   end if;
-  return;
+  anchor:=coalesce(p_paid_at,now());
+  if o.snapshot->>'kind'='pack' then ending:=null;
+  else
+   select greatest(anchor,coalesce(paid_until,anchor)) into anchor from subscriptions where id=p_subscription for update;
+   if anchor is null then anchor:=coalesce(p_paid_at,now()); end if;
+   ending:=anchor+case when o.snapshot->>'kind'='year' then interval '1 year' else interval '1 month' end;
+   insert into subscriptions(id,order_id,user_id,status,paid_until) values(p_subscription,o.id,o.user_id,'authorized',ending)
+   on conflict(id) do update set paid_until=excluded.paid_until;
+  end if;
+  update payments set coverage_start=anchor,coverage_end=ending where id=p_id;
+  update orders set status='paid' where id=o.id;
+  if o.snapshot->>'kind'='year' then perform amobla_refresh_annual(o.user_id);
+  else
+   insert into credit_grants(user_id,source_key,payment_id,total,remaining,starts_at,expires_at)
+   values(o.user_id,p_id||':0',p_id,(o.snapshot->>'photos')::int,(o.snapshot->>'photos')::int,anchor,ending)
+   on conflict(source_key) do nothing returning id into g;
+   if g is not null then insert into credit_ledger(user_id,grant_id,delta,reason) values(o.user_id,g,(o.snapshot->>'photos')::int,'payment'); end if;
+  end if;
  end if;
- -- Checkout Pro permits multiple payment attempts: a pack order grants once.
- if o.snapshot->>'kind'='pack' and exists(select 1 from payments where order_id=o.id and id<>p_id and coverage_start is not null) then
-  update payments set status='duplicate' where id=p_id;
-  return;
- end if;
- anchor:=coalesce(p_paid_at,now());
- if o.snapshot->>'kind'='pack' then ending:=null;
- else
-  select greatest(anchor,coalesce(paid_until,anchor)) into anchor from subscriptions where id=p_subscription for update;
-  if anchor is null then anchor:=coalesce(p_paid_at,now()); end if;
-  ending:=anchor+case when o.snapshot->>'kind'='year' then interval '1 year' else interval '1 month' end;
-  insert into subscriptions(id,order_id,user_id,status,paid_until) values(p_subscription,o.id,o.user_id,'authorized',ending)
-  on conflict(id) do update set paid_until=excluded.paid_until;
- end if;
- update payments set coverage_start=anchor,coverage_end=ending where id=p_id;
- update orders set status='paid' where id=o.id;
- if o.snapshot->>'kind'='year' then perform amobla_refresh_annual(o.user_id);
- else
-  insert into credit_grants(user_id,source_key,payment_id,total,remaining,starts_at,expires_at)
-  values(o.user_id,p_id||':0',p_id,(o.snapshot->>'photos')::int,(o.snapshot->>'photos')::int,anchor,ending)
-  on conflict(source_key) do nothing returning id into g;
-  if g is not null then insert into credit_ledger(user_id,grant_id,delta,reason) values(o.user_id,g,(o.snapshot->>'photos')::int,'payment'); end if;
+ -- 'approved' after a mediation: resolved in the seller's favour.
+ if previous.status='in_mediation' and p_status='approved' then
+  update profiles set blocked=(
+   exists(select 1 from payments where user_id=o.user_id and status in ('charged_back','in_mediation')) or
+   exists(select 1 from credit_grants where user_id=o.user_id and revoked and remaining<total)
+  ) where id=o.user_id;
  end if;
 end $$;
 

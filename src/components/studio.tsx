@@ -93,6 +93,9 @@ export function Studio({
   const [round, setRound] = useState(0);
   const [batchCompleted, setBatchCompleted] = useState(0);
   const requestKey = useRef<string | null>(null);
+  // Bumped whenever another photo is opened: results that arrive late for an
+  // earlier photo must not replace what is on screen (nor its project id).
+  const photoSession = useRef(0);
   const [showLogin, setShowLogin] = useState(false);
   const [password, setPassword] = useState("");
   const [loginBusy, setLoginBusy] = useState(false);
@@ -252,7 +255,13 @@ export function Studio({
       return () => document.removeEventListener("keydown", listener);
     }
   }, [showLogin]);
+  // The request key makes a retry return the same batch; with different
+  // settings it must be a new request, not a replay of the old one.
+  useEffect(() => {
+    requestKey.current = null;
+  }, [room, style, mode, notes]);
   function reset() {
+    photoSession.current++;
     void clearDraft().catch(() => {});
     setSource("");
     setProjectId(null);
@@ -285,6 +294,7 @@ export function Studio({
         projectId: null,
         savedAt: Date.now(),
       });
+      photoSession.current++;
       setProjectId(null);
       setVariants([]);
       requestKey.current = null;
@@ -305,6 +315,7 @@ export function Studio({
     }
   }
   function useExample(r: RoomId) {
+    photoSession.current++;
     void clearDraft().catch(() => {});
     setProjectId(null);
     setVariants([]);
@@ -371,39 +382,70 @@ export function Studio({
     return remote.projects as Project[];
   }
   async function watchJob(id: string) {
+    const session = photoSession.current;
+    const current = () => session === photoSession.current;
+    let failures = 0;
     for (let i = 0; i < 105; i++) {
-      const response = await fetch(`/api/jobs/${encodeURIComponent(id)}`, {
-        cache: "no-store",
-      });
-      const job = await response.json();
-      if (!response.ok) throw new Error(job.error);
+      let job: {
+        status?: string;
+        error?: string;
+        result?: string;
+        variant?: NonNullable<Project["variants"]>[number];
+        projectId?: string;
+      } | null;
+      try {
+        const response = await fetch(`/api/jobs/${encodeURIComponent(id)}`, {
+          cache: "no-store",
+        });
+        job = await response.json().catch(() => null);
+        // Server hiccups and dropped connections are retried; only a real
+        // answer (such as 'not found') ends the wait.
+        if (response.status >= 500 || response.status === 429 || !job)
+          throw new Error("RETRY");
+        if (!response.ok)
+          throw Object.assign(new Error(job.error), { final: true });
+        failures = 0;
+      } catch (e) {
+        if ((e as { final?: boolean }).final) throw e;
+        if (++failures > 8)
+          throw new Error(
+            "Perdimos la conexión. Tu diseño sigue en proceso y queda guardado en tus proyectos.",
+            { cause: e },
+          );
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        continue;
+      }
       if (job.status === "succeeded") {
         if (!job.result || !job.variant)
           throw new Error(
             "No pudimos recuperar esta imagen. Volvé a abrir la foto desde tus proyectos.",
           );
+        if (!current()) return job.projectId || null;
         // Publish the finished image before fetching the rest of the library.
         setResult(job.result);
         setBatchCompleted((n) => n + 1);
-        setProjectId(job.projectId);
+        setProjectId(job.projectId || null);
+        const variant = job.variant;
         setVariants((previous) => [
-          job.variant,
+          variant,
           ...(previous || []).filter((v) => v.id !== id),
         ]);
         setNotice("Diseño listo y guardado.");
         requestKey.current = null;
-        return job.projectId as string;
+        return job.projectId || null;
       }
       if (job.status === "failed" || job.status === "needs_review") {
+        if (!current()) return null;
         requestKey.current = null;
-        await refreshCloud();
+        await refreshCloud().catch(() => null);
         throw new Error(job.error);
       }
       await new Promise((resolve) => setTimeout(resolve, i < 20 ? 1500 : 3000));
     }
-    setNotice(
-      "Tu diseño sigue en proceso. Podés consultar su estado desde Mi cuenta.",
-    );
+    if (current())
+      setNotice(
+        "Tu diseño sigue en proceso. Podés consultar su estado desde Mi cuenta.",
+      );
     return null;
   }
   useEffect(() => {
@@ -470,6 +512,8 @@ export function Studio({
     !(projectId && variants?.some((v) => v.free === false));
   async function generate() {
     if (generateLock.current || !source) return;
+    // Set when a batch is already running: opened once the lock is released.
+    let resume: Project | null = null;
     setError("");
     setNotice("");
     if (demo) {
@@ -580,6 +624,17 @@ export function Studio({
           body: data,
         });
         const batch = await response.json();
+        if (response.status === 409 && /en curso/.test(batch.error || "")) {
+          // A batch already runs, typically started before a page reload:
+          // open it so its results show up instead of a dead end.
+          const running = (await refreshCloud().catch(() => [])).find(
+            (p) => p.pendingJobIds?.length || p.pendingJobId,
+          );
+          if (running) {
+            resume = running;
+            return;
+          }
+        }
         if (!response.ok) throw new Error(batch.error);
         const ids: string[] = batch.ids || [batch.id];
         setProjectId(batch.projectId);
@@ -625,6 +680,10 @@ export function Studio({
       generateLock.current = false;
       setBusy(false);
       setRound(0);
+    }
+    if (resume) {
+      setNotice("Ya tenías una generación en curso. Te la mostramos acá.");
+      await openProject(resume);
     }
   }
   async function login(e: React.FormEvent) {
@@ -674,10 +733,35 @@ export function Studio({
         label,
       );
     } catch (e) {
+      // Saved images use links that expire after an hour: renew them once.
+      const shown = variants?.find((v) => v.result === result);
+      if (status?.mode === "cloud" && projectId) {
+        try {
+          const fresh = (await refreshCloud()).find((p) => p.id === projectId);
+          const image =
+            fresh?.variants?.find((v) => v.id === shown?.id)?.result ||
+            fresh?.result;
+          if (fresh && image) {
+            setSource(fresh.original);
+            setResult(image);
+            setVariants(fresh.variants || []);
+            await downloadDesign(
+              image,
+              `${room}-${style}`,
+              sideBySide ? fresh.original : undefined,
+              label,
+            );
+            return;
+          }
+        } catch {
+          /* falls through to the original error */
+        }
+      }
       setError(e instanceof Error ? e.message : "No pudimos descargar.");
     }
   }
   async function openProject(p: Project) {
+    photoSession.current++;
     setProjectId(p.cloud ? p.id : null);
     setVariants(p.variants || []);
     requestKey.current = null;
@@ -700,8 +784,17 @@ export function Studio({
         : [p.pendingJobId];
       setRoundTotal(pending.length);
       setBatchCompleted(0);
-      void Promise.all(pending.map((id) => watchJob(id)))
-        .catch((e) => setError(e.message))
+      // One failed proposal must not stop watching the others.
+      void Promise.allSettled(pending.map((id) => watchJob(id)))
+        .then((outcomes) => {
+          const failed = outcomes.find((o) => o.status === "rejected");
+          if (failed && failed.status === "rejected")
+            setError(
+              failed.reason instanceof Error
+                ? failed.reason.message
+                : "Una de las propuestas falló.",
+            );
+        })
         .finally(() => {
           generateLock.current = false;
           setBusy(false);
@@ -714,8 +807,13 @@ export function Studio({
     );
     if (!p.demo) {
       try {
-        const blob = await fetch(p.original).then((r) => r.blob());
-        setFile(new File([blob], "room.jpg", { type: "image/jpeg" }));
+        const response = await fetch(p.original);
+        // An expired link answers with an error page, not the photo.
+        if (!response.ok) throw new Error("ORIGINAL_UNAVAILABLE");
+        const blob = await response.blob();
+        setFile(
+          new File([blob], `${p.name || "room"}.jpg`, { type: "image/jpeg" }),
+        );
       } catch {
         setError("No pudimos recuperar el original. Volvé a cargarlo.");
       }

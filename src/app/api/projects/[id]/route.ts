@@ -35,13 +35,15 @@ export async function DELETE(
         g.result_path ? [g.result_path] : [],
       ),
     ];
-    const removed = await db.storage.from(BUCKET).remove(paths);
-    if (removed.error) throw new Error("IMAGE_DELETE_FAILED");
+    // Marked deleted first: if removing the files then fails, the worst case
+    // is unused files, never a listed project whose images are gone.
     const updated = await db
       .from("projects")
       .update({ deleted_at: new Date().toISOString() })
       .eq("id", id);
     if (updated.error) throw new Error("PROJECT_DELETE_FAILED");
+    const removed = await db.storage.from(BUCKET).remove(paths);
+    if (removed.error) console.error("image_delete_deferred", id);
     return Response.json({ deleted: true });
   } catch (e) {
     return failure(e);

@@ -62,7 +62,18 @@ export async function rpc<T>(
 ): Promise<T> {
   const { data, error } = await adminClient().rpc(name, args);
   if (error) {
+    // Matched by substring in order: the per-account codes must come before
+    // DAILY_LIMIT and STORAGE_LIMIT, which they contain.
     const messages: Record<string, [number, string]> = {
+      USER_DAILY_LIMIT: [
+        429,
+        "Llegaste al máximo de diseños por hoy. Mañana podés seguir.",
+      ],
+      USER_STORAGE_LIMIT: [
+        409,
+        "Tu cuenta llegó a su espacio máximo. Vaciá la papelera para seguir creando.",
+      ],
+      GUEST_REQUIRED: [403, "Recargá la página para empezar la prueba gratis."],
       GUEST_LIMIT: [
         429,
         "Alcanzaste el límite de la prueba gratuita. Elegí un plan para continuar.",

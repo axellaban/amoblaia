@@ -112,3 +112,46 @@ it("counts failed notification attempts", async () => {
     ),
   ).toEqual({ attempts: 2, last_error: "MERCADOPAGO_500" });
 });
+
+it("credits a payment whose first notification was a partial refund", async () => {
+  const order = "00000000-0000-4000-8000-000000000074";
+  await db.exec(
+    `update profiles set blocked=false where id='${user}'; update subscriptions set status='cancelled' where user_id='${user}'`,
+  );
+  await db.query("select amobla_create_order($1,$2,'basic-month')", [
+    user,
+    order,
+  ]);
+  await db.exec(
+    `update orders set provider_subscription_id='sub-p' where id='${order}'`,
+  );
+  await apply("pay-first-partial", "partially_refunded", order, "sub-p");
+  expect(await liveGrants("pay-first-partial")).toBe(1);
+  await apply("pay-first-partial", "approved", order, "sub-p");
+  expect(await liveGrants("pay-first-partial")).toBe(1);
+});
+
+it("unblocks when a mediation that came first is resolved for the seller", async () => {
+  // A separate account: the one above keeps an old chargeback on purpose.
+  const buyer = "00000000-0000-4000-8000-000000000076",
+    order = "00000000-0000-4000-8000-000000000075";
+  await db.exec(`insert into auth.users values('${buyer}')`);
+  await db.query("select amobla_account($1,false)", [buyer]);
+  await db.query("select amobla_create_order($1,$2,'basic-month')", [
+    buyer,
+    order,
+  ]);
+  await db.exec(
+    `update orders set provider_subscription_id='sub-q' where id='${order}'`,
+  );
+  const isBlocked = async () =>
+    (await one<{ b: boolean }>(
+      "select blocked as b from profiles where id=$1",
+      [buyer],
+    ))!.b;
+  await apply("pay-first-mediation", "in_mediation", order, "sub-q");
+  expect(await isBlocked()).toBe(true);
+  await apply("pay-first-mediation", "approved", order, "sub-q");
+  expect(await isBlocked()).toBe(false);
+  expect(await liveGrants("pay-first-mediation")).toBe(1);
+});

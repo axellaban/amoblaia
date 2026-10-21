@@ -43,7 +43,12 @@ export async function optimizePhoto(file: File) {
         "La imagen sigue siendo demasiado pesada. Reducí su resolución y volvé a subirla.",
       );
     return {
-      file: new File([blob], "room.jpg", { type: "image/jpeg" }),
+      // Keeps the user's file name: the project is named after it.
+      file: new File(
+        [blob],
+        `${file.name.replace(/\.[^.]+$/, "").slice(0, 100) || "room"}.jpg`,
+        { type: "image/jpeg" },
+      ),
       url: await blobToDataURL(blob),
     };
   } finally {

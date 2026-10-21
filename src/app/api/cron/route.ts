@@ -6,6 +6,7 @@ import { runJob } from "@/lib/commerce/jobs";
 import { processInbox } from "@/lib/commerce/mercadopago";
 export const maxDuration = 300;
 export async function GET(request: Request) {
+  const deadline = Date.now() + maxDuration * 1000 - 5000;
   const secret = process.env.CRON_SECRET;
   if (
     !secret ||
@@ -45,7 +46,7 @@ export async function GET(request: Request) {
       await processInbox(event.event_key, event.topic, event.resource_id);
     for (const job of jobs.data || [])
       try {
-        await runJob(job.id);
+        await runJob(job.id, deadline);
       } catch {
         console.error("cron_job_failed", job.id);
       }

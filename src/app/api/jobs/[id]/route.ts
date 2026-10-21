@@ -1,5 +1,5 @@
 import { after } from "next/server";
-import { requireUser, failure, HttpError } from "@/lib/commerce/http";
+import { requireUser, failure, HttpError, rpc } from "@/lib/commerce/http";
 import { runJob, signPath } from "@/lib/commerce/jobs";
 import { adminClient } from "@/lib/supabase/server";
 export const maxDuration = 300;
@@ -7,23 +7,34 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const deadline = Date.now() + maxDuration * 1000 - 5000;
   try {
     const user = await requireUser(undefined, true);
     const { id } = await params;
     const { data: job, error } = await adminClient()
       .from("generations")
       .select(
-        "id,status,result_path,error_code,project_id,is_free,room,style,mode,notes,created_at",
+        "id,status,result_path,error_code,project_id,is_free,room,style,mode,notes,created_at,started_at",
       )
       .eq("id", id)
       .eq("user_id", user.id)
       .maybeSingle();
     if (error || !job)
       throw new HttpError(404, "No encontramos esta generación.");
+    // A worker that died leaves the job 'running': past ten minutes it goes
+    // to review here instead of polling forever (and locking the account).
+    if (
+      job.status === "running" &&
+      job.started_at &&
+      Date.now() - Date.parse(job.started_at) > 10 * 60 * 1000
+    ) {
+      await rpc("amobla_sweep_stale", { p_user: user.id }).catch(() => null);
+      job.status = "needs_review";
+    }
     if (job.status === "queued")
       after(async () => {
         try {
-          await runJob(id);
+          await runJob(id, deadline);
         } catch {
           console.error("job_dispatch_failed", id);
         }

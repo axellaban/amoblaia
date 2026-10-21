@@ -18,25 +18,35 @@ export async function GET(request: Request) {
       .order("created_at", { ascending: false })
       .limit(150);
     if (error) throw new Error("PROJECT_LIST_FAILED");
+    // One file that cannot be signed (missing or deleted) must not turn the
+    // whole library into an error: that item is left out instead.
+    const sign = (path: string) =>
+      signPath(path).catch(() => {
+        console.error("image_sign_failed");
+        return "";
+      });
     const rows = await Promise.all(
       (projects || []).map(async (p) => {
         const done = p.generations
           .filter((g) => g.status === "succeeded" && g.result_path)
           .sort((a, b) => b.created_at.localeCompare(a.created_at));
 
-        const variants = await Promise.all(
-          done.map(async (g) => ({
-            id: g.id,
-            free: g.is_free,
-            result: await signPath(g.result_path!),
-            room: g.room,
-            style: g.style,
-            mode: g.mode,
-            notes: g.notes,
-            createdAt: Date.parse(g.created_at),
-          })),
-        );
-        const original = await signPath(p.original_path);
+        const variants = (
+          await Promise.all(
+            done.map(async (g) => ({
+              id: g.id,
+              free: g.is_free,
+              result: await sign(g.result_path!),
+              room: g.room,
+              style: g.style,
+              mode: g.mode,
+              notes: g.notes,
+              createdAt: Date.parse(g.created_at),
+            })),
+          )
+        ).filter((v) => v.result);
+        const original = await sign(p.original_path);
+        if (!original) return null;
         const pending = p.generations.find(
           (g) => g.status === "queued" || g.status === "running",
         );
@@ -68,9 +78,10 @@ export async function GET(request: Request) {
     return Response.json(
       {
         projects: rows.filter(
-          (p) =>
-            new URL(request.url).searchParams.get("includeTrash") === "1" ||
-            !p.trashedAt,
+          (p): p is NonNullable<typeof p> =>
+            p !== null &&
+            (new URL(request.url).searchParams.get("includeTrash") === "1" ||
+              !p.trashedAt),
         ),
       },
       { headers: { "Cache-Control": "private, no-store" } },
