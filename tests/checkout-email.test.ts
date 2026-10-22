@@ -1,34 +1,49 @@
-import { beforeEach, afterEach, describe, it, expect, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({
-  open: null as null | Record<string, unknown>,
-  status: "pending",
-  calls: [] as unknown[],
-  fail: "",
+  open: [] as Record<string, unknown>[],
+  current: null as Record<string, unknown> | null,
+  calls: [] as {
+    path?: string;
+    method?: string;
+    body?: unknown;
+    table?: string;
+    data?: unknown;
+  }[],
+  rpcArgs: [] as { name: string; args: Record<string, unknown> }[],
+  providerStatus: "pending",
+  fail: 0,
   reason: "",
-  newStatus: "authorized",
-  current: null as null | Record<string, unknown>,
-  cancelFails: false,
-  rpcArgs: [] as unknown[],
-  merchantEmail: "seller@example.com",
+  dispatch: true,
 }));
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/commerce/http", async (original) => ({
   ...(await original<typeof import("../src/lib/commerce/http")>()),
   requireUser: async () => ({ id: "user-id", email: "google@example.com" }),
-  rpc: vi.fn(async (name: string, args: unknown) =>
-    (state.rpcArgs.push({ name, args }), name === "amobla_account")
+  rpc: vi.fn(async (name: string, args: Record<string, unknown>) => {
+    state.rpcArgs.push({ name, args });
+    return name === "amobla_account"
       ? { blocked: false }
       : {
-          dispatch: true,
+          dispatch: state.dispatch,
           order: {
-            snapshot: { kind: "month", name: "Inicial", price_cents: 2000000 },
+            status: "creating",
+            snapshot: {
+              kind: String(args.p_sku).startsWith("pack-")
+                ? "pack"
+                : String(args.p_sku).endsWith("-year")
+                  ? "year"
+                  : "month",
+              name: "Inicial",
+              price_cents: 2000000,
+            },
           },
-        },
-  ),
+        };
+  }),
 }));
 vi.mock("@/lib/supabase/server", () => ({
   adminClient: () => ({
     from: (table: string) => {
+      let mutation = false;
       const q = {
         select: () => q,
         eq: () => q,
@@ -36,19 +51,14 @@ vi.mock("@/lib/supabase/server", () => ({
         order: () => q,
         limit: () => q,
         in: () => q,
-        maybeSingle: async () => ({
-          data: table === "subscriptions" ? state.current : state.open,
-          error: null,
-        }),
+        maybeSingle: async () => ({ data: state.current, error: null }),
         update: (data: unknown) => {
+          mutation = true;
           state.calls.push({ table, data });
           return q;
         },
-        insert: (data: unknown) => {
-          state.calls.push({ table, data });
-          return q;
-        },
-        then: (resolve: (v: unknown) => unknown) => resolve({ error: null }),
+        then: (resolve: (v: unknown) => unknown) =>
+          resolve({ error: null, data: mutation ? null : state.open }),
       };
       return q;
     },
@@ -57,460 +67,251 @@ vi.mock("@/lib/supabase/server", () => ({
 vi.mock("@/lib/commerce/mercadopago", async (original) => {
   const real =
     await original<typeof import("../src/lib/commerce/mercadopago")>();
-  const mp = vi.fn(
-    async (path: string, method = "GET", body?: unknown): Promise<unknown> => {
-      state.calls.push({ path, method, body });
-      if (method === "GET")
-        return {
-          status: state.status,
-          external_reference: "old-order",
-          collector_id: 123,
-        };
-      if (method === "PUT") {
-        if (state.cancelFails && path.includes("current-sub"))
-          throw new Error("MERCADOPAGO_500");
-        return { status: "cancelled" };
-      }
-      if (state.fail)
-        throw new real.MercadoPagoError(
-          Number(state.fail.replace("MERCADOPAGO_", "")),
-          state.reason,
-        );
-      return {
-        id: "new-sub",
-        status: state.newStatus,
-        init_point:
-          "https://www.mercadopago.com.ar/subscriptions/checkout?preapproval_id=new-sub",
-      };
-    },
-  );
   return {
-    MercadoPagoError: real.MercadoPagoError,
-    cardRefusalMessage: real.cardRefusalMessage,
+    ...real,
     billingConfigured: () => true,
-    isDuplicateSubscription: () => false,
     settleStaleOrders: vi.fn(async () => {}),
     verifyCheckoutPayer: vi.fn(async (email: string) => {
-      if (email === state.merchantEmail) {
+      if (email === "seller@example.com") {
         const { HttpError } = await import("../src/lib/commerce/http");
-        throw new HttpError(400, "El email para el pago corresponde a la cuenta que cobra en amoblaIA. Para probar una compra, usá una cuenta compradora distinta de la vendedora.");
+        throw new HttpError(
+          400,
+          "Usá una cuenta compradora distinta de la vendedora.",
+        );
       }
     }),
-    mp,
-    // Same contract as the real one: cancel in MP, then record it.
+    syncSubscription: vi.fn(async (id: string) => ({
+      sub: { id, status: state.providerStatus },
+      order: {},
+    })),
     retireSubscription: vi.fn(async (id: string) => {
-      await mp(`/preapproval/${id}`, "PUT", { status: "cancelled" });
       state.calls.push({
-        table: "subscriptions",
-        data: { status: "cancelled" },
+        path: `/preapproval/${id}`,
+        method: "PUT",
+        body: { status: "cancelled" },
       });
+    }),
+    mp: vi.fn(async (path: string, method: string, body: unknown) => {
+      state.calls.push({ path, method, body });
+      if (state.fail) throw new real.MercadoPagoError(state.fail, state.reason);
+      return {
+        id: "new-sub",
+        status: "pending",
+        init_point:
+          "https://www.mercadopago.com.ar/subscriptions/checkout?preapproval_id=new-sub",
+        sandbox_init_point: "https://sandbox.mercadopago.com.ar/pay",
+      };
     }),
   };
 });
 import { POST } from "../src/app/api/checkout/route";
+const key = "00000000-0000-4000-8000-000000000001";
+const request = (patch: Record<string, unknown> = {}) =>
+  new Request("https://amobla.example/api/checkout", {
+    method: "POST",
+    headers: {
+      Origin: "https://amobla.example",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      sku: "basic-month",
+      key,
+      payerEmail: "buyer@example.com",
+      ...patch,
+    }),
+  });
 beforeEach(() => {
-  state.open = null;
-  state.status = "pending";
-  state.calls = [];
-  state.fail = "";
-  state.reason = "";
-  state.newStatus = "authorized";
-  state.current = null;
-  state.cancelFails = false;
-  state.rpcArgs = [];
-  state.merchantEmail = "seller@example.com";
+  Object.assign(state, {
+    open: [],
+    current: null,
+    calls: [],
+    rpcArgs: [],
+    providerStatus: "pending",
+    fail: 0,
+    reason: "",
+    dispatch: true,
+  });
   vi.stubEnv("MERCADOPAGO_MODE", "production");
-  vi.stubEnv("MERCADOPAGO_COLLECTOR_ID", "123");
   vi.stubEnv("APP_URL", "https://amobla.example");
   vi.stubEnv("MERCADOPAGO_NOTIFICATION_TOKEN", "private-notification-token");
 });
 afterEach(() => vi.unstubAllEnvs());
-const request = (payerEmail?: string) =>
-  new Request("https://amobla.example/api/checkout", {
-    method: "POST",
-    headers: {
-      Origin: "https://amobla.example",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      sku: "basic-month",
-      key: "00000000-0000-4000-8000-000000000001",
-      payerEmail,
-    }),
-  });
-describe("Mercado Pago payer identity", () => {
-  it("checks the confirmed email without creating orders, charging or reserving credits", async () => {
-    const response = await POST(new Request("https://amobla.example/api/checkout", {
-      method: "POST",
-      headers: { Origin: "https://amobla.example", "Content-Type": "application/json" },
-      body: JSON.stringify({ intent: "validate_payer", payerEmail: "buyer@example.com" }),
-    }));
-    expect(await response.json()).toEqual({ valid: true });
-    expect(state.calls).toEqual([]);
-    expect(state.rpcArgs).toEqual([]);
-  });
-  it("catches the merchant email at confirmation before a card is entered", async () => {
-    const response = await POST(new Request("https://amobla.example/api/checkout", {
-      method: "POST",
-      headers: { Origin: "https://amobla.example", "Content-Type": "application/json" },
-      body: JSON.stringify({ intent: "validate_payer", payerEmail: " SELLER@EXAMPLE.COM " }),
-    }));
-    expect(response.status).toBe(400);
-    expect((await response.json()).error).toContain("cuenta compradora distinta");
-    expect(state.calls).toEqual([]);
-    expect(state.rpcArgs).toEqual([]);
-  });
-  it("requires the payment email instead of silently using the Google email", async () => {
-    expect((await POST(request())).status).toBe(400);
-    expect(state.calls).toEqual([]);
-  });
-  it("binds the checkout to the explicitly entered normalized payment email", async () => {
-    const r = await POST(request("  MP-Buyer@example.com  "));
-    expect(r.status).toBe(200);
-    expect(state.calls).toContainEqual(
-      expect.objectContaining({
-        path: "/preapproval",
-        method: "POST",
-        body: expect.objectContaining({ payer_email: "mp-buyer@example.com" }),
-      }),
-    );
-  });
-  it("reuses a pending checkout only when its stored payer email matches", async () => {
-    state.open = {
-      id: "old-order",
-      payer_email: "mp@example.com",
-      checkout_url: "https://www.mercadopago.com.ar/old",
-      provider_subscription_id: "old-sub",
-    };
-    const r = await POST(request("mp@example.com"));
-    expect(await r.json()).toEqual({
-      url: "https://www.mercadopago.com.ar/old",
-    });
-    expect(state.calls).toEqual([]);
-  });
-  it("replaces a legacy wrong-email checkout and cancels its pending provider subscription", async () => {
-    state.open = {
-      id: "old-order",
-      payer_email: null,
-      checkout_url: "https://www.mercadopago.com.ar/old",
-      provider_subscription_id: "old-sub",
-    };
-    expect((await POST(request("mp@example.com"))).status).toBe(200);
-    expect(state.calls).toContainEqual({
-      path: "/preapproval/old-sub",
-      method: "PUT",
-      body: { status: "cancelled" },
-    });
-    expect(state.calls).toContainEqual({
-      table: "orders",
-      data: { status: "superseded" },
-    });
-  });
-  it("does not cancel a subscription that is already authorized", async () => {
-    state.open = {
-      id: "old-order",
-      payer_email: null,
-      checkout_url: "https://www.mercadopago.com.ar/old",
-      provider_subscription_id: "old-sub",
-    };
-    state.status = "authorized";
-    expect((await POST(request("mp@example.com"))).status).toBe(409);
+describe("Hosted checkout", () => {
+  it("creates a pending subscription with an explicit payer and an order-bound return URL", async () => {
     expect(
-      state.calls.some((c) => (c as { method?: string }).method === "PUT"),
-    ).toBe(false);
-  });
-});
-const cardRequest = (
-  cardToken: unknown,
-  payerEmail: unknown = "payer-argentina@example.com",
-) =>
-  new Request("https://amobla.example/api/checkout", {
-    method: "POST",
-    headers: {
-      Origin: "https://amobla.example",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      sku: "basic-month",
-      key: "00000000-0000-4000-8000-000000000002",
-      cardToken,
-      payerEmail,
-    }),
-  });
-describe("Card subscriptions", () => {
-  it("rejects a buyer matching the collector before creating or changing an order", async () => {
-    state.merchantEmail = "payer-argentina@example.com";
-    const response = await POST(cardRequest("a1b2c3d4e5f60718293a4b5c6d7e8f90"));
-    expect(response.status).toBe(400);
-    expect((await response.json()).error).toContain("cuenta compradora distinta");
-    expect(state.calls).toEqual([]);
-    expect(state.rpcArgs).not.toContainEqual(expect.objectContaining({ name: "amobla_create_order" }));
-  });
-  it("uses the Brick payer email instead of the Google email for the authorized subscription", async () => {
-    const r = await POST(cardRequest("a1b2c3d4e5f60718293a4b5c6d7e8f90"));
-    expect(r.status).toBe(200);
-    expect(await r.json()).toEqual({ subscribed: true, changed: false });
-    expect(state.calls).toContainEqual(
-      expect.objectContaining({
-        path: "/preapproval",
-        method: "POST",
-        body: expect.objectContaining({
-          status: "authorized",
-          card_token_id: "a1b2c3d4e5f60718293a4b5c6d7e8f90",
-          payer_email: "payer-argentina@example.com",
-          auto_recurring: expect.objectContaining({
-            transaction_amount: 20000,
-            currency_id: "ARS",
-          }),
-        }),
-      }),
-    );
-    expect(state.calls).toContainEqual({
-      table: "subscriptions",
-      data: expect.objectContaining({ id: "new-sub", status: "authorized" }),
-    });
-  });
-  it("normalizes the email from the card form", async () => {
-    const r = await POST(
-      cardRequest("a1b2c3d4e5f60718293a4b5c6d7e8f90", "  PAYER-AR@example.com  "),
-    );
-    expect(r.status).toBe(200);
-    expect(state.calls).toContainEqual(
-      expect.objectContaining({
-        path: "/preapproval",
-        method: "POST",
-        body: expect.objectContaining({ payer_email: "payer-ar@example.com" }),
-      }),
-    );
-  });
-  it.each([
-    undefined,
-    "",
-    "not-an-email",
-    ["payer@example.com"],
-    "x".repeat(255) + "@example.com",
-  ])(
-    "rejects missing or invalid card payer emails without substituting the Google identity: %s",
-    async (payerEmail) => {
-      // JSON omits undefined; do not let the request helper supply its default.
-      const r = new Request("https://amobla.example/api/checkout", {
-        method: "POST",
-        headers: {
-          Origin: "https://amobla.example",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          sku: "basic-month",
-          key: "00000000-0000-4000-8000-000000000002",
-          cardToken: "a1b2c3d4e5f60718293a4b5c6d7e8f90",
-          payerEmail,
-        }),
-      });
-      expect((await POST(r)).status).toBe(400);
-      expect(state.calls).toEqual([]);
-    },
-  );
-  it("does not replace the card form email with a server test payer", async () => {
-    vi.stubEnv("MERCADOPAGO_MODE", "test");
-    vi.stubEnv("ADMIN_EMAILS", "google@example.com");
-    vi.stubEnv("MERCADOPAGO_TEST_PAYER_EMAIL", "other-country@example.com");
-    expect(
-      (await POST(cardRequest("a1b2c3d4e5f60718293a4b5c6d7e8f90"))).status,
+      (await POST(request({ payerEmail: " MP-Buyer@example.com " }))).status,
     ).toBe(200);
     expect(state.calls).toContainEqual(
       expect.objectContaining({
         path: "/preapproval",
         method: "POST",
         body: expect.objectContaining({
-          payer_email: "payer-argentina@example.com",
+          payer_email: "mp-buyer@example.com",
+          status: "pending",
+          external_reference: key,
+          back_url: `https://amobla.example/cuenta?orden=${key}&pago=retorno`,
+          auto_recurring: {
+            frequency: 1,
+            frequency_type: "months",
+            transaction_amount: 20000,
+            currency_id: "ARS",
+          },
+        }),
+      }),
+    );
+    expect(JSON.stringify(state.calls)).not.toContain("card_token_id");
+    expect(state.calls.some((c) => c.table === "subscriptions")).toBe(false);
+  });
+  it.each([
+    undefined,
+    "",
+    "bad",
+    ["buyer@example.com"],
+    "x".repeat(255) + "@example.com",
+  ])(
+    "does not replace an invalid payer with Google: %s",
+    async (payerEmail) => {
+      expect((await POST(request({ payerEmail }))).status).toBe(400);
+      expect(state.calls).toEqual([]);
+    },
+  );
+  it("rejects stale embedded-card submissions before creating anything", async () => {
+    const r = await POST(request({ cardToken: "old-token" }));
+    expect(r.status).toBe(400);
+    expect((await r.json()).error).toContain("Recargá");
+    expect(state.calls).toEqual([]);
+    expect(state.rpcArgs).toEqual([]);
+  });
+  it("rejects the merchant's own payer identity before reserving an order", async () => {
+    expect(
+      (await POST(request({ payerEmail: " SELLER@EXAMPLE.COM " }))).status,
+    ).toBe(400);
+    expect(state.calls).toEqual([]);
+    expect(state.rpcArgs).toEqual([]);
+  });
+  it("preserves annual recurrence and charges the full catalog amount", async () => {
+    await POST(request({ sku: "basic-year" }));
+    expect(state.calls).toContainEqual(
+      expect.objectContaining({
+        body: expect.objectContaining({
+          auto_recurring: expect.objectContaining({
+            frequency: 12,
+            transaction_amount: 20000,
+          }),
         }),
       }),
     );
   });
-  it("closes the order and asks for another card when Mercado Pago declines it", async () => {
-    state.fail = "MERCADOPAGO_400";
-    const r = await POST(cardRequest("a1b2c3d4e5f60718293a4b5c6d7e8f90"));
-    expect(r.status).toBe(402);
-    expect(state.calls).toContainEqual({
-      table: "orders",
-      data: { status: "checkout_failed" },
-    });
-  });
-  it("explains test/live incompatibility without exposing technical details to admins", async () => {
-    state.fail = "MERCADOPAGO_400";
-    state.reason =
-      '{"message":"Both payer and collector must be real or test users"}';
-    vi.stubEnv("ADMIN_EMAILS", "google@example.com");
-    const r = await POST(cardRequest("a1b2c3d4e5f60718293a4b5c6d7e8f90"));
-    const { error } = await r.json();
-    expect(error).toContain(
-      "las tarjetas de prueba solo funcionan en modo prueba",
-    );
-    expect(error).not.toContain("Detalle para el equipo");
-    expect(error).not.toContain(state.reason);
-  });
-  it("reports guest_site_mismatch without claiming the payer's email or card is wrong", async () => {
-    state.fail = "MERCADOPAGO_400";
-    state.reason =
-      '{"message":"Payer is associated with a different site","code":"guest_site_mismatch","status":400}';
-    vi.stubEnv("ADMIN_EMAILS", "google@example.com");
-    const r = await POST(cardRequest("a1b2c3d4e5f60718293a4b5c6d7e8f90"));
-    expect(r.status).toBe(402);
-    const { error } = await r.json();
-    expect(error).toContain("revisar la configuración del cobro");
-    expect(error).not.toContain("otro país");
-    expect(error).not.toContain("email del pagador");
-    expect(error).not.toContain("no aprobó la tarjeta");
-    expect(error).not.toContain("guest_site_mismatch");
-    expect(error).not.toContain("Detalle para el equipo");
-    expect(state.calls).toContainEqual({
-      table: "orders",
-      data: { status: "checkout_failed" },
-    });
-  });
-  it("never shows Mercado Pago's raw answer to a regular buyer", async () => {
-    state.fail = "MERCADOPAGO_400";
-    state.reason = '{"message":"CC_VAL_433 Credit card validation has failed"}';
-    const { error } = await (
-      await POST(cardRequest("a1b2c3d4e5f60718293a4b5c6d7e8f90"))
-    ).json();
-    expect(error).toBe(
-      "Mercado Pago no aprobó la tarjeta. Revisá los datos o probá con otra.",
+  it("uses Pro for a pack without binding its payer to Google", async () => {
+    const r = await POST(request({ sku: "pack-10", payerEmail: undefined }));
+    expect(r.status).toBe(200);
+    const body = state.calls.find((c) => c.path === "/checkout/preferences")
+      ?.body as Record<string, unknown>;
+    expect(body).not.toHaveProperty("payer");
+    expect(body.external_reference).toBe(key);
+    expect(body.back_urls).toEqual(
+      expect.objectContaining({
+        success: `https://amobla.example/cuenta?orden=${key}&pago=retorno`,
+      }),
     );
   });
-  it("treats a subscription that Mercado Pago did not authorize as a declined card", async () => {
-    state.newStatus = "pending";
-    const r = await POST(cardRequest("a1b2c3d4e5f60718293a4b5c6d7e8f90"));
-    expect(r.status).toBe(402);
+  it("reuses a link only after the provider confirms it is still pending", async () => {
+    state.open = [
+      {
+        id: "old-order",
+        sku: "basic-month",
+        payer_email: "buyer@example.com",
+        checkout_url: "https://www.mercadopago.com.ar/old",
+        provider_subscription_id: "old-sub",
+      },
+    ];
+    expect(await (await POST(request())).json()).toEqual({
+      url: "https://www.mercadopago.com.ar/old",
+      order: "old-order",
+    });
+    expect(state.calls).toEqual([]);
+  });
+  it("never cancels or reopens a checkout that became authorized", async () => {
+    state.open = [
+      {
+        id: "old-order",
+        sku: "basic-month",
+        payer_email: "buyer@example.com",
+        checkout_url: "https://www.mercadopago.com.ar/old",
+        provider_subscription_id: "old-sub",
+      },
+    ];
+    state.providerStatus = "authorized";
+    expect((await POST(request())).status).toBe(409);
+    expect(state.calls).toEqual([]);
+  });
+  it("replaces a pending checkout when its payer changes", async () => {
+    state.open = [
+      {
+        id: "old-order",
+        sku: "basic-month",
+        payer_email: "wrong@example.com",
+        checkout_url: "https://www.mercadopago.com.ar/old",
+        provider_subscription_id: "old-sub",
+      },
+    ];
+    expect((await POST(request())).status).toBe(200);
     expect(state.calls).toContainEqual({
-      path: "/preapproval/new-sub",
+      path: "/preapproval/old-sub",
       method: "PUT",
       body: { status: "cancelled" },
     });
-    expect(state.calls).toContainEqual({
-      table: "orders",
-      data: { status: "checkout_failed" },
-    });
   });
-  it("closes a redirect checkout that Mercado Pago refused, so a retry is not blocked", async () => {
-    state.fail = "MERCADOPAGO_400";
-    expect((await POST(request("mp@example.com"))).status).toBe(402);
-    expect(state.calls).toContainEqual({
-      table: "orders",
-      data: { status: "checkout_failed" },
-    });
-  });
-  it("saves the payer email before calling Mercado Pago", async () => {
-    await POST(cardRequest("a1b2c3d4e5f60718293a4b5c6d7e8f90"));
-    const saved = state.calls.findIndex(
-      (c) =>
-        JSON.stringify(c) ===
-        JSON.stringify({
-          table: "orders",
-          data: { payer_email: "payer-argentina@example.com" },
-        }),
-    );
-    const created = state.calls.findIndex(
-      (c) => (c as { path?: string }).path === "/preapproval",
-    );
-    expect(saved).toBeGreaterThanOrEqual(0);
-    expect(saved).toBeLessThan(created);
-  });
-  it("keeps an uncertain provider error for review instead of retrying", async () => {
-    state.fail = "MERCADOPAGO_500";
-    expect(
-      (await POST(cardRequest("a1b2c3d4e5f60718293a4b5c6d7e8f90"))).status,
-    ).toBe(500);
-    expect(state.calls).toContainEqual({
-      table: "orders",
-      data: { status: "checkout_needs_review" },
-    });
-  });
-  it("rejects a malformed card token before calling Mercado Pago", async () => {
-    expect((await POST(cardRequest("<script>"))).status).toBe(400);
-    expect(state.calls).toEqual([]);
-  });
-  it("does not open a checkout when Mercado Pago only rate-limits the request", async () => {
-    state.fail = "MERCADOPAGO_429";
-    expect(
-      (await POST(cardRequest("a1b2c3d4e5f60718293a4b5c6d7e8f90"))).status,
-    ).toBe(500);
-    expect(state.calls).toContainEqual({
-      table: "orders",
-      data: { status: "checkout_needs_review" },
-    });
-  });
-});
-describe("Plan changes", () => {
-  const token = "a1b2c3d4e5f60718293a4b5c6d7e8f90";
-  beforeEach(() => {
+  it("opens a plan change without cancelling the active plan", async () => {
     state.current = {
       id: "current-sub",
       order_id: "current-order",
-      status: "authorized",
       orders: { sku: "standard-month" },
     };
-  });
-  it("replaces the current plan and cancels it only after the new one is authorized", async () => {
-    const r = await POST(cardRequest(token));
-    expect(await r.json()).toEqual({ subscribed: true, changed: true });
+    state.open = [
+      { id: "current-order", provider_subscription_id: "current-sub" },
+    ];
+    expect((await POST(request())).status).toBe(200);
     expect(state.rpcArgs).toContainEqual({
       name: "amobla_create_order",
       args: expect.objectContaining({ p_replace: true }),
     });
-    const created = state.calls.findIndex(
-      (c) => (c as { path?: string }).path === "/preapproval",
-    );
-    const cancelled = state.calls.findIndex(
-      (c) => (c as { path?: string }).path === "/preapproval/current-sub",
-    );
-    expect(created).toBeGreaterThanOrEqual(0);
-    expect(cancelled).toBeGreaterThan(created);
-    expect(state.calls).toContainEqual({
-      table: "subscriptions",
-      data: { status: "cancelled" },
-    });
+    expect(state.calls.some((c) => c.method === "PUT")).toBe(false);
   });
-  it("rolls back the new plan when the old one cannot be cancelled", async () => {
-    state.cancelFails = true;
-    const r = await POST(cardRequest(token));
-    expect(r.status).toBe(502);
-    expect(state.calls).toContainEqual({
-      path: "/preapproval/new-sub",
-      method: "PUT",
-      body: { status: "cancelled" },
-    });
-    expect(state.calls).not.toContainEqual({
-      table: "subscriptions",
-      data: { status: "cancelled" },
-    });
-  });
-  it("refuses to buy the plan the user already has", async () => {
-    state.current = { ...state.current, orders: { sku: "basic-month" } };
-    expect((await POST(cardRequest(token))).status).toBe(409);
-    expect(state.calls).toEqual([]);
-  });
-  it("lets a never-paid pending checkout of the same plan be replaced", async () => {
-    // The real case: an abandoned redirect checkout showed as 'your plan'.
+  it("refuses a new purchase of the active plan", async () => {
     state.current = {
-      ...state.current,
-      status: "pending",
+      id: "current-sub",
+      order_id: "current-order",
       orders: { sku: "basic-month" },
     };
-    const r = await POST(cardRequest(token));
-    expect(await r.json()).toEqual({ subscribed: true, changed: true });
+    expect((await POST(request())).status).toBe(409);
+    expect(state.calls).toEqual([]);
+  });
+  it.each([408, 409, 429, 500])(
+    "keeps uncertain failures under review, including HTTP %s",
+    async (status) => {
+      state.fail = status;
+      expect((await POST(request())).status).toBe(500);
+      expect(state.calls).toContainEqual({
+        table: "orders",
+        data: { status: "checkout_needs_review" },
+      });
+    },
+  );
+  it("closes a definite refusal without exposing provider details", async () => {
+    state.fail = 400;
+    state.reason = '{"message":"technical private diagnostic"}';
+    const r = await POST(request());
+    expect(r.status).toBe(402);
+    expect((await r.json()).error).not.toContain("technical");
     expect(state.calls).toContainEqual({
-      path: "/preapproval/current-sub",
-      method: "PUT",
-      body: { status: "cancelled" },
+      table: "orders",
+      data: { status: "checkout_failed" },
     });
   });
-  it("keeps a first purchase compatible with the database before the migration", async () => {
-    state.current = null;
-    await POST(cardRequest(token));
-    const call = state.rpcArgs.find(
-      (c) => (c as { name: string }).name === "amobla_create_order",
-    ) as { args: Record<string, unknown> };
-    expect(call.args).not.toHaveProperty("p_replace");
+  it("does not re-dispatch an idempotent order whose result is uncertain", async () => {
+    state.dispatch = false;
+    expect((await POST(request())).status).toBe(409);
+    expect(state.calls.some((c) => c.method === "POST")).toBe(false);
   });
 });

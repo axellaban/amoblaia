@@ -7201,9 +7201,6 @@ h2 .accent {
 .checkout-modal {
   width: 480px;
 }
-.card-brick {
-  margin-top: 16px;
-}
 @media (max-width: 600px) {
   .modal-backdrop {
     padding: 12px;
@@ -7231,3 +7228,8 @@ h2 .accent {
 .confirm-card .button {
   width: 100%;
 }
+
+.checkout-result > p { display: flex; align-items: center; gap: .6rem; }
+.checkout-result > p > svg { flex-shrink: 0; }
+.checkout-result-actions { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: 1rem; }
+@media (max-width: 600px) { .checkout-result-actions .button { width: 100%; } }

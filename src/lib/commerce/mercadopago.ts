@@ -106,24 +106,6 @@ export class MercadoPagoError extends Error {
     super(`MERCADOPAGO_${status}`);
   }
 }
-/** Buyer-facing explanation of why Mercado Pago refused a card subscription. */
-export function cardRefusalMessage(reason: string) {
-  if (
-    /guest_site_mismatch|associated with a different site|different countries/i.test(
-      reason,
-    )
-  )
-    return "Mercado Pago no pudo vincular los datos de este pago con la suscripción. Necesitamos revisar la configuración del cobro. Contactanos desde Soporte.";
-  if (/real or test users|test user|live mode|livemode/i.test(reason))
-    return "Esta tarjeta no corresponde al modo de cobro: las tarjetas de prueba solo funcionan en modo prueba y las reales en modo real.";
-  if (/card_token|card token|token/i.test(reason))
-    return "Los datos de la tarjeta vencieron. Volvé a cargarlos e intentá de nuevo.";
-  if (/country/i.test(reason))
-    return "Mercado Pago no acepta esta tarjeta para cobros en Argentina. Probá con otra.";
-  if (/amount|transaction_amount/i.test(reason))
-    return "Mercado Pago no aceptó el importe de este plan. Escribinos desde Soporte.";
-  return "Mercado Pago no aprobó la tarjeta. Revisá los datos o probá con otra.";
-}
 export async function mp<T>(
   path: string,
   method = "GET",
@@ -158,6 +140,20 @@ export async function mp<T>(
     throw new MercadoPagoError(response.status, reason.slice(0, 300));
   }
   return response.json() as Promise<T>;
+}
+/** Accept only HTTPS checkout destinations controlled by Mercado Pago. */
+export function checkoutUrl(value: unknown) {
+  if (typeof value !== "string") throw new Error("INVALID_CHECKOUT_URL");
+  const url = new URL(value);
+  if (
+    url.protocol !== "https:" ||
+    url.username ||
+    url.password ||
+    url.port ||
+    !/(^|\.)mercadopago\.com(\.ar)?$/.test(url.hostname)
+  )
+    throw new Error("INVALID_CHECKOUT_URL");
+  return url.toString();
 }
 function verifySeller(id: number | string) {
   if (
@@ -246,7 +242,7 @@ export async function retireSubscription(id: string) {
       .update({ status: "cancelled" })
       .eq("id", ended.data.order_id);
 }
-export async function syncSubscription(id: string) {
+export async function syncSubscription(id: string, paidPayment?: Payment) {
   const sub = await mp<Subscription>(`/preapproval/${encodeURIComponent(id)}`);
   verifySeller(sub.collector_id);
   let order = await getOrder(String(sub.external_reference));
@@ -283,17 +279,39 @@ export async function syncSubscription(id: string) {
   )
     throw new Error("SUBSCRIPTION_MISMATCH");
   const db = adminClient();
-  // A plan change whose checkout could not finish (timeout, crash) leaves
-  // the old plan open: whichever path first sees the new one authorized
-  // retires it, so the buyer is never billed for both.
+  // Validate the actual paid invoice before changing the previous plan.
+  // Authorizing a mandate is not a first charge, and abandoned links must
+  // leave the current subscription and its renewal untouched.
+  if (paidPayment) validatePayment(paidPayment, order);
+  const paid = Boolean(
+    paidPayment &&
+      ["approved", "partially_refunded"].includes(paidPayment.status),
+  );
+  if (
+    order.replaces_subscription_id &&
+    order.status !== "paid" &&
+    !paid &&
+    ["pending", "authorized", "paused"].includes(sub.status)
+  )
+    return { sub, order };
   if (sub.status === "authorized" && order.replaces_subscription_id) {
     const old = await db
       .from("subscriptions")
       .select("status")
       .eq("id", order.replaces_subscription_id)
       .maybeSingle();
-    if (old.data && old.data.status !== "cancelled")
-      await retireSubscription(order.replaces_subscription_id);
+    if (old.error) throw new Error("SUBSCRIPTION_LOOKUP_FAILED");
+    if (old.data && old.data.status !== "cancelled") {
+      try {
+        await retireSubscription(order.replaces_subscription_id);
+      } catch {
+        await db
+          .from("orders")
+          .update({ status: "checkout_needs_review" })
+          .eq("id", order.id);
+        throw new Error("PLAN_CHANGE_CANCELLATION_PENDING");
+      }
+    }
   }
   const saved = await db
     .from("subscriptions")
@@ -368,28 +386,34 @@ export async function syncPayment(id: string, subscriptionId?: string) {
   const payment = await mp<Payment>(`/v1/payments/${encodeURIComponent(id)}`);
   let order: Order;
   if (subscriptionId) {
-    const linked = await syncSubscription(subscriptionId);
+    const linked = await syncSubscription(subscriptionId, payment);
     order = linked.order;
-    // The authorized invoice was fetched from MP and binds this payment to this subscription.
+    // The caller obtained this binding from a provider-verified invoice.
   } else {
     const external = String(payment.external_reference || "");
-    if (!/^[0-9a-f-]{36}$/i.test(external)) return;
-    order = await getOrder(external);
-    if (order.snapshot.kind !== "pack") {
-      const invoices = await mp<{
-        results: {
-          preapproval_id: string;
-          payment?: { id: number | string };
-        }[];
-      }>(`/authorized_payments/search?payment_id=${encodeURIComponent(id)}`);
+    let direct: Order | null = null;
+    if (/^[0-9a-f-]{36}$/i.test(external)) direct = await getOrder(external);
+    if (direct?.snapshot.kind === "pack") order = direct;
+    else {
+      const invoices = await mp<{ results: AuthorizedInvoice[] }>(
+        `/authorized_payments/search?payment_id=${encodeURIComponent(id)}`,
+      );
       const invoice = invoices.results.find(
         (i) =>
           String(i.payment?.id) === String(payment.id) &&
-          i.preapproval_id === order.provider_subscription_id,
+          (!direct || i.preapproval_id === direct.provider_subscription_id),
       );
-      if (!invoice) throw new Error("SUBSCRIPTION_INVOICE_NOT_FOUND");
+      if (!invoice) {
+        // An unrelated merchant payment with no amoblaIA reference is ignored;
+        // an invoice for one of our orders must remain retryable.
+        if (!direct) return;
+        throw new Error("SUBSCRIPTION_INVOICE_NOT_FOUND");
+      }
       subscriptionId = invoice.preapproval_id;
-      await syncSubscription(subscriptionId);
+      const linked = await syncSubscription(subscriptionId, payment);
+      order = linked.order;
+      if (direct && direct.id !== order.id)
+        throw new Error("PAYMENT_ORDER_MISMATCH");
     }
   }
   validatePayment(payment, order);
@@ -419,6 +443,31 @@ export async function syncPayment(id: string, subscriptionId?: string) {
       await retireSubscription(subscriptionId);
   }
 }
+type AuthorizedInvoice = {
+  id: string | number;
+  preapproval_id: string;
+  payment?: { id: number | string };
+};
+/** Some subscription notifications precede the invoice's detail endpoint.
+ * The search API is an independent, read-only recovery path. A missing
+ * invoice stays retryable; a callback alone never becomes an approval. */
+export async function authorizedInvoice(id: string) {
+  try {
+    const invoice = await mp<AuthorizedInvoice>(
+      `/authorized_payments/${encodeURIComponent(id)}`,
+    );
+    if (String(invoice.id) !== id) throw new Error("INVOICE_ID_MISMATCH");
+    return invoice;
+  } catch (e) {
+    if (!(e instanceof MercadoPagoError) || e.status !== 404) throw e;
+    const found = await mp<{ results: AuthorizedInvoice[] }>(
+      `/authorized_payments/search?id=${encodeURIComponent(id)}`,
+    );
+    const invoice = found.results.find((i) => String(i.id) === id);
+    if (!invoice) throw e;
+    return invoice;
+  }
+}
 export async function processBillingEvent(topic: string, id: string) {
   if (topic === "payment") return syncPayment(id);
   if (topic === "subscription_preapproval") {
@@ -426,10 +475,7 @@ export async function processBillingEvent(topic: string, id: string) {
     return;
   }
   if (topic === "subscription_authorized_payment") {
-    const invoice = await mp<{
-      preapproval_id: string;
-      payment?: { id: number | string };
-    }>(`/authorized_payments/${encodeURIComponent(id)}`);
+    const invoice = await authorizedInvoice(id);
     if (invoice.payment?.id)
       await syncPayment(String(invoice.payment.id), invoice.preapproval_id);
   }
@@ -438,6 +484,13 @@ export async function processBillingEvent(topic: string, id: string) {
 export async function processInbox(key: string, topic: string, id: string) {
   const db = adminClient();
   try {
+    const existing = await db
+      .from("webhook_events")
+      .select("processed_at")
+      .eq("event_key", key)
+      .maybeSingle();
+    if (existing.error) throw new Error("INBOX_LOOKUP_FAILED");
+    if (existing.data?.processed_at) return true;
     await processBillingEvent(topic, id);
     const r = await db
       .from("webhook_events")

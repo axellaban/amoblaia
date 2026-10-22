@@ -75,7 +75,7 @@ describe("Mercado Pago notification ingress", () => {
         topic: "subscription_authorized_payment",
         resource_id: "123456",
       }),
-      expect.anything(),
+      { onConflict: "event_key", ignoreDuplicates: true },
     );
     expect(mocks.upsert.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.processInbox.mock.invocationCallOrder[0],

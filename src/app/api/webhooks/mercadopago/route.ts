@@ -40,8 +40,8 @@ export async function POST(request: Request) {
     const token = process.env.MERCADOPAGO_NOTIFICATION_TOKEN;
     const tokenValid = Boolean(
       token &&
-      token.length >= 32 &&
-      sameSecret(url.searchParams.get("token") || "", token),
+        token.length >= 32 &&
+        sameSecret(url.searchParams.get("token") || "", token),
     );
     const secret = process.env.MERCADOPAGO_WEBHOOK_SECRET;
     const signatureValid = Boolean(
@@ -52,7 +52,7 @@ export async function POST(request: Request) {
     // MP's API, including seller, order, amount and currency, so a callback alone never grants credits.
     if (!tokenValid && !signatureValid)
       return new Response("Unauthorized", { status: 401 });
-    const key = `${topic}:${id}:${String(body.id || body.date_created || request.headers.get("x-request-id") || "event").slice(0, 100)}`;
+    const key = `${topic}:${id}:${String(body.id || body.date_created || request.headers.get("x-request-id") || crypto.randomUUID()).slice(0, 100)}`;
     const saved = await adminClient().from("webhook_events").upsert(
       {
         event_key: key,
@@ -61,7 +61,7 @@ export async function POST(request: Request) {
         processed_at: null,
         last_error: null,
       },
-      { onConflict: "event_key" },
+      { onConflict: "event_key", ignoreDuplicates: true },
     );
     if (saved.error) return new Response("Retry", { status: 503 });
     // Processed before answering: a failure returns 500 so Mercado Pago

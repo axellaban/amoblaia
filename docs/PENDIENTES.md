@@ -4,6 +4,16 @@ Se detiene el trabajo a pedido del usuario para conservar créditos. Los cambios
 
 Producción: https://amoblaia.vercel.app/
 
+## Checkout alojado — 22 de octubre de 2026
+
+- Se reemplaza el formulario de tarjeta por el checkout alojado de Mercado Pago: Suscripciones para mensual/anual, Checkout Pro para packs. Los precios y la renovación se conservan. El email de pago de suscripciones sigue siendo explícito.
+- El retorno comprueba propiedad de la orden, consulta al proveedor y acredita mediante el mismo RPC idempotente que los webhooks. Los parámetros de éxito del navegador no habilitan créditos. Mi cuenta permite retomar/verificar compras abiertas.
+- El plan anterior se conserva al abrir o autorizar un cambio; su renovación se cancela después de verificar el primer cobro aprobado del nuevo. La relación de reemplazo se guarda en la transacción que crea la orden.
+- Aplicadas en Supabase las migraciones `202610210003_billing_hardening.sql` (faltaba el contador de fallos) y `202610220001_hosted_checkout.sql`. No se contrataron recursos pagos.
+- Recuperación de 404 de facturas mediante búsqueda por ID exacto, conservación de errores realmente pendientes y protección frente a reenvíos de eventos procesados. El cron incorpora conciliación de compras recientes y renovaciones próximas.
+- Verificación automatizada: 181 tests en 32 archivos aprobados antes de la revisión visual. Falta una compra aprobada que complete el titular: no se reenvía su tarjeta ni se realiza un cobro para certificarla.
+- Detalle de alcance y validación: [CHECKOUT_ALOJADO_2026-10-22.md](CHECKOUT_ALOJADO_2026-10-22.md).
+
 ## Corrección de checkout — 22 de octubre de 2026
 
 - **Diagnóstico comprobado del intento de las 19:55, referencia `4299340e`:** el comprador confirmó un email distinto del login y pasó el control previo. Mercado Pago rechazó `POST /preapproval` con HTTP 400 y `CC_VAL_433 Credit card validation has failed`. El detalle oficial de la operación en su panel dice explícitamente «El banco emisor de la tarjeta rechazó el pago», por ARS 20.000, sin un motivo bancario más específico. La orden quedó en `checkout_failed`, sin suscripción asociada ni pagos registrados para esa orden. La revisión fue de solo lectura: no se reintentó el cobro. No atribuir este rechazo a país del email, saldo, CVV u otra causa no informada por el proveedor.

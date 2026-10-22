@@ -38,6 +38,13 @@ export async function GET() {
         .in("status", ["queued", "running", "needs_review", "failed"])
         .order("created_at", { ascending: false })
         .limit(20),
+      db
+        .from("orders")
+        .select("id,snapshot")
+        .eq("user_id", user.id)
+        .in("status", ["creating", "checkout_ready", "checkout_needs_review"])
+        .order("created_at", { ascending: false })
+        .limit(10),
     ]);
     if (results.some((r) => r.error)) throw new Error("ACCOUNT_LOOKUP_FAILED");
     return Response.json(
@@ -51,6 +58,7 @@ export async function GET() {
         grants: results[1].data,
         payments: results[2].data,
         jobs: results[3].data,
+        checkouts: results[4].data,
       },
       { headers: { "Cache-Control": "private, no-store" } },
     );

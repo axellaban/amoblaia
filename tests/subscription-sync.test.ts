@@ -169,7 +169,7 @@ it("reports a cancellation that really did not happen", async () => {
   expect(state.writes).toEqual([]);
 });
 
-it("retires the replaced plan when the new one is first seen authorized", async () => {
+it("retires the replaced plan only after its first verified approved payment", async () => {
   state.order.provider_subscription_id = "sub-1";
   state.order.status = "checkout_ready";
   state.order.replaces_subscription_id = "sub-old";
@@ -196,6 +196,19 @@ it("retires the replaced plan when the new one is first seen authorized", async 
     }),
   );
   await syncSubscription("sub-1");
+  expect(calls.some((c) => c.startsWith("PUT"))).toBe(false);
+  vi.stubEnv("MERCADOPAGO_MODE", "production");
+  await syncSubscription("sub-1", {
+    id: "pay-1",
+    collector_id: 123,
+    external_reference: "order-1",
+    currency_id: "ARS",
+    transaction_amount: 20000,
+    status: "approved",
+    live_mode: true,
+    date_approved: new Date().toISOString(),
+    date_created: new Date().toISOString(),
+  });
   expect(calls).toContain(
     "PUT https://api.mercadopago.com/preapproval/sub-old",
   );

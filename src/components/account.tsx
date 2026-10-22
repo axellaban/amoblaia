@@ -11,6 +11,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { formatARS } from "@/lib/commerce/catalog";
+import { CheckoutReturn } from "./checkout-return";
 import { clearDraft } from "@/lib/studio-draft";
 import { browserClient } from "@/lib/supabase/client";
 type Account = {
@@ -38,6 +39,7 @@ type Account = {
     error_code: string;
     created_at: string;
   }[];
+  checkouts: { id: string; snapshot: { name: string } }[];
   grants: {
     id: string;
     source_key: string;
@@ -73,18 +75,23 @@ export function AccountDashboard() {
     [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false),
     [cancel, setCancel] = useState("");
+  const [returnOrder, setReturnOrder] = useState("");
   const load = useCallback(async () => {
     setBusy(true);
     try {
       const r = await fetch("/api/account", { cache: "no-store" });
       if (r.status === 401) {
-        window.location.assign("/acceso?next=%2Fcuenta");
+        window.location.assign(
+          `/acceso?next=${encodeURIComponent(window.location.pathname + window.location.search)}`,
+        );
         return;
       }
       const p = await r.json();
       if (!r.ok) throw new Error(p.error);
       if (p.anonymous) {
-        window.location.assign("/acceso?next=%2Fcuenta");
+        window.location.assign(
+          `/acceso?next=${encodeURIComponent(window.location.pathname + window.location.search)}`,
+        );
         return;
       }
       setAccount(p);
@@ -97,16 +104,10 @@ export function AccountDashboard() {
   }, []);
   useEffect(() => {
     void load();
-    // Arriving from a card payment: confirm it, then drop the flag from the URL.
-    const done = new URLSearchParams(window.location.search).get("suscripcion");
-    if (done) {
-      setNotice(
-        done === "cambiada"
-          ? "Cambiaste de plan. Cancelamos la renovación del anterior y conservás sus fotos hasta su vencimiento."
-          : "¡Listo! Tu suscripción está activa. El primer cobro se confirma en unos minutos y ahí se habilitan tus fotos.",
-      );
-      window.history.replaceState(null, "", "/cuenta");
-    }
+    const order =
+      new URLSearchParams(window.location.search).get("orden") || "";
+    if (/^[0-9a-f-]{36}$/i.test(order)) setReturnOrder(order);
+    // Return flags are presentation hints, never evidence of payment.
   }, [load]);
   // Subscriptions that ended without ever being charged (abandoned or
   // replaced checkouts) are noise in the list.
@@ -140,7 +141,9 @@ export function AccountDashboard() {
       const p = await r.json();
       if (!r.ok) throw new Error(p.error);
       if (p.anonymous) {
-        window.location.assign("/acceso?next=%2Fcuenta");
+        window.location.assign(
+          `/acceso?next=${encodeURIComponent(window.location.pathname + window.location.search)}`,
+        );
         return;
       }
       setNotice(
@@ -206,6 +209,13 @@ export function AccountDashboard() {
           {notice}
         </p>
       )}
+      {returnOrder && (
+        <CheckoutReturn
+          key={returnOrder}
+          order={returnOrder}
+          onSettled={load}
+        />
+      )}
       {!account && busy && (
         <p>
           <LoaderCircle className="spin" size={20} />
@@ -262,6 +272,20 @@ export function AccountDashboard() {
               equipo desde el enlace de soporte.
             </p>
           )}
+          {(account.checkouts || [])
+            .filter((o) => o.id !== returnOrder)
+            .map((o) => (
+              <section key={o.id} className="account-panel">
+                <h2>Compra por confirmar · {o.snapshot.name}</h2>
+                <Link
+                  href={`/cuenta?orden=${o.id}`}
+                  className="button button-outline"
+                  onClick={() => setReturnOrder(o.id)}
+                >
+                  Verificar o continuar el pago <ArrowUpRight size={17} />
+                </Link>
+              </section>
+            ))}
           <section className="account-panel">
             <h2>Mis suscripciones</h2>
             {!subscriptions.length ? (
@@ -277,14 +301,16 @@ export function AccountDashboard() {
                     <p>
                       {s.status === "pending"
                         ? "Pago sin completar"
-                        : statuses[s.status] || s.status}{" "}
+                        : s.status === "authorized" && !s.paid_until
+                          ? "Esperando el primer pago"
+                          : statuses[s.status] || s.status}{" "}
                       · {s.orders?.snapshot?.photos} fotos por mes
                     </p>
                     <p>
                       {s.paid_until
                         ? `Período pagado hasta ${date(s.paid_until)}`
                         : s.status === "pending"
-                          ? "No se hizo ningún cobro. Para suscribirte, elegí un plan en Precios."
+                          ? "Completá el pago en Mercado Pago o verificá su estado."
                           : "Esperando la confirmación del primer pago."}
                     </p>
                   </div>

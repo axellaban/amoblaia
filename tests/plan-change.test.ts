@@ -51,3 +51,22 @@ it("is not callable by browser roles", async () => {
   );
   expect(r.rows[0].allowed).toBe(false);
 });
+it("binds the replacement atomically and keeps the current plan during an abandoned checkout", async () => {
+  const changed = "00000000-0000-4000-8000-000000000064";
+  const rows = await db.query<{ replaces_subscription_id: string }>(
+    "select replaces_subscription_id from orders where id=$1",
+    [changed],
+  );
+  expect(rows.rows[0].replaces_subscription_id).toBe("sub-basic");
+  await db.query(
+    "update orders set status='checkout_ready',provider_subscription_id='sub-new' where id=$1",
+    [changed],
+  );
+  await expect(
+    order("00000000-0000-4000-8000-000000000066", true),
+  ).rejects.toThrow("SUBSCRIPTION_EXISTS");
+  const active = await db.query<{ status: string }>(
+    "select status from subscriptions where id='sub-basic'",
+  );
+  expect(active.rows[0].status).toBe("authorized");
+});

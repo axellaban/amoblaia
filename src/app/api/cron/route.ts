@@ -3,6 +3,7 @@ import { sameSecret } from "@/lib/session";
 import { cloudConfigured, cloudEnabled } from "@/lib/supabase/config";
 import { adminClient } from "@/lib/supabase/server";
 import { runJob } from "@/lib/commerce/jobs";
+import { reconcileCheckout } from "@/lib/commerce/reconcile";
 import { processInbox } from "@/lib/commerce/mercadopago";
 export const maxDuration = 300;
 export async function GET(request: Request) {
@@ -24,7 +25,7 @@ export async function GET(request: Request) {
     .eq("status", "running")
     .lt("started_at", new Date(Date.now() - 10 * 60 * 1000).toISOString());
   if (stale.error) return new Response("Retry", { status: 503 });
-  const [jobs, events] = await Promise.all([
+  const [jobs, events, checkouts, renewals] = await Promise.all([
     db
       .from("generations")
       .select("id")
@@ -39,11 +40,45 @@ export async function GET(request: Request) {
       .order("attempts")
       .order("received_at")
       .limit(25),
+    db
+      .from("orders")
+      .select("id,user_id")
+      .in("status", ["checkout_ready", "checkout_needs_review"])
+      .gte(
+        "created_at",
+        new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+      )
+      .order("created_at", { ascending: false })
+      .limit(5),
+    db
+      .from("subscriptions")
+      .select("order_id,user_id")
+      .in("status", ["authorized", "paused"])
+      .lte(
+        "paid_until",
+        new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      )
+      .order("paid_until")
+      .limit(5),
   ]);
-  if (jobs.error || events.error) return new Response("Retry", { status: 503 });
+  if (jobs.error || events.error || checkouts.error || renewals.error)
+    return new Response("Retry", { status: 503 });
   after(async () => {
-    for (const event of events.data || [])
+    for (const event of events.data || []) {
+      if (Date.now() > deadline - 60000) break;
       await processInbox(event.event_key, event.topic, event.resource_id);
+    }
+    const orders = new Map(
+      (checkouts.data || []).map((o) => [o.id, o.user_id]),
+    );
+    for (const sub of renewals.data || [])
+      orders.set(sub.order_id, sub.user_id);
+    for (const [id, userId] of orders) {
+      if (Date.now() > deadline - 60000) break;
+      await reconcileCheckout(userId, id).catch(() =>
+        console.error("cron_checkout_pending", id),
+      );
+    }
     for (const job of jobs.data || [])
       try {
         await runJob(job.id, deadline);

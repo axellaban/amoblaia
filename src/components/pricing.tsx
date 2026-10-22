@@ -11,7 +11,6 @@ import {
   BadgeCheck,
   X,
 } from "lucide-react";
-import { CardBrick, mercadoPagoPublicKey } from "./card-brick";
 import {
   offers,
   skuFor,
@@ -42,7 +41,7 @@ const faqs = [
   ],
   [
     "¿Puedo cambiar de plan?",
-    "Sí, cuando quieras: elegí el nuevo plan acá y pagalo con tarjeta. Se activa en el momento, cancelamos la renovación del anterior y conservás las fotos que ya pagaste hasta su vencimiento. No hacemos prorrateos.",
+    "Sí: elegí el nuevo plan y completá el pago en Mercado Pago. Al confirmarse el nuevo cobro detenemos la renovación del anterior. Conservás las fotos ya pagadas hasta su vencimiento. No hacemos prorrateos.",
   ],
   [
     "¿Hacen reembolsos?",
@@ -73,7 +72,6 @@ export function PricingPlans({
     [busy, setBusy] = useState(""),
     [error, setError] = useState(""),
     [payerEmail, setPayerEmail] = useState(""),
-    [confirmedPayerEmail, setConfirmedPayerEmail] = useState(""),
     [selectedSku, setSelectedSku] = useState(""),
     [faq, setFaq] = useState<number | null>(null);
   const [expandedPlans, setExpandedPlans] = useState<Record<string, boolean>>(
@@ -129,34 +127,6 @@ export function PricingPlans({
   );
   const savingLabel =
     saving >= 0.05 ? `hasta ${Math.floor((saving * 100) / 5) * 5}% menos` : "";
-  async function confirmCardEmail() {
-    setBusy(selectedSku);
-    setError("");
-    try {
-      const normalized = payerEmail.trim().toLowerCase();
-      const response = await fetch("/api/checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ intent: "validate_payer", payerEmail: normalized }),
-      });
-      if (response.status === 401) {
-        window.location.assign("/acceso?next=%2Fprecios");
-        return;
-      }
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error);
-      setPayerEmail(normalized);
-      setConfirmedPayerEmail(normalized);
-    } catch (e) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : "No pudimos verificar el pago. Intentá nuevamente.",
-      );
-    } finally {
-      setBusy("");
-    }
-  }
   async function buy(sku: string) {
     setBusy(sku);
     setError("");
@@ -189,61 +159,6 @@ export function PricingPlans({
       setBusy("");
     }
   }
-  // Keep the payer email submitted by the Brick alongside its card token.
-  async function subscribeWithCard(
-    sku: string,
-    cardToken: string,
-    cardPayerEmail: string,
-  ) {
-    setBusy(sku);
-    setError("");
-    try {
-      if (
-        !confirmedPayerEmail ||
-        cardPayerEmail.trim().toLowerCase() !== confirmedPayerEmail
-      )
-        throw new Error(
-          "Volvé a confirmar el email para el pago antes de continuar.",
-        );
-      const response = await fetch("/api/checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        // A card token is single-use, so every attempt is a new order.
-        body: JSON.stringify({
-          sku,
-          key: crypto.randomUUID(),
-          cardToken,
-          payerEmail: cardPayerEmail,
-        }),
-      });
-      if (response.status === 401) {
-        // Say it plainly before leaving: the card was not charged.
-        setTimeout(
-          () => window.location.assign("/acceso?next=%2Fprecios"),
-          3000,
-        );
-        throw new Error(
-          "Tu sesión venció y no se hizo ningún cobro. Te llevamos a entrar de nuevo…",
-        );
-      }
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error);
-      window.location.assign(
-        `/cuenta?suscripcion=${payload.changed ? "cambiada" : "activa"}`,
-      );
-    } catch (e) {
-      setError(
-        e instanceof Error && e.message
-          ? e.message
-          : "No pudimos completar la suscripción.",
-      );
-      setBusy("");
-      throw e;
-    }
-  }
-  const cardCheckout = Boolean(
-    mercadoPagoPublicKey && selectedProduct && selectedProduct.kind !== "pack",
-  );
   function card(offer: (typeof offers)[number]) {
     const sku = skuFor(offer.id, annual),
       cents = price(sku),
@@ -292,15 +207,13 @@ export function PricingPlans({
             onClick={() => {
               setError("");
               setPayerEmail("");
-              setConfirmedPayerEmail("");
-              // Sign in before the card form, not after the card is typed.
+              // The order belongs to the signed-in customer before leaving for MP.
               if (!email) {
                 window.location.assign("/acceso?next=%2Fprecios");
                 return;
               }
               // Packs go straight to Checkout Pro, which takes any account.
-              if (mercadoPagoPublicKey && sku.startsWith("pack-"))
-                void buy(sku);
+              if (sku.startsWith("pack-")) void buy(sku);
               else setSelectedSku(sku);
             }}
           >
@@ -414,11 +327,7 @@ export function PricingPlans({
               </button>
               <span className="eyebrow">PAGO SEGURO CON MERCADO PAGO</span>
               <h2 id="checkout-title">
-                {cardCheckout
-                  ? currentSku
-                    ? "Cambiá de plan"
-                    : "Completá tu suscripción"
-                  : "Confirmá tu email de Mercado Pago"}
+                {currentSku ? "Cambiá de plan" : "Completá tu suscripción"}
               </h2>
               {selectedProduct && (
                 <div className="checkout-summary">
@@ -430,7 +339,8 @@ export function PricingPlans({
                       : selectedProduct.kind === "month"
                         ? "por mes"
                         : "por única vez"}
-                    {selectedProduct.kind !== "pack" && " · Renovación automática"}
+                    {selectedProduct.kind !== "pack" &&
+                      " · Renovación automática"}
                   </p>
                   <p>
                     {selectedProduct.photos} fotos originales por mes ·
@@ -438,108 +348,50 @@ export function PricingPlans({
                   </p>
                 </div>
               )}
-              {cardCheckout && selectedProduct ? (
-                <>
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      void confirmCardEmail();
-                    }}
-                  >
-                    <label htmlFor="card-payer-email">Email para el pago</label>
-                    <input
-                      id="card-payer-email"
-                      type="email"
-                      name="payerEmail"
-                      required
-                      maxLength={254}
-                      autoComplete="email"
-                      placeholder="tu-email@ejemplo.com"
-                      value={payerEmail}
-                      readOnly={Boolean(confirmedPayerEmail)}
-                      disabled={Boolean(busy)}
-                      onChange={(e) => {
-                        setPayerEmail(e.target.value);
-                        setError("");
-                      }}
-                    />
-                    {confirmedPayerEmail ? (
-                      <button
-                        type="button"
-                        className="button button-outline"
-                        disabled={Boolean(busy)}
-                        onClick={() => {
-                          setConfirmedPayerEmail("");
-                          setError("");
-                        }}
-                      >
-                        Cambiar email
-                      </button>
-                    ) : (
-                      <button
-                        className="button button-primary"
-                        disabled={Boolean(busy)}
-                      >
-                        {busy ? "Verificando…" : "Confirmar email y continuar"}
-                      </button>
-                    )}
-                  </form>
-                  {error && (
-                    <p className="inline-error" role="alert">
-                      {error}
-                    </p>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void buy(selectedSku);
+                }}
+              >
+                <label htmlFor="mp-payer-email">
+                  Email que vas a usar en Mercado Pago
+                </label>
+                <input
+                  id="mp-payer-email"
+                  name="payerEmail"
+                  type="email"
+                  required
+                  autoFocus
+                  autoComplete="email"
+                  maxLength={254}
+                  disabled={Boolean(busy)}
+                  value={payerEmail}
+                  onChange={(e) => {
+                    setPayerEmail(e.target.value);
+                    setError("");
+                  }}
+                  placeholder="tu-email@ejemplo.com"
+                />
+                {error && (
+                  <p className="inline-error" role="alert">
+                    {error}
+                  </p>
+                )}
+                <button
+                  className="button button-primary"
+                  disabled={Boolean(busy)}
+                >
+                  {busy ? (
+                    <LoaderCircle size={18} className="spin" />
+                  ) : (
+                    <ArrowUpRight size={18} />
                   )}
-                  {confirmedPayerEmail && (
-                    <CardBrick
-                      amount={(selectedProduct.price_cents || 0) / 100}
-                      email={confirmedPayerEmail}
-                      onToken={(token, cardPayerEmail) =>
-                        subscribeWithCard(selectedSku, token, cardPayerEmail)
-                      }
-                    />
-                  )}
-                </>
-              ) : (
-                <>
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      void buy(selectedSku);
-                    }}
-                  >
-                    <label htmlFor="mp-payer-email">
-                      Email de tu cuenta de Mercado Pago
-                    </label>
-                    <input
-                      id="mp-payer-email"
-                      type="email"
-                      required
-                      autoFocus
-                      autoComplete="email"
-                      maxLength={254}
-                      value={payerEmail}
-                      onChange={(e) => setPayerEmail(e.target.value)}
-                      placeholder="tu-email@ejemplo.com"
-                    />
-                    {error && (
-                      <p className="inline-error" role="alert">
-                        {error}
-                      </p>
-                    )}
-                    <button
-                      className="button button-primary"
-                      disabled={Boolean(busy)}
-                    >
-                      {busy ? (
-                        <LoaderCircle size={18} className="spin" />
-                      ) : (
-                        <ArrowUpRight size={18} />
-                      )}{" "}
-                      Ir a Mercado Pago
-                    </button>
-                  </form>
-                </>
-              )}
+                  {busy
+                    ? "Abriendo Mercado Pago…"
+                    : "Continuar en Mercado Pago"}
+                </button>
+              </form>
             </section>
           </div>
         )}
