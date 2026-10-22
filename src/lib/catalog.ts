@@ -147,10 +147,8 @@ export function afterImage(room: RoomId, style: StyleId = "modern") {
   const availableRoom = (demoRooms as readonly string[]).includes(room)
     ? room
     : "living";
-  const availableStyle = (demoStyles as readonly string[]).includes(style)
-    ? style
-    : "modern";
-  return `/ejemplos/${availableRoom}-${availableStyle}.webp`;
+  // The examples include a scene for every style, so the demo offers all of them.
+  return `/ejemplos/${availableRoom}-${style}.webp`;
 }
 export function buildPrompt(
   roomId: string,

@@ -29,7 +29,6 @@ import Link from "next/link";
 import {
   beforeImage,
   demoRooms,
-  demoStyles,
   afterImage,
   rooms,
   styles,
@@ -1377,14 +1376,7 @@ export function Studio({
                         }}
                       >
                         {styles.map((s) => (
-                          <option
-                            key={s.id}
-                            value={s.id}
-                            disabled={
-                              demo &&
-                              !(demoStyles as readonly string[]).includes(s.id)
-                            }
-                          >
+                          <option key={s.id} value={s.id}>
                             {s.name}
                           </option>
                         ))}
@@ -1392,12 +1384,6 @@ export function Studio({
                       <p className="field-hint">
                         {styles.find((s) => s.id === style)?.description}
                       </p>
-                      {demo && (
-                        <p className="field-hint">
-                          Los ejemplos muestran el estilo Moderno. Con tu foto
-                          podés explorar los {styles.length}.
-                        </p>
-                      )}
                     </fieldset>
                   </div>
                 </div>
