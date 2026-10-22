@@ -9,6 +9,7 @@ const state = vi.hoisted(() => ({
   current: null as null | Record<string, unknown>,
   cancelFails: false,
   rpcArgs: [] as unknown[],
+  merchantEmail: "seller@example.com",
 }));
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/commerce/http", async (original) => ({
@@ -89,6 +90,12 @@ vi.mock("@/lib/commerce/mercadopago", async (original) => {
     billingConfigured: () => true,
     isDuplicateSubscription: () => false,
     settleStaleOrders: vi.fn(async () => {}),
+    verifyCheckoutPayer: vi.fn(async (email: string) => {
+      if (email === state.merchantEmail) {
+        const { HttpError } = await import("../src/lib/commerce/http");
+        throw new HttpError(400, "El email para el pago corresponde a la cuenta que cobra en amoblaIA. Para probar una compra, usá una cuenta compradora distinta de la vendedora.");
+      }
+    }),
     mp,
     // Same contract as the real one: cancel in MP, then record it.
     retireSubscription: vi.fn(async (id: string) => {
@@ -111,6 +118,7 @@ beforeEach(() => {
   state.current = null;
   state.cancelFails = false;
   state.rpcArgs = [];
+  state.merchantEmail = "seller@example.com";
   vi.stubEnv("MERCADOPAGO_MODE", "production");
   vi.stubEnv("MERCADOPAGO_COLLECTOR_ID", "123");
   vi.stubEnv("APP_URL", "https://amobla.example");
@@ -131,6 +139,27 @@ const request = (payerEmail?: string) =>
     }),
   });
 describe("Mercado Pago payer identity", () => {
+  it("checks the confirmed email without creating orders, charging or reserving credits", async () => {
+    const response = await POST(new Request("https://amobla.example/api/checkout", {
+      method: "POST",
+      headers: { Origin: "https://amobla.example", "Content-Type": "application/json" },
+      body: JSON.stringify({ intent: "validate_payer", payerEmail: "buyer@example.com" }),
+    }));
+    expect(await response.json()).toEqual({ valid: true });
+    expect(state.calls).toEqual([]);
+    expect(state.rpcArgs).toEqual([]);
+  });
+  it("catches the merchant email at confirmation before a card is entered", async () => {
+    const response = await POST(new Request("https://amobla.example/api/checkout", {
+      method: "POST",
+      headers: { Origin: "https://amobla.example", "Content-Type": "application/json" },
+      body: JSON.stringify({ intent: "validate_payer", payerEmail: " SELLER@EXAMPLE.COM " }),
+    }));
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toContain("cuenta compradora distinta");
+    expect(state.calls).toEqual([]);
+    expect(state.rpcArgs).toEqual([]);
+  });
   it("requires the payment email instead of silently using the Google email", async () => {
     expect((await POST(request())).status).toBe(400);
     expect(state.calls).toEqual([]);
@@ -209,6 +238,14 @@ const cardRequest = (
     }),
   });
 describe("Card subscriptions", () => {
+  it("rejects a buyer matching the collector before creating or changing an order", async () => {
+    state.merchantEmail = "payer-argentina@example.com";
+    const response = await POST(cardRequest("a1b2c3d4e5f60718293a4b5c6d7e8f90"));
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toContain("cuenta compradora distinta");
+    expect(state.calls).toEqual([]);
+    expect(state.rpcArgs).not.toContainEqual(expect.objectContaining({ name: "amobla_create_order" }));
+  });
   it("uses the Brick payer email instead of the Google email for the authorized subscription", async () => {
     const r = await POST(cardRequest("a1b2c3d4e5f60718293a4b5c6d7e8f90"));
     expect(r.status).toBe(200);
@@ -312,7 +349,7 @@ describe("Card subscriptions", () => {
     expect(error).not.toContain("Detalle para el equipo");
     expect(error).not.toContain(state.reason);
   });
-  it("explains guest_site_mismatch as a payer country error and allows retrying the closed order", async () => {
+  it("reports guest_site_mismatch without claiming the payer's email or card is wrong", async () => {
     state.fail = "MERCADOPAGO_400";
     state.reason =
       '{"message":"Payer is associated with a different site","code":"guest_site_mismatch","status":400}';
@@ -320,8 +357,9 @@ describe("Card subscriptions", () => {
     const r = await POST(cardRequest("a1b2c3d4e5f60718293a4b5c6d7e8f90"));
     expect(r.status).toBe(402);
     const { error } = await r.json();
-    expect(error).toContain("email del pagador");
-    expect(error).toContain("Mercado Pago Argentina");
+    expect(error).toContain("revisar la configuración del cobro");
+    expect(error).not.toContain("otro país");
+    expect(error).not.toContain("email del pagador");
     expect(error).not.toContain("no aprobó la tarjeta");
     expect(error).not.toContain("guest_site_mismatch");
     expect(error).not.toContain("Detalle para el equipo");

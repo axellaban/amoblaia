@@ -113,7 +113,7 @@ export function cardRefusalMessage(reason: string) {
       reason,
     )
   )
-    return "El email del pagador está asociado a Mercado Pago de otro país. Ingresá un email de Mercado Pago Argentina en el formulario y volvé a intentarlo.";
+    return "Mercado Pago no pudo vincular los datos de este pago con la suscripción. Necesitamos revisar la configuración del cobro. Contactanos desde Soporte.";
   if (/real or test users|test user|live mode|livemode/i.test(reason))
     return "Esta tarjeta no corresponde al modo de cobro: las tarjetas de prueba solo funcionan en modo prueba y las reales en modo real.";
   if (/card_token|card token|token/i.test(reason))
@@ -165,6 +165,29 @@ function verifySeller(id: number | string) {
     String(id) !== process.env.MERCADOPAGO_COLLECTOR_ID
   )
     throw new Error("SELLER_MISMATCH");
+}
+/** Read-only check before collecting a card or creating any order/subscription. */
+export async function verifyCheckoutPayer(email: string) {
+  const merchant = await mp<{
+    id: number;
+    email: string;
+    site_id: string;
+    country_id: string;
+  }>("/users/me");
+  if (
+    String(merchant.id) !== process.env.MERCADOPAGO_COLLECTOR_ID ||
+    merchant.site_id !== "MLA" ||
+    merchant.country_id !== "AR"
+  )
+    throw new HttpError(
+      503,
+      "Necesitamos revisar la configuración de Mercado Pago antes de recibir pagos. Contactanos desde Soporte.",
+    );
+  if (email.trim().toLowerCase() === merchant.email?.trim().toLowerCase())
+    throw new HttpError(
+      400,
+      "El email para el pago corresponde a la cuenta que cobra en amoblaIA. Para probar una compra, usá una cuenta compradora distinta de la vendedora.",
+    );
 }
 export function validatePayment(payment: Payment, order: Order) {
   verifySeller(payment.collector_id);

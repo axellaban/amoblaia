@@ -14,6 +14,7 @@ import {
   mp,
   retireSubscription,
   settleStaleOrders,
+  verifyCheckoutPayer,
 } from "@/lib/commerce/mercadopago";
 import type { Product } from "@/lib/commerce/catalog";
 export async function POST(request: Request) {
@@ -37,7 +38,22 @@ export async function POST(request: Request) {
       );
     if (Number(request.headers.get("content-length") || 0) > 2048)
       throw new HttpError(413, "Solicitud inválida.");
-    const { sku, key, payerEmail, cardToken } = await request.json();
+    const { sku, key, payerEmail, cardToken, intent } = await request.json();
+    if (intent === "validate_payer") {
+      const email =
+        typeof payerEmail === "string" ? payerEmail.trim().toLowerCase() : "";
+      if (
+        !email ||
+        email.length > 254 ||
+        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+      )
+        throw new HttpError(400, "Ingresá un email válido para el pago.");
+      await verifyCheckoutPayer(email);
+      return Response.json(
+        { valid: true },
+        { headers: { "Cache-Control": "no-store" } },
+      );
+    }
     if (
       typeof sku !== "string" ||
       !/^[-a-z0-9]{3,40}$/.test(sku) ||
@@ -76,7 +92,8 @@ export async function POST(request: Request) {
       email.length > 254 ||
       !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
     )
-      throw new HttpError(400, "Ingresá un email válido de Mercado Pago.");
+      throw new HttpError(400, "Ingresá un email válido para el pago.");
+    await verifyCheckoutPayer(email);
     // An abandoned checkout for the same plan is reopened instead of blocking a new attempt.
     const open = await db
       .from("orders")

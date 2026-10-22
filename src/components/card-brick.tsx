@@ -43,9 +43,12 @@ function loadSdk() {
 }
 export function CardBrick({
   amount,
+  email,
   onToken,
 }: {
   amount: number;
+  /** Explicitly confirmed in our visible checkout form before mounting the Brick. */
+  email: string;
   /** Resolves when the subscription was created; rejects to let the buyer retry. */
   onToken: (token: string, payerEmail: string) => Promise<void>;
 }) {
@@ -65,8 +68,7 @@ export function CardBrick({
         controller = await mp.bricks().create("cardPayment", container, {
           initialization: {
             amount,
-            // Supplying the Google email here hides the Brick's email field.
-            // Keep it editable: the payer may use another email or MP country.
+            payer: { email },
           },
           customization: {
             paymentMethods: { maxInstallments: 1 },
@@ -93,7 +95,7 @@ export function CardBrick({
       active = false;
       controller?.unmount();
     };
-  }, [amount, container]);
+  }, [amount, email, container]);
   return (
     <div className="card-brick">
       {state === "loading" && (

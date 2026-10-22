@@ -73,6 +73,7 @@ export function PricingPlans({
     [busy, setBusy] = useState(""),
     [error, setError] = useState(""),
     [payerEmail, setPayerEmail] = useState(""),
+    [confirmedPayerEmail, setConfirmedPayerEmail] = useState(""),
     [selectedSku, setSelectedSku] = useState(""),
     [faq, setFaq] = useState<number | null>(null);
   const [expandedPlans, setExpandedPlans] = useState<Record<string, boolean>>(
@@ -128,6 +129,34 @@ export function PricingPlans({
   );
   const savingLabel =
     saving >= 0.05 ? `hasta ${Math.floor((saving * 100) / 5) * 5}% menos` : "";
+  async function confirmCardEmail() {
+    setBusy(selectedSku);
+    setError("");
+    try {
+      const normalized = payerEmail.trim().toLowerCase();
+      const response = await fetch("/api/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ intent: "validate_payer", payerEmail: normalized }),
+      });
+      if (response.status === 401) {
+        window.location.assign("/acceso?next=%2Fprecios");
+        return;
+      }
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error);
+      setPayerEmail(normalized);
+      setConfirmedPayerEmail(normalized);
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : "No pudimos verificar el pago. Intentá nuevamente.",
+      );
+    } finally {
+      setBusy("");
+    }
+  }
   async function buy(sku: string) {
     setBusy(sku);
     setError("");
@@ -169,6 +198,13 @@ export function PricingPlans({
     setBusy(sku);
     setError("");
     try {
+      if (
+        !confirmedPayerEmail ||
+        cardPayerEmail.trim().toLowerCase() !== confirmedPayerEmail
+      )
+        throw new Error(
+          "Volvé a confirmar el email para el pago antes de continuar.",
+        );
       const response = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -255,6 +291,8 @@ export function PricingPlans({
             disabled={!ready || Boolean(busy) || sku === currentSku}
             onClick={() => {
               setError("");
+              setPayerEmail("");
+              setConfirmedPayerEmail("");
               // Sign in before the card form, not after the card is typed.
               if (!email) {
                 window.location.assign("/acceso?next=%2Fprecios");
@@ -411,10 +449,53 @@ export function PricingPlans({
                     Mercado Pago.
                   </p>
                   <p className="field-hint">
-                    El email para el pago puede ser distinto al que usás para
-                    entrar a amoblaIA. Si ya está asociado a Mercado Pago, debe
-                    corresponder a una cuenta de Argentina.
+                    Confirmá el email para la suscripción. Puede ser distinto al
+                    que usás para entrar a amoblaIA. Después cargás tu tarjeta.
                   </p>
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      void confirmCardEmail();
+                    }}
+                  >
+                    <label htmlFor="card-payer-email">Email para el pago</label>
+                    <input
+                      id="card-payer-email"
+                      type="email"
+                      name="payerEmail"
+                      required
+                      maxLength={254}
+                      autoComplete="email"
+                      placeholder="tu-email@ejemplo.com"
+                      value={payerEmail}
+                      readOnly={Boolean(confirmedPayerEmail)}
+                      disabled={Boolean(busy)}
+                      onChange={(e) => {
+                        setPayerEmail(e.target.value);
+                        setError("");
+                      }}
+                    />
+                    {confirmedPayerEmail ? (
+                      <button
+                        type="button"
+                        className="button button-outline"
+                        disabled={Boolean(busy)}
+                        onClick={() => {
+                          setConfirmedPayerEmail("");
+                          setError("");
+                        }}
+                      >
+                        Cambiar email
+                      </button>
+                    ) : (
+                      <button
+                        className="button button-primary"
+                        disabled={Boolean(busy)}
+                      >
+                        {busy ? "Verificando…" : "Confirmar email y continuar"}
+                      </button>
+                    )}
+                  </form>
                   {currentSku && (
                     <p className="field-hint">
                       El nuevo plan se activa en el momento. Cancelamos la
@@ -427,12 +508,15 @@ export function PricingPlans({
                       {error}
                     </p>
                   )}
-                  <CardBrick
-                    amount={(selectedProduct.price_cents || 0) / 100}
-                    onToken={(token, cardPayerEmail) =>
-                      subscribeWithCard(selectedSku, token, cardPayerEmail)
-                    }
-                  />
+                  {confirmedPayerEmail && (
+                    <CardBrick
+                      amount={(selectedProduct.price_cents || 0) / 100}
+                      email={confirmedPayerEmail}
+                      onToken={(token, cardPayerEmail) =>
+                        subscribeWithCard(selectedSku, token, cardPayerEmail)
+                      }
+                    />
+                  )}
                 </>
               ) : (
                 <>
