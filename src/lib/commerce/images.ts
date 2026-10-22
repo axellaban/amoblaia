@@ -73,7 +73,7 @@ export class ProviderError extends Error {
 async function watermark(image: Buffer) {
   const { width = 1280 } = await sharp(image).metadata();
   const mark = await sharp(WATERMARK_PNG)
-    .resize({ width: Math.round(width * 0.62) })
+    .resize({ width: Math.round(width * 0.5) })
     .toBuffer();
   return sharp(image)
     .composite([{ input: mark, gravity: "center", blend: "over" }])
