@@ -9,6 +9,7 @@ Alcance: todas las páginas públicas, el estudio (vacío, con foto, ejemplo, re
 - Script de Playwright que recorre cada página, hace scroll para cargar imágenes diferidas y mide el contraste WCAG real de cada texto visible contra el fondo que efectivamente tiene detrás (capas, transparencias y degradados), incluidos placeholders.
 - Detecta también desbordes horizontales, objetivos táctiles menores de 24 px y texto menor de 12 px.
 - Revisión visual de capturas completas de cada ruta y estado.
+- El estudio embebido del home solo aparece con la prueba gratis activa, como en producción. Se verificó en producción, vacío y con foto cargada.
 - Las páginas privadas (Mis fotos, Mi cuenta, Administración), el checkout y el recorrido guiado requieren una sesión real: se revisaron su CSS y la cabecera privada, no las pantallas con datos.
 
 ## Causa principal
@@ -23,6 +24,7 @@ Alcance: todas las páginas públicas, el estudio (vacío, con foto, ejemplo, re
 | --- | --- | --- |
 | Estudio, pestaña activa «Nuevo diseño» | Texto casi negro sobre azul marino: `.studio-tabs .selected` perdía contra `.studio-tabs > button.selected` | 1:1 → 17:1 |
 | Menú móvil/tablet en Mis fotos, Mi cuenta y Administración | Cabecera blanca con links blancos; «Precios» en lima sobre blanco | 1:1 → 17:1 |
+| Home, estudio embebido (prueba gratis) | Títulos, «Todo empieza con una foto», «Elegí el ambiente», «Estilo de muebles» y «Un toque personal» heredaban el blanco del hero; los títulos también tomaban el tamaño del hero | 1:1 → 17:1 |
 | Precios, plan destacado | «por mes» gris claro sobre verde lima | 1,6:1 → 5:1 |
 | Estudio, cabecera | Ruta «Estudio de diseño» y etiqueta superior grises sobre azul marino | 2,5:1 y 3,5:1 → 17:1 y 14:1 |
 | Botones deshabilitados («Disponible pronto», «Generar mi diseño» sin foto) | Azul lavado con texto blanco | 2,4:1 → 5:1 |
