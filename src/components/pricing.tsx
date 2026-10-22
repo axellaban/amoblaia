@@ -10,11 +10,14 @@ import {
   Minus,
   BadgeCheck,
   X,
+  Timer,
+  House,
 } from "lucide-react";
 import {
   offers,
   skuFor,
   formatARS,
+  launchOffer,
   type Product,
 } from "@/lib/commerce/catalog";
 const features = [
@@ -52,12 +55,28 @@ const faqs = [
     "Con Mercado Pago: tarjeta de crédito, débito o dinero en cuenta. Los precios están en pesos argentinos y son finales.",
   ],
 ];
+/** "25/10 a las 23:59" in Argentina (UTC−3, no daylight saving). Built by
+ * hand: Intl output differs between Node and browsers and breaks hydration. */
+function arDate(time: number) {
+  const d = new Date(time - 3 * 3600e3);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getUTCDate()}/${d.getUTCMonth() + 1} a las ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+}
+/** "2 d 05 h 09 m 03 s" until `end`. */
+function countdown(end: number, now: number) {
+  const left = Math.max(0, Math.floor((end - now) / 1000));
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const days = Math.floor(left / 86400);
+  return `${days ? `${days} d ` : ""}${pad(Math.floor(left / 3600) % 24)} h ${pad(Math.floor(left / 60) % 60)} m ${pad(left % 60)} s`;
+}
 export function PricingPlans({
   products,
   enabled,
   trial,
   email,
   currentSku,
+  firstPackUsed = false,
+  renderedAt,
 }: {
   products: Product[];
   enabled: boolean;
@@ -66,9 +85,45 @@ export function PricingPlans({
   email?: string;
   /** The plan the user is subscribed to, if any. */
   currentSku?: string;
+  /** Whether this account already bought the one-per-account pack. */
+  firstPackUsed?: boolean;
+  /** Server time of this render, so the countdown hydrates identically. */
+  renderedAt: number;
 }) {
   const checkoutKeys = useRef<Record<string, string>>({});
-  const [annual, setAnnual] = useState(!currentSku?.endsWith("-month")),
+  const [now, setNow] = useState(renderedAt);
+  const launch = (sku: string) => {
+    const p = products.find((p) => p.sku === sku && p.active);
+    return p ? launchOffer(p, now) : null;
+  };
+  const launches = offers
+    .map((o) => ({
+      offer: launch(skuFor(o.id)),
+      list: products.find((p) => p.sku === skuFor(o.id))?.price_cents || 0,
+    }))
+    .filter((l) => l.offer && l.list);
+  const launchEnds = launches.length
+    ? Math.min(...launches.map((l) => Date.parse(l.offer!.endsAt)))
+    : 0;
+  const launchMonths = launches[0]?.offer?.months || 0;
+  const launchCut = Math.max(
+    0,
+    ...launches.map((l) => 1 - l.offer!.cents / l.list),
+  );
+  useEffect(() => {
+    if (!launchEnds) return;
+    const tick = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(tick);
+  }, [launchEnds]);
+  const firstPack = firstPackUsed
+    ? undefined
+    : products.find((p) => p.sku === "pack-first" && p.active && p.price_cents);
+  // During the launch, plans open on the monthly prices that carry it.
+  const [annual, setAnnual] = useState(
+      currentSku
+        ? !currentSku.endsWith("-month")
+        : !products.some((p) => p.active && launchOffer(p, renderedAt)),
+    ),
     [busy, setBusy] = useState(""),
     [error, setError] = useState(""),
     [payerEmail, setPayerEmail] = useState(""),
@@ -78,6 +133,7 @@ export function PricingPlans({
     {},
   );
   const selectedProduct = products.find((p) => p.sku === selectedSku);
+  const selectedDeal = selectedProduct ? launch(selectedProduct.sku) : null;
   const modalRef = useRef<HTMLElement>(null);
   const busyRef = useRef(busy);
   busyRef.current = busy;
@@ -162,7 +218,8 @@ export function PricingPlans({
   function card(offer: (typeof offers)[number]) {
     const sku = skuFor(offer.id, annual),
       cents = price(sku),
-      monthly = annual ? cents / 12 : cents,
+      deal = annual ? null : launch(sku),
+      monthly = annual ? cents / 12 : deal?.cents || cents,
       yearlyMonthly = price(skuFor(offer.id, true)) / 12,
       ready = enabled && cents > 0,
       featured = offer.id === "professional";
@@ -180,13 +237,25 @@ export function PricingPlans({
           </div>
           {cents > 0 ? (
             <>
+              {deal && (
+                <div className="price-was">
+                  <span className="visually-hidden">Precio regular: </span>
+                  <s>{formatARS(cents)}</s>
+                  <em>−{Math.round((1 - deal.cents / cents) * 100)}%</em>
+                </div>
+              )}
               <div className="price">
                 {formatARS(monthly)} <span>por mes</span>
               </div>
               <small className="per-photo">
                 {formatARS(monthly / offer.photos)} por foto
+                {deal && ` · los primeros ${deal.months} meses`}
               </small>
-              {annual ? (
+              {deal ? (
+                <small className="annual-hint">
+                  Después {formatARS(cents)} por mes
+                </small>
+              ) : annual ? (
                 <small className="annual-hint">
                   Se cobra {formatARS(cents)} por año
                 </small>
@@ -250,6 +319,18 @@ export function PricingPlans({
       </article>
     );
   }
+  const trialBanner = (
+    <div className="trial-banner">
+      <Sparkles size={24} />
+      <div>
+        <h2>Probá con tus fotos, sin registrarte.</h2>
+        <p>Hasta 3 diseños por tanda, con marca de agua. Sin tarjeta.</p>
+      </div>
+      <Link className="button button-dark" href="/acceso">
+        Empezar <ArrowUpRight size={17} />
+      </Link>
+    </div>
+  );
   return (
     <div className="pricing-page">
       <div className="pricing-band" aria-hidden="true" />
@@ -282,22 +363,97 @@ export function PricingPlans({
             </button>
           </div>
         </div>
-        {trial && (
-          <div className="trial-banner">
-            <Sparkles size={24} />
+        {launchEnds ? (
+          <div className="launch-banner">
+            <Timer size={26} />
             <div>
-              <h2>Probá con tus fotos, sin registrarte.</h2>
+              <h2>
+                Precio de lanzamiento: hasta{" "}
+                {Math.floor((launchCut * 100) / 5) * 5}% menos
+              </h2>
               <p>
-                Hasta 3 diseños por tanda. 25 en total por cuenta, con marca de
-                agua. Sin tarjeta.
+                En los planes mensuales, durante los primeros {launchMonths}{" "}
+                meses. Termina el {arDate(launchEnds)} h.
+                {firstPack && (
+                  <>
+                    {" "}
+                    <a href="#primera-propiedad">
+                      ¿Una sola propiedad? 5 fotos por{" "}
+                      {formatARS(firstPack.price_cents || 0)}
+                    </a>
+                  </>
+                )}
               </p>
             </div>
-            <Link className="button button-dark" href="/acceso">
-              Empezar <ArrowUpRight size={17} />
-            </Link>
+            <span className="launch-countdown" role="timer">
+              <span className="visually-hidden">Termina en </span>
+              {countdown(launchEnds, now)}
+            </span>
+            {annual && (
+              <button
+                className="button button-small"
+                onClick={() => setAnnual(false)}
+              >
+                Ver precios mensuales
+              </button>
+            )}
           </div>
+        ) : (
+          trial && trialBanner
         )}
         <div className="pricing-grid commercial-plans">{offers.map(card)}</div>
+        {launchEnds > 0 && (
+          <p className="launch-terms">
+            Precio de lanzamiento válido para suscripciones mensuales
+            contratadas hasta el {arDate(launchEnds)} h (hora de Argentina). Se
+            cobra en los primeros {launchMonths} pagos; desde el siguiente se
+            cobra el precio regular indicado. No aplica a planes anuales ni a
+            packs.
+          </p>
+        )}
+        {firstPack && (
+          <section className="first-pack" id="primera-propiedad">
+            <House size={30} />
+            <div>
+              <span className="eyebrow">PAGO ÚNICO · SIN SUSCRIPCIÓN</span>
+              <h2>{firstPack.name}</h2>
+              <p>
+                {firstPack.photos} fotos para amoblar un aviso completo, con
+                regeneraciones y sin marca de agua. Una por cuenta; usalas
+                dentro de los {firstPack.valid_days || 30} días.
+              </p>
+            </div>
+            <div className="first-pack-buy">
+              <strong>{formatARS(firstPack.price_cents || 0)}</strong>
+              <small>
+                {formatARS((firstPack.price_cents || 0) / firstPack.photos)} por
+                foto
+              </small>
+              <button
+                className="button button-primary"
+                disabled={!enabled || Boolean(busy)}
+                onClick={() => {
+                  setError("");
+                  setPayerEmail("");
+                  if (!email) {
+                    window.location.assign("/acceso?next=%2Fprecios");
+                    return;
+                  }
+                  // Like any pack: straight to Checkout Pro.
+                  void buy(firstPack.sku);
+                }}
+              >
+                {busy === firstPack.sku ? (
+                  <LoaderCircle size={18} className="spin" />
+                ) : (
+                  <ArrowUpRight size={18} />
+                )}{" "}
+                {enabled ? "Comprar" : "Disponible pronto"}
+              </button>
+            </div>
+          </section>
+        )}
+        {launchEnds > 0 && trial && trialBanner}
         {error && !selectedSku && (
           <p className="inline-error" role="alert">
             {error}
@@ -333,12 +489,15 @@ export function PricingPlans({
                 <div className="checkout-summary">
                   <strong>{selectedProduct.name}</strong>
                   <p>
-                    {formatARS(selectedProduct.price_cents || 0)}{" "}
-                    {selectedProduct.kind === "year"
-                      ? "por año, en un solo cobro"
-                      : selectedProduct.kind === "month"
-                        ? "por mes"
-                        : "por única vez"}
+                    {selectedDeal
+                      ? `${formatARS(selectedDeal.cents)} por mes los primeros ${selectedDeal.months} meses, después ${formatARS(selectedProduct.price_cents || 0)} por mes`
+                      : `${formatARS(selectedProduct.price_cents || 0)} ${
+                          selectedProduct.kind === "year"
+                            ? "por año, en un solo cobro"
+                            : selectedProduct.kind === "month"
+                              ? "por mes"
+                              : "por única vez"
+                        }`}
                     {selectedProduct.kind !== "pack" &&
                       " · Renovación automática"}
                   </p>

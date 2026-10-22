@@ -610,7 +610,7 @@ export function Studio({
         const runs = activeFreeTier ? freeBatchSize(availableFree) : 1;
         if (!runs)
           throw new Error(
-            "Usaste tus 25 diseños gratis. Elegí un plan para seguir creando.",
+            "Llegaste al límite de la prueba gratis. Elegí un plan para seguir creando.",
           );
         setRoundTotal(runs);
         setRound(runs > 1 ? 1 : 0);
@@ -854,10 +854,10 @@ export function Studio({
             {status?.mode === "cloud" ? (
               <Link href="/cuenta">
                 {status.anonymous
-                  ? `${freeRemaining} diseños gratis · Sin registro`
+                  ? "Prueba gratis · Sin registro"
                   : status.authenticated
                     ? free
-                      ? `${freeRemaining} diseños gratis · Mi cuenta`
+                      ? "Prueba gratis · Mi cuenta"
                       : `${credits ?? "…"} fotos · Mi cuenta`
                     : "Ingresar a mi cuenta"}
               </Link>
@@ -1485,7 +1485,7 @@ export function Studio({
                   {demo
                     ? "Demo precargada · No consume API"
                     : freeTier
-                      ? `${freeRemaining} de ${FREE_RESULT_LIMIT} diseños gratis disponibles · Con marca de agua`
+                      ? "Prueba gratis · Con marca de agua"
                       : status?.configured
                         ? status.mode === "cloud"
                           ? "Calidad alta · Regeneraciones incluidas"

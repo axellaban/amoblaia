@@ -53,7 +53,7 @@ const steps = [
   },
   {
     title: "Creá, compará y descargá",
-    text: "Las propuestas aparecen una por una mientras se generan. Podés ver y descargar las listas sin esperar al resto. La prueba incluye hasta 25 resultados en tandas de hasta tres.",
+    text: "Las propuestas aparecen una por una mientras se generan. Podés ver y descargar las listas sin esperar al resto. En la prueba gratis se crean de a tres, con marca de agua.",
     path: "/estudio",
     target: "generate",
   },

@@ -22,10 +22,19 @@ export default async function Pricing() {
   const user = canBuy ? await currentUser().catch(() => null) : null;
   if (canBuy && process.env.MERCADOPAGO_MODE !== "production")
     canBuy = isAdmin(user?.email);
+  // The "Primera propiedad" pack is one per account: hide it once bought.
+  let firstPackUsed = false;
   // The active subscription, so its plan is marked and the others offer a
   // change. A pending one was never paid and is not anybody's plan.
   let currentSku: string | undefined;
   if (user) {
+    const { count } = await adminClient()
+      .from("orders")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user.id)
+      .eq("sku", "pack-first")
+      .eq("status", "paid");
+    firstPackUsed = Boolean(count);
     const { data } = await adminClient()
       .from("subscriptions")
       .select("orders(sku)")
@@ -43,6 +52,8 @@ export default async function Pricing() {
       trial={cloudEnabled() && process.env.LIVE_TRIAL_ENABLED === "true"}
       email={user?.email || undefined}
       currentSku={currentSku}
+      firstPackUsed={firstPackUsed}
+      renderedAt={Date.now()}
     />
   );
 }

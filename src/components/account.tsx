@@ -227,17 +227,13 @@ export function AccountDashboard() {
           <div className="account-summary">
             <article className="balance-card">
               <Camera size={24} />
-              <span>
-                {account.free
-                  ? "DISEÑOS GRATIS DISPONIBLES"
-                  : "FOTOS DISPONIBLES"}
-              </span>
+              <span>{account.free ? "TU PLAN" : "FOTOS DISPONIBLES"}</span>
               <strong>
-                {account.free ? account.freeRemaining : account.credits}
+                {account.free ? "Prueba gratis" : account.credits}
               </strong>
               <p>
                 {account.free
-                  ? "25 diseños en total. Creá hasta 3 por tanda, sin tarjeta."
+                  ? "Diseños con marca de agua, de a 3 por tanda. Para fotos sin marca, elegí un plan."
                   : "Regeneraciones incluidas durante tu período pago."}
               </p>
               <Link href="/estudio" className="button button-primary">

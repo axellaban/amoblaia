@@ -3,13 +3,13 @@ export const faqItems = [
     id: "gratis",
     category: "Diseños",
     q: "¿Qué incluye la versión gratuita?",
-    a: "Tenés 25 resultados gratis por cuenta verificada, en tandas de hasta tres. Podés amoblar o rediseñar un living o dormitorio. Incluye marca de agua y resolución reducida. No necesitás tarjeta y borrar proyectos no reinicia el cupo.",
+    a: "Podés probar gratis con tus fotos, en tandas de hasta tres. Podés amoblar o rediseñar un living o dormitorio. Incluye marca de agua y resolución reducida. No necesitás tarjeta y borrar proyectos no reinicia el cupo.",
   },
   {
     id: "variantes",
     category: "Diseños",
     q: "¿Cómo funcionan las variantes?",
-    a: "En los planes pagos, cada foto original permite crear nuevas propuestas durante la vigencia paga sin consumir otra foto, con límites de uso razonable y disponibilidad. En la versión gratuita podés seguir creando, con un máximo de 25 resultados en total para tu cuenta. Descargar de nuevo un resultado no consume cupo.",
+    a: "En los planes pagos, cada foto original permite crear nuevas propuestas durante la vigencia paga sin consumir otra foto, con límites de uso razonable y disponibilidad. La versión gratuita tiene un límite de resultados por cuenta. Descargar de nuevo un resultado no consume cupo.",
   },
   {
     id: "ambientes",

@@ -121,8 +121,11 @@ Referencias: [Suscripciones](https://www.mercadopago.com.ar/developers/es/docs/s
 
 ## Catálogo y precios
 
-- Packs: 10 y 25 fotos, sin renovación automática ni vencimiento.
-- Planes: 6, 20, 60 y 150 fotos originales por mes.
+- Packs: 10 y 25 fotos, sin renovación automática ni vencimiento (inactivos).
+- **Primera propiedad** (`pack-first`, migración `202610230001`): 5 fotos por $4.990, pago único por Checkout Pro, una compra pagada por cuenta. Las fotos vencen a los 30 días de acreditado el pago (`valid_days`).
+- Planes: 6, 20, 60 y 150 fotos originales por mes. Precios de lista desde `202610230001`: mensual $38.900 / $53.900 / $121.900 / $214.900; anual $296.900 / $351.900 / $722.900 / $1.464.900.
+- **Precio de lanzamiento** de los planes mensuales: $19.900 / $26.900 / $59.900 / $104.900 durante los primeros 3 cobros, para suscripciones creadas antes de `products.promo_ends_at`. La migración abre la ventana por 72 horas desde que se aplica. Para moverla: `update products set promo_ends_at = '2026-10-27 23:59-03' where promo_price_cents is not null;`. Para cerrarla: `promo_ends_at = now()`. La orden guarda el precio de lanzamiento en su copia; los cobros por ese importe o por el de lista se acreditan. Después del tercer pago acreditado, el webhook (y el cron diario como respaldo) cambia el importe de la suscripción en Mercado Pago al de lista con `PUT /preapproval/{id}`.
+- `PAID_IMAGE_QUALITY=medium` en Vercel genera las propuestas pagas en calidad media (≈ 3 veces más barato). Por defecto `high`; cambiarlo solo después de comparar ambas con fotos reales.
 - Tres resultados en total por foto original, sumando estilos y operaciones. Las descargas no gastan fotos.
 - Los cupos mensuales no se acumulan.
 - Prueba opcional: una foto por cuenta verificada, una sola vez, con vencimiento de 30 días.

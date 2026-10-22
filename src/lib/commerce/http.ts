@@ -88,6 +88,7 @@ export async function rpc<T>(
       ],
       FOLDER_NOT_FOUND: [404, "No encontramos esa carpeta."],
       PRODUCT_UNAVAILABLE: [409, "Este plan todavía no está disponible."],
+      PURCHASE_LIMIT: [409, "Esta promoción es una por cuenta y ya la usaste."],
       SUBSCRIPTION_EXISTS: [
         409,
         "Ya tenés una suscripción o un alta pendiente. Revisala desde Mi cuenta.",
@@ -105,7 +106,7 @@ export async function rpc<T>(
       ],
       FREE_LIMIT: [
         402,
-        "Usaste tus 25 diseños gratis. Elegí un plan para seguir creando.",
+        "Llegaste al límite de la prueba gratis. Elegí un plan para seguir creando.",
       ],
       FREE_FEATURE_LOCKED: [
         403,

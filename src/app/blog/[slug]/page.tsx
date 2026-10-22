@@ -52,7 +52,7 @@ export default async function Article({
         ))}
         <div className="article-cta">
           <h2>Probalo con una foto propia</h2>
-          <p>25 diseños gratis por cuenta. Sin tarjeta.</p>
+          <p>Probalo gratis, con marca de agua. Sin tarjeta.</p>
           <Link href="/estudio" className="button button-primary">
             Abrir el estudio
           </Link>

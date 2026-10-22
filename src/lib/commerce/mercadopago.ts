@@ -2,7 +2,7 @@ import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { adminClient } from "@/lib/supabase/server";
 import { HttpError, rpc } from "./http";
-import type { Product } from "./catalog";
+import { acceptedChargeCents, type Product } from "./catalog";
 export type Order = {
   id: string;
   user_id: string;
@@ -189,7 +189,9 @@ export function validatePayment(payment: Payment, order: Order) {
   verifySeller(payment.collector_id);
   if (
     payment.currency_id !== "ARS" ||
-    moneyCents(payment.transaction_amount) !== order.snapshot.price_cents
+    !acceptedChargeCents(order.snapshot).includes(
+      moneyCents(payment.transaction_amount),
+    )
   )
     throw new Error("PAYMENT_AMOUNT_MISMATCH");
   if (payment.live_mode !== (process.env.MERCADOPAGO_MODE === "production"))
@@ -273,7 +275,9 @@ export async function syncSubscription(id: string, paidPayment?: Payment) {
     order.provider_subscription_id !== sub.id ||
     order.snapshot.kind === "pack" ||
     a.currency_id !== "ARS" ||
-    moneyCents(a.transaction_amount) !== order.snapshot.price_cents ||
+    !acceptedChargeCents(order.snapshot).includes(
+      moneyCents(a.transaction_amount),
+    ) ||
     a.frequency_type !== "months" ||
     a.frequency !== (order.snapshot.kind === "year" ? 12 : 1)
   )
@@ -430,6 +434,16 @@ export async function syncPayment(id: string, subscriptionId?: string) {
     p_paid_at: payment.date_approved || payment.date_created,
     p_subscription: subscriptionId || null,
   });
+  // The payment is already credited: a failed switch is retried by the
+  // daily cron instead of failing this notification over and over.
+  if (
+    subscriptionId &&
+    order.snapshot.promo_price_cents &&
+    ["approved", "partially_refunded"].includes(status)
+  )
+    await endLaunchPrice(subscriptionId, order).catch(() =>
+      console.error("launch_price_not_ended", subscriptionId),
+    );
   // A full refund or a chargeback undoes the purchase: renewals must stop,
   // or a blocked account would keep being charged every month. A failure is
   // thrown so the notification is retried.
@@ -466,6 +480,48 @@ export async function authorizedInvoice(id: string) {
     const invoice = found.results.find((i) => String(i.id) === id);
     if (!invoice) throw e;
     return invoice;
+  }
+}
+/**
+ * After the launch months have been paid, the next renewals are charged at
+ * the list price kept in the order. Idempotent, so it can be retried.
+ */
+export async function endLaunchPrice(subscriptionId: string, order: Order) {
+  const { promo_months: months, price_cents: list } = order.snapshot;
+  if (!months || !list) return;
+  const paid = await adminClient()
+    .from("payments")
+    .select("id", { count: "exact", head: true })
+    .eq("order_id", order.id)
+    .not("coverage_start", "is", null);
+  if (paid.error) throw new Error("PAYMENT_LOOKUP_FAILED");
+  if ((paid.count || 0) < months) return;
+  const path = `/preapproval/${encodeURIComponent(subscriptionId)}`;
+  const sub = await mp<Subscription>(path);
+  verifySeller(sub.collector_id);
+  if (
+    sub.status === "cancelled" ||
+    moneyCents(sub.auto_recurring.transaction_amount) === list
+  )
+    return;
+  await mp(path, "PUT", {
+    auto_recurring: { transaction_amount: list / 100, currency_id: "ARS" },
+  });
+}
+/** Daily fallback for launch prices whose switch failed in the webhook. */
+export async function endLaunchPrices() {
+  const { data, error } = await adminClient()
+    .from("subscriptions")
+    .select("id,orders(*)")
+    .eq("status", "authorized")
+    .limit(200);
+  if (error) throw new Error("SUBSCRIPTION_LOOKUP_FAILED");
+  for (const row of data || []) {
+    const order = row.orders as unknown as Order | null;
+    if (!order?.snapshot.promo_price_cents) continue;
+    await endLaunchPrice(row.id, order).catch(() =>
+      console.error("launch_price_not_ended", row.id),
+    );
   }
 }
 export async function processBillingEvent(topic: string, id: string) {

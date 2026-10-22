@@ -96,7 +96,12 @@ export async function renderPhoto(
   );
   body.set("prompt", prompt);
   body.set("n", "1");
-  body.set("quality", free ? "medium" : "high");
+  // Paid proposals cost about 3x more in "high". PAID_IMAGE_QUALITY=medium
+  // lowers that once a visual test with real listings approves it.
+  body.set(
+    "quality",
+    free || process.env.PAID_IMAGE_QUALITY === "medium" ? "medium" : "high",
+  );
   body.set("size", "auto");
   body.set("output_format", "jpeg");
   body.set("output_compression", "94");

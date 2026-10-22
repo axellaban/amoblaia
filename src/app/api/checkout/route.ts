@@ -16,7 +16,7 @@ import {
   verifyCheckoutPayer,
   checkoutUrl,
 } from "@/lib/commerce/mercadopago";
-import type { Product } from "@/lib/commerce/catalog";
+import { firstChargeCents, type Product } from "@/lib/commerce/catalog";
 
 export async function POST(request: Request) {
   try {
@@ -226,7 +226,9 @@ export async function POST(request: Request) {
                 auto_recurring: {
                   frequency: snapshot.kind === "year" ? 12 : 1,
                   frequency_type: "months",
-                  transaction_amount: snapshot.price_cents! / 100,
+                  // The launch price, if the order kept one; the list price
+                  // replaces it after its first months (syncPayment).
+                  transaction_amount: firstChargeCents(snapshot) / 100,
                   currency_id: "ARS",
                 },
                 back_url: `${back}&pago=retorno`,

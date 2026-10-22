@@ -144,7 +144,7 @@ export const resources: Resource[] = [
     sections: [
       {
         title: "Fotos originales y resultados",
-        body: "Los planes se miden por fotos originales. Cada una incluye regeneraciones durante la vigencia paga y podés volver a descargar sus resultados. La versión gratuita ofrece 25 resultados en total con marca de agua.",
+        body: "Los planes se miden por fotos originales. Cada una incluye regeneraciones durante la vigencia paga y podés volver a descargar sus resultados. La versión gratuita ofrece resultados con marca de agua.",
       },
       {
         title: "Mensual o anual",
@@ -212,7 +212,7 @@ export const resources: Resource[] = [
       },
       {
         title: "Revisá el alcance antes de pagar",
-        body: "En amoblaIA podés probar 25 resultados gratuitos con marca de agua. Los planes pagos suman todos los ambientes y estilos, retiro de muebles y nuevos resultados sin marca de agua. El detalle y el cupo están en Precios.",
+        body: "En amoblaIA podés probar gratis, con marca de agua. Los planes pagos suman todos los ambientes y estilos, retiro de muebles y nuevos resultados sin marca de agua. El detalle y el cupo están en Precios.",
       },
     ],
   },
@@ -371,7 +371,7 @@ export const articles = [
       },
       {
         title: "Probá el flujo primero",
-        body: "Podés explorar los ejemplos y crear hasta 25 resultados gratuitos con marca de agua. Eso permite conocer las opciones y revisar el resultado con una foto propia antes de contratar.",
+        body: "Podés explorar los ejemplos y crear resultados gratuitos con marca de agua. Eso permite conocer las opciones y revisar el resultado con una foto propia antes de contratar.",
       },
     ],
   },

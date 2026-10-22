@@ -18,7 +18,7 @@ afterAll(async () => {
   await db?.close();
 });
 describe("Launch catalog", () => {
-  it("publishes every plan with a price and keeps packs unpublished", async () => {
+  it("publishes every plan with a price and only the first-property pack", async () => {
     const { rows } = await db.query<{
       sku: string;
       kind: string;
@@ -26,9 +26,9 @@ describe("Launch catalog", () => {
       price_cents: string;
       active: boolean;
     }>("select sku,kind,photos,price_cents,active from products");
-    expect(rows).toHaveLength(10);
+    expect(rows).toHaveLength(11);
     for (const p of rows) {
-      expect(p.active).toBe(p.kind !== "pack");
+      expect(p.active).toBe(p.kind !== "pack" || p.sku === "pack-first");
       if (p.active) expect(Number(p.price_cents)).toBeGreaterThanOrEqual(100);
     }
     const price = (sku: string) =>
@@ -44,7 +44,7 @@ describe("Launch catalog", () => {
       "select amobla_create_order($1,$2,$3)",
       [user, "00000000-0000-4000-8000-0000000000aa", "standard-month"],
     );
-    expect(JSON.stringify(order.rows[0])).toContain("2700000");
+    expect(JSON.stringify(order.rows[0])).toContain("5390000");
   });
   it("grants each plan's monthly quota without stacking renewals", async () => {
     const buyer = "00000000-0000-4000-8000-000000000004";
@@ -69,7 +69,7 @@ describe("Launch catalog", () => {
       ).rows[0].amobla_account.credits;
     const pay = (id: string) =>
       db.query(
-        "select amobla_apply_payment($1,$2,'approved',6000000,now(),'sub-pro')",
+        "select amobla_apply_payment($1,$2,'approved',12190000,now(),'sub-pro')",
         [id, order],
       );
     await pay("pay-1");
@@ -102,7 +102,7 @@ describe("Launch catalog", () => {
       [order],
     );
     await db.query(
-      "select amobla_apply_payment('pay-basic',$1,'approved',2000000,now(),'sub-basic')",
+      "select amobla_apply_payment('pay-basic',$1,'approved',3890000,now(),'sub-basic')",
       [order],
     );
     await db.query(

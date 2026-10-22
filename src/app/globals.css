@@ -7233,3 +7233,137 @@ h2 .accent {
 .checkout-result > p > svg { flex-shrink: 0; }
 .checkout-result-actions { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: 1rem; }
 @media (max-width: 600px) { .checkout-result-actions .button { width: 100%; } }
+/* Launch price and the one-per-account "Primera propiedad" pack. */
+.launch-banner {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin: 30px 0 56px;
+  padding: 22px 28px;
+  border: 1px solid #bcfd9766;
+  border-radius: 18px;
+  /* Its own navy: on phones it extends below the dark band. */
+  background: var(--forest-light);
+  color: #fff;
+}
+.launch-banner > svg {
+  color: var(--clay);
+}
+.launch-banner h2 {
+  margin: 0 0 6px;
+  font-size: 22px;
+}
+.launch-banner p {
+  color: #c6cbdf;
+  font-size: 15px;
+}
+.launch-banner a {
+  color: var(--clay);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.launch-countdown {
+  margin-left: auto;
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: #00000033;
+  color: var(--clay);
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.price-was {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  color: var(--subtle);
+  font-size: 15px;
+}
+.price-was s {
+  text-decoration-thickness: 2px;
+}
+.price-was em {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--clay);
+  color: var(--ink);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 700;
+}
+.price-card.featured .price-was em {
+  background: var(--ink);
+  color: #fff;
+}
+.launch-terms {
+  max-width: 900px;
+  margin: 20px 0 0;
+  color: var(--subtle);
+  font-size: 13px;
+}
+.first-pack {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 26px;
+  margin: 40px 0 0;
+  padding: 26px 30px;
+  border: 2px solid var(--terracotta);
+  border-radius: 24px;
+  background: #f4f7ff;
+}
+.first-pack > svg {
+  color: var(--terracotta);
+}
+.first-pack .eyebrow {
+  margin-bottom: 8px;
+  color: var(--terracotta);
+}
+.first-pack h2 {
+  margin-bottom: 6px;
+  font-size: 26px;
+}
+.first-pack p {
+  max-width: 560px;
+  color: var(--muted);
+}
+.first-pack-buy {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+}
+.first-pack-buy strong {
+  font-size: 30px;
+  font-weight: 750;
+}
+.first-pack-buy small {
+  color: var(--subtle);
+}
+.first-pack-buy .button {
+  min-width: 180px;
+  margin-top: 10px;
+  border-radius: 12px;
+}
+.first-pack + .trial-banner {
+  margin: 30px 0 0;
+}
+@media (max-width: 700px) {
+  .launch-banner {
+    flex-wrap: wrap;
+    padding: 20px;
+    gap: 14px;
+  }
+  .launch-countdown {
+    margin-left: 0;
+  }
+  .first-pack {
+    grid-template-columns: 1fr;
+    gap: 14px;
+    padding: 22px 20px;
+  }
+  .first-pack-buy {
+    justify-items: stretch;
+  }
+}
