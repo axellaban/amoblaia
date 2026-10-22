@@ -430,28 +430,16 @@ export function PricingPlans({
                       : selectedProduct.kind === "month"
                         ? "por mes"
                         : "por única vez"}
+                    {selectedProduct.kind !== "pack" && " · Renovación automática"}
                   </p>
                   <p>
                     {selectedProduct.photos} fotos originales por mes ·
                     Regeneraciones incluidas
                   </p>
-                  <small>
-                    Renovación automática. Podés cancelar futuras renovaciones
-                    desde Mi cuenta.
-                  </small>
                 </div>
               )}
               {cardCheckout && selectedProduct ? (
                 <>
-                  <p>
-                    Pagá con tarjeta de crédito o débito. Los datos de la
-                    tarjeta los procesa Mercado Pago; no necesitás una cuenta de
-                    Mercado Pago.
-                  </p>
-                  <p className="field-hint">
-                    Confirmá el email para la suscripción. Puede ser distinto al
-                    que usás para entrar a amoblaIA. Después cargás tu tarjeta.
-                  </p>
                   <form
                     onSubmit={(e) => {
                       e.preventDefault();
@@ -496,13 +484,6 @@ export function PricingPlans({
                       </button>
                     )}
                   </form>
-                  {currentSku && (
-                    <p className="field-hint">
-                      El nuevo plan se activa en el momento. Cancelamos la
-                      renovación de tu plan actual y conservás sus fotos hasta
-                      su vencimiento.
-                    </p>
-                  )}
                   {error && (
                     <p className="inline-error" role="alert">
                       {error}
@@ -520,10 +501,6 @@ export function PricingPlans({
                 </>
               ) : (
                 <>
-                  <p>
-                    Usá el email con el que vas a pagar en Mercado Pago. Puede
-                    ser distinto al que usás para entrar a amoblaIA.
-                  </p>
                   <form
                     onSubmit={(e) => {
                       e.preventDefault();
@@ -544,10 +521,6 @@ export function PricingPlans({
                       onChange={(e) => setPayerEmail(e.target.value)}
                       placeholder="tu-email@ejemplo.com"
                     />
-                    <p className="field-hint">
-                      Al abrir Mercado Pago, ingresá con esa misma cuenta. Así
-                      evitás el error de emails diferentes.
-                    </p>
                     {error && (
                       <p className="inline-error" role="alert">
                         {error}
