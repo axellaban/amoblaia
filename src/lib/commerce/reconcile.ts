@@ -60,7 +60,7 @@ export async function reconcileCheckout(
           payment?: { id: string | number };
         }[];
       }>(
-        `/authorized_payments/search?preapproval_id=${encodeURIComponent(sub.id)}&limit=100`,
+        `/authorized_payments/search?preapproval_id=${encodeURIComponent(sub.id)}&limit=20`,
       );
       const ids = [
         ...new Set(
@@ -86,9 +86,13 @@ export async function reconcileCheckout(
         .slice(0, 5))
         await syncPayment(String(payment.id));
     }
-  } catch {
+  } catch (error) {
     uncertain = true;
-    console.error("checkout_reconciliation_deferred", order.id);
+    console.error(
+      "checkout_reconciliation_deferred",
+      order.id,
+      error instanceof Error ? error.message.slice(0, 80) : "UNKNOWN",
+    );
   }
   const [fresh, payments] = await Promise.all([
     db.from("orders").select("status,checkout_url").eq("id", order.id).single(),
