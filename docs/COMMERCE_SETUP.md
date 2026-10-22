@@ -73,6 +73,8 @@ Referencias: [SMTP](https://supabase.com/docs/guides/auth/auth-smtp), [CAPTCHA](
 
 ## Mercado Pago
 
+**Corrección del 22/10/2026:** las suscripciones con tarjeta usan el email ingresado en Card Payment Brick, visible y editable. No se reemplaza por el email de Google ni por `MERCADOPAGO_TEST_PAYER_EMAIL`. En modo prueba, ingresar en el formulario el email exacto del comprador de prueba de Argentina. `guest_site_mismatch` indica una incompatibilidad de sitio/país del pagador; verificar que la aplicación, las credenciales y el comprador correspondan a Argentina. El formulario permite corregir el email, pero no modifica el país de una cuenta de Mercado Pago existente. Referencia: [contrato de Card Payment Brick](https://github.com/mercadopago/sdk-js/blob/main/docs/bricks/card-payment.md).
+
 Aplicación indicada por el titular: `4931907475590636`, creada como **Checkout Pro**. El backend usa Checkout Pro para packs y la API de Suscripciones para mensual/anual; no maneja números de tarjeta. La configuración y homologación del proveedor sigue pendiente: el panel solicitó verificación de la cuenta antes de abrir Webhooks. No se habilitaron ventas ni se efectuaron pagos.
 
 El modo de prueba solo permite iniciar checkouts al administrador: los botones de compra en `/precios` aparecen únicamente para los emails de `ADMIN_EMAILS` y siguen ocultos para el público. No habilitar pruebas financieras abiertas a clientes. La variable `MERCADOPAGO_MODE=production` y los demás controles comerciales deben estar completos antes de vender.

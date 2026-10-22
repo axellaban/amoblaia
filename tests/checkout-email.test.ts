@@ -191,7 +191,10 @@ describe("Mercado Pago payer identity", () => {
     ).toBe(false);
   });
 });
-const cardRequest = (cardToken: unknown) =>
+const cardRequest = (
+  cardToken: unknown,
+  payerEmail: unknown = "payer-argentina@example.com",
+) =>
   new Request("https://amobla.example/api/checkout", {
     method: "POST",
     headers: {
@@ -202,10 +205,11 @@ const cardRequest = (cardToken: unknown) =>
       sku: "basic-month",
       key: "00000000-0000-4000-8000-000000000002",
       cardToken,
+      payerEmail,
     }),
   });
 describe("Card subscriptions", () => {
-  it("creates an authorized subscription with the account email, no Mercado Pago login", async () => {
+  it("uses the Brick payer email instead of the Google email for the authorized subscription", async () => {
     const r = await POST(cardRequest("a1b2c3d4e5f60718293a4b5c6d7e8f90"));
     expect(r.status).toBe(200);
     expect(await r.json()).toEqual({ subscribed: true, changed: false });
@@ -216,7 +220,7 @@ describe("Card subscriptions", () => {
         body: expect.objectContaining({
           status: "authorized",
           card_token_id: "a1b2c3d4e5f60718293a4b5c6d7e8f90",
-          payer_email: "google@example.com",
+          payer_email: "payer-argentina@example.com",
           auto_recurring: expect.objectContaining({
             transaction_amount: 20000,
             currency_id: "ARS",
@@ -229,6 +233,63 @@ describe("Card subscriptions", () => {
       data: expect.objectContaining({ id: "new-sub", status: "authorized" }),
     });
   });
+  it("normalizes the email from the card form", async () => {
+    const r = await POST(
+      cardRequest("a1b2c3d4e5f60718293a4b5c6d7e8f90", "  PAYER-AR@example.com  "),
+    );
+    expect(r.status).toBe(200);
+    expect(state.calls).toContainEqual(
+      expect.objectContaining({
+        path: "/preapproval",
+        method: "POST",
+        body: expect.objectContaining({ payer_email: "payer-ar@example.com" }),
+      }),
+    );
+  });
+  it.each([
+    undefined,
+    "",
+    "not-an-email",
+    ["payer@example.com"],
+    "x".repeat(255) + "@example.com",
+  ])(
+    "rejects missing or invalid card payer emails without substituting the Google identity: %s",
+    async (payerEmail) => {
+      // JSON omits undefined; do not let the request helper supply its default.
+      const r = new Request("https://amobla.example/api/checkout", {
+        method: "POST",
+        headers: {
+          Origin: "https://amobla.example",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          sku: "basic-month",
+          key: "00000000-0000-4000-8000-000000000002",
+          cardToken: "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+          payerEmail,
+        }),
+      });
+      expect((await POST(r)).status).toBe(400);
+      expect(state.calls).toEqual([]);
+    },
+  );
+  it("does not replace the card form email with a server test payer", async () => {
+    vi.stubEnv("MERCADOPAGO_MODE", "test");
+    vi.stubEnv("ADMIN_EMAILS", "google@example.com");
+    vi.stubEnv("MERCADOPAGO_TEST_PAYER_EMAIL", "other-country@example.com");
+    expect(
+      (await POST(cardRequest("a1b2c3d4e5f60718293a4b5c6d7e8f90"))).status,
+    ).toBe(200);
+    expect(state.calls).toContainEqual(
+      expect.objectContaining({
+        path: "/preapproval",
+        method: "POST",
+        body: expect.objectContaining({
+          payer_email: "payer-argentina@example.com",
+        }),
+      }),
+    );
+  });
   it("closes the order and asks for another card when Mercado Pago declines it", async () => {
     state.fail = "MERCADOPAGO_400";
     const r = await POST(cardRequest("a1b2c3d4e5f60718293a4b5c6d7e8f90"));
@@ -238,7 +299,7 @@ describe("Card subscriptions", () => {
       data: { status: "checkout_failed" },
     });
   });
-  it("explains a test card used against live credentials, with the detail for admins", async () => {
+  it("explains test/live incompatibility without exposing technical details to admins", async () => {
     state.fail = "MERCADOPAGO_400";
     state.reason =
       '{"message":"Both payer and collector must be real or test users"}';
@@ -248,7 +309,26 @@ describe("Card subscriptions", () => {
     expect(error).toContain(
       "las tarjetas de prueba solo funcionan en modo prueba",
     );
-    expect(error).toContain("Detalle para el equipo");
+    expect(error).not.toContain("Detalle para el equipo");
+    expect(error).not.toContain(state.reason);
+  });
+  it("explains guest_site_mismatch as a payer country error and allows retrying the closed order", async () => {
+    state.fail = "MERCADOPAGO_400";
+    state.reason =
+      '{"message":"Payer is associated with a different site","code":"guest_site_mismatch","status":400}';
+    vi.stubEnv("ADMIN_EMAILS", "google@example.com");
+    const r = await POST(cardRequest("a1b2c3d4e5f60718293a4b5c6d7e8f90"));
+    expect(r.status).toBe(402);
+    const { error } = await r.json();
+    expect(error).toContain("email del pagador");
+    expect(error).toContain("Mercado Pago Argentina");
+    expect(error).not.toContain("no aprobó la tarjeta");
+    expect(error).not.toContain("guest_site_mismatch");
+    expect(error).not.toContain("Detalle para el equipo");
+    expect(state.calls).toContainEqual({
+      table: "orders",
+      data: { status: "checkout_failed" },
+    });
   });
   it("never shows Mercado Pago's raw answer to a regular buyer", async () => {
     state.fail = "MERCADOPAGO_400";
@@ -289,7 +369,7 @@ describe("Card subscriptions", () => {
         JSON.stringify(c) ===
         JSON.stringify({
           table: "orders",
-          data: { payer_email: "google@example.com" },
+          data: { payer_email: "payer-argentina@example.com" },
         }),
     );
     const created = state.calls.findIndex(

@@ -3,7 +3,7 @@ import { useEffect, useId, useRef, useState } from "react";
 
 // Mercado Pago's Card Payment Brick: card fields hosted by Mercado Pago, so
 // card numbers never reach amoblaIA. It only hands us a single-use token.
-type CardData = { token: string };
+type CardData = { token: string; payer: { email: string } };
 type Controller = { unmount(): void };
 type MercadoPagoSdk = new (
   key: string,
@@ -43,13 +43,11 @@ function loadSdk() {
 }
 export function CardBrick({
   amount,
-  email,
   onToken,
 }: {
   amount: number;
-  email?: string;
   /** Resolves when the subscription was created; rejects to let the buyer retry. */
-  onToken: (token: string) => Promise<void>;
+  onToken: (token: string, payerEmail: string) => Promise<void>;
 }) {
   const container = `card-brick-${useId().replace(/:/g, "")}`;
   const submit = useRef(onToken);
@@ -67,20 +65,25 @@ export function CardBrick({
         controller = await mp.bricks().create("cardPayment", container, {
           initialization: {
             amount,
-            ...(email ? { payer: { email } } : {}),
+            // Supplying the Google email here hides the Brick's email field.
+            // Keep it editable: the payer may use another email or MP country.
           },
           customization: {
             paymentMethods: { maxInstallments: 1 },
             visual: {
               hideFormTitle: true,
               style: { customVariables: { baseColor: "#2e5fcb" } },
-              texts: { formSubmit: "Suscribirme" },
+              texts: {
+                formSubmit: "Suscribirme",
+                email: { label: "Email para el pago" },
+              },
             },
           },
           callbacks: {
             onReady: () => active && setState("ready"),
             onError: () => undefined,
-            onSubmit: (data: CardData) => submit.current(data.token),
+            onSubmit: (data: CardData) =>
+              submit.current(data.token, data.payer.email),
           },
         });
         if (!active) controller.unmount();
@@ -90,7 +93,7 @@ export function CardBrick({
       active = false;
       controller?.unmount();
     };
-  }, [amount, email, container]);
+  }, [amount, container]);
   return (
     <div className="card-brick">
       {state === "loading" && (

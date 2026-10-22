@@ -55,23 +55,20 @@ export async function POST(request: Request) {
         "Tu cuenta necesita una revisión antes de realizar otra compra.",
       );
     const db = adminClient();
-    // A card tokenized on our page needs no Mercado Pago login, so the
-    // subscription uses the account email and nobody has to match emails.
+    // Card token and payer email come from the same Mercado Pago form.
+    // Google identifies the owner of our order, not the payer's MP account.
     const card =
       typeof cardToken === "string" && /^[A-Za-z0-9_-]{16,128}$/.test(cardToken)
         ? cardToken
         : null;
     if (cardToken !== undefined && !card)
       throw new HttpError(400, "Revisá los datos de la tarjeta.");
-    const email = card
-      ? (process.env.MERCADOPAGO_MODE !== "production" &&
-          process.env.MERCADOPAGO_TEST_PAYER_EMAIL) ||
-        (user.email || "").toLowerCase()
-      : typeof payerEmail === "string"
+    const email =
+      typeof payerEmail === "string"
         ? payerEmail.trim().toLowerCase()
         : // Checkout Pro takes any account; a redirect subscription must not
           // silently use the sign-in email, since Mercado Pago binds it.
-          sku.startsWith("pack-")
+          !card && sku.startsWith("pack-")
           ? (user.email || "").toLowerCase()
           : "";
     if (
@@ -298,15 +295,12 @@ export async function POST(request: Request) {
         .eq("id", key);
       if (refused) {
         const reason = e instanceof MercadoPagoError ? e.reason : "";
-        // Admins also see Mercado Pago's own words, to diagnose without logs.
+        // Technical details stay in server logs, including for admins.
         throw new HttpError(
           402,
-          (card
+          card
             ? cardRefusalMessage(reason)
-            : "Mercado Pago rechazó el pedido. Revisá el email e intentá de nuevo.") +
-            (isAdmin(user.email) && reason
-              ? ` (Detalle para el equipo: ${reason.slice(0, 200)})`
-              : ""),
+            : "Mercado Pago rechazó el pedido. Revisá el email e intentá de nuevo.",
         );
       }
       throw e;

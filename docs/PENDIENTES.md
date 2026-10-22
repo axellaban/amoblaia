@@ -4,6 +4,16 @@ Se detiene el trabajo a pedido del usuario para conservar créditos. Los cambios
 
 Producción: https://amoblaia.vercel.app/
 
+## Corrección de checkout — 22 de octubre de 2026
+
+- El error reportado `guest_site_mismatch` identifica una incompatibilidad entre el sitio/país del pagador y el del cobro. El mensaje anterior lo presentaba como tarjeta rechazada.
+- Card Payment Brick recibía el email de Google en `initialization.payer.email`, lo que oculta su campo de email. Además, la app descartaba `payer.email` de `onSubmit` y el backend lo reemplazaba por el email de Google (o un email de prueba configurado). Se corrigieron ambos extremos: el email queda visible y editable en el Brick y se transmite con el token de la tarjeta hasta `/preapproval`, validado y normalizado en el servidor. El usuario autenticado sigue siendo el dueño de la orden; el email de pago no cambia su cuenta.
+- Si Mercado Pago vuelve a informar incompatibilidad de país, el mensaje indica corregir el email por uno de Mercado Pago Argentina. El detalle técnico queda en los logs del servidor y no se incluye en el checkout, tampoco para administradores. La orden rechazada se cierra para permitir otro intento.
+- La clave pública publicada devuelve los tipos de documento argentinos (DNI, Cédula, L.C., L.E. y Otro) en la API de Mercado Pago. La lectura de credenciales privadas en Vercel exige una verificación adicional; no se modificaron ni se copiaron. Esto no certifica la aprobación de una tarjeta o una cuenta pagadora concreta.
+- Verificación de la corrección: 156 tests en 26 archivos aprobados, TypeScript, ESLint y build correctos. El SDK real mostró el campo de email editable en una vista local del mismo componente de checkout; verificado en escritorio y móvil de 390 px, sin desbordamiento horizontal. Los cobros del entorno local permanecieron deshabilitados y no se enviaron tarjetas. Evidencia en `outputs/verificacion/checkout-email-editable-{desktop,mobile}.png`, fuera del repositorio. La vista temporal de QA se eliminó antes del commit.
+- Falta completar la compra controlada con un comprador de Argentina distinto del vendedor y comprobar su acreditación. No se efectuaron cargos durante esta corrección. Si el propio email del comprador está asociado a otro país, ese vínculo debe resolverse con Mercado Pago o usando su email de Argentina; la app no puede cambiarlo.
+- Referencia del contrato del Brick: https://github.com/mercadopago/sdk-js/blob/main/docs/bricks/card-payment.md (`initialization.payer.email` y `CardData.payer.email`).
+
 ## Actualización 21 de octubre de 2026 (rama `claude/gracious-volta-oavmeb`)
 
 - **Crédito de OpenAI agotado** durante la generación de ejemplos (`credit_balance_exhausted`). Si es la misma clave que usa producción, la generación de imágenes de los clientes también falla hasta recargar crédito.

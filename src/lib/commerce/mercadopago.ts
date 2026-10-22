@@ -108,11 +108,17 @@ export class MercadoPagoError extends Error {
 }
 /** Buyer-facing explanation of why Mercado Pago refused a card subscription. */
 export function cardRefusalMessage(reason: string) {
+  if (
+    /guest_site_mismatch|associated with a different site|different countries/i.test(
+      reason,
+    )
+  )
+    return "El email del pagador está asociado a Mercado Pago de otro país. Ingresá un email de Mercado Pago Argentina en el formulario y volvé a intentarlo.";
   if (/real or test users|test user|live mode|livemode/i.test(reason))
     return "Esta tarjeta no corresponde al modo de cobro: las tarjetas de prueba solo funcionan en modo prueba y las reales en modo real.";
   if (/card_token|card token|token/i.test(reason))
     return "Los datos de la tarjeta vencieron. Volvé a cargarlos e intentá de nuevo.";
-  if (/different countries|country/i.test(reason))
+  if (/country/i.test(reason))
     return "Mercado Pago no acepta esta tarjeta para cobros en Argentina. Probá con otra.";
   if (/amount|transaction_amount/i.test(reason))
     return "Mercado Pago no aceptó el importe de este plan. Escribinos desde Soporte.";

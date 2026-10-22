@@ -63,7 +63,7 @@ export function PricingPlans({
   products: Product[];
   enabled: boolean;
   trial: boolean;
-  /** Signed-in email, used as the subscriber email for card payments. */
+  /** Signed-in email, used to require sign-in before opening checkout. */
   email?: string;
   /** The plan the user is subscribed to, if any. */
   currentSku?: string;
@@ -160,9 +160,12 @@ export function PricingPlans({
       setBusy("");
     }
   }
-  // Subscriptions paid with a card on this page: no Mercado Pago login, so
-  // the buyer's Mercado Pago email does not matter.
-  async function subscribeWithCard(sku: string, cardToken: string) {
+  // Keep the payer email submitted by the Brick alongside its card token.
+  async function subscribeWithCard(
+    sku: string,
+    cardToken: string,
+    cardPayerEmail: string,
+  ) {
     setBusy(sku);
     setError("");
     try {
@@ -170,7 +173,12 @@ export function PricingPlans({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         // A card token is single-use, so every attempt is a new order.
-        body: JSON.stringify({ sku, key: crypto.randomUUID(), cardToken }),
+        body: JSON.stringify({
+          sku,
+          key: crypto.randomUUID(),
+          cardToken,
+          payerEmail: cardPayerEmail,
+        }),
       });
       if (response.status === 401) {
         // Say it plainly before leaving: the card was not charged.
@@ -339,7 +347,7 @@ export function PricingPlans({
           </div>
         )}
         <div className="pricing-grid commercial-plans">{offers.map(card)}</div>
-        {error && (
+        {error && !selectedSku && (
           <p className="inline-error" role="alert">
             {error}
           </p>
@@ -402,6 +410,11 @@ export function PricingPlans({
                     tarjeta los procesa Mercado Pago; no necesitás una cuenta de
                     Mercado Pago.
                   </p>
+                  <p className="field-hint">
+                    El email para el pago puede ser distinto al que usás para
+                    entrar a amoblaIA. Si ya está asociado a Mercado Pago, debe
+                    corresponder a una cuenta de Argentina.
+                  </p>
                   {currentSku && (
                     <p className="field-hint">
                       El nuevo plan se activa en el momento. Cancelamos la
@@ -416,8 +429,9 @@ export function PricingPlans({
                   )}
                   <CardBrick
                     amount={(selectedProduct.price_cents || 0) / 100}
-                    email={email}
-                    onToken={(token) => subscribeWithCard(selectedSku, token)}
+                    onToken={(token, cardPayerEmail) =>
+                      subscribeWithCard(selectedSku, token, cardPayerEmail)
+                    }
                   />
                 </>
               ) : (
