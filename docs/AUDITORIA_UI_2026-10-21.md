@@ -23,7 +23,7 @@ Alcance: todas las páginas públicas, el estudio (vacío, con foto, ejemplo, re
 | --- | --- | --- |
 | Estudio, pestaña activa «Nuevo diseño» | Texto casi negro sobre azul marino: `.studio-tabs .selected` perdía contra `.studio-tabs > button.selected` | 1:1 → 17:1 |
 | Menú móvil/tablet en Mis fotos, Mi cuenta y Administración | Cabecera blanca con links blancos; «Precios» en lima sobre blanco | 1:1 → 17:1 |
-| Precios, plan destacado | «por mes» gris claro sobre verde lima | 1,6:1 → 4,5:1 |
+| Precios, plan destacado | «por mes» gris claro sobre verde lima | 1,6:1 → 5:1 |
 | Estudio, cabecera | Ruta «Estudio de diseño» y etiqueta superior grises sobre azul marino | 2,5:1 y 3,5:1 → 17:1 y 14:1 |
 | Botones deshabilitados («Disponible pronto», «Generar mi diseño» sin foto) | Azul lavado con texto blanco | 2,4:1 → 5:1 |
 | Herramientas pagas bloqueadas (Mejorar foto, Día a atardecer) | Texto al 45 % de opacidad | 1,7:1 → 5,1:1 |

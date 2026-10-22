@@ -4116,6 +4116,10 @@ fieldset {
   color: inherit;
   opacity: 0.65;
 }
+/* Faded gray on lime fell to 2.5:1; faded ink, like the other plans, is 5:1. */
+.commercial-plans .price-card.featured .price > span {
+  color: inherit;
+}
 .commercial-plans .annual-hint {
   display: inline-block;
   white-space: nowrap;
