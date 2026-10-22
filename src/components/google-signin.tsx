@@ -168,7 +168,7 @@ export function GoogleSignIn({ next }: { next: string | null }) {
           el navegador»).
         </p>
       )}
-      <div ref={ref} />
+      <div ref={ref} className="google-button-slot" />
       {!ready && !error && !slow && (
         <p role="status">Cargando acceso con Google…</p>
       )}

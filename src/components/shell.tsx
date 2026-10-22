@@ -78,13 +78,26 @@ export function Header() {
           >
             {privatePage ? "Mi cuenta" : "Blog"}
           </Link>
-          <Link
-            className="mobile-account-nav"
-            href="/cuenta"
-            onClick={() => setOpen(false)}
-          >
-            Mi cuenta
-          </Link>
+          {/* The header buttons are hidden on small screens; private pages
+              already list "Mi cuenta" above. */}
+          {!privatePage && (
+            <div className="mobile-nav-actions">
+              <Link
+                href="/acceso"
+                className="button button-outline"
+                onClick={() => setOpen(false)}
+              >
+                Entrar
+              </Link>
+              <Link
+                href="/acceso"
+                className="button button-primary"
+                onClick={() => setOpen(false)}
+              >
+                Crear cuenta
+              </Link>
+            </div>
+          )}
         </nav>
         <div className="nav-actions">
           {privatePage ? (

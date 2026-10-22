@@ -8,6 +8,8 @@
   --terracotta-dark: #2a55b6;
   --sand: #edf1f8;
   --muted: #5c6170;
+  /* Secondary text: at least 4.5:1 on white, --sand and the lime card. */
+  --subtle: #646a7c;
   --line: #e3e5ed;
   --paper: #ffffff;
   --font-sans: var(--font-outfit), Arial, sans-serif;
@@ -38,6 +40,16 @@ input,
 textarea,
 select {
   font: inherit;
+}
+/* Browser defaults (#757575, or faded in Firefox) fall below 4.5:1 on tinted fields. */
+::placeholder {
+  color: var(--subtle);
+  opacity: 1;
+}
+input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--terracotta);
 }
 button,
 a,
@@ -161,10 +173,10 @@ fieldset {
 .button-outline {
   background: transparent;
   color: var(--ink);
-  border: 1px solid #dbd9d6;
+  border: 1px solid #d8d9dd;
 }
 .button-outline:hover {
-  background: #f0ede9;
+  background: #ecedf3;
 }
 .button-large {
   min-height: 54px;
@@ -175,6 +187,14 @@ fieldset {
   min-height: 40px;
   font-size: 14.5px;
   padding: 10px 17px;
+}
+/* A faded blue button with white text reads as broken (2.4:1); a neutral
+   fill keeps the label legible while clearly not actionable. */
+.button:disabled {
+  opacity: 1;
+  background: #e4e7f0;
+  color: var(--muted);
+  box-shadow: none;
 }
 .icon-button {
   display: inline-flex;
@@ -276,7 +296,7 @@ fieldset {
   align-items: center;
   gap: 29px;
   font-size: 14px;
-  color: #dfd9d3;
+  color: #d7dae4;
 }
 .nav-links a {
   padding: 10px 0;
@@ -312,7 +332,7 @@ fieldset {
   background: #eeb1990d;
   border: 1px solid #eeb19924;
   border-radius: 30px;
-  color: #d5c8bf;
+  color: #c4cadc;
   font-size: 11px;
   font-weight: 450;
   letter-spacing: 0.1em;
@@ -329,7 +349,7 @@ fieldset {
 }
 .hero-copy > p {
   font-size: 15px;
-  color: #cac3bc;
+  color: #c0c4d0;
   line-height: 1.8;
   margin-bottom: 28px;
   font-weight: 350;
@@ -339,7 +359,7 @@ fieldset {
   align-items: center;
   gap: 7px;
   font-size: 12px;
-  color: #cac2b8;
+  color: #bec3d2;
   margin-top: 13px;
 }
 .hero-micro svg {
@@ -361,7 +381,7 @@ fieldset {
   position: relative;
   aspect-ratio: 1.34;
   overflow: hidden;
-  background: #e2dfdb;
+  background: #dedfe5;
   border-radius: 12px;
   isolation: isolate;
 }
@@ -385,7 +405,7 @@ fieldset {
   font-size: 12px;
   font-weight: 500;
   padding: 5px 11px;
-  background: #fffaf4eb;
+  background: #f8fbffeb;
   color: #22342c;
   border-radius: 4px;
   box-shadow: 0 2px 10px #0000000a;
@@ -398,7 +418,7 @@ fieldset {
   right: 15px;
 }
 .after-label span {
-  color: #645f5b;
+  color: var(--muted);
   font-size: 11px;
   margin-left: 3px;
 }
@@ -477,7 +497,7 @@ fieldset {
   padding: 10px 14px 10px 18px;
   border: 0;
   border-radius: 12px;
-  background: #fbf7f1;
+  background: #f5f7ff;
   color: var(--ink);
   font: inherit;
   font-size: 15px;
@@ -562,7 +582,7 @@ fieldset {
 .section-header > p {
   font-size: 14.5px;
   line-height: 1.8;
-  color: #7e776f;
+  color: var(--subtle);
 }
 .section-header .text-link {
   margin-top: 18px;
@@ -604,7 +624,7 @@ fieldset {
 }
 .gallery-card-caption > div > span {
   font-size: 11.5px;
-  color: #928c85;
+  color: var(--subtle);
 }
 .gallery-card-caption h3,
 .gallery-card-caption h2 {
@@ -617,11 +637,11 @@ fieldset {
   gap: 10px;
   align-items: center;
   font-size: 12px;
-  color: #898279;
+  color: var(--subtle);
 }
 .gallery-disclaimer {
   font-size: 12px;
-  color: #847d75;
+  color: var(--subtle);
   margin-top: 22px;
   line-height: 1.6;
 }
@@ -633,7 +653,7 @@ fieldset {
 }
 .center-heading > p {
   font-size: 14.5px;
-  color: #7a746d;
+  color: var(--subtle);
   margin-top: 18px;
 }
 
@@ -647,7 +667,7 @@ fieldset {
 }
 .faq-layout > div > p {
   font-size: 14.5px;
-  color: #7b746d;
+  color: var(--subtle);
   margin-top: 23px;
   line-height: 1.8;
 }
@@ -679,7 +699,7 @@ fieldset {
 }
 .faq-item p {
   font-size: 14px;
-  color: #7d766e;
+  color: var(--subtle);
   line-height: 1.9;
   padding: 0 35px 21px 0;
 }
@@ -721,7 +741,7 @@ fieldset {
   margin-bottom: 32px;
 }
 .cta-section h2 > span {
-  color: #fbe3d6;
+  color: #dee8ff;
 }
 .cta-section p {
   font-size: 14px;
@@ -824,7 +844,7 @@ fieldset {
   margin-top: 56px;
   padding-top: 26px;
   border-top: 1px solid #ffffff14;
-  color: #e6ddd3;
+  color: #d9deee;
   font-size: 15px;
 }
 .highlights span,
@@ -868,7 +888,7 @@ fieldset {
   left: 16px;
   padding: 6px 12px;
   border-radius: 20px;
-  background: #fbf7f1;
+  background: #f5f7ff;
   font-size: 13px;
   font-weight: 700;
 }
@@ -884,14 +904,14 @@ fieldset {
 .showcase-tabs button {
   padding: 8px 14px;
   border-radius: 20px;
-  background: #1f1c19b3;
+  background: #1b1c21b3;
   color: #fff;
   font-size: 13px;
   font-weight: 650;
   backdrop-filter: blur(6px);
 }
 .showcase-tabs button.selected {
-  background: #fbf7f1;
+  background: #f5f7ff;
   color: var(--ink);
 }
 .showcase-thumbs {
@@ -964,7 +984,7 @@ fieldset {
 .simple-block small {
   display: block;
   margin-top: 12px;
-  color: #c9c0b6;
+  color: #bcc1d1;
 }
 .simple-block .eyebrow {
   color: var(--clay);
@@ -988,7 +1008,7 @@ fieldset {
   margin-bottom: 8px;
 }
 .simple-cards p {
-  color: #c9c0b6;
+  color: #bcc1d1;
 }
 .step-cards {
   display: grid;
@@ -1148,11 +1168,11 @@ fieldset {
   align-items: center;
   gap: 10px;
   font-size: 12px;
-  color: #938c85;
+  color: var(--subtle);
   margin-bottom: 25px;
 }
 .studio-breadcrumb > span {
-  color: #5d5853;
+  color: var(--muted);
 }
 .studio-heading {
   display: flex;
@@ -1163,7 +1183,7 @@ fieldset {
 }
 .studio-heading .eyebrow {
   font-size: 11px;
-  color: #75706c;
+  color: var(--subtle);
   margin-bottom: 10px;
 }
 .studio-heading h1 {
@@ -1176,7 +1196,7 @@ fieldset {
 }
 .studio-heading p {
   font-size: 14px;
-  color: #847e75;
+  color: var(--subtle);
   margin-top: 8px;
 }
 .mobile-break {
@@ -1186,11 +1206,11 @@ fieldset {
   display: flex;
   align-items: center;
   gap: 7px;
-  border: 1px solid #ddd8d3;
+  border: 1px solid #d6d9e1;
   border-radius: 30px;
-  background: #edeae6;
+  background: #e9eaf0;
   padding: 6px 12px;
-  color: #5d534a;
+  color: var(--muted);
   white-space: nowrap;
   font-size: 12px;
 }
@@ -1208,7 +1228,7 @@ fieldset {
   display: flex;
   gap: 26px;
   align-items: center;
-  border-bottom: 1px solid #e2dfdb;
+  border-bottom: 1px solid #dedfe5;
   margin-bottom: 27px;
 }
 .studio-tabs > button {
@@ -1217,7 +1237,7 @@ fieldset {
   gap: 8px;
   padding: 13px 0 14px;
   background: none;
-  color: #958f88;
+  color: var(--subtle);
   font-size: 14px;
   border-bottom: 2px solid transparent;
   position: relative;
@@ -1229,17 +1249,17 @@ fieldset {
 }
 .studio-tabs > button > span {
   font-size: 11px;
-  background: #e7e4e1;
+  background: #e3e4e9;
   border-radius: 4px;
   padding: 0 5px;
-  color: #605954;
+  color: var(--muted);
 }
 .local-label {
   margin-left: auto;
   display: flex;
   align-items: center;
   gap: 6px;
-  color: #86817c;
+  color: var(--subtle);
   font-size: 11.5px;
 }
 .workspace {
@@ -1250,7 +1270,7 @@ fieldset {
 }
 .studio-canvas {
   background: white;
-  border: 1px solid #e3dfdb;
+  border: 1px solid #dde0e6;
   border-radius: 10px;
   padding: 22px;
   min-width: 0;
@@ -1273,8 +1293,8 @@ fieldset {
 .section-number {
   display: grid;
   place-items: center;
-  border: 1px solid #e5e2de;
-  color: #7b716a;
+  border: 1px solid #e1e2e8;
+  color: var(--subtle);
   font-size: 11px;
   border-radius: 5px;
   width: 22px;
@@ -1287,7 +1307,7 @@ fieldset {
   gap: 6px;
   background: none;
   font-size: 11.5px;
-  color: #76706b;
+  color: var(--subtle);
   min-height: 34px;
 }
 .dropzone {
@@ -1297,17 +1317,17 @@ fieldset {
   align-items: center;
   text-align: center;
   min-height: 343px;
-  border: 1px dashed #c6bfba;
+  border: 1px dashed #bdc0ca;
   border-radius: 7px;
-  background: radial-gradient(ellipse at 50% 35%, #f0ede960, transparent 70%);
+  background: radial-gradient(ellipse at 50% 35%, #ecedf360, transparent 70%);
   transition:
     background 0.2s,
     border-color 0.2s;
   padding: 30px 15px;
 }
 .dropzone.dragging {
-  border-color: #917865;
-  background: #f1e7db;
+  border-color: #707ca1;
+  background: #e2e8fb;
 }
 .upload-illustration {
   position: relative;
@@ -1321,9 +1341,9 @@ fieldset {
   position: absolute;
   inset: 5px 10px 10px;
   background: #fff;
-  border: 1px solid #c7beb7;
+  border: 1px solid #bbbfcd;
   border-radius: 7px;
-  color: #8c8077;
+  color: var(--subtle);
   transform: rotate(-4deg);
 }
 .upload-sheet {
@@ -1331,8 +1351,8 @@ fieldset {
   width: 61px;
   height: 61px;
   border-radius: 6px;
-  border: 1px solid #e0d8ce;
-  background: #f5f3f0;
+  border: 1px solid #d4d9e8;
+  background: #f2f3f7;
   left: 15px;
   top: 6px;
   transform: rotate(-16deg);
@@ -1351,7 +1371,7 @@ fieldset {
   place-items: center;
   border: 3px solid #fff;
   border-radius: 50%;
-  color: #51463e;
+  color: #434858;
 }
 .dropzone h3 {
   font-family: var(--font-display);
@@ -1361,7 +1381,7 @@ fieldset {
 }
 .dropzone p {
   font-size: 13px;
-  color: #837d79;
+  color: var(--subtle);
   margin-bottom: 21px;
 }
 .dropzone .button {
@@ -1371,14 +1391,14 @@ fieldset {
 }
 .upload-meta {
   font-size: 11.5px;
-  color: #958e89;
+  color: var(--subtle);
   margin-top: 11px;
 }
 .canvas-photo {
   position: relative;
   border-radius: 6px;
   overflow: hidden;
-  background: #efece8;
+  background: #ebecf2;
   min-height: 240px;
   aspect-ratio: 1.5;
 }
@@ -1444,7 +1464,7 @@ fieldset {
 }
 .generating-overlay p {
   font-size: 14px;
-  color: #d9d1c8;
+  color: #ced2e0;
 }
 .generating-overlay > span {
   display: flex;
@@ -1467,12 +1487,12 @@ fieldset {
   align-items: center;
   gap: 8px;
   font-size: 13px;
-  color: #635347;
+  color: var(--muted);
   margin-bottom: 9px;
 }
 .result-success > .icon-button {
   margin-left: auto;
-  color: #766f69;
+  color: var(--subtle);
 }
 .download-actions {
   display: flex;
@@ -1488,16 +1508,16 @@ fieldset {
   align-items: flex-start;
   gap: 8px;
   font-size: 12px;
-  color: #78726e;
+  color: var(--subtle);
   line-height: 1.6;
   margin-top: 13px;
 }
 .checkbox-label input {
-  accent-color: #7e6755;
+  accent-color: var(--terracotta);
   margin: 2px 0 0;
   flex-shrink: 0;
-  width: 13px;
-  height: 13px;
+  width: 16px;
+  height: 16px;
 }
 .examples {
   margin-top: 26px;
@@ -1512,14 +1532,14 @@ fieldset {
 .examples-heading > span {
   font-size: 11px;
   letter-spacing: 0.11em;
-  color: #817a74;
+  color: var(--subtle);
 }
 .examples-heading p {
   display: flex;
   align-items: center;
   gap: 7px;
   font-size: 11.5px;
-  color: #7a746e;
+  color: var(--subtle);
 }
 .example-grid {
   display: grid;
@@ -1536,7 +1556,7 @@ fieldset {
   overflow: hidden;
 }
 .example-grid > button.selected {
-  border-color: #a8917f;
+  border-color: var(--terracotta);
 }
 .example-grid img {
   width: 100%;
@@ -1548,7 +1568,7 @@ fieldset {
   display: block;
   font-size: 11.5px;
   padding: 6px 3px 1px;
-  color: #6a625d;
+  color: var(--muted);
 }
 .example-check {
   position: absolute;
@@ -1563,38 +1583,38 @@ fieldset {
   color: #2d5d47;
 }
 .studio-tip {
-  border-top: 1px solid #efece8;
+  border-top: 1px solid #ebecf2;
   display: flex;
   align-items: flex-start;
   gap: 9px;
   padding-top: 17px;
   margin-top: 20px;
-  color: #887b72;
+  color: var(--subtle);
 }
 .studio-tip p {
   font-size: 11.5px;
-  color: #8d8782;
+  color: var(--subtle);
   line-height: 1.8;
 }
 .studio-tip strong {
-  color: #6b645e;
+  color: var(--muted);
   font-weight: 500;
 }
 .settings-panel {
   background: #fff;
-  border: 1px solid #e2ded9;
+  border: 1px solid #dcdee6;
   border-radius: 10px;
   padding: 22px;
 }
 .settings-heading {
   padding-bottom: 20px;
-  border-bottom: 1px solid #efece8;
+  border-bottom: 1px solid #ebecf2;
   margin-bottom: 19px;
 }
 .settings-heading > span {
   display: block;
   font-size: 11.5px;
-  color: #8d8782;
+  color: var(--subtle);
   margin: 6px 0 0 30px;
 }
 .settings-panel legend {
@@ -1609,7 +1629,7 @@ fieldset {
 .settings-panel legend > span {
   font-size: 11px;
   font-weight: 400;
-  color: #8d8681;
+  color: var(--subtle);
 }
 .settings-panel fieldset {
   margin-bottom: 22px;
@@ -1627,7 +1647,7 @@ fieldset {
   padding: 8px 4px;
   border-radius: 4px;
   font-size: 12px;
-  color: #8c847e;
+  color: var(--subtle);
   min-height: 35px;
 }
 .mode-options > button.selected {
@@ -1638,7 +1658,7 @@ fieldset {
 .field-hint {
   font-size: 11px;
   line-height: 1.8;
-  color: #918882;
+  color: var(--subtle);
   margin-top: 8px;
 }
 .room-options {
@@ -1654,25 +1674,25 @@ fieldset {
   gap: 8px;
   padding: 11px 5px 8px;
   min-height: 69px;
-  border: 1px solid #e7e4e1;
+  border: 1px solid #e3e4e9;
   border-radius: 5px;
   background: #fff;
-  color: #8e8681;
+  color: var(--subtle);
   font-size: 11px;
 }
 .room-options > button > svg:last-child:not(:first-child) {
   position: absolute;
   right: 5px;
   top: 5px;
-  color: #736154;
+  color: var(--muted);
 }
 .room-options > button.selected {
-  border-color: #a38c7a;
-  background: #f4f1ee;
-  color: #63564d;
+  border-color: #858fb2;
+  background: #f0f1f6;
+  color: var(--muted);
 }
 .room-options > button:hover {
-  background: #f9f6f3;
+  background: #f5f6fb;
 }
 .style-options {
   display: grid;
@@ -1683,10 +1703,10 @@ fieldset {
   display: flex;
   gap: 7px;
   align-items: center;
-  border: 1px solid #e7e4e1;
+  border: 1px solid #e3e4e9;
   border-radius: 5px;
   background: #fff;
-  color: #7b736d;
+  color: var(--subtle);
   font-size: 11.5px;
   min-height: 35px;
   padding: 8px 9px;
@@ -1702,9 +1722,9 @@ fieldset {
   margin-left: auto;
 }
 .style-options > button.selected {
-  border-color: #a38c7a;
-  background: #f4f1ee;
-  color: #63564d;
+  border-color: #858fb2;
+  background: #f0f1f6;
+  color: var(--muted);
 }
 .style-options > button:disabled {
   opacity: 0.38;
@@ -1722,7 +1742,7 @@ fieldset {
 }
 .notes-field label > span {
   font-size: 11px;
-  color: #928a84;
+  color: var(--subtle);
   font-weight: 400;
 }
 .notes-field textarea {
@@ -1730,7 +1750,7 @@ fieldset {
   width: 100%;
   height: 76px;
   resize: vertical;
-  border: 1px solid #e5e0da;
+  border: 1px solid #dee1ea;
   border-radius: 5px;
   padding: 10px;
   font-size: 12px;
@@ -1739,24 +1759,23 @@ fieldset {
   line-height: 1.7;
 }
 .notes-field textarea::placeholder {
-  color: #99928d;
+  color: var(--subtle);
 }
 .notes-field > span {
   display: block;
   text-align: right;
   font-size: 11px;
-  color: #9f9994;
+  color: var(--subtle);
   margin-top: 2px;
 }
 .notes-field textarea:disabled {
-  background: #f8f6f4;
-  opacity: 0.6;
+  background: #f7f8fc;
 }
 .consent {
   font-size: 11.5px;
 }
 .generate-area {
-  border-top: 1px solid #eeebe8;
+  border-top: 1px solid #eaebf0;
   margin-top: 17px;
   padding-top: 18px;
 }
@@ -1772,7 +1791,7 @@ fieldset {
 .generate-area > p {
   font-size: 11px;
   text-align: center;
-  color: #8e847c;
+  color: var(--subtle);
   margin-top: 9px;
 }
 .pilot-link {
@@ -1780,7 +1799,7 @@ fieldset {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  color: #71655c;
+  color: var(--muted);
   font-size: 11.5px;
   background: none;
   margin: 12px auto 0;
@@ -1791,7 +1810,7 @@ fieldset {
   align-items: center;
   gap: 20px;
   font-size: 11px;
-  color: #928d88;
+  color: var(--subtle);
   margin-top: 22px;
 }
 .studio-bottom > span,
@@ -1815,9 +1834,9 @@ fieldset {
   color: #9c5036;
 }
 .feedback.notice {
-  background: #f1ebe3;
-  border: 1px solid #d2c6be;
-  color: #665a50;
+  background: #e8ecf7;
+  border: 1px solid #c3c8d9;
+  color: var(--muted);
 }
 .feedback > .icon-button {
   margin-left: auto;
@@ -1837,7 +1856,7 @@ fieldset {
 }
 .projects-header p {
   font-size: 14px;
-  color: #77716c;
+  color: var(--subtle);
   margin-top: 10px;
 }
 .projects-header .button {
@@ -1851,7 +1870,7 @@ fieldset {
 }
 .project-card {
   background: #fff;
-  border: 1px solid #e3ded9;
+  border: 1px solid #dcdfe7;
   border-radius: 8px;
   overflow: hidden;
 }
@@ -1861,7 +1880,7 @@ fieldset {
   width: 100%;
   padding: 0;
   aspect-ratio: 1.4;
-  background: #e9e5e1;
+  background: #e3e6ec;
 }
 .project-image img {
   width: 100%;
@@ -1873,8 +1892,8 @@ fieldset {
   bottom: 10px;
   left: 10px;
   font-size: 11px;
-  background: #fff9f2e6;
-  color: #68605b;
+  background: #f7faffe6;
+  color: var(--muted);
   padding: 3px 8px;
   border-radius: 3px;
 }
@@ -1900,7 +1919,7 @@ fieldset {
 }
 .project-info p {
   font-size: 11.5px;
-  color: #89817b;
+  color: var(--subtle);
   margin-top: 7px;
 }
 .delete-confirm {
@@ -1924,14 +1943,14 @@ fieldset {
   flex-direction: column;
   align-items: center;
   text-align: center;
-  border: 1px dashed #cbc3bc;
+  border: 1px dashed #c0c4d1;
   border-radius: 9px;
   background: #fff;
   padding: 65px 25px;
   margin-bottom: 30px;
 }
 .empty-projects > svg {
-  color: #a49991;
+  color: var(--subtle);
   margin-bottom: 20px;
   stroke-width: 1.3;
 }
@@ -1941,7 +1960,7 @@ fieldset {
 }
 .empty-projects p {
   font-size: 14px;
-  color: #867d76;
+  color: var(--subtle);
   margin: 15px 0 25px;
 }
 .modal-backdrop {
@@ -1975,13 +1994,13 @@ fieldset {
   width: 50px;
   height: 50px;
   border-radius: 12px;
-  background: #f0e6da;
-  color: #7b6859;
+  background: #e1e7fa;
+  color: var(--subtle);
   margin-bottom: 24px;
 }
 .modal .eyebrow {
   font-size: 11px;
-  color: #837971;
+  color: var(--subtle);
   margin-bottom: 10px;
 }
 .modal h2 {
@@ -1990,7 +2009,7 @@ fieldset {
 .modal > p {
   font-size: 14px;
   line-height: 1.8;
-  color: #7c756f;
+  color: var(--subtle);
   margin: 17px 0 23px;
 }
 .modal form > label {
@@ -2000,7 +2019,7 @@ fieldset {
 }
 .modal input {
   width: 100%;
-  border: 1px solid #d1c9c3;
+  border: 1px solid #c7cad6;
   border-radius: 5px;
   background: white;
   padding: 12px;
@@ -2015,7 +2034,7 @@ fieldset {
   display: block;
   font-size: 11.5px;
   text-align: center;
-  color: #8f867f;
+  color: var(--subtle);
   margin-top: 20px;
 }
 .form-error {
@@ -2045,7 +2064,7 @@ fieldset {
   margin-bottom: 45px;
 }
 .page-intro .eyebrow {
-  color: #80766f;
+  color: var(--subtle);
   font-size: 11.5px;
 }
 .page-intro h1 {
@@ -2058,7 +2077,7 @@ fieldset {
 }
 .page-intro p {
   font-size: 14.5px;
-  color: #78726d;
+  color: var(--subtle);
   line-height: 1.8;
   margin-top: 23px;
 }
@@ -2067,19 +2086,19 @@ fieldset {
   gap: 6px;
   flex-wrap: wrap;
   align-items: center;
-  border-top: 1px solid #e1dcd6;
+  border-top: 1px solid #dadde6;
   padding-top: 22px;
   margin-bottom: 32px;
 }
 .gallery-filters > svg {
   margin-right: 12px;
-  color: #8b827a;
+  color: var(--subtle);
 }
 .gallery-filters > button {
   padding: 9px 14px;
   border-radius: 4px;
   background: transparent;
-  color: #837a73;
+  color: var(--subtle);
   font-size: 13px;
   min-height: 37px;
 }
@@ -2098,7 +2117,7 @@ fieldset {
   justify-content: space-between;
   align-items: center;
   gap: 25px;
-  background: #ede9e4;
+  background: #e7e9f1;
   padding: 32px;
   border-radius: 8px;
   margin: 55px 0 35px;
@@ -2106,7 +2125,7 @@ fieldset {
 .gallery-invite .eyebrow {
   font-size: 11px;
   margin-bottom: 10px;
-  color: #837971;
+  color: var(--subtle);
 }
 .gallery-invite h2 {
   font-size: 25px;
@@ -2127,7 +2146,7 @@ fieldset {
 }
 .price-card {
   position: relative;
-  border: 1px solid #e2dcd4;
+  border: 1px solid #d9dde8;
   border-radius: 10px;
   background: #fff;
   padding: 35px;
@@ -2141,13 +2160,13 @@ fieldset {
   width: 45px;
   height: 45px;
   border-radius: 9px;
-  color: #7e7167;
-  background: #f3f0ed;
+  color: var(--subtle);
+  background: #eff0f5;
   margin-bottom: 28px;
 }
 .price-card .eyebrow {
   font-size: 11px;
-  color: #8a7e74;
+  color: var(--subtle);
   margin-bottom: 10px;
 }
 .price-card h2 {
@@ -2163,19 +2182,19 @@ fieldset {
 .price > span {
   display: block;
   font-size: 12px;
-  color: #948b84;
+  color: var(--subtle);
   letter-spacing: 0;
 }
 .price-card > p {
   font-size: 14px;
   line-height: 1.8;
-  color: #827871;
+  color: var(--subtle);
   margin-bottom: 23px;
 }
 .price-card ul {
   list-style: none;
   padding: 21px 0 10px;
-  border-top: 1px solid #eae6e1;
+  border-top: 1px solid #e4e6ee;
   margin: 0 0 25px;
   width: 100%;
   flex: 1;
@@ -2186,11 +2205,11 @@ fieldset {
   gap: 9px;
   font-size: 13px;
   line-height: 1.8;
-  color: #776d65;
+  color: var(--subtle);
   margin-bottom: 12px;
 }
 .price-card li > svg {
-  color: #958172;
+  color: var(--subtle);
   margin-top: 1px;
 }
 .price-card > .button {
@@ -2209,7 +2228,7 @@ fieldset {
 .price-card.featured p,
 .price-card.featured li,
 .price-card.featured .price > span {
-  color: #a9a098;
+  color: var(--subtle);
 }
 .price-card.featured ul {
   border-color: #ffffff16;
@@ -2297,7 +2316,7 @@ fieldset {
   font-weight: 600;
 }
 .price-card.featured .per-photo {
-  color: #c9c0b6;
+  color: #bcc1d1;
 }
 .price-card.featured .annual-hint {
   background: #ffffff14;
@@ -2334,7 +2353,7 @@ fieldset {
   font-style: normal;
 }
 .price-card.featured .price-pending {
-  color: #d9cfc6;
+  color: #cbd0e0;
 }
 .pricing-footnote {
   max-width: 670px;
@@ -2347,7 +2366,7 @@ fieldset {
 }
 .pricing-footnote p {
   font-size: 13px;
-  color: #8a8078;
+  color: var(--subtle);
   line-height: 1.9;
 }
 .legal-page {
@@ -2366,10 +2385,10 @@ fieldset {
 .legal-page p {
   font-size: 15px;
   line-height: 1.9;
-  color: #746c67;
+  color: var(--subtle);
 }
 .legal-page .eyebrow {
-  color: #837971;
+  color: var(--subtle);
 }
 .not-found {
   padding-top: 100px;
@@ -2380,7 +2399,7 @@ fieldset {
   margin-bottom: 25px;
 }
 .not-found p {
-  color: #7f766f;
+  color: var(--subtle);
   margin-bottom: 25px;
 }
 @media (min-width: 1450px) {
@@ -2502,7 +2521,7 @@ fieldset {
     margin-left: -22px;
     margin-right: -22px;
     padding: 12px 22px calc(12px + env(safe-area-inset-bottom));
-    box-shadow: 0 -10px 24px #1f1c1912;
+    box-shadow: 0 -10px 24px #1b1c2112;
     border-radius: 0 0 10px 10px;
   }
   .header {
@@ -2676,11 +2695,13 @@ fieldset {
   .settings-panel fieldset {
     margin-bottom: 25px;
   }
-  .settings-panel fieldset:nth-of-type(2) {
+  /* Direct children only: the room and style fieldsets now live inside
+     .staging-selects, where these placements staggered them. */
+  .settings-panel > fieldset:nth-of-type(2) {
     grid-row: 2/4;
     grid-column: 2;
   }
-  .settings-panel fieldset:nth-of-type(3) {
+  .settings-panel > fieldset:nth-of-type(3) {
     grid-column: 1;
   }
   .notes-field {
@@ -2834,7 +2855,7 @@ fieldset {
     padding: 60px 0;
   }
   .eyebrow {
-    font-size: 11px;
+    font-size: 12px;
     margin-bottom: 17px;
   }
   .section h2 {
@@ -2999,7 +3020,7 @@ fieldset {
     position: relative;
   }
   .studio-heading .eyebrow {
-    font-size: 11px;
+    font-size: 12px;
     letter-spacing: 0.12em;
     margin-bottom: 12px;
   }
@@ -3328,7 +3349,7 @@ fieldset {
     font-size: 45px;
   }
   .page-intro .eyebrow {
-    font-size: 11px;
+    font-size: 12px;
   }
   .page-intro p {
     font-size: 14px;
@@ -3505,7 +3526,7 @@ fieldset {
   width: 100%;
   min-width: 0;
   padding: 12px 14px;
-  border: 1px solid #dad8d5;
+  border: 1px solid #d7d8dc;
   border-radius: 9px;
   background: white;
   color: var(--ink);
@@ -3547,8 +3568,8 @@ fieldset {
 }
 .inline-notice {
   color: #305242 !important;
-  background: #f3f1ee;
-  border: 1px solid #e5dcd0;
+  background: #f0f1f5;
+  border: 1px solid #d8ddef;
 }
 .billing-toggle {
   display: inline-flex;
@@ -3573,8 +3594,8 @@ fieldset {
   display: flex;
   align-items: center;
   gap: 25px;
-  border: 1px solid #e3dacf;
-  background: #f0edea;
+  border: 1px solid #d6dbec;
+  background: #ecedf2;
   border-radius: 18px;
   padding: 28px 32px;
   margin: 30px 0 65px;
@@ -3696,7 +3717,7 @@ fieldset {
   line-height: 1.15;
 }
 .balance-card > p {
-  color: #d7d0c9;
+  color: #cdd1dd;
   margin-bottom: 24px;
 }
 .billing-status {
@@ -3854,9 +3875,6 @@ fieldset {
   .price-edit {
     grid-template-columns: 1fr 130px 100px;
   }
-  .account-nav {
-    display: none;
-  }
 }
 @media (max-width: 700px) {
   .auth-layout {
@@ -3934,12 +3952,33 @@ fieldset {
   }
 }
 
-.mobile-account-nav {
+.mobile-nav-actions {
   display: none;
 }
-@media (max-width: 1100px) {
-  .nav-links .mobile-account-nav {
-    display: block;
+@media (max-width: 700px) {
+  .nav-links .mobile-nav-actions {
+    display: grid;
+    gap: 12px;
+    margin-top: 28px;
+  }
+  /* Buttons, not menu rows: undo the large link style of the open menu. */
+  .nav-links .mobile-nav-actions .button {
+    min-height: 52px;
+    padding: 14px 20px;
+    border: 0;
+    border-radius: 12px;
+    font-family: var(--font-sans);
+    font-size: 16px;
+  }
+  .nav-links .mobile-nav-actions .button-outline {
+    border: 2px solid #a8b5e2;
+    color: white;
+  }
+  .nav-links .mobile-nav-actions .button:hover {
+    color: white;
+  }
+  .nav-links .mobile-nav-actions .button-outline:hover {
+    background: #ffffff14;
   }
 }
 .google-access {
@@ -4010,7 +4049,7 @@ fieldset {
 }
 .price-card.featured .price-panel > p,
 .price-card.featured .per-photo {
-  color: #36472c;
+  color: #3b4258;
 }
 .commercial-plans .photo-allowance {
   margin: 18px 0 10px;
@@ -4119,7 +4158,7 @@ fieldset {
 }
 .google-button:hover {
   border-color: #c6c9cc;
-  box-shadow: 0 6px 18px #1f1c1914;
+  box-shadow: 0 6px 18px #1b1c2114;
 }
 .auth-legal {
   font-size: 13px;
@@ -4148,9 +4187,12 @@ fieldset {
   color: var(--terracotta);
 }
 @media (max-width: 700px) {
+  /* Google renders a fixed-width button (up to 320 px); this padding keeps it
+     inside the card on a 390 px screen. */
   .auth-card {
     order: -1;
-    padding: 30px 22px;
+    min-width: 0;
+    padding: 30px 18px;
   }
   .auth-card h2 {
     font-size: 30px;
@@ -4197,9 +4239,12 @@ fieldset {
 .free-upsell .button {
   width: 100%;
 }
+/* Locked tools stay readable so people can see what a plan adds. */
 .room-options > button:disabled,
 .mode-options > button:disabled {
-  opacity: 0.45;
+  opacity: 1;
+  background: #f7f8fc;
+  color: var(--subtle);
 }
 
 /* Reference audit, 20 Oct 2026: Outfit, navy canvas, blue actions, green emphasis. */
@@ -4433,6 +4478,14 @@ h2 .accent {
   justify-items: center;
   gap: 12px;
 }
+/* Google sizes its button from this box's width when it renders: a centered
+   (shrink-to-fit) box measured 0 and got a fixed 320 px that overflowed small
+   phones. */
+.google-button-slot {
+  justify-self: stretch;
+  display: flex;
+  justify-content: center;
+}
 .google-native p {
   font-size: 14px;
 }
@@ -4500,7 +4553,7 @@ h2 .accent {
 }
 .pricing-page .billing-toggle em {
   background: var(--clay);
-  color: #1a2715;
+  color: #1f2332;
 }
 .studio-page {
   background: var(--forest);
@@ -4517,14 +4570,39 @@ h2 .accent {
 .studio-breadcrumb {
   color: #c6cbdf;
 }
+/* The header sits on navy: the light-theme rules above must not leak through. */
+.studio-breadcrumb > span {
+  color: white;
+}
+.studio-heading .eyebrow {
+  color: var(--clay);
+}
+.studio-heading h1 .accent {
+  color: var(--clay);
+}
+.status-badge {
+  border-color: #ffffff2e;
+  background: #ffffff14;
+  color: white;
+}
+.status-badge .live-dot {
+  background: var(--clay);
+}
 .studio-tabs {
   background: transparent;
   color: #c6cbdf;
   border-color: #ffffff24;
 }
-.studio-tabs .selected {
+.studio-tabs > button {
+  color: #c6cbdf;
+}
+.studio-tabs > button.selected {
   color: white;
   border-color: var(--clay);
+}
+.studio-tabs > button > span {
+  background: #ffffff1f;
+  color: white;
 }
 .studio-tabs .local-label {
   color: #c6cbdf;
@@ -4576,6 +4654,7 @@ h2 .accent {
   background: transparent;
   padding: 0;
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 .mode-options > button {
@@ -4689,7 +4768,7 @@ h2 .accent {
 }
 .free-pill {
   background: var(--clay);
-  color: #24341d;
+  color: #292f42;
   font-size: 12px;
 }
 .workspace .free-upsell h3 {
@@ -4956,6 +5035,41 @@ h2 .accent {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+/* Tablets: side by side, the settings column was under 300 px, cutting the
+   room and style selects to "Liv" and "Mo". Stack it as on phones. */
+@media (max-width: 1050px) {
+  .workspace,
+  .workspace.has-results,
+  .workspace.has-results.with-upsell {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+  .studio-canvas {
+    order: 1;
+    width: 100%;
+  }
+  .settings-panel {
+    order: 2;
+    width: 100%;
+    display: block;
+  }
+  .workspace .free-upsell {
+    order: 3;
+    width: 100%;
+  }
+  .workspace.has-results .input-preview {
+    display: none;
+  }
+  .generate-area {
+    position: static;
+    margin-left: 0;
+    margin-right: 0;
+    padding: 18px 0 0;
+    box-shadow: none;
+    background: transparent;
+  }
+}
 @media (max-width: 700px) {
   .container {
     padding-left: 16px;
@@ -5097,7 +5211,10 @@ h2 .accent {
   .studio-heading {
     display: block;
   }
+  /* In the flow below the intro, instead of floating over the breadcrumb. */
   .status-badge {
+    position: static;
+    display: inline-flex;
     margin-top: 18px;
   }
   .workspace,
@@ -5138,7 +5255,9 @@ h2 .accent {
   }
   .generate-area {
     position: static;
-    padding: 0;
+    margin-left: 0;
+    margin-right: 0;
+    padding: 18px 0 0;
     box-shadow: none;
     background: transparent;
   }
@@ -5645,8 +5764,15 @@ h2 .accent {
   background: white;
   color: var(--ink);
 }
-.header-private .nav-links {
+.header-private .nav-links,
+.header-private .nav-links a {
   color: var(--ink);
+  border-color: var(--line);
+}
+/* Lime only reads on navy; the private header is white. */
+.header-private .nav-links a:hover,
+.header-private .nav-links a.active {
+  color: var(--terracotta);
 }
 .header-private .logo-ai {
   color: var(--terracotta);
@@ -6894,7 +7020,7 @@ h2 .accent {
   font-size: 18px;
 }
 .footer .newsletter-inline input::placeholder {
-  color: #9aa6c4;
+  color: var(--subtle);
 }
 .newsletter-inline button {
   position: absolute;
@@ -6997,13 +7123,29 @@ h2 .accent {
 .nav-actions .button-small {
   border-color: var(--terracotta);
 }
+/* "Entrar" stays visible down to 701 px, where the menu takes over. */
+@media (max-width: 1100px) {
+  .nav-actions .account-nav,
+  .nav-actions .button-small {
+    padding: 12px 20px;
+  }
+}
 .nav-links a {
   font-weight: 600;
 }
+/* All eleven styles must be reachable with a mouse, which cannot scroll a
+   strip with a hidden scrollbar: wrap onto a second row instead. */
 .hx-style-tabs {
-  -webkit-mask-image: linear-gradient(to left, transparent, #000 32px);
-  mask-image: linear-gradient(to left, transparent, #000 32px);
-  padding-right: 24px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  overflow: visible;
+  gap: 6px;
+}
+.hx-style-tabs button:first-child {
+  margin-left: 0;
+}
+.hx-style-tabs button {
+  padding: 7px 14px;
 }
 @media (max-width: 1023px) {
   .hx .hx-cta {
