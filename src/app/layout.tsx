@@ -1,4 +1,6 @@
 import { ProductTour } from "@/components/product-tour";
+import Script from "next/script";
+import { GOOGLE_ADS_ID } from "@/lib/ads";
 import type { Metadata, Viewport } from "next";
 import { Outfit } from "next/font/google";
 import { Header, Footer } from "@/components/shell";
@@ -42,6 +44,20 @@ export default function RootLayout({
         <main id="contenido">{children}</main>
         <Footer />
         <ProductTour />
+        {process.env.VERCEL_ENV === "production" && (
+          <>
+            <Script
+              src={`https://www.googletagmanager.com/gtag/js?id=${GOOGLE_ADS_ID}`}
+              strategy="afterInteractive"
+            />
+            <Script id="google-ads-tag" strategy="afterInteractive">
+              {`window.dataLayer = window.dataLayer || [];
+function gtag(){dataLayer.push(arguments);}
+gtag('js', new Date());
+gtag('config', '${GOOGLE_ADS_ID}');`}
+            </Script>
+          </>
+        )}
       </body>
     </html>
   );

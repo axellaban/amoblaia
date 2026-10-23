@@ -49,6 +49,7 @@ import { optimizePhoto, blobToDataURL, downloadDesign } from "@/lib/images";
 import { Comparison } from "./comparison";
 import { clearDraft, loadDraft, saveDraft } from "@/lib/studio-draft";
 import { FREE_RESULT_LIMIT, freeBatchSize } from "@/lib/free-tier";
+import { trackPhotoUploaded } from "@/lib/ads";
 export function Studio({
   embedded = false,
   onClose,
@@ -635,6 +636,7 @@ export function Studio({
           }
         }
         if (!response.ok) throw new Error(batch.error);
+        trackPhotoUploaded();
         const ids: string[] = batch.ids || [batch.id];
         setProjectId(batch.projectId);
         setRoundTotal(ids.length);
@@ -666,6 +668,7 @@ export function Studio({
           setStatus((s) => (s ? { ...s, authenticated: false } : s));
         throw new Error(payload.error);
       }
+      trackPhotoUploaded();
       const url = await blobToDataURL(await response.blob());
       setResult(url);
       await persist(url);
