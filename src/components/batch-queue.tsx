@@ -11,7 +11,7 @@ import {
   ArrowUpRight,
 } from "lucide-react";
 import { rooms, type ModeId, type RoomId, type StyleId } from "@/lib/catalog";
-import { downloadDesign, optimizePhoto } from "@/lib/images";
+import { downloadDesign, optimizePhoto, thumbnail } from "@/lib/images";
 import { waitForJob } from "@/lib/jobs-client";
 import { trackPhotoUploaded } from "@/lib/ads";
 /** Photos per batch: a whole listing, while the previews stay light in memory. */
@@ -34,14 +34,17 @@ export type BatchItem = {
 type Settings = { style: StyleId; mode: ModeId; notes: string };
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 // Answers that would refuse every other photo too: no photos left, an
-// expired plan, a signed-out or blocked account, the daily cap.
-const STOPS = [401, 402, 403, 429, 503];
+// expired plan, a signed-out or blocked account, the daily cap, a full
+// account. Only a photo sitting in the trash is that photo's own problem.
+const stops = (status: number, message: string) =>
+  [401, 402, 403, 429, 503].includes(status) ||
+  (status === 409 && !/papelera/.test(message));
 /**
  * Paid accounts can drop several photos and get one design of each. They are
  * sent one at a time: an account renders one batch at a time, so each photo
  * waits for the previous one instead of being refused.
  */
-export function useBatch(onProgress: () => void) {
+export function useBatch(onProgress: (finished: boolean) => void) {
   const [items, setItems] = useState<BatchItem[]>([]);
   const [running, setRunning] = useState(false);
   const [preparing, setPreparing] = useState(0);
@@ -55,12 +58,33 @@ export function useBatch(onProgress: () => void) {
       list.map((item) => (item.id === id ? { ...item, ...values } : item)),
     );
   }
-  // Photos not sent yet are lost on leaving; sent ones finish on the server.
   useEffect(() => {
     if (!running) return;
+    // Photos not sent yet are lost on leaving; sent ones finish on the server.
     const warn = (e: BeforeUnloadEvent) => e.preventDefault();
     window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
+    // A phone that locks its screen pauses the page, and the queue with it.
+    // The browser drops the lock whenever the page is hidden: ask again.
+    let lock: WakeLockSentinel | null = null;
+    let active = true;
+    const keepAwake = () => {
+      if (document.visibilityState !== "visible" || !navigator.wakeLock) return;
+      navigator.wakeLock
+        .request("screen")
+        .then((sentinel) => {
+          if (active) lock = sentinel;
+          else void sentinel.release();
+        })
+        .catch(() => {});
+    };
+    keepAwake();
+    document.addEventListener("visibilitychange", keepAwake);
+    return () => {
+      active = false;
+      window.removeEventListener("beforeunload", warn);
+      document.removeEventListener("visibilitychange", keepAwake);
+      void lock?.release().catch(() => {});
+    };
   }, [running]);
   useEffect(
     () => () =>
@@ -78,13 +102,16 @@ export function useBatch(onProgress: () => void) {
     for (const file of accepted) {
       try {
         const photo = await optimizePhoto(file);
+        const preview = URL.createObjectURL(
+          await thumbnail(photo.file).catch(() => photo.file),
+        );
         change((list) => [
           ...list,
           {
             id: crypto.randomUUID(),
             key: crypto.randomUUID(),
             file: photo.file,
-            preview: URL.createObjectURL(photo.file),
+            preview,
             name: file.name.replace(/\.[^.]+$/, "") || "Foto",
             room,
             status: "waiting",
@@ -169,8 +196,13 @@ export function useBatch(onProgress: () => void) {
     if (!response?.ok) {
       const message =
         batch.error || "No pudimos enviar esta foto. Probá de nuevo.";
+      if (response && stops(response.status, message)) {
+        // The photo was not reserved: it waits with the rest to resume.
+        patch(item.id, { status: "waiting", message: undefined });
+        return message;
+      }
       patch(item.id, { status: "failed", message });
-      return response && STOPS.includes(response.status) ? message : null;
+      return null;
     }
     trackPhotoUploaded();
     const jobId = batch.ids?.[0] || batch.id;
@@ -214,27 +246,24 @@ export function useBatch(onProgress: () => void) {
     }
     return null;
   }
+  /**
+   * Sends the queued photos in order. Returns why it stopped early, if it
+   * did; the photos not sent stay queued, so starting again resumes.
+   */
   async function start(settings: Settings) {
-    if (running) return;
+    if (running) return null;
     setRunning(true);
     try {
       let next: BatchItem | undefined;
       while ((next = latest.current.find((i) => i.status === "waiting"))) {
         const stop = await send(next, settings);
-        onProgress();
-        if (stop) {
-          change((list) =>
-            list.map((i) =>
-              i.status === "waiting"
-                ? { ...i, status: "failed", message: stop }
-                : i,
-            ),
-          );
-          break;
-        }
+        if (stop) return stop;
+        onProgress(false);
       }
+      return null;
     } finally {
       setRunning(false);
+      onProgress(true);
     }
   }
   /** Result links expire after an hour: a failed download asks for a new one. */
@@ -367,7 +396,11 @@ export function BatchList({
         {batch.items.map((item) => (
           <li key={item.id} className={`batch-item ${item.status}`}>
             <div className="batch-thumb">
-              <img src={item.result || item.preview} alt={item.name} />
+              <img
+                src={item.result || item.preview}
+                alt={item.name}
+                decoding="async"
+              />
               <span className="batch-status">
                 {item.status === "done" ? (
                   <Check size={12} />

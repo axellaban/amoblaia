@@ -113,7 +113,12 @@ export function Studio({
   const loginTrigger = useRef<HTMLButtonElement>(null);
   const generateLock = useRef(false);
   const restoringProject = useRef<string | null>(null);
-  const batch = useBatch(() => void refreshCloud().catch(() => null));
+  // Each photo only updates the balance: the full library signs every image
+  // of the account, so it is reloaded once the batch ends.
+  const batch = useBatch(
+    (finished) =>
+      void (finished ? refreshCloud() : refreshAccount()).catch(() => null),
+  );
   const batchMode = batch.items.length > 0;
   useEffect(() => {
     let active = true;
@@ -345,7 +350,9 @@ export function Studio({
       );
       return;
     }
-    void batch.start({ style, mode, notes });
+    void batch.start({ style, mode, notes }).then((stop) => {
+      if (stop) setError(stop);
+    });
   }
   function useExample(r: RoomId) {
     photoSession.current++;
@@ -409,11 +416,26 @@ export function Studio({
       throw new Error(remote.error || account.error);
     const local = await listProjects().catch(() => [] as Project[]);
     setProjects([...(remote.projects || []), ...local.filter((p) => p.demo)]);
+    applyAccount(account);
+    return remote.projects as Project[];
+  }
+  async function refreshAccount() {
+    const account = await fetch("/api/account", { cache: "no-store" }).then(
+      (r) => r.json(),
+    );
+    if (account.error) throw new Error(account.error);
+    applyAccount(account);
+  }
+  function applyAccount(account: {
+    credits?: number;
+    unlimited?: boolean;
+    free?: boolean;
+    freeRemaining?: number;
+  }) {
     if (typeof account.credits === "number") setCredits(account.credits);
     setUnlimited(account.unlimited === true);
     setFree(account.free === true);
     setFreeRemaining(account.freeRemaining ?? 0);
-    return remote.projects as Project[];
   }
   async function watchJob(id: string) {
     const session = photoSession.current;

@@ -8,6 +8,10 @@ Producción: https://amoblaia.vercel.app/
 
 - `UNLIMITED_EMAILS` (Vercel, separada por comas) marca cuentas del equipo que generan sin descontar fotos. Al entrar, la app les abre una asignación de 1.000.000 de fotos sin vencimiento (`credit_grants.source_key = unlimited:<id>`) y les sube el cupo diario a 1000. Si un email sale de la lista, esa asignación vence en su próximo ingreso. No requiere migración. Siguen valiendo el espacio por cuenta (320 MB) y el máximo de 150 fotos guardadas.
 - Las cuentas con fotos pagas (suscripción o pack) pueden arrastrar hasta 20 fotos juntas en el estudio, elegir el ambiente de cada una y crear un diseño de cada foto con el mismo estilo. Se envían de a una porque la base admite una tanda en curso por cuenta. Procesarlas en paralelo requiere cambiar `amobla_reserve_generation` y revisar el límite de imágenes por minuto de OpenAI.
+- Límites con tandas de 20, revisados sin generar imágenes reales:
+  - Peso: cada foto queda muy por debajo de los topes (2,8 MB al subir, 3 MB en el servidor, 4 MB por archivo en Storage). Entre original y resultado ocupa unos 0,6–2,5 MB, así que una tanda de 20 usa unos 12–50 MB del presupuesto global de 800 MB y del de 320 MB por cuenta.
+  - Cupo diario: con `MAX_GENERATIONS_PER_DAY=100` cada cuenta puede crear 33 diseños por día y entre todas 100. Una tanda de 20 entra; una segunda el mismo día se frena en la foto 14 y las demás quedan en espera para retomarlas al día siguiente. Subir el valor en Vercel (por ejemplo a 300: 100 por cuenta) es una decisión de costo.
+  - Duración: las fotos van de a una, así que 20 tardan bastante más que una sola. La página mantiene la pantalla encendida mientras procesa (Wake Lock, donde el navegador lo permite) y avisa antes de cerrarse.
 
 ## Auditoría de cobros — 23 de octubre de 2026
 
