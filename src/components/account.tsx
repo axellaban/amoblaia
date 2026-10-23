@@ -10,7 +10,7 @@ import {
   Camera,
   ShieldCheck,
 } from "lucide-react";
-import { formatARS } from "@/lib/commerce/catalog";
+import { formatARS, isFullyReversed } from "@/lib/commerce/catalog";
 import { CheckoutReturn } from "./checkout-return";
 import { clearDraft } from "@/lib/studio-draft";
 import { browserClient } from "@/lib/supabase/client";
@@ -25,7 +25,10 @@ type Account = {
     id: string;
     status: string;
     paid_until: string | null;
-    orders: { snapshot: { name: string; kind: string; photos: number } };
+    orders: {
+      snapshot: { name: string; kind: string; photos: number };
+      payments?: { status: string }[];
+    };
   }[];
   payments: {
     id: string;
@@ -109,6 +112,9 @@ export function AccountDashboard() {
     if (/^[0-9a-f-]{36}$/i.test(order)) setReturnOrder(order);
     // Return flags are presentation hints, never evidence of payment.
   }, [load]);
+  // A refunded plan paid for nothing: it shows no paid period.
+  const refunded = (s: Account["subscriptions"][number]) =>
+    isFullyReversed((s.orders?.payments || []).map((p) => p.status));
   // Subscriptions that ended without ever being charged (abandoned or
   // replaced checkouts) are noise in the list.
   const subscriptions = (account?.subscriptions || []).filter(
@@ -313,17 +319,23 @@ export function AccountDashboard() {
                     <p>
                       {s.status === "pending"
                         ? "Pago sin completar"
-                        : s.status === "authorized" && !s.paid_until
-                          ? "Esperando el primer pago"
-                          : statuses[s.status] || s.status}{" "}
+                        : refunded(s)
+                          ? "Reembolsada"
+                          : s.status === "authorized" && !s.paid_until
+                            ? "Esperando el primer pago"
+                            : statuses[s.status] || s.status}{" "}
                       · {s.orders?.snapshot?.photos} fotos por mes
                     </p>
                     <p>
-                      {s.paid_until
-                        ? `Período pagado hasta ${date(s.paid_until)}`
-                        : s.status === "pending"
-                          ? "Completá el pago en Mercado Pago o verificá su estado."
-                          : "Esperando la confirmación del primer pago."}
+                      {refunded(s)
+                        ? s.status === "cancelled"
+                          ? "Se devolvió el pago y el plan no se renueva."
+                          : "Se devolvió el pago. Estamos cancelando la renovación."
+                        : s.paid_until
+                          ? `Período pagado hasta ${date(s.paid_until)}`
+                          : s.status === "pending"
+                            ? "Completá el pago en Mercado Pago o verificá su estado."
+                            : "Esperando la confirmación del primer pago."}
                     </p>
                   </div>
                   {s.status === "pending" ? (

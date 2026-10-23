@@ -14,6 +14,14 @@ export const offers = [
     description: "Para equipos, inmobiliarias y fotógrafos",
   },
 ];
+/** True when every charge was undone (a full refund or a chargeback) and
+ * nothing is still paid for: the subscription must not renew. */
+export function isFullyReversed(statuses: string[]) {
+  return (
+    statuses.some((s) => ["refunded", "charged_back"].includes(s)) &&
+    !statuses.some((s) => ["approved", "partially_refunded"].includes(s))
+  );
+}
 export function formatARS(cents: number) {
   return new Intl.NumberFormat("es-AR", {
     style: "currency",

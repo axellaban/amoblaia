@@ -4,7 +4,11 @@ import { cloudConfigured, cloudEnabled } from "@/lib/supabase/config";
 import { adminClient } from "@/lib/supabase/server";
 import { runJob } from "@/lib/commerce/jobs";
 import { reconcileCheckout } from "@/lib/commerce/reconcile";
-import { endLaunchPrices, processInbox } from "@/lib/commerce/mercadopago";
+import {
+  endLaunchPrices,
+  processInbox,
+  retireReversedSubscriptions,
+} from "@/lib/commerce/mercadopago";
 export const maxDuration = 300;
 export async function GET(request: Request) {
   const deadline = Date.now() + maxDuration * 1000 - 5000;
@@ -81,6 +85,9 @@ export async function GET(request: Request) {
     }
     await endLaunchPrices().catch(() =>
       console.error("cron_launch_prices_failed"),
+    );
+    await retireReversedSubscriptions().catch(() =>
+      console.error("cron_reversed_subscriptions_failed"),
     );
     for (const job of jobs.data || [])
       try {

@@ -16,7 +16,7 @@ export async function GET() {
     const results = await Promise.all([
       db
         .from("subscriptions")
-        .select("id,status,paid_until,orders(snapshot)")
+        .select("id,status,paid_until,orders(snapshot,payments(status))")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false }),
       db

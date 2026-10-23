@@ -2,7 +2,7 @@ import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { adminClient } from "@/lib/supabase/server";
 import { HttpError, rpc } from "./http";
-import { acceptedChargeCents, type Product } from "./catalog";
+import { acceptedChargeCents, isFullyReversed, type Product } from "./catalog";
 export type Order = {
   id: string;
   user_id: string;
@@ -289,7 +289,7 @@ export async function syncSubscription(id: string, paidPayment?: Payment) {
   if (paidPayment) validatePayment(paidPayment, order);
   const paid = Boolean(
     paidPayment &&
-      ["approved", "partially_refunded"].includes(paidPayment.status),
+    ["approved", "partially_refunded"].includes(paidPayment.status),
   );
   if (
     order.replaces_subscription_id &&
@@ -521,6 +521,27 @@ export async function endLaunchPrices() {
     if (!order?.snapshot.promo_price_cents) continue;
     await endLaunchPrice(row.id, order).catch(() =>
       console.error("launch_price_not_ended", row.id),
+    );
+  }
+}
+/** Daily fallback: a subscription whose charges were all refunded must stop
+ * renewing even if the refund was processed without cancelling it (a deploy
+ * that predates that rule, a lost notification). */
+export async function retireReversedSubscriptions() {
+  const { data, error } = await adminClient()
+    .from("subscriptions")
+    .select("id,orders(payments(status))")
+    .in("status", ["authorized", "paused"])
+    .limit(200);
+  if (error) throw new Error("SUBSCRIPTION_LOOKUP_FAILED");
+  for (const row of data || []) {
+    const order = row.orders as unknown as {
+      payments: { status: string }[];
+    } | null;
+    if (!isFullyReversed((order?.payments || []).map((p) => p.status)))
+      continue;
+    await retireSubscription(row.id).catch(() =>
+      console.error("reversed_subscription_not_retired", row.id),
     );
   }
 }
