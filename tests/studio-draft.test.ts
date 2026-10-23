@@ -14,7 +14,6 @@ const draft = (): StudioDraft => ({
   style: "scandinavian",
   mode: "redesign",
   notes: "Sofá azul",
-  consent: true,
   projectId: null,
   savedAt: Date.now(),
 });
@@ -34,7 +33,6 @@ describe("Photo persistence across sign-in navigation", () => {
       style: "scandinavian",
       mode: "redesign",
       notes: "Sofá azul",
-      consent: true,
     });
   });
   it("recovers a historical style without offering the retired category", async () => {

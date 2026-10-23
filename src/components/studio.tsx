@@ -106,7 +106,6 @@ export function Studio({
   const [password, setPassword] = useState("");
   const [loginBusy, setLoginBusy] = useState(false);
   const [loginError, setLoginError] = useState("");
-  const [consent, setConsent] = useState(false);
   const [label, setLabel] = useState(true);
   const [comparison, setComparison] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -146,7 +145,6 @@ export function Studio({
         setStyle(draft.style);
         setMode(draft.mode);
         setNotes(draft.notes);
-        setConsent(draft.consent);
         setProjectId(draft.projectId);
         restoringProject.current = draft.projectId;
         setNotice("Recuperamos tu foto. Podés continuar donde estabas.");
@@ -210,7 +208,6 @@ export function Studio({
       style,
       mode,
       notes,
-      consent,
       projectId,
       savedAt: Date.now(),
     }).catch(() => {});
@@ -222,7 +219,6 @@ export function Studio({
     style,
     mode,
     notes,
-    consent,
     projectId,
     demo,
   ]);
@@ -287,7 +283,6 @@ export function Studio({
     setDemo(false);
     setError("");
     setNotice("");
-    setConsent(false);
     setView("create");
   }
   async function acceptFile(selected?: File) {
@@ -304,7 +299,6 @@ export function Studio({
         style,
         mode,
         notes,
-        consent: false,
         projectId: null,
         savedAt: Date.now(),
       });
@@ -317,8 +311,7 @@ export function Studio({
       setFilename(selected.name);
       setResult("");
       setDemo(false);
-      setConsent(false);
-      setView("create");
+        setView("create");
     } catch (e) {
       setError(
         e instanceof Error ? e.message : "No pudimos abrir esta imagen.",
@@ -347,12 +340,6 @@ export function Studio({
   function startBatch() {
     setError("");
     setNotice("");
-    if (!consent) {
-      setError(
-        "Confirmá que podés usar estas fotos y enviarlas al proveedor de IA.",
-      );
-      return;
-    }
     void batch.start({ style, mode, notes }).then((stop) => {
       if (stop) setError(stop);
     });
@@ -574,12 +561,6 @@ export function Studio({
     if (!status?.configured) {
       setError(
         "La generación con tus fotos todavía no está habilitada en este piloto. Mientras tanto, podés explorar todos los ejemplos precargados.",
-      );
-      return;
-    }
-    if (!consent) {
-      setError(
-        "Confirmá que podés usar esta foto y enviarla al proveedor de IA.",
       );
       return;
     }
@@ -819,7 +800,6 @@ export function Studio({
     setFile(null);
     setView("create");
     setError("");
-    setConsent(false);
     if (p.pendingJobId && !generateLock.current) {
       generateLock.current = true;
       setBusy(true);
@@ -1490,19 +1470,6 @@ export function Studio({
                 />
                 <span>{notes.length}/500</span>
               </div>
-              {((source && !demo) || batchMode) && (
-                <label className="checkbox-label consent">
-                  <input
-                    type="checkbox"
-                    checked={consent}
-                    onChange={(e) => setConsent(e.target.checked)}
-                    disabled={locked}
-                  />{" "}
-                  {batchMode
-                    ? "Tengo permiso para usar estas fotos y enviarlas a nuestro proveedor de inteligencia artificial para generar los diseños."
-                    : "Tengo permiso para usar esta foto y enviarla a nuestro proveedor de inteligencia artificial para generar el diseño."}
-                </label>
-              )}
               <div className="generate-area" data-tour="generate">
                 {batchMode ? (
                   <>

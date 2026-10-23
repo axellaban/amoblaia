@@ -13,7 +13,6 @@ export type StudioDraft = {
   style: StyleId;
   mode: ModeId;
   notes: string;
-  consent: boolean;
   projectId: string | null;
   savedAt: number;
 };
