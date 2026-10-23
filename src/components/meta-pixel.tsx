@@ -3,7 +3,11 @@ import Script from "next/script";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
 
-const PIXEL_ID = process.env.NEXT_PUBLIC_META_PIXEL_ID;
+// amoblaIA pixel. Public by design, like the Google Ads and PostHog IDs; override per environment if needed.
+// Only production sends events, unless a pixel ID is set explicitly (for example, to test in a preview).
+const PIXEL_ID =
+  process.env.NEXT_PUBLIC_META_PIXEL_ID ||
+  (process.env.NEXT_PUBLIC_VERCEL_ENV === "production" ? "3147699175419885" : undefined);
 
 /** Meta Pixel base code. The inline snippet sends the first PageView; later
  * client-side navigations send their own. */
