@@ -40,7 +40,9 @@ export function CheckoutReturn({
       const next = payload as CheckoutResult;
       setResult(next);
       setError("");
-      if (["approved", "refunded", "cancelled"].includes(next.state))
+      if (
+        ["approved", "refunded", "cancelled", "duplicate"].includes(next.state)
+      )
         await onSettled();
       return next;
     } catch (e) {
@@ -65,9 +67,13 @@ export function CheckoutReturn({
         stopped ||
         ++rounds >= 40 ||
         (next &&
-          ["approved", "refunded", "cancelled", "rejected"].includes(
-            next.state,
-          ))
+          [
+            "approved",
+            "refunded",
+            "cancelled",
+            "rejected",
+            "duplicate",
+          ].includes(next.state))
       )
         return;
       timer = setTimeout(

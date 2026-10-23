@@ -5,7 +5,8 @@ export type CheckoutState =
   | "rejected"
   | "cancelled"
   | "review"
-  | "refunded";
+  | "refunded"
+  | "duplicate";
 export type CheckoutResult = {
   order: string;
   state: CheckoutState;
@@ -24,4 +25,6 @@ export const checkoutMessages: Record<CheckoutState, string> = {
     "Estamos verificando tu compra. No vuelvas a pagar mientras la revisamos.",
   refunded:
     "El pago fue reintegrado o está en revisión. Consultá el detalle en Mi cuenta.",
+  duplicate:
+    "Ya tenías esta compra, así que no te cobramos dos veces: te devolvemos este pago.",
 };

@@ -115,6 +115,9 @@ export async function reconcileCheckout(
     rows.some((p) =>
       ["refunded", "charged_back", "in_mediation"].includes(p.status),
     );
+  const duplicate =
+    !approved &&
+    rows.some((p) => ["duplicate", "duplicate_refunded"].includes(p.status));
   const rejected = rows.some((p) => p.status === "rejected");
   const inProcess = rows.some((p) =>
     ["pending", "in_process", "authorized"].includes(p.status),
@@ -124,18 +127,20 @@ export async function reconcileCheckout(
     ? "approved"
     : reversed
       ? "refunded"
-      : uncertain || status === "checkout_needs_review"
-        ? "review"
-        : inProcess
-          ? "pending"
-          : ["cancelled", "superseded"].includes(status) ||
-              providerStatus === "cancelled"
-            ? "cancelled"
-            : rejected || status === "checkout_failed"
-              ? "rejected"
-              : providerStatus === "authorized" || status === "creating"
-                ? "pending"
-                : "ready";
+      : duplicate
+        ? "duplicate"
+        : uncertain || status === "checkout_needs_review"
+          ? "review"
+          : inProcess
+            ? "pending"
+            : ["cancelled", "superseded"].includes(status) ||
+                providerStatus === "cancelled"
+              ? "cancelled"
+              : rejected || status === "checkout_failed"
+                ? "rejected"
+                : providerStatus === "authorized" || status === "creating"
+                  ? "pending"
+                  : "ready";
   let url: string | null = null;
   if (["ready", "rejected"].includes(state) && fresh.data.checkout_url) {
     try {

@@ -2,7 +2,7 @@ import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { adminClient } from "@/lib/supabase/server";
 import { HttpError, rpc } from "./http";
-import { acceptedChargeCents, isFullyReversed, type Product } from "./catalog";
+import { acceptedChargeCents, type Product } from "./catalog";
 export type Order = {
   id: string;
   user_id: string;
@@ -409,8 +409,10 @@ export async function syncPayment(id: string, subscriptionId?: string) {
       );
       if (!invoice) {
         // An unrelated merchant payment with no amoblaIA reference is ignored;
-        // an invoice for one of our orders must remain retryable.
-        if (!direct) return;
+        // an invoice for one of our orders must remain retryable, unless the
+        // attempt was refused: it never credits anything.
+        if (!direct || ["rejected", "cancelled"].includes(payment.status))
+          return;
         throw new Error("SUBSCRIPTION_INVOICE_NOT_FOUND");
       }
       subscriptionId = invoice.preapproval_id;
@@ -428,7 +430,7 @@ export async function syncPayment(id: string, subscriptionId?: string) {
     payment.status === "approved"
       ? "partially_refunded"
       : payment.status;
-  await rpc("amobla_apply_payment", {
+  const recorded = await rpc<string | null>("amobla_apply_payment", {
     p_id: String(payment.id),
     p_order: order.id,
     p_status: status,
@@ -446,19 +448,67 @@ export async function syncPayment(id: string, subscriptionId?: string) {
     await endLaunchPrice(subscriptionId, order).catch(() =>
       console.error("launch_price_not_ended", subscriptionId),
     );
-  // A full refund or a chargeback undoes the purchase: renewals must stop,
-  // or a blocked account would keep being charged every month. A failure is
-  // thrown so the notification is retried.
+  // A chargeback, or a full refund of the latest charge, undoes the purchase:
+  // renewals must stop, or the buyer would keep being charged. Refunding an
+  // older charge, or one of two charges of the same cycle (a duplicated
+  // renewal), leaves the plan running. A failure is thrown so the
+  // notification is retried.
   if (subscriptionId && ["refunded", "charged_back"].includes(status)) {
-    const { data, error } = await adminClient()
-      .from("subscriptions")
-      .select("status")
-      .eq("id", subscriptionId)
-      .maybeSingle();
-    if (error) throw new Error("SUBSCRIPTION_LOOKUP_FAILED");
-    if (data && data.status !== "cancelled")
+    const db = adminClient();
+    const [current, charges] = await Promise.all([
+      db
+        .from("subscriptions")
+        .select("status")
+        .eq("id", subscriptionId)
+        .maybeSingle(),
+      db.from("payments").select("id,status,paid_at").eq("order_id", order.id),
+    ]);
+    if (current.error || charges.error)
+      throw new Error("SUBSCRIPTION_LOOKUP_FAILED");
+    if (
+      current.data &&
+      current.data.status !== "cancelled" &&
+      (status === "charged_back" ||
+        endsCurrentPeriod(String(payment.id), charges.data || []))
+    )
       await retireSubscription(subscriptionId);
   }
+  // A second payment that must not grant (a retried pack checkout, a second
+  // one-per-account pack) is given back instead of waiting for support. A
+  // network or server failure is retried; a refusal (for example, not enough
+  // balance) leaves it 'duplicate', which support sees as a refund to make.
+  if (recorded === "duplicate" && payment.status === "approved")
+    await mp(
+      `/v1/payments/${encodeURIComponent(String(payment.id))}/refunds`,
+      "POST",
+      {},
+      `duplicate-${payment.id}`,
+    ).catch((e) => {
+      // 400/404/422: Mercado Pago will not refund it (no balance, too old).
+      // Anything else (rate limit, timeout, credentials) is retried.
+      if (e instanceof MercadoPagoError && [400, 404, 422].includes(e.status))
+        console.error("duplicate_refund_refused", payment.id, e.status);
+      else throw e;
+    });
+}
+/** Two charges this close together belong to the same billing cycle. */
+const SAME_CYCLE_MS = 15 * 24 * 60 * 60 * 1000;
+/** True when refunding this charge ends the plan: no other charge is still
+ * paid after it, nor in its same billing cycle (a duplicated renewal). */
+export function endsCurrentPeriod(
+  id: string,
+  charges: { id: string; status: string; paid_at: string | null }[],
+) {
+  const own = Date.parse(
+    charges.find((c) => c.id === id)?.paid_at || new Date().toISOString(),
+  );
+  return !charges.some(
+    (c) =>
+      c.id !== id &&
+      ["approved", "partially_refunded"].includes(c.status) &&
+      c.paid_at &&
+      Date.parse(c.paid_at) > own - SAME_CYCLE_MS,
+  );
 }
 type AuthorizedInvoice = {
   id: string | number;
@@ -492,6 +542,13 @@ export async function authorizedInvoice(id: string) {
 export async function endLaunchPrice(subscriptionId: string, order: Order) {
   const { promo_months: months, price_cents: list } = order.snapshot;
   if (!months || !list) return;
+  const current = await adminClient()
+    .from("subscriptions")
+    .select("list_price_restored_at")
+    .eq("id", subscriptionId)
+    .maybeSingle();
+  if (current.error) throw new Error("SUBSCRIPTION_LOOKUP_FAILED");
+  if (current.data?.list_price_restored_at) return;
   const paid = await adminClient()
     .from("payments")
     .select("id", { count: "exact", head: true })
@@ -503,26 +560,35 @@ export async function endLaunchPrice(subscriptionId: string, order: Order) {
   const sub = await mp<Subscription>(path);
   verifySeller(sub.collector_id);
   if (
-    sub.status === "cancelled" ||
-    moneyCents(sub.auto_recurring.transaction_amount) === list
+    sub.status !== "cancelled" &&
+    moneyCents(sub.auto_recurring.transaction_amount) !== list
   )
-    return;
-  await mp(path, "PUT", {
-    auto_recurring: { transaction_amount: list / 100, currency_id: "ARS" },
-  });
-}
-/** Daily fallback for launch prices whose switch failed in the webhook. */
-export async function endLaunchPrices() {
-  const { data, error } = await adminClient()
+    await mp(path, "PUT", {
+      auto_recurring: { transaction_amount: list / 100, currency_id: "ARS" },
+    });
+  // Done for good: the daily sweep stops checking this subscription.
+  const done = await adminClient()
     .from("subscriptions")
-    .select("id,orders(*)")
-    .eq("status", "authorized")
-    .limit(200);
-  if (error) throw new Error("SUBSCRIPTION_LOOKUP_FAILED");
-  for (const row of data || []) {
-    const order = row.orders as unknown as Order | null;
-    if (!order?.snapshot.promo_price_cents) continue;
-    await endLaunchPrice(row.id, order).catch(() =>
+    .update({ list_price_restored_at: new Date().toISOString() })
+    .eq("id", subscriptionId);
+  if (done.error) throw new Error("SUBSCRIPTION_UPDATE_FAILED");
+}
+/** Daily fallback for launch prices whose switch failed in the webhook.
+ * Stops before `until` (a timestamp) so the cron keeps time for other work. */
+export async function endLaunchPrices(until = Infinity) {
+  const rows = await rpc<{ id: string; order: Order }[]>(
+    "amobla_promo_subscriptions",
+    { p_limit: 50 },
+  );
+  const db = adminClient();
+  for (const row of rows || []) {
+    if (Date.now() > until) break;
+    // One that keeps failing goes behind the others on the next run.
+    await db
+      .from("subscriptions")
+      .update({ list_price_checked_at: new Date().toISOString() })
+      .eq("id", row.id);
+    await endLaunchPrice(row.id, row.order).catch(() =>
       console.error("launch_price_not_ended", row.id),
     );
   }
@@ -530,21 +596,14 @@ export async function endLaunchPrices() {
 /** Daily fallback: a subscription whose charges were all refunded must stop
  * renewing even if the refund was processed without cancelling it (a deploy
  * that predates that rule, a lost notification). */
-export async function retireReversedSubscriptions() {
-  const { data, error } = await adminClient()
-    .from("subscriptions")
-    .select("id,orders(payments(status))")
-    .in("status", ["authorized", "paused"])
-    .limit(200);
-  if (error) throw new Error("SUBSCRIPTION_LOOKUP_FAILED");
-  for (const row of data || []) {
-    const order = row.orders as unknown as {
-      payments: { status: string }[];
-    } | null;
-    if (!isFullyReversed((order?.payments || []).map((p) => p.status)))
-      continue;
-    await retireSubscription(row.id).catch(() =>
-      console.error("reversed_subscription_not_retired", row.id),
+export async function retireReversedSubscriptions(until = Infinity) {
+  const ids = await rpc<string[]>("amobla_reversed_subscriptions", {
+    p_limit: 50,
+  });
+  for (const id of ids || []) {
+    if (Date.now() > until) break;
+    await retireSubscription(id).catch(() =>
+      console.error("reversed_subscription_not_retired", id),
     );
   }
 }
@@ -563,14 +622,16 @@ export async function processBillingEvent(topic: string, id: string) {
 /** Processes a stored notification; false means it failed and must be retried. */
 export async function processInbox(key: string, topic: string, id: string) {
   const db = adminClient();
+  let received: string | null = null;
   try {
     const existing = await db
       .from("webhook_events")
-      .select("processed_at")
+      .select("processed_at,received_at")
       .eq("event_key", key)
       .maybeSingle();
     if (existing.error) throw new Error("INBOX_LOOKUP_FAILED");
     if (existing.data?.processed_at) return true;
+    received = existing.data?.received_at || null;
     await processBillingEvent(topic, id);
     const r = await db
       .from("webhook_events")
@@ -581,6 +642,24 @@ export async function processInbox(key: string, topic: string, id: string) {
   } catch (e) {
     const code =
       e instanceof Error ? e.message.slice(0, 80) : "PROCESSING_FAILED";
+    // Mercado Pago lists a real invoice within minutes. One it still does not
+    // have three days later never existed for this seller (for example, it
+    // belongs to the other mode): it is closed, keeping its error.
+    if (
+      topic === "subscription_authorized_payment" &&
+      code === "MERCADOPAGO_404" &&
+      received &&
+      Date.parse(received) < Date.now() - 3 * 24 * 60 * 60 * 1000
+    ) {
+      const closed = await db
+        .from("webhook_events")
+        .update({
+          processed_at: new Date().toISOString(),
+          last_error: `ABANDONED_${code}`,
+        })
+        .eq("event_key", key);
+      if (!closed.error) return true;
+    }
     // Counting attempts lets the retry queue put events that keep failing
     // behind fresh ones (amobla_inbox_failed needs the 20261021 migration).
     const counted = await db.rpc("amobla_inbox_failed", {

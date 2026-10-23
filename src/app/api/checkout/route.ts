@@ -167,7 +167,10 @@ export async function POST(request: Request) {
         (pack || created.order.payer_email === email)
       )
         return Response.json(
-          { url: checkoutUrl(created.order.checkout_url), order: key },
+          {
+            url: checkoutUrl(created.order.checkout_url),
+            order: created.order.id,
+          },
           { headers: { "Cache-Control": "no-store" } },
         );
       throw new HttpError(

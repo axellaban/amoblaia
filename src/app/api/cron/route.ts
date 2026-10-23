@@ -89,10 +89,12 @@ export async function GET(request: Request) {
         console.error("cron_checkout_pending", id),
       );
     }
-    await endLaunchPrices().catch(() =>
+    // Billing sweeps stop starting new work 150 s before the deadline: one
+    // Mercado Pago call can take 30 s and a generation needs about 85 s.
+    await endLaunchPrices(deadline - 150000).catch(() =>
       console.error("cron_launch_prices_failed"),
     );
-    await retireReversedSubscriptions().catch(() =>
+    await retireReversedSubscriptions(deadline - 150000).catch(() =>
       console.error("cron_reversed_subscriptions_failed"),
     );
     for (const job of jobs.data || [])

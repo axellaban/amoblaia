@@ -95,7 +95,10 @@ describe("Primera propiedad pack", () => {
   it("is sold once per account and its photos last 30 days", async () => {
     const user = await buyer();
     const abandoned = await order(user, "pack-first");
-    // An unpaid checkout does not use up the offer.
+    // An unpaid checkout that never became ready does not use up the offer.
+    await db.exec(
+      `update orders set created_at=now()-interval '10 minutes' where id='${abandoned.id}'`,
+    );
     const first = await order(user, "pack-first");
     expect(abandoned.id).not.toBe(first.id);
     await pay("first-1", first.id, 499000, null);

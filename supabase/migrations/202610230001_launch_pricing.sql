@@ -1,9 +1,12 @@
 -- List prices back at parity with the reference (202610200003), a 72-hour
 -- launch price on the monthly plans for their first three charges, and a
 -- one-per-account "Primera propiedad" pack whose photos last 30 days.
--- The launch window starts when this file is applied; to move it:
+-- The launch window starts when this file is first applied; to move it:
 --   update public.products set promo_ends_at = '2026-10-27 23:59-03' where promo_price_cents is not null;
--- Safe to re-run: it only adds missing columns and updates catalog rows.
+-- Safe to re-run: the catalog is only written on the first run (before the
+-- pack-first row exists), so a re-run never restarts the window, restores
+-- prices changed from the admin panel or reactivates a plan. Its functions are
+-- replaced by 202610230002: re-running this file means re-running that one.
 begin;
 alter table public.products
  add column if not exists promo_price_cents bigint check(promo_price_cents>=100),
@@ -15,35 +18,38 @@ alter table public.products drop constraint if exists products_promo_below_price
 alter table public.products add constraint products_promo_below_price
  check(promo_price_cents is null or (kind='month' and promo_months is not null and promo_price_cents<price_cents));
 
-update public.products as p
-set price_cents = v.price_cents, active = true
-from (values
-  ('basic-month',          3890000),
-  ('standard-month',       5390000),
-  ('professional-month',  12190000),
-  ('enterprise-month',    21490000),
-  ('basic-year',          29690000),
-  ('standard-year',       35190000),
-  ('professional-year',   72290000),
-  ('enterprise-year',    146490000)
-) as v(sku, price_cents)
-where p.sku = v.sku;
+do $catalog$ begin
+ -- The pack this file creates marks that it already ran once.
+ if not exists(select 1 from public.products where sku='pack-first') then
+  update public.products as p
+  set price_cents = v.price_cents, active = true
+  from (values
+    ('basic-month',          3890000),
+    ('standard-month',       5390000),
+    ('professional-month',  12190000),
+    ('enterprise-month',    21490000),
+    ('basic-year',          29690000),
+    ('standard-year',       35190000),
+    ('professional-year',   72290000),
+    ('enterprise-year',    146490000)
+  ) as v(sku, price_cents)
+  where p.sku = v.sku;
 
-update public.products as p
-set promo_price_cents = v.promo_cents, promo_months = 3, promo_ends_at = now() + interval '72 hours'
-from (values
-  ('basic-month',          1990000),
-  ('standard-month',       2690000),
-  ('professional-month',   5990000),
-  ('enterprise-month',    10490000)
-) as v(sku, promo_cents)
-where p.sku = v.sku;
+  update public.products as p
+  set promo_price_cents = v.promo_cents, promo_months = 3, promo_ends_at = now() + interval '72 hours'
+  from (values
+    ('basic-month',          1990000),
+    ('standard-month',       2690000),
+    ('professional-month',   5990000),
+    ('enterprise-month',    10490000)
+  ) as v(sku, promo_cents)
+  where p.sku = v.sku;
 
-insert into public.products(sku,name,kind,photos,price_cents,active,per_account_limit,valid_days)
-values ('pack-first','Primera propiedad','pack',5,499000,true,1,30)
-on conflict (sku) do update set name=excluded.name, kind=excluded.kind, photos=excluded.photos,
- price_cents=excluded.price_cents, active=excluded.active,
- per_account_limit=excluded.per_account_limit, valid_days=excluded.valid_days;
+  insert into public.products(sku,name,kind,photos,price_cents,active,per_account_limit,valid_days)
+  values ('pack-first','Primera propiedad','pack',5,499000,true,1,30)
+  on conflict (sku) do nothing;
+ end if;
+end $catalog$;
 
 -- As in 202610220001 (hosted checkout), plus: the order keeps the launch
 -- price only if the window is open when it is created, and a per-account
@@ -85,7 +91,10 @@ grant execute on function public.amobla_create_order(uuid,uuid,text,boolean) to 
 
 -- As in 202610210003, plus: a launch-price order accepts either its launch
 -- or its list amount, and a pack with valid_days grants photos that expire.
-create or replace function public.amobla_apply_payment(p_id text,p_order uuid,p_status text,p_amount bigint,p_paid_at timestamptz,p_subscription text default null)
+-- Dropped first: 202610230002 changes its return type, and this file must
+-- still re-run after it.
+drop function if exists public.amobla_apply_payment(text,uuid,text,bigint,timestamptz,text);
+create function public.amobla_apply_payment(p_id text,p_order uuid,p_status text,p_amount bigint,p_paid_at timestamptz,p_subscription text default null)
  returns void language plpgsql security definer set search_path=public as $$
 declare o orders; previous payments; anchor timestamptz; ending timestamptz; g uuid;
 begin

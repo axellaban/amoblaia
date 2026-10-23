@@ -9,6 +9,8 @@ vi.mock("@/lib/supabase/server", () => ({
         select: () => q,
         eq: () => q,
         not: async () => ({ count: state.paid, error: null }),
+        update: () => ({ eq: async () => ({ error: null }) }),
+        maybeSingle: async () => ({ data: null, error: null }),
       };
       return q;
     },
