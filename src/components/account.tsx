@@ -159,6 +159,20 @@ export function AccountDashboard() {
       setBusy(false);
     }
   }
+  // Paid photos still in their period: shows the balance against what was bought.
+  const active = (account?.grants || []).filter(
+    (g) =>
+      !g.source_key.startsWith("trial:") &&
+      !g.revoked &&
+      (!g.expires_at || Date.parse(g.expires_at) > Date.now()),
+  );
+  const period = {
+    total: active.reduce((n, g) => n + g.total, 0),
+    renews: active
+      .map((g) => g.expires_at)
+      .filter((d): d is string => Boolean(d))
+      .sort()[0],
+  };
   return (
     <div className="account-page container">
       <div className="account-heading">
@@ -234,7 +248,9 @@ export function AccountDashboard() {
               <p>
                 {account.free
                   ? "Diseños con marca de agua, de a 3 por tanda. Para fotos sin marca, elegí un plan."
-                  : "Regeneraciones incluidas durante tu período pago."}
+                  : period.total
+                    ? `Te quedan ${account.credits} de ${period.total} fotos${period.renews ? ` hasta el ${date(period.renews)}` : ""}. Cada foto incluye sus regeneraciones.`
+                    : "Regeneraciones incluidas durante tu período pago."}
               </p>
               <Link href="/estudio" className="button button-primary">
                 Crear un diseño
