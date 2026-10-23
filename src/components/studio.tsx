@@ -50,6 +50,7 @@ import { Comparison } from "./comparison";
 import { clearDraft, loadDraft, saveDraft } from "@/lib/studio-draft";
 import { FREE_RESULT_LIMIT, freeBatchSize } from "@/lib/free-tier";
 import { trackPhotoUploaded } from "@/lib/ads";
+import { track, trackOnce } from "@/lib/analytics";
 export function Studio({
   embedded = false,
   onClose,
@@ -431,6 +432,8 @@ export function Studio({
           ...(previous || []).filter((v) => v.id !== id),
         ]);
         setNotice("Diseño listo y guardado.");
+        track("herramienta_resultado", { herramienta: "estudio", room, style, mode });
+        trackOnce("activacion", "activacion", { room, style, mode });
         requestKey.current = null;
         return job.projectId || null;
       }
@@ -510,6 +513,11 @@ export function Studio({
     (!status.authenticated || free) &&
     !demo &&
     !(projectId && variants?.some((v) => v.free === false));
+  // The free allowance ran out: the studio now offers plans instead of designs.
+  const limitReached = cloudReady && freeTier && freeRemaining <= 0;
+  useEffect(() => {
+    if (limitReached) track("limite_planes_visto", { origen: "limite_gratis" });
+  }, [limitReached]);
   async function generate() {
     if (generateLock.current || !source) return;
     // Set when a batch is already running: opened once the lock is released.
@@ -590,6 +598,7 @@ export function Studio({
       }
     }
     if (activeFreeTier && availableFree <= 0) {
+      track("limite_planes_visto", { origen: "estudio" });
       window.location.assign("/precios");
       return;
     }
@@ -637,6 +646,13 @@ export function Studio({
         }
         if (!response.ok) throw new Error(batch.error);
         trackPhotoUploaded();
+        track("foto_subida", {
+          room,
+          style,
+          mode,
+          gratis: activeFreeTier,
+          propuestas: (batch.ids || [batch.id]).length,
+        });
         const ids: string[] = batch.ids || [batch.id];
         setProjectId(batch.projectId);
         setRoundTotal(ids.length);
@@ -669,8 +685,11 @@ export function Studio({
         throw new Error(payload.error);
       }
       trackPhotoUploaded();
+      track("foto_subida", { room, style, mode, gratis: false, propuestas: 1 });
       const url = await blobToDataURL(await response.blob());
       setResult(url);
+      track("herramienta_resultado", { herramienta: "estudio", room, style, mode });
+      trackOnce("activacion", "activacion", { room, style, mode });
       await persist(url);
     } catch (e) {
       setError(
@@ -727,6 +746,7 @@ export function Studio({
     }
   }
   async function download(sideBySide = false) {
+    track("diseno_descargado", { comparacion: sideBySide, room, style });
     try {
       await downloadDesign(
         result,

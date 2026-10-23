@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useState, useRef, useEffect } from "react";
+import { track } from "@/lib/analytics";
 import {
   Check,
   ArrowUpRight,
@@ -206,7 +207,16 @@ export function PricingPlans({
       // Uncertain errors (5xx) keep the key so a retry cannot duplicate it.
       if (response.status >= 400 && response.status < 500)
         delete checkoutKeys.current[slot];
-      if (!response.ok) throw new Error(payload.error);
+      if (!response.ok) {
+        track("checkout_error", {
+          sku,
+          status: response.status,
+          code: payload.code || `HTTP_${response.status}`,
+          mensaje: payload.error,
+        });
+        throw new Error(payload.error);
+      }
+      track("checkout_creado", { sku });
       window.location.assign(payload.url);
     } catch (e) {
       setError(
@@ -276,6 +286,7 @@ export function PricingPlans({
             onClick={() => {
               setError("");
               setPayerEmail("");
+              track("plan_click", { sku, anual: annual, logueado: Boolean(email) });
               // The order belongs to the signed-in customer before leaving for MP.
               if (!email) {
                 window.location.assign("/acceso?next=%2Fprecios");
@@ -435,6 +446,11 @@ export function PricingPlans({
                 onClick={() => {
                   setError("");
                   setPayerEmail("");
+                  track("plan_click", {
+                    sku: firstPack.sku,
+                    anual: false,
+                    logueado: Boolean(email),
+                  });
                   if (!email) {
                     window.location.assign("/acceso?next=%2Fprecios");
                     return;
