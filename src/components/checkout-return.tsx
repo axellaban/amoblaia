@@ -6,6 +6,7 @@ import {
   checkoutMessages,
   type CheckoutResult,
 } from "@/lib/commerce/checkout-result";
+import { trackOnce } from "@/lib/analytics";
 
 export function CheckoutReturn({
   order,
@@ -40,6 +41,11 @@ export function CheckoutReturn({
       const next = payload as CheckoutResult;
       setResult(next);
       setError("");
+      if (next.state === "approved")
+        trackOnce(`compra:${next.order}`, "compra_confirmada", {
+          order: next.order,
+          plan: next.name,
+        });
       if (
         ["approved", "refunded", "cancelled", "duplicate"].includes(next.state)
       )
