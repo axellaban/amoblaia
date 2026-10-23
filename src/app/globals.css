@@ -3955,6 +3955,9 @@ fieldset {
 .mobile-nav-actions {
   display: none;
 }
+.nav-pending {
+  visibility: hidden;
+}
 @media (max-width: 700px) {
   .nav-links .mobile-nav-actions {
     display: grid;
@@ -5786,6 +5789,10 @@ h2 .accent {
 .header-private .account-nav {
   color: var(--ink);
   border-color: var(--line);
+}
+/* The rule above darkens every menu link, the menu's button included. */
+.header-private .nav-links .mobile-nav-actions .button-primary {
+  color: white;
 }
 @media (max-width: 1100px) {
   .header-private .nav-links.is-open {

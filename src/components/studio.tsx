@@ -740,6 +740,8 @@ export function Studio({
     try {
       const response = await fetch("/api/session", { method: "DELETE" });
       if (!response.ok) throw new Error();
+      // Lets the header drop its account links.
+      window.dispatchEvent(new Event("amoblaia:session"));
       setStatus((s) => (s ? { ...s, authenticated: false } : s));
       setProjects([]);
       setCredits(null);
