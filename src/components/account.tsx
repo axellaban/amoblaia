@@ -17,6 +17,7 @@ import { browserClient } from "@/lib/supabase/client";
 type Account = {
   email: string;
   admin: boolean;
+  unlimited?: boolean;
   credits: number;
   free: boolean;
   freeRemaining: number;
@@ -252,14 +253,20 @@ export function AccountDashboard() {
               <Camera size={24} />
               <span>{account.free ? "TU PLAN" : "FOTOS DISPONIBLES"}</span>
               <strong>
-                {account.free ? "Prueba gratis" : account.credits}
+                {account.unlimited
+                  ? "Ilimitadas"
+                  : account.free
+                    ? "Prueba gratis"
+                    : account.credits}
               </strong>
               <p>
-                {account.free
-                  ? "Diseños con marca de agua, de a 3 por tanda. Para fotos sin marca, elegí un plan."
-                  : period.total
-                    ? `Te quedan ${account.credits} de ${period.total} fotos${period.renews ? ` hasta el ${date(period.renews)}` : ""}. Cada foto incluye sus regeneraciones.`
-                    : "Regeneraciones incluidas durante tu período pago."}
+                {account.unlimited
+                  ? "Cuenta del equipo: tus diseños no descuentan fotos."
+                  : account.free
+                    ? "Diseños con marca de agua, de a 3 por tanda. Para fotos sin marca, elegí un plan."
+                    : period.total
+                      ? `Te quedan ${account.credits} de ${period.total} fotos${period.renews ? ` hasta el ${date(period.renews)}` : ""}. Cada foto incluye sus regeneraciones.`
+                      : "Regeneraciones incluidas durante tu período pago."}
               </p>
               <Link href="/estudio" className="button button-primary">
                 Crear un diseño

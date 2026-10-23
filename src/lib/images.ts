@@ -55,6 +55,28 @@ export async function optimizePhoto(file: File) {
     bitmap.close();
   }
 }
+/** A small copy for previews: a 2048 px photo costs ~12 MB of memory to show. */
+export async function thumbnail(file: Blob, width = 480) {
+  const bitmap = await createImageBitmap(file);
+  try {
+    const ratio = Math.min(1, width / bitmap.width);
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bitmap.width * ratio);
+    canvas.height = Math.round(bitmap.height * ratio);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("NO_CANVAS");
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    return await new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob(
+        (b) => (b ? resolve(b) : reject(new Error("NO_THUMBNAIL"))),
+        "image/jpeg",
+        0.8,
+      ),
+    );
+  } finally {
+    bitmap.close();
+  }
+}
 async function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
