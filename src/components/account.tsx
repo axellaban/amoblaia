@@ -174,10 +174,12 @@ export function AccountDashboard() {
   );
   const period = {
     total: active.reduce((n, g) => n + g.total, 0),
-    renews: active
-      .map((g) => g.expires_at)
-      .filter((d): d is string => Boolean(d))
-      .sort()[0],
+    // One date only when the whole balance ends together; otherwise the
+    // list below gives each expiry.
+    renews:
+      new Set(active.map((g) => g.expires_at)).size === 1
+        ? active[0]?.expires_at
+        : null,
   };
   return (
     <div className="account-page container">
@@ -411,14 +413,8 @@ export function AccountDashboard() {
           )}
           <section className="account-panel">
             <h2>Fotos y vencimientos</h2>
-            {account.grants
-              .filter((g) => !g.source_key.startsWith("trial:"))
-              .filter(
-                (g) =>
-                  g.remaining > 0 &&
-                  !g.revoked &&
-                  (!g.expires_at || Date.parse(g.expires_at) > Date.now()),
-              )
+            {active
+              .filter((g) => g.remaining > 0)
               .map((g) => (
                 <div className="data-row" key={g.id}>
                   <strong>

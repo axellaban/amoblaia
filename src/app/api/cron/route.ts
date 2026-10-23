@@ -62,6 +62,12 @@ export async function GET(request: Request) {
         "paid_until",
         new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       )
+      // Lapsed or paused plans keep an old date: without a floor they would
+      // hold every slot and due renewals would never be reconciled.
+      .gte(
+        "paid_until",
+        new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
+      )
       .order("paid_until")
       .limit(5),
   ]);

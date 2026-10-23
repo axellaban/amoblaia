@@ -421,9 +421,11 @@ export async function syncPayment(id: string, subscriptionId?: string) {
     }
   }
   validatePayment(payment, order);
+  // Only an approval with money given back is a partial refund: a chargeback
+  // or a dispute can also report refunded amounts and must keep its status.
   const status =
     (payment.transaction_amount_refunded || 0) > 0 &&
-    payment.status !== "refunded"
+    payment.status === "approved"
       ? "partially_refunded"
       : payment.status;
   await rpc("amobla_apply_payment", {
@@ -448,11 +450,12 @@ export async function syncPayment(id: string, subscriptionId?: string) {
   // or a blocked account would keep being charged every month. A failure is
   // thrown so the notification is retried.
   if (subscriptionId && ["refunded", "charged_back"].includes(status)) {
-    const { data } = await adminClient()
+    const { data, error } = await adminClient()
       .from("subscriptions")
       .select("status")
       .eq("id", subscriptionId)
       .maybeSingle();
+    if (error) throw new Error("SUBSCRIPTION_LOOKUP_FAILED");
     if (data && data.status !== "cancelled")
       await retireSubscription(subscriptionId);
   }
