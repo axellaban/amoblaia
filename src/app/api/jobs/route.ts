@@ -1,6 +1,7 @@
 import { after } from "next/server";
 import { requireUser, failure, rpc } from "@/lib/commerce/http";
 import { enqueuePhoto, runJob } from "@/lib/commerce/jobs";
+import { syncUnlimited, UNLIMITED_DAILY_LIMIT } from "@/lib/commerce/unlimited";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 export async function POST(request: Request) {
@@ -11,10 +12,15 @@ export async function POST(request: Request) {
       p_user: user.id,
       p_trial: process.env.LIVE_TRIAL_ENABLED === "true",
     });
+    const { unlimited } = await syncUnlimited(user);
     // When this function will be stopped (maxDuration), so each render
     // leaves room to record its result.
     const deadline = started + maxDuration * 1000 - 5000;
-    const batch = await enqueuePhoto(request, user.id);
+    const batch = await enqueuePhoto(
+      request,
+      user.id,
+      unlimited ? UNLIMITED_DAILY_LIMIT : undefined,
+    );
     after(async () => {
       try {
         await Promise.allSettled(batch.ids.map((id) => runJob(id, deadline)));

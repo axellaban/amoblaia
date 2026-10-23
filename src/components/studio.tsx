@@ -50,6 +50,8 @@ import { Comparison } from "./comparison";
 import { clearDraft, loadDraft, saveDraft } from "@/lib/studio-draft";
 import { FREE_RESULT_LIMIT, freeBatchSize } from "@/lib/free-tier";
 import { trackPhotoUploaded } from "@/lib/ads";
+import { waitForJob } from "@/lib/jobs-client";
+import { BatchList, useBatch } from "./batch-queue";
 export function Studio({
   embedded = false,
   onClose,
@@ -86,6 +88,7 @@ export function Studio({
   const [projectId, setProjectId] = useState<string | null>(null);
   const [variants, setVariants] = useState<Project["variants"]>([]);
   const [credits, setCredits] = useState<number | null>(null);
+  const [unlimited, setUnlimited] = useState(false);
   const [free, setFree] = useState(false);
   const [freeRemaining, setFreeRemaining] = useState(0);
   const [draftReady, setDraftReady] = useState(false);
@@ -110,6 +113,8 @@ export function Studio({
   const loginTrigger = useRef<HTMLButtonElement>(null);
   const generateLock = useRef(false);
   const restoringProject = useRef<string | null>(null);
+  const batch = useBatch(() => void refreshCloud().catch(() => null));
+  const batchMode = batch.items.length > 0;
   useEffect(() => {
     let active = true;
     void loadDraft()
@@ -171,6 +176,7 @@ export function Studio({
               ]);
             if (typeof account.credits === "number")
               setCredits(account.credits);
+            setUnlimited(account.unlimited === true);
             setFree(account.free === true);
             setFreeRemaining(account.freeRemaining ?? 0);
             setCloudReady(true);
@@ -314,6 +320,33 @@ export function Studio({
       if (input.current) input.current.value = "";
     }
   }
+  async function acceptFiles(selected: File[]) {
+    if (!selected.length) return;
+    if (batchMode || (selected.length > 1 && batchAllowed)) {
+      if (input.current) input.current.value = "";
+      setError("");
+      setNotice("");
+      const problems = await batch.add(selected, room);
+      if (problems.length) setError(problems.join(" "));
+      return;
+    }
+    await acceptFile(selected[0]);
+    if (selected.length > 1 && status?.mode === "cloud")
+      setNotice(
+        "Subir varias fotos juntas está incluido en los planes pagos. Abrimos la primera.",
+      );
+  }
+  function startBatch() {
+    setError("");
+    setNotice("");
+    if (!consent) {
+      setError(
+        "Confirmá que podés usar estas fotos y enviarlas al proveedor de IA.",
+      );
+      return;
+    }
+    void batch.start({ style, mode, notes });
+  }
   function useExample(r: RoomId) {
     photoSession.current++;
     void clearDraft().catch(() => {});
@@ -377,6 +410,7 @@ export function Studio({
     const local = await listProjects().catch(() => [] as Project[]);
     setProjects([...(remote.projects || []), ...local.filter((p) => p.demo)]);
     if (typeof account.credits === "number") setCredits(account.credits);
+    setUnlimited(account.unlimited === true);
     setFree(account.free === true);
     setFreeRemaining(account.freeRemaining ?? 0);
     return remote.projects as Project[];
@@ -384,69 +418,37 @@ export function Studio({
   async function watchJob(id: string) {
     const session = photoSession.current;
     const current = () => session === photoSession.current;
-    let failures = 0;
-    for (let i = 0; i < 105; i++) {
-      let job: {
-        status?: string;
-        error?: string;
-        result?: string;
-        variant?: NonNullable<Project["variants"]>[number];
-        projectId?: string;
-      } | null;
-      try {
-        const response = await fetch(`/api/jobs/${encodeURIComponent(id)}`, {
-          cache: "no-store",
-        });
-        job = await response.json().catch(() => null);
-        // Server hiccups and dropped connections are retried; only a real
-        // answer (such as 'not found') ends the wait.
-        if (response.status >= 500 || response.status === 429 || !job)
-          throw new Error("RETRY");
-        if (!response.ok)
-          throw Object.assign(new Error(job.error), { final: true });
-        failures = 0;
-      } catch (e) {
-        if ((e as { final?: boolean }).final) throw e;
-        if (++failures > 8)
-          throw new Error(
-            "Perdimos la conexión. Tu diseño sigue en proceso y queda guardado en tus proyectos.",
-            { cause: e },
-          );
-        await new Promise((resolve) => setTimeout(resolve, 3000));
-        continue;
-      }
-      if (job.status === "succeeded") {
-        if (!job.result || !job.variant)
-          throw new Error(
-            "No pudimos recuperar esta imagen. Volvé a abrir la foto desde tus proyectos.",
-          );
-        if (!current()) return job.projectId || null;
-        // Publish the finished image before fetching the rest of the library.
-        setResult(job.result);
-        setBatchCompleted((n) => n + 1);
-        setProjectId(job.projectId || null);
-        const variant = job.variant;
-        setVariants((previous) => [
-          variant,
-          ...(previous || []).filter((v) => v.id !== id),
-        ]);
-        setNotice("Diseño listo y guardado.");
-        requestKey.current = null;
-        return job.projectId || null;
-      }
-      if (job.status === "failed" || job.status === "needs_review") {
-        if (!current()) return null;
-        requestKey.current = null;
-        await refreshCloud().catch(() => null);
-        throw new Error(job.error);
-      }
-      await new Promise((resolve) => setTimeout(resolve, i < 20 ? 1500 : 3000));
+    const job = await waitForJob(id);
+    if (!job) {
+      if (current())
+        setNotice(
+          "Tu diseño sigue en proceso. Podés consultar su estado desde Mi cuenta.",
+        );
+      return null;
     }
-    if (current())
-      setNotice(
-        "Tu diseño sigue en proceso. Podés consultar su estado desde Mi cuenta.",
-      );
-    return null;
+    if (job.status === "succeeded") {
+      if (!job.result || !job.variant)
+        throw new Error(
+          "No pudimos recuperar esta imagen. Volvé a abrir la foto desde tus proyectos.",
+        );
+      if (!current()) return job.projectId || null;
+      // Publish the finished image before fetching the rest of the library.
+      setResult(job.result);
+      setBatchCompleted((n) => n + 1);
+      setProjectId(job.projectId || null);
+      const variant = job.variant;
+      setVariants((previous) => [
+        variant,
+        ...(previous || []).filter((v) => v.id !== id),
+      ]);
+      setNotice("Diseño listo y guardado.");
+      requestKey.current = null;
+      return job.projectId || null;
+    }
+    if (!current()) return null;
+    requestKey.current = null;
+    await refreshCloud().catch(() => null);
+    throw new Error(job.error);
   }
   useEffect(() => {
     const id = searchParams.get("job");
@@ -510,6 +512,14 @@ export function Studio({
     (!status.authenticated || free) &&
     !demo &&
     !(projectId && variants?.some((v) => v.free === false));
+  // Several photos at once is part of the paid plans.
+  const batchAllowed =
+    status?.mode === "cloud" &&
+    status.authenticated &&
+    !status.anonymous &&
+    cloudReady &&
+    !free;
+  const locked = busy || batch.running;
   async function generate() {
     if (generateLock.current || !source) return;
     // Set when a batch is already running: opened once the lock is released.
@@ -860,7 +870,9 @@ export function Studio({
                   : status.authenticated
                     ? free
                       ? "Prueba gratis · Mi cuenta"
-                      : `${credits ?? "…"} fotos · Mi cuenta`
+                      : unlimited
+                        ? "Fotos ilimitadas · Mi cuenta"
+                        : `${credits ?? "…"} fotos · Mi cuenta`
                     : "Ingresar a mi cuenta"}
               </Link>
             ) : status?.configured ? (
@@ -1019,9 +1031,11 @@ export function Studio({
               <div className="canvas-heading">
                 <h2>
                   <span className="section-number">01</span>{" "}
-                  {result
-                    ? "Tu espacio, transformado"
-                    : "La foto de tu espacio"}
+                  {batchMode
+                    ? "Las fotos de la propiedad"
+                    : result
+                      ? "Tu espacio, transformado"
+                      : "La foto de tu espacio"}
                 </h2>
                 {source && !busy && (
                   <button className="subtle-button" onClick={reset}>
@@ -1034,10 +1048,20 @@ export function Studio({
                 className="visually-hidden"
                 type="file"
                 accept="image/jpeg,image/png,image/webp"
-                aria-label="Subir foto de la propiedad"
-                onChange={(e) => acceptFile(e.target.files?.[0])}
+                aria-label="Subir fotos de la propiedad"
+                multiple
+                onChange={(e) => acceptFiles(Array.from(e.target.files || []))}
               />
-              {!source ? (
+              {batchMode ? (
+                <BatchList
+                  batch={batch}
+                  onAddPhotos={() => input.current?.click()}
+                  onFiles={(files) => void acceptFiles(files)}
+                  label={label}
+                  onLabelChange={setLabel}
+                  onError={setError}
+                />
+              ) : !source ? (
                 <div
                   className={`dropzone ${dragging ? "dragging" : ""}`}
                   onDragOver={(e) => {
@@ -1048,7 +1072,7 @@ export function Studio({
                   onDrop={(e) => {
                     e.preventDefault();
                     setDragging(false);
-                    void acceptFile(e.dataTransfer.files[0]);
+                    void acceptFiles(Array.from(e.dataTransfer.files));
                   }}
                 >
                   <div className="upload-illustration">
@@ -1066,7 +1090,11 @@ export function Studio({
                       ? "Preparando tu foto…"
                       : "Todo empieza con una foto."}
                   </h3>
-                  <p>Arrastrala hasta acá o elegila desde tu dispositivo.</p>
+                  <p>
+                    {batchAllowed
+                      ? "Arrastrá una o varias fotos (hasta 20) o elegilas desde tu dispositivo."
+                      : "Arrastrala hasta acá o elegila desde tu dispositivo."}
+                  </p>
                   <button
                     className="button button-primary"
                     onClick={() => input.current?.click()}
@@ -1077,7 +1105,8 @@ export function Studio({
                     ) : (
                       <Upload size={17} />
                     )}{" "}
-                    Subir mi foto <ArrowUpRight size={16} />
+                    {batchAllowed ? "Subir mis fotos" : "Subir mi foto"}{" "}
+                    <ArrowUpRight size={16} />
                   </button>
                   <span className="upload-meta">
                     JPG, PNG o WebP · Hasta 10 MB
@@ -1225,33 +1254,35 @@ export function Studio({
                   </label>
                 </div>
               )}
-              <div className="examples">
-                <div className="examples-heading">
-                  <span>¿SOLO ESTÁS EXPLORANDO?</span>
-                  <p>
-                    Probá con un espacio de ejemplo <ArrowRight size={14} />
-                  </p>
+              {!batchMode && (
+                <div className="examples">
+                  <div className="examples-heading">
+                    <span>¿SOLO ESTÁS EXPLORANDO?</span>
+                    <p>
+                      Probá con un espacio de ejemplo <ArrowRight size={14} />
+                    </p>
+                  </div>
+                  <div className="example-grid">
+                    {demoRooms.map((r) => (
+                      <button
+                        key={r}
+                        onClick={() => useExample(r)}
+                        disabled={busy || reading}
+                        aria-label={`Usar ejemplo de ${rooms.find((x) => x.id === r)?.name}`}
+                        className={demo && room === r ? "selected" : ""}
+                      >
+                        <img src={beforeImage(r)} alt="" />
+                        <span>{rooms.find((x) => x.id === r)?.name}</span>
+                        {demo && room === r && (
+                          <span className="example-check">
+                            <Check size={13} />
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <div className="example-grid">
-                  {demoRooms.map((r) => (
-                    <button
-                      key={r}
-                      onClick={() => useExample(r)}
-                      disabled={busy || reading}
-                      aria-label={`Usar ejemplo de ${rooms.find((x) => x.id === r)?.name}`}
-                      className={demo && room === r ? "selected" : ""}
-                    >
-                      <img src={beforeImage(r)} alt="" />
-                      <span>{rooms.find((x) => x.id === r)?.name}</span>
-                      {demo && room === r && (
-                        <span className="example-check">
-                          <Check size={13} />
-                        </span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              )}
               <div className="studio-tip">
                 <ShieldCheck size={18} />
                 <p>
@@ -1297,7 +1328,7 @@ export function Studio({
                     type="checkbox"
                     aria-label="Quitar muebles existentes"
                     checked={mode === "remove" || mode === "redesign"}
-                    disabled={busy || reading || freeTier}
+                    disabled={locked || reading || freeTier}
                     onChange={(e) =>
                       chooseMode(
                         e.target.checked
@@ -1319,7 +1350,7 @@ export function Studio({
                       type="checkbox"
                       aria-label="Agregar muebles"
                       checked={mode === "furnish" || mode === "redesign"}
-                      disabled={busy || reading || freeTier}
+                      disabled={locked || reading || freeTier}
                       onChange={(e) =>
                         chooseMode(
                           e.target.checked
@@ -1332,37 +1363,40 @@ export function Studio({
                     />
                   </label>
                   <div className="staging-selects">
-                    <fieldset disabled={busy || reading}>
-                      <legend>Elegí el ambiente</legend>
-                      <select
-                        className="studio-select"
-                        aria-label="Tipo de ambiente"
-                        value={room}
-                        onChange={(e) => chooseRoom(e.target.value as RoomId)}
-                      >
-                        {rooms.map((r) => (
-                          <option
-                            key={r.id}
-                            value={r.id}
-                            disabled={
-                              (freeTier && !freeRooms.includes(r.id)) ||
-                              (demo &&
-                                !(demoRooms as readonly string[]).includes(
-                                  r.id,
-                                ))
-                            }
-                          >
-                            {r.name}
-                            {freeTier && !freeRooms.includes(r.id)
-                              ? " · Plan pago"
-                              : ""}
-                          </option>
-                        ))}
-                      </select>
-                    </fieldset>
+                    {/* In a batch each photo has its own room. */}
+                    {!batchMode && (
+                      <fieldset disabled={busy || reading}>
+                        <legend>Elegí el ambiente</legend>
+                        <select
+                          className="studio-select"
+                          aria-label="Tipo de ambiente"
+                          value={room}
+                          onChange={(e) => chooseRoom(e.target.value as RoomId)}
+                        >
+                          {rooms.map((r) => (
+                            <option
+                              key={r.id}
+                              value={r.id}
+                              disabled={
+                                (freeTier && !freeRooms.includes(r.id)) ||
+                                (demo &&
+                                  !(demoRooms as readonly string[]).includes(
+                                    r.id,
+                                  ))
+                              }
+                            >
+                              {r.name}
+                              {freeTier && !freeRooms.includes(r.id)
+                                ? " · Plan pago"
+                                : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </fieldset>
+                    )}
                     <fieldset
                       disabled={
-                        busy ||
+                        locked ||
                         reading ||
                         ["remove", "enhance", "dusk"].includes(mode)
                       }
@@ -1400,7 +1434,7 @@ export function Studio({
                       .map((m) => (
                         <button
                           key={m.id}
-                          disabled={busy || reading || freeTier || demo}
+                          disabled={locked || reading || freeTier || demo}
                           className={mode === m.id ? "selected" : ""}
                           onClick={() => chooseMode(m.id)}
                         >
@@ -1420,67 +1454,103 @@ export function Studio({
                   maxLength={500}
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  disabled={busy || demo || mode === "remove"}
+                  disabled={locked || demo || mode === "remove"}
                 />
                 <span>{notes.length}/500</span>
               </div>
-              {source && !demo && (
+              {((source && !demo) || batchMode) && (
                 <label className="checkbox-label consent">
                   <input
                     type="checkbox"
                     checked={consent}
                     onChange={(e) => setConsent(e.target.checked)}
-                    disabled={busy}
+                    disabled={locked}
                   />{" "}
-                  Tengo permiso para usar esta foto y enviarla a nuestro
-                  proveedor de inteligencia artificial para generar el diseño.
+                  {batchMode
+                    ? "Tengo permiso para usar estas fotos y enviarlas a nuestro proveedor de inteligencia artificial para generar los diseños."
+                    : "Tengo permiso para usar esta foto y enviarla a nuestro proveedor de inteligencia artificial para generar el diseño."}
                 </label>
               )}
               <div className="generate-area" data-tour="generate">
-                <button
-                  ref={loginTrigger}
-                  className="button button-primary generate-button"
-                  onClick={generate}
-                  disabled={
-                    !source ||
-                    busy ||
-                    reading ||
-                    !status ||
-                    (!demo &&
-                      status.mode === "cloud" &&
-                      (status.authenticated || status.anonymous) &&
-                      credits === null)
-                  }
-                >
-                  {busy ? (
-                    <LoaderCircle size={19} className="spin" />
-                  ) : (
-                    <Sparkles size={19} />
-                  )}{" "}
-                  {busy
-                    ? "Creando tu diseño…"
-                    : demo
-                      ? "Ver transformación de ejemplo"
-                      : freeTier
-                        ? freeRemaining > 0
-                          ? `Crear ${freeBatchSize(freeRemaining)} diseños gratis`
-                          : "Ver planes"
-                        : result
-                          ? "Generar otra variante"
-                          : "Generar mi diseño"}
-                  {!busy && <ArrowUpRight size={19} />}
-                </button>
-                <p>
-                  {demo
-                    ? "Demo precargada · No consume API"
-                    : freeTier
-                      ? "Prueba gratis · Con marca de agua"
-                      : status?.configured
-                        ? status.mode === "cloud"
-                          ? "Calidad alta · Regeneraciones incluidas"
-                          : "Calidad alta · Acceso de piloto"
-                        : "Explorá gratis los ejemplos precargados"}
-                </p>
+                {batchMode ? (
+                  <>
+                    <button
+                      className="button button-primary generate-button"
+                      onClick={startBatch}
+                      disabled={
+                        batch.running || !batch.waiting || batch.preparing > 0
+                      }
+                    >
+                      {batch.running ? (
+                        <LoaderCircle size={19} className="spin" />
+                      ) : (
+                        <Sparkles size={19} />
+                      )}{" "}
+                      {batch.running
+                        ? "Creando tus diseños…"
+                        : batch.waiting
+                          ? `Crear ${batch.waiting} ${batch.waiting === 1 ? "diseño" : "diseños"}`
+                          : "Tanda terminada"}
+                      {!batch.running && batch.waiting > 0 && (
+                        <ArrowUpRight size={19} />
+                      )}
+                    </button>
+                    <p>
+                      {unlimited
+                        ? "Calidad alta · Una foto por vez · Sin límite de fotos"
+                        : credits !== null && batch.waiting > credits
+                          ? `Te quedan ${credits} fotos: las demás no se van a crear.`
+                          : "Calidad alta · Una foto por vez · Cada foto nueva usa 1 de tu saldo"}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      ref={loginTrigger}
+                      className="button button-primary generate-button"
+                      onClick={generate}
+                      disabled={
+                        !source ||
+                        busy ||
+                        reading ||
+                        !status ||
+                        (!demo &&
+                          status.mode === "cloud" &&
+                          (status.authenticated || status.anonymous) &&
+                          credits === null)
+                      }
+                    >
+                      {busy ? (
+                        <LoaderCircle size={19} className="spin" />
+                      ) : (
+                        <Sparkles size={19} />
+                      )}{" "}
+                      {busy
+                        ? "Creando tu diseño…"
+                        : demo
+                          ? "Ver transformación de ejemplo"
+                          : freeTier
+                            ? freeRemaining > 0
+                              ? `Crear ${freeBatchSize(freeRemaining)} diseños gratis`
+                              : "Ver planes"
+                            : result
+                              ? "Generar otra variante"
+                              : "Generar mi diseño"}
+                      {!busy && <ArrowUpRight size={19} />}
+                    </button>
+                    <p>
+                      {demo
+                        ? "Demo precargada · No consume API"
+                        : freeTier
+                          ? "Prueba gratis · Con marca de agua"
+                          : status?.configured
+                            ? status.mode === "cloud"
+                              ? "Calidad alta · Regeneraciones incluidas"
+                              : "Calidad alta · Acceso de piloto"
+                            : "Explorá gratis los ejemplos precargados"}
+                    </p>
+                  </>
+                )}
               </div>
               {status?.configured &&
                 !status.authenticated &&

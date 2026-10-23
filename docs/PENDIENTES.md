@@ -4,6 +4,11 @@ Se detiene el trabajo a pedido del usuario para conservar créditos. Los cambios
 
 Producción: https://amoblaia.vercel.app/
 
+## Cuentas ilimitadas y varias fotos por tanda — 23 de octubre de 2026
+
+- `UNLIMITED_EMAILS` (Vercel, separada por comas) marca cuentas del equipo que generan sin descontar fotos. Al entrar, la app les abre una asignación de 1.000.000 de fotos sin vencimiento (`credit_grants.source_key = unlimited:<id>`) y les sube el cupo diario a 1000. Si un email sale de la lista, esa asignación vence en su próximo ingreso. No requiere migración. Siguen valiendo el espacio por cuenta (320 MB) y el máximo de 150 fotos guardadas.
+- Las cuentas con fotos pagas (suscripción o pack) pueden arrastrar hasta 20 fotos juntas en el estudio, elegir el ambiente de cada una y crear un diseño de cada foto con el mismo estilo. Se envían de a una porque la base admite una tanda en curso por cuenta. Procesarlas en paralelo requiere cambiar `amobla_reserve_generation` y revisar el límite de imágenes por minuto de OpenAI.
+
 ## Auditoría de cobros — 23 de octubre de 2026
 
 - **Pendiente: aplicar en Supabase `202610230002_billing_audit.sql`** (SQL Editor; se puede re-ejecutar). Sin ella el código publicado funciona como antes, pero quedan apagados la devolución automática de duplicados, la reutilización del checkout del pack y la vuelta al precio de lista con su barrido diario. Verificar después que `amobla_apply_payment` devuelva `text` y que `subscriptions` tenga `list_price_restored_at` y `list_price_checked_at`.

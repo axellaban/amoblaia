@@ -33,6 +33,7 @@ En **amoblaia → Settings → Environment Variables**, crear:
 | SUPABASE_SECRET_KEY                  | Secret, privada                         | Production |
 | APP_URL                              | Config                                  | Production |
 | ADMIN_EMAILS                         | Config, solo servidor                   | Production |
+| UNLIMITED_EMAILS                     | Config, solo servidor                   | Production |
 | SAAS_ENABLED                         | Config                                  | Production |
 | BILLING_ENABLED                      | Config                                  | Production |
 | LIVE_TRIAL_ENABLED                   | Config                                  | Production |

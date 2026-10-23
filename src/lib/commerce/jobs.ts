@@ -45,7 +45,11 @@ async function grantIsTrial(grantId: string | null) {
     .maybeSingle();
   return Boolean(data?.source_key.startsWith("trial:"));
 }
-export async function enqueuePhoto(request: Request, userId: string) {
+export async function enqueuePhoto(
+  request: Request,
+  userId: string,
+  dailyLimit = Number(process.env.MAX_GENERATIONS_PER_DAY || 100),
+) {
   if (!process.env.OPENAI_API_KEY)
     throw new HttpError(503, "La generación todavía no está habilitada.");
   const photo = await readPhoto(request);
@@ -166,7 +170,7 @@ export async function enqueuePhoto(request: Request, userId: string) {
               i + 1,
             ),
       ),
-      p_daily_limit: Number(process.env.MAX_GENERATIONS_PER_DAY || 100),
+      p_daily_limit: dailyLimit,
     });
   } catch (rejected) {
     // A batch refused for quota, capacity or an active batch must not leave an
