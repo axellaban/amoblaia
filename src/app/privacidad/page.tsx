@@ -4,7 +4,7 @@ export default function Privacy() {
     <article className="legal-page container">
       <span className="eyebrow">TUS FOTOS, CON CLARIDAD</span>
       <h1>Privacidad</h1>
-      <p>Actualización: 20 de octubre de 2026.</p>
+      <p>Actualización: 23 de octubre de 2026.</p>
       <h2>Cuenta y proyectos</h2>
       <p>
         Cuando las cuentas están habilitadas, guardamos tu identificador, email,
@@ -55,6 +55,13 @@ export default function Privacy() {
         perfil. No solicitamos acceso a tu correo ni a tus archivos de Google.
         La versión de piloto usa una cookie de acceso compartido que vence a las
         ocho horas.
+      </p>
+      <h2>Medición de publicidad</h2>
+      <p>
+        Usamos la etiqueta de Google Ads para saber si una visita que llegó
+        desde un anuncio terminó subiendo una foto. Google puede guardar cookies
+        propias para medir esa conversión. No le enviamos tus fotos, tu email ni
+        el contenido de tus proyectos.
       </p>
       <h2>Conservación y eliminación</h2>
       <p>
