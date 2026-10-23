@@ -1,6 +1,7 @@
 import { ProductTour } from "@/components/product-tour";
 import Script from "next/script";
 import { GOOGLE_ADS_ID } from "@/lib/ads";
+import { MetaPixel } from "@/components/meta-pixel";
 import type { Metadata, Viewport } from "next";
 import { Outfit } from "next/font/google";
 import { Header, Footer } from "@/components/shell";
@@ -58,6 +59,7 @@ gtag('config', '${GOOGLE_ADS_ID}');`}
             </Script>
           </>
         )}
+        <MetaPixel />
       </body>
     </html>
   );

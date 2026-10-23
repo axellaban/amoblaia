@@ -98,7 +98,7 @@ export async function reconcileCheckout(
     db.from("orders").select("status,checkout_url").eq("id", order.id).single(),
     db
       .from("payments")
-      .select("status,coverage_start")
+      .select("status,coverage_start,amount_cents")
       .eq("order_id", order.id)
       .order("created_at", { ascending: false })
       .limit(30),
@@ -106,10 +106,11 @@ export async function reconcileCheckout(
   if (fresh.error || payments.error)
     throw new Error("CHECKOUT_RESULT_LOOKUP_FAILED");
   const rows = payments.data || [];
-  const approved = rows.some(
+  const charge = rows.find(
     (p) =>
       ["approved", "partially_refunded"].includes(p.status) && p.coverage_start,
   );
+  const approved = Boolean(charge);
   const reversed =
     !approved &&
     rows.some((p) =>
@@ -149,5 +150,11 @@ export async function reconcileCheckout(
       /* Never return an unsafe destination. */
     }
   }
-  return { order: order.id, state, name: order.snapshot.name, url };
+  return {
+    order: order.id,
+    state,
+    name: order.snapshot.name,
+    url,
+    value: charge?.amount_cents != null ? charge.amount_cents / 100 : null,
+  };
 }
