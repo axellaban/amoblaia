@@ -211,7 +211,7 @@ export function PricingPlans({
         track("checkout_error", {
           sku,
           status: response.status,
-          code: payload.code || `HTTP_${response.status}`,
+          codigo: payload.code || `HTTP_${response.status}`,
           mensaje: payload.error,
         });
         throw new Error(payload.error);
