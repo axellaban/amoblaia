@@ -63,6 +63,15 @@ export default function Privacy() {
         propias para medir esa conversión. No le enviamos tus fotos, tu email ni
         el contenido de tus proyectos.
       </p>
+      <p>
+        También usamos el píxel y la API de conversiones de Meta (Facebook e
+        Instagram) para medir cuándo una visita sube una foto, crea una cuenta o
+        contrata un plan. Meta puede guardar sus propias cookies. Junto con cada
+        evento le enviamos tu dirección IP, los datos de tu navegador, el tipo
+        de ambiente y estilo elegidos o el monto pagado, y, si tenés cuenta, tu
+        email cifrado de forma irreversible (hash SHA-256). No le enviamos tus
+        fotos ni el contenido de tus proyectos.
+      </p>
       <h2>Conservación y eliminación</h2>
       <p>
         Podés descargar y borrar tus proyectos desde el estudio. No se pueden

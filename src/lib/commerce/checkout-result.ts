@@ -12,6 +12,8 @@ export type CheckoutResult = {
   state: CheckoutState;
   name: string;
   url: string | null;
+  /** Approved charge in ARS, for conversion tracking. */
+  value?: number | null;
 };
 export const checkoutMessages: Record<CheckoutState, string> = {
   approved: "¡Pago confirmado! Tus fotos ya están disponibles.",
