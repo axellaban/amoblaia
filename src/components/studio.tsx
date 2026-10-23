@@ -50,6 +50,7 @@ import { Comparison } from "./comparison";
 import { clearDraft, loadDraft, saveDraft } from "@/lib/studio-draft";
 import { FREE_RESULT_LIMIT, freeBatchSize } from "@/lib/free-tier";
 import { trackPhotoUploaded } from "@/lib/ads";
+import { metaTrack } from "@/lib/meta";
 export function Studio({
   embedded = false,
   onClose,
@@ -96,6 +97,8 @@ export function Studio({
   // Bumped whenever another photo is opened: results that arrive late for an
   // earlier photo must not replace what is on screen (nor its project id).
   const photoSession = useRef(0);
+  // Photo session already reported to Meta: a regeneration is not an upload.
+  const trackedUpload = useRef(-1);
   const [showLogin, setShowLogin] = useState(false);
   const [password, setPassword] = useState("");
   const [loginBusy, setLoginBusy] = useState(false);
@@ -510,6 +513,11 @@ export function Studio({
     (!status.authenticated || free) &&
     !demo &&
     !(projectId && variants?.some((v) => v.free === false));
+  function trackUpload() {
+    if (trackedUpload.current === photoSession.current) return;
+    trackedUpload.current = photoSession.current;
+    metaTrack("amoblaia_foto_subida", { ambiente: room, estilo: style });
+  }
   async function generate() {
     if (generateLock.current || !source) return;
     // Set when a batch is already running: opened once the lock is released.
@@ -637,6 +645,7 @@ export function Studio({
         }
         if (!response.ok) throw new Error(batch.error);
         trackPhotoUploaded();
+        if (!activeProjectId) trackUpload();
         const ids: string[] = batch.ids || [batch.id];
         setProjectId(batch.projectId);
         setRoundTotal(ids.length);
@@ -669,6 +678,7 @@ export function Studio({
         throw new Error(payload.error);
       }
       trackPhotoUploaded();
+      trackUpload();
       const url = await blobToDataURL(await response.blob());
       setResult(url);
       await persist(url);
