@@ -4,6 +4,30 @@ Se detiene el trabajo a pedido del usuario para conservar créditos. Los cambios
 
 Producción: https://amoblaia.vercel.app/
 
+## Auditoría de cobros — 23 de octubre de 2026
+
+- **Pendiente: aplicar en Supabase `202610230002_billing_audit.sql`** (SQL Editor; se puede re-ejecutar). Sin ella el código publicado funciona como antes, pero quedan apagados la devolución automática de duplicados, la reutilización del checkout del pack y la vuelta al precio de lista con su barrido diario. Verificar después que `amobla_apply_payment` devuelva `text` y que `subscriptions` tenga `list_price_restored_at` y `list_price_checked_at`.
+- Caso real: el plan Agente de un cliente se reembolsó completo y la suscripción siguió activa en Mercado Pago, con un cobro programado para el 21/11. El reembolso quitó las fotos, pero no canceló la suscripción. La causa probable es que se procesó antes del deploy que agregó esa regla, aunque no está confirmado. El titular la canceló a mano. El barrido diario ahora cancela esos casos.
+- Reglas nuevas de reembolso:
+  - Un contracargo, o el reembolso del último cobro, termina el plan y devuelve el período cobrado.
+  - El reembolso de un cobro anterior no termina el plan.
+  - El reembolso de uno de dos cobros de la misma renovación (a menos de 15 días) conserva el plan: el otro cobro hereda ese mes y las fotos ya usadas, sin bloquear la cuenta.
+  - Un plan anual con reembolso parcial sigue dando sus fotos mensuales.
+- Pack de una compra por cuenta:
+  - Un segundo checkout reutiliza el que está abierto.
+  - Un segundo pago queda `duplicate`: se cierra su orden y la app lo devuelve.
+  - Si Mercado Pago rechaza esa devolución (400/404/422), el pago queda `duplicate` para hacerlo a mano.
+  - Cuando el dinero vuelve, por reembolso o contracargo, el pago pasa a `duplicate_refunded`.
+- Notificaciones:
+  - Un pago rechazado sin factura ya no se reintenta.
+  - Una factura `subscription_authorized_payment` que sigue en 404 a los 3 días se cierra como `ABANDONED_MERCADOPAGO_404` después de un último intento.
+  - Esto limpia los avisos trabados del intento rechazado del 22/10.
+- `202610230001_launch_pricing.sql` solo escribe el catálogo en su primera ejecución. Si se re-ejecuta, hay que re-ejecutar después `202610230002`.
+- Verificación: 211 tests, TypeScript y ESLint aprobados. No se probó contra Mercado Pago real: la devolución automática y las cancelaciones quedan por confirmar con el primer caso real.
+- Pendiente del titular en Mercado Pago:
+  - El checkout muestra «HolaVeggie», que es el nombre de la cuenta vendedora. Hay que renombrarla o usar una cuenta propia para amoblaIA.
+  - Descartar su propio checkout pendiente del plan Inicial a $20.000, de un precio que ya no existe.
+
 ## Checkout alojado — 22 de octubre de 2026
 
 - Se reemplaza el formulario de tarjeta por el checkout alojado de Mercado Pago: Suscripciones para mensual/anual, Checkout Pro para packs. Los precios y la renovación se conservan. El email de pago de suscripciones sigue siendo explícito.
