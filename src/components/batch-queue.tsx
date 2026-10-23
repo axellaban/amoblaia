@@ -14,6 +14,7 @@ import { rooms, type ModeId, type RoomId, type StyleId } from "@/lib/catalog";
 import { downloadDesign, optimizePhoto, thumbnail } from "@/lib/images";
 import { waitForJob } from "@/lib/jobs-client";
 import { trackPhotoUploaded } from "@/lib/ads";
+import { metaTrack } from "@/lib/meta";
 /** Photos per batch: a whole listing, while the previews stay light in memory. */
 export const MAX_BATCH = 20;
 export type BatchItem = {
@@ -205,6 +206,10 @@ export function useBatch(onProgress: (finished: boolean) => void) {
       return null;
     }
     trackPhotoUploaded();
+    metaTrack("amoblaia_foto_subida", {
+      ambiente: item.room,
+      estilo: settings.style,
+    });
     const jobId = batch.ids?.[0] || batch.id;
     if (!jobId) {
       patch(item.id, {

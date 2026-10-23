@@ -6,6 +6,24 @@ import {
   checkoutMessages,
   type CheckoutResult,
 } from "@/lib/commerce/checkout-result";
+import { metaTrack } from "@/lib/meta";
+
+// Reported once per order, also across reloads of the return page.
+function trackSubscribe(result: CheckoutResult) {
+  const key = `meta-subscribe-${result.order}`;
+  try {
+    if (localStorage.getItem(key)) return;
+    localStorage.setItem(key, "1");
+  } catch {
+    /* Without storage the shared event ID still deduplicates in Meta. */
+  }
+  metaTrack(
+    "Subscribe",
+    result.value != null ? { value: result.value, currency: "ARS" } : {},
+    true,
+    { eventId: `subscribe-${result.order}` },
+  );
+}
 
 export function CheckoutReturn({
   order,
@@ -40,6 +58,7 @@ export function CheckoutReturn({
       const next = payload as CheckoutResult;
       setResult(next);
       setError("");
+      if (next.state === "approved") trackSubscribe(next);
       if (
         ["approved", "refunded", "cancelled", "duplicate"].includes(next.state)
       )
