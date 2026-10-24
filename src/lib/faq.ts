@@ -18,6 +18,24 @@ export const faqItems = [
     a: "Living, dormitorio, comedor, cocina, home office, patio o balcón, monoambiente y quincho. Hay diez estilos: contemporáneo cálido, nórdico, mid-century, lujo, costero, campo contemporáneo, industrial, minimalista, clásico renovado y ecléctico. El plan gratuito incluye living y dormitorio.",
   },
   {
+    id: "estado-actual",
+    category: "Diseños",
+    q: "¿Cómo muestro la ambientación sin confundir a los compradores?",
+    a: "Cada propuesta se muestra junto a la foto real con los títulos «Estado actual» y «Propuesta de ambientación virtual», y lleva el rótulo «Ambientación virtual · Mobiliario agregado digitalmente» en pantalla, en las descargas y en las fichas compartidas. La IA trabaja con instrucciones para conservar paredes, aberturas, pisos y defectos, pero puede equivocarse: compará cada propuesta con la original y marcala como revisada antes de compartirla. Los muebles son orientativos y no surgen de medidas verificadas.",
+  },
+  {
+    id: "fichas",
+    category: "Diseños",
+    q: "¿Qué es una ficha de propiedad?",
+    a: "Es un enlace por propiedad que abrís desde Fichas. El comprador lo abre sin crear una cuenta, ve primero la foto real de cada ambiente, puede explorar los estilos que revisaste y consultarte por WhatsApp. Mirarla no genera imágenes ni usa fotos de tu plan. Podés desactivar el enlace cuando quieras.",
+  },
+  {
+    id: "insertar-web",
+    category: "Diseños",
+    q: "¿Puedo mostrar la ficha en la web de mi inmobiliaria?",
+    a: "Sí, con el código de «Insertar en mi web» de cada ficha, si tu web o proveedor permite insertar iframes (por ejemplo, un bloque de HTML personalizado). Muchos portales inmobiliarios no lo permiten; en ese caso compartí el enlace. Si desactivás la ficha, también deja de verse en tu web.",
+  },
+  {
     id: "muebles",
     category: "Diseños",
     q: "¿Puedo sacar los muebles que ya están?",

@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ContactForm } from "./contact-form";
 import { Menu, X, LogOut } from "lucide-react";
+import { isBareRoute } from "@/lib/routes";
 /** Brand mark: an arched doorway with a bench inside, plus the spark of AI. */
 export function LogoMark({ className }: { className?: string }) {
   return (
@@ -39,13 +40,19 @@ export function Logo() {
 export function Header() {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
-  const privatePage = ["/proyectos", "/cuenta", "/administracion"].includes(
-    pathname,
-  );
+  const bare = isBareRoute(pathname);
+  const privatePage = [
+    "/proyectos",
+    "/fichas",
+    "/cuenta",
+    "/administracion",
+  ].includes(pathname);
   // The layout is static, so the session is read here. Private pages send
   // signed-out visitors to /acceso, so they can assume one until it loads.
   const [session, setSession] = useState<boolean | null>(null);
   useEffect(() => {
+    // Buyers on a shared showcase have no session to look up.
+    if (bare) return;
     let active = true;
     const load = () =>
       fetch("/api/session", { cache: "no-store" })
@@ -70,6 +77,7 @@ export function Header() {
   // itself would only reload it.
   const account = signedIn && !appNav;
   const create = signedIn && !studio;
+  if (bare) return null;
   return (
     <header className={`header ${privatePage ? "header-private" : ""}`}>
       <div className="container nav">
@@ -86,6 +94,15 @@ export function Header() {
           >
             {appNav ? "Mis fotos" : "Inicio"}
           </Link>
+          {appNav && (
+            <Link
+              className={pathname === "/fichas" ? "active" : ""}
+              href="/fichas"
+              onClick={() => setOpen(false)}
+            >
+              Fichas
+            </Link>
+          )}
           <Link
             className={pathname === "/galeria" ? "active" : ""}
             href="/galeria"
@@ -215,6 +232,8 @@ export function Header() {
   );
 }
 export function Footer() {
+  const pathname = usePathname();
+  if (isBareRoute(pathname)) return null;
   return (
     <footer className="footer">
       <div className="container">

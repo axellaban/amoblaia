@@ -2,6 +2,7 @@
 import Script from "next/script";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
+import { isBareRoute } from "@/lib/routes";
 
 // amoblaIA pixel. Public by design, like the Google Ads and PostHog IDs; override per environment if needed.
 // Only production sends events, unless a pixel ID is set explicitly (for example, to test in a preview).
@@ -14,15 +15,17 @@ const PIXEL_ID =
 export function MetaPixel() {
   const pathname = usePathname();
   const first = useRef(true);
+  // Buyers on a shared showcase are the agency's visitors, not amoblaIA's audience.
+  const bare = isBareRoute(pathname);
   useEffect(() => {
-    if (!PIXEL_ID) return;
+    if (!PIXEL_ID || bare) return;
     if (first.current) {
       first.current = false;
       return;
     }
     window.fbq?.("track", "PageView");
   }, [pathname]);
-  if (!PIXEL_ID || !/^\d+$/.test(PIXEL_ID)) return null;
+  if (!PIXEL_ID || !/^\d+$/.test(PIXEL_ID) || bare) return null;
   return (
     <Script id="meta-pixel" strategy="afterInteractive">
       {`!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?

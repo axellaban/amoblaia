@@ -9,7 +9,10 @@ import {
   ChevronDown,
   CircleHelp,
   Clock,
+  Code2,
   Image as ImageIcon,
+  Images,
+  Link2,
   MousePointerClick,
   RefreshCw,
   Rocket,
@@ -269,7 +272,7 @@ export function Landing({
           <div className="hx-gallery-copy">
             <Eyebrow icon={ImageIcon}>Galería</Eyebrow>
             <h2>
-              <b>Mirá la transformación:</b> galería de antes y después
+              <b>Mirá las propuestas:</b> estado actual y ambientación
             </h2>
             <p>
               Mirá cómo amoblaIA transforma espacios poco atractivos en
@@ -429,6 +432,60 @@ export function Landing({
           </div>
         </section>
 
+        <section className="hx-container hx-uses" id="usos">
+          <div className="hx-center">
+            <Eyebrow icon={Sofa}>Para inmobiliarias</Eyebrow>
+            <h2>
+              Ayudá a tus clientes a <b>imaginar cómo vivir</b> en una
+              propiedad
+            </h2>
+            <p>
+              Mostrando siempre su estado real junto a propuestas de
+              ambientación virtual. La misma ambientación sirve de tres formas:
+            </p>
+          </div>
+          <div className="hx-uses-grid">
+            {[
+              [
+                Images,
+                "Descargá una comparativa",
+                "Estado actual y propuesta en una sola imagen, horizontal o vertical, lista para publicaciones, WhatsApp o para mostrar en una visita.",
+              ],
+              [
+                Link2,
+                "Compartí una propiedad interactiva",
+                "Un enlace por propiedad: el comprador ve primero la foto real, explora los estilos disponibles y te consulta por WhatsApp. No necesita cuenta.",
+              ],
+              [
+                Code2,
+                "Integrala en tu web",
+                "La misma ficha dentro de tu sitio con un código para copiar y pegar, si tu web permite insertar iframes.",
+              ],
+            ].map(([Icon, title, text]) => {
+              const I = Icon as typeof Images;
+              return (
+                <article key={title as string}>
+                  <I size={22} />
+                  <h3>{title as string}</h3>
+                  <p>{text as string}</p>
+                </article>
+              );
+            })}
+          </div>
+          <ul className="hx-uses-points">
+            {[
+              "Foto real siempre visible como referencia",
+              "Ambientaciones virtuales identificadas con un rótulo",
+              "Distintos estilos sobre la misma propiedad",
+              "Para publicaciones, conversaciones y visitas",
+            ].map((t) => (
+              <li key={t}>
+                <Check size={18} /> {t}
+              </li>
+            ))}
+          </ul>
+        </section>
+
         <section className="hx-container hx-steps-section">
           <div className="hx-center">
             <Eyebrow icon={Settings}>Cómo funciona</Eyebrow>
@@ -454,8 +511,8 @@ export function Landing({
                 "original",
               ],
               [
-                "Descargá y destacá",
-                "Descargá la foto amoblada y usala donde quieras.",
+                "Revisá y compartí",
+                "Comparala con la foto real, descargá la comparativa o sumala a una ficha.",
                 "modern",
               ],
             ].map(([title, text, s], i) => (
@@ -505,10 +562,13 @@ export function Landing({
                 ["Económico", `desde ${STARTING_PRICE} por mes`],
                 ["Regeneraciones ilimitadas", "hasta que quedes conforme"],
                 [
-                  "IA de alta precisión",
-                  "no altera la distribución del ambiente",
+                  "Foto real siempre visible",
+                  "la propuesta se muestra junto al estado actual",
                 ],
-                ["Publicación transparente", "sin tergiversar la propiedad"],
+                [
+                  "Ambientaciones identificadas",
+                  "rótulo de mobiliario agregado digitalmente",
+                ],
               ].map(([b, t]) => (
                 <p key={b}>
                   <Check size={20} strokeWidth={3} />

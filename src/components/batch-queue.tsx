@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { rooms, type ModeId, type RoomId, type StyleId } from "@/lib/catalog";
 import { downloadDesign, optimizePhoto, thumbnail } from "@/lib/images";
+import { disclosureFor, labelRequired } from "@/lib/disclosure";
 import { waitForJob } from "@/lib/jobs-client";
 import { trackPhotoUploaded } from "@/lib/ads";
 import { metaTrack } from "@/lib/meta";
@@ -272,11 +273,11 @@ export function useBatch(onProgress: (finished: boolean) => void) {
     }
   }
   /** Result links expire after an hour: a failed download asks for a new one. */
-  async function download(item: BatchItem, label: boolean) {
+  async function download(item: BatchItem, label: string | null) {
     const name = `${item.name}-${item.room}`;
     try {
       if (!item.result) throw new Error("NO_RESULT");
-      await downloadDesign(item.result, name, undefined, label);
+      await downloadDesign(item.result, name, label);
     } catch {
       const fresh = item.jobId
         ? await fetch(`/api/jobs/${encodeURIComponent(item.jobId)}`, {
@@ -290,7 +291,7 @@ export function useBatch(onProgress: (finished: boolean) => void) {
           "No pudimos descargar esta foto. Abrila desde Mis proyectos.",
         );
       patch(item.id, { result: fresh.result });
-      await downloadDesign(fresh.result, name, undefined, label);
+      await downloadDesign(fresh.result, name, label);
     }
   }
   const count = (status: BatchItem["status"]) =>
@@ -325,6 +326,7 @@ export function BatchList({
   onFiles,
   label,
   onLabelChange,
+  mode,
   onError,
 }: {
   batch: Batch;
@@ -332,8 +334,12 @@ export function BatchList({
   onFiles: (files: File[]) => void;
   label: boolean;
   onLabelChange: (value: boolean) => void;
+  mode: ModeId;
   onError: (message: string) => void;
 }) {
+  // Staged images always carry their disclosure; only retouching may skip it.
+  const required = labelRequired(mode);
+  const labelText = required || label ? disclosureFor(mode) : null;
   const [dragging, setDragging] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const total = batch.items.length;
@@ -344,7 +350,7 @@ export function BatchList({
     setDownloading(true);
     try {
       for (const item of batch.items.filter((i) => i.status === "done")) {
-        await batch.download(item, label);
+        await batch.download(item, labelText);
         // Browsers drop downloads fired back to back.
         await pause(400);
       }
@@ -453,7 +459,7 @@ export function BatchList({
                     className="button button-dark"
                     onClick={() =>
                       batch
-                        .download(item, label)
+                        .download(item, labelText)
                         .catch((e) =>
                           onError(
                             e instanceof Error
@@ -504,14 +510,20 @@ export function BatchList({
             Descargar{" "}
             {batch.done === 1 ? "el diseño" : `los ${batch.done} diseños`}
           </button>
-          <label className="checkbox-label">
-            <input
-              type="checkbox"
-              checked={label}
-              onChange={(e) => onLabelChange(e.target.checked)}
-            />{" "}
-            Incluir etiqueta «Amoblamiento virtual»
-          </label>
+          {required ? (
+            <p className="checkbox-label">
+              Cada imagen incluye el rótulo «{disclosureFor(mode)}».
+            </p>
+          ) : (
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={label}
+                onChange={(e) => onLabelChange(e.target.checked)}
+              />{" "}
+              Incluir rótulo «{disclosureFor(mode)}»
+            </label>
+          )}
         </div>
       )}
       {batch.running && (

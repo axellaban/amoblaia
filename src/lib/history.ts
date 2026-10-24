@@ -19,6 +19,8 @@ export type Project = {
   variants?: {
     id: string;
     free?: boolean;
+    /** The agent compared it with the original and approved it for sharing. */
+    reviewed?: boolean;
     result: string;
     room: RoomId;
     style: StyleId;

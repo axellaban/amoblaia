@@ -8,15 +8,24 @@ export async function GET(request: Request) {
     // Retries a trial hand-over that failed at sign-in, before listing.
     await adoptGuest(user);
     const db = adminClient();
-    const { data: projects, error } = await db
-      .from("projects")
-      .select(
-        "id,name,created_at,original_path,folder_id,trashed_at,generations(id,room,style,mode,notes,status,result_path,created_at,is_free)",
-      )
-      .eq("user_id", user.id)
-      .is("deleted_at", null)
-      .order("created_at", { ascending: false })
-      .limit(150);
+    const list = (review: string) =>
+      db
+        .from("projects")
+        .select(
+          `id,name,created_at,original_path,folder_id,trashed_at,generations(id,room,style,mode,notes,status,result_path,created_at,is_free${review})`,
+        )
+        .eq("user_id", user.id)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false })
+        .limit(150);
+    let { data: projects, error } = await list(",reviewed_at,discarded_at");
+    // Before the showcase migration is applied the review columns do not
+    // exist yet: the library keeps working as it did.
+    if (
+      error &&
+      (error.code === "42703" || /reviewed_at|discarded_at/.test(error.message))
+    )
+      ({ data: projects, error } = await list(""));
     if (error) throw new Error("PROJECT_LIST_FAILED");
     // One file that cannot be signed (missing or deleted) must not turn the
     // whole library into an error: that item is left out instead.
@@ -28,7 +37,10 @@ export async function GET(request: Request) {
     const rows = await Promise.all(
       (projects || []).map(async (p) => {
         const done = p.generations
-          .filter((g) => g.status === "succeeded" && g.result_path)
+          // A discarded proposal is hidden everywhere; its file stays with the project.
+          .filter(
+            (g) => g.status === "succeeded" && g.result_path && !g.discarded_at,
+          )
           .sort((a, b) => b.created_at.localeCompare(a.created_at));
 
         const variants = (
@@ -36,6 +48,7 @@ export async function GET(request: Request) {
             done.map(async (g) => ({
               id: g.id,
               free: g.is_free,
+              reviewed: Boolean(g.reviewed_at),
               result: await sign(g.result_path!),
               room: g.room,
               style: g.style,

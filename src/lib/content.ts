@@ -132,7 +132,7 @@ export const resources: Resource[] = [
       },
       {
         title: "3. Revisá y descargá",
-        body: "Compará con el original, elegí tu propuesta y descargá el JPG. También podés armar un antes y después. Antes de publicar, verificá que el resultado conserve la arquitectura e informá que tiene amoblamiento virtual.",
+        body: "Compará la propuesta con el estado actual, que queda siempre a la vista, y marcala como revisada si conserva la arquitectura y los defectos reales. Descargá la propuesta rotulada o la comparativa con ambas fotos, o sumala a una ficha para compartir.",
       },
     ],
   },
@@ -265,8 +265,8 @@ export const articles = [
         body: "Compará cada resultado contra la foto original. Verificá que los muebles no bloqueen pasos y que las ventanas y elementos fijos sigan en su lugar. Descartá los resultados con errores visibles.",
       },
       {
-        title: "Mostrá el antes y después",
-        body: "Usá ambas imágenes y una etiqueta clara de amoblamiento virtual. Guardá los originales y los JPG finales en el proyecto de la propiedad para que todo el equipo trabaje con la misma versión.",
+        title: "Mostrá el estado actual junto a la propuesta",
+        body: "Usá ambas imágenes y un rótulo claro de ambientación virtual. Guardá los originales y los JPG finales en el proyecto de la propiedad para que todo el equipo trabaje con la misma versión.",
       },
     ],
   },

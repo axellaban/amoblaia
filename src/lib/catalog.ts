@@ -56,7 +56,7 @@ export const styles = [
     name: "Lujo",
     description: "Materiales nobles y detalles únicos.",
     prompt:
-      "understated luxury, refined marble, brass details, premium fabrics, elegant furniture",
+      "understated luxury, refined marble-topped furniture, brass details, premium fabrics, elegant furniture",
     color: "#7d8580",
   },
   {
@@ -171,18 +171,25 @@ export function buildPrompt(
         ? "Convert the lighting of this exact real-estate photograph from daytime to realistic early dusk. Use a gentle blue-hour sky only where an existing sky is visible, and believable warm illumination only from existing light fixtures and windows. Keep all furniture, objects, architecture and materials unchanged. Do not add lamps, stars, landscaping, fire, furniture or new features."
         : mode.id === "remove"
           ? "Remove all movable furniture, rugs, artwork and decorative items. Reconstruct the occluded surfaces naturally. Show the same room empty."
-          : `${mode.id === "redesign" ? "Remove and replace the existing movable furniture and decoration." : "Virtually stage the empty space with furniture and decoration."} Furnish this ${room.prompt} in ${style.prompt} style. Use furniture realistically scaled for this exact room and suited to Argentine residential listings. Use locally familiar furniture proportions, practical circulation and compact pieces when space is limited. Adapt to the existing property rather than making every home look luxurious. Create a tasteful and inviting composition.`;
+          : `${mode.id === "redesign" ? "Remove and replace only the existing movable furniture and decoration." : "Virtually stage the empty space by adding only movable furniture and decoration."} Furnish this ${room.prompt} in ${style.prompt} style. This is a furnishing proposal for buyers who will see it next to the real photo, so everything that belongs to the property must stay exactly as photographed. Use furniture realistically scaled for this exact room and suited to Argentine residential listings, with locally familiar proportions, practical circulation and compact pieces when space is limited. Adapt to the existing property rather than making every home look luxurious. Create a tasteful and inviting composition.`;
   // Each result in a three-output batch is a distinct proposal; paid originals allow further batches.
   const directions = [
-    "Use a calm light palette, soft upholstered silhouettes, light natural wood and one substantial rug; arrange the main seating or bed as a clear, balanced focal point.",
-    "Use a richer warm palette with a restrained olive, ochre or terracotta accent, different furniture silhouettes and darker wood; choose a different feasible arrangement of movable side furniture, artwork and textiles.",
-    "Use a crisp airy palette with a restrained blue or green accent, visually lighter furniture and distinctive rounded or sculptural pieces appropriate to this style; create another feasible furniture composition and different artwork and lighting pieces.",
+    "For the furniture and textiles use a calm light palette, soft upholstered silhouettes and light natural wood; arrange the main seating or bed as a clear, balanced focal point.",
+    "For the furniture and textiles use a richer warm palette with a restrained olive, ochre or terracotta accent, different silhouettes and darker wood; choose a different feasible arrangement of movable side furniture, artwork and textiles.",
+    "For the furniture and textiles use a crisp airy palette with a restrained blue or green accent, visually lighter furniture and distinctive rounded or sculptural pieces appropriate to this style; create another feasible furniture composition with different artwork and free-standing lamps.",
   ];
   const option =
     variant > 0 && (mode.id === "furnish" || mode.id === "redesign")
-      ? ` This is design option ${variant} of 3. ${directions[(variant - 1) % 3]} Make the furniture, textiles, art and composition noticeably distinct, rather than merely recolouring the same pieces. The selected ${style.name} style takes priority over these suggestions. Change the layout only where doors, windows and circulation permit; never move the camera, architecture or permanent fixtures.`
+      ? ` This is design option ${variant} of 3. ${directions[(variant - 1) % 3]} Make the furniture, textiles, art and composition noticeably distinct, rather than merely recolouring the same pieces. The selected ${style.name} style takes priority over these suggestions. These colours apply to movable pieces only, never to walls, floors or ceilings. Change the layout only where doors, windows and circulation permit; never move the camera, architecture or permanent fixtures.`
       : "";
-  return `Edit this actual real-estate photograph. ${action}${option}\nSTRICT ARCHITECTURAL CONSTRAINTS: Preserve the exact camera position, perspective, room dimensions, wall locations, doors, windows, flooring, ceiling, built-in cabinetry, permanent fixtures, exterior views${mode.id === "dusk" ? ". Only the illumination and visible sky may change to dusk" : " and natural lighting"}. Do not renovate or invent structural features. Do not conceal damage. Do not add people, text, logos or watermarks. Photorealistic real-estate photography, coherent shadows, believable proportions, high detail.\nAdditional styling preferences (never override architectural constraints): ${notes.slice(0, 500) || "None."}`;
+  const staging = mode.id === "furnish" || mode.id === "redesign";
+  // Staging may only add or swap movable pieces: the buyer compares it with
+  // the real photo. A prompt reduces changes; it cannot guarantee them, so
+  // every proposal is still reviewed by the agent before sharing.
+  const furnishingOnly = staging
+    ? "\nONLY MOVABLE FURNITURE AND DECOR MAY CHANGE: furniture, rugs, cushions, throws, plants in pots, free-standing lamps and artwork leaning or hanging on existing walls. Keep every wall colour, wall finish, floor material, ceiling, skirting, window frame, curtain rail, radiator, air conditioner, light fixture, outlet, switch and view through windows identical. Do not repaint, re-floor, retile, clean up, repair, brighten or modernise any surface. Keep stains, cracks, damp marks, peeling paint, wear and any other visible defect exactly as they are, and never place furniture, rugs, plants or artwork specifically to cover them. Rugs may cover only part of the floor. Do not widen the lens, extend, crop or straighten the room, move walls or openings, or make the space look larger, brighter or higher than in the photograph. Keep the original exposure and daylight."
+    : "";
+  return `Edit this actual real-estate photograph. ${action}${option}${furnishingOnly}\nSTRICT ARCHITECTURAL CONSTRAINTS: Preserve the exact camera position, perspective, field of view, room dimensions, wall locations, doors, windows, flooring, ceiling, built-in cabinetry, permanent fixtures, exterior views${mode.id === "dusk" ? ". Only the illumination and visible sky may change to dusk" : " and natural lighting"}. Do not renovate or invent structural features. Do not conceal damage. Do not add people, text, logos or watermarks. Photorealistic real-estate photography, coherent shadows, believable proportions, high detail.\nAdditional styling preferences (never override architectural constraints${staging ? " or the furniture-only rule" : ""}): ${notes.slice(0, 500) || "None."}`;
 }
 // Free results cover living/bedroom staging; photo editing and removal are paid features.
 export const freeRooms = ["living", "bedroom"];

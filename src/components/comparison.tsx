@@ -1,18 +1,33 @@
 "use client";
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { ChevronsLeftRight } from "lucide-react";
+/**
+ * Slider over the same frame: an alternative view, never the only way to
+ * compare. "Estado actual / Propuesta" rather than "antes / después", which
+ * would suggest a real renovation.
+ */
 export function Comparison({
   before,
   after,
-  alt = "Ambiente con virtual staging",
+  alt = "Propuesta de ambientación virtual",
   initial = 45,
   compact = false,
+  beforeLabel = "Estado actual",
+  afterLabel = "Propuesta",
+  disclosure,
+  ratio,
 }: {
   before: string;
   after: string;
   alt?: string;
   initial?: number;
   compact?: boolean;
+  beforeLabel?: string;
+  afterLabel?: string;
+  /** Drawn over the proposal side, so the slider never hides it. */
+  disclosure?: string | null;
+  /** Width over height of the photos: the frame takes it and nothing is cropped. */
+  ratio?: number;
 }) {
   const [position, setPosition] = useState(initial);
   const box = useRef<HTMLDivElement>(null);
@@ -86,7 +101,8 @@ export function Comparison({
   return (
     <div
       ref={box}
-      className={`comparison ${compact ? "comparison-compact" : ""}`}
+      className={`comparison ${compact ? "comparison-compact" : ""} ${ratio ? "comparison-contain" : ""}`}
+      style={ratio ? { aspectRatio: ratio } : undefined}
       onPointerDown={down}
       onPointerMove={move}
       onPointerUp={up}
@@ -97,16 +113,15 @@ export function Comparison({
         className="comparison-before"
         style={{ clipPath: `inset(0 ${100 - position}% 0 0)` }}
       >
-        <img
-          src={before}
-          alt="Ambiente original antes del diseño"
-          draggable={false}
-        />
+        <img src={before} alt="Estado actual del ambiente" draggable={false} />
       </div>
-      <div className="comparison-label before-label">Antes</div>
-      <div className="comparison-label after-label">
-        Después <span>con IA</span>
-      </div>
+      <div className="comparison-label before-label">{beforeLabel}</div>
+      <div className="comparison-label after-label">{afterLabel}</div>
+      {disclosure && (
+        <span className="disclosure-pill comparison-disclosure">
+          {disclosure}
+        </span>
+      )}
       <div className="comparison-line" style={{ left: `${position}%` }}>
         <span>
           <ChevronsLeftRight size={21} />
@@ -119,7 +134,7 @@ export function Comparison({
         max="100"
         value={position}
         onChange={(e) => setPosition(Number(e.target.value))}
-        aria-label="Comparar antes y después"
+        aria-label={`Comparar ${beforeLabel.toLowerCase()} y ${afterLabel.toLowerCase()}`}
         className="comparison-range"
       />
     </div>

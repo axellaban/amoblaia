@@ -23,13 +23,13 @@ export function Gallery() {
         <div className="page-intro">
           <span className="eyebrow">GALERÍA</span>
           <h1>
-            Mirá la transformación:
+            Estado actual y
             <br />
-            antes y después
+            propuestas de ambientación
           </h1>
           <p>
-            Explorá ambientes y estilos. Elegí Original para ver el punto de
-            partida.
+            Explorá ambientes y estilos. Elegí Original para ver el estado
+            actual del que parte cada propuesta.
           </p>
         </div>
         <div
@@ -53,6 +53,7 @@ export function Gallery() {
               <Comparison
                 before={beforeImage(room)}
                 after={afterImage(room, style)}
+                disclosure="Ambientación virtual · Mobiliario agregado digitalmente"
               />
             ) : (
               <img
@@ -107,7 +108,7 @@ export function Gallery() {
               checked={compare}
               onChange={(e) => setCompare(e.target.checked)}
             />
-            Comparar antes y después con deslizador
+            Comparar estado actual y propuesta con deslizador
           </label>
           <Link href="/estudio" className="button button-primary">
             Subir mi foto <ArrowUpRight size={18} />

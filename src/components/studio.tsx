@@ -19,11 +19,9 @@ import {
   X,
   ShieldCheck,
   LockKeyhole,
-  Images,
   RotateCcw,
   LogOut,
   Info,
-  Eye,
   SplitSquareHorizontal,
   Sofa,
   RefreshCw,
@@ -32,6 +30,11 @@ import {
   Sunset,
   Maximize2,
   Share2,
+  ChevronDown,
+  CircleCheck,
+  CircleDashed,
+  Trash2,
+  LayoutPanelLeft,
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -51,11 +54,25 @@ import { listProjects, saveProject, type Project } from "@/lib/history";
 import {
   optimizePhoto,
   blobToDataURL,
-  downloadDesign,
-  shareDesign,
+  downloadExport,
+  shareExport,
   canShareImages,
+  type ExportKind,
 } from "@/lib/images";
-import { Comparison } from "./comparison";
+import {
+  ProposalCompare,
+  ProposalViewer,
+  type CompareView,
+  type Side,
+} from "./proposal-compare";
+import {
+  PROPOSAL_TITLE,
+  SCALE_NOTE,
+  disclosureFor,
+  isStagingMode,
+  labelRequired,
+} from "@/lib/disclosure";
+import { track } from "@/lib/analytics";
 import { clearDraft, loadDraft, saveDraft } from "@/lib/studio-draft";
 import { FREE_RESULT_LIMIT, freeBatchSize } from "@/lib/free-tier";
 import { trackPhotoUploaded } from "@/lib/ads";
@@ -124,10 +141,14 @@ export function Studio({
   const [password, setPassword] = useState("");
   const [loginBusy, setLoginBusy] = useState(false);
   const [loginError, setLoginError] = useState("");
+  // Only retouching (enhance, dusk) may be exported without its label.
   const [label, setLabel] = useState(true);
-  const [comparison, setComparison] = useState(false);
+  const [view, setView] = useState<CompareView>("pair");
   const [canShare, setCanShare] = useState(false);
   const [viewer, setViewer] = useState(false);
+  const [zoom, setZoom] = useState<Side | null>(null);
+  const [downloadMenu, setDownloadMenu] = useState(false);
+  const [reviewBusy, setReviewBusy] = useState(false);
   const viewerTrigger = useRef<HTMLButtonElement>(null);
   // Set when a plan-only option is tapped: on phones there is no tooltip.
   const [paidHint, setPaidHint] = useState("");
@@ -289,6 +310,37 @@ export function Studio({
     return () => clearTimeout(timer);
   }, [notice]);
   useEffect(() => setCanShare(canShareImages()), []);
+  // The photo's proportions, also when a saved project opens on a proposal.
+  useEffect(() => {
+    if (!source) return;
+    let active = true;
+    const img = new Image();
+    img.onload = () => {
+      if (active && img.naturalWidth && img.naturalHeight)
+        setAspect(img.naturalWidth / img.naturalHeight);
+    };
+    img.src = source;
+    return () => {
+      active = false;
+    };
+  }, [source]);
+  useEffect(() => {
+    if (!downloadMenu) return;
+    const close = (e: Event) => {
+      if (
+        e instanceof KeyboardEvent
+          ? e.key === "Escape"
+          : !(e.target as Element).closest?.(".download-menu")
+      )
+        setDownloadMenu(false);
+    };
+    document.addEventListener("keydown", close);
+    document.addEventListener("pointerdown", close);
+    return () => {
+      document.removeEventListener("keydown", close);
+      document.removeEventListener("pointerdown", close);
+    };
+  }, [downloadMenu]);
   useEffect(() => {
     if (!viewer) return;
     const trigger = viewerTrigger.current;
@@ -325,6 +377,7 @@ export function Studio({
     setError("");
     setNotice("");
     setViewer(false);
+    setZoom(null);
   }
   async function acceptFile(selected?: File) {
     if (!selected || busy || reading) return;
@@ -796,34 +849,52 @@ export function Studio({
       setError("No pudimos cerrar la sesión. Intentá de nuevo.");
     }
   }
-  async function download(sideBySide = false, share = false) {
-    const send = share ? shareDesign : downloadDesign;
+  // The proposal on screen and the label it must carry wherever it goes.
+  const current = variants?.find((v) => v.result === result);
+  const shownMode = current?.mode ?? mode;
+  const disclosure = result
+    ? labelRequired(shownMode) || label
+      ? disclosureFor(shownMode)
+      : null
+    : null;
+  const proposalTitle = isStagingMode(shownMode)
+    ? PROPOSAL_TITLE
+    : modes.find((m) => m.id === shownMode)?.name || "Resultado";
+  async function download(kind: ExportKind, share = false) {
+    setDownloadMenu(false);
+    const send = share ? shareExport : downloadExport;
+    const input = (original: string, proposal: string) => ({
+      kind,
+      name: `${room}-${style}`,
+      original,
+      proposal,
+      label: disclosure,
+    });
+    const done = () => {
+      if (kind === "horizontal" || kind === "vertical")
+        track("comparativa_descargada", {
+          formato: kind,
+          origen: "estudio",
+          compartida: share,
+        });
+    };
     try {
-      await send(
-        result,
-        `${room}-${style}`,
-        sideBySide ? source : undefined,
-        label,
-      );
+      await send(input(source, result));
+      done();
     } catch (e) {
       // Saved images use links that expire after an hour: renew them once.
-      const shown = variants?.find((v) => v.result === result);
       if (status?.mode === "cloud" && projectId) {
         try {
           const fresh = (await refreshCloud()).find((p) => p.id === projectId);
           const image =
-            fresh?.variants?.find((v) => v.id === shown?.id)?.result ||
+            fresh?.variants?.find((v) => v.id === current?.id)?.result ||
             fresh?.result;
           if (fresh && image) {
             setSource(fresh.original);
             setResult(image);
             setVariants(fresh.variants || []);
-            await send(
-              image,
-              `${room}-${style}`,
-              sideBySide ? fresh.original : undefined,
-              label,
-            );
+            await send(input(fresh.original, image));
+            done();
             return;
           }
         } catch {
@@ -831,6 +902,61 @@ export function Studio({
         }
       }
       setError(e instanceof Error ? e.message : "No pudimos descargar.");
+    }
+  }
+  /** Compared with the real photo: approve it for sharing, undo, or discard it. */
+  async function review(action: "review" | "unreview" | "discard") {
+    const v = current;
+    if (!v || reviewBusy) return;
+    if (
+      action === "discard" &&
+      !window.confirm(
+        "¿Descartar esta propuesta? Deja de verse en el estudio y en tus fichas. No devuelve la foto usada.",
+      )
+    )
+      return;
+    setReviewBusy(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/proposals/${v.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error);
+      if (action === "discard") {
+        const rest = (variants || []).filter((x) => x.id !== v.id);
+        setVariants(rest);
+        const next = rest[0];
+        setResult(next?.result || "");
+        if (next) {
+          setRoom(next.room);
+          setStyle(normalizeStyle(next.style));
+          setMode(next.mode);
+        }
+        setNotice(
+          "Descartamos la propuesta. Si querés otra, generá una nueva variante.",
+        );
+      } else {
+        setVariants((list) =>
+          (list || []).map((x) =>
+            x.id === v.id ? { ...x, reviewed: action === "review" } : x,
+          ),
+        );
+        setNotice(
+          action === "review"
+            ? "Propuesta revisada. Ya podés sumarla a una ficha para compartir."
+            : "Quitamos la revisión: la propuesta deja de mostrarse en tus fichas.",
+        );
+      }
+      void refreshCloud().catch(() => null);
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "No pudimos guardar la revisión.",
+      );
+    } finally {
+      setReviewBusy(false);
     }
   }
   async function openProject(p: Project) {
@@ -1006,7 +1132,7 @@ export function Studio({
                 {batchMode
                   ? "Las fotos de la propiedad"
                   : result
-                    ? "Tu espacio, transformado"
+                    ? "Estado actual y propuesta"
                     : "La foto de tu espacio"}
               </h2>
               {source && !batchMode && (
@@ -1040,6 +1166,7 @@ export function Studio({
                   onFiles={(files) => void acceptFiles(files)}
                   label={label}
                   onLabelChange={setLabel}
+                  mode={mode}
                   onError={setError}
                 />
               ) : !source ? (
@@ -1102,30 +1229,37 @@ export function Studio({
                     JPG, PNG o WebP · Hasta 10 MB
                   </span>
                 </div>
+              ) : result ? (
+                // The real photo stays on screen next to every proposal.
+                <div
+                  className={`stage-compare is-${view}`}
+                  style={{ "--ar": aspect } as CSSProperties}
+                >
+                  <ProposalCompare
+                    original={source}
+                    proposal={result}
+                    disclosure={disclosure}
+                    proposalTitle={proposalTitle}
+                    view={view}
+                    ratio={aspect}
+                    onZoom={(side) => setZoom(side)}
+                  />
+                </div>
               ) : (
                 <div
                   className="stage-media"
                   style={{ "--ar": aspect } as CSSProperties}
                 >
-                  {result && comparison ? (
-                    <Comparison before={source} after={result} />
-                  ) : (
-                    <img
-                      src={result || source}
-                      alt={
-                        result
-                          ? "Diseño de tu ambiente"
-                          : "Foto original de tu propiedad"
-                      }
-                      onLoad={(e) => {
-                        const { naturalWidth: w, naturalHeight: h } =
-                          e.currentTarget;
-                        if (w && h) setAspect(w / h);
-                      }}
-                    />
-                  )}
-                  {/* Not over the comparison: it would cover its labels. */}
-                  {!(busy && !result) && !(result && comparison) && (
+                  <img
+                    src={source}
+                    alt="Estado actual: foto original de tu propiedad"
+                    onLoad={(e) => {
+                      const { naturalWidth: w, naturalHeight: h } =
+                        e.currentTarget;
+                      if (w && h) setAspect(w / h);
+                    }}
+                  />
+                  {!busy && (
                     <button
                       ref={viewerTrigger}
                       className="stage-zoom"
@@ -1136,7 +1270,7 @@ export function Studio({
                       <Maximize2 size={17} />
                     </button>
                   )}
-                  {busy && !result && (
+                  {busy && (
                     <div className="generating-overlay">
                       <div className="generating-icon">
                         <Sparkles size={28} />
@@ -1150,7 +1284,7 @@ export function Studio({
                         {elapsed < 20
                           ? "Analizando la foto y su perspectiva…"
                           : elapsed < 60
-                            ? "Diseñando muebles, materiales y luz…"
+                            ? "Agregando muebles y decoración…"
                             : "Cuidando los últimos detalles del ambiente…"}
                       </p>
                       <span>
@@ -1218,6 +1352,12 @@ export function Studio({
                       >
                         <img src={v.result} alt="" />
                         <span>Diseño {(variants?.length || 0) - i}</span>
+                        {v.reviewed && (
+                          <span className="variant-reviewed" title="Revisada">
+                            <CircleCheck size={13} />
+                            <span className="visually-hidden"> (revisada)</span>
+                          </span>
+                        )}
                       </button>
                     ))}
                     {busy &&
@@ -1247,45 +1387,73 @@ export function Studio({
                     <div
                       className="view-toggle"
                       role="group"
-                      aria-label="Cómo ver el diseño"
+                      aria-label="Cómo comparar"
                     >
                       <button
-                        className={comparison ? "" : "selected"}
-                        aria-pressed={!comparison}
-                        onClick={() => setComparison(false)}
+                        className={view === "pair" ? "selected" : ""}
+                        aria-pressed={view === "pair"}
+                        onClick={() => setView("pair")}
                       >
-                        <Eye size={16} /> Diseño
+                        <LayoutPanelLeft size={16} /> Lado a lado
                       </button>
                       <button
-                        className={comparison ? "selected" : ""}
-                        aria-pressed={comparison}
-                        onClick={() => setComparison(true)}
+                        className={view === "slider" ? "selected" : ""}
+                        aria-pressed={view === "slider"}
+                        onClick={() => setView("slider")}
                       >
-                        <SplitSquareHorizontal size={16} /> Comparar
+                        <SplitSquareHorizontal size={16} /> Deslizador
                       </button>
                     </div>
                     {canShare && (
                       <button
                         className="button button-outline share-button"
-                        aria-label="Compartir"
-                        title="Compartir"
-                        onClick={() => download(false, true)}
+                        aria-label="Compartir la comparativa"
+                        title="Compartir la comparativa"
+                        onClick={() => download("vertical", true)}
                       >
                         <Share2 size={17} />
                       </button>
                     )}
-                    <button
-                      className="button button-dark"
-                      onClick={() => download()}
-                    >
-                      <Download size={16} /> Descargar JPG
-                    </button>
-                    <button
-                      className="button button-outline"
-                      onClick={() => download(true)}
-                    >
-                      <Images size={16} /> Antes y después
-                    </button>
+                    <div className="download-menu">
+                      <button
+                        className="button button-dark"
+                        aria-expanded={downloadMenu}
+                        aria-haspopup="true"
+                        onClick={() => setDownloadMenu((o) => !o)}
+                      >
+                        <Download size={16} /> Descargar{" "}
+                        <ChevronDown size={15} />
+                      </button>
+                      {downloadMenu && (
+                        <div className="download-options" role="menu">
+                          {(
+                            [
+                              [
+                                "vertical",
+                                "Comparativa vertical",
+                                "Para celular y WhatsApp",
+                              ],
+                              [
+                                "horizontal",
+                                "Comparativa horizontal",
+                                "Para publicaciones y pantallas",
+                              ],
+                              ["proposal", "Solo la propuesta", "Con su rótulo"],
+                              ["original", "Foto original", "Estado actual"],
+                            ] as [ExportKind, string, string][]
+                          ).map(([kind, name, hint]) => (
+                            <button
+                              key={kind}
+                              role="menuitem"
+                              onClick={() => download(kind)}
+                            >
+                              <strong>{name}</strong>
+                              <span>{hint}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
                 {busy && result && (
@@ -1295,21 +1463,84 @@ export function Studio({
                     ver y descargar las que están listas.
                   </p>
                 )}
+                {result &&
+                  current &&
+                  !demo &&
+                  isStagingMode(current.mode) &&
+                  status?.mode === "cloud" &&
+                  status.authenticated &&
+                  !status.anonymous && (
+                    <div
+                      className={`review-panel ${current.reviewed ? "is-reviewed" : ""}`}
+                    >
+                      <p>
+                        {current.reviewed ? (
+                          <>
+                            <CircleCheck size={16} />
+                            <span>
+                              <strong>Revisada.</strong> Lista para sumar a una{" "}
+                              <Link href="/fichas">ficha compartible</Link>.
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <CircleDashed size={16} />
+                            <span>
+                              <strong>Sin revisar.</strong> Compará con el estado
+                              actual: paredes, aberturas, pisos, defectos y vistas
+                              tienen que verse igual. Si algo cambió, descartala y
+                              generá otra variante.
+                            </span>
+                          </>
+                        )}
+                      </p>
+                      <div>
+                        {current.reviewed ? (
+                          <button
+                            className="button button-outline button-small"
+                            disabled={reviewBusy}
+                            onClick={() => review("unreview")}
+                          >
+                            Quitar revisión
+                          </button>
+                        ) : (
+                          <button
+                            className="button button-primary button-small"
+                            disabled={reviewBusy}
+                            onClick={() => review("review")}
+                          >
+                            <Check size={15} /> Marcar como revisada
+                          </button>
+                        )}
+                        <button
+                          className="button button-outline button-small"
+                          disabled={reviewBusy || busy}
+                          onClick={() => review("discard")}
+                        >
+                          <Trash2 size={15} /> Descartar
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 {result && (
                   <div className="result-meta">
-                    <label className="checkbox-label">
-                      <input
-                        type="checkbox"
-                        checked={label}
-                        onChange={(e) => setLabel(e.target.checked)}
-                      />{" "}
-                      Incluir etiqueta «Amoblamiento virtual»
-                    </label>
-                    <p className="studio-tip">
-                      <ShieldCheck size={15} />
-                      Antes de publicar, revisá que se conserve la arquitectura
-                      real.
-                    </p>
+                    {labelRequired(shownMode) ? (
+                      <p className="studio-tip">
+                        <ShieldCheck size={15} />
+                        {isStagingMode(shownMode)
+                          ? SCALE_NOTE
+                          : "Las descargas incluyen el rótulo de imagen editada."}
+                      </p>
+                    ) : (
+                      <label className="checkbox-label">
+                        <input
+                          type="checkbox"
+                          checked={label}
+                          onChange={(e) => setLabel(e.target.checked)}
+                        />{" "}
+                        Incluir rótulo «{disclosureFor(shownMode)}»
+                      </label>
+                    )}
                   </div>
                 )}
                 {showExamples && (
@@ -1609,7 +1840,17 @@ export function Studio({
           </Link>
         </div>
       </div>
-      {viewer && (result || source) && (
+      {zoom && result && (
+        <ProposalViewer
+          original={source}
+          proposal={result}
+          disclosure={disclosure}
+          proposalTitle={proposalTitle}
+          initial={zoom}
+          onClose={() => setZoom(null)}
+        />
+      )}
+      {viewer && !result && source && (
         <div
           className="viewer"
           role="dialog"
@@ -1619,12 +1860,7 @@ export function Studio({
             if (e.target === e.currentTarget) setViewer(false);
           }}
         >
-          <img
-            src={result || source}
-            alt={
-              result ? "Diseño de tu ambiente" : "Foto original de tu propiedad"
-            }
-          />
+          <img src={source} alt="Estado actual: foto original de tu propiedad" />
           <button
             className="viewer-close icon-button"
             aria-label="Cerrar"

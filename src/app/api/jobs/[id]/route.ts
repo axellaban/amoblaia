@@ -51,6 +51,7 @@ export async function GET(
               id: job.id,
               result,
               free: job.is_free,
+              reviewed: false,
               room: job.room,
               style: job.style,
               mode: job.mode,

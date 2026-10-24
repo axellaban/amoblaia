@@ -45,19 +45,40 @@ const config: NextConfig = {
     }));
   },
   async headers() {
+    const base = [
+      { key: "X-Content-Type-Options", value: "nosniff" },
+      { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+      {
+        key: "Permissions-Policy",
+        value: "camera=(), microphone=(), geolocation=()",
+      },
+    ];
+    // Shared showcases are for people with the link, not for search engines.
+    const noIndex = { key: "X-Robots-Tag", value: "noindex, nofollow" };
     return [
       {
-        source: "/:path*",
+        // Everything except /embed/ stays unframable.
+        source: "/((?!embed/).*)",
         headers: [
-          { key: "X-Content-Type-Options", value: "nosniff" },
+          ...base,
           { key: "X-Frame-Options", value: "DENY" },
-          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
+        ],
+      },
+      {
+        // Only the showcase embed can live inside an agency's site. It has no
+        // account actions. EMBED_FRAME_ANCESTORS can narrow it to known sites.
+        source: "/embed/:path*",
+        headers: [
+          ...base,
+          noIndex,
           {
-            key: "Permissions-Policy",
-            value: "camera=(), microphone=(), geolocation=()",
+            key: "Content-Security-Policy",
+            value: `frame-ancestors ${process.env.EMBED_FRAME_ANCESTORS?.trim() || "*"}`,
           },
         ],
       },
+      { source: "/ficha/:path*", headers: [noIndex] },
     ];
   },
 };

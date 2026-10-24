@@ -82,6 +82,18 @@ export async function rpc<T>(
         429,
         "Ya recibimos varias consultas. Esperá un rato antes de enviar otra.",
       ],
+      GENERATION_NOT_FOUND: [404, "No encontramos esa propuesta."],
+      NOT_REVIEWABLE: [
+        409,
+        "Solo se pueden revisar propuestas terminadas de Amoblar o Rediseñar.",
+      ],
+      SHOWCASE_NOT_FOUND: [404, "No encontramos esa ficha."],
+      TOO_MANY_ROOMS: [400, "Una ficha admite hasta 20 ambientes."],
+      INVALID_ROOM_LABEL: [
+        400,
+        "Cada ambiente necesita un nombre de hasta 60 caracteres.",
+      ],
+      DUPLICATE_ROOM: [400, "Esa foto ya está en la ficha."],
       PROJECT_NOT_FOUND: [
         404,
         "No encontramos la foto. Revisá también la papelera.",

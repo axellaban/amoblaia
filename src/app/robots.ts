@@ -5,7 +5,8 @@ export default function robots(): MetadataRoute.Robots {
     rules: {
       userAgent: "*",
       allow: "/",
-      disallow: ["/api/", "/administracion", "/cuenta", "/auth/"],
+      // Shared showcases stay crawlable for link previews; their pages say noindex.
+      disallow: ["/api/", "/administracion", "/cuenta", "/auth/", "/fichas", "/embed/"],
     },
     sitemap: `${base}/sitemap.xml`,
   };
