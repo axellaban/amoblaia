@@ -5,6 +5,7 @@ import { MetaPixel } from "@/components/meta-pixel";
 import type { Metadata, Viewport } from "next";
 import { Outfit } from "next/font/google";
 import { Header, Footer } from "@/components/shell";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 const outfit = Outfit({
   subsets: ["latin"],
@@ -45,6 +46,7 @@ export default function RootLayout({
         <main id="contenido">{children}</main>
         <Footer />
         <ProductTour />
+        <Analytics />
         {process.env.VERCEL_ENV === "production" && (
           <>
             <Script
