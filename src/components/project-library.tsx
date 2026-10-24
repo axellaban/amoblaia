@@ -29,6 +29,12 @@ export function ProjectLibrary() {
     [rename, setRename] = useState(""),
     [projectName, setProjectName] = useState(""),
     [purge, setPurge] = useState("");
+  // Decides the banner: plans for the free trial, the balance otherwise.
+  const [plan, setPlan] = useState<{
+    free: boolean;
+    unlimited: boolean;
+    credits: number;
+  } | null>(null);
   const load = useCallback(async () => {
     try {
       const session = await fetch("/api/session", { cache: "no-store" }).then(
@@ -57,6 +63,22 @@ export function ProjectLibrary() {
   useEffect(() => {
     void load();
   }, [load]);
+  // Once, not on every reload of the photos; a failure only hides the banner.
+  useEffect(() => {
+    fetch("/api/account", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then(
+        (a) =>
+          a &&
+          !a.anonymous &&
+          setPlan({
+            free: a.free === true,
+            unlimited: a.unlimited === true,
+            credits: a.credits ?? 0,
+          }),
+      )
+      .catch(() => {});
+  }, []);
   const active = projects.filter((p) => !p.trashedAt),
     trash = projects.filter((p) => p.trashedAt),
     inFolder = (p: Project) =>
@@ -269,15 +291,39 @@ export function ProjectLibrary() {
             Guardando…
           </p>
         )}
-        {filter !== "trash" && (
+        {filter !== "trash" && plan && (
           <div className="library-upgrade">
             <Images size={23} />
-            <p>
-              Todos los estilos, alta resolución y resultados sin marca de agua.
-            </p>
-            <Link className="button button-primary" href="/precios">
-              Elegir plan
-            </Link>
+            {plan.free ? (
+              <>
+                <p>
+                  Todos los estilos, alta resolución y resultados sin marca de
+                  agua.
+                </p>
+                <Link className="button button-primary" href="/precios">
+                  Elegir plan
+                </Link>
+              </>
+            ) : (
+              <>
+                <p>
+                  {plan.unlimited ? (
+                    <>
+                      Tu cuenta tiene fotos <strong>ilimitadas</strong>.
+                    </>
+                  ) : (
+                    <>
+                      Te quedan <strong>{plan.credits}</strong>{" "}
+                      {plan.credits === 1 ? "foto" : "fotos"} en tu plan. Cada
+                      foto incluye sus regeneraciones.
+                    </>
+                  )}
+                </p>
+                <Link className="button button-outline" href="/cuenta">
+                  Ver mi cuenta
+                </Link>
+              </>
+            )}
           </div>
         )}
         {filter === "trash" && (
