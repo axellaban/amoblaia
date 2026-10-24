@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ContactForm } from "./contact-form";
 import { Menu, X, LogOut } from "lucide-react";
 /** Brand mark: an arched doorway with a bench inside, plus the spark of AI. */
@@ -42,6 +42,34 @@ export function Header() {
   const privatePage = ["/proyectos", "/cuenta", "/administracion"].includes(
     pathname,
   );
+  // The layout is static, so the session is read here. Private pages send
+  // signed-out visitors to /acceso, so they can assume one until it loads.
+  const [session, setSession] = useState<boolean | null>(null);
+  useEffect(() => {
+    let active = true;
+    const load = () =>
+      fetch("/api/session", { cache: "no-store" })
+        .then((r) => r.json())
+        .then((s) => {
+          if (active)
+            setSession(
+              s.mode === "cloud" && s.authenticated === true && !s.anonymous,
+            );
+        })
+        .catch(() => active && setSession(false));
+    void load();
+    return () => {
+      active = false;
+    };
+  }, []);
+  const signedIn = session ?? (privatePage || null);
+  const studio = pathname === "/estudio";
+  // Signed in, the studio is part of the app: same links as the private pages.
+  const appNav = privatePage || (studio && signedIn === true);
+  // The app links already include "Mi cuenta", and the studio linking to
+  // itself would only reload it.
+  const account = signedIn && !appNav;
+  const create = signedIn && !studio;
   return (
     <header className={`header ${privatePage ? "header-private" : ""}`}>
       <div className="container nav">
@@ -53,10 +81,10 @@ export function Header() {
           aria-label="Navegación principal"
         >
           <Link
-            href={privatePage ? "/proyectos" : "/"}
+            href={appNav ? "/proyectos" : "/"}
             onClick={() => setOpen(false)}
           >
-            {privatePage ? "Mis fotos" : "Inicio"}
+            {appNav ? "Mis fotos" : "Inicio"}
           </Link>
           <Link
             className={pathname === "/galeria" ? "active" : ""}
@@ -73,34 +101,89 @@ export function Header() {
             Precios
           </Link>
           <Link
-            href={privatePage ? "/cuenta" : "/blog"}
+            href={appNav ? "/cuenta" : "/blog"}
             onClick={() => setOpen(false)}
           >
-            {privatePage ? "Mi cuenta" : "Blog"}
+            {appNav ? "Mi cuenta" : "Blog"}
           </Link>
-          {/* The header buttons are hidden on small screens; private pages
-              already list "Mi cuenta" above. */}
-          {!privatePage && (
+          {/* The header buttons are hidden on small screens. */}
+          {(!signedIn || account || create) && (
             <div className="mobile-nav-actions">
+              {signedIn ? (
+                <>
+                  {account && (
+                    <Link
+                      href="/cuenta"
+                      className="button button-outline"
+                      onClick={() => setOpen(false)}
+                    >
+                      Mi cuenta
+                    </Link>
+                  )}
+                  {create && (
+                    <Link
+                      href="/estudio"
+                      className="button button-primary"
+                      onClick={() => setOpen(false)}
+                    >
+                      Ir al estudio
+                    </Link>
+                  )}
+                </>
+              ) : (
+                <>
+                  <Link
+                    href="/acceso"
+                    className="button button-outline"
+                    onClick={() => setOpen(false)}
+                  >
+                    Entrar
+                  </Link>
+                  <Link
+                    href="/acceso"
+                    className="button button-primary"
+                    onClick={() => setOpen(false)}
+                  >
+                    Crear cuenta
+                  </Link>
+                </>
+              )}
+            </div>
+          )}
+        </nav>
+        <div className="nav-actions">
+          {signedIn ? (
+            <>
+              {account && (
+                <Link href="/cuenta" className="account-nav">
+                  Mi cuenta
+                </Link>
+              )}
+              {create && (
+                <Link href="/estudio" className="button button-small">
+                  Ir al estudio
+                </Link>
+              )}
+            </>
+          ) : (
+            // Hidden while the session loads, so a signed-in visitor does
+            // not see "Entrar" first.
+            <>
               <Link
                 href="/acceso"
-                className="button button-outline"
-                onClick={() => setOpen(false)}
+                className={`account-nav ${signedIn === null ? "nav-pending" : ""}`}
               >
                 Entrar
               </Link>
               <Link
                 href="/acceso"
-                className="button button-primary"
-                onClick={() => setOpen(false)}
+                className={`button button-small ${signedIn === null ? "nav-pending" : ""}`}
               >
                 Crear cuenta
               </Link>
-            </div>
+            </>
           )}
-        </nav>
-        <div className="nav-actions">
-          {privatePage ? (
+          {privatePage && (
             <button
               className="icon-button"
               aria-label="Cerrar sesión"
@@ -117,15 +200,6 @@ export function Header() {
             >
               <LogOut size={20} />
             </button>
-          ) : (
-            <>
-              <Link href="/acceso" className="account-nav">
-                Entrar
-              </Link>
-              <Link href="/acceso" className="button button-small">
-                Crear cuenta
-              </Link>
-            </>
           )}
           <button
             className="menu-toggle icon-button"

@@ -1,5 +1,11 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { useSearchParams } from "next/navigation";
 import {
   ArrowRight,
@@ -11,19 +17,21 @@ import {
   LoaderCircle,
   Download,
   X,
-  FolderOpen,
-  Trash2,
   ShieldCheck,
   LockKeyhole,
-  ChevronRight,
   Images,
   RotateCcw,
   LogOut,
   Info,
   Eye,
   SplitSquareHorizontal,
-  CircleMinus,
-  CirclePlus,
+  Sofa,
+  RefreshCw,
+  Eraser,
+  WandSparkles,
+  Sunset,
+  Maximize2,
+  Share2,
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -39,13 +47,14 @@ import {
   type StyleId,
   type ModeId,
 } from "@/lib/catalog";
+import { listProjects, saveProject, type Project } from "@/lib/history";
 import {
-  listProjects,
-  saveProject,
-  deleteProject,
-  type Project,
-} from "@/lib/history";
-import { optimizePhoto, blobToDataURL, downloadDesign } from "@/lib/images";
+  optimizePhoto,
+  blobToDataURL,
+  downloadDesign,
+  shareDesign,
+  canShareImages,
+} from "@/lib/images";
 import { Comparison } from "./comparison";
 import { clearDraft, loadDraft, saveDraft } from "@/lib/studio-draft";
 import { FREE_RESULT_LIMIT, freeBatchSize } from "@/lib/free-tier";
@@ -53,6 +62,16 @@ import { trackPhotoUploaded } from "@/lib/ads";
 import { metaTrack } from "@/lib/meta";
 import { waitForJob } from "@/lib/jobs-client";
 import { BatchList, useBatch } from "./batch-queue";
+// Staging changes the furniture; the photo modes only retouch the picture.
+const stagingModes = [
+  { id: "furnish", icon: Sofa },
+  { id: "redesign", icon: RefreshCw },
+  { id: "remove", icon: Eraser },
+] as const;
+const photoModes = [
+  { id: "enhance", icon: WandSparkles, label: "Mejorar foto" },
+  { id: "dusk", icon: Sunset, label: "Atardecer" },
+] as const;
 export function Studio({
   embedded = false,
   onClose,
@@ -63,7 +82,6 @@ export function Studio({
   const searchParams = useSearchParams();
   const [openingProject, setOpeningProject] = useState(false);
   const [cloudReady, setCloudReady] = useState(false);
-  const [view, setView] = useState<"create" | "projects">("create");
   const [room, setRoom] = useState<RoomId>("living");
   const [style, setStyle] = useState<StyleId>("modern");
   const [mode, setMode] = useState<ModeId>("furnish");
@@ -108,7 +126,13 @@ export function Studio({
   const [loginError, setLoginError] = useState("");
   const [label, setLabel] = useState(true);
   const [comparison, setComparison] = useState(false);
-  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [canShare, setCanShare] = useState(false);
+  const [viewer, setViewer] = useState(false);
+  const viewerTrigger = useRef<HTMLButtonElement>(null);
+  // Set when a plan-only option is tapped: on phones there is no tooltip.
+  const [paidHint, setPaidHint] = useState("");
+  // Width over height of the photo on screen, so the stage fits it whole.
+  const [aspect, setAspect] = useState(4 / 3);
   const input = useRef<HTMLInputElement>(null);
   const resultRef = useRef<HTMLDivElement>(null);
   const loginInput = useRef<HTMLInputElement>(null);
@@ -211,21 +235,10 @@ export function Studio({
       projectId,
       savedAt: Date.now(),
     }).catch(() => {});
-  }, [
-    draftReady,
-    file,
-    filename,
-    room,
-    style,
-    mode,
-    notes,
-    projectId,
-    demo,
-  ]);
+  }, [draftReady, file, filename, room, style, mode, notes, projectId, demo]);
   useEffect(() => {
     if (searchParams.get("view") === "projects")
       window.location.replace("/proyectos");
-    else setView("create");
   }, [searchParams]);
   useEffect(() => {
     if (!busy) return;
@@ -265,6 +278,34 @@ export function Studio({
       return () => document.removeEventListener("keydown", listener);
     }
   }, [showLogin]);
+  // Notices confirm and step aside (on phones they cover the actions);
+  // errors stay until closed.
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(
+      () => setNotice(""),
+      Math.max(5000, notice.length * 70),
+    );
+    return () => clearTimeout(timer);
+  }, [notice]);
+  useEffect(() => setCanShare(canShareImages()), []);
+  useEffect(() => {
+    if (!viewer) return;
+    const trigger = viewerTrigger.current;
+    // Its only control is the close button, so Tab stays on it.
+    const keys = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setViewer(false);
+      if (e.key === "Tab") e.preventDefault();
+    };
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", keys);
+    return () => {
+      document.removeEventListener("keydown", keys);
+      document.body.style.overflow = overflow;
+      trigger?.focus();
+    };
+  }, [viewer]);
   // The request key makes a retry return the same batch; with different
   // settings it must be a new request, not a replay of the old one.
   useEffect(() => {
@@ -283,7 +324,7 @@ export function Studio({
     setDemo(false);
     setError("");
     setNotice("");
-    setView("create");
+    setViewer(false);
   }
   async function acceptFile(selected?: File) {
     if (!selected || busy || reading) return;
@@ -311,7 +352,6 @@ export function Studio({
       setFilename(selected.name);
       setResult("");
       setDemo(false);
-        setView("create");
     } catch (e) {
       setError(
         e instanceof Error ? e.message : "No pudimos abrir esta imagen.",
@@ -360,7 +400,6 @@ export function Studio({
     setResult("");
     setError("");
     setNotice("");
-    setView("create");
   }
   function chooseRoom(r: RoomId) {
     setRoom(r);
@@ -370,6 +409,7 @@ export function Studio({
     }
   }
   function chooseMode(m: ModeId) {
+    setPaidHint("");
     setMode(m);
     setResult("");
     if (demo) setSource(m === "furnish" ? beforeImage(room) : afterImage(room));
@@ -618,6 +658,13 @@ export function Studio({
     setBusy(true);
     setElapsed(0);
     setBatchCompleted(0);
+    // On phones the button can be far below the photo: show the progress.
+    resultRef.current?.scrollIntoView({
+      behavior: matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "auto"
+        : "smooth",
+      block: "nearest",
+    });
     try {
       const data = new FormData();
       data.set("image", file);
@@ -749,9 +796,10 @@ export function Studio({
       setError("No pudimos cerrar la sesión. Intentá de nuevo.");
     }
   }
-  async function download(sideBySide = false) {
+  async function download(sideBySide = false, share = false) {
+    const send = share ? shareDesign : downloadDesign;
     try {
-      await downloadDesign(
+      await send(
         result,
         `${room}-${style}`,
         sideBySide ? source : undefined,
@@ -770,7 +818,7 @@ export function Studio({
             setSource(fresh.original);
             setResult(image);
             setVariants(fresh.variants || []);
-            await downloadDesign(
+            await send(
               image,
               `${room}-${style}`,
               sideBySide ? fresh.original : undefined,
@@ -798,7 +846,6 @@ export function Studio({
     setFilename(p.name);
     setDemo(p.demo);
     setFile(null);
-    setView("create");
     setError("");
     if (p.pendingJobId && !generateLock.current) {
       generateLock.current = true;
@@ -843,6 +890,70 @@ export function Studio({
       }
     }
   }
+  const usesStyle = mode === "furnish" || mode === "redesign";
+  // What the account has left: the first thing to know before creating.
+  const balance: { label: ReactNode; href?: string } | null = !status
+    ? null
+    : status.mode !== "cloud"
+      ? { label: status.configured ? "Piloto de IA" : "Modo demo" }
+      : (status.authenticated || status.anonymous) && !cloudReady
+        ? { label: "Cargando tu saldo…" }
+        : status.authenticated && !free
+          ? {
+              label: unlimited ? (
+                <>
+                  Fotos <strong>ilimitadas</strong>
+                </>
+              ) : (
+                <>
+                  Te quedan <strong>{credits}</strong>{" "}
+                  {credits === 1 ? "foto" : "fotos"}
+                </>
+              ),
+              href: "/cuenta",
+            }
+          : {
+              label:
+                status.authenticated || status.anonymous ? (
+                  <>
+                    Prueba gratis: <strong>{freeRemaining}</strong> de{" "}
+                    {FREE_RESULT_LIMIT} diseños
+                  </>
+                ) : (
+                  <>
+                    Prueba gratis: <strong>{FREE_RESULT_LIMIT}</strong> diseños
+                    sin registro
+                  </>
+                ),
+              href: status.authenticated ? "/cuenta" : "/precios",
+            };
+  const hint: ReactNode = demo ? (
+    "Ejemplo precargado: no descuenta fotos"
+  ) : !status?.configured ? (
+    "Explorá gratis los ejemplos precargados"
+  ) : !source ? (
+    "Subí una foto o probá con un ejemplo"
+  ) : freeTier ? (
+    result ? (
+      <>
+        Con marca de agua · <Link href="/precios">Ver planes sin marca</Link>
+      </>
+    ) : (
+      "Prueba gratis · Con marca de agua"
+    )
+  ) : status.mode !== "cloud" ? (
+    "Calidad alta · Acceso de piloto"
+  ) : unlimited ? (
+    "Calidad alta · No descuenta fotos"
+  ) : projectId ? (
+    "Calidad alta · Regeneraciones incluidas"
+  ) : (
+    `Calidad alta · Usa 1 de tus ${credits ?? "…"} fotos`
+  );
+  const hasVariants = Boolean(variants && variants.length > 0);
+  const showExamples = !source || (demo && !result);
+  const showFooter =
+    !batchMode && (hasVariants || busy || Boolean(result) || showExamples);
   return (
     <div className={`studio-page ${embedded ? "studio-embedded" : ""}`}>
       {embedded && (
@@ -855,215 +966,73 @@ export function Studio({
         </button>
       )}
       <div className="container">
-        <div className="studio-breadcrumb">
-          <Link href="/">Inicio</Link>
-          <ChevronRight size={13} />
-          <span>Estudio de diseño</span>
-        </div>
-        <div className="studio-heading">
-          <div>
-            <span className="eyebrow">TU ESPACIO, SU MEJOR VERSIÓN</span>
-            <h1>
-              Un gran antes.
-              <br className="mobile-break" /> Un mejor después
-              <span className="accent">.</span>
-            </h1>
-            <p>
-              Subí una foto, elegí el estilo y dejá que aparezcan las
-              posibilidades.
-            </p>
-          </div>
-          <div className="status-badge">
-            <span className="live-dot" />
-            {status?.mode === "cloud" ? (
-              <Link href="/cuenta">
-                {status.anonymous
-                  ? "Prueba gratis · Sin registro"
-                  : status.authenticated
-                    ? free
-                      ? "Prueba gratis · Mi cuenta"
-                      : unlimited
-                        ? "Fotos ilimitadas · Mi cuenta"
-                        : `${credits ?? "…"} fotos · Mi cuenta`
-                    : "Ingresar a mi cuenta"}
-              </Link>
-            ) : status?.configured ? (
-              "Piloto de IA"
-            ) : (
-              "Modo demo"
-            )}
-            {status?.authenticated && (
-              <button
-                className="icon-button"
-                onClick={logout}
-                title="Cerrar sesión"
-                aria-label="Cerrar sesión"
-              >
-                <LogOut size={15} />
-              </button>
-            )}
-          </div>
-        </div>
-        <div className="studio-tabs">
-          <button
-            className={view === "create" ? "selected" : ""}
-            onClick={() => setView("create")}
-          >
-            <Sparkles size={17} /> Nuevo diseño
-          </button>
-          <button
-            className={view === "projects" ? "selected" : ""}
-            onClick={() => window.location.assign("/proyectos")}
-          >
-            <FolderOpen size={17} /> Mis proyectos{" "}
-            <span>{projects.length}</span>
-          </button>
-          <span className="local-label">
-            <ShieldCheck size={14} />{" "}
-            {status?.mode === "cloud"
-              ? status.anonymous
-                ? "Tus diseños quedan en esta sesión"
-                : "Tus diseños con IA quedan en tu cuenta"
-              : "Tus proyectos quedan en este navegador"}
-          </span>
-        </div>
-        {view === "projects" ? (
-          <div className="projects-view">
-            <div className="projects-header">
-              <div>
-                <h2>Tu colección de espacios</h2>
-                <p>
-                  {status?.mode === "cloud"
-                    ? "Tus fotos originales, con sus variantes. Los ejemplos demo quedan en este dispositivo."
-                    : "Los últimos 20 diseños que guardaste en este dispositivo."}
-                </p>
-              </div>
-              <button className="button button-dark" onClick={reset}>
-                <ImagePlus size={17} /> Nuevo diseño
-              </button>
-            </div>
-            {projects.length === 0 ? (
-              <div className="empty-projects">
-                <FolderOpen size={42} />
-                <h3>Acá empieza tu colección.</h3>
-                <p>Creá tu primer diseño y lo vas a encontrar acá.</p>
-                <button className="button button-dark" onClick={reset}>
-                  Crear mi primer diseño <ArrowUpRight size={17} />
-                </button>
-              </div>
-            ) : (
-              <div className="projects-grid">
-                {projects.map((p) => (
-                  <article className="project-card" key={p.id}>
-                    <button
-                      className="project-image"
-                      onClick={() => openProject(p)}
-                    >
-                      <img src={p.result || p.original} alt={p.name} />
-                      <span>
-                        {p.demo
-                          ? "Demo"
-                          : p.pendingJobId
-                            ? "Generando…"
-                            : p.variants
-                              ? `${p.variants.length} diseños`
-                              : "Diseño con IA"}
-                      </span>
-                    </button>
-                    <div className="project-info">
-                      <button onClick={() => openProject(p)}>
-                        <h3>{p.name}</h3>
-                        <p>
-                          {styles.find((s) => s.id === p.style)?.name} ·{" "}
-                          {new Date(p.createdAt).toLocaleDateString("es-AR")}
-                        </p>
-                      </button>
-                      {deleteId === p.id ? (
-                        <div className="delete-confirm">
-                          <button
-                            onClick={async () => {
-                              try {
-                                if (p.cloud) {
-                                  const response = await fetch(
-                                    `/api/projects/${p.id}`,
-                                    {
-                                      method: "PATCH",
-                                      headers: {
-                                        "Content-Type": "application/json",
-                                      },
-                                      body: JSON.stringify({ action: "trash" }),
-                                    },
-                                  );
-                                  const payload = await response.json();
-                                  if (!response.ok)
-                                    throw new Error(payload.error);
-                                  await refreshCloud();
-                                } else {
-                                  await deleteProject(p.id);
-                                  if (status?.mode === "cloud")
-                                    await refreshCloud();
-                                  else setProjects(await listProjects());
-                                }
-                                setDeleteId(null);
-                              } catch (e) {
-                                setError(
-                                  e instanceof Error
-                                    ? e.message
-                                    : "No pudimos borrar el proyecto.",
-                                );
-                              }
-                            }}
-                          >
-                            Borrar
-                          </button>
-                          <button onClick={() => setDeleteId(null)}>
-                            Cancelar
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          className="icon-button"
-                          aria-label={`Borrar ${p.name}`}
-                          onClick={() => setDeleteId(p.id)}
-                        >
-                          <Trash2 size={17} />
-                        </button>
-                      )}
-                    </div>
-                  </article>
-                ))}
-              </div>
-            )}
-          </div>
-        ) : (
-          <div
-            className={`workspace ${result ? "has-results" : ""} ${freeTier && result ? "with-upsell" : ""}`}
-          >
-            <div className="studio-canvas" data-tour="upload">
-              <div className="canvas-heading">
-                <h2>
-                  <span className="section-number">01</span>{" "}
-                  {batchMode
-                    ? "Las fotos de la propiedad"
-                    : result
-                      ? "Tu espacio, transformado"
-                      : "La foto de tu espacio"}
-                </h2>
-                {source && !busy && (
-                  <button className="subtle-button" onClick={reset}>
-                    <RotateCcw size={14} /> Cambiar foto
+        <div className={`workspace ${source || batchMode ? "has-photo" : ""}`}>
+          <div className="studio-intro">
+            <h1>Estudio de diseño</h1>
+            {balance && (
+              <div className="studio-balance">
+                {balance.href ? (
+                  <Link href={balance.href}>
+                    <span className="live-dot" />
+                    <span>{balance.label}</span>
+                    <ArrowUpRight size={14} />
+                  </Link>
+                ) : (
+                  <span>
+                    <span className="live-dot" />
+                    {balance.label}
+                  </span>
+                )}
+                {status?.mode !== "cloud" && status?.authenticated && (
+                  <button
+                    className="icon-button"
+                    onClick={logout}
+                    title="Cerrar sesión"
+                    aria-label="Cerrar sesión"
+                  >
+                    <LogOut size={15} />
                   </button>
                 )}
               </div>
-              <input
-                ref={input}
-                className="visually-hidden"
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                aria-label="Subir fotos de la propiedad"
-                multiple
-                onChange={(e) => acceptFiles(Array.from(e.target.files || []))}
-              />
+            )}
+          </div>
+          <section
+            className="studio-canvas"
+            data-tour="upload"
+            aria-label="Tu foto"
+          >
+            <div className="canvas-heading">
+              <h2>
+                {batchMode
+                  ? "Las fotos de la propiedad"
+                  : result
+                    ? "Tu espacio, transformado"
+                    : "La foto de tu espacio"}
+              </h2>
+              {source && !batchMode && (
+                <span className="photo-name" title={filename}>
+                  {demo ? "Ejemplo" : filename}
+                </span>
+              )}
+              {source && !busy && !batchMode && (
+                <button className="subtle-button" onClick={reset}>
+                  <RotateCcw size={14} /> Cambiar foto
+                </button>
+              )}
+            </div>
+            <input
+              ref={input}
+              className="visually-hidden"
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              aria-label="Subir fotos de la propiedad"
+              multiple
+              onChange={(e) => acceptFiles(Array.from(e.target.files || []))}
+            />
+            <div
+              className={`canvas-stage ${batchMode ? "is-batch" : !source ? "is-empty" : ""}`}
+              ref={resultRef}
+            >
               {batchMode ? (
                 <BatchList
                   batch={batch}
@@ -1076,6 +1045,9 @@ export function Studio({
               ) : !source ? (
                 <div
                   className={`dropzone ${dragging ? "dragging" : ""}`}
+                  // The whole area opens the picker; the button inside is
+                  // the keyboard's way in and bubbles up here.
+                  onClick={() => !reading && input.current?.click()}
                   onDragOver={(e) => {
                     e.preventDefault();
                     setDragging(true);
@@ -1091,10 +1063,10 @@ export function Studio({
                     <span className="upload-sheet one" />
                     <span className="upload-sheet two" />
                     <div>
-                      <ImagePlus size={34} strokeWidth={1.4} />
+                      <ImagePlus size={30} strokeWidth={1.4} />
                     </div>
                     <span className="upload-spark">
-                      <Sparkles size={16} />
+                      <Sparkles size={14} />
                     </span>
                   </div>
                   <h3>
@@ -1103,13 +1075,20 @@ export function Studio({
                       : "Todo empieza con una foto."}
                   </h3>
                   <p>
-                    {batchAllowed
-                      ? "Arrastrá una o varias fotos (hasta 20) o elegilas desde tu dispositivo."
-                      : "Arrastrala hasta acá o elegila desde tu dispositivo."}
+                    <span className="pointer-only">
+                      {batchAllowed
+                        ? "Arrastrá una o varias fotos (hasta 20) o elegilas desde tu computadora."
+                        : "Arrastrala hasta acá o elegila desde tu computadora."}
+                    </span>
+                    <span className="touch-only">
+                      {batchAllowed
+                        ? "Elegí una o varias fotos (hasta 20) de tu galería."
+                        : "Elegí una foto de tu galería o sacala con la cámara."}
+                    </span>
                   </p>
                   <button
+                    type="button"
                     className="button button-primary"
-                    onClick={() => input.current?.click()}
                     disabled={reading}
                   >
                     {reading ? (
@@ -1117,15 +1096,17 @@ export function Studio({
                     ) : (
                       <Upload size={17} />
                     )}{" "}
-                    {batchAllowed ? "Subir mis fotos" : "Subir mi foto"}{" "}
-                    <ArrowUpRight size={16} />
+                    {batchAllowed ? "Subir mis fotos" : "Subir mi foto"}
                   </button>
                   <span className="upload-meta">
                     JPG, PNG o WebP · Hasta 10 MB
                   </span>
                 </div>
               ) : (
-                <div className="canvas-photo" ref={resultRef}>
+                <div
+                  className="stage-media"
+                  style={{ "--ar": aspect } as CSSProperties}
+                >
                   {result && comparison ? (
                     <Comparison before={source} after={result} />
                   ) : (
@@ -1136,15 +1117,29 @@ export function Studio({
                           ? "Diseño de tu ambiente"
                           : "Foto original de tu propiedad"
                       }
+                      onLoad={(e) => {
+                        const { naturalWidth: w, naturalHeight: h } =
+                          e.currentTarget;
+                        if (w && h) setAspect(w / h);
+                      }}
                     />
                   )}
-                  <span className="photo-name">
-                    {demo ? "EJEMPLO DEMO" : filename}
-                  </span>
+                  {/* Not over the comparison: it would cover its labels. */}
+                  {!(busy && !result) && !(result && comparison) && (
+                    <button
+                      ref={viewerTrigger}
+                      className="stage-zoom"
+                      aria-label="Ver en pantalla completa"
+                      title="Ver en pantalla completa"
+                      onClick={() => setViewer(true)}
+                    >
+                      <Maximize2 size={17} />
+                    </button>
+                  )}
                   {busy && !result && (
                     <div className="generating-overlay">
                       <div className="generating-icon">
-                        <Sparkles size={32} />
+                        <Sparkles size={28} />
                       </div>
                       <h3>
                         {round
@@ -1169,80 +1164,116 @@ export function Studio({
                   )}
                 </div>
               )}
-              {((variants && variants.length > 0) || busy) && (
-                <div
-                  className="variant-picker"
-                  aria-label="Variantes de esta foto"
-                >
-                  {(variants || []).map((v, i) => (
-                    <button
-                      key={v.id}
-                      className={result === v.result ? "selected" : ""}
-                      onClick={() => {
-                        setResult(v.result);
-                        setRoom(v.room);
-                        setStyle(normalizeStyle(v.style));
-                        setMode(v.mode);
-                        setNotes(v.notes);
-                      }}
-                    >
-                      <img src={v.result} alt="" />
-                      Diseño {(variants?.length || 0) - i}
-                    </button>
-                  ))}
-                  {busy &&
-                    Array.from(
-                      { length: Math.max(0, roundTotal - batchCompleted) },
-                      (_, i) => (
-                        <div
-                          className="variant-pending"
-                          key={`pending-${i}`}
-                          role="status"
-                          aria-label={
-                            i === 0
-                              ? "Generando siguiente diseño"
-                              : "Diseño pendiente"
-                          }
-                        >
-                          <img src={source} alt="" />
-                          <LoaderCircle className="spin" size={24} />
-                          <span>Creando…</span>
-                        </div>
-                      ),
-                    )}
+              {(error || notice) && (
+                <div className="studio-feedback">
+                  {error && (
+                    <div className="feedback error" role="alert">
+                      <Info size={18} />
+                      <p>{error}</p>
+                      <button
+                        className="icon-button"
+                        aria-label="Cerrar error"
+                        onClick={() => setError("")}
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+                  )}
+                  {notice && (
+                    <div className="feedback notice" role="status">
+                      <Check size={18} />
+                      <p>{notice}</p>
+                      <button
+                        className="icon-button"
+                        aria-label="Cerrar aviso"
+                        onClick={() => setNotice("")}
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
-              {busy && result && (
-                <p className="batch-progress" role="status">
-                  <LoaderCircle className="spin" size={17} />
-                  {batchCompleted} de {roundTotal} propuestas listas. Ya podés
-                  explorar y descargar los que están listos.
-                </p>
-              )}
-              {result && (
-                <div className="result-actions">
-                  <div className="result-success">
-                    <Check size={17} />
-                    <span>
-                      {demo
-                        ? "Ejemplo listo para explorar"
-                        : "Tu diseño está listo"}
-                    </span>
-                    <button
-                      className="icon-button"
-                      aria-label={
-                        comparison ? "Ver solo el resultado" : "Ver comparación"
-                      }
-                      onClick={() => setComparison(!comparison)}
-                    >
-                      {comparison ? (
-                        <Eye size={17} />
-                      ) : (
-                        <SplitSquareHorizontal size={17} />
+            </div>
+            {showFooter && (
+              <div className="canvas-footer">
+                {(hasVariants || busy) && (
+                  <div
+                    className="variant-picker"
+                    role="group"
+                    aria-label="Variantes de esta foto"
+                  >
+                    {(variants || []).map((v, i) => (
+                      <button
+                        key={v.id}
+                        className={result === v.result ? "selected" : ""}
+                        aria-pressed={result === v.result}
+                        onClick={() => {
+                          setResult(v.result);
+                          setRoom(v.room);
+                          setStyle(normalizeStyle(v.style));
+                          setMode(v.mode);
+                          setNotes(v.notes);
+                        }}
+                      >
+                        <img src={v.result} alt="" />
+                        <span>Diseño {(variants?.length || 0) - i}</span>
+                      </button>
+                    ))}
+                    {busy &&
+                      Array.from(
+                        { length: Math.max(0, roundTotal - batchCompleted) },
+                        (_, i) => (
+                          <div
+                            className="variant-pending"
+                            key={`pending-${i}`}
+                            role="status"
+                            aria-label={
+                              i === 0
+                                ? "Generando siguiente diseño"
+                                : "Diseño pendiente"
+                            }
+                          >
+                            <img src={source} alt="" />
+                            <LoaderCircle className="spin" size={20} />
+                            <span>Creando…</span>
+                          </div>
+                        ),
                       )}
-                    </button>
                   </div>
-                  <div className="download-actions">
+                )}
+                {result && (
+                  <div className="result-actions">
+                    <div
+                      className="view-toggle"
+                      role="group"
+                      aria-label="Cómo ver el diseño"
+                    >
+                      <button
+                        className={comparison ? "" : "selected"}
+                        aria-pressed={!comparison}
+                        onClick={() => setComparison(false)}
+                      >
+                        <Eye size={16} /> Diseño
+                      </button>
+                      <button
+                        className={comparison ? "selected" : ""}
+                        aria-pressed={comparison}
+                        onClick={() => setComparison(true)}
+                      >
+                        <SplitSquareHorizontal size={16} /> Comparar
+                      </button>
+                    </div>
+                    {canShare && (
+                      <button
+                        className="button button-outline share-button"
+                        aria-label="Compartir"
+                        title="Compartir"
+                        onClick={() => download(false, true)}
+                      >
+                        <Share2 size={17} />
+                      </button>
+                    )}
                     <button
                       className="button button-dark"
                       onClick={() => download()}
@@ -1256,313 +1287,218 @@ export function Studio({
                       <Images size={16} /> Antes y después
                     </button>
                   </div>
-                  <label className="checkbox-label">
-                    <input
-                      type="checkbox"
-                      checked={label}
-                      onChange={(e) => setLabel(e.target.checked)}
-                    />{" "}
-                    Incluir etiqueta «Amoblamiento virtual»
-                  </label>
-                </div>
-              )}
-              {!batchMode && (
-                <div className="examples">
-                  <div className="examples-heading">
-                    <span>¿SOLO ESTÁS EXPLORANDO?</span>
-                    <p>
-                      Probá con un espacio de ejemplo <ArrowRight size={14} />
+                )}
+                {busy && result && (
+                  <p className="batch-progress" role="status">
+                    <LoaderCircle className="spin" size={16} />
+                    {batchCompleted} de {roundTotal} propuestas listas. Ya podés
+                    ver y descargar las que están listas.
+                  </p>
+                )}
+                {result && (
+                  <div className="result-meta">
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={label}
+                        onChange={(e) => setLabel(e.target.checked)}
+                      />{" "}
+                      Incluir etiqueta «Amoblamiento virtual»
+                    </label>
+                    <p className="studio-tip">
+                      <ShieldCheck size={15} />
+                      Antes de publicar, revisá que se conserve la arquitectura
+                      real.
                     </p>
                   </div>
-                  <div className="example-grid">
-                    {demoRooms.map((r) => (
-                      <button
-                        key={r}
-                        onClick={() => useExample(r)}
-                        disabled={busy || reading}
-                        aria-label={`Usar ejemplo de ${rooms.find((x) => x.id === r)?.name}`}
-                        className={demo && room === r ? "selected" : ""}
-                      >
-                        <img src={beforeImage(r)} alt="" />
-                        <span>{rooms.find((x) => x.id === r)?.name}</span>
-                        {demo && room === r && (
-                          <span className="example-check">
-                            <Check size={13} />
-                          </span>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              <div className="studio-tip">
-                <ShieldCheck size={18} />
-                <p>
-                  <strong>La arquitectura es el punto de partida.</strong>{" "}
-                  Comprobá que el resultado conserve las características reales
-                  antes de publicar.
-                </p>
-              </div>
-            </div>
-            <aside className="settings-panel">
-              {source && (
-                <div className="input-preview">
-                  <h3>Tu foto original</h3>
-                  <img src={source} alt="Foto original" />
-                  <button
-                    className="subtle-button"
-                    onClick={reset}
-                    disabled={busy}
-                  >
-                    Probar otra foto
-                  </button>
-                </div>
-              )}
-              <div className="settings-heading">
-                <h2>
-                  <span className="section-number">02</span> Diseñá a tu manera
-                </h2>
-                <span>Un poco de vos. Un poco de IA.</span>
-              </div>
-              <div className="staging-controls" data-tour="operation">
-                <label
-                  className={`operation-toggle ${mode === "remove" || mode === "redesign" ? "active" : ""}`}
-                >
-                  <CircleMinus size={21} />
-                  <span>Quitar muebles existentes</span>
-                  {freeTier && (
-                    <LockKeyhole
-                      size={15}
-                      aria-label="Incluido en planes pagos"
-                    />
-                  )}
-                  <input
-                    type="checkbox"
-                    aria-label="Quitar muebles existentes"
-                    checked={mode === "remove" || mode === "redesign"}
-                    disabled={locked || reading || freeTier}
-                    onChange={(e) =>
-                      chooseMode(
-                        e.target.checked
-                          ? mode === "furnish"
-                            ? "redesign"
-                            : "remove"
-                          : "furnish",
-                      )
-                    }
-                  />
-                </label>
-                <div
-                  className={`furnish-card ${mode === "furnish" || mode === "redesign" ? "active" : ""}`}
-                >
-                  <label className="operation-toggle">
-                    <CirclePlus size={21} />
-                    <span>Agregar muebles</span>
-                    <input
-                      type="checkbox"
-                      aria-label="Agregar muebles"
-                      checked={mode === "furnish" || mode === "redesign"}
-                      disabled={locked || reading || freeTier}
-                      onChange={(e) =>
-                        chooseMode(
-                          e.target.checked
-                            ? mode === "remove"
-                              ? "redesign"
-                              : "furnish"
-                            : "remove",
-                        )
-                      }
-                    />
-                  </label>
-                  <div className="staging-selects">
-                    {/* In a batch each photo has its own room. */}
-                    {!batchMode && (
-                      <fieldset disabled={busy || reading}>
-                        <legend>Elegí el ambiente</legend>
-                        <select
-                          className="studio-select"
-                          aria-label="Tipo de ambiente"
-                          value={room}
-                          onChange={(e) => chooseRoom(e.target.value as RoomId)}
-                        >
-                          {rooms.map((r) => (
-                            <option
-                              key={r.id}
-                              value={r.id}
-                              disabled={
-                                (freeTier && !freeRooms.includes(r.id)) ||
-                                (demo &&
-                                  !(demoRooms as readonly string[]).includes(
-                                    r.id,
-                                  ))
-                              }
-                            >
-                              {r.name}
-                              {freeTier && !freeRooms.includes(r.id)
-                                ? " · Plan pago"
-                                : ""}
-                            </option>
-                          ))}
-                        </select>
-                      </fieldset>
-                    )}
-                    <fieldset
-                      disabled={
-                        locked ||
-                        reading ||
-                        ["remove", "enhance", "dusk"].includes(mode)
-                      }
-                    >
-                      <legend>Estilo de muebles</legend>
-                      <select
-                        className="studio-select"
-                        aria-label="Estilo de muebles"
-                        data-tour="style"
-                        value={style}
-                        onChange={(e) => {
-                          setStyle(e.target.value as StyleId);
-                          setResult("");
-                        }}
-                      >
-                        {styles.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.name}
-                          </option>
-                        ))}
-                      </select>
-                      <p className="field-hint">
-                        {styles.find((s) => s.id === style)?.description}
-                      </p>
-                    </fieldset>
-                  </div>
-                </div>
-                <details className="photo-tools">
-                  <summary>
-                    Herramientas de foto{freeTier ? " · Plan pago" : ""}
-                  </summary>
-                  <div className="mode-options">
-                    {modes
-                      .filter((m) => ["enhance", "dusk"].includes(m.id))
-                      .map((m) => (
+                )}
+                {showExamples && (
+                  <div className="examples">
+                    <p>
+                      <span>¿Solo estás explorando?</span> Probá con un ejemplo{" "}
+                      <ArrowRight size={14} />
+                    </p>
+                    <div className="example-grid">
+                      {demoRooms.map((r) => (
                         <button
-                          key={m.id}
-                          disabled={locked || reading || freeTier || demo}
-                          className={mode === m.id ? "selected" : ""}
-                          onClick={() => chooseMode(m.id)}
+                          key={r}
+                          onClick={() => useExample(r)}
+                          disabled={busy || reading}
+                          aria-label={`Usar ejemplo de ${rooms.find((x) => x.id === r)?.name}`}
+                          aria-pressed={demo && room === r}
+                          className={demo && room === r ? "selected" : ""}
                         >
-                          {freeTier && <LockKeyhole size={12} />} {m.name}
+                          <img src={beforeImage(r)} alt="" />
+                          <span>{rooms.find((x) => x.id === r)?.name}</span>
+                          {demo && room === r && (
+                            <span className="example-check">
+                              <Check size={12} />
+                            </span>
+                          )}
                         </button>
                       ))}
+                    </div>
                   </div>
-                </details>
+                )}
               </div>
-              <div className="notes-field">
-                <label htmlFor="design-notes">
-                  Un toque personal <span>opcional</span>
-                </label>
-                <textarea
-                  id="design-notes"
-                  placeholder="Ej.: tonos cálidos, sofá de lino, detalles en madera…"
-                  maxLength={500}
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  disabled={locked || demo || mode === "remove"}
-                />
-                <span>{notes.length}/500</span>
-              </div>
-              <div className="generate-area" data-tour="generate">
-                {batchMode ? (
-                  <>
+            )}
+          </section>
+          <section className="settings-panel" aria-label="Opciones de diseño">
+            <fieldset className="mode-field" data-tour="operation">
+              <legend>¿Qué querés hacer?</legend>
+              <div className="mode-segment">
+                {stagingModes.map(({ id, icon: Icon }) => {
+                  const paidOnly = freeTier && id !== "furnish";
+                  return (
                     <button
-                      className="button button-primary generate-button"
-                      onClick={startBatch}
-                      disabled={
-                        batch.running || !batch.waiting || batch.preparing > 0
+                      key={id}
+                      className={`${mode === id ? "selected" : ""} ${paidOnly ? "is-locked" : ""}`}
+                      aria-pressed={mode === id}
+                      // Not disabled: a tap explains the lock.
+                      aria-disabled={paidOnly || undefined}
+                      disabled={locked || reading}
+                      title={
+                        paidOnly ? "Incluido en los planes pagos" : undefined
+                      }
+                      onClick={() =>
+                        paidOnly
+                          ? setPaidHint(
+                              modes.find((m) => m.id === id)?.name || "",
+                            )
+                          : chooseMode(id)
                       }
                     >
-                      {batch.running ? (
-                        <LoaderCircle size={19} className="spin" />
-                      ) : (
-                        <Sparkles size={19} />
-                      )}{" "}
-                      {batch.running
-                        ? "Creando tus diseños…"
-                        : batch.waiting
-                          ? `Crear ${batch.waiting} ${batch.waiting === 1 ? "diseño" : "diseños"}`
-                          : "Tanda terminada"}
-                      {!batch.running && batch.waiting > 0 && (
-                        <ArrowUpRight size={19} />
+                      <Icon size={18} />
+                      {modes.find((m) => m.id === id)?.name}
+                      {paidOnly && (
+                        <>
+                          <LockKeyhole size={12} className="mode-lock" />
+                          <span className="visually-hidden"> (plan pago)</span>
+                        </>
                       )}
                     </button>
-                    <p>
-                      {unlimited
-                        ? "Calidad alta · Una foto por vez · Sin límite de fotos"
-                        : credits !== null && batch.waiting > credits
-                          ? `Te quedan ${credits} fotos: las demás no se van a crear.`
-                          : "Calidad alta · Una foto por vez · Cada foto nueva usa 1 de tu saldo"}
-                    </p>
+                  );
+                })}
+              </div>
+              <div className="mode-tools">
+                <span>Retoque</span>
+                {photoModes.map(({ id, icon: Icon, label: name }) => (
+                  <button
+                    key={id}
+                    className={`${mode === id ? "selected" : ""} ${freeTier ? "is-locked" : ""}`}
+                    aria-pressed={mode === id}
+                    aria-disabled={freeTier || undefined}
+                    disabled={locked || reading || demo}
+                    title={
+                      freeTier
+                        ? "Incluido en los planes pagos"
+                        : modes.find((m) => m.id === id)?.name
+                    }
+                    onClick={() =>
+                      freeTier
+                        ? setPaidHint(
+                            modes.find((m) => m.id === id)?.name || "",
+                          )
+                        : chooseMode(id)
+                    }
+                  >
+                    {freeTier ? <LockKeyhole size={12} /> : <Icon size={14} />}
+                    {name}
+                    {freeTier && (
+                      <span className="visually-hidden"> (plan pago)</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+              <p className="field-hint" aria-live="polite">
+                {paidHint && freeTier ? (
+                  <>
+                    <strong>{paidHint}</strong> está incluido en los planes
+                    pagos. <Link href="/precios">Ver planes</Link>
                   </>
                 ) : (
                   <>
-                    <button
-                      ref={loginTrigger}
-                      className="button button-primary generate-button"
-                      onClick={generate}
-                      disabled={
-                        !source ||
-                        busy ||
-                        reading ||
-                        !status ||
-                        (!demo &&
-                          status.mode === "cloud" &&
-                          (status.authenticated || status.anonymous) &&
-                          credits === null)
-                      }
-                    >
-                      {busy ? (
-                        <LoaderCircle size={19} className="spin" />
-                      ) : (
-                        <Sparkles size={19} />
-                      )}{" "}
-                      {busy
-                        ? "Creando tu diseño…"
-                        : demo
-                          ? "Ver transformación de ejemplo"
-                          : freeTier
-                            ? freeRemaining > 0
-                              ? `Crear ${freeBatchSize(freeRemaining)} diseños gratis`
-                              : "Ver planes"
-                            : result
-                              ? "Generar otra variante"
-                              : "Generar mi diseño"}
-                      {!busy && <ArrowUpRight size={19} />}
-                    </button>
-                    <p>
-                      {demo
-                        ? "Demo precargada · No consume API"
-                        : freeTier
-                          ? "Prueba gratis · Con marca de agua"
-                          : status?.configured
-                            ? status.mode === "cloud"
-                              ? "Calidad alta · Regeneraciones incluidas"
-                              : "Calidad alta · Acceso de piloto"
-                            : "Explorá gratis los ejemplos precargados"}
-                    </p>
+                    {modes.find((m) => m.id === mode)?.description}
+                    {freeTier &&
+                      " Las demás opciones están en los planes pagos."}
                   </>
                 )}
-              </div>
-              {status?.configured &&
-                !status.authenticated &&
-                !demo &&
-                status.mode !== "cloud" && (
-                  <button
-                    className="pilot-link"
-                    onClick={() => setShowLogin(true)}
-                  >
-                    <LockKeyhole size={13} /> Tengo una clave de acceso
-                  </button>
+              </p>
+            </fieldset>
+            {(!batchMode || usesStyle) && (
+              <div className="staging-selects">
+                {/* In a batch each photo has its own room. */}
+                {!batchMode && (
+                  <label className="select-field">
+                    <span>Ambiente</span>
+                    <select
+                      className="studio-select"
+                      value={room}
+                      disabled={busy || reading}
+                      onChange={(e) => chooseRoom(e.target.value as RoomId)}
+                    >
+                      {rooms.map((r) => (
+                        <option
+                          key={r.id}
+                          value={r.id}
+                          disabled={
+                            (freeTier && !freeRooms.includes(r.id)) ||
+                            (demo &&
+                              !(demoRooms as readonly string[]).includes(r.id))
+                          }
+                        >
+                          {r.name}
+                          {freeTier && !freeRooms.includes(r.id)
+                            ? " · Plan pago"
+                            : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                 )}
-            </aside>
+                {usesStyle && (
+                  <label className="select-field">
+                    <span>Estilo</span>
+                    <select
+                      className="studio-select"
+                      data-tour="style"
+                      value={style}
+                      disabled={locked || reading}
+                      onChange={(e) => {
+                        setStyle(e.target.value as StyleId);
+                        setResult("");
+                      }}
+                    >
+                      {styles.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+              </div>
+            )}
+            {usesStyle && (
+              <p className="field-hint style-hint">
+                {styles.find((s) => s.id === style)?.description}
+              </p>
+            )}
+            <div className="notes-field">
+              <label htmlFor="design-notes">
+                Un toque personal <span>opcional</span>
+                <span className="notes-count">{notes.length}/500</span>
+              </label>
+              <textarea
+                id="design-notes"
+                rows={2}
+                placeholder="Ej.: tonos cálidos, sofá de lino, detalles en madera…"
+                maxLength={500}
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                disabled={locked || demo || mode === "remove"}
+              />
+            </div>
             {freeTier && result && (
               <aside className="free-upsell">
                 <span className="free-pill">Planes desde 6 fotos por mes</span>
@@ -1575,43 +1511,95 @@ export function Studio({
                     "Retiro de muebles incluido",
                   ].map((t) => (
                     <li key={t}>
-                      <Check size={16} /> {t}
+                      <Check size={15} /> {t}
                     </li>
                   ))}
                 </ul>
                 <Link href="/precios" className="button button-primary">
-                  <LockKeyhole size={17} /> Desbloquear todo
+                  <LockKeyhole size={16} /> Desbloquear todo
                 </Link>
               </aside>
             )}
+          </section>
+          <div className="generate-area" data-tour="generate">
+            {batchMode ? (
+              <>
+                <button
+                  className="button button-primary generate-button"
+                  onClick={startBatch}
+                  disabled={
+                    batch.running || !batch.waiting || batch.preparing > 0
+                  }
+                >
+                  {batch.running ? (
+                    <LoaderCircle size={19} className="spin" />
+                  ) : (
+                    <Sparkles size={19} />
+                  )}{" "}
+                  {batch.running
+                    ? "Creando tus diseños…"
+                    : batch.waiting
+                      ? `Crear ${batch.waiting} ${batch.waiting === 1 ? "diseño" : "diseños"}`
+                      : "Tanda terminada"}
+                </button>
+                <p>
+                  {unlimited
+                    ? "Calidad alta · Una foto por vez · Sin límite de fotos"
+                    : credits !== null && batch.waiting > credits
+                      ? `Te quedan ${credits} fotos: las demás no se van a crear.`
+                      : "Calidad alta · Una foto por vez · Cada foto nueva usa 1 de tu saldo"}
+                </p>
+              </>
+            ) : (
+              <>
+                <button
+                  ref={loginTrigger}
+                  className="button button-primary generate-button"
+                  onClick={generate}
+                  disabled={
+                    !source ||
+                    busy ||
+                    reading ||
+                    !status ||
+                    (!demo &&
+                      status.mode === "cloud" &&
+                      (status.authenticated || status.anonymous) &&
+                      credits === null)
+                  }
+                >
+                  {busy ? (
+                    <LoaderCircle size={19} className="spin" />
+                  ) : (
+                    <Sparkles size={19} />
+                  )}{" "}
+                  {busy
+                    ? "Creando tu diseño…"
+                    : demo
+                      ? "Ver transformación de ejemplo"
+                      : freeTier
+                        ? freeRemaining > 0
+                          ? `Crear ${freeBatchSize(freeRemaining)} diseños gratis`
+                          : "Ver planes"
+                        : result
+                          ? "Generar otra variante"
+                          : "Generar mi diseño"}
+                </button>
+                <p>{hint}</p>
+              </>
+            )}
+            {status?.configured &&
+              !status.authenticated &&
+              !demo &&
+              status.mode !== "cloud" && (
+                <button
+                  className="pilot-link"
+                  onClick={() => setShowLogin(true)}
+                >
+                  <LockKeyhole size={13} /> Tengo una clave de acceso
+                </button>
+              )}
           </div>
-        )}
-        {error && (
-          <div className="feedback error" role="alert">
-            <Info size={18} />
-            <p>{error}</p>
-            <button
-              className="icon-button"
-              aria-label="Cerrar error"
-              onClick={() => setError("")}
-            >
-              <X size={16} />
-            </button>
-          </div>
-        )}
-        {notice && (
-          <div className="feedback notice" role="status">
-            <Check size={18} />
-            <p>{notice}</p>
-            <button
-              className="icon-button"
-              aria-label="Cerrar aviso"
-              onClick={() => setNotice("")}
-            >
-              <X size={16} />
-            </button>
-          </div>
-        )}
+        </div>
         <div className="studio-bottom">
           <span>
             <LockKeyhole size={13} /> Las fotos se procesan solo cuando generás.
@@ -1621,6 +1609,33 @@ export function Studio({
           </Link>
         </div>
       </div>
+      {viewer && (result || source) && (
+        <div
+          className="viewer"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Foto en pantalla completa"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setViewer(false);
+          }}
+        >
+          <img
+            src={result || source}
+            alt={
+              result ? "Diseño de tu ambiente" : "Foto original de tu propiedad"
+            }
+          />
+          <button
+            className="viewer-close icon-button"
+            aria-label="Cerrar"
+            autoFocus
+            onClick={() => setViewer(false)}
+          >
+            <X size={22} />
+          </button>
+          <p className="viewer-hint touch-only">Pellizcá para ampliar</p>
+        </div>
+      )}
       {showLogin && (
         <div
           className="modal-backdrop"
