@@ -10,8 +10,8 @@ Virtual staging para Latinoamérica. MVP en español inspirado en la experiencia
 - Carga por archivo o arrastrar y soltar: JPG, PNG y WebP hasta 10 MB. Optimización en el navegador antes de enviar y validación real de los bytes en el servidor.
 - Ocho ambientes, diez estilos, amoblamiento, rediseño y retiro de muebles.
 - Edición de fotos propias mediante OpenAI Images API, con calidad alta y restricciones de conservación arquitectónica.
-- Comparador antes/después accesible con teclado, descarga JPG y exportación de ambas imágenes lado a lado.
-- Etiqueta opcional de amoblamiento virtual en las exportaciones.
+- «Estado actual» y «Propuesta de ambientación virtual» siempre juntas (en paralelo o apiladas), deslizador como alternativa, rótulo «Ambientación virtual · Mobiliario agregado digitalmente» en pantalla y descargas, y comparativas horizontales y verticales.
+- Revisión de propuestas y fichas de propiedad compartibles (`/fichas`, `/ficha/<token>`) e insertables en la web de la inmobiliaria (`/embed/ficha/<token>`). Ver [docs/FICHAS.md](docs/FICHAS.md).
 - Historial de los últimos 20 proyectos en IndexedDB, con recuperación y borrado individual.
 - Demo con fotos precargadas, sin API, registro ni tarjeta. Está identificada como demo y no simula generación sobre fotos propias.
 - Acceso privado de piloto: contraseña compartida, cookie HttpOnly firmada y vencimiento a las 8 horas.

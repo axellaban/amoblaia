@@ -4,6 +4,12 @@ Se detiene el trabajo a pedido del usuario para conservar créditos. Los cambios
 
 Producción: https://amoblaia.vercel.app/
 
+## Estado actual, propuestas y fichas compartibles — 24 de octubre de 2026
+
+- **Pendiente: aplicar en Supabase `202610240001_property_showcases.sql`** (SQL Editor; se puede re-ejecutar) antes de publicar la rama `claude/fichas-estado-actual`. Sin ella el estudio y la biblioteca funcionan como antes, pero la revisión, `/fichas`, `/ficha/…` y `/embed/…` no.
+- Opcional: `EMBED_FRAME_ANCESTORS` para limitar qué sitios pueden insertar fichas.
+- Falta probar con Supabase real y con generaciones reales los prompts nuevos de Amoblar/Rediseñar. Detalle, cómo probar y límites: [FICHAS.md](FICHAS.md).
+
 ## Cuentas ilimitadas y varias fotos por tanda — 23 de octubre de 2026
 
 - `UNLIMITED_EMAILS` (Vercel, separada por comas) marca cuentas del equipo que generan sin descontar fotos. Al entrar, la app les abre una asignación de 1.000.000 de fotos sin vencimiento (`credit_grants.source_key = unlimited:<id>`) y les sube el cupo diario a 1000. Si un email sale de la lista, esa asignación vence en su próximo ingreso. No requiere migración. Siguen valiendo el espacio por cuenta (320 MB) y el máximo de 150 fotos guardadas.
