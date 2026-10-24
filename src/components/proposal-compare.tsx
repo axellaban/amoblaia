@@ -83,7 +83,10 @@ export function ProposalCompare({
 }) {
   if (view === "slider")
     return (
-      <div className={`pc pc-slider ${className}`}>
+      <div
+        className={`pc pc-slider ${className}`}
+        style={ratio ? ({ "--ar": ratio } as CSSProperties) : undefined}
+      >
         <Comparison
           before={original}
           after={proposal}

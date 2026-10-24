@@ -200,7 +200,7 @@ export async function renderExport({
   if (label) drawLabel(ctx, label, layout.photos[1]);
   const f = layout.footer;
   ctx.fillStyle = "#5c6170";
-  ctx.font = `400 ${Math.round(layout.fontSize * 0.55)}px ${FONT}`;
+  ctx.font = `400 ${Math.round(layout.fontSize * (kind === "vertical" ? 0.55 : 0.7))}px ${FONT}`;
   ctx.textBaseline = "middle";
   ctx.fillText(
     "El estado actual es la foto real. La propuesta es ilustrativa: los muebles y su tamaño son orientativos.",

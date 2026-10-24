@@ -181,37 +181,40 @@ export function ShowcaseViewer({
                   <span className="pc-dot" aria-hidden="true" />
                   {ORIGINAL_TITLE} · {room.label}
                 </figcaption>
-                <img
-                  src={original}
-                  alt={`${room.label}: foto real del estado actual`}
-                  onLoad={(e) => {
-                    const { naturalWidth: w, naturalHeight: h } =
-                      e.currentTarget;
-                    if (w && h) setRatio((m) => ({ ...m, [room.id]: w / h }));
-                  }}
-                  onError={() => setFailed(true)}
-                />
+                <div className="sc-original-frame">
+                  <img
+                    src={original}
+                    alt={`${room.label}: foto real del estado actual`}
+                    onLoad={(e) => {
+                      const { naturalWidth: w, naturalHeight: h } =
+                        e.currentTarget;
+                      if (w && h)
+                        setRatio((m) => ({ ...m, [room.id]: w / h }));
+                    }}
+                    onError={() => setFailed(true)}
+                  />
+                  {options.length ? (
+                    <button
+                      className="button button-primary sc-explore"
+                      onClick={() => {
+                        setExplored((m) => ({ ...m, [room.id]: true }));
+                        track("ambientacion_explorada", {
+                          origen: origin,
+                          ficha: data.id,
+                          ambiente: roomIndex + 1,
+                          estilos: options.length,
+                        });
+                      }}
+                    >
+                      <Sofa size={18} /> Explorá este ambiente amoblado
+                    </button>
+                  ) : (
+                    <span className="sc-badge">
+                      Sin propuestas de ambientación por ahora
+                    </span>
+                  )}
+                </div>
               </figure>
-              {options.length ? (
-                <button
-                  className="button button-primary sc-explore"
-                  onClick={() => {
-                    setExplored((m) => ({ ...m, [room.id]: true }));
-                    track("ambientacion_explorada", {
-                      origen: origin,
-                      ficha: data.id,
-                      ambiente: roomIndex + 1,
-                      estilos: options.length,
-                    });
-                  }}
-                >
-                  <Sofa size={18} /> Explorá este ambiente amoblado
-                </button>
-              ) : (
-                <p className="sc-note">
-                  Este ambiente todavía no tiene propuestas de ambientación.
-                </p>
-              )}
             </>
           ) : (
             <>

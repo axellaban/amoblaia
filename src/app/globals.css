@@ -6888,7 +6888,8 @@ h2 .accent {
   max-width: 96%;
   padding: 0.5em 0.95em;
   border-radius: 999px;
-  background: rgba(15, 19, 35, 0.86);
+  /* Opaque, so the copy burned into shared images never shows through. */
+  background: #121628;
   color: #fff;
   font-size: max(11px, calc(var(--fw, 600px) * 0.019));
   font-weight: 600;
@@ -6979,6 +6980,12 @@ h2 .accent {
 }
 .pc-slider {
   position: relative;
+}
+/* Below the labels, which sit at the top corners. */
+.pc-slider > .pc-zoom {
+  top: auto;
+  bottom: 12px;
+  right: 12px;
 }
 .pc-slider .comparison {
   width: 100%;
@@ -7312,14 +7319,12 @@ h2 .accent {
 .sc-original img {
   display: block;
   width: 100%;
-  max-height: 72svh;
+  max-height: 64svh;
   border-radius: 14px;
   background: #e7eaf2;
   object-fit: contain;
 }
 .sc-explore {
-  width: 100%;
-  max-width: 420px;
   min-height: 50px;
   font-size: 16px;
 }
@@ -7341,6 +7346,33 @@ h2 .accent {
 }
 .sc-compare .pc-frame .disclosed > img {
   max-height: 70svh;
+}
+.sc-compare.pc-slider {
+  width: min(100%, calc(70svh * var(--ar, 1.5)));
+  margin: 0 auto;
+}
+.sc-original-frame {
+  position: relative;
+}
+.sc-original-frame > .sc-explore,
+.sc-original-frame > .sc-badge {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  box-shadow: 0 10px 30px #0b0f1d59;
+}
+.sc-explore {
+  width: max-content;
+  max-width: calc(100% - 24px);
+}
+.sc-badge {
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 .sc-note {
   margin: 10px 0 0;
@@ -7401,6 +7433,14 @@ h2 .accent {
   }
   .sc-controls .view-toggle {
     margin-left: 0;
+  }
+  .view-toggle button {
+    white-space: nowrap;
+  }
+  .sc-original-frame > .sc-explore {
+    bottom: 10px;
+    min-height: 44px;
+    font-size: 15px;
   }
   /* Contact stays at hand on a phone. */
   .sc-enlace .sc-contact {
