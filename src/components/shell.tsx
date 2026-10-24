@@ -58,18 +58,18 @@ export function Header() {
         })
         .catch(() => active && setSession(false));
     void load();
-    // The studio signs out without reloading the page.
-    window.addEventListener("amoblaia:session", load);
     return () => {
       active = false;
-      window.removeEventListener("amoblaia:session", load);
     };
   }, []);
   const signedIn = session ?? (privatePage || null);
-  // Private pages already list "Mi cuenta", and the studio linking to itself
-  // would only reload it.
-  const account = signedIn && !privatePage;
-  const create = signedIn && pathname !== "/estudio";
+  const studio = pathname === "/estudio";
+  // Signed in, the studio is part of the app: same links as the private pages.
+  const appNav = privatePage || (studio && signedIn === true);
+  // The app links already include "Mi cuenta", and the studio linking to
+  // itself would only reload it.
+  const account = signedIn && !appNav;
+  const create = signedIn && !studio;
   return (
     <header className={`header ${privatePage ? "header-private" : ""}`}>
       <div className="container nav">
@@ -81,10 +81,10 @@ export function Header() {
           aria-label="Navegación principal"
         >
           <Link
-            href={privatePage ? "/proyectos" : "/"}
+            href={appNav ? "/proyectos" : "/"}
             onClick={() => setOpen(false)}
           >
-            {privatePage ? "Mis fotos" : "Inicio"}
+            {appNav ? "Mis fotos" : "Inicio"}
           </Link>
           <Link
             className={pathname === "/galeria" ? "active" : ""}
@@ -101,53 +101,55 @@ export function Header() {
             Precios
           </Link>
           <Link
-            href={privatePage ? "/cuenta" : "/blog"}
+            href={appNav ? "/cuenta" : "/blog"}
             onClick={() => setOpen(false)}
           >
-            {privatePage ? "Mi cuenta" : "Blog"}
+            {appNav ? "Mi cuenta" : "Blog"}
           </Link>
           {/* The header buttons are hidden on small screens. */}
-          <div className="mobile-nav-actions">
-            {signedIn ? (
-              <>
-                {account && (
+          {(!signedIn || account || create) && (
+            <div className="mobile-nav-actions">
+              {signedIn ? (
+                <>
+                  {account && (
+                    <Link
+                      href="/cuenta"
+                      className="button button-outline"
+                      onClick={() => setOpen(false)}
+                    >
+                      Mi cuenta
+                    </Link>
+                  )}
+                  {create && (
+                    <Link
+                      href="/estudio"
+                      className="button button-primary"
+                      onClick={() => setOpen(false)}
+                    >
+                      Ir al estudio
+                    </Link>
+                  )}
+                </>
+              ) : (
+                <>
                   <Link
-                    href="/cuenta"
+                    href="/acceso"
                     className="button button-outline"
                     onClick={() => setOpen(false)}
                   >
-                    Mi cuenta
+                    Entrar
                   </Link>
-                )}
-                {create && (
                   <Link
-                    href="/estudio"
+                    href="/acceso"
                     className="button button-primary"
                     onClick={() => setOpen(false)}
                   >
-                    Crear diseño
+                    Crear cuenta
                   </Link>
-                )}
-              </>
-            ) : (
-              <>
-                <Link
-                  href="/acceso"
-                  className="button button-outline"
-                  onClick={() => setOpen(false)}
-                >
-                  Entrar
-                </Link>
-                <Link
-                  href="/acceso"
-                  className="button button-primary"
-                  onClick={() => setOpen(false)}
-                >
-                  Crear cuenta
-                </Link>
-              </>
-            )}
-          </div>
+                </>
+              )}
+            </div>
+          )}
         </nav>
         <div className="nav-actions">
           {signedIn ? (
@@ -159,7 +161,7 @@ export function Header() {
               )}
               {create && (
                 <Link href="/estudio" className="button button-small">
-                  Crear diseño
+                  Ir al estudio
                 </Link>
               )}
             </>
