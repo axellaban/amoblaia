@@ -30,6 +30,8 @@ import {
   Eraser,
   WandSparkles,
   Sunset,
+  Maximize2,
+  Share2,
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -46,7 +48,13 @@ import {
   type ModeId,
 } from "@/lib/catalog";
 import { listProjects, saveProject, type Project } from "@/lib/history";
-import { optimizePhoto, blobToDataURL, downloadDesign } from "@/lib/images";
+import {
+  optimizePhoto,
+  blobToDataURL,
+  downloadDesign,
+  shareDesign,
+  canShareImages,
+} from "@/lib/images";
 import { Comparison } from "./comparison";
 import { clearDraft, loadDraft, saveDraft } from "@/lib/studio-draft";
 import { FREE_RESULT_LIMIT, freeBatchSize } from "@/lib/free-tier";
@@ -118,6 +126,11 @@ export function Studio({
   const [loginError, setLoginError] = useState("");
   const [label, setLabel] = useState(true);
   const [comparison, setComparison] = useState(false);
+  const [canShare, setCanShare] = useState(false);
+  const [viewer, setViewer] = useState(false);
+  const viewerTrigger = useRef<HTMLButtonElement>(null);
+  // Set when a plan-only option is tapped: on phones there is no tooltip.
+  const [paidHint, setPaidHint] = useState("");
   // Width over height of the photo on screen, so the stage fits it whole.
   const [aspect, setAspect] = useState(4 / 3);
   const input = useRef<HTMLInputElement>(null);
@@ -275,6 +288,24 @@ export function Studio({
     );
     return () => clearTimeout(timer);
   }, [notice]);
+  useEffect(() => setCanShare(canShareImages()), []);
+  useEffect(() => {
+    if (!viewer) return;
+    const trigger = viewerTrigger.current;
+    // Its only control is the close button, so Tab stays on it.
+    const keys = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setViewer(false);
+      if (e.key === "Tab") e.preventDefault();
+    };
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", keys);
+    return () => {
+      document.removeEventListener("keydown", keys);
+      document.body.style.overflow = overflow;
+      trigger?.focus();
+    };
+  }, [viewer]);
   // The request key makes a retry return the same batch; with different
   // settings it must be a new request, not a replay of the old one.
   useEffect(() => {
@@ -293,6 +324,7 @@ export function Studio({
     setDemo(false);
     setError("");
     setNotice("");
+    setViewer(false);
   }
   async function acceptFile(selected?: File) {
     if (!selected || busy || reading) return;
@@ -377,6 +409,7 @@ export function Studio({
     }
   }
   function chooseMode(m: ModeId) {
+    setPaidHint("");
     setMode(m);
     setResult("");
     if (demo) setSource(m === "furnish" ? beforeImage(room) : afterImage(room));
@@ -625,6 +658,13 @@ export function Studio({
     setBusy(true);
     setElapsed(0);
     setBatchCompleted(0);
+    // On phones the button can be far below the photo: show the progress.
+    resultRef.current?.scrollIntoView({
+      behavior: matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "auto"
+        : "smooth",
+      block: "nearest",
+    });
     try {
       const data = new FormData();
       data.set("image", file);
@@ -756,9 +796,10 @@ export function Studio({
       setError("No pudimos cerrar la sesión. Intentá de nuevo.");
     }
   }
-  async function download(sideBySide = false) {
+  async function download(sideBySide = false, share = false) {
+    const send = share ? shareDesign : downloadDesign;
     try {
-      await downloadDesign(
+      await send(
         result,
         `${room}-${style}`,
         sideBySide ? source : undefined,
@@ -777,7 +818,7 @@ export function Studio({
             setSource(fresh.original);
             setResult(image);
             setVariants(fresh.variants || []);
-            await downloadDesign(
+            await send(
               image,
               `${room}-${style}`,
               sideBySide ? fresh.original : undefined,
@@ -925,7 +966,7 @@ export function Studio({
         </button>
       )}
       <div className="container">
-        <div className="workspace">
+        <div className={`workspace ${source || batchMode ? "has-photo" : ""}`}>
           <div className="studio-intro">
             <h1>Estudio de diseño</h1>
             {balance && (
@@ -1004,6 +1045,9 @@ export function Studio({
               ) : !source ? (
                 <div
                   className={`dropzone ${dragging ? "dragging" : ""}`}
+                  // The whole area opens the picker; the button inside is
+                  // the keyboard's way in and bubbles up here.
+                  onClick={() => !reading && input.current?.click()}
                   onDragOver={(e) => {
                     e.preventDefault();
                     setDragging(true);
@@ -1043,8 +1087,8 @@ export function Studio({
                     </span>
                   </p>
                   <button
+                    type="button"
                     className="button button-primary"
-                    onClick={() => input.current?.click()}
                     disabled={reading}
                   >
                     {reading ? (
@@ -1079,6 +1123,18 @@ export function Studio({
                         if (w && h) setAspect(w / h);
                       }}
                     />
+                  )}
+                  {/* Not over the comparison: it would cover its labels. */}
+                  {!(busy && !result) && !(result && comparison) && (
+                    <button
+                      ref={viewerTrigger}
+                      className="stage-zoom"
+                      aria-label="Ver en pantalla completa"
+                      title="Ver en pantalla completa"
+                      onClick={() => setViewer(true)}
+                    >
+                      <Maximize2 size={17} />
+                    </button>
                   )}
                   {busy && !result && (
                     <div className="generating-overlay">
@@ -1208,6 +1264,16 @@ export function Studio({
                         <SplitSquareHorizontal size={16} /> Comparar
                       </button>
                     </div>
+                    {canShare && (
+                      <button
+                        className="button button-outline share-button"
+                        aria-label="Compartir"
+                        title="Compartir"
+                        onClick={() => download(false, true)}
+                      >
+                        <Share2 size={17} />
+                      </button>
+                    )}
                     <button
                       className="button button-dark"
                       onClick={() => download()}
@@ -1286,13 +1352,21 @@ export function Studio({
                   return (
                     <button
                       key={id}
-                      className={mode === id ? "selected" : ""}
+                      className={`${mode === id ? "selected" : ""} ${paidOnly ? "is-locked" : ""}`}
                       aria-pressed={mode === id}
-                      disabled={locked || reading || paidOnly}
+                      // Not disabled: a tap explains the lock.
+                      aria-disabled={paidOnly || undefined}
+                      disabled={locked || reading}
                       title={
                         paidOnly ? "Incluido en los planes pagos" : undefined
                       }
-                      onClick={() => chooseMode(id)}
+                      onClick={() =>
+                        paidOnly
+                          ? setPaidHint(
+                              modes.find((m) => m.id === id)?.name || "",
+                            )
+                          : chooseMode(id)
+                      }
                     >
                       <Icon size={18} />
                       {modes.find((m) => m.id === id)?.name}
@@ -1311,15 +1385,22 @@ export function Studio({
                 {photoModes.map(({ id, icon: Icon, label: name }) => (
                   <button
                     key={id}
-                    className={mode === id ? "selected" : ""}
+                    className={`${mode === id ? "selected" : ""} ${freeTier ? "is-locked" : ""}`}
                     aria-pressed={mode === id}
-                    disabled={locked || reading || freeTier || demo}
+                    aria-disabled={freeTier || undefined}
+                    disabled={locked || reading || demo}
                     title={
                       freeTier
                         ? "Incluido en los planes pagos"
                         : modes.find((m) => m.id === id)?.name
                     }
-                    onClick={() => chooseMode(id)}
+                    onClick={() =>
+                      freeTier
+                        ? setPaidHint(
+                            modes.find((m) => m.id === id)?.name || "",
+                          )
+                        : chooseMode(id)
+                    }
                   >
                     {freeTier ? <LockKeyhole size={12} /> : <Icon size={14} />}
                     {name}
@@ -1329,9 +1410,19 @@ export function Studio({
                   </button>
                 ))}
               </div>
-              <p className="field-hint">
-                {modes.find((m) => m.id === mode)?.description}
-                {freeTier && " Las demás opciones están en los planes pagos."}
+              <p className="field-hint" aria-live="polite">
+                {paidHint && freeTier ? (
+                  <>
+                    <strong>{paidHint}</strong> está incluido en los planes
+                    pagos. <Link href="/precios">Ver planes</Link>
+                  </>
+                ) : (
+                  <>
+                    {modes.find((m) => m.id === mode)?.description}
+                    {freeTier &&
+                      " Las demás opciones están en los planes pagos."}
+                  </>
+                )}
               </p>
             </fieldset>
             {(!batchMode || usesStyle) && (
@@ -1518,6 +1609,33 @@ export function Studio({
           </Link>
         </div>
       </div>
+      {viewer && (result || source) && (
+        <div
+          className="viewer"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Foto en pantalla completa"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setViewer(false);
+          }}
+        >
+          <img
+            src={result || source}
+            alt={
+              result ? "Diseño de tu ambiente" : "Foto original de tu propiedad"
+            }
+          />
+          <button
+            className="viewer-close icon-button"
+            aria-label="Cerrar"
+            autoFocus
+            onClick={() => setViewer(false)}
+          >
+            <X size={22} />
+          </button>
+          <p className="viewer-hint touch-only">Pellizcá para ampliar</p>
+        </div>
+      )}
       {showLogin && (
         <div
           className="modal-backdrop"

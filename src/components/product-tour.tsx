@@ -106,8 +106,10 @@ export function ProductTour() {
       const element = current.target
         ? document.querySelector<HTMLElement>(`[data-tour="${current.target}"]`)
         : null;
-      if (element) {
-        const r = element.getBoundingClientRect();
+      // A hidden target (zero size) gets the centered card, not a spotlight
+      // in the corner.
+      const r = element?.getBoundingClientRect();
+      if (r?.width && r.height) {
         setRect({
           top: r.top - 6,
           left: r.left - 6,

@@ -384,6 +384,10 @@ fieldset {
   background: #dedfe5;
   border-radius: 12px;
   isolation: isolate;
+  cursor: ew-resize;
+  touch-action: pan-y pinch-zoom;
+  user-select: none;
+  -webkit-user-select: none;
 }
 .comparison > img,
 .comparison-before,
@@ -446,6 +450,7 @@ fieldset {
   color: var(--ink);
   box-shadow: 0 3px 10px #0002;
 }
+/* The photo takes the pointer; the input is there for the keyboard. */
 .comparison-range {
   position: absolute;
   inset: 0;
@@ -454,7 +459,7 @@ fieldset {
   height: 100%;
   margin: 0;
   opacity: 0;
-  cursor: ew-resize;
+  pointer-events: none;
 }
 .comparison:focus-within {
   outline: 3px solid var(--terracotta);
@@ -5837,6 +5842,64 @@ h2 .accent {
   aspect-ratio: auto;
   border-radius: 0;
 }
+/* Top corner: messages show up along the bottom. */
+.stage-zoom {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #ffffffe6;
+  color: var(--ink);
+  box-shadow: 0 2px 10px #0f173329;
+  cursor: zoom-in;
+}
+.stage-zoom:hover {
+  background: #fff;
+}
+/* Full screen, to check the details before publishing. */
+.viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: 56px 12px 40px;
+  background: #0a0e1a;
+}
+.viewer img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 8px;
+  object-fit: contain;
+}
+.viewer-close.icon-button {
+  position: absolute;
+  top: calc(10px + env(safe-area-inset-top));
+  right: 10px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #ffffff1f;
+  color: #fff;
+}
+.viewer-close.icon-button:hover {
+  background: #ffffff33;
+}
+.viewer-hint {
+  position: absolute;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  left: 0;
+  right: 0;
+  margin: 0;
+  color: #c9cfe2;
+  font-size: 13px;
+  text-align: center;
+}
 
 .dropzone {
   display: flex;
@@ -6117,6 +6180,11 @@ h2 .accent {
   gap: 8px;
   font-size: 14px;
 }
+.canvas-footer .result-actions .share-button {
+  order: 1;
+  width: 44px;
+  padding: 0;
+}
 .view-toggle {
   display: inline-flex;
   padding: 3px;
@@ -6313,15 +6381,23 @@ h2 .accent {
   background: #edf1fd;
   box-shadow: inset 0 0 0 1px var(--terracotta);
 }
-/* Locked options stay legible: they say what a plan adds. */
+/* Locked options stay legible: they say what a plan adds, and a tap on
+   them explains it. */
 .mode-segment button:disabled,
-.mode-tools button:disabled {
+.mode-segment button.is-locked,
+.mode-tools button:disabled,
+.mode-tools button.is-locked {
   opacity: 1;
   background: #f6f7fa;
   color: var(--subtle);
   cursor: not-allowed;
 }
-.mode-segment button:disabled > svg {
+.mode-segment button.is-locked,
+.mode-tools button.is-locked {
+  cursor: pointer;
+}
+.mode-segment button:disabled > svg,
+.mode-segment button.is-locked > svg {
   color: #969db2;
 }
 /* While a design is being created the choice stays readable. */
@@ -6359,6 +6435,12 @@ h2 .accent {
   color: var(--ink);
   font-size: 12.5px;
   cursor: pointer;
+}
+.mode-field .field-hint a {
+  color: var(--terracotta);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 .mode-field .field-hint,
 .settings-panel .style-hint {
@@ -6556,8 +6638,44 @@ h2 .accent {
 }
 
 @media (max-width: 959px) {
+  /* Focused fields scroll clear of the pinned button. */
+  html:has(.studio-page) {
+    scroll-padding-bottom: 120px;
+  }
   .studio-canvas {
     padding-bottom: 16px;
+  }
+  /* Nothing to create yet: the upload area is the only action. */
+  .workspace:not(.has-photo) .generate-area {
+    display: none;
+  }
+  /* While typing, the pinned button would cover the field. */
+  .workspace:has(.notes-field textarea:focus) .generate-area {
+    position: static;
+    box-shadow: none;
+  }
+  .canvas-footer .result-actions .view-toggle {
+    flex: 1 1 calc(100% - 52px);
+  }
+  .canvas-footer .result-actions .share-button {
+    order: 0;
+    flex: 0 0 44px;
+  }
+  /* Thumb-sized targets. */
+  .mode-tools button,
+  .view-toggle button {
+    min-height: 40px;
+  }
+  .canvas-heading .subtle-button {
+    min-height: 40px;
+  }
+  .feedback > .icon-button {
+    min-width: 40px;
+    min-height: 40px;
+  }
+  .studio-balance > a,
+  .studio-balance > span {
+    min-height: 36px;
   }
   .canvas-footer {
     grid-template-columns: minmax(0, 1fr);
@@ -6567,14 +6685,12 @@ h2 .accent {
     grid-row: auto;
     justify-content: stretch;
   }
-  .canvas-footer .result-actions .view-toggle {
-    width: 100%;
-  }
   .view-toggle button {
     flex: 1;
   }
-  .canvas-footer .result-actions .button {
-    flex: 1 1 0;
+  .canvas-footer .result-actions .button:not(.share-button) {
+    flex: 1 1 calc(50% - 4px);
+    padding: 9px 10px;
   }
   /* Pinned while the studio is on screen, so creating never needs a scroll. */
   .generate-area {
@@ -6646,6 +6762,11 @@ h2 .accent {
   .canvas-heading .photo-name,
   .examples > p > svg {
     display: none;
+  }
+  /* On the narrowest phones the title wraps instead of pushing "Cambiar
+     foto" out of the card. */
+  .canvas-heading h2 {
+    white-space: normal;
   }
   /* 16 px keeps iOS from zooming into the field. */
   .settings-panel .studio-select,
@@ -6730,5 +6851,18 @@ h2 .accent {
     grid-column: 1;
     grid-row: auto;
     justify-content: flex-start;
+  }
+}
+/* Phones held sideways: keep the pinned button short. */
+@media (max-width: 959px) and (max-height: 500px) {
+  .generate-area > p {
+    display: none;
+  }
+  .generate-button {
+    min-height: 44px;
+  }
+  /* Photo and pinned button on screen together. */
+  .stage-media {
+    max-height: 58vh;
   }
 }
