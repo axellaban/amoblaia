@@ -654,7 +654,7 @@ export function Studio({
       }
     }
     if (activeFreeTier && availableFree <= 0) {
-      track("limite_visto", { motivo: "sin_prueba_gratis" }, true);
+      track("limite_planes_visto", { motivo: "sin_prueba_gratis" }, true);
       window.location.assign("/precios");
       return;
     }
