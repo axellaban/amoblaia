@@ -1,4 +1,5 @@
 "use client";
+import { redirectKeepingClick } from "@/lib/ads";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
@@ -41,7 +42,7 @@ export function ProjectLibrary() {
         (r) => r.json(),
       );
       if (!session.authenticated) {
-        window.location.assign("/acceso?next=%2Fproyectos");
+        redirectKeepingClick("/acceso?next=%2Fproyectos");
         return;
       }
       const responses = await Promise.all([
@@ -49,7 +50,7 @@ export function ProjectLibrary() {
         fetch("/api/folders", { cache: "no-store" }),
       ]);
       if (responses.some((r) => r.status === 401)) {
-        window.location.assign("/acceso?next=%2Fproyectos");
+        redirectKeepingClick("/acceso?next=%2Fproyectos");
         return;
       }
       const [p, f] = await Promise.all(responses.map((r) => r.json()));

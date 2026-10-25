@@ -1,4 +1,5 @@
 "use client";
+import { redirectKeepingClick } from "@/lib/ads";
 import Link from "next/link";
 import { useEffect, useState, useCallback } from "react";
 import {
@@ -86,7 +87,7 @@ export function AccountDashboard() {
     try {
       const r = await fetch("/api/account", { cache: "no-store" });
       if (r.status === 401) {
-        window.location.assign(
+        redirectKeepingClick(
           `/acceso?next=${encodeURIComponent(window.location.pathname + window.location.search)}`,
         );
         return;
@@ -94,7 +95,7 @@ export function AccountDashboard() {
       const p = await r.json();
       if (!r.ok) throw new Error(p.error);
       if (p.anonymous) {
-        window.location.assign(
+        redirectKeepingClick(
           `/acceso?next=${encodeURIComponent(window.location.pathname + window.location.search)}`,
         );
         return;
@@ -149,7 +150,7 @@ export function AccountDashboard() {
       const p = await r.json();
       if (!r.ok) throw new Error(p.error);
       if (p.anonymous) {
-        window.location.assign(
+        redirectKeepingClick(
           `/acceso?next=${encodeURIComponent(window.location.pathname + window.location.search)}`,
         );
         return;
