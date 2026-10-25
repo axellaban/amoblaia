@@ -1,4 +1,5 @@
 "use client";
+import { redirectKeepingClick } from "@/lib/ads";
 import Link from "next/link";
 import { useState, useRef, useEffect } from "react";
 import {
@@ -198,7 +199,7 @@ export function PricingPlans({
         }),
       });
       if (response.status === 401) {
-        window.location.assign("/acceso?next=%2Fprecios");
+        redirectKeepingClick("/acceso?next=%2Fprecios");
         return;
       }
       const payload = await response.json();
@@ -278,7 +279,7 @@ export function PricingPlans({
               setPayerEmail("");
               // The order belongs to the signed-in customer before leaving for MP.
               if (!email) {
-                window.location.assign("/acceso?next=%2Fprecios");
+                redirectKeepingClick("/acceso?next=%2Fprecios");
                 return;
               }
               // Packs go straight to Checkout Pro, which takes any account.
@@ -436,7 +437,7 @@ export function PricingPlans({
                   setError("");
                   setPayerEmail("");
                   if (!email) {
-                    window.location.assign("/acceso?next=%2Fprecios");
+                    redirectKeepingClick("/acceso?next=%2Fprecios");
                     return;
                   }
                   // Like any pack: straight to Checkout Pro.

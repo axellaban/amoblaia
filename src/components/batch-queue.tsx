@@ -13,7 +13,7 @@ import {
 import { rooms, type ModeId, type RoomId, type StyleId } from "@/lib/catalog";
 import { downloadDesign, optimizePhoto, thumbnail } from "@/lib/images";
 import { waitForJob } from "@/lib/jobs-client";
-import { trackPhotoUploaded } from "@/lib/ads";
+import { trackPhotoDownload, trackPhotoUploaded } from "@/lib/ads";
 import { metaTrack } from "@/lib/meta";
 /** Photos per batch: a whole listing, while the previews stay light in memory. */
 export const MAX_BATCH = 20;
@@ -341,6 +341,7 @@ export function BatchList({
     (i) => !["waiting", "sending", "running"].includes(i.status),
   ).length;
   async function downloadAll() {
+    trackPhotoDownload();
     setDownloading(true);
     try {
       for (const item of batch.items.filter((i) => i.status === "done")) {
@@ -451,7 +452,8 @@ export function BatchList({
                 <div className="batch-actions">
                   <button
                     className="button button-dark"
-                    onClick={() =>
+                    onClick={() => {
+                      trackPhotoDownload();
                       batch
                         .download(item, label)
                         .catch((e) =>
@@ -460,8 +462,8 @@ export function BatchList({
                               ? e.message
                               : "No pudimos descargar.",
                           ),
-                        )
-                    }
+                        );
+                    }}
                   >
                     <Download size={14} /> JPG
                   </button>
