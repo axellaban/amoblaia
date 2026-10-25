@@ -1,0 +1,4 @@
+node_modules/
+public/music/
+out/stills/
+out/*.raw.mp4

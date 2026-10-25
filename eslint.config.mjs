@@ -12,5 +12,6 @@ export default defineConfig([
       ],
     },
   },
-  globalIgnores([".next/**", "next-env.d.ts"]),
+  // video/: video demo, proyecto aparte (Remotion) con sus propias dependencias.
+  globalIgnores([".next/**", "next-env.d.ts", "video/**"]),
 ]);

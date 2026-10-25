@@ -4,6 +4,13 @@ Se detiene el trabajo a pedido del usuario para conservar créditos. Los cambios
 
 Producción: https://amoblaia.vercel.app/
 
+## Video demo para inmobiliarias — 25 de octubre de 2026
+
+- `video/demo/out/amoblaia-horizontal.mp4` (1920 × 1080) y `amoblaia-vertical.mp4` (1080 × 1920), de 34 s: antes y después del living, el estudio real (subir la foto, elegir estilo, toque personal, crear), comparador, grilla de ambientes y cierre con la prueba gratis.
+- Se capturó producción en modo demo: no se generó ninguna imagen ni se gastó API. El resultado que se ve es el ejemplo precargado del mismo living (imagen real del motor). La nota al pie aclara que las imágenes son ilustrativas y que la prueba gratis lleva marca de agua.
+- Es un proyecto aparte (Remotion) y no entra en el build, el lint ni los tests. Cómo regenerarlo: [`video/demo/README.md`](../video/demo/README.md).
+- Pendiente: que el titular lo mire y decida dónde usarlo.
+
 ## Cuentas ilimitadas y varias fotos por tanda — 23 de octubre de 2026
 
 - `UNLIMITED_EMAILS` (Vercel, separada por comas) marca cuentas del equipo que generan sin descontar fotos. Al entrar, la app les abre una asignación de 1.000.000 de fotos sin vencimiento (`credit_grants.source_key = unlimited:<id>`) y les sube el cupo diario a 1000. Si un email sale de la lista, esa asignación vence en su próximo ingreso. No requiere migración. Siguen valiendo el espacio por cuenta (320 MB) y el máximo de 150 fotos guardadas.

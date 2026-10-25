@@ -1,0 +1,52 @@
+[
+  {
+    "value": "modern",
+    "label": "Moderno",
+    "disabled": false
+  },
+  {
+    "value": "scandinavian",
+    "label": "Nórdico",
+    "disabled": false
+  },
+  {
+    "value": "midcentury",
+    "label": "Mid-century",
+    "disabled": false
+  },
+  {
+    "value": "luxury",
+    "label": "Lujo",
+    "disabled": false
+  },
+  {
+    "value": "coastal",
+    "label": "Costero",
+    "disabled": false
+  },
+  {
+    "value": "farmhouse",
+    "label": "Rústico",
+    "disabled": false
+  },
+  {
+    "value": "industrial",
+    "label": "Industrial",
+    "disabled": false
+  },
+  {
+    "value": "minimalist",
+    "label": "Minimalista",
+    "disabled": false
+  },
+  {
+    "value": "classic",
+    "label": "Clásico",
+    "disabled": false
+  },
+  {
+    "value": "standard",
+    "label": "Estándar",
+    "disabled": false
+  }
+]

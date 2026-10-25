@@ -1,0 +1,29 @@
+{
+  "name": "amoblaia-video-demo",
+  "private": true,
+  "type": "module",
+  "description": "Video demo de amoblaIA (Remotion): la web real capturada con Playwright y animada.",
+  "scripts": {
+    "studio": "remotion studio",
+    "music": "node scripts/fetch-music.mjs",
+    "render": "node scripts/fetch-music.mjs && node scripts/render.mjs amoblaia",
+    "stills": "node scripts/stills.mjs amoblaia-horizontal",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@remotion/bundler": "4.0.532",
+    "@remotion/cli": "4.0.532",
+    "@remotion/fonts": "4.0.532",
+    "@remotion/renderer": "4.0.532",
+    "@remotion/transitions": "4.0.532",
+    "react": "19.1.1",
+    "react-dom": "19.1.1",
+    "remotion": "4.0.532"
+  },
+  "devDependencies": {
+    "@types/react": "19.1.12",
+    "playwright": "1.63.0",
+    "tsx": "4.20.5",
+    "typescript": "5.9.2"
+  }
+}
