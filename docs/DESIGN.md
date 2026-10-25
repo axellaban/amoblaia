@@ -22,6 +22,12 @@ Firecrawl identifica **Outfit** como familia principal y de titulares. Reporta a
 
 Contenedor de 1200 px incluyendo padding de 40 px. En móvil: 16 px laterales. Botones con radio de 12 px; fotos de 14–18 px; tarjetas grandes de 18–24 px. Titular del hero de 56 px en escritorio y 32 px en móvil. Estos tamaños se eligieron para reproducir la jerarquía y permitir texto en español.
 
+## Marca
+
+Isotipo: un arco de puerta con un sofá adentro y la chispa de la IA, sobre un cuadrado azul #3c59bf de esquinas redondeadas. Arco blanco, sofá y chispa lima #cbff9a. El sofá reemplazó al banco anterior, que a 16–36 px no se reconocía. Wordmark en Outfit: "amobla" semibold e "IA" extrabold al 78 %, lima sobre fondos oscuros y azul sobre fondos claros.
+
+Los trazos están en `src/lib/brand.ts`: la cabecera y el pie los dibujan desde ahí. `node --experimental-strip-types scripts/generate-brand.ts` regenera el favicon, el ícono de Apple, `public/brand/` y la marca de agua de la versión gratuita. La imagen para compartir (`src/app/opengraph-image.jpg`) es una composición fotográfica: si cambia el isotipo, hay que redibujar su insignia superior izquierda.
+
 ## Recorridos observados y aplicados
 
 - **Inicio:** cabecera oscura, hero en dos columnas, foto con selectores de ambiente/estilo, CTA de carga y ventajas. En móvil la foto aparece antes del texto. El CTA abre el estudio dentro del hero.

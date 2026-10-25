@@ -4,25 +4,22 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ContactForm } from "./contact-form";
 import { Menu, X, LogOut } from "lucide-react";
-/** Brand mark: an arched doorway with a bench inside, plus the spark of AI. */
+import { BRAND, MARK } from "@/lib/brand";
+/** Brand mark: an arched doorway with a sofa inside, plus the spark of AI. */
 export function LogoMark({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 40 40" aria-hidden="true" className={className}>
-      <rect width="40" height="40" rx="11" fill="#3c59bf" />
-      <g
+      <rect width="40" height="40" rx="11" fill={BRAND.blue} />
+      <path
+        d={MARK.doorway}
         fill="none"
-        stroke="#fbf1e8"
+        stroke={BRAND.white}
         strokeWidth="2.6"
         strokeLinecap="round"
         strokeLinejoin="round"
-      >
-        <path d="M12 31V19a8 8 0 0 1 16 0v12M8.5 31h23" />
-        <path d="M15.5 27.5v-2A1.5 1.5 0 0 1 17 24h6a1.5 1.5 0 0 1 1.5 1.5v2" />
-      </g>
-      <path
-        d="M31.5 4.5l1.3 3.7 3.7 1.3-3.7 1.3-1.3 3.7-1.3-3.7-3.7-1.3 3.7-1.3z"
-        fill="#cbff9a"
       />
+      <path d={MARK.sofa} fill={BRAND.lime} />
+      <path d={MARK.spark} fill={BRAND.lime} />
     </svg>
   );
 }
@@ -229,8 +226,12 @@ export function Footer() {
         </div>
         <div className="footer-top">
           <div>
-            <Link href="/" className="footer-brand">
-              <b>amobla</b>IA
+            <Link
+              href="/"
+              className="footer-brand"
+              aria-label="amoblaIA, inicio"
+            >
+              <Logo />
             </Link>
             <p>
               Escribinos cuando quieras desde <Link href="/ayuda">Soporte</Link>

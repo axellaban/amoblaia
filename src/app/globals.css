@@ -1,5 +1,5 @@
 :root {
-  /* amoblaIA brand: terracotta doors, forest greens and warm plaster. See docs/DESIGN.md. */
+  /* amoblaIA brand: navy, blue and lime. The mark lives in src/lib/brand.ts. See docs/DESIGN.md. */
   --ink: #161b26;
   --forest: #141a30;
   --forest-light: #202740;
@@ -5244,10 +5244,6 @@ h2 .accent {
   display: block;
   margin-bottom: 24px;
   color: #fff;
-  font-size: 14px;
-}
-.footer-brand b {
-  font-weight: 600;
 }
 .footer .footer-top > div > p {
   margin: 0;
