@@ -58,7 +58,11 @@ import {
 import { Comparison } from "./comparison";
 import { clearDraft, loadDraft, saveDraft } from "@/lib/studio-draft";
 import { FREE_RESULT_LIMIT, freeBatchSize } from "@/lib/free-tier";
-import { trackPhotoUploaded } from "@/lib/ads";
+import {
+  trackPhotoDownload,
+  trackPhotoUploaded,
+  withClickIds,
+} from "@/lib/ads";
 import { track } from "@/lib/analytics";
 import { metaTrack } from "@/lib/meta";
 import { waitForJob } from "@/lib/jobs-client";
@@ -239,7 +243,9 @@ export function Studio({
   }, [draftReady, file, filename, room, style, mode, notes, projectId, demo]);
   useEffect(() => {
     if (searchParams.get("view") === "projects")
-      window.location.replace("/proyectos");
+      window.location.replace(
+        withClickIds("/proyectos", window.location.search),
+      );
   }, [searchParams]);
   useEffect(() => {
     if (!busy) return;
@@ -802,6 +808,7 @@ export function Studio({
     }
   }
   async function download(sideBySide = false, share = false) {
+    trackPhotoDownload();
     const send = share ? shareDesign : downloadDesign;
     try {
       await send(

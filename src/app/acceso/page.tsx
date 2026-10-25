@@ -5,6 +5,7 @@ import { AuthForm } from "@/components/auth-form";
 import { currentUser } from "@/lib/supabase/server";
 import { cloudConfigured, cloudEnabled } from "@/lib/supabase/config";
 import { safeNext } from "@/lib/commerce/redirect";
+import { withClickIds } from "@/lib/ads";
 export const metadata: Metadata = {
   title: "Tu cuenta",
   robots: { index: false, follow: false },
@@ -26,7 +27,12 @@ export default async function Access({
         typeof params.next === "string" ? params.next : null,
         "/proyectos",
       );
-      redirect(next.startsWith("/acceso") ? "/proyectos" : next);
+      const search = new URLSearchParams();
+      for (const [key, value] of Object.entries(params))
+        if (typeof value === "string") search.set(key, value);
+      redirect(
+        withClickIds(next.startsWith("/acceso") ? "/proyectos" : next, search),
+      );
     }
   }
   return (

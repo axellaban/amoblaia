@@ -1,4 +1,5 @@
 "use client";
+import { redirectKeepingClick } from "@/lib/ads";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowUpRight, Check, LoaderCircle, RefreshCw } from "lucide-react";
@@ -52,7 +53,7 @@ export function CheckoutReturn({
         body: JSON.stringify({ order }),
       });
       if (response.status === 401) {
-        window.location.assign(
+        redirectKeepingClick(
           `/acceso?next=${encodeURIComponent(`/cuenta?orden=${order}`)}`,
         );
         return null;
