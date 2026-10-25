@@ -14,6 +14,7 @@ import { rooms, type ModeId, type RoomId, type StyleId } from "@/lib/catalog";
 import { downloadDesign, optimizePhoto, thumbnail } from "@/lib/images";
 import { waitForJob } from "@/lib/jobs-client";
 import { trackPhotoUploaded } from "@/lib/ads";
+import { track } from "@/lib/analytics";
 import { metaTrack } from "@/lib/meta";
 /** Photos per batch: a whole listing, while the previews stay light in memory. */
 export const MAX_BATCH = 20;
@@ -210,6 +211,11 @@ export function useBatch(onProgress: (finished: boolean) => void) {
       ambiente: item.room,
       estilo: settings.style,
     });
+    track("foto_subida", {
+      ambiente: item.room,
+      estilo: settings.style,
+      lote: true,
+    });
     const jobId = batch.ids?.[0] || batch.id;
     if (!jobId) {
       patch(item.id, {
@@ -231,13 +237,18 @@ export function useBatch(onProgress: (finished: boolean) => void) {
           status: "later",
           message: "Sigue en proceso. Va a aparecer en Mis proyectos.",
         });
-      else if (job.status === "succeeded" && job.result)
+      else if (job.status === "succeeded" && job.result) {
         patch(item.id, {
           status: "done",
           result: job.result,
           projectId: job.projectId || batch.projectId,
         });
-      else if (job.status === "failed")
+        track("diseno_generado", {
+          ambiente: item.room,
+          estilo: settings.style,
+          lote: true,
+        });
+      } else if (job.status === "failed")
         patch(item.id, { status: "failed", message: job.error });
       else patch(item.id, { status: "later", message: job.error });
     } catch (e) {

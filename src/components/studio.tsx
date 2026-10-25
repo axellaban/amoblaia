@@ -59,6 +59,7 @@ import { Comparison } from "./comparison";
 import { clearDraft, loadDraft, saveDraft } from "@/lib/studio-draft";
 import { FREE_RESULT_LIMIT, freeBatchSize } from "@/lib/free-tier";
 import { trackPhotoUploaded } from "@/lib/ads";
+import { track } from "@/lib/analytics";
 import { metaTrack } from "@/lib/meta";
 import { waitForJob } from "@/lib/jobs-client";
 import { BatchList, useBatch } from "./batch-queue";
@@ -486,6 +487,7 @@ export function Studio({
       if (!current()) return job.projectId || null;
       // Publish the finished image before fetching the rest of the library.
       setResult(job.result);
+      track("diseno_generado", { ambiente: room, estilo: style, modo: mode });
       setBatchCompleted((n) => n + 1);
       setProjectId(job.projectId || null);
       const variant = job.variant;
@@ -576,6 +578,7 @@ export function Studio({
     if (trackedUpload.current === photoSession.current) return;
     trackedUpload.current = photoSession.current;
     metaTrack("amoblaia_foto_subida", { ambiente: room, estilo: style });
+    track("foto_subida", { ambiente: room, estilo: style, modo: mode });
   }
   async function generate() {
     if (generateLock.current || !source) return;
@@ -651,6 +654,7 @@ export function Studio({
       }
     }
     if (activeFreeTier && availableFree <= 0) {
+      track("limite_visto", { motivo: "sin_prueba_gratis" }, true);
       window.location.assign("/precios");
       return;
     }
@@ -741,6 +745,7 @@ export function Studio({
       trackUpload();
       const url = await blobToDataURL(await response.blob());
       setResult(url);
+      track("diseno_generado", { ambiente: room, estilo: style, modo: mode });
       await persist(url);
     } catch (e) {
       setError(
