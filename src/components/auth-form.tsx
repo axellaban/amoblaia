@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { browserClient } from "@/lib/supabase/client";
 import { safeNext } from "@/lib/commerce/redirect";
 import { GoogleSignIn } from "./google-signin";
+import { track } from "@/lib/analytics";
 import { metaTrack } from "@/lib/meta";
 import { ArrowUpRight, Check, LoaderCircle, ShieldCheck } from "lucide-react";
 declare global {
@@ -137,6 +138,7 @@ export function AuthForm() {
             "No pudimos crear la cuenta. Revisá tus datos o intentá de nuevo más tarde.",
           );
         metaTrack("CompleteRegistration", {}, true, { email });
+        track("registro");
         setNotice(
           "Revisá tu email para confirmar la cuenta. Si ya tenés una, podés ingresar o recuperar la contraseña.",
         );

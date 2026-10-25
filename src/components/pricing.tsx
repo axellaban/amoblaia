@@ -21,6 +21,7 @@ import {
   launchOffer,
   type Product,
 } from "@/lib/commerce/catalog";
+import { track } from "@/lib/analytics";
 const features = [
   "Regeneraciones incluidas",
   "Todos los ambientes y estilos",
@@ -185,6 +186,7 @@ export function PricingPlans({
   const savingLabel =
     saving >= 0.05 ? `hasta ${Math.floor((saving * 100) / 5) * 5}% menos` : "";
   async function buy(sku: string) {
+    track("plan_click", { plan: sku });
     setBusy(sku);
     setError("");
     const slot = `${sku}:${payerEmail.trim().toLowerCase()}`;
@@ -208,6 +210,7 @@ export function PricingPlans({
       if (response.status >= 400 && response.status < 500)
         delete checkoutKeys.current[slot];
       if (!response.ok) throw new Error(payload.error);
+      track("checkout_creado", { plan: sku }, true);
       window.location.assign(payload.url);
     } catch (e) {
       setError(

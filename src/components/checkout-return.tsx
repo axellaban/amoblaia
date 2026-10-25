@@ -7,6 +7,7 @@ import {
   checkoutMessages,
   type CheckoutResult,
 } from "@/lib/commerce/checkout-result";
+import { track } from "@/lib/analytics";
 import { metaTrack } from "@/lib/meta";
 
 // Reported once per order, also across reloads of the return page.
@@ -24,6 +25,10 @@ function trackSubscribe(result: CheckoutResult) {
     true,
     { eventId: `subscribe-${result.order}` },
   );
+  track("compra_confirmada", {
+    plan: result.name,
+    ...(result.value != null && { monto: result.value }),
+  });
 }
 
 export function CheckoutReturn({
