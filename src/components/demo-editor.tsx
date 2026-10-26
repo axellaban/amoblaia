@@ -904,7 +904,7 @@ export function DemoEditor({ id }: { id: string }) {
             )}
             <p className="dm-help">
               {openStyles.length
-                ? "Con ambientación, la primera foto abre comparada: mitad original y mitad ambientada, con la barra al medio y «Volver al original». Si ese estilo no está disponible, abre con la original."
+                ? "Con ambientación, cada foto que tenga ambientaciones abre comparada: mitad original y mitad ambientada, con la barra al medio, en este estilo (o el último que eligió el comprador). Las fotos sin ambientaciones abren con la original."
                 : "Para abrir con una ambientación, la primera foto visible tiene que tener al menos un estilo listo."}
             </p>
             <label className="checkbox-label dm-check">

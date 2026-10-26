@@ -541,10 +541,10 @@ function Gallery({
   );
   const name = (style: string) => styleNames[style] ?? style;
   const [index, setIndex] = useState(0);
-  // Remembered per photo during the visit. The first photo may open compared 50/50 with its staging (opening mode B).
-  const [states, setStates] = useState<Record<string, PhotoState>>(() =>
-    demo.openStyle && photos[0] ? { [photos[0].id]: { style: demo.openStyle, compare: true, position: 50 } } : {},
-  );
+  // Remembered per photo during the visit.
+  const [states, setStates] = useState<Record<string, PhotoState>>({});
+  // The style last chosen: photos not seen yet open in it when they have it.
+  const lastStyle = useRef(demo.openStyle);
   // Where the comparison line was last left, on any photo.
   const lastPosition = useRef(50);
   const [failed, setFailed] = useState<Record<string, boolean>>({});
@@ -556,7 +556,14 @@ function Gallery({
   const swipe = useRef<{ x: number; y: number } | null>(null);
 
   const photo = photos[index];
-  const state = (photo && states[photo.id]) || ORIGINAL;
+  // Opening mode B: every photo with stagings opens compared, the line in the middle
+  // (in the style last chosen, else the configured one, else its first). Otherwise, the original.
+  const opening = (p: PublicPhoto): PhotoState => {
+    if (!demo.openStyle || !p.versions.length) return ORIGINAL;
+    const style = [lastStyle.current, demo.openStyle].find((st) => st && p.versions.some((v) => v.style === st));
+    return { style: style ?? p.versions[0].style, compare: true, position: 50 };
+  };
+  const state = photo ? (states[photo.id] ?? opening(photo)) : ORIGINAL;
   const version = photo ? versionOf(photo, state.style) : null;
   const stagedKey = photo && version ? `${photo.id}:${version.style}` : "";
   const stagedFailed = Boolean(stagedKey && failed[stagedKey]);
@@ -577,6 +584,7 @@ function Gallery({
     // The line stays where the buyer left it: moved all the way to one side,
     // the next style is seen the same way, not from the middle again.
     setState({ style, compare: true, position: state.style && state.compare ? state.position : lastPosition.current });
+    lastStyle.current = style;
     log("demo_estilo", { estilo: style });
   };
   const backToOriginal = () => {
