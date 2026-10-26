@@ -27,19 +27,30 @@ export async function requireUser(request?: Request, allowGuest = false) {
     throw new HttpError(401, "Ingresá a tu cuenta y verificá tu email.");
   return user;
 }
-export function isAdmin(email?: string) {
-  return Boolean(
-    email &&
-    (process.env.ADMIN_EMAILS || "")
-      .split(",")
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean)
-      .includes(email.toLowerCase()),
-  );
+/**
+ * Accounts that may use only the commercial demos panel (/admin/demos and
+ * /api/admin/demos/*), on top of ADMIN_EMAILS. Kept in code so the team can
+ * add editors without access to the Vercel project; they still sign in with
+ * a verified email, and get no access to billing or the rest of the admin.
+ */
+const DEMO_EDITOR_EMAILS = ["facundogregorini@gmail.com"];
+export type AdminScope = "all" | "demos";
+export function isAdmin(email?: string, scope: AdminScope = "all") {
+  if (!email) return false;
+  const normalized = email.toLowerCase();
+  if (scope === "demos" && DEMO_EDITOR_EMAILS.includes(normalized)) return true;
+  return (process.env.ADMIN_EMAILS || "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean)
+    .includes(normalized);
 }
-export async function requireAdmin(request?: Request) {
+export async function requireAdmin(
+  request?: Request,
+  scope: AdminScope = "all",
+) {
   const user = await requireUser(request);
-  if (!isAdmin(user.email))
+  if (!isAdmin(user.email, scope))
     throw new HttpError(403, "Acceso reservado al equipo.");
   return user;
 }

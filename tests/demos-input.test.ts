@@ -35,6 +35,13 @@ describe("Admin permission", () => {
     expect(isAdmin("cliente@example.com")).toBe(false);
     expect(isAdmin("equipo@amobla.com.evil")).toBe(false);
   });
+  it("lets demo editors into the demos panel only", () => {
+    vi.stubEnv("ADMIN_EMAILS", "equipo@amobla.com");
+    expect(isAdmin("FacundoGregorini@gmail.com", "demos")).toBe(true);
+    expect(isAdmin("facundogregorini@gmail.com")).toBe(false);
+    expect(isAdmin("equipo@amobla.com", "demos")).toBe(true);
+    expect(isAdmin("cliente@example.com", "demos")).toBe(false);
+  });
 });
 
 describe("Form input", () => {

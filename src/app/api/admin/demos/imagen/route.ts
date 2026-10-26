@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 /** Web-sized copies of demo photos and proposals for the panel and the preview. Admins only. */
 export async function GET(request: Request) {
   try {
-    await requireAdmin();
+    await requireAdmin(undefined, "demos");
     const q = new URL(request.url).searchParams;
     const path = await adminImagePath({
       photoId: q.get("foto"),

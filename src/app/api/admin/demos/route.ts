@@ -8,7 +8,7 @@ const PRIVATE = { "Cache-Control": "private, no-store" };
 
 export async function GET() {
   try {
-    await requireAdmin();
+    await requireAdmin(undefined, "demos");
     return Response.json(await listDemos(), { headers: PRIVATE });
   } catch (e) {
     return failure(e);
@@ -18,7 +18,7 @@ export async function GET() {
 /** Creates the agency (or reuses one), the property and a draft demo. */
 export async function POST(request: Request) {
   try {
-    const actor = await requireAdmin(request);
+    const actor = await requireAdmin(request, "demos");
     const body = await readJson(request);
     const agencyId = isUuid(body.agencyId) ? body.agencyId : null;
     const property = propertyInput(body.property);

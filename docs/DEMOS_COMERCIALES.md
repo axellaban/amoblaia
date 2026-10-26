@@ -8,7 +8,7 @@ Herramienta interna para preparar, con fotos reales de una inmobiliaria, una gal
 ## Puesta en marcha
 
 1. **Aplicar la migración** `supabase/migrations/202610260001_commercial_demos.sql` en Supabase (SQL Editor). Se puede re-ejecutar. Crea `agencies`, `demo_properties`, `demo_photos`, `demos` y la función `amobla_reserve_demo_generation`. Aplicarla **antes** de desplegar el código: sin ella el panel y la página pública responden error, pero el resto de la app funciona igual.
-2. **Habilitar administradores**: agregar el email de cada cuenta del equipo a `ADMIN_EMAILS` en Vercel (separados por comas) y redeployar. La cuenta debe existir y tener el email verificado (Google o email confirmado). No hay ninguna forma de volverse administrador desde el navegador.
+2. **Habilitar administradores**: agregar el email de cada cuenta del equipo a `ADMIN_EMAILS` en Vercel (separados por comas) y redeployar. La cuenta debe existir y tener el email verificado (Google o email confirmado). No hay ninguna forma de volverse administrador desde el navegador. Para dar acceso solo al panel de demos (sin cobros ni el resto del admin) sin tocar Vercel, agregar el email a `DEMO_EDITOR_EMAILS` en `src/lib/commerce/http.ts`.
 3. Opcional: si el equipo va a ambientar muchas fotos en un día, agregar esas cuentas también a `UNLIMITED_EMAILS` (cupo diario de 1000 en lugar de un tercio de `MAX_GENERATIONS_PER_DAY`).
 
 Verificación de la migración (SQL Editor):

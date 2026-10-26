@@ -38,7 +38,7 @@ async function editorPhoto(demoId: string, photoId: string) {
 export async function GET(_request: Request, { params }: Params) {
   const deadline = Date.now() + maxDuration * 1000 - 5000;
   try {
-    await requireAdmin();
+    await requireAdmin(undefined, "demos");
     const { id, photoId } = await params;
     const demo = await demoRow(id);
     const photo = await photoOf(demo, photoId);
@@ -71,7 +71,7 @@ export async function GET(_request: Request, { params }: Params) {
 /** Edits a photo: room, label, style, mode, visibility, and which proposal the demo shows. */
 export async function PATCH(request: Request, { params }: Params) {
   try {
-    await requireAdmin(request);
+    await requireAdmin(request, "demos");
     const { id, photoId } = await params;
     const demo = await demoRow(id);
     const photo = await photoOf(demo, photoId);
@@ -120,7 +120,7 @@ export async function PATCH(request: Request, { params }: Params) {
 /** Removes the photo from the demo; its files go too unless another demo uses them. */
 export async function DELETE(request: Request, { params }: Params) {
   try {
-    await requireAdmin(request);
+    await requireAdmin(request, "demos");
     const { id, photoId } = await params;
     const demo = await demoRow(id);
     const photo = await photoOf(demo, photoId);
@@ -142,7 +142,7 @@ export async function DELETE(request: Request, { params }: Params) {
 export async function POST(request: Request, { params }: Params) {
   const started = Date.now();
   try {
-    const actor = await requireAdmin(request);
+    const actor = await requireAdmin(request, "demos");
     if (!process.env.OPENAI_API_KEY)
       throw new HttpError(503, "La generación todavía no está habilitada.");
     const { id, photoId } = await params;
