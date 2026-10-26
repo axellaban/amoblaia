@@ -10,14 +10,17 @@ import {
   DEFAULT_PRIMARY,
   readBranding,
   readSettings,
+  whatsappNumber,
   type AgencyBranding,
+  type DemoSettings,
 } from "./branding";
+import { styleFits } from "./styles";
+import { OG_LABEL_ORIGINAL, OG_LABEL_STAGED } from "./og-labels";
 import {
   TOKEN_PATTERN,
   coverVersion,
   isUuid,
   orderStyles,
-  photoLabel,
   pickCover,
   shownVersions,
   styleName,
@@ -145,6 +148,8 @@ export async function saveJson(
   id: string,
   value: unknown,
 ) {
+  if (Buffer.byteLength(JSON.stringify(value)) > (column === "settings" ? 19000 : 390000))
+    throw new HttpError(413, "Es demasiado largo para guardar. Acortá la descripción o las listas.");
   const { error } = await adminClient()
     .from(table)
     .update({ [column]: value })
@@ -337,7 +342,54 @@ export async function demoDetail(id: string): Promise<DemoDetail> {
     branding: { ...branding, logo: logoVersion(branding) ? `/api/admin/demos/${demo.id}/logo?v=${logoVersion(branding)}` : null },
     settings: saved.settings,
     settingsReady: saved.ready,
+    warnings: reviewWarnings({
+      settings: saved.settings,
+      branding,
+      listingUrl: prop.listing_url,
+      firstVisible: photoList.find((p) => p.visible) ?? null,
+      photos: photoList,
+    }),
   };
+}
+
+/** What the admin should check or complete before sharing. Never shown to buyers. */
+export function reviewWarnings(input: {
+  settings: DemoSettings;
+  branding: AgencyBranding;
+  listingUrl: string | null;
+  firstVisible: EditorPhoto | null;
+  photos: EditorPhoto[];
+}) {
+  const { settings, branding, listingUrl } = input;
+  const out: string[] = [];
+  const contact = contactOf(settings, branding);
+  if (!contact.whatsapp && !contact.phone && !contact.email && !contact.url)
+    out.push(
+      listingUrl
+        ? "Sin contacto válido: el botón principal lleva a «Ver publicación original». Cargá el WhatsApp del agente o de la inmobiliaria."
+        : "Sin contacto válido ni publicación original: la ficha no tiene a dónde dirigir las consultas.",
+    );
+  if (settings.priceConflict)
+    out.push(`Precio en conflicto (${settings.priceConflict}): la ficha muestra «Consultar» hasta que lo resuelvas.`);
+  else if (!settings.price) out.push("Sin precio confirmado: la ficha muestra «Consultar».");
+  if (!listingUrl) out.push("Falta el enlace a la publicación original.");
+  if (settings.map.precision === "none") out.push("Sin ubicación verificada para el mapa: se muestra solo el texto.");
+  const other = new Set(
+    input.photos.flatMap((p) => Object.keys(p.shown)).filter((st) => !styleFits(st, settings.propertyType)),
+  );
+  if (other.size)
+    out.push(
+      `${other.size === 1 ? "Hay un estilo" : `Hay ${other.size} estilos`} de otro tipo de inmueble (${[...other]
+        .map(styleName)
+        .join(", ")}) que no se muestra${other.size === 1 ? "" : "n"} en la ficha.`,
+    );
+  if (
+    settings.openMode === "styled" &&
+    (!settings.openStyle || !input.firstVisible?.shown[settings.openStyle] || !styleFits(settings.openStyle, settings.propertyType))
+  )
+    out.push("La ambientación de apertura no está disponible en la primera foto: la ficha abre con la original.");
+  if (!settings.reviewedAt) out.push("Todavía no marcaste la ficha como revisada contra la publicación.");
+  return out;
 }
 
 /** Builds the minimal public payload. Only visible photos; a staged version only when it can be delivered. */
@@ -357,10 +409,15 @@ async function publicPayload(demo: DemoRow, logoUrl: (v: string) => string): Pro
   const visible = photos.filter((p) => p.visible);
   const shown = await shownOf(visible);
   const main = mainOf(photos);
-  const order = orderStyles(visible.flatMap((p) => [...(shown.get(p.id)?.keys() ?? [])]), main);
+  // Only styles that fit the property: an office never shows a living room.
+  const order = orderStyles(
+    visible.flatMap((p) => [...(shown.get(p.id)?.keys() ?? [])]),
+    main,
+  ).filter((style) => styleFits(style, settings.propertyType));
   const list: PublicPhoto[] = visible.map((p) => ({
     id: p.id,
-    label: photoLabel(p),
+    // Only a label the admin wrote: room names ("Living") can be wrong for the property.
+    label: p.label?.trim() || "",
     versions: versionList(shown.get(p.id), order),
   }));
   const prop = check(property, "DEMO_PROPERTY_LOOKUP_FAILED") as {
@@ -403,17 +460,72 @@ async function publicPayload(demo: DemoRow, logoUrl: (v: string) => string): Pro
     },
     title: demo.title || prop.title,
     location: prop.location,
-    description: prop.description,
+    description: settings.description ?? prop.description,
     listingUrl: prop.listing_url,
+    propertyType: settings.propertyType,
     operation: settings.operation,
-    price: settings.price,
+    price: settings.priceConflict ? null : settings.price,
+    expenses: settings.expenses,
+    availability: settings.availability,
+    requirements: settings.requirements,
     features: settings.features,
     reference: settings.reference,
+    facts: settings.facts,
+    amenities: settings.amenities,
+    map: publicMap(settings),
+    agent: settings.agent
+      ? {
+          name: settings.agent.name,
+          role: settings.agent.role,
+          photoUrl: settings.agent.photoUrl,
+          initials: initials(settings.agent.name),
+        }
+      : null,
+    contact: contactOf(settings, branding),
+    closingTitle:
+      settings.closingTitle ??
+      (settings.propertyType === "office" ? "¿Te imaginás trabajando acá?" : "¿Te imaginás viviendo acá?"),
+    closingText: settings.closingText,
     styles: order.map((id) => ({ id, name: styleName(id) })),
     cover: cover ? list.find((p) => p.id === cover.id)! : null,
     photos: list,
     openStyle,
     banner: settings.banner,
+    share: { title: settings.shareTitle, description: settings.shareDescription },
+  };
+}
+
+const initials = (name: string) =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]!.toUpperCase())
+    .join("");
+
+/** Never more precise than the listing: zones to ~1 km, approximate locations to ~100 m. */
+export function publicMap(settings: Pick<DemoSettings, "map">): PublicDemo["map"] {
+  const { precision, lat, lng } = settings.map;
+  if (precision === "none" || lat === null || lng === null) return null;
+  const digits = precision === "zone" ? 2 : precision === "approx" ? 3 : 5;
+  const round = (n: number) => Math.round(n * 10 ** digits) / 10 ** digits;
+  return { precision, lat: round(lat), lng: round(lng) };
+}
+
+/** Inquiries go to the assigned agent first, then to the agency's own channel. */
+export function contactOf(
+  settings: Pick<DemoSettings, "agent">,
+  branding: AgencyBranding,
+): PublicDemo["contact"] {
+  const kind = branding.contactKind;
+  const value = branding.contactValue ?? null;
+  const agent = settings.agent;
+  const wa = (v: string | null | undefined) => (v && whatsappNumber(v) ? v : null);
+  return {
+    whatsapp: wa(agent?.whatsapp) ?? (kind === "whatsapp" ? wa(value) : null),
+    phone: agent?.phone ?? (kind === "phone" ? value : null),
+    email: agent?.email ?? (kind === "email" ? value : null),
+    url: kind === "url" ? value : null,
   };
 }
 
@@ -534,8 +646,9 @@ const SEAM = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1200" h
 
 /**
  * The link preview card (1200×630): the left half of the original over the
- * staged version, so the before and after show side by side; a single photo
- * when there is no staged version.
+ * staged version, labelled "Original" and "Ambientación ilustrativa con IA";
+ * a single photo when there is no staged version. It never changes how the
+ * page opens: the gallery still starts with the original.
  */
 export async function renderPreview(paths: { original: string; staged: string | null }) {
   const original = await download(paths.original);
@@ -547,10 +660,14 @@ export async function renderPreview(paths: { original: string; staged: string | 
   const left = await sharp(await ogCrop(original))
     .extract({ left: 0, top: 0, width: 600, height: OG.height })
     .toBuffer();
+  const [a, b] = await Promise.all([sharp(OG_LABEL_ORIGINAL).metadata(), sharp(OG_LABEL_STAGED).metadata()]);
   return sharp(await ogCrop(staged))
     .composite([
       { input: left, left: 0, top: 0 },
       { input: SEAM, left: 0, top: 0 },
+      // Identified as an illustration, as on the page.
+      { input: OG_LABEL_ORIGINAL, left: 24, top: OG.height - 24 - (a.height ?? 50) },
+      { input: OG_LABEL_STAGED, left: OG.width - 24 - (b.width ?? 400), top: OG.height - 24 - (b.height ?? 50) },
     ])
     .jpeg({ quality: 78, progressive: true })
     .toBuffer();

@@ -213,7 +213,8 @@ describe("Public demo", () => {
       photos: [
         {
           id: PHOTO,
-          label: "Living",
+          // No room name: "Living" would be wrong for an office.
+          label: "",
           versions: [
             { style: "modern", v: GEN.slice(0, 8) },
             { style: "industrial", v: GEN2.slice(0, 8) },
@@ -280,5 +281,45 @@ describe("Public demo", () => {
     });
     expect(demo).toMatchObject({ banner: false, price: "USD 265.000", operation: null });
     expect(JSON.stringify(demo)).not.toContain("aGVsbG8=");
+  });
+
+  it("shows only the styles that fit the property type", async () => {
+    (state.tables.demos[0] as Row).settings = { propertyType: "office" };
+    expect((await publishedDemo(TOKEN))?.styles).toEqual([]);
+    state.tables.generations.push({
+      id: "00000000-0000-4000-8000-000000000e09",
+      project_id: "pj1",
+      style: "office_executive",
+      result_path: "u/pj1/o.jpg",
+      status: "succeeded",
+      is_free: false,
+    });
+    expect((await publishedDemo(TOKEN))?.styles).toEqual([{ id: "office_executive", name: "Oficina ejecutiva" }]);
+  });
+
+  it("never shows a contradictory price, nor a map more precise than the listing", async () => {
+    (state.tables.demos[0] as Row).settings = {
+      operation: "Alquiler",
+      price: "$ 1.100.000",
+      priceConflict: "cabecera $ 1.100.000 / descripción $ 950.000",
+      map: { precision: "approx", lat: -38.004871, lng: -57.551234 },
+    };
+    const demo = await publishedDemo(TOKEN);
+    expect(demo?.price).toBeNull();
+    expect(demo?.map).toEqual({ precision: "approx", lat: -38.005, lng: -57.551 });
+    expect(JSON.stringify(demo)).not.toContain("950.000");
+    (state.tables.demos[0] as Row).settings = { map: { precision: "zone", lat: -38.004871, lng: -57.551234 } };
+    expect((await publishedDemo(TOKEN))?.map).toEqual({ precision: "zone", lat: -38, lng: -57.55 });
+  });
+
+  it("routes inquiries to the assigned agent first, then to the agency", async () => {
+    (state.tables.agencies[0] as Row).branding = { contactKind: "whatsapp", contactValue: "+54 9 223 555-0000" };
+    expect((await publishedDemo(TOKEN))?.contact.whatsapp).toBe("+54 9 223 555-0000");
+    (state.tables.demos[0] as Row).settings = {
+      agent: { name: "Guadalupe Bonanni Tempone", whatsapp: "+54 9 223 555-1111", email: "gb@sur.test" },
+    };
+    const demo = await publishedDemo(TOKEN);
+    expect(demo?.contact).toMatchObject({ whatsapp: "+54 9 223 555-1111", email: "gb@sur.test" });
+    expect(demo?.agent).toMatchObject({ name: "Guadalupe Bonanni Tempone", initials: "GB", photoUrl: null });
   });
 });

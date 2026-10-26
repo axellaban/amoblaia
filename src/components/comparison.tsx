@@ -117,8 +117,9 @@ export function Comparison({
       >
         <img src={before} alt={beforeAlt} draggable={false} />
       </div>
-      <div className="comparison-label before-label">{beforeLabel}</div>
-      <div className="comparison-label after-label">
+      {/* Each label leaves when its side is almost out of view. */}
+      <div className={`comparison-label before-label ${position < 18 ? "is-hidden" : ""}`}>{beforeLabel}</div>
+      <div className={`comparison-label after-label ${position > 82 ? "is-hidden" : ""}`}>
         {afterLabel ?? (
           <>
             Después <span>con IA</span>

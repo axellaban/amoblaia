@@ -65,3 +65,60 @@ describe("Branding and settings input", () => {
     expect(whatsappNumber("+54 9 223 555-1234")).toBe("5492235551234");
   });
 });
+
+import { buildDemoPrompt, styleFits } from "../src/lib/demos/styles";
+import { moneyMentions, parseListing } from "../src/lib/demos/listing";
+import { reviewWarnings } from "../src/lib/demos/server";
+
+describe("Property types", () => {
+  it("stages offices as workplaces, keeping the architectural constraints", () => {
+    const prompt = buildDemoPrompt("office", "office_executive", "furnish", "");
+    expect(prompt).toContain("commercial office");
+    expect(prompt).toContain("not a home");
+    expect(prompt).toContain("STRICT ARCHITECTURAL CONSTRAINTS");
+    expect(styleFits("modern", "office")).toBe(false);
+    expect(styleFits("office_team", "office")).toBe(true);
+    expect(buildDemoPrompt("living", "modern", "furnish", "")).toContain("living room");
+  });
+});
+
+describe("Listing data", () => {
+  it("reads the full description and every published amount", () => {
+    const html = `<title>Oficina en Güemes</title>
+      <div class="price">$ 1.100.000</div>
+      <div id="description"><p>Oficina con dos privados.</p><ul><li>Baño con antebaño</li><li>Primer piso por escalera</li></ul>
+      <p>Valor $950.000 más expensas.</p></div>`;
+    const listing = parseListing(html, "https://inmo.test/p/1");
+    expect(listing.fullDescription).toContain("Oficina con dos privados.");
+    expect(listing.fullDescription).toContain("- Baño con antebaño");
+    expect(listing.prices).toEqual(["$ 1.100.000", "$ 950.000"]);
+    expect(moneyMentions("USD 95.000 y U$S 95.000")).toEqual(["USD 95.000"]);
+  });
+  it("validates the location and the agent before saving", () => {
+    expect(() => settingsInput({ map: { precision: "approx", lat: "", lng: "" } }, readSettings({}))).toThrow(/latitud/);
+    expect(settingsInput({ map: { precision: "zone", lat: "-38.0", lng: "-57.55" } }, readSettings({})).map).toEqual({
+      precision: "zone",
+      lat: -38,
+      lng: -57.55,
+    });
+    expect(() => settingsInput({ agent: { name: "Ana", whatsapp: "12" } }, readSettings({}))).toThrow(/WhatsApp/);
+    expect(() => settingsInput({ agent: { name: "Ana", photoUrl: "http://x.test/a.jpg" } }, readSettings({}))).toThrow(/https/);
+    expect(settingsInput({ agent: { name: "" } }, readSettings({})).agent).toBeNull();
+  });
+  it("warns privately about what is missing or contradictory", () => {
+    const warnings = reviewWarnings({
+      settings: readSettings({ priceConflict: "dos importes", propertyType: "office" }),
+      branding: {},
+      listingUrl: "https://inmo.test/p/1",
+      firstVisible: null,
+      photos: [
+        { id: "p", projectId: "x", position: 0, visible: true, room: "living", label: null, mode: "furnish", discarded: [], shown: { modern: "g" }, generations: [] },
+      ],
+    });
+    expect(warnings.join("\n")).toMatch(/Sin contacto válido/);
+    expect(warnings.join("\n")).toMatch(/Precio en conflicto \(dos importes\)/);
+    expect(warnings.join("\n")).toMatch(/otro tipo de inmueble \(Moderno\)/);
+    expect(warnings.join("\n")).toMatch(/Sin ubicación verificada/);
+    expect(warnings.join("\n")).toMatch(/revisada/);
+  });
+});
