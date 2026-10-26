@@ -35,6 +35,10 @@ describe("Admin permission", () => {
     expect(isAdmin("cliente@example.com")).toBe(false);
     expect(isAdmin("equipo@amobla.com.evil")).toBe(false);
   });
+  it("includes the temporary admins hardcoded until they are in ADMIN_EMAILS", () => {
+    vi.stubEnv("ADMIN_EMAILS", "");
+    expect(isAdmin("FacundoGregorini@gmail.com")).toBe(true);
+  });
 });
 
 describe("Form input", () => {

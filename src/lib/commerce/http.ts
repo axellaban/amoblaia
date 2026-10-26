@@ -27,11 +27,15 @@ export async function requireUser(request?: Request, allowGuest = false) {
     throw new HttpError(401, "Ingresá a tu cuenta y verificá tu email.");
   return user;
 }
+/**
+ * TEMPORAL: administradores fijados en el código mientras no estén cargados
+ * en ADMIN_EMAILS de Vercel. Quitar el email apenas se agregue a la variable.
+ */
+const TEMP_ADMIN_EMAILS = ["facundogregorini@gmail.com"];
 export function isAdmin(email?: string) {
   return Boolean(
     email &&
-    (process.env.ADMIN_EMAILS || "")
-      .split(",")
+    [...(process.env.ADMIN_EMAILS || "").split(","), ...TEMP_ADMIN_EMAILS]
       .map((s) => s.trim().toLowerCase())
       .filter(Boolean)
       .includes(email.toLowerCase()),
