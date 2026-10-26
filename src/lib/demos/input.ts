@@ -60,10 +60,6 @@ export function photoChanges(raw: unknown) {
     if (!validRoom(v.room)) throw new HttpError(400, "Elegí un ambiente válido.");
     changes.room = v.room;
   }
-  if ("style" in v) {
-    if (!validStyle(v.style)) throw new HttpError(400, "Elegí un estilo válido.");
-    changes.style = v.style;
-  }
   if ("mode" in v) {
     if (!validMode(v.mode)) throw new HttpError(400, "Elegí Amoblar o Rediseñar.");
     changes.mode = v.mode;

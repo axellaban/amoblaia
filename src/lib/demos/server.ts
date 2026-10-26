@@ -7,15 +7,20 @@ import { HttpError } from "@/lib/commerce/http";
 import { normalizePhoto } from "@/lib/commerce/images";
 import {
   TOKEN_PATTERN,
+  coverVersion,
   isUuid,
+  orderStyles,
   photoLabel,
   pickCover,
+  shownVersions,
+  styleName,
   type AgencyRow,
   type DemoDetail,
   type DemoMode,
   type DemoSummary,
   type EditorPhoto,
   type GenerationRow,
+  type PhotoVersion,
   type PublicDemo,
   type PublicPhoto,
 } from "./shared";
@@ -58,22 +63,56 @@ function check<T>(result: { data: T | null; error: unknown }, code: string) {
   return result.data as T;
 }
 
-/** Approved proposals that can really be shown: succeeded, with a stored file, never a free (watermarked) result. */
-async function deliverable(ids: string[]) {
-  if (!ids.length) return new Map<string, string>();
-  const rows = check(
-    await adminClient()
-      .from("generations")
-      .select("id,result_path,status,is_free")
-      .in("id", ids),
-    "DEMO_GENERATIONS_LOOKUP_FAILED",
-  ) as { id: string; result_path: string | null; status: string; is_free: boolean }[];
+type StagedRow = {
+  id: string;
+  project_id: string;
+  style: string;
+  status: string;
+  result_path: string | null;
+  is_free: boolean;
+};
+/** Finished results of these projects, newest first, in chunks so the query string stays short. */
+async function stagedOf(projectIds: string[]) {
+  const ids = [...new Set(projectIds)];
+  const rows: StagedRow[] = [];
+  for (let i = 0; i < ids.length; i += 100) {
+    rows.push(
+      ...(check(
+        await adminClient()
+          .from("generations")
+          .select("id,project_id,style,status,result_path,is_free,created_at")
+          .in("project_id", ids.slice(i, i + 100))
+          .eq("status", "succeeded")
+          .eq("is_free", false)
+          .order("created_at", { ascending: false })
+          .limit(5000),
+        "DEMO_GENERATIONS_LOOKUP_FAILED",
+      ) as StagedRow[]),
+    );
+  }
+  return rows;
+}
+type ShownSource = Pick<PhotoRow, "id" | "project_id" | "approved_generation_id" | "discarded">;
+/** For each photo, the version shown in each style. */
+async function shownOf<P extends ShownSource>(photos: P[]) {
+  const staged = await stagedOf(photos.map((p) => p.project_id));
   return new Map(
-    rows
-      .filter((g) => g.status === "succeeded" && g.result_path && !g.is_free)
-      .map((g) => [g.id, g.result_path!]),
+    photos.map((p) => [
+      p.id,
+      shownVersions(
+        p,
+        staged.filter((g) => g.project_id === p.project_id),
+      ),
+    ]),
   );
 }
+/** The demo's main style: kept on every photo (the editor sets them together). */
+const mainOf = (photos: Pick<PhotoRow, "style">[]) => photos[0]?.style ?? "modern";
+const versionList = (shown: Map<string, StagedRow> | undefined, order: string[]): PhotoVersion[] =>
+  order.flatMap((style) => {
+    const g = shown?.get(style);
+    return g ? [{ style, v: g.id.slice(0, 8) }] : [];
+  });
 
 export async function listDemos() {
   const db = adminClient();
@@ -97,7 +136,7 @@ export async function listDemos() {
     propertyIds.length
       ? db
           .from("demo_photos")
-          .select("id,property_id,approved_generation_id,visible,position")
+          .select("id,property_id,project_id,approved_generation_id,discarded,visible,position,style")
           .in("property_id", propertyIds)
           .order("position")
       : Promise.resolve({ data: [], error: null }),
@@ -117,14 +156,18 @@ export async function listDemos() {
       (p) => [p.id, p.title],
     ),
   );
-  const photoRows = check(photos, "DEMO_LIST_FAILED") as {
-    id: string;
+  const photoRows = check(photos, "DEMO_LIST_FAILED") as (ShownSource & {
     property_id: string;
-    approved_generation_id: string | null;
     visible: boolean;
-  }[];
+    style: string;
+  })[];
+  const shown = await shownOf(photoRows);
   const summaries: DemoSummary[] = demos.map((d) => {
     const own = photoRows.filter((p) => p.property_id === d.property_id);
+    const main = mainOf(own);
+    const order = orderStyles(own.flatMap((p) => [...(shown.get(p.id)?.keys() ?? [])]), main);
+    const withVersions = own.map((p) => ({ ...p, versions: versionList(shown.get(p.id), order) }));
+    const cover = pickCover(withVersions, d.cover_photo_id, main);
     return {
       id: d.id,
       token: d.token,
@@ -134,9 +177,9 @@ export async function listDemos() {
       agencyName: agencyName.get(d.agency_id) || "",
       propertyTitle: propertyTitle.get(d.property_id) || "",
       photos: own.length,
-      staged: own.filter((p) => p.approved_generation_id).length,
+      staged: withVersions.filter((p) => p.versions.length).length,
       coverPhotoId: d.cover_photo_id,
-      cover: pickCover(own, d.cover_photo_id),
+      cover: cover ? { id: cover.id, version: coverVersion(cover, main) } : null,
       createdAt: d.created_at,
       publishedAt: d.published_at,
     };
@@ -199,6 +242,9 @@ export async function demoDetail(id: string): Promise<DemoDetail> {
       ) as (GenerationRow & { project_id: string })[])
     : [];
   const prop = check(property, "DEMO_PROPERTY_LOOKUP_FAILED") as DemoDetail["property"];
+  const shown = await shownOf(photos);
+  const main = mainOf(photos);
+  const order = orderStyles(photos.flatMap((p) => [...(shown.get(p.id)?.keys() ?? [])]), main);
   const photoList: EditorPhoto[] = photos.map((p) => ({
     id: p.id,
     projectId: p.project_id,
@@ -206,14 +252,15 @@ export async function demoDetail(id: string): Promise<DemoDetail> {
     visible: p.visible,
     room: p.room,
     label: p.label,
-    style: p.style,
     mode: p.mode,
-    approvedGenerationId: p.approved_generation_id,
     discarded: p.discarded || [],
+    shown: Object.fromEntries([...(shown.get(p.id) ?? new Map<string, StagedRow>())].map(([k, g]) => [k, g.id])),
     generations: generations
       .filter((g) => g.project_id === p.project_id)
       .map(({ project_id: _ignored, ...g }) => g),
   }));
+  const withVersions = photos.map((p) => ({ ...p, versions: versionList(shown.get(p.id), order) }));
+  const cover = pickCover(withVersions, demo.cover_photo_id, main);
   return {
     demo: {
       id: demo.id,
@@ -224,15 +271,17 @@ export async function demoDetail(id: string): Promise<DemoDetail> {
       agencyName: (check(agency, "DEMO_AGENCY_LOOKUP_FAILED") as AgencyRow).name,
       propertyTitle: prop.title,
       photos: photos.length,
-      staged: photos.filter((p) => p.approved_generation_id).length,
+      staged: withVersions.filter((p) => p.versions.length).length,
       coverPhotoId: demo.cover_photo_id,
-      cover: pickCover(photos, demo.cover_photo_id),
+      cover: cover ? { id: cover.id, version: coverVersion(cover, main) } : null,
       createdAt: demo.created_at,
       publishedAt: demo.published_at,
     },
     agency: check(agency, "DEMO_AGENCY_LOOKUP_FAILED") as AgencyRow,
     property: prop,
     photos: photoList,
+    styles: order,
+    mainStyle: main,
   };
 }
 
@@ -249,23 +298,24 @@ async function publicPayload(demo: DemoRow): Promise<PublicDemo> {
     photosOf(demo.property_id),
   ]);
   const visible = photos.filter((p) => p.visible);
-  const ready = await deliverable(
-    visible.flatMap((p) => (p.approved_generation_id ? [p.approved_generation_id] : [])),
-  );
-  const list: PublicPhoto[] = visible.map((p) => {
-    const staged = Boolean(p.approved_generation_id && ready.has(p.approved_generation_id));
-    return {
-      id: p.id,
-      label: photoLabel(p),
-      staged,
-      version: staged ? p.approved_generation_id!.slice(0, 8) : "o",
-    };
-  });
+  const shown = await shownOf(visible);
+  const main = mainOf(photos);
+  const order = orderStyles(visible.flatMap((p) => [...(shown.get(p.id)?.keys() ?? [])]), main);
+  const list: PublicPhoto[] = visible.map((p) => ({
+    id: p.id,
+    label: photoLabel(p),
+    versions: versionList(shown.get(p.id), order),
+  }));
   const prop = check(property, "DEMO_PROPERTY_LOOKUP_FAILED") as {
     title: string;
     location: string | null;
     description: string | null;
   };
+  const cover = pickCover(
+    list.map((p) => ({ ...p, visible: true })),
+    demo.cover_photo_id,
+    main,
+  );
   return {
     id: demo.id,
     agencyId: demo.agency_id,
@@ -273,11 +323,8 @@ async function publicPayload(demo: DemoRow): Promise<PublicDemo> {
     title: demo.title || prop.title,
     location: prop.location,
     description: prop.description,
-    cover:
-      list.find((p) => p.id === demo.cover_photo_id) ??
-      list.find((p) => p.staged) ??
-      list[0] ??
-      null,
+    styles: order.map((id) => ({ id, name: styleName(id) })),
+    cover: cover ? list.find((p) => p.id === cover.id)! : null,
     photos: list,
   };
 }
@@ -301,12 +348,23 @@ export async function previewDemo(id: string) {
   return publicPayload(await demoRow(id));
 }
 
-/** Storage path of a public image, only for a visible photo of a published demo. */
-export async function publicImagePath(
-  token: string,
-  photoId: string,
-  variant: "original" | "staged",
-) {
+/** Storage path of a photo: the original, or the version it shows in a style. */
+async function photoPath(photo: PhotoRow, style: string | null) {
+  if (style) return (await shownOf([photo])).get(photo.id)?.get(style)?.result_path ?? null;
+  const project = check(
+    await adminClient()
+      .from("projects")
+      .select("original_path")
+      .eq("id", photo.project_id)
+      .is("deleted_at", null)
+      .maybeSingle(),
+    "DEMO_PROJECT_LOOKUP_FAILED",
+  ) as { original_path: string } | null;
+  return project?.original_path ?? null;
+}
+
+/** A public image, only of a visible photo of a published demo. */
+export async function publicImagePaths(token: string, photoId: string, style: string | null) {
   if (!TOKEN_PATTERN.test(token) || !isUuid(photoId)) return null;
   const db = adminClient();
   const demo = check(
@@ -329,30 +387,21 @@ export async function publicImagePath(
       .maybeSingle(),
     "DEMO_PHOTO_LOOKUP_FAILED",
   ) as PhotoRow | null;
-  return photo ? photoPath(photo, variant) : null;
+  return photo ? imagePaths(photo, style) : null;
 }
 
-async function photoPath(photo: PhotoRow, variant: "original" | "staged") {
-  if (variant === "staged") {
-    if (!photo.approved_generation_id) return null;
-    return (await deliverable([photo.approved_generation_id])).get(photo.approved_generation_id) ?? null;
-  }
-  const project = check(
-    await adminClient()
-      .from("projects")
-      .select("original_path")
-      .eq("id", photo.project_id)
-      .is("deleted_at", null)
-      .maybeSingle(),
-    "DEMO_PROJECT_LOOKUP_FAILED",
-  ) as { original_path: string } | null;
-  return project?.original_path ?? null;
+async function imagePaths(photo: PhotoRow, style: string | null) {
+  const original = await photoPath(photo, null);
+  if (!original) return null;
+  const staged = style ? await photoPath(photo, style) : null;
+  if (style && !staged) return null;
+  return { original, staged };
 }
 
-/** Admin image: a demo photo (original or approved version) or one proposal of a demo photo. */
-export async function adminImagePath(params: {
+/** Admin image: a demo photo (original or its version in a style) or one proposal of a demo photo. */
+export async function adminImagePaths(params: {
   photoId?: string | null;
-  variant?: string | null;
+  style?: string | null;
   generationId?: string | null;
 }) {
   const db = adminClient();
@@ -368,32 +417,64 @@ export async function adminImagePath(params: {
         .maybeSingle(),
       "DEMO_GENERATION_LOOKUP_FAILED",
     ) as { result_path: string | null } | null;
-    return g?.result_path ?? null;
+    return g?.result_path ? { original: g.result_path, staged: null } : null;
   }
   if (!isUuid(params.photoId)) return null;
   const photo = check(
     await db.from("demo_photos").select(PHOTO_FIELDS).eq("id", params.photoId).maybeSingle(),
     "DEMO_PHOTO_LOOKUP_FAILED",
   ) as PhotoRow | null;
-  return photo ? photoPath(photo, params.variant === "staged" ? "staged" : "original") : null;
+  return photo ? imagePaths(photo, params.style || null) : null;
 }
 
-/** Reads a stored image and returns a web-sized JPEG (or a 1200×630 card for link previews). */
-export async function renderImage(path: string, width: number, og = false) {
+async function download(path: string) {
   const file = await adminClient().storage.from(BUCKET).download(path);
-  if (file.error || !file.data) return null;
-  const pipeline = sharp(Buffer.from(await file.data.arrayBuffer()), {
-    limitInputPixels: 40_000_000,
-  });
-  return og
-    ? pipeline
-        .resize({ width: 1200, height: 630, fit: "cover", position: "attention" })
-        .jpeg({ quality: 78, progressive: true })
-        .toBuffer()
-    : pipeline
-        .resize({ width, height: width, fit: "inside", withoutEnlargement: true })
-        .jpeg({ quality: 82, progressive: true })
-        .toBuffer();
+  return file.error || !file.data ? null : Buffer.from(await file.data.arrayBuffer());
+}
+const OG = { width: 1200, height: 630 };
+/** Both halves are cropped the same way, so the seam lines up. */
+const ogCrop = (bytes: Buffer) =>
+  sharp(bytes, { limitInputPixels: 40_000_000 })
+    .resize({ ...OG, fit: "cover", position: "centre" })
+    .toBuffer();
+const SEAM = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630">
+<rect x="597" y="0" width="6" height="630" fill="#ffffff"/>
+<circle cx="600" cy="315" r="36" fill="#ffffff"/>
+<path d="M590 299 L574 315 L590 331 M610 299 L626 315 L610 331" fill="none" stroke="#161b26" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>`);
+
+/**
+ * The link preview card (1200×630): the left half of the original over the
+ * staged version, so the before and after show side by side; a single photo
+ * when there is no staged version.
+ */
+export async function renderPreview(paths: { original: string; staged: string | null }) {
+  const original = await download(paths.original);
+  if (!original) return null;
+  if (!paths.staged)
+    return sharp(await ogCrop(original)).jpeg({ quality: 78, progressive: true }).toBuffer();
+  const staged = await download(paths.staged);
+  if (!staged) return null;
+  const left = await sharp(await ogCrop(original))
+    .extract({ left: 0, top: 0, width: 600, height: OG.height })
+    .toBuffer();
+  return sharp(await ogCrop(staged))
+    .composite([
+      { input: left, left: 0, top: 0 },
+      { input: SEAM, left: 0, top: 0 },
+    ])
+    .jpeg({ quality: 78, progressive: true })
+    .toBuffer();
+}
+
+/** Reads a stored image and returns a web-sized JPEG. */
+export async function renderImage(path: string, width: number) {
+  const bytes = await download(path);
+  if (!bytes) return null;
+  return sharp(bytes, { limitInputPixels: 40_000_000 })
+    .resize({ width, height: width, fit: "inside", withoutEnlargement: true })
+    .jpeg({ quality: 82, progressive: true })
+    .toBuffer();
 }
 
 export type AgencyInput = {

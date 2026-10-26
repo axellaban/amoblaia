@@ -1,5 +1,6 @@
-import { publicImagePath, renderImage } from "@/lib/demos/server";
+import { publicImagePaths, renderImage, renderPreview } from "@/lib/demos/server";
 import { imageWidth } from "@/lib/demos/shared";
+import { validStyle } from "@/lib/demos/input";
 import { cloudConfigured } from "@/lib/supabase/config";
 export const runtime = "nodejs";
 
@@ -13,6 +14,7 @@ const notFound = () =>
  * Images of a published demo. The bucket stays private: each request checks
  * that the demo is published and the photo visible, then serves a web-sized
  * copy, so no storage path, signed URL or account id reaches the page.
+ * `e` names a style (its staged version); `og=1` is the link preview card.
  * Edge caching is short so unpublishing takes effect within minutes.
  */
 export async function GET(
@@ -23,11 +25,13 @@ export async function GET(
     if (!cloudConfigured()) return notFound();
     const { token, photoId } = await params;
     const q = new URL(request.url).searchParams;
-    const variant = q.get("v") === "staged" ? "staged" : "original";
-    const path = await publicImagePath(token, photoId, variant);
-    if (!path) return notFound();
-    const og = q.get("og") === "1";
-    const image = await renderImage(path, imageWidth(q.get("w")), og);
+    const style = q.get("e");
+    const paths = await publicImagePaths(token, photoId, validStyle(style) ? style : null);
+    if (!paths) return notFound();
+    const image =
+      q.get("og") === "1"
+        ? await renderPreview(paths)
+        : await renderImage(paths.staged ?? paths.original, imageWidth(q.get("w")));
     if (!image) return notFound();
     return new Response(new Uint8Array(image), {
       headers: {

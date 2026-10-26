@@ -16,8 +16,11 @@ import {
   cleanUrl,
   ctaHref,
   imageWidth,
+  ogImageUrl,
+  orderStyles,
   pickCover,
   publicImageUrl,
+  shownVersions,
   whatsappShareUrl,
   DEMO_TEXT,
   TOKEN_PATTERN,
@@ -60,9 +63,9 @@ describe("Form input", () => {
     );
   });
   it("accepts only catalog rooms and styles, and staging modes that keep the room", () => {
+    // The style is the demo's (main style), not a photo setting.
     expect(photoChanges({ room: "kitchen", style: "scandinavian", visible: false })).toEqual({
       room: "kitchen",
-      style: "scandinavian",
       visible: false,
     });
     expect(() => photoChanges({ room: "garage" })).toThrow();
@@ -101,23 +104,54 @@ describe("Sharing", () => {
     expect(TOKEN_PATTERN.test("a".repeat(24))).toBe(true);
     expect(TOKEN_PATTERN.test(`${"a".repeat(23)}/`)).toBe(false);
   });
-  it("versions image URLs so approving another proposal refreshes caches", () => {
-    const photo = { id: "p1", label: "Living", staged: true, version: "abcd1234" };
-    expect(publicImageUrl("tok", photo, "staged", 960)).toBe("/demo/tok/imagen/p1?v=staged&r=abcd1234&w=960");
+  it("versions image URLs so a new version refreshes caches", () => {
+    const v = { style: "modern", v: "abcd1234" };
+    expect(publicImageUrl("tok", "p1", v, 960)).toBe("/demo/tok/imagen/p1?e=modern&r=abcd1234&w=960");
+    expect(publicImageUrl("tok", "p1", null, 960)).toBe("/demo/tok/imagen/p1?r=o&w=960");
+    expect(ogImageUrl("tok", "p1", v)).toBe("/demo/tok/imagen/p1?e=modern&r=abcd1234&og=1");
     expect(imageWidth("700")).toBe(960);
     expect(imageWidth("99999")).toBe(2048);
     expect(imageWidth("x")).toBe(1600);
   });
-  it("chooses the cover among visible photos, preferring a staged one", () => {
-    const photos = [
-      { id: "a", visible: true, approved_generation_id: null },
-      { id: "b", visible: true, approved_generation_id: "11111111-aaaa" },
-      { id: "c", visible: false, approved_generation_id: "22222222-bbbb" },
+  it("shows per style the approved version, else the newest deliverable one", () => {
+    const g = (id: string, style: string, extra: Record<string, unknown> = {}) => ({
+      id,
+      style,
+      status: "succeeded",
+      result_path: `${id}.jpg`,
+      is_free: false,
+      ...extra,
+    });
+    const gens = [
+      g("n1", "modern"),
+      g("n0", "modern"),
+      g("f1", "industrial", { is_free: true }),
+      g("r1", "coastal", { status: "running", result_path: null }),
+      g("d1", "classic"),
     ];
-    expect(pickCover(photos, null)?.id).toBe("b");
-    expect(pickCover(photos, "a")?.id).toBe("a");
-    expect(pickCover(photos, "c")?.id).toBe("b");
-    expect(pickCover([], null)).toBeNull();
+    const shown = shownVersions({ approved_generation_id: "n0", discarded: ["d1"] }, gens);
+    expect([...shown].map(([k, v]) => [k, v.id])).toEqual([["modern", "n0"]]);
+    expect(shownVersions({ approved_generation_id: null, discarded: [] }, gens).get("modern")?.id).toBe("n1");
+  });
+  it("orders styles with the main one first, then as in the catalog", () => {
+    expect(orderStyles(["industrial", "modern", "unknown", "coastal"], "industrial")).toEqual([
+      "industrial",
+      "modern",
+      "coastal",
+    ]);
+  });
+  it("chooses the cover among visible photos, preferring one staged in the main style", () => {
+    const photos = [
+      { id: "a", visible: true, versions: [] },
+      { id: "b", visible: true, versions: [{ style: "coastal", v: "1" }] },
+      { id: "c", visible: true, versions: [{ style: "modern", v: "2" }] },
+      { id: "d", visible: false, versions: [{ style: "modern", v: "3" }] },
+    ];
+    expect(pickCover(photos, null, "modern")?.id).toBe("c");
+    expect(pickCover(photos, null, "classic")?.id).toBe("b");
+    expect(pickCover(photos, "a", "modern")?.id).toBe("a");
+    expect(pickCover(photos, "d", "modern")?.id).toBe("c");
+    expect(pickCover([], null, "modern")).toBeNull();
   });
   it("states the mandatory AI transparency texts", () => {
     expect(DEMO_TEXT.disclaimer).toContain("inteligencia artificial");

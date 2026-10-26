@@ -109,7 +109,7 @@ export function LinkPreview({ demo, location }: { demo: DemoSummary; location?: 
     <div className="dm-link-preview" aria-label="Previsualización del enlace">
       {demo.cover ? (
         <img
-          src={adminPhotoUrl(demo.cover.id, demo.cover.staged ? "staged" : "original", 960, demo.cover.version)}
+          src={adminPhotoUrl(demo.cover.id, demo.cover.version, undefined, true)}
           alt=""
         />
       ) : (
@@ -247,7 +247,7 @@ export function DemoList() {
             <Link href={`/admin/demos/${d.id}`} className="dm-thumb" aria-label={`Editar ${d.title}`}>
               {d.cover ? (
                 <img
-                  src={adminPhotoUrl(d.cover.id, d.cover.staged ? "staged" : "original", 480, d.cover.version)}
+                  src={adminPhotoUrl(d.cover.id, d.cover.version, 480)}
                   alt=""
                   loading="lazy"
                 />
