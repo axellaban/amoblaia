@@ -169,7 +169,7 @@ describe("Admin API authorization", () => {
 });
 
 describe("AI staging from the panel", () => {
-  it("reserves through the demo RPC with the regular prompt and daily capacity", async () => {
+  it("reserves through the demo RPC with the regular prompt and no daily cap", async () => {
     vi.stubEnv("OPENAI_API_KEY", "test-key-never-real");
     vi.stubEnv("MAX_GENERATIONS_PER_DAY", "90");
     const r = await photo.POST(
@@ -184,7 +184,7 @@ describe("AI staging from the panel", () => {
       p_room: "bedroom",
       p_style: "scandinavian",
       p_mode: "redesign",
-      p_daily_limit: 90,
+      p_daily_limit: 1_000_000,
     });
     expect(String(call.args.p_prompt)).toContain("STRICT ARCHITECTURAL CONSTRAINTS");
     expect(state.after).toHaveLength(1);
