@@ -77,6 +77,8 @@ export function Header() {
   // itself would only reload it.
   const account = signedIn && !appNav;
   const create = signedIn && !studio;
+  // A demo is the agency's listing: its own header, no amoblaIA navigation.
+  if (isDemoPage(pathname)) return null;
   return (
     <header className={`header ${privatePage ? "header-private" : ""}`}>
       <div className="container nav">
@@ -221,7 +223,12 @@ export function Header() {
     </header>
   );
 }
+/** /demo/<token>: the buyer-facing listing of an agency. */
+const isDemoPage = (pathname: string) => pathname.startsWith("/demo/");
+
 export function Footer() {
+  const pathname = usePathname();
+  if (isDemoPage(pathname)) return null;
   return (
     <footer className="footer">
       <div className="container">

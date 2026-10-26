@@ -43,6 +43,21 @@ import {
 } from "@/lib/demos/shared";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const emptyBrand = {
+  primary: "",
+  accent: "",
+  titleFont: "sans" as "sans" | "serif",
+  contactKind: "whatsapp" as "whatsapp" | "url" | "phone" | "email",
+  contactValue: "",
+  visitUrl: "",
+};
+const emptyListing = { operation: "", price: "", features: "", reference: "" };
+const CONTACT_LABELS = {
+  whatsapp: ["WhatsApp", "+54 9 223 555-1234"],
+  url: ["Formulario o página de contacto", "https://inmobiliaria.com/contacto"],
+  phone: ["Teléfono", "+54 223 555-1234"],
+  email: ["Email", "consultas@inmobiliaria.com"],
+} as const;
 const liveStatus = (g: GenerationRow) => g.status === "queued" || g.status === "running";
 const isLive = (p: EditorPhoto, style?: string) =>
   p.generations.some((g) => liveStatus(g) && (!style || g.style === style));
@@ -81,6 +96,8 @@ export function DemoEditor({ id }: { id: string }) {
   const [title, setTitle] = useState("");
   const [agency, setAgency] = useState({ name: "", website: "", contact_name: "", notes: "" });
   const [property, setProperty] = useState({ title: "", listing_url: "", location: "", description: "" });
+  const [brand, setBrand] = useState(emptyBrand);
+  const [listing, setListing] = useState(emptyListing);
   const base = `/api/admin/demos/${id}`;
   const queueRef = useRef<string | null>(null);
   const firstLoad = useRef(true);
@@ -105,6 +122,20 @@ export function DemoEditor({ id }: { id: string }) {
       listing_url: d.property.listing_url ?? "",
       location: d.property.location ?? "",
       description: d.property.description ?? "",
+    });
+    setBrand({
+      primary: d.branding.primary ?? "",
+      accent: d.branding.accent ?? "",
+      titleFont: d.branding.titleFont ?? "sans",
+      contactKind: d.branding.contactKind ?? "whatsapp",
+      contactValue: d.branding.contactValue ?? "",
+      visitUrl: d.branding.visitUrl ?? "",
+    });
+    setListing({
+      operation: d.settings.operation ?? "",
+      price: d.settings.price ?? "",
+      features: d.settings.features ?? "",
+      reference: d.settings.reference ?? "",
     });
   }, []);
   const load = useCallback(async () => apply(await api<DemoDetail>(base)), [apply, base]);
@@ -296,6 +327,9 @@ export function DemoEditor({ id }: { id: string }) {
     .flatMap((p) =>
       chosen.filter((style) => !p.shown[style] && !isLive(p, style)).map((style) => ({ photoId: p.id, style })),
     );
+  // Opening mode B uses a style of the first photo the buyer sees.
+  const firstVisible = photos.find((p) => p.visible);
+  const openStyles = firstVisible ? chosen.filter((st) => firstVisible.shown[st]) : [];
   const reviewPhoto = review && photos.find((p) => p.id === review.photoId);
   const reviewGenId = review && reviewPhoto?.shown[review.style];
   const reviewGen = reviewPhoto?.generations.find((g) => g.id === reviewGenId);
@@ -698,16 +732,23 @@ export function DemoEditor({ id }: { id: string }) {
             <h2>Compartir</h2>
             {live ? (
               <>
-                <input
-                  className="dm-link"
-                  readOnly
-                  value={publicLink(demo.token)}
-                  onFocus={(e) => e.target.select()}
-                  aria-label="Enlace público"
-                />
+                <label className="dm-link-label">
+                  Para presentar a la inmobiliaria {detail.settings.banner ? "(con la franja de la demo)" : ""}
+                  <input
+                    className="dm-link"
+                    readOnly
+                    value={publicLink(demo.token, true)}
+                    onFocus={(e) => e.target.select()}
+                  />
+                </label>
+                <label className="dm-link-label">
+                  Para compradores (sin franja ni marcas de amoblaIA)
+                  <input className="dm-link" readOnly value={publicLink(demo.token)} onFocus={(e) => e.target.select()} />
+                </label>
                 <div className="dm-share">
                   <ShareButtons demo={demo} />
                 </div>
+                <p className="dm-help">WhatsApp envía a la inmobiliaria los dos enlaces.</p>
               </>
             ) : (
               <p className="dm-help">
@@ -734,6 +775,69 @@ export function DemoEditor({ id }: { id: string }) {
             )}
           </section>
           <section className="account-panel">
+            <h2>Al abrir la demo</h2>
+            {!detail.settingsReady && <MigrationNote />}
+            <div className="dm-choice dm-choice-column" role="radiogroup" aria-label="Modo de apertura">
+              <label>
+                <input
+                  type="radio"
+                  name="open-mode"
+                  checked={detail.settings.openMode === "original"}
+                  disabled={busy || !detail.settingsReady}
+                  onChange={() => demoAction({ action: "settings", settings: { openMode: "original" } }, "Guardado.")}
+                />
+                Foto original (recomendado)
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  name="open-mode"
+                  checked={detail.settings.openMode === "styled"}
+                  disabled={busy || !detail.settingsReady || !openStyles.length}
+                  onChange={() =>
+                    demoAction(
+                      { action: "settings", settings: { openMode: "styled", openStyle: detail.settings.openStyle ?? openStyles[0] } },
+                      "Guardado.",
+                    )
+                  }
+                />
+                Ambientación predeterminada
+              </label>
+            </div>
+            {detail.settings.openMode === "styled" && (
+              <label className="dm-select">
+                Estilo de la primera foto
+                <select
+                  value={openStyles.includes(detail.settings.openStyle ?? "") ? detail.settings.openStyle! : ""}
+                  disabled={busy}
+                  onChange={(e) => demoAction({ action: "settings", settings: { openStyle: e.target.value } }, "Guardado.")}
+                >
+                  {!openStyles.includes(detail.settings.openStyle ?? "") && <option value="">Elegí un estilo…</option>}
+                  {openStyles.map((st) => (
+                    <option key={st} value={st}>
+                      {styleName(st)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <p className="dm-help">
+              {openStyles.length
+                ? "Con ambientación, la primera foto abre ambientada (identificada) con «Comparar con original» y «Volver al original». Si ese estilo no está disponible, abre con la original."
+                : "Para abrir con una ambientación, la primera foto visible tiene que tener al menos un estilo listo."}
+            </p>
+            <label className="checkbox-label dm-check">
+              <input
+                type="checkbox"
+                checked={detail.settings.banner}
+                disabled={busy || !detail.settingsReady}
+                onChange={(e) => demoAction({ action: "settings", settings: { banner: e.target.checked } }, "Guardado.")}
+              />
+              Mostrar «Demo preparada para {demo.agencyName} · Por Amobla IA» en el enlace de presentación
+            </label>
+            <p className="dm-help">Estos ajustes son privados: el comprador nunca los ve.</p>
+          </section>
+          <section className="account-panel">
             <h2>Título de la demo</h2>
             <form
               className="dm-inline-form"
@@ -757,13 +861,145 @@ export function DemoEditor({ id }: { id: string }) {
           </section>
           <section className="account-panel">
             <h2>Inmobiliaria</h2>
+            {!detail.settingsReady && <MigrationNote />}
+            <div className="dm-logo">
+              {detail.branding.logo ? (
+                <img src={detail.branding.logo} alt={`Logo de ${demo.agencyName}`} />
+              ) : (
+                <span className="dm-logo-empty">Sin logo: se muestra el nombre</span>
+              )}
+              <div className="dm-logo-actions">
+                <label className="button button-small button-outline">
+                  {detail.branding.logo ? "Cambiar logo" : "Subir logo"}
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                    className="dm-hidden-input"
+                    disabled={busy || !detail.settingsReady}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      e.target.value = "";
+                      if (!file) return;
+                      const form = new FormData();
+                      form.set("logo", file);
+                      void run(async () => {
+                        await api(`${base}/logo`, { method: "POST", body: form });
+                        await load();
+                      }, "Logo guardado.");
+                    }}
+                  />
+                </label>
+                {detail.branding.logo && (
+                  <button
+                    type="button"
+                    className="text-link"
+                    disabled={busy}
+                    onClick={() =>
+                      run(async () => {
+                        await api(`${base}/logo`, { method: "DELETE" });
+                        await load();
+                      }, "Logo quitado.")
+                    }
+                  >
+                    Quitar
+                  </button>
+                )}
+              </div>
+            </div>
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                void demoAction({ action: "agency", agency }, "Inmobiliaria guardada.");
+                void run(async () => {
+                  await api(base, { method: "PATCH", body: JSON.stringify({ action: "agency", agency }) });
+                  if (detail.settingsReady)
+                    await api(base, { method: "PATCH", body: JSON.stringify({ action: "branding", branding: brand }) });
+                  await load();
+                }, "Inmobiliaria guardada.");
               }}
             >
               <AgencyFields value={agency} onChange={setAgency} />
+              <div className="dm-fields">
+                <label>
+                  Color principal <small>(botones)</small>
+                  <span className="dm-color">
+                    <input
+                      type="color"
+                      value={brand.primary || "#1f3a5f"}
+                      onChange={(e) => setBrand({ ...brand, primary: e.target.value })}
+                      aria-label="Color principal"
+                    />
+                    <input
+                      value={brand.primary}
+                      placeholder="#1f3a5f"
+                      maxLength={7}
+                      onChange={(e) => setBrand({ ...brand, primary: e.target.value })}
+                    />
+                  </span>
+                </label>
+                <label>
+                  Color secundario <small>(selección y etiquetas)</small>
+                  <span className="dm-color">
+                    <input
+                      type="color"
+                      value={brand.accent || "#6f8f5a"}
+                      onChange={(e) => setBrand({ ...brand, accent: e.target.value })}
+                      aria-label="Color secundario"
+                    />
+                    <input
+                      value={brand.accent}
+                      placeholder="#6f8f5a"
+                      maxLength={7}
+                      onChange={(e) => setBrand({ ...brand, accent: e.target.value })}
+                    />
+                  </span>
+                </label>
+                <label>
+                  Tipografía de títulos
+                  <select
+                    value={brand.titleFont}
+                    onChange={(e) => setBrand({ ...brand, titleFont: e.target.value as "sans" | "serif" })}
+                  >
+                    <option value="sans">Sin serif (moderna)</option>
+                    <option value="serif">Con serif (clásica)</option>
+                  </select>
+                </label>
+                <label>
+                  Cómo la contactan los compradores
+                  <select
+                    value={brand.contactKind}
+                    onChange={(e) => setBrand({ ...brand, contactKind: e.target.value as typeof brand.contactKind })}
+                  >
+                    {Object.entries(CONTACT_LABELS).map(([k, [label]]) => (
+                      <option key={k} value={k}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="dm-wide">
+                  {CONTACT_LABELS[brand.contactKind][0]} <small>(el mismo canal que usa en su sitio)</small>
+                  <input
+                    value={brand.contactValue}
+                    maxLength={300}
+                    placeholder={CONTACT_LABELS[brand.contactKind][1]}
+                    onChange={(e) => setBrand({ ...brand, contactValue: e.target.value })}
+                  />
+                </label>
+                <label className="dm-wide">
+                  Enlace para coordinar visitas <small>(opcional: solo si existe)</small>
+                  <input
+                    value={brand.visitUrl}
+                    maxLength={300}
+                    inputMode="url"
+                    placeholder="https://…"
+                    onChange={(e) => setBrand({ ...brand, visitUrl: e.target.value })}
+                  />
+                </label>
+              </div>
+              <p className="dm-help">
+                «Consultar a {demo.agencyName}» usa este canal. Con WhatsApp se prepara un mensaje con la
+                propiedad; el comprador decide enviarlo. Sin contacto cargado, el botón no aparece.
+              </p>
               <button className="button button-small" disabled={busy}>
                 Guardar inmobiliaria
               </button>
@@ -774,10 +1010,54 @@ export function DemoEditor({ id }: { id: string }) {
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                void demoAction({ action: "property", property }, "Propiedad guardada.");
+                void run(async () => {
+                  await api(base, { method: "PATCH", body: JSON.stringify({ action: "property", property }) });
+                  if (detail.settingsReady)
+                    await api(base, { method: "PATCH", body: JSON.stringify({ action: "settings", settings: listing }) });
+                  await load();
+                }, "Propiedad guardada.");
               }}
             >
               <PropertyFields value={property} onChange={setProperty} />
+              <div className="dm-fields">
+                <label>
+                  Operación
+                  <input
+                    value={listing.operation}
+                    maxLength={40}
+                    placeholder="Venta"
+                    onChange={(e) => setListing({ ...listing, operation: e.target.value })}
+                  />
+                </label>
+                <label>
+                  Precio <small>(tal como lo publica)</small>
+                  <input
+                    value={listing.price}
+                    maxLength={40}
+                    placeholder="USD 265.000"
+                    onChange={(e) => setListing({ ...listing, price: e.target.value })}
+                  />
+                </label>
+                <label>
+                  Características
+                  <input
+                    value={listing.features}
+                    maxLength={120}
+                    placeholder="3 ambientes · 101 m² · 2 dormitorios"
+                    onChange={(e) => setListing({ ...listing, features: e.target.value })}
+                  />
+                </label>
+                <label>
+                  Código de referencia
+                  <input
+                    value={listing.reference}
+                    maxLength={40}
+                    placeholder="RAP12025427"
+                    onChange={(e) => setListing({ ...listing, reference: e.target.value })}
+                  />
+                </label>
+              </div>
+              <p className="dm-help">Solo se muestra lo que cargues: copialo de la publicación original.</p>
               <button className="button button-small" disabled={busy}>
                 Guardar propiedad
               </button>
@@ -920,5 +1200,15 @@ function Review({
         </div>
       </div>
     </div>
+  );
+}
+
+function MigrationNote() {
+  return (
+    <p className="inline-error" role="status">
+      Para guardar logo, colores, contacto y apertura falta aplicar la migración{" "}
+      <code>202610270001_demo_branding.sql</code> en Supabase. Mientras tanto la demo abre con la foto
+      original y sin marca propia.
+    </p>
   );
 }

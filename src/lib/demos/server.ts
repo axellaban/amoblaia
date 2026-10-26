@@ -6,6 +6,13 @@ import { BUCKET } from "@/lib/commerce/jobs";
 import { HttpError } from "@/lib/commerce/http";
 import { normalizePhoto } from "@/lib/commerce/images";
 import {
+  DEFAULT_ACCENT,
+  DEFAULT_PRIMARY,
+  readBranding,
+  readSettings,
+  type AgencyBranding,
+} from "./branding";
+import {
   TOKEN_PATTERN,
   coverVersion,
   isUuid,
@@ -113,6 +120,47 @@ const versionList = (shown: Map<string, StagedRow> | undefined, order: string[])
     const g = shown?.get(style);
     return g ? [{ style, v: g.id.slice(0, 8) }] : [];
   });
+
+/**
+ * A JSON column added by 202610270001_demo_branding.sql. Before the migration
+ * is applied the query fails: the page then uses defaults (original photo,
+ * no logo, neutral colors) and the panel says the migration is pending.
+ */
+async function optionalJson(table: "agencies" | "demos", column: "branding" | "settings", id: string) {
+  const { data, error } = await adminClient().from(table).select(column).eq("id", id).maybeSingle();
+  if (error) return { ready: false, value: {} as unknown };
+  return { ready: true, value: (data as Record<string, unknown> | null)?.[column] ?? {} };
+}
+export async function brandingOf(agencyId: string) {
+  return readBranding((await optionalJson("agencies", "branding", agencyId)).value);
+}
+export async function settingsOf(demoId: string) {
+  const r = await optionalJson("demos", "settings", demoId);
+  return { ready: r.ready, settings: readSettings(r.value) };
+}
+/** Saves a JSON column; a clear message while the migration is missing. */
+export async function saveJson(
+  table: "agencies" | "demos",
+  column: "branding" | "settings",
+  id: string,
+  value: unknown,
+) {
+  const { error } = await adminClient()
+    .from(table)
+    .update({ [column]: value })
+    .eq("id", id);
+  if (error)
+    throw new HttpError(
+      409,
+      "Para guardar esto falta aplicar la migración 202610270001_demo_branding.sql en Supabase.",
+    );
+}
+/** The logo as stored (small PNG or WebP, base64). */
+export async function logoOf(agencyId: string) {
+  const logo = (await brandingOf(agencyId)).logo;
+  return logo ? { type: logo.type, bytes: Buffer.from(logo.data, "base64") } : null;
+}
+const logoVersion = (b: AgencyBranding) => b.logo?.v ?? null;
 
 export async function listDemos() {
   const db = adminClient();
@@ -242,7 +290,11 @@ export async function demoDetail(id: string): Promise<DemoDetail> {
       ) as (GenerationRow & { project_id: string })[])
     : [];
   const prop = check(property, "DEMO_PROPERTY_LOOKUP_FAILED") as DemoDetail["property"];
-  const shown = await shownOf(photos);
+  const [shown, branding, saved] = await Promise.all([
+    shownOf(photos),
+    brandingOf(demo.agency_id),
+    settingsOf(demo.id),
+  ]);
   const main = mainOf(photos);
   const order = orderStyles(photos.flatMap((p) => [...(shown.get(p.id)?.keys() ?? [])]), main);
   const photoList: EditorPhoto[] = photos.map((p) => ({
@@ -282,20 +334,25 @@ export async function demoDetail(id: string): Promise<DemoDetail> {
     photos: photoList,
     styles: order,
     mainStyle: main,
+    branding: { ...branding, logo: logoVersion(branding) ? `/api/admin/demos/${demo.id}/logo?v=${logoVersion(branding)}` : null },
+    settings: saved.settings,
+    settingsReady: saved.ready,
   };
 }
 
 /** Builds the minimal public payload. Only visible photos; a staged version only when it can be delivered. */
-async function publicPayload(demo: DemoRow): Promise<PublicDemo> {
+async function publicPayload(demo: DemoRow, logoUrl: (v: string) => string): Promise<PublicDemo> {
   const db = adminClient();
-  const [agency, property, photos] = await Promise.all([
-    db.from("agencies").select("name").eq("id", demo.agency_id).single(),
+  const [agency, property, photos, branding, { settings }] = await Promise.all([
+    db.from("agencies").select("name,website").eq("id", demo.agency_id).single(),
     db
       .from("demo_properties")
-      .select("title,location,description")
+      .select("title,location,listing_url,description")
       .eq("id", demo.property_id)
       .single(),
     photosOf(demo.property_id),
+    brandingOf(demo.agency_id),
+    settingsOf(demo.id),
   ]);
   const visible = photos.filter((p) => p.visible);
   const shown = await shownOf(visible);
@@ -309,23 +366,54 @@ async function publicPayload(demo: DemoRow): Promise<PublicDemo> {
   const prop = check(property, "DEMO_PROPERTY_LOOKUP_FAILED") as {
     title: string;
     location: string | null;
+    listing_url: string | null;
     description: string | null;
   };
+  const ag = check(agency, "DEMO_AGENCY_LOOKUP_FAILED") as { name: string; website: string | null };
   const cover = pickCover(
     list.map((p) => ({ ...p, visible: true })),
     demo.cover_photo_id,
     main,
   );
+  // Opening mode B: the first photo in the configured style, only if it has it.
+  const first = list[0];
+  const openStyle =
+    settings.openMode === "styled" &&
+    settings.openStyle &&
+    first?.versions.some((v) => v.style === settings.openStyle)
+      ? settings.openStyle
+      : null;
+  const version = logoVersion(branding);
   return {
     id: demo.id,
     agencyId: demo.agency_id,
-    agencyName: (check(agency, "DEMO_AGENCY_LOOKUP_FAILED") as { name: string }).name,
+    agencyName: ag.name,
+    agency: {
+      name: ag.name,
+      website: ag.website,
+      logo: version ? logoUrl(version) : null,
+      primary: branding.primary ?? DEFAULT_PRIMARY,
+      accent: branding.accent ?? DEFAULT_ACCENT,
+      titleFont: branding.titleFont ?? "sans",
+      contact:
+        branding.contactKind && branding.contactValue
+          ? { kind: branding.contactKind, value: branding.contactValue }
+          : null,
+      visitUrl: branding.visitUrl ?? null,
+    },
     title: demo.title || prop.title,
     location: prop.location,
     description: prop.description,
+    listingUrl: prop.listing_url,
+    operation: settings.operation,
+    price: settings.price,
+    features: settings.features,
+    reference: settings.reference,
     styles: order.map((id) => ({ id, name: styleName(id) })),
     cover: cover ? list.find((p) => p.id === cover.id)! : null,
     photos: list,
+    openStyle,
+    banner: settings.banner,
   };
 }
 
@@ -341,11 +429,12 @@ export async function publishedDemo(token: string) {
       .maybeSingle(),
     "DEMO_LOOKUP_FAILED",
   ) as DemoRow | null;
-  return demo ? publicPayload(demo) : null;
+  return demo ? publicPayload(demo, (v) => `/demo/${token}/logo?v=${v}`) : null;
 }
 /** The same payload for an admin preview, whatever the state. */
 export async function previewDemo(id: string) {
-  return publicPayload(await demoRow(id));
+  const demo = await demoRow(id);
+  return publicPayload(demo, (v) => `/api/admin/demos/${demo.id}/logo?v=${v}`);
 }
 
 /** Storage path of a photo: the original, or the version it shows in a style. */

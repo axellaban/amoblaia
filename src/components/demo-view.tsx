@@ -1,24 +1,30 @@
 "use client";
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ArrowLeft,
   ArrowRight,
+  CalendarDays,
+  Check,
   ChevronLeft,
   ChevronRight,
+  ExternalLink,
+  Info,
+  Mail,
   MapPin,
-  Pause,
-  Play,
-  Share2,
+  Maximize2,
+  MessageCircle,
+  Minimize2,
+  Phone,
+  RotateCw,
   Sparkles,
-  X,
 } from "lucide-react";
 import { Comparison } from "./comparison";
 import { registerSuperProperties, track } from "@/lib/analytics";
+import { contactHref, textOn } from "@/lib/demos/branding";
 import {
   adminPhotoUrl,
   ctaHref,
   DEMO_REF_KEY,
-  DEMO_TEXT,
   publicImageUrl,
   type PhotoVersion,
   type PublicDemo,
@@ -26,52 +32,89 @@ import {
 } from "@/lib/demos/shared";
 
 type Source = { kind: "public"; token: string } | { kind: "preview" };
-/** A style id, or "original". */
-type Choice = string;
-const ORIGINAL = "original";
-/** Like Zillow's ?vsxlb=1: a link that opens the page straight in the staging viewer. */
-const VIEWER_PARAM = "ambientar";
-const SLIDE_MS = 5000;
+/** What a photo shows: its original, or one style (in full or compared with the original). */
+type PhotoState = { style: string | null; compare: boolean; position: number };
+const ORIGINAL: PhotoState = { style: null, compare: false, position: 50 };
+const TEXT = {
+  panelTitle: "Imaginá este espacio a tu estilo",
+  panelHint: "Elegí una ambientación para esta foto.",
+  keepsOriginal: "La foto original se mantiene hasta que elijas un estilo.",
+  original: "Original",
+  staged: "Ambientado con IA",
+  backToOriginal: "Volver al original",
+  compare: "Comparar con original",
+  illustrative:
+    "Ambientación virtual realizada con inteligencia artificial: las imágenes son ilustrativas y los muebles no están incluidos en la propiedad.",
+};
 
-function urlFor(source: Source, photoId: string, version: PhotoVersion | null, width: number) {
-  return source.kind === "public"
-    ? publicImageUrl(source.token, photoId, version, width)
-    : adminPhotoUrl(photoId, version, width);
+function urlFor(source: Source, photoId: string, version: PhotoVersion | null, width: number, retry = 0) {
+  const url =
+    source.kind === "public"
+      ? publicImageUrl(source.token, photoId, version, width)
+      : adminPhotoUrl(photoId, version, width);
+  return retry ? `${url}&n=${retry}` : url;
 }
-const versionOf = (photo: PublicPhoto, choice: Choice) =>
-  choice === ORIGINAL ? null : (photo.versions.find((v) => v.style === choice) ?? null);
+const versionOf = (photo: PublicPhoto, style: string | null) =>
+  style ? (photo.versions.find((v) => v.style === style) ?? null) : null;
 
 /**
- * The commercial demo as the agency sees it: a full-width slideshow of the
- * photos in the main style, and a staging viewer to compare every photo in
- * each style the demo offers. The admin preview renders this same component,
- * only with images served from the admin route.
+ * The demo as the agency's own listing: its brand, its contact, the
+ * property's photos in one carousel, and an optional staging of each photo.
+ * Every photo opens as its clean original (except the first one in opening
+ * mode B); choosing a style compares it with the original, and each photo
+ * keeps its own state during the visit. Nothing here generates images: the
+ * styles are versions prepared and reviewed in the panel.
  */
-export function DemoView({ demo, source }: { demo: PublicDemo; source: Source }) {
-  const photos = demo.photos;
-  const main = demo.styles[0]?.id ?? ORIGINAL;
+export function DemoView({
+  demo,
+  source,
+  presentation = false,
+}: {
+  demo: PublicDemo;
+  source: Source;
+  /** The link for the agency: may show the "Demo preparada para…" strip. */
+  presentation?: boolean;
+}) {
+  const { agency, photos } = demo;
   const styleNames = useMemo(
     () => Object.fromEntries(demo.styles.map((s) => [s.id, s.name])) as Record<string, string>,
     [demo.styles],
   );
-  const staged = useMemo(() => photos.filter((p) => p.versions.length).length, [photos]);
   const analytics = useMemo(
     () => ({
       demo_id: demo.id,
       inmobiliaria_id: demo.agencyId,
       fotos: photos.length,
-      ambientadas: staged,
-      estilos: demo.styles.length,
+      ambientadas: photos.filter((p) => p.versions.length).length,
+      version: presentation ? "presentacion" : "comprador",
     }),
-    [demo.id, demo.agencyId, photos.length, staged, demo.styles.length],
+    [demo.id, demo.agencyId, photos, presentation],
   );
-  const [slide, setSlide] = useState(0);
-  const [playing, setPlaying] = useState(true);
-  const [viewer, setViewer] = useState<{ index: number; choice: Choice } | null>(null);
-  const opener = useRef<HTMLElement | null>(null);
-  const coverIndex = Math.max(0, photos.findIndex((p) => p.id === demo.cover?.id));
+  const [index, setIndex] = useState(0);
+  // Remembered per photo during the visit. The first photo may open staged.
+  const [states, setStates] = useState<Record<string, PhotoState>>(() =>
+    demo.openStyle && photos[0] ? { [photos[0].id]: { style: demo.openStyle, compare: false, position: 50 } } : {},
+  );
+  const [failed, setFailed] = useState<Record<string, boolean>>({});
+  const [retries, setRetries] = useState<Record<string, number>>({});
+  const [ratios, setRatios] = useState<Record<string, number>>({});
+  const [full, setFull] = useState(false);
+  const [pageUrl, setPageUrl] = useState("");
+  const thumbs = useRef<HTMLOListElement>(null);
+  const swipe = useRef<{ x: number; y: number } | null>(null);
+
+  const photo = photos[index];
+  const state = (photo && states[photo.id]) || ORIGINAL;
+  const version = photo ? versionOf(photo, state.style) : null;
+  const stagedKey = photo && version ? `${photo.id}:${version.style}` : "";
+  const stagedFailed = Boolean(stagedKey && failed[stagedKey]);
+  // A version that fails to load leaves the original on screen.
+  const showing = version && !stagedFailed ? version : null;
+  const comparing = Boolean(showing && state.compare);
+  const name = (style: string) => styleNames[style] ?? style;
 
   useEffect(() => {
+    setPageUrl(window.location.href.split("?")[0]);
     if (source.kind !== "public") return;
     track("demo_vista", analytics);
     registerSuperProperties({ demo_id: demo.id, demo_inmobiliaria_id: demo.agencyId });
@@ -81,279 +124,33 @@ export function DemoView({ demo, source }: { demo: PublicDemo; source: Source })
         JSON.stringify({ demoId: demo.id, agencyId: demo.agencyId, at: Date.now() }),
       );
     } catch {
-      /* Private mode or blocked storage: attribution then relies on the CTA link. */
+      /* Private mode or blocked storage. */
     }
   }, [source.kind, demo.id, demo.agencyId, analytics]);
 
-  const open = useCallback(
-    (index: number, choice: Choice, from: string) => {
-      opener.current = document.activeElement as HTMLElement | null;
-      setViewer({ index, choice });
-      if (source.kind === "public") track("demo_visor_abierto", { ...analytics, desde: from });
-      const url = new URL(window.location.href);
-      url.searchParams.set(VIEWER_PARAM, "1");
-      window.history.replaceState(null, "", url);
-    },
-    [analytics, source.kind],
+  const setState = useCallback(
+    (next: PhotoState) => photo && setStates((s) => ({ ...s, [photo.id]: next })),
+    [photo],
   );
-  const close = useCallback(() => {
-    setViewer(null);
-    const url = new URL(window.location.href);
-    url.searchParams.delete(VIEWER_PARAM);
-    window.history.replaceState(null, "", url);
-    opener.current?.focus();
-  }, []);
-  // A shared link with ?ambientar=1 opens on the viewer, like the CTA.
-  useEffect(() => {
-    if (new URLSearchParams(window.location.search).has(VIEWER_PARAM) && photos.length)
-      setViewer({ index: coverIndex, choice: main });
-    // Only on arrival.
-  }, []);
-  // Reduced motion: the slideshow starts paused.
-  useEffect(() => {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) setPlaying(false);
-  }, []);
-  useEffect(() => {
-    if (!playing || viewer || photos.length < 2) return;
-    const timer = setTimeout(() => setSlide((i) => (i + 1) % photos.length), SLIDE_MS);
-    return () => clearTimeout(timer);
-  }, [playing, viewer, slide, photos.length]);
-
-  const hero = photos[slide];
-  const heroVersion = hero ? versionOf(hero, main) ?? hero.versions[0] ?? null : null;
-  const cover = photos[coverIndex];
-  const coverStaged = cover ? versionOf(cover, main) : null;
-  const teaser = cover ? [ORIGINAL, ...cover.versions.map((v) => v.style)] : [];
-
-  async function share() {
-    const url = window.location.href.split("?")[0];
-    try {
-      if (navigator.share) await navigator.share({ title: demo.title, url });
-      else await navigator.clipboard.writeText(url);
-    } catch {
-      /* Cancelled by the visitor. */
-    }
-  }
-
-  return (
-    <div className="dv-page">
-      <section className="dv-hero" aria-label="Fotos de la propiedad">
-        {hero ? (
-          <img
-            key={`${hero.id}-${heroVersion?.v ?? "o"}`}
-            className="dv-hero-img"
-            src={urlFor(source, hero.id, heroVersion, 2048)}
-            alt={`${hero.label}${heroVersion ? `: ambientación virtual ${styleNames[heroVersion.style] ?? ""}` : ""}`}
-          />
-        ) : (
-          <div className="dv-hero-empty">Esta demo todavía no tiene fotos.</div>
-        )}
-        <div className="dv-hero-shade" aria-hidden="true" />
-        <div className="dv-hero-top">
-          <span className="dv-pill">
-            <b>
-              amobla<span>IA</span>
-            </b>
-            <span className="dv-pill-muted">· Muestra para {demo.agencyName}</span>
-          </span>
-          {source.kind === "public" && (
-            <button type="button" className="dv-pill dv-pill-button" onClick={share}>
-              <Share2 size={17} aria-hidden="true" /> Compartir
-            </button>
-          )}
-        </div>
-        {hero && (
-          <div className="dv-hero-bottom">
-            <nav className="dv-tiles" aria-label="Accesos de la galería">
-              {coverStaged && (
-                <button type="button" className="dv-tile" onClick={() => open(coverIndex, main, "portada")}>
-                  <span className="dv-tile-img">
-                    <img src={urlFor(source, cover.id, coverStaged, 480)} alt="" />
-                    <span className="dv-new">Nuevo</span>
-                  </span>
-                  Ambientación virtual
-                </button>
-              )}
-              <button type="button" className="dv-tile" onClick={() => open(0, ORIGINAL, "fotos")}>
-                <span className="dv-tile-img">
-                  <img src={urlFor(source, photos[0].id, null, 480)} alt="" />
-                </span>
-                Fotos ({photos.length})
-              </button>
-            </nav>
-            {photos.length > 1 && (
-              <div className="dv-progress">
-                <button
-                  type="button"
-                  className="dv-play"
-                  aria-label={playing ? "Pausar el pase de fotos" : "Reanudar el pase de fotos"}
-                  onClick={() => setPlaying((p) => !p)}
-                >
-                  {playing ? <Pause size={18} /> : <Play size={18} />}
-                </button>
-                <ol>
-                  {photos.map((p, i) => (
-                    <li key={p.id}>
-                      <button
-                        type="button"
-                        aria-label={`Ver ${p.label}`}
-                        aria-current={i === slide ? "true" : undefined}
-                        onClick={() => setSlide(i)}
-                      >
-                        <span
-                          className={i === slide ? (playing && !viewer ? "is-running" : "is-on") : ""}
-                          style={{ animationDuration: `${SLIDE_MS}ms` }}
-                        />
-                      </button>
-                    </li>
-                  ))}
-                </ol>
-                <span className="dv-caption">
-                  {heroVersion ? styleNames[heroVersion.style] : DEMO_TEXT.original}
-                </span>
-              </div>
-            )}
-          </div>
-        )}
-      </section>
-
-      <div className="dv-body container">
-        <main className="dv-main">
-          <div className="dv-agency">
-            <strong>{demo.agencyName}</strong>
-            <span>Muestra de ambientación virtual</span>
-          </div>
-          <div className="dv-title">
-            {staged > 0 && (
-              <span className="dv-badge">
-                <span aria-hidden="true" /> {DEMO_TEXT.badge}
-              </span>
-            )}
-            <h1>{demo.title}</h1>
-            {demo.location && (
-              <p className="dv-location">
-                <MapPin size={18} aria-hidden="true" /> {demo.location}
-              </p>
-            )}
-          </div>
-          <p className="dv-description">{demo.description || `${DEMO_TEXT.headline}.`}</p>
-
-          {staged > 0 && cover && (
-            <section className="dv-teaser" aria-labelledby="dv-teaser-title">
-              <div className="dv-teaser-head">
-                <div>
-                  <h2 id="dv-teaser-title">Mirala ambientada</h2>
-                  <p>
-                    {staged} {staged === 1 ? "foto" : "fotos"} ·{" "}
-                    {demo.styles.length === 1
-                      ? `estilo ${demo.styles[0].name}`
-                      : `${demo.styles.length} estilos: ${demo.styles.map((s) => s.name).join(", ")}`}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  className="button button-primary"
-                  onClick={() => open(coverIndex, main, "boton")}
-                >
-                  <Sparkles size={18} aria-hidden="true" /> Ver ambientación virtual
-                </button>
-              </div>
-              <ul className="dv-teaser-grid">
-                {teaser.map((choice) => (
-                  <li key={choice}>
-                    <button type="button" onClick={() => open(coverIndex, choice, "miniatura")}>
-                      <img src={urlFor(source, cover.id, versionOf(cover, choice), 480)} alt="" loading="lazy" />
-                      {choice === ORIGINAL ? DEMO_TEXT.original : styleNames[choice]}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-          <p className="dv-footnote">{DEMO_TEXT.disclaimer}</p>
-        </main>
-
-        <aside className="dv-aside">
-          <span>Muestra preparada por</span>
-          <strong className="dv-logo">
-            amobla<span>IA</span>
-          </strong>
-          <p>
-            {DEMO_TEXT.ctaTitle} {DEMO_TEXT.ctaBody}
-          </p>
-          <Link
-            href={ctaHref(demo.id, demo.agencyId)}
-            className="button button-outline button-large"
-            onClick={() => source.kind === "public" && track("demo_cta_click", analytics, true)}
-          >
-            {DEMO_TEXT.ctaButton} <ArrowRight size={18} />
-          </Link>
-        </aside>
-      </div>
-
-      {viewer && photos.length > 0 && (
-        <StagingViewer
-          demo={demo}
-          source={source}
-          styleNames={styleNames}
-          index={viewer.index}
-          choice={viewer.choice}
-          onChange={(index, choice) => {
-            if (choice !== viewer.choice && source.kind === "public")
-              track("demo_estilo", { ...analytics, estilo: choice });
-            setViewer({ index, choice });
-          }}
-          onClose={close}
-          onCta={() => source.kind === "public" && track("demo_cta_click", analytics, true)}
-        />
-      )}
-    </div>
-  );
-}
-
-/** "Ambientá este espacio": one photo at a time, with every style it was staged in. */
-function StagingViewer({
-  demo,
-  source,
-  styleNames,
-  index,
-  choice,
-  onChange,
-  onClose,
-  onCta,
-}: {
-  demo: PublicDemo;
-  source: Source;
-  styleNames: Record<string, string>;
-  index: number;
-  choice: Choice;
-  onChange: (index: number, choice: Choice) => void;
-  onClose: () => void;
-  onCta: () => void;
-}) {
-  const photos = demo.photos;
-  const photo = photos[index] ?? photos[0];
-  // The chosen style stays while moving between photos; a photo without it shows as is.
-  const version = versionOf(photo, choice);
-  const shown = version ? choice : ORIGINAL;
-  const [ratios, setRatios] = useState<Record<string, number>>({});
-  const closeButton = useRef<HTMLButtonElement>(null);
   const go = useCallback(
-    (step: number) => onChange((index + step + photos.length) % photos.length, choice),
-    [index, choice, photos.length, onChange],
+    (step: number) => setIndex((i) => (photos.length ? (i + step + photos.length) % photos.length : 0)),
+    [photos.length],
   );
+  const choose = (style: string) => {
+    // Back to a style already explored on this photo: its line stays where it was.
+    const same = state.style === style;
+    setState({ style, compare: true, position: same ? state.position : 50 });
+    if (source.kind === "public") track("demo_estilo", { ...analytics, estilo: style });
+  };
+  const backToOriginal = () => {
+    setState(ORIGINAL);
+    if (source.kind === "public") track("demo_original", analytics);
+  };
 
-  useEffect(() => {
-    closeButton.current?.focus();
-    const overflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = overflow;
-    };
-  }, []);
+  // Keyboard: arrows move between photos (not while a control has the focus), Esc leaves full screen.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") return onClose();
+      if (e.key === "Escape") return setFull(false);
       const target = e.target as HTMLElement | null;
       if (target?.closest("input, textarea, select")) return;
       if (e.key === "ArrowRight") go(1);
@@ -361,120 +158,368 @@ function StagingViewer({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [go, onClose]);
-  // The next photo starts loading before it is needed.
+  }, [go]);
   useEffect(() => {
-    const next = photos[(index + 1) % photos.length];
-    if (!next || next === photo) return;
-    const img = new Image();
-    img.src = urlFor(source, next.id, versionOf(next, choice), 1600);
-  }, [index, photos, photo, choice, source]);
+    if (!full) return;
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = overflow;
+    };
+  }, [full]);
+  // The current thumbnail stays in view; the next original starts loading.
+  useEffect(() => {
+    thumbs.current
+      ?.querySelector<HTMLElement>(`[data-index="${index}"]`)
+      ?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+    const next = photos[(index + 1) % Math.max(1, photos.length)];
+    if (next && next !== photo) new Image().src = urlFor(source, next.id, null, 1600);
+  }, [index, photos, photo, source]);
 
-  const ratio = ratios[photo.id] ?? 4 / 3;
-  const options = [ORIGINAL, ...photo.versions.map((v) => v.style)];
-  return (
-    <div className="dv-viewer" role="dialog" aria-modal="true" aria-labelledby="dv-viewer-title">
-      <header className="dv-viewer-head">
-        <h2 id="dv-viewer-title">
-          <Sparkles size={22} aria-hidden="true" /> Ambientá este espacio
-        </h2>
-        <button ref={closeButton} type="button" className="dv-icon" aria-label="Cerrar" onClick={onClose}>
-          <X size={24} />
-        </button>
-      </header>
-      <div className="dv-viewer-body">
-        <section className="dv-viewer-photo" aria-label={`${photo.label}, foto ${index + 1} de ${photos.length}`}>
-          <div className="dv-viewer-stage">
-            {/* Measures the real proportions so nothing of the frame is cropped. */}
-            <img
-              className="dv-measure"
-              src={urlFor(source, photo.id, null, 480)}
-              alt=""
-              aria-hidden="true"
-              onLoad={(e) => {
-                const { naturalWidth: w, naturalHeight: h } = e.currentTarget;
-                if (w && h) setRatios((r) => (r[photo.id] ? r : { ...r, [photo.id]: w / h }));
+  const brandStyle = {
+    "--brand": agency.primary,
+    "--brand-ink": textOn(agency.primary),
+    "--brand-accent": agency.accent,
+    "--brand-accent-ink": textOn(agency.accent),
+  } as React.CSSProperties;
+  const contact = agency.contact
+    ? {
+        kind: agency.contact.kind,
+        href: contactHref(
+          { contactKind: agency.contact.kind, contactValue: agency.contact.value },
+          { title: demo.title, reference: demo.reference, url: demo.listingUrl || pageUrl },
+        ),
+      }
+    : null;
+  const ContactIcon =
+    contact?.kind === "whatsapp" ? MessageCircle : contact?.kind === "phone" ? Phone : contact?.kind === "email" ? Mail : ArrowRight;
+  const external = { target: "_blank", rel: "noopener noreferrer" } as const;
+  const contactButton = contact?.href ? (
+    <a
+      className="dv2-contact-main"
+      href={contact.href}
+      {...(contact.kind === "whatsapp" || contact.kind === "url" ? external : {})}
+      onClick={() => source.kind === "public" && track("demo_contacto", { ...analytics, canal: contact.kind })}
+    >
+      <ContactIcon size={20} aria-hidden="true" />
+      <span>Consultar a {agency.name}</span>
+      <ArrowRight size={18} aria-hidden="true" />
+    </a>
+  ) : null;
+
+  const panel =
+    photo && photo.versions.length > 0 ? (
+      <section className="dv2-panel" aria-labelledby="dv2-panel-title">
+        <h2 id="dv2-panel-title">{TEXT.panelTitle}</h2>
+        <p className="dv2-panel-hint">{TEXT.panelHint}</p>
+        <div className="dv2-options" role="radiogroup" aria-labelledby="dv2-panel-title">
+          {photo.versions.map((v) => {
+            const on = state.style === v.style;
+            return (
+              <button
+                key={v.style}
+                type="button"
+                role="radio"
+                aria-checked={on}
+                className={on ? "is-on" : ""}
+                onClick={() => choose(v.style)}
+              >
+                <img src={urlFor(source, photo.id, v, 480)} alt="" loading="lazy" />
+                <span>{name(v.style)}</span>
+                <span className="dv2-radio" aria-hidden="true">
+                  {on && <Check size={14} strokeWidth={3} />}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        {stagedFailed ? (
+          <p className="dv2-note is-error" role="alert">
+            No pudimos cargar esta ambientación. Seguís viendo la foto original.
+            <button
+              type="button"
+              className="dv2-link"
+              onClick={() => {
+                setFailed((f) => ({ ...f, [stagedKey]: false }));
+                setRetries((r) => ({ ...r, [stagedKey]: (r[stagedKey] ?? 0) + 1 }));
               }}
-            />
-            <div className="dv-frame" style={{ "--ratio": String(ratio) } as React.CSSProperties}>
-              {version ? (
-                <Comparison
-                  key={`${photo.id}-${shown}`}
-                  before={urlFor(source, photo.id, null, 1600)}
-                  after={urlFor(source, photo.id, version, 1600)}
-                  alt={`${photo.label}: ambientación virtual ${styleNames[shown]}`}
-                  beforeAlt={`${photo.label}: foto original`}
-                  beforeLabel={DEMO_TEXT.original}
-                  afterLabel={`Ambientación virtual · ${styleNames[shown]}`}
-                  initial={50}
-                />
-              ) : (
+            >
+              <RotateCw size={14} aria-hidden="true" /> Reintentar
+            </button>
+          </p>
+        ) : state.style ? (
+          <div className="dv2-actions">
+            {!state.compare && (
+              <button type="button" className="dv2-secondary" onClick={() => setState({ ...state, compare: true })}>
+                {TEXT.compare}
+              </button>
+            )}
+            <button type="button" className="dv2-secondary" onClick={backToOriginal}>
+              <ArrowLeft size={17} aria-hidden="true" /> {TEXT.backToOriginal}
+            </button>
+          </div>
+        ) : (
+          <p className="dv2-note">
+            <Info size={16} aria-hidden="true" /> {TEXT.keepsOriginal}
+          </p>
+        )}
+      </section>
+    ) : null;
+
+  const ratio = photo ? (ratios[photo.id] ?? 4 / 3) : 4 / 3;
+  const originalKey = photo ? `${photo.id}:o` : "";
+
+  return (
+    <div className={`dv2-page ${agency.titleFont === "serif" ? "is-serif" : ""}`} style={brandStyle}>
+      {presentation && demo.banner && (
+        <div className="dv2-banner" role="note">
+          Demo preparada para {agency.name} ·{" "}
+          <a
+            href={ctaHref(demo.id, demo.agencyId)}
+            {...external}
+            onClick={() => source.kind === "public" && track("demo_cta_click", analytics, true)}
+          >
+            Por Amobla IA
+          </a>
+        </div>
+      )}
+      <header className="dv2-header">
+        <div className="container">
+          {agency.website ? (
+            <a className="dv2-brand" href={agency.website} {...external}>
+              <Brand agency={agency} />
+            </a>
+          ) : (
+            <span className="dv2-brand">
+              <Brand agency={agency} />
+            </span>
+          )}
+          {demo.listingUrl && (
+            <a className="dv2-header-link" href={demo.listingUrl} {...external}>
+              Ver publicación original <ExternalLink size={15} aria-hidden="true" />
+            </a>
+          )}
+        </div>
+      </header>
+
+      <div className="container dv2-main">
+        <div className="dv2-heading">
+          <div>
+            {(demo.reference || demo.operation) && (
+              <p className="dv2-ref">
+                {[demo.operation, demo.reference && `Ref. ${demo.reference}`].filter(Boolean).join(" · ")}
+              </p>
+            )}
+            <h1>{demo.title}</h1>
+            {demo.features && <p className="dv2-features">{demo.features}</p>}
+            {demo.location && (
+              <p className="dv2-location">
+                <MapPin size={16} aria-hidden="true" /> {demo.location}
+              </p>
+            )}
+          </div>
+          <div className="dv2-heading-side">
+            {(demo.operation || demo.price) && (
+              <p className="dv2-price">
+                {demo.operation && <span className="dv2-chip">{demo.operation}</span>}
+                {demo.price && <strong>{demo.price}</strong>}
+              </p>
+            )}
+            {contactButton && <div className="dv2-contact-top">{contactButton}</div>}
+          </div>
+        </div>
+
+        {!photo ? (
+          <p className="dv2-empty">Esta propiedad todavía no tiene fotos.</p>
+        ) : (
+          <div className={`dv2-gallery ${panel ? "has-panel" : ""}`}>
+            <div className="dv2-media">
+              <div
+                className={`dv2-stage ${full ? "is-full" : ""}`}
+                role="group"
+                aria-roledescription="carrusel"
+                aria-label={`Foto ${index + 1} de ${photos.length}`}
+                onPointerDown={(e) => {
+                  if (!comparing) swipe.current = { x: e.clientX, y: e.clientY };
+                }}
+                onPointerUp={(e) => {
+                  const s = swipe.current;
+                  swipe.current = null;
+                  // Swiping changes photo only outside comparison: there, dragging moves the line.
+                  if (!s || comparing || photos.length < 2) return;
+                  const dx = e.clientX - s.x;
+                  if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(e.clientY - s.y)) go(dx < 0 ? 1 : -1);
+                }}
+                onPointerCancel={() => (swipe.current = null)}
+              >
+                {/* Measures the original's proportions: both images are shown in them, never stretched. */}
                 <img
-                  key={photo.id}
-                  className="dv-single"
-                  src={urlFor(source, photo.id, null, 1600)}
-                  alt={`${photo.label}: foto original`}
+                  className="dv2-measure"
+                  src={urlFor(source, photo.id, null, 480)}
+                  alt=""
+                  aria-hidden="true"
+                  onLoad={(e) => {
+                    const { naturalWidth: w, naturalHeight: h } = e.currentTarget;
+                    if (w && h) setRatios((r) => (r[photo.id] ? r : { ...r, [photo.id]: w / h }));
+                  }}
                 />
+                <div className="dv2-frame" style={{ "--ratio": String(ratio) } as React.CSSProperties}>
+                  {failed[originalKey] ? (
+                    <div className="dv2-broken">
+                      No pudimos cargar esta foto.
+                      <button
+                        type="button"
+                        className="dv2-link"
+                        onClick={() => {
+                          setFailed((f) => ({ ...f, [originalKey]: false }));
+                          setRetries((r) => ({ ...r, [originalKey]: (r[originalKey] ?? 0) + 1 }));
+                        }}
+                      >
+                        <RotateCw size={14} aria-hidden="true" /> Reintentar
+                      </button>
+                    </div>
+                  ) : comparing && showing ? (
+                    <Comparison
+                      key={stagedKey}
+                      before={urlFor(source, photo.id, null, 2048, retries[originalKey])}
+                      after={urlFor(source, photo.id, showing, 2048, retries[stagedKey])}
+                      alt={`${photo.label}: ambientación ${name(showing.style)} con IA, ilustrativa`}
+                      beforeAlt={`${photo.label}: foto original`}
+                      beforeLabel={TEXT.original}
+                      afterLabel={TEXT.staged}
+                      initial={state.position}
+                      onPositionChange={(position) =>
+                        setStates((s) => ({ ...s, [photo.id]: { ...(s[photo.id] ?? state), position } }))
+                      }
+                      onAfterError={() => setFailed((f) => ({ ...f, [stagedKey]: true }))}
+                    />
+                  ) : (
+                    <>
+                      <img
+                        key={`${photo.id}-${showing?.style ?? "o"}`}
+                        className="dv2-photo"
+                        src={urlFor(
+                          source,
+                          photo.id,
+                          showing,
+                          2048,
+                          showing ? retries[stagedKey] : retries[originalKey],
+                        )}
+                        alt={
+                          showing
+                            ? `${photo.label}: ambientación ${name(showing.style)} con IA, ilustrativa`
+                            : `${photo.label}: foto original`
+                        }
+                        draggable={false}
+                        onError={() => setFailed((f) => ({ ...f, [showing ? stagedKey : originalKey]: true }))}
+                      />
+                      {showing && (
+                        <span className="dv2-tag is-ai">
+                          <Sparkles size={14} aria-hidden="true" /> {TEXT.staged} · {name(showing.style)}
+                        </span>
+                      )}
+                    </>
+                  )}
+                </div>
+                {photos.length > 1 && (
+                  <>
+                    <button type="button" className="dv2-nav dv2-prev" aria-label="Foto anterior" onClick={() => go(-1)}>
+                      <ChevronLeft size={24} />
+                    </button>
+                    <button type="button" className="dv2-nav dv2-next" aria-label="Foto siguiente" onClick={() => go(1)}>
+                      <ChevronRight size={24} />
+                    </button>
+                  </>
+                )}
+                <span className="dv2-counter">
+                  {index + 1} / {photos.length}
+                </span>
+                <button
+                  type="button"
+                  className="dv2-full"
+                  aria-label={full ? "Salir de pantalla completa" : "Ver en pantalla completa"}
+                  aria-pressed={full}
+                  onClick={() => setFull((f) => !f)}
+                >
+                  {full ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+                </button>
+              </div>
+              {photos.length > 1 && (
+                <div className="dv2-thumbs">
+                  <button type="button" className="dv2-thumbs-step" aria-label="Foto anterior" onClick={() => go(-1)}>
+                    <ChevronLeft size={18} />
+                  </button>
+                  <ol ref={thumbs} aria-label="Fotos de la propiedad">
+                    {photos.map((p, i) => (
+                      <li key={p.id}>
+                        <button
+                          type="button"
+                          data-index={i}
+                          aria-label={`Ver foto ${i + 1}`}
+                          aria-current={i === index ? "true" : undefined}
+                          className={i === index ? "is-on" : ""}
+                          onClick={() => setIndex(i)}
+                        >
+                          <img src={urlFor(source, p.id, null, 480)} alt="" loading="lazy" />
+                        </button>
+                      </li>
+                    ))}
+                  </ol>
+                  <button type="button" className="dv2-thumbs-step" aria-label="Foto siguiente" onClick={() => go(1)}>
+                    <ChevronRight size={18} />
+                  </button>
+                </div>
               )}
             </div>
-            {photos.length > 1 && (
-              <>
-                <button type="button" className="dv-nav dv-prev" aria-label="Foto anterior" onClick={() => go(-1)}>
-                  <ChevronLeft size={26} />
-                </button>
-                <button type="button" className="dv-nav dv-next" aria-label="Foto siguiente" onClick={() => go(1)}>
-                  <ChevronRight size={26} />
-                </button>
-              </>
-            )}
+            {panel && <aside className="dv2-aside">{panel}</aside>}
           </div>
-          <div className="dv-viewer-meta">
-            <span>
-              <strong>{photo.label}</strong> · Foto {index + 1} de {photos.length}
-            </span>
-            {photos.length > 1 && photos.length <= 20 && (
-              <span className="dv-dots" aria-hidden="true">
-                {photos.map((p, i) => (
-                  <span key={p.id} className={i === index ? "is-on" : ""} />
-                ))}
-              </span>
-            )}
-          </div>
-        </section>
+        )}
+        {photos.some((p) => p.versions.length) && <p className="dv2-illustrative">{TEXT.illustrative}</p>}
 
-        <aside className="dv-viewer-side" aria-labelledby="dv-styles-title">
-          <h3 id="dv-styles-title">Elegí un estilo</h3>
-          {photo.versions.length ? (
-            <div className="dv-styles" role="radiogroup" aria-labelledby="dv-styles-title">
-              {options.map((id) => (
-                <button
-                  key={id}
-                  type="button"
-                  role="radio"
-                  aria-checked={shown === id}
-                  className={shown === id ? "is-on" : ""}
-                  onClick={() => onChange(index, id)}
+        {(demo.description || demo.listingUrl || agency.visitUrl) && (
+          <div className="dv2-details">
+            {demo.description && (
+              <section className="dv2-description" aria-labelledby="dv2-desc-title">
+                <h2 id="dv2-desc-title">Descripción</h2>
+                <p>{demo.description}</p>
+              </section>
+            )}
+            <section className="dv2-contact" aria-label={`Contacto con ${agency.name}`}>
+              {demo.listingUrl && (
+                <a
+                  className="dv2-contact-link"
+                  href={demo.listingUrl}
+                  {...external}
+                  onClick={() => source.kind === "public" && track("demo_publicacion_original", analytics)}
                 >
-                  <img src={urlFor(source, photo.id, versionOf(photo, id), 480)} alt="" loading="lazy" />
-                  <span>{id === ORIGINAL ? DEMO_TEXT.original : styleNames[id]}</span>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <p className="dv-plain">
-              Esta foto se muestra como es, sin ambientación.
-              {photos.length > 1 ? " Pasá a otra para ver los estilos." : ""}
-            </p>
-          )}
-          <p className="dv-viewer-note">{DEMO_TEXT.disclaimer}</p>
-          <Link href={ctaHref(demo.id, demo.agencyId)} className="button button-primary" onClick={onCta}>
-            Quiero esto para mis propiedades
-          </Link>
-        </aside>
+                  Ver publicación original <ExternalLink size={16} aria-hidden="true" />
+                </a>
+              )}
+              {agency.visitUrl && (
+                <a
+                  className="dv2-contact-link"
+                  href={agency.visitUrl}
+                  {...external}
+                  onClick={() => source.kind === "public" && track("demo_visita", analytics)}
+                >
+                  <CalendarDays size={16} aria-hidden="true" /> Coordinar una visita
+                </a>
+              )}
+            </section>
+          </div>
+        )}
       </div>
-      <span className="dv-sr" aria-live="polite">
-        {photo.label}: {shown === ORIGINAL ? DEMO_TEXT.original : `ambientación ${styleNames[shown]}`}
-      </span>
+
+      <footer className="dv2-footer container">
+        <span>
+          <Sparkles size={13} aria-hidden="true" /> Tecnología de amoblaIA
+        </span>
+      </footer>
+      {contactButton && <div className="dv2-sticky">{contactButton}</div>}
     </div>
   );
+}
+
+function Brand({ agency }: { agency: PublicDemo["agency"] }) {
+  return agency.logo ? <img src={agency.logo} alt={agency.name} /> : <strong>{agency.name}</strong>;
 }

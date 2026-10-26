@@ -10,6 +10,8 @@ export function Comparison({
   beforeAlt = "Ambiente original antes del diseño",
   beforeLabel = "Antes",
   afterLabel,
+  onPositionChange,
+  onAfterError,
 }: {
   before: string;
   after: string;
@@ -20,8 +22,17 @@ export function Comparison({
   beforeLabel?: string;
   /** Replaces "Después con IA". */
   afterLabel?: string;
+  /** Lets a gallery remember where the line was for each photo. */
+  onPositionChange?: (position: number) => void;
+  /** The "after" image did not load. */
+  onAfterError?: () => void;
 }) {
   const [position, setPosition] = useState(initial);
+  const report = useRef(onPositionChange);
+  report.current = onPositionChange;
+  useEffect(() => {
+    report.current?.(position);
+  }, [position]);
   const box = useRef<HTMLDivElement>(null);
   // Where the pointer went down, and whether it is dragging the line: a
   // touch only does once it moves sideways, so vertical swipes just scroll.
@@ -99,7 +110,7 @@ export function Comparison({
       onPointerUp={up}
       onPointerCancel={() => (start.current = null)}
     >
-      <img src={after} alt={alt} draggable={false} />
+      <img src={after} alt={alt} draggable={false} onError={onAfterError} />
       <div
         className="comparison-before"
         style={{ clipPath: `inset(0 ${100 - position}% 0 0)` }}
