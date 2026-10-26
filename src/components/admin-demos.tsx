@@ -38,7 +38,9 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   return payload as T;
 }
 
-export const publicLink = (token: string) => demoUrl(window.location.origin, token);
+/** The buyers' link, or the one for presenting the demo to the agency (it may show the strip). */
+export const publicLink = (token: string, presentation = false) =>
+  demoUrl(window.location.origin, token, presentation);
 
 export async function copyText(text: string) {
   try {
@@ -75,19 +77,19 @@ export function ShareButtons({
         disabled={!live}
         title={live ? undefined : "Publicá la demo para compartirla"}
         onClick={async () => {
-          if (await copyText(publicLink(demo.token))) {
+          if (await copyText(publicLink(demo.token, true))) {
             setCopied(true);
             setTimeout(() => setCopied(false), 2000);
           }
         }}
       >
         {copied ? <Check size={15} /> : <Copy size={15} />}
-        {compact ? (copied ? "Copiado" : "Copiar") : copied ? "Enlace copiado" : "Copiar enlace"}
+        {compact ? (copied ? "Copiado" : "Copiar") : copied ? "Enlace copiado" : "Copiar enlace de presentación"}
       </button>
       {live ? (
         <a
           className="button button-small dm-whatsapp"
-          href={whatsappShareUrl(publicLink(demo.token), demo.agencyName, demo.title)}
+          href={whatsappShareUrl(publicLink(demo.token, true), publicLink(demo.token), demo.agencyName, demo.title)}
           target="_blank"
           rel="noopener noreferrer"
         >
@@ -119,11 +121,10 @@ export function LinkPreview({ demo, location }: { demo: DemoSummary; location?: 
       )}
       <div>
         <strong>
-          {demo.agencyName} · {demo.title}
+          {demo.title} · {demo.agencyName}
         </strong>
         <p>
-          Mirá cómo podría verse esta propiedad{location ? ` en ${location}` : ""} con ambientación
-          virtual con IA.
+          {location ? `${location} · ` : ""}Imaginá cada espacio a tu estilo con {demo.agencyName}.
         </p>
         <span>{host}</span>
       </div>
@@ -325,7 +326,7 @@ export function AgencyFields({
         <input required maxLength={120} value={value.name} onChange={set("name")} />
       </label>
       <label>
-        Sitio web
+        Sitio web <small>(visible: el logo enlaza ahí)</small>
         <input
           maxLength={300}
           inputMode="url"
@@ -372,7 +373,7 @@ export function PropertyFields({
         <input maxLength={160} placeholder="Palermo, CABA" value={value.location} onChange={set("location")} />
       </label>
       <label className="dm-wide">
-        URL de la publicación original <small>(interna)</small>
+        URL de la publicación original <small>(visible: «Ver publicación original»)</small>
         <input
           maxLength={500}
           inputMode="url"

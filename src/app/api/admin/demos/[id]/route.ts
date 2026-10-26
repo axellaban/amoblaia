@@ -1,12 +1,23 @@
 import { requireAdmin, failure, HttpError, rpc } from "@/lib/commerce/http";
 import {
   assertNoLiveJobs,
+  brandingOf,
   demoDetail,
   demoRow,
   newToken,
   releaseProjects,
+  saveJson,
+  settingsOf,
 } from "@/lib/demos/server";
-import { agencyInput, orderInput, propertyInput, readJson, validStyle } from "@/lib/demos/input";
+import {
+  agencyInput,
+  brandingInput,
+  orderInput,
+  propertyInput,
+  readJson,
+  settingsInput,
+  validStyle,
+} from "@/lib/demos/input";
 import { cleanText, isUuid } from "@/lib/demos/shared";
 import { adminClient } from "@/lib/supabase/server";
 
@@ -121,6 +132,22 @@ export async function PATCH(request: Request, { params }: Params) {
           ),
         );
         if (results.some((r) => r.error)) throw new Error("DEMO_ORDER_FAILED");
+        break;
+      }
+      case "branding":
+        // The logo has its own route; this keeps it.
+        await saveJson(
+          "agencies",
+          "branding",
+          demo.agency_id,
+          brandingInput(body.branding, await brandingOf(demo.agency_id)),
+        );
+        break;
+      case "settings": {
+        const next = settingsInput(body.settings, (await settingsOf(demo.id)).settings);
+        if (next.openStyle !== null && !validStyle(next.openStyle))
+          throw new HttpError(400, "Elegí un estilo válido.");
+        await saveJson("demos", "settings", demo.id, next);
         break;
       }
       case "main-style":

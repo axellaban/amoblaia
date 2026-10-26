@@ -43,18 +43,43 @@ export type PublicPhoto = {
   versions: PhotoVersion[];
 };
 export type StyleOption = { id: string; name: string };
-/** Exactly what the public page receives: no notes, contacts or internal ids of other entities. */
+/** The agency as its buyers see it: identity and public contact only. */
+export type PublicAgency = {
+  name: string;
+  website: string | null;
+  /** Versioned URL of the logo, or null to show the name. */
+  logo: string | null;
+  primary: string;
+  accent: string;
+  titleFont: "sans" | "serif";
+  contact: { kind: "whatsapp" | "url" | "phone" | "email"; value: string } | null;
+  visitUrl: string | null;
+};
+/**
+ * Exactly what the public page receives: no internal notes, contact person,
+ * settings or ids of other entities. Listing data shows only when entered.
+ */
 export type PublicDemo = {
   id: string;
   agencyId: string;
   agencyName: string;
+  agency: PublicAgency;
   title: string;
   location: string | null;
   description: string | null;
+  listingUrl: string | null;
+  operation: string | null;
+  price: string | null;
+  features: string | null;
+  reference: string | null;
   /** Styles with at least one staged photo; the first is the main one (cover and link preview). */
   styles: StyleOption[];
   cover: PublicPhoto | null;
   photos: PublicPhoto[];
+  /** The style the first photo opens in (opening mode B), only when it really has that version. */
+  openStyle: string | null;
+  /** The presentation link may show "Demo preparada para…"; the buyers' link never does. */
+  banner: boolean;
 };
 
 export type DemoStatus = "draft" | "published";
@@ -117,6 +142,10 @@ export type DemoDetail = {
   /** Styles with a staged version, main one first. */
   styles: string[];
   mainStyle: string;
+  branding: Omit<import("./branding").AgencyBranding, "logo"> & { logo: string | null };
+  settings: import("./branding").DemoSettings;
+  /** False until migration 202610270001_demo_branding.sql is applied: branding and settings cannot be saved. */
+  settingsReady: boolean;
 };
 
 export function roomName(id: string) {
@@ -198,12 +227,16 @@ export function cleanUrl(value: unknown) {
 }
 
 export const demoPath = (token: string) => `/demo/${token}`;
-export function demoUrl(origin: string, token: string) {
-  return `${origin.replace(/\/$/, "")}${demoPath(token)}`;
+/** The link for presenting the demo to the agency: it may show the "Demo preparada para…" strip. */
+export const PRESENTATION_PARAM = "presentacion";
+/** The buyers' link (plain), or the presentation link for the agency. */
+export function demoUrl(origin: string, token: string, presentation = false) {
+  const url = `${origin.replace(/\/$/, "")}${demoPath(token)}`;
+  return presentation ? `${url}?${PRESENTATION_PARAM}=1` : url;
 }
 /** wa.me opens WhatsApp Web or the app; the recipient needs nothing installed to open the link itself. */
-export function whatsappShareUrl(url: string, agency: string, title: string) {
-  const text = `Hola ${agency}! Preparamos una muestra de cómo podría verse "${title}" con ambientación virtual: ${url}`;
+export function whatsappShareUrl(presentationUrl: string, buyersUrl: string, agency: string, title: string) {
+  const text = `Hola ${agency}! Preparamos una muestra de cómo podría verse "${title}" con ambientación virtual: ${presentationUrl}\n\nPara compartir con compradores (sin la franja de la demo): ${buyersUrl}`;
   return `https://wa.me/?text=${encodeURIComponent(text)}`;
 }
 /** Where "Probar amoblaIA" leads: the regular studio, carrying the demo and agency for attribution. */

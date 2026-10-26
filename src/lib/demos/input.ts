@@ -2,6 +2,16 @@
 import { HttpError } from "@/lib/commerce/http";
 import { rooms, styles } from "@/lib/catalog";
 import { cleanText, cleanUrl, DEMO_MODES, type DemoMode } from "./shared";
+import {
+  CONTACT_KINDS,
+  TITLE_FONTS,
+  color,
+  whatsappNumber,
+  type AgencyBranding,
+  type ContactKind,
+  type DemoSettings,
+  type TitleFont,
+} from "./branding";
 
 export async function readJson(request: Request, max = 16384) {
   if (Number(request.headers.get("content-length") || 0) > max)
@@ -82,4 +92,68 @@ export function orderInput(raw: unknown, current: string[]) {
   )
     throw new HttpError(409, "El orden cambió en otra pestaña. Recargá la página.");
   return raw as string[];
+}
+
+/** Branding fields from the panel. Unknown values are rejected; the logo is handled by its own route. */
+export function brandingInput(raw: unknown, current: AgencyBranding): AgencyBranding {
+  const v = (raw ?? {}) as Record<string, unknown>;
+  const out: AgencyBranding = { ...current };
+  for (const key of ["primary", "accent"] as const) {
+    if (!(key in v)) continue;
+    if (v[key] === null || v[key] === "") delete out[key];
+    else if (color(v[key])) out[key] = color(v[key]);
+    else throw new HttpError(400, "Usá un color en formato #RRGGBB.");
+  }
+  if ("titleFont" in v) {
+    if (!TITLE_FONTS.includes(v.titleFont as TitleFont)) throw new HttpError(400, "Tipografía inválida.");
+    out.titleFont = v.titleFont as TitleFont;
+  }
+  if ("contactKind" in v || "contactValue" in v) {
+    const value = cleanText(v.contactValue, 300);
+    if (!value) {
+      delete out.contactKind;
+      delete out.contactValue;
+    } else {
+      const kind = v.contactKind as ContactKind;
+      if (!CONTACT_KINDS.includes(kind)) throw new HttpError(400, "Elegí cómo se contacta a la inmobiliaria.");
+      if (kind === "whatsapp" && !whatsappNumber(value))
+        throw new HttpError(400, "Ingresá el WhatsApp con código de país, por ejemplo +54 9 223 555-1234.");
+      if (kind === "url" && !cleanUrl(value))
+        throw new HttpError(400, "Revisá el enlace de contacto: usá una dirección como inmobiliaria.com/contacto.");
+      if (kind === "email" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value))
+        throw new HttpError(400, "Revisá el email de contacto.");
+      if (kind === "phone" && value.replace(/\D/g, "").length < 6) throw new HttpError(400, "Revisá el teléfono.");
+      out.contactKind = kind;
+      out.contactValue = kind === "url" ? cleanUrl(value)! : value;
+    }
+  }
+  if ("visitUrl" in v) {
+    const url = cleanUrl(v.visitUrl);
+    if (url === undefined) throw new HttpError(400, "Revisá el enlace para coordinar visitas.");
+    if (url) out.visitUrl = url;
+    else delete out.visitUrl;
+  }
+  return out;
+}
+
+export function settingsInput(raw: unknown, current: DemoSettings): DemoSettings {
+  const v = (raw ?? {}) as Record<string, unknown>;
+  const out = { ...current };
+  if ("openMode" in v) {
+    if (v.openMode !== "original" && v.openMode !== "styled") throw new HttpError(400, "Modo de apertura inválido.");
+    out.openMode = v.openMode;
+  }
+  if ("openStyle" in v) out.openStyle = typeof v.openStyle === "string" && v.openStyle ? v.openStyle : null;
+  if ("banner" in v) {
+    if (typeof v.banner !== "boolean") throw new HttpError(400, "Valor inválido.");
+    out.banner = v.banner;
+  }
+  for (const [key, max] of [
+    ["operation", 40],
+    ["price", 40],
+    ["features", 120],
+    ["reference", 40],
+  ] as const)
+    if (key in v) out[key] = cleanText(v[key], max);
+  return out;
 }

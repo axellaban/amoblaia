@@ -186,4 +186,16 @@ describe("Access control of the demo tables", () => {
   it("can be applied again without errors", async () => {
     await expect(db.exec(readFileSync(MIGRATION, "utf8"))).resolves.toBeTruthy();
   });
+
+describe("Agency branding and demo settings", () => {
+  it("default to empty (original photo, no logo) and reject oversized values", async () => {
+    const row = await one<{ branding: unknown }>(
+      "insert into agencies(name) values('Russillo') returning branding",
+    );
+    expect(row!.branding).toEqual({});
+    await expect(
+      db.query("insert into agencies(name,branding) values('X',$1)", [JSON.stringify({ logo: "x".repeat(500000) })]),
+    ).rejects.toThrow();
+  });
+});
 });

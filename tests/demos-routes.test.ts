@@ -199,7 +199,7 @@ describe("AI staging from the panel", () => {
 });
 
 describe("Public demo", () => {
-  it("returns only what the page shows: no notes, contacts, listing URL or hidden photos", async () => {
+  it("returns only what the page shows: no internal notes, contact person, settings or hidden photos", async () => {
     const demo = await publishedDemo(TOKEN);
     expect(demo).toMatchObject({
       agencyName: "Sur Propiedades",
@@ -222,7 +222,9 @@ describe("Public demo", () => {
       ],
     });
     const json = JSON.stringify(demo);
-    for (const secret of ["Le interesa", "Ana", "sur.test", "portal.test", "u/demos", "u/pj1", "Suite", GEN])
+    // The agency's site and the original listing are public now: the page links to them.
+    expect(demo).toMatchObject({ listingUrl: "https://portal.test/1", agency: { website: "https://sur.test/" } });
+    for (const secret of ["Le interesa", "Ana", "u/demos", "u/pj1", "Suite", GEN, "openMode", "banner\":false"])
       expect(json).not.toContain(secret);
   });
 
@@ -249,5 +251,34 @@ describe("Public demo", () => {
     const demo = await publishedDemo(TOKEN);
     expect(demo?.styles.map((s) => s.id)).toEqual(["industrial", "modern"]);
     expect(demo?.photos[0].versions.map((v) => v.style)).toEqual(["industrial", "modern"]);
+  });
+
+  it("opens in the configured style only when the first photo has it, else with the original", async () => {
+    expect((await publishedDemo(TOKEN))?.openStyle).toBeNull();
+    (state.tables.demos[0] as Row).settings = { openMode: "styled", openStyle: "industrial" };
+    expect((await publishedDemo(TOKEN))?.openStyle).toBe("industrial");
+    (state.tables.demos[0] as Row).settings = { openMode: "styled", openStyle: "coastal" };
+    expect((await publishedDemo(TOKEN))?.openStyle).toBeNull();
+    (state.tables.demos[0] as Row).settings = { openMode: "original", openStyle: "industrial" };
+    expect((await publishedDemo(TOKEN))?.openStyle).toBeNull();
+  });
+
+  it("sends inquiries to the agency's own channel, with its brand", async () => {
+    (state.tables.agencies[0] as Row).branding = {
+      primary: "#123456",
+      contactKind: "whatsapp",
+      contactValue: "+54 9 223 555-1234",
+      logo: { type: "image/png", data: "aGVsbG8=", v: "abc123" },
+    };
+    (state.tables.demos[0] as Row).settings = { banner: false, price: "USD 265.000" };
+    const demo = await publishedDemo(TOKEN);
+    expect(demo?.agency).toMatchObject({
+      name: "Sur Propiedades",
+      primary: "#123456",
+      contact: { kind: "whatsapp", value: "+54 9 223 555-1234" },
+      logo: `/demo/${TOKEN}/logo?v=abc123`,
+    });
+    expect(demo).toMatchObject({ banner: false, price: "USD 265.000", operation: null });
+    expect(JSON.stringify(demo)).not.toContain("aGVsbG8=");
   });
 });
