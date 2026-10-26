@@ -809,6 +809,11 @@ export function Studio({
   }
   async function download(sideBySide = false, share = false) {
     trackPhotoDownload();
+    track("diseno_descargado", {
+      cantidad: 1,
+      formato: sideBySide ? "antes_despues" : "diseno",
+      compartido: share,
+    });
     const send = share ? shareDesign : downloadDesign;
     try {
       await send(

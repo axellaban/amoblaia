@@ -353,6 +353,10 @@ export function BatchList({
   ).length;
   async function downloadAll() {
     trackPhotoDownload();
+    track("diseno_descargado", {
+      cantidad: batch.items.filter((i) => i.status === "done").length,
+      formato: "lote",
+    });
     setDownloading(true);
     try {
       for (const item of batch.items.filter((i) => i.status === "done")) {
@@ -465,6 +469,10 @@ export function BatchList({
                     className="button button-dark"
                     onClick={() => {
                       trackPhotoDownload();
+                      track("diseno_descargado", {
+                        cantidad: 1,
+                        formato: "diseno",
+                      });
                       batch
                         .download(item, label)
                         .catch((e) =>
