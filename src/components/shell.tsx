@@ -39,9 +39,9 @@ export function Logo() {
 export function Header() {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
-  const privatePage = ["/proyectos", "/cuenta", "/administracion"].includes(
-    pathname,
-  );
+  const privatePage =
+    ["/proyectos", "/cuenta", "/administracion"].includes(pathname) ||
+    pathname.startsWith("/admin/");
   // The layout is static, so the session is read here. Private pages send
   // signed-out visitors to /acceso, so they can assume one until it loads.
   const [session, setSession] = useState<boolean | null>(null);

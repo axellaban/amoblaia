@@ -15,6 +15,8 @@ export async function GET(request: Request) {
       )
       .eq("user_id", user.id)
       .is("deleted_at", null)
+      // Photos of commercial demos live in the admin panel, not the library.
+      .not("original_hash", "like", "demo:%")
       .order("created_at", { ascending: false })
       .limit(150);
     if (error) throw new Error("PROJECT_LIST_FAILED");

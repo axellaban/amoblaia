@@ -31,5 +31,7 @@ export const config = {
     "/api/checkout/:path*",
     "/api/billing/:path*",
     "/api/session",
+    "/admin/:path*",
+    "/api/admin/:path*",
   ],
 };

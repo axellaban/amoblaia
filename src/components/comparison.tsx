@@ -7,12 +7,19 @@ export function Comparison({
   alt = "Ambiente con virtual staging",
   initial = 45,
   compact = false,
+  beforeAlt = "Ambiente original antes del diseño",
+  beforeLabel = "Antes",
+  afterLabel,
 }: {
   before: string;
   after: string;
   alt?: string;
   initial?: number;
   compact?: boolean;
+  beforeAlt?: string;
+  beforeLabel?: string;
+  /** Replaces "Después con IA". */
+  afterLabel?: string;
 }) {
   const [position, setPosition] = useState(initial);
   const box = useRef<HTMLDivElement>(null);
@@ -97,15 +104,15 @@ export function Comparison({
         className="comparison-before"
         style={{ clipPath: `inset(0 ${100 - position}% 0 0)` }}
       >
-        <img
-          src={before}
-          alt="Ambiente original antes del diseño"
-          draggable={false}
-        />
+        <img src={before} alt={beforeAlt} draggable={false} />
       </div>
-      <div className="comparison-label before-label">Antes</div>
+      <div className="comparison-label before-label">{beforeLabel}</div>
       <div className="comparison-label after-label">
-        Después <span>con IA</span>
+        {afterLabel ?? (
+          <>
+            Después <span>con IA</span>
+          </>
+        )}
       </div>
       <div className="comparison-line" style={{ left: `${position}%` }}>
         <span>
