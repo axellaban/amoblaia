@@ -3750,10 +3750,10 @@ h2 .accent {
   color: #fff;
 }
 .gallery-thumbnails {
-  display: flex;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: 8px;
   margin-top: 16px;
-  overflow-x: auto;
   padding: 4px;
 }
 .gallery-thumbnails button {
@@ -3761,8 +3761,13 @@ h2 .accent {
   border: 2px solid transparent;
   background: transparent;
   border-radius: 12px;
-  min-width: 130px;
-  width: 150px;
+  min-width: 0;
+  color: var(--ink);
+  font-size: 12px;
+}
+.gallery-thumbnails button span {
+  display: block;
+  padding: 5px 0 2px;
 }
 .gallery-thumbnails button.selected {
   border-color: var(--terracotta);
@@ -3792,9 +3797,8 @@ h2 .accent {
     font-size: 11px;
     padding: 8px 10px;
   }
-  .gallery-thumbnails button {
-    min-width: 95px;
-    width: 95px;
+  .gallery-thumbnails {
+    grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
   }
   .gallery-toolbar {
     flex-direction: column;
@@ -4000,16 +4004,23 @@ h2 .accent {
   overflow: hidden;
   min-width: 0;
 }
-.library-card > a {
+.library-card > a,
+.library-card > .library-card-media {
   display: block;
   position: relative;
 }
-.library-card > a > img {
+.library-card > .library-card-media {
+  padding: 0;
+  opacity: 0.7;
+}
+.library-card > a > img,
+.library-card-media > img {
   aspect-ratio: 1.5;
   object-fit: cover;
   width: 100%;
 }
-.library-card > a > span {
+.library-card > a > span,
+.library-card-media > span {
   position: absolute;
   bottom: 8px;
   left: 8px;

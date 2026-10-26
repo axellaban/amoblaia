@@ -1,4 +1,6 @@
+import type { Metadata } from "next";
 import Link from "next/link";
+export const metadata: Metadata = { title: "Términos de uso" };
 export default function Terms() {
   return (
     <article className="legal-page container">

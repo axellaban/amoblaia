@@ -1,4 +1,6 @@
+import type { Metadata } from "next";
 import Link from "next/link";
+export const metadata: Metadata = { title: "Privacidad" };
 export default function Privacy() {
   return (
     <article className="legal-page container">

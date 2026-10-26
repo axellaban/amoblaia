@@ -140,7 +140,7 @@ export function Header() {
                     Entrar
                   </Link>
                   <Link
-                    href="/acceso"
+                    href="/acceso?modo=registro"
                     className="button button-primary"
                     onClick={() => setOpen(false)}
                   >
@@ -176,7 +176,7 @@ export function Header() {
                 Entrar
               </Link>
               <Link
-                href="/acceso"
+                href="/acceso?modo=registro"
                 className={`button button-small ${signedIn === null ? "nav-pending" : ""}`}
               >
                 Crear cuenta

@@ -66,7 +66,7 @@ export function FaqBrowser() {
         <section aria-live="polite">
           <h2>
             {query
-              ? `${results.length} respuestas`
+              ? `${results.length} ${results.length === 1 ? "respuesta" : "respuestas"}`
               : "Preguntas más consultadas"}
           </h2>
           {results.length === 0 && (

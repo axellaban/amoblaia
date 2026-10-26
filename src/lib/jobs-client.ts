@@ -32,7 +32,7 @@ export async function waitForJob(id: string) {
       if ((e as { final?: boolean }).final) throw e;
       if (++failures > 8)
         throw new Error(
-          "Perdimos la conexión. Tu diseño sigue en proceso y queda guardado en tus proyectos.",
+          "Perdimos la conexión. Tu diseño sigue en proceso y queda guardado en Mis fotos.",
           { cause: e },
         );
       await pause(3000);

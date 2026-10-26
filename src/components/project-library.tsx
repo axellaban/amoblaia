@@ -17,6 +17,10 @@ import {
 import { TourButton } from "./product-tour";
 import type { Project } from "@/lib/history";
 type FolderRow = { id: string; name: string };
+const designs = (p: Project) => {
+  const n = p.variants?.length || 0;
+  return `${n} ${n === 1 ? "diseño" : "diseños"}`;
+};
 export function ProjectLibrary() {
   const [projects, setProjects] = useState<Project[]>([]),
     [folders, setFolders] = useState<FolderRow[]>([]),
@@ -80,6 +84,15 @@ export function ProjectLibrary() {
       )
       .catch(() => {});
   }, []);
+  // Escape keeps the photo in the trash, like the dialog's first button.
+  useEffect(() => {
+    if (!purge) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !busy) setPurge("");
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [purge, busy]);
   const active = projects.filter((p) => !p.trashedAt),
     trash = projects.filter((p) => p.trashedAt),
     inFolder = (p: Project) =>
@@ -298,7 +311,7 @@ export function ProjectLibrary() {
             {plan.free ? (
               <>
                 <p>
-                  Todos los estilos, alta resolución y resultados sin marca de
+                  Todos los ambientes, alta resolución y resultados sin marca de
                   agua.
                 </p>
                 <Link className="button button-primary" href="/precios">
@@ -356,13 +369,21 @@ export function ProjectLibrary() {
           <div className="library-grid">
             {shown.map((p) => (
               <article key={p.id} className="library-card">
-                <Link
-                  href={p.trashedAt ? "#" : `/estudio?project=${p.id}`}
-                  aria-label={`Abrir ${p.name}`}
-                >
-                  <img src={p.result || p.original} alt={p.name} />
-                  <span>{p.variants?.length || 0} diseños</span>
-                </Link>
+                {/* A photo in the trash opens only after restoring it. */}
+                {p.trashedAt ? (
+                  <div className="library-card-media">
+                    <img src={p.result || p.original} alt={p.name} />
+                    <span>{designs(p)}</span>
+                  </div>
+                ) : (
+                  <Link
+                    href={`/estudio?project=${p.id}`}
+                    aria-label={`Abrir ${p.name}`}
+                  >
+                    <img src={p.result || p.original} alt={p.name} />
+                    <span>{designs(p)}</span>
+                  </Link>
+                )}
                 <div>
                   {rename === p.id ? (
                     <form
@@ -468,6 +489,7 @@ export function ProjectLibrary() {
               <div className="resource-links">
                 <button
                   className="button button-outline"
+                  autoFocus
                   onClick={() => setPurge("")}
                   disabled={busy}
                 >

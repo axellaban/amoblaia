@@ -220,7 +220,7 @@ export function useBatch(onProgress: (finished: boolean) => void) {
     if (!jobId) {
       patch(item.id, {
         status: "later",
-        message: "Revisala en Mis proyectos.",
+        message: "Revisala en Mis fotos.",
       });
       return null;
     }
@@ -235,7 +235,7 @@ export function useBatch(onProgress: (finished: boolean) => void) {
       if (!job)
         patch(item.id, {
           status: "later",
-          message: "Sigue en proceso. Va a aparecer en Mis proyectos.",
+          message: "Sigue en proceso. Va a aparecer en Mis fotos.",
         });
       else if (job.status === "succeeded" && job.result) {
         patch(item.id, {
@@ -257,7 +257,7 @@ export function useBatch(onProgress: (finished: boolean) => void) {
         message:
           e instanceof Error
             ? e.message
-            : "Sigue en proceso. Va a aparecer en Mis proyectos.",
+            : "Sigue en proceso. Va a aparecer en Mis fotos.",
       });
     }
     return null;
@@ -298,7 +298,7 @@ export function useBatch(onProgress: (finished: boolean) => void) {
         : null;
       if (!fresh?.result)
         throw new Error(
-          "No pudimos descargar esta foto. Abrila desde Mis proyectos.",
+          "No pudimos descargar esta foto. Abrila desde Mis fotos.",
         );
       patch(item.id, { result: fresh.result });
       await downloadDesign(fresh.result, name, undefined, label);
@@ -530,7 +530,7 @@ export function BatchList({
       {batch.running && (
         <p className="batch-hint">
           Mantené esta página abierta hasta que terminen. Cada foto lista queda
-          guardada en Mis proyectos.
+          guardada en Mis fotos.
         </p>
       )}
     </div>

@@ -74,7 +74,7 @@ export async function enqueuePhoto(
   if (project?.trashed_at)
     throw new HttpError(
       409,
-      "Esta foto está en la papelera. Restaurala desde Mis proyectos para seguir creando.",
+      "Esta foto está en la papelera. Restaurala desde Mis fotos para seguir creando.",
     );
   if (photo.projectId && !project)
     throw new HttpError(404, "No encontramos la foto original.");

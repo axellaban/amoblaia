@@ -330,8 +330,8 @@ export function PricingPlans({
         <h2>Probá con tus fotos, sin registrarte.</h2>
         <p>Hasta 3 diseños por tanda, con marca de agua. Sin tarjeta.</p>
       </div>
-      <Link className="button button-dark" href="/acceso">
-        Empezar <ArrowUpRight size={17} />
+      <Link className="button button-dark" href="/estudio">
+        Probar gratis <ArrowUpRight size={17} />
       </Link>
     </div>
   );
@@ -355,12 +355,14 @@ export function PricingPlans({
           >
             <button
               className={!annual ? "selected" : ""}
+              aria-pressed={!annual}
               onClick={() => setAnnual(false)}
             >
               Mensual
             </button>
             <button
               className={annual ? "selected" : ""}
+              aria-pressed={annual}
               onClick={() => setAnnual(true)}
             >
               Anual {savingLabel && <em>{savingLabel}</em>}
