@@ -389,6 +389,80 @@ export function PropertyFields({
   );
 }
 
+/**
+ * Creates the demo from the listing URL alone: the server reads the page and
+ * returns the photos found, imported here one by one so progress is visible
+ * and the order of the listing is kept.
+ */
+function ImportFromListing() {
+  const router = useRouter();
+  const [url, setUrl] = useState("");
+  const [status, setStatus] = useState("");
+  const [error, setError] = useState("");
+  const busy = Boolean(status);
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    setStatus("Leyendo la publicación…");
+    try {
+      const listing = await api<{ id: string; title: string; images: string[] }>(
+        "/api/admin/demos/importar",
+        { method: "POST", body: JSON.stringify({ url }) },
+      );
+      for (const [i, image] of listing.images.entries()) {
+        setStatus(`Importando fotos de “${listing.title}”: ${i + 1} de ${listing.images.length}…`);
+        try {
+          await api(`/api/admin/demos/${listing.id}/photos`, {
+            method: "POST",
+            body: JSON.stringify({ url: image }),
+          });
+        } catch {
+          // Thumbnails, site graphics and repeated pictures are skipped.
+        }
+      }
+      router.push(`/admin/demos/${listing.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No pudimos leer la publicación.");
+      setStatus("");
+    }
+  }
+  return (
+    <form onSubmit={submit} className="account-panel dm-import">
+      <h2>Desde la publicación</h2>
+      <p className="dm-help">
+        Pegá la URL de la ficha en la web de la inmobiliaria. Tomamos el título, la ubicación,
+        la descripción, la inmobiliaria y las fotos; después podés corregir todo en el editor.
+      </p>
+      {error && (
+        <p className="inline-error" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="dm-import-row">
+        <input
+          required
+          type="text"
+          inputMode="url"
+          maxLength={500}
+          placeholder="https://inmobiliaria.com.ar/propiedad/…"
+          aria-label="URL de la ficha de la propiedad"
+          value={url}
+          disabled={busy}
+          onChange={(e) => setUrl(e.target.value)}
+        />
+        <button className="button button-primary" disabled={busy || !url.trim()}>
+          {busy ? "Creando…" : "Crear demo"}
+        </button>
+      </div>
+      {status && (
+        <p className="dm-help" role="status" aria-live="polite">
+          {status}
+        </p>
+      )}
+    </form>
+  );
+}
+
 export function NewDemoForm() {
   const router = useRouter();
   const [agencies, setAgencies] = useState<AgencyRow[] | null>(null);
@@ -431,7 +505,10 @@ export function NewDemoForm() {
       <h1>
         Nueva demo<span className="accent">.</span>
       </h1>
-      <p>Primero la inmobiliaria y la propiedad. Las fotos se cargan en el paso siguiente.</p>
+      <p>Pegá la URL de la ficha y la armamos sola, o cargá los datos a mano.</p>
+      <ImportFromListing />
+      <h2 className="dm-or">O a mano</h2>
+      <p className="dm-help">Primero la inmobiliaria y la propiedad. Las fotos se cargan en el paso siguiente.</p>
       {error && (
         <p className="inline-error" role="alert">
           {error}

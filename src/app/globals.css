@@ -7416,6 +7416,20 @@ h2 .accent {
   font-size: 14px;
   margin: 8px 0 !important;
 }
+.dm-import-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 12px;
+}
+.dm-import-row input {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+.dm-or {
+  font-size: 21px !important;
+  margin: 28px 0 4px !important;
+}
 .dm-editor {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 360px;

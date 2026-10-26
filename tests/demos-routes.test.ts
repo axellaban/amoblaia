@@ -76,6 +76,7 @@ import * as one from "../src/app/api/admin/demos/[id]/route";
 import * as photos from "../src/app/api/admin/demos/[id]/photos/route";
 import * as photo from "../src/app/api/admin/demos/[id]/photos/[photoId]/route";
 import * as image from "../src/app/api/admin/demos/imagen/route";
+import * as importar from "../src/app/api/admin/demos/importar/route";
 import { publicImagePath, publishedDemo } from "../src/lib/demos/server";
 import { requireAdminPage } from "../src/lib/demos/admin-page";
 
@@ -133,6 +134,8 @@ describe("Admin API authorization", () => {
     const responses = await Promise.all([
       list.GET(),
       list.POST(req("/api/admin/demos", "POST", { agency: { name: "X" }, property: { title: "Y" } })),
+      importar.POST(req("/api/admin/demos/importar", "POST", { url: "https://x.com/p/1" })),
+      photos.POST(req(`/api/admin/demos/${DEMO}/photos`, "POST", { url: "https://x.com/1.jpg" }), params({ id: DEMO })),
       one.GET(req(`/api/admin/demos/${DEMO}`), params({ id: DEMO })),
       one.PATCH(req(`/api/admin/demos/${DEMO}`, "PATCH", { action: "publish" }), params({ id: DEMO })),
       one.DELETE(req(`/api/admin/demos/${DEMO}`, "DELETE"), params({ id: DEMO })),
