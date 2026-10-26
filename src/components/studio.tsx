@@ -333,6 +333,8 @@ export function Studio({
     setError("");
     setNotice("");
     setViewer(false);
+    // A new photo opens on its design, not on the previous comparison.
+    setComparison(false);
   }
   async function acceptFile(selected?: File) {
     if (!selected || busy || reading) return;
