@@ -112,7 +112,7 @@ describe("Listing data", () => {
       listingUrl: "https://inmo.test/p/1",
       firstVisible: null,
       photos: [
-        { id: "p", projectId: "x", position: 0, visible: true, room: "living", label: null, mode: "furnish", discarded: [], shown: { modern: "g" }, generations: [] },
+        { id: "p", projectId: "x", position: 0, visible: true, room: "living", label: null, mode: "furnish", discarded: [], source: null, shown: { modern: "g" }, generations: [] },
       ],
     });
     expect(warnings.join("\n")).toMatch(/Sin contacto válido/);

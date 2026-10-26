@@ -7,6 +7,8 @@ import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { HttpError } from "@/lib/commerce/http";
 import { cleanText, cleanUrl } from "./shared";
+import { extractDetails } from "./listing-details";
+import { toDemo, type ImportedDemo } from "./import";
 
 export const MAX_LISTING_PHOTOS = 30;
 const MAX_HTML_BYTES = 3 * 1024 * 1024;
@@ -20,8 +22,10 @@ export type Listing = {
   description: string | null;
   /** The longest description block on the page, as published (up to 6000 characters). */
   fullDescription: string | null;
-  /** Every amount the page shows, in order and without repeats: more than one may be a conflict. */
+  /** Every amount the page shows, in order and without repeats (extras and fees included). */
   prices: string[];
+  /** Amounts inside the page's price elements only. */
+  headlinePrices: string[];
   listingUrl: string;
   agency: { name: string; website: string };
   images: string[];
@@ -342,6 +346,7 @@ export function parseListing(html: string, pageUrl: string): Listing {
   );
   const priceText = blocksNamed(html, /(price|precio|valor)/i).map(blockText).join("\n");
   const prices = moneyMentions(`${priceText}\n${title}\n${fullDescription ?? ""}`);
+  const headlinePrices = moneyMentions(priceText);
 
   return {
     title,
@@ -349,6 +354,7 @@ export function parseListing(html: string, pageUrl: string): Listing {
     description,
     fullDescription,
     prices,
+    headlinePrices,
     listingUrl: page.toString(),
     agency: { name: agencyName, website: `${page.protocol}//${page.host}/` },
     images,
@@ -451,13 +457,32 @@ export async function fetchPublic(raw: string, kind: "page" | "image") {
   throw new HttpError(502, "La publicación redirige demasiadas veces.");
 }
 
+/**
+ * Everything the demo needs from the listing page, with the state of each
+ * field. The detailed reading wins; the generic one (JSON-LD, Open Graph,
+ * photos anywhere on the page) only fills what it could not find.
+ */
+export function importListing(html: string, pageUrl: string): ImportedDemo {
+  const listing = parseListing(html, pageUrl);
+  return toDemo(extractDetails(html, pageUrl), {
+    title: listing.title,
+    location: listing.location,
+    description: listing.fullDescription ?? listing.description,
+    prices: listing.headlinePrices,
+    images: listing.images,
+    agencyName: listing.agency.name,
+    website: listing.agency.website,
+  });
+}
+
 export async function readListing(raw: unknown) {
   const address = cleanUrl(raw);
   if (!address) throw new HttpError(400, "Pegá la URL de la ficha de la propiedad.");
   const page = await fetchPublic(address, "page");
   if (page.type && !/html|xml/i.test(page.type))
     throw new HttpError(400, "Esa URL no es una página web. Pegá la URL de la ficha.");
-  const listing = parseListing(page.body.toString("utf8"), page.url);
+  const html = page.body.toString("utf8");
+  const listing = parseListing(html, page.url);
   // Keep the address the admin pasted (the redirect target may be a tracking URL).
-  return { ...listing, listingUrl: address };
+  return { ...listing, listingUrl: address, imported: importListing(html, page.url) };
 }

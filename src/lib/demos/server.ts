@@ -15,6 +15,8 @@ import {
   type DemoSettings,
 } from "./branding";
 import { styleFits } from "./styles";
+import { fetchPublic } from "./listing";
+import type { ImportedDemo } from "./import";
 import { OG_LABEL_ORIGINAL, OG_LABEL_STAGED } from "./og-labels";
 import {
   TOKEN_PATTERN,
@@ -167,6 +169,47 @@ export async function logoOf(agencyId: string) {
 }
 const logoVersion = (b: AgencyBranding) => b.logo?.v ?? null;
 
+/** A logo kept small (at most 480×160, transparency preserved) to live in the branding. */
+export async function logoFromBytes(bytes: Buffer) {
+  const png = await sharp(bytes, { limitInputPixels: 20_000_000 })
+    .resize({ width: 480, height: 160, fit: "inside", withoutEnlargement: true })
+    .png({ compressionLevel: 9 })
+    .toBuffer()
+    .catch(() => {
+      throw new HttpError(400, "No pudimos leer el logo. Probá con otro archivo.");
+    });
+  return { type: "image/png", data: png.toString("base64"), v: createHash("sha256").update(png).digest("hex").slice(0, 10) };
+}
+
+/**
+ * Completes the agency with what the listing publishes: its logo and the
+ * contact for inquiries, only where nothing is set (what the admin chose stays).
+ */
+export async function completeAgency(agencyId: string, imp: ImportedDemo, contact: string | null = null) {
+  const branding = await brandingOf(agencyId);
+  const next: AgencyBranding = { ...branding };
+  const done = { logo: false, contact: false };
+  if (!branding.logo && imp.agency.logoUrl) {
+    const image = await fetchPublic(imp.agency.logoUrl, "image").catch(() => null);
+    const logo = image && (await logoFromBytes(image.body).catch(() => null));
+    if (logo) [next.logo, done.logo] = [logo, true];
+  }
+  if (!branding.contactKind || !branding.contactValue) {
+    const value = contact ?? imp.agency.whatsapp ?? imp.agency.phone ?? imp.agency.email;
+    if (value) {
+      next.contactKind = value.includes("@")
+        ? "email"
+        : whatsappNumber(value) && (contact || value === imp.agency.whatsapp)
+          ? "whatsapp"
+          : "phone";
+      next.contactValue = value;
+      done.contact = true;
+    }
+  }
+  if (done.logo || done.contact) await saveJson("agencies", "branding", agencyId, next);
+  return done;
+}
+
 export async function listDemos() {
   const db = adminClient();
   const demos = check(
@@ -282,6 +325,13 @@ export async function demoDetail(id: string): Promise<DemoDetail> {
     photosOf(demo.property_id),
   ]);
   const projectIds = [...new Set(photos.map((p) => p.project_id))];
+  const names = new Map(
+    projectIds.length
+      ? ((await db.from("projects").select("id,name").in("id", projectIds)).data as { id: string; name: string | null }[] | null ?? []).map(
+          (p) => [p.id, p.name],
+        )
+      : [],
+  );
   const generations = projectIds.length
     ? (check(
         await db
@@ -311,6 +361,7 @@ export async function demoDetail(id: string): Promise<DemoDetail> {
     label: p.label,
     mode: p.mode,
     discarded: p.discarded || [],
+    source: names.get(p.project_id) ?? null,
     shown: Object.fromEntries([...(shown.get(p.id) ?? new Map<string, StagedRow>())].map(([k, g]) => [k, g.id])),
     generations: generations
       .filter((g) => g.project_id === p.project_id)
@@ -462,6 +513,19 @@ async function publicPayload(demo: DemoRow, logoUrl: (v: string) => string): Pro
     location: prop.location,
     description: settings.description ?? prop.description,
     listingUrl: prop.listing_url,
+    ...listingFields(settings, branding),
+    styles: order.map((id) => ({ id, name: styleName(id) })),
+    cover: cover ? list.find((p) => p.id === cover.id)! : null,
+    photos: list,
+    openStyle,
+    banner: settings.banner,
+    share: { title: settings.shareTitle, description: settings.shareDescription },
+  };
+}
+
+/** The property's data as the page shows it: only confirmed prices, a map never more precise than published. */
+export function listingFields(settings: DemoSettings, branding: AgencyBranding) {
+  return {
     propertyType: settings.propertyType,
     operation: settings.operation,
     price: settings.priceConflict ? null : settings.price,
@@ -486,12 +550,6 @@ async function publicPayload(demo: DemoRow, logoUrl: (v: string) => string): Pro
       settings.closingTitle ??
       (settings.propertyType === "office" ? "¿Te imaginás trabajando acá?" : "¿Te imaginás viviendo acá?"),
     closingText: settings.closingText,
-    styles: order.map((id) => ({ id, name: styleName(id) })),
-    cover: cover ? list.find((p) => p.id === cover.id)! : null,
-    photos: list,
-    openStyle,
-    banner: settings.banner,
-    share: { title: settings.shareTitle, description: settings.shareDescription },
   };
 }
 
@@ -760,14 +818,28 @@ export async function createDemo(input: {
  * appends it to the demo. The same picture uploaded again reuses its
  * project (and the proposals already made for it).
  */
-export async function addPhoto(demo: DemoRow, actorId: string, bytes: Buffer, name: string) {
+export async function addPhoto(
+  demo: DemoRow,
+  actorId: string,
+  bytes: Buffer,
+  name: string,
+  opts: { reuse?: boolean } = {},
+) {
   const db = adminClient();
   const existing = await photosOf(demo.property_id);
-  if (existing.length >= MAX_PHOTOS_PER_DEMO)
-    throw new HttpError(409, `Una demo admite hasta ${MAX_PHOTOS_PER_DEMO} fotos.`);
   const image = await normalizePhoto(bytes);
   const hash = createHash("sha256").update(image).digest("hex");
   const originalHash = `demo:${hash}`;
+  // Reimporting a listing: a photo already in the demo is returned as is (with its stagings).
+  if (opts.reuse) {
+    const known = (await db.from("projects").select("id").eq("original_hash", originalHash).is("deleted_at", null)).data as
+      | { id: string }[]
+      | null;
+    const same = existing.find((p) => known?.some((k) => k.id === p.project_id));
+    if (same) return { ...same, reused: true };
+  }
+  if (existing.length >= MAX_PHOTOS_PER_DEMO)
+    throw new HttpError(409, `Una demo admite hasta ${MAX_PHOTOS_PER_DEMO} fotos.`);
   const lookup = async () =>
     check(
       await db
@@ -821,7 +893,7 @@ export async function addPhoto(demo: DemoRow, actorId: string, bytes: Buffer, na
     .single();
   if (inserted.error?.code === "23505") throw new HttpError(409, "Esta foto ya está en la demo.");
   if (inserted.error || !inserted.data) throw new Error("DEMO_PHOTO_CREATE_FAILED");
-  return inserted.data as PhotoRow;
+  return { ...(inserted.data as PhotoRow), reused: false };
 }
 
 export async function photoOf(demo: DemoRow, photoId: string) {

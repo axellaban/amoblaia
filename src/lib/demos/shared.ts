@@ -146,6 +146,8 @@ export type EditorPhoto = {
   label: string | null;
   mode: DemoMode;
   discarded: string[];
+  /** The file name it was imported or uploaded with (listing photos carry the property's id). */
+  source: string | null;
   /** The version each style shows, by style id: a generation id. */
   shown: Record<string, string>;
   generations: GenerationRow[];

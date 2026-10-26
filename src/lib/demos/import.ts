@@ -1,0 +1,326 @@
+// From what a listing page publishes to the demo's data, with the state of
+// each field: found, not published, not extracted (the page has the section
+// but nothing could be read) or contradictory. Pure: no network, no database.
+import { DEFAULT_SETTINGS, type AmenityGroup, type DemoSettings, type Fact, type FactIcon } from "./branding";
+import { norm, type ListingDetails } from "./listing-details";
+
+export type FieldStatus = "found" | "missing" | "error" | "conflict";
+export type ReportRow = {
+  field: string;
+  status: FieldStatus;
+  value: string | null;
+  /** Where it was read, or why it is missing. */
+  note: string | null;
+  /** Without it the demo cannot be shared: asks for intervention. */
+  required: boolean;
+};
+export type ImportedDemo = {
+  /** The property's id on the agency's site; its own photo files start with it. */
+  propertyId: string | null;
+  title: string;
+  location: string | null;
+  propertyType: "residential" | "office";
+  operation: string | null;
+  reference: string | null;
+  price: string | null;
+  priceConflict: string | null;
+  /** When the price conflicts: the amounts to choose from, as published. */
+  priceOptions: string[];
+  features: string | null;
+  facts: Fact[];
+  description: string | null;
+  amenities: AmenityGroup[];
+  map: { precision: "zone" | "approx" | "exact"; lat: number; lng: number } | null;
+  agent: { name: string; role: null; whatsapp: string | null; phone: string | null; email: string | null; photoUrl: string | null } | null;
+  agency: {
+    name: string | null;
+    website: string;
+    logoUrl: string | null;
+    whatsapp: string | null;
+    phone: string | null;
+    email: string | null;
+  };
+  images: string[];
+  report: ReportRow[];
+};
+
+/** Labels as sites publish them → the fact they are. First match wins. */
+const FACTS: { icon: FactIcon; labels: RegExp; label: (v: string) => string }[] = [
+  { icon: "area", labels: /^(total construido|superficie total|sup\. total|total)$/, label: () => "totales" },
+  { icon: "area", labels: /^(superficie cubierta|cubierta|sup\. cubierta)$/, label: () => "cubiertos" },
+  { icon: "area", labels: /^(superficie semicubierta|semicubierta|sup\. semicubierta)$/, label: () => "semicubiertos" },
+  { icon: "rooms", labels: /^ambientes$/, label: (v) => (v === "1" ? "ambiente" : "ambientes") },
+  { icon: "bedrooms", labels: /^dormitorios$/, label: (v) => (v === "1" ? "dormitorio" : "dormitorios") },
+  { icon: "bathrooms", labels: /^banos$/, label: (v) => (v === "1" ? "baño" : "baños") },
+  { icon: "bathrooms", labels: /^toilettes?$/, label: (v) => (v === "1" ? "toilette" : "toilettes") },
+  { icon: "parking", labels: /^cocheras?$/, label: (v) => (v === "1" ? "cochera" : "cocheras") },
+  { icon: "age", labels: /^antiguedad$/, label: () => "antigüedad" },
+];
+/** General data worth showing as text (not icons); "No especificado" is not data. */
+const INFO = /^(condicion|situacion|orientacion|disposicion|apto profesional|apto credito|credito|plantas|piso|luminosidad|estado)$/;
+const UNSPECIFIED = /^(no especificado|-|n\/a|sin datos?)$/i;
+
+const lowerFirst = (s: string) => s.replace(/^(\p{Lu})(\p{Ll})/u, (_m, a: string, b: string) => a.toLowerCase() + b);
+
+export type Fallback = {
+  title: string;
+  location: string | null;
+  description: string | null;
+  /** Amounts in the page's price elements, when the details found no price. */
+  prices: string[];
+  images: string[];
+  agencyName: string;
+  website: string;
+};
+
+export function toDemo(d: ListingDetails, fallback: Fallback): ImportedDemo {
+  const value = (re: RegExp) => d.pairs.find((p) => re.test(norm(p.label)) && !UNSPECIFIED.test(p.value))?.value ?? null;
+  const facts: Fact[] = [];
+  for (const f of FACTS) {
+    const v = value(f.labels);
+    if (v && facts.length < 8) facts.push({ icon: f.icon, value: v, label: f.label(v) });
+  }
+  const amb = value(/^ambientes$/);
+  const total = value(/^(total construido|superficie total)$/) ?? value(/^(superficie cubierta|cubierta)$/);
+  const dorm = value(/^dormitorios$/);
+  const features = [amb && `${amb} ${amb === "1" ? "ambiente" : "ambientes"}`, total, dorm && `${dorm} ${dorm === "1" ? "dormitorio" : "dormitorios"}`]
+    .filter(Boolean)
+    .join(" · ");
+  // Same label, different values on the page: a real contradiction.
+  const contradictions = new Map<string, Set<string>>();
+  // Only the property's own data: phones and e-mails of the agent and the branch differ by nature.
+  for (const p of d.pairs.filter((x) => FACTS.some((f) => f.labels.test(norm(x.label))) || INFO.test(norm(x.label)))) {
+    const k = norm(p.label).replace(/^superficie /, "");
+    if (!contradictions.has(k)) contradictions.set(k, new Set());
+    contradictions.get(k)!.add(p.value.toLowerCase());
+  }
+  const info = [
+    ...new Map(
+      d.pairs
+        .filter((p) => INFO.test(norm(p.label)) && !UNSPECIFIED.test(p.value))
+        .map((p) => [norm(p.label), `${p.label}: ${lowerFirst(p.value)}`]),
+    ).values(),
+  ];
+  const amenities: AmenityGroup[] = [
+    ...(info.length ? [{ title: "Información general", items: info }] : []),
+    ...d.features.map((g) => ({ title: g.title, items: [...new Set(g.items)] })),
+  ].slice(0, 4);
+  const office = /oficina|consultorio|local/i.test(d.propertyKind ?? "");
+  const has = (re: RegExp) => d.headings.some((h) => re.test(h));
+  const row = (field: string, v: string | null | undefined, opts: { required?: boolean; note?: string; error?: boolean; conflict?: string | null } = {}): ReportRow => ({
+    field,
+    status: opts.conflict ? "conflict" : v ? "found" : opts.error ? "error" : "missing",
+    value: v ?? null,
+    note: opts.conflict ?? (v ? (opts.note ?? null) : opts.error ? "La página tiene esta sección pero no se pudo leer: reintentá o avisá al equipo." : "No figura en la publicación."),
+    required: Boolean(opts.required),
+  });
+  const pairConflicts = [...contradictions].filter(([, vals]) => vals.size > 1).map(([k, vals]) => `${k}: ${[...vals].join(" / ")}`);
+  const agent = d.agent?.name
+    ? { name: d.agent.name, role: null, whatsapp: d.agent.whatsapp, phone: d.agent.phone, email: d.agent.email, photoUrl: d.agent.photoUrl?.startsWith("https://") ? d.agent.photoUrl : null }
+    : null;
+  const images = d.images.length ? d.images : fallback.images;
+  const description = d.description ?? fallback.description;
+  // Without a price element of its own, a single amount in the price area is the price;
+  // several are not guessed (they may be extras or other listings).
+  const price = d.price?.text ?? (fallback.prices.length === 1 ? fallback.prices[0] : null);
+  const priceNote = !price && fallback.prices.length > 1 ? `La página muestra ${fallback.prices.join(", ")} sin indicar cuál es el precio.` : undefined;
+  const contact = agent?.whatsapp ?? agent?.phone ?? agent?.email ?? d.agency.whatsapp ?? d.agency.phone ?? d.agency.email;
+  const report: ReportRow[] = [
+    row("Título", d.shortTitle ?? fallback.title, { required: true }),
+    row("Referencia", d.reference),
+    row("Tipo de inmueble", d.propertyKind),
+    row("Operación", d.operation),
+    d.priceConflict
+      ? row("Precio", price, { required: true, conflict: `Dos precios distintos en la misma publicación: ${d.priceConflict}. Elegí cuál mostrar.` })
+      : priceNote
+        ? { field: "Precio", status: "error", value: null, note: priceNote, required: false }
+        : row("Precio", price, { error: has(/^precio|^valor/i) }),
+    row("Ubicación", d.location ?? fallback.location),
+    row("Mapa", d.map ? `${d.map.precision === "exact" ? "ubicación exacta" : d.map.precision === "zone" ? "zona" : "ubicación aproximada"}${d.map.radius ? ` (${d.map.radius} m)` : ""}` : null, { error: !d.map && has(/^ubicaci/i) }),
+    row("Superficies", [value(/^(total construido|superficie total)$/), value(/^(superficie cubierta|cubierta)$/), value(/^(superficie semicubierta|semicubierta)$/)].filter(Boolean).join(" · ") || null, { error: has(/superficie/i) && !total }),
+    row("Ambientes y dormitorios", [amb && `${amb} amb.`, dorm && `${dorm} dorm.`].filter(Boolean).join(" · ") || null),
+    row("Baños", [value(/^banos$/) && `${value(/^banos$/)} baño`, value(/^toilettes?$/) && `${value(/^toilettes?$/)} toilette`].filter(Boolean).join(" · ") || null),
+    row("Descripción", description ? `${description.length} caracteres` : null, { error: !description && has(/^descripci/i) }),
+    row("Características y servicios", amenities.length ? amenities.map((g) => `${g.title} (${g.items.length})`).join(" · ") : null),
+    row("Fotos de la propiedad", images.length ? `${images.length}` : null, { required: true, note: d.images.length ? "Solo las de esta propiedad, sin las de propiedades similares." : "Revisá que todas sean de esta propiedad." }),
+    row("Inmobiliaria", d.agency.name ?? fallback.agencyName),
+    row("Logo", d.agency.logoUrl ? decodeURIComponent(d.agency.logoUrl.split(/[?#]/)[0].split("/").pop() ?? "") : null, { note: d.agency.logoUrl ? "Se guarda en la demo si la inmobiliaria no tiene uno." : undefined }),
+    row("Agente", agent?.name, { error: !agent && has(/^contacto/i) }),
+    row("Email del agente", agent?.email),
+    row("WhatsApp del agente", agent?.whatsapp),
+    row("Teléfono del agente", agent?.phone),
+    row("Contacto para consultas", contact, { required: true }),
+    ...(pairConflicts.length ? [row("Datos de la ficha", null, { conflict: `La página muestra valores distintos: ${pairConflicts.join("; ")}` })] : []),
+  ];
+  return {
+    propertyId: d.propertyId,
+    title: d.shortTitle ?? fallback.title,
+    location: d.location ?? fallback.location,
+    propertyType: office ? "office" : "residential",
+    operation: d.operation,
+    reference: d.reference,
+    price,
+    priceConflict: d.priceConflict,
+    priceOptions: d.priceOptions,
+    features: features || null,
+    facts,
+    description,
+    amenities,
+    map: d.map ? { precision: d.map.precision, lat: d.map.lat, lng: d.map.lng } : null,
+    agent,
+    agency: {
+      name: d.agency.name,
+      website: fallback.website,
+      logoUrl: d.agency.logoUrl,
+      whatsapp: d.agency.whatsapp,
+      phone: d.agency.phone,
+      email: d.agency.email,
+    },
+    images,
+    report,
+  };
+}
+
+/** What a (re)import can write. Photos and the agency's logo and contact go apart. */
+export const IMPORT_FIELDS = [
+  "title",
+  "location",
+  "propertyType",
+  "operation",
+  "reference",
+  "price",
+  "features",
+  "facts",
+  "description",
+  "amenities",
+  "map",
+  "agent",
+] as const;
+export type ImportField = (typeof IMPORT_FIELDS)[number];
+const FIELD_LABELS: Record<ImportField, string> = {
+  title: "Título",
+  location: "Ubicación",
+  propertyType: "Tipo de inmueble",
+  operation: "Operación",
+  reference: "Referencia",
+  price: "Precio",
+  features: "Resumen",
+  facts: "Datos principales",
+  description: "Descripción",
+  amenities: "Características y servicios",
+  map: "Mapa",
+  agent: "Agente",
+};
+export type ImportChange = { field: ImportField; label: string; current: string; imported: string };
+export type CurrentDemo = {
+  title: string;
+  location: string | null;
+  settings: DemoSettings;
+  /** What the previous automatic reading produced: equal values were never edited by hand. */
+  generated: { title: string | null; location: string | null; description: string | null };
+};
+type Values = DemoSettings & { title: string; location: string | null };
+
+const PRECISION = { none: "sin mapa", zone: "zona", approx: "aproximada", exact: "exacta" } as const;
+const clip = (s: string, n = 90) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
+function shown(field: ImportField, v: Values): string {
+  switch (field) {
+    case "propertyType":
+      return v.propertyType === "office" ? "Oficina o local" : "Vivienda";
+    case "price":
+      return v.priceConflict ? `Consultar precio (${v.priceConflict})` : (v.price ?? "—");
+    case "facts":
+      return v.facts.map((f) => `${f.value} ${f.label}`).join(" · ") || "—";
+    case "amenities":
+      return v.amenities.map((g) => `${g.title} (${g.items.length})`).join(" · ") || "—";
+    case "map":
+      return v.map.precision === "none" ? "—" : `Ubicación ${PRECISION[v.map.precision]}`;
+    case "agent":
+      return v.agent ? [v.agent.name, v.agent.email, v.agent.whatsapp ?? v.agent.phone].filter(Boolean).join(" · ") : "—";
+    case "description":
+      return v.description ? clip(v.description.replace(/\s+/g, " ")) : "—";
+    default:
+      return (v[field] as string | null) || "—";
+  }
+}
+/** The comparable content of a field (formatting differences are not changes). */
+function key(field: ImportField, v: Values) {
+  const raw = field === "price" ? [v.price, v.priceConflict] : v[field];
+  return JSON.stringify(raw ?? null).replace(/\s+/g, " ").toLowerCase();
+}
+function empty(field: ImportField, v: Values) {
+  switch (field) {
+    case "title":
+      return !v.title.trim();
+    case "propertyType":
+      // The default: never chosen by hand when the listing says otherwise.
+      return v.propertyType === "residential";
+    case "price":
+      // The old reading marked any second amount (a parking space, a storage room) as a conflict.
+      return !v.price && (!v.priceConflict || /^la publicación muestra /.test(v.priceConflict));
+    case "facts":
+    case "amenities":
+      return !v[field].length;
+    case "map":
+      return v.map.precision === "none";
+    default:
+      return !v[field];
+  }
+}
+function importedValues(imp: ImportedDemo): Values {
+  return {
+    ...DEFAULT_SETTINGS,
+    title: imp.title,
+    location: imp.location,
+    propertyType: imp.propertyType,
+    operation: imp.operation,
+    reference: imp.reference,
+    price: imp.priceConflict ? null : imp.price,
+    priceConflict: imp.priceConflict,
+    features: imp.features,
+    facts: imp.facts,
+    description: imp.description,
+    amenities: imp.amenities,
+    map: imp.map ? { precision: imp.map.precision, lat: imp.map.lat, lng: imp.map.lng } : { precision: "none", lat: null, lng: null },
+    agent: imp.agent,
+  };
+}
+const currentValues = (cur: CurrentDemo): Values => ({ ...cur.settings, title: cur.title, location: cur.location });
+
+/**
+ * Compares the demo with a new reading of the listing. Empty fields and
+ * values the previous reading wrote are filled; a different value someone
+ * typed is a conflict the admin decides on before anything is overwritten.
+ */
+export function planImport(cur: CurrentDemo, imp: ImportedDemo) {
+  const now = currentValues(cur);
+  const next = importedValues(imp);
+  const fill: ImportChange[] = [];
+  const conflicts: ImportChange[] = [];
+  for (const field of IMPORT_FIELDS) {
+    if (empty(field, next) || key(field, now) === key(field, next)) continue;
+    const change = { field, label: FIELD_LABELS[field], current: shown(field, now), imported: shown(field, next) };
+    const auto =
+      (field === "title" && now.title === cur.generated.title) ||
+      (field === "location" && now.location === cur.generated.location) ||
+      (field === "description" && now.description === cur.generated.description);
+    if (empty(field, now) || auto) fill.push(change);
+    else conflicts.push(change);
+  }
+  return { fill, conflicts };
+}
+
+/** The demo after taking these fields from the listing. */
+export function applyImport(cur: CurrentDemo, imp: ImportedDemo, fields: ImportField[]) {
+  const next = importedValues(imp);
+  const out = currentValues(cur);
+  for (const field of fields) {
+    if (empty(field, next)) continue;
+    if (field === "price") {
+      out.price = next.price;
+      out.priceConflict = next.priceConflict;
+    } else (out as Record<string, unknown>)[field] = next[field];
+  }
+  const { title, location, ...settings } = out;
+  return { title, location, settings };
+}

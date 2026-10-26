@@ -46,7 +46,7 @@ type Source = { kind: "public"; token: string } | { kind: "preview" };
 type PhotoState = { style: string | null; compare: boolean; position: number };
 const ORIGINAL: PhotoState = { style: null, compare: false, position: 50 };
 const TEXT = {
-  keepsOriginal: "Elegí una opción para compararla con el original.",
+  keepsOriginal: "La foto original se mantiene hasta que elijas un estilo.",
   original: "Original",
   staged: "Ambientado con IA",
   backToOriginal: "Volver al original",
@@ -65,6 +65,7 @@ const FACT_ICON: Record<FactIcon, typeof Ruler> = {
   other: Info,
 };
 const external = { target: "_blank", rel: "noopener noreferrer" } as const;
+const VISIBLE_STYLES = 3;
 
 function urlFor(source: Source, photoId: string, version: PhotoVersion | null, width: number, retry = 0) {
   const url =
@@ -125,6 +126,8 @@ export function DemoView({
 }) {
   const { agency } = demo;
   const [pageUrl, setPageUrl] = useState("");
+  // The agent's photo lives on the agency's site: if it fails, the initials stand in.
+  const [agentPhotoFailed, setAgentPhotoFailed] = useState(false);
   const analytics = useMemo(
     () => ({
       demo_id: demo.id,
@@ -168,13 +171,16 @@ export function DemoView({
     "--brand-accent-ink": textOn(agency.accent),
   } as React.CSSProperties;
   const noun = demo.propertyType === "office" ? "la oficina" : "la propiedad";
-  const priceLabel = demo.price ?? `Consultar ${/alquiler/i.test(demo.operation ?? "") ? "alquiler" : "precio"}`;
-  const conditions = [
-    demo.price && { label: "Precio", value: demo.price },
+  const rent = /alquiler/i.test(demo.operation ?? "");
+  const priceLabel = demo.price ?? `Consultar ${rent ? "alquiler" : "precio"}`;
+  // Only what applies to this operation: a sale shows no rental requirements nor generic text.
+  const terms = [
     demo.expenses && { label: "Expensas", value: demo.expenses },
     demo.availability && { label: "Disponibilidad", value: demo.availability },
     demo.requirements && { label: "Requisitos", value: demo.requirements },
   ].filter(Boolean) as { label: string; value: string }[];
+  const conditions = terms.length && demo.price ? [{ label: "Precio", value: demo.price }, ...terms] : terms;
+  const showConditions = terms.length > 0 || (rent && !demo.price);
 
   return (
     <div className={`dv2-page ${agency.titleFont === "serif" ? "is-serif" : ""}`} style={brandStyle}>
@@ -253,19 +259,10 @@ export function DemoView({
             {demo.description && <Description text={demo.description} />}
             {demo.amenities.length > 0 && (
               <section className="dv2-section" aria-labelledby="dv2-amenities">
-                <h2 id="dv2-amenities">Características</h2>
+                <h2 id="dv2-amenities">Características y servicios</h2>
                 <div className="dv2-amenities">
                   {demo.amenities.map((g, i) => (
-                    <div key={i}>
-                      {g.title && <h3>{g.title}</h3>}
-                      <ul>
-                        {g.items.map((item, j) => (
-                          <li key={j}>
-                            <Check size={16} aria-hidden="true" /> {item}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
+                    <AmenityList key={i} group={g} />
                   ))}
                 </div>
               </section>
@@ -275,8 +272,17 @@ export function DemoView({
             <Brand agency={agency} small />
             {demo.agent && (
               <div className="dv2-agent">
-                {demo.agent.photoUrl ? (
-                  <img src={demo.agent.photoUrl} alt="" loading="lazy" />
+                {demo.agent.photoUrl && !agentPhotoFailed ? (
+                  <img
+                    src={demo.agent.photoUrl}
+                    alt=""
+                    loading="lazy"
+                    onError={() => setAgentPhotoFailed(true)}
+                    // An error before hydration fires no event: checked when mounted.
+                    ref={(el) => {
+                      if (el?.complete && !el.naturalWidth) setAgentPhotoFailed(true);
+                    }}
+                  />
                 ) : (
                   <span className="dv2-initials" aria-hidden="true">
                     {demo.agent.initials}
@@ -313,12 +319,12 @@ export function DemoView({
           </section>
         )}
 
-        {(conditions.length > 0 || !demo.price) && (
+        {showConditions && (
           <section className="dv2-conditions" aria-labelledby="dv2-conditions">
             <FileText size={28} aria-hidden="true" />
             <div>
               <h2 id="dv2-conditions">
-                {/alquiler/i.test(demo.operation ?? "") ? "Condiciones del alquiler" : "Condiciones"}
+                {rent ? "Condiciones del alquiler" : /venta/i.test(demo.operation ?? "") ? "Condiciones de la venta" : "Condiciones"}
               </h2>
               {conditions.length > 0 && (
                 <dl>
@@ -330,7 +336,7 @@ export function DemoView({
                   ))}
                 </dl>
               )}
-              {!demo.price && (
+              {rent && !demo.price && (
                 <p>
                   Consultá el valor actualizado{demo.expenses ? "" : ", las expensas"} y los requisitos con {agency.name}.
                 </p>
@@ -393,26 +399,55 @@ function Brand({ agency, small = false }: { agency: PublicDemo["agency"]; small?
   );
 }
 
+/** One group of features; long lists show the first ones and expand. */
+function AmenityList({ group }: { group: PublicDemo["amenities"][number] }) {
+  const [open, setOpen] = useState(false);
+  const FIRST = 8;
+  const items = open ? group.items : group.items.slice(0, FIRST);
+  return (
+    <div>
+      {group.title && <h3>{group.title}</h3>}
+      <ul>
+        {items.map((item, j) => (
+          <li key={j}>
+            <Check size={16} aria-hidden="true" /> {item}
+          </li>
+        ))}
+      </ul>
+      {group.items.length > FIRST && (
+        <button type="button" className="dv2-more-link" aria-expanded={open} onClick={() => setOpen(!open)}>
+          {open ? "Ver menos" : `Ver todos (${group.items.length})`}
+        </button>
+      )}
+    </div>
+  );
+}
+
 /** The description as published, in short paragraphs and lists; long ones start collapsed. */
 function Description({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
   const blocks = useMemo(() => {
     const out: ({ kind: "p"; text: string } | { kind: "ul"; items: string[] })[] = [];
+    // Sites without blank lines write one idea per line: each is a short paragraph,
+    // unless it obviously continues the previous one (", 101 metros cuadrados.").
+    const loose = !/\n\s*\n/.test(text);
     for (const raw of text.split(/\n/)) {
       const line = raw.trim();
       const item = line.match(/^[-•*·]\s*(.+)/);
       const last = out[out.length - 1];
+      const continues = /^[,.;:)\p{Ll}]/u.test(line);
       if (!line) out.push({ kind: "p", text: "" });
       else if (item) {
         if (last?.kind === "ul") last.items.push(item[1]);
         else out.push({ kind: "ul", items: [item[1]] });
-      } else if (last?.kind === "p" && last.text) last.text += ` ${line}`;
+      } else if (last?.kind === "p" && last.text && (!loose || continues))
+        last.text += /^[,.;:)]/.test(line) ? line : ` ${line}`;
       else out.push({ kind: "p", text: line });
     }
     return out.filter((b) => b.kind === "ul" || b.text);
   }, [text]);
   const long = text.length > 600 || blocks.length > 4;
-  const shown = long && !open ? blocks.slice(0, 2) : blocks;
+  const shown = long && !open ? blocks.slice(0, 3) : blocks;
   return (
     <section className="dv2-section" aria-labelledby="dv2-description">
       <h2 id="dv2-description">Descripción</h2>
@@ -514,6 +549,7 @@ function Gallery({
   const [retries, setRetries] = useState<Record<string, number>>({});
   const [ratios, setRatios] = useState<Record<string, number>>({});
   const [full, setFull] = useState(false);
+  const [allStyles, setAllStyles] = useState(false);
   const thumbs = useRef<HTMLOListElement>(null);
   const swipe = useRef<{ x: number; y: number } | null>(null);
 
@@ -574,17 +610,25 @@ function Gallery({
     if (next && next !== photo) new Image().src = urlFor(source, next.id, null, 2048);
   }, [index, photos, photo, source]);
 
+  // The strip scrolls a page at a time; the photo changes only on a thumbnail or the arrows on it.
+  const scrollThumbs = (step: number) =>
+    thumbs.current?.scrollBy({ left: step * thumbs.current.clientWidth * 0.8, behavior: "smooth" });
+
   if (!photo) return <p className="dv2-empty">Esta propiedad todavía no tiene fotos.</p>;
   const ratio = ratios[photo.id] ?? 4 / 3;
   const originalKey = `${photo.id}:o`;
   const panelTitle =
     demo.propertyType === "office" ? "Imaginá tu oficina a tu estilo" : "Imaginá este espacio a tu estilo";
+  // Three styles at first; the chosen one always stays in view.
+  const listed = allStyles
+    ? photo.versions
+    : photo.versions.filter((v, i) => i < VISIBLE_STYLES || v.style === state.style);
   const panel = photo.versions.length > 0 && (
     <section className="dv2-panel" aria-labelledby="dv2-panel-title">
       <h2 id="dv2-panel-title">{panelTitle}</h2>
       <p className="dv2-panel-hint">Elegí una propuesta para esta foto.</p>
       <div className="dv2-options" role="radiogroup" aria-labelledby="dv2-panel-title">
-        {photo.versions.map((v) => {
+        {listed.map((v) => {
           const on = state.style === v.style;
           return (
             <button
@@ -596,16 +640,20 @@ function Gallery({
               onClick={() => choose(v.style)}
             >
               <img src={urlFor(source, photo.id, v, 480)} alt="" loading="lazy" />
-              <span className="dv2-option-name">
-                <span className="dv2-radio" aria-hidden="true">
-                  {on && <Check size={13} strokeWidth={3} />}
-                </span>
-                {name(v.style)}
+              <span className="dv2-option-name">{name(v.style)}</span>
+              <span className="dv2-radio" aria-hidden="true">
+                {on && <Check size={13} strokeWidth={3} />}
               </span>
             </button>
           );
         })}
       </div>
+      {photo.versions.length > VISIBLE_STYLES && (
+        <button type="button" className="dv2-more" aria-expanded={allStyles} onClick={() => setAllStyles((a) => !a)}>
+          {allStyles ? "Ver menos estilos" : `Ver más estilos (${photo.versions.length - VISIBLE_STYLES})`}
+          {allStyles ? <ChevronUp size={15} aria-hidden="true" /> : <ChevronDown size={15} aria-hidden="true" />}
+        </button>
+      )}
       {stagedFailed ? (
         <p className="dv2-note is-error" role="alert">
           No pudimos cargar esta ambientación. Seguís viendo la foto original.
@@ -632,7 +680,9 @@ function Gallery({
           </button>
         </div>
       ) : (
-        <p className="dv2-note">{TEXT.keepsOriginal}</p>
+        <p className="dv2-note">
+          <Info size={15} aria-hidden="true" /> {TEXT.keepsOriginal}
+        </p>
       )}
     </section>
   );
@@ -743,6 +793,9 @@ function Gallery({
         </div>
         {photos.length > 1 && (
           <div className="dv2-thumbs">
+            <button type="button" className="dv2-thumbs-step" aria-label="Ver miniaturas anteriores" onClick={() => scrollThumbs(-1)}>
+              <ChevronLeft size={18} />
+            </button>
             <ol ref={thumbs} aria-label="Fotos de la propiedad">
               {photos.map((p, i) => (
                 <li key={p.id}>
@@ -759,6 +812,9 @@ function Gallery({
                 </li>
               ))}
             </ol>
+            <button type="button" className="dv2-thumbs-step" aria-label="Ver más miniaturas" onClick={() => scrollThumbs(1)}>
+              <ChevronRight size={18} />
+            </button>
           </div>
         )}
       </div>
@@ -766,6 +822,9 @@ function Gallery({
         <aside className="dv2-aside">
           {panel}
           {sideAction && <div className="dv2-side-action">{sideAction}</div>}
+          <span className="dv2-tech dv2-side-tech">
+            <Sparkles size={12} aria-hidden="true" /> Tecnología de <b>amoblaIA</b>
+          </span>
         </aside>
       )}
     </div>

@@ -30,6 +30,8 @@ import { optimizePhoto } from "@/lib/images";
 import { rooms } from "@/lib/catalog";
 import { DEMO_STYLES, PROPERTY_TYPE_NAMES, styleFits, type PropertyType } from "@/lib/demos/styles";
 import { ListingForm } from "./demo-listing-form";
+import { ImportPreview, ImportReport, exceptions, foreignPhotos, syncPhotos } from "./demo-import";
+import type { ImportChange, ImportField, ImportedDemo } from "@/lib/demos/import";
 import {
   MAX_DEMO_STYLES,
   adminGenerationUrl,
@@ -439,7 +441,7 @@ export function DemoEditor({ id }: { id: string }) {
                 })
               }
             >
-              Volver a leer la publicación
+              Completar desde la publicación
             </button>
             <button
               type="button"
@@ -462,12 +464,17 @@ export function DemoEditor({ id }: { id: string }) {
           <p className="inline-notice">Todo listo para compartir.</p>
         )}
         {reread && (
-          <RereadDiff
+          <ListingSync
             reread={reread}
             detail={detail}
+            base={base}
             busy={busy}
             onClose={() => setReread(null)}
-            onUse={(body, done) => demoAction(body, done)}
+            onDone={(d, done) => {
+              apply(d);
+              setReread(null);
+              setNotice(done);
+            }}
           />
         )}
       </section>
@@ -1283,145 +1290,188 @@ function MigrationNote() {
 }
 
 type Reread = {
-  title: string;
-  location: string | null;
-  description: string | null;
-  prices: string[];
-  photos: number;
+  imported: ImportedDemo;
+  fill: ImportChange[];
+  conflicts: ImportChange[];
   checkedAt: string;
 };
 
 /**
- * What the original listing says now, next to what the demo has. Nothing
- * changes until the admin chooses, field by field: manual corrections are
- * never overwritten silently.
+ * A new reading of the original listing, applied with care: empty fields and
+ * what the old reading wrote are completed; values edited by hand are listed
+ * and only replaced if ticked. The link and the stagings are kept, the
+ * listing's own photos are added in its order and the ones from other
+ * properties are taken out.
  */
-function RereadDiff({
+function ListingSync({
   reread,
   detail,
+  base,
   busy,
   onClose,
-  onUse,
+  onDone,
 }: {
   reread: Reread;
   detail: DemoDetail;
+  base: string;
   busy: boolean;
   onClose: () => void;
-  onUse: (body: Record<string, unknown>, done: string) => Promise<void>;
+  onDone: (d: DemoDetail, notice: string) => void;
 }) {
-  const p = detail.property;
-  const property = (changes: Partial<typeof p>) => ({
-    action: "property",
-    property: { title: p.title, location: p.location, listing_url: p.listing_url, description: p.description, ...changes },
-  });
-  const same = (a: string | null | undefined, b: string | null | undefined) =>
-    (a ?? "").replace(/\s+/g, " ").trim() === (b ?? "").replace(/\s+/g, " ").trim();
-  const rows: { label: string; current: string | null; listing: string | null; use: () => Promise<void> }[] = [
-    {
-      label: "Título",
-      current: p.title,
-      listing: reread.title,
-      use: () => onUse(property({ title: reread.title }), "Título actualizado desde la publicación."),
-    },
-    {
-      label: "Ubicación",
-      current: p.location,
-      listing: reread.location,
-      use: () => onUse(property({ location: reread.location }), "Ubicación actualizada desde la publicación."),
-    },
-    {
-      label: "Descripción",
-      current: detail.settings.description ?? p.description,
-      listing: reread.description,
-      use: () =>
-        onUse({ action: "settings", settings: { description: reread.description } }, "Descripción actualizada desde la publicación."),
-    },
-  ];
-  const price = detail.settings.price;
+  const [replace, setReplace] = useState<Set<ImportField>>(new Set());
+  const [dropForeign, setDropForeign] = useState(true);
+  const [status, setStatus] = useState("");
+  const [error, setError] = useState("");
+  const imported = reread.imported;
+  const foreign = foreignPhotos(detail.photos, imported.propertyId);
+  const working = Boolean(status) || busy;
+  const pending = exceptions(imported.report);
+
+  async function complete() {
+    setError("");
+    setStatus("Completando los datos…");
+    try {
+      const done = await api<{ fields: string[]; completed: { logo: boolean; contact: boolean }; images: string[] }>(
+        `${base}/publicacion`,
+        { method: "POST", body: JSON.stringify({ replace: [...replace] }) },
+      );
+      let removed = 0;
+      let hidden = 0;
+      if (dropForeign)
+        for (const p of foreign) {
+          setStatus(`Quitando fotos de otras propiedades: ${removed + hidden + 1} de ${foreign.length}…`);
+          // Without stagings nothing is lost; with them, the photo is only hidden.
+          if (p.generations.length) {
+            await api(`${base}/photos/${p.id}`, { method: "PATCH", body: JSON.stringify({ changes: { visible: false } }) });
+            hidden++;
+          } else {
+            await api(`${base}/photos/${p.id}`, { method: "DELETE" });
+            removed++;
+          }
+        }
+      const { ids, failed } = await syncPhotos(base, done.images, setStatus);
+      const fresh = await api<DemoDetail>(base);
+      const rest = fresh.photos.map((p) => p.id).filter((id) => !ids.includes(id));
+      const order = [...ids.filter((id) => fresh.photos.some((p) => p.id === id)), ...rest];
+      if (order.join() !== fresh.photos.map((p) => p.id).join())
+        await api(base, { method: "PATCH", body: JSON.stringify({ action: "order", ids: order }) });
+      const added = ids.length - detail.photos.filter((p) => ids.includes(p.id)).length;
+      onDone(
+        await api<DemoDetail>(base),
+        [
+          `${done.fields.length} datos completados desde la publicación`,
+          `${added} fotos agregadas, ${ids.length - added} ya estaban`,
+          failed ? `${failed} no se pudieron descargar` : "",
+          removed + hidden ? `${removed + hidden} de otras propiedades quitadas${hidden ? ` (${hidden} ocultas por tener ambientaciones)` : ""}` : "",
+          done.completed.logo ? "logo importado" : "",
+          done.completed.contact ? "contacto de la inmobiliaria cargado" : "",
+        ]
+          .filter(Boolean)
+          .join(" · ") + ".",
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No pudimos completar la demo.");
+    } finally {
+      setStatus("");
+    }
+  }
+
   return (
-    <div className="dm-reread" role="region" aria-label="Comparación con la publicación">
+    <div className="dm-reread" role="region" aria-label="Completar desde la publicación">
       <div className="dm-reread-head">
         <strong>Publicación leída el {new Date(reread.checkedAt).toLocaleString("es-AR")}</strong>
-        <button type="button" className="text-link" onClick={onClose}>
+        <button type="button" className="text-link" onClick={onClose} disabled={working}>
           Cerrar
         </button>
       </div>
-      <table>
-        <thead>
-          <tr>
-            <th scope="col">Dato</th>
-            <th scope="col">En la demo</th>
-            <th scope="col">En la publicación</th>
-            <th scope="col">
-              <span className="dv2-sr">Acción</span>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.label} className={same(r.current, r.listing) ? "is-same" : "is-diff"}>
-              <th scope="row">{r.label}</th>
-              <td>{r.current || <em>vacío</em>}</td>
-              <td>{r.listing || <em>no encontrado</em>}</td>
-              <td>
-                {same(r.current, r.listing) ? (
-                  "Igual"
-                ) : r.listing ? (
-                  <button type="button" className="button button-small button-outline" disabled={busy} onClick={() => void r.use()}>
-                    Usar el de la publicación
-                  </button>
-                ) : (
-                  "—"
-                )}
-              </td>
-            </tr>
+      {error && (
+        <p className="inline-error" role="alert">
+          {error}
+        </p>
+      )}
+      <ImportPreview data={imported} />
+      {reread.fill.length > 0 ? (
+        <>
+          <h3>Se completa</h3>
+          <table>
+            <tbody>
+              {reread.fill.map((c) => (
+                <tr key={c.field} className="is-diff">
+                  <th scope="row">{c.label}</th>
+                  <td>{c.current === "—" ? <em>vacío</em> : c.current}</td>
+                  <td>{c.imported}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      ) : (
+        <p className="dm-help">No hay datos vacíos para completar.</p>
+      )}
+      {reread.conflicts.length > 0 && (
+        <>
+          <h3>Distinto a lo que se editó a mano</h3>
+          <p className="dm-help">Se mantiene lo de la demo salvo que marques reemplazarlo.</p>
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Dato</th>
+                <th scope="col">En la demo</th>
+                <th scope="col">En la publicación</th>
+                <th scope="col">Reemplazar</th>
+              </tr>
+            </thead>
+            <tbody>
+              {reread.conflicts.map((c) => (
+                <tr key={c.field} className="is-diff">
+                  <th scope="row">{c.label}</th>
+                  <td>{c.current}</td>
+                  <td>{c.imported}</td>
+                  <td>
+                    <input
+                      type="checkbox"
+                      aria-label={`Reemplazar ${c.label}`}
+                      checked={replace.has(c.field)}
+                      onChange={(e) => {
+                        const next = new Set(replace);
+                        if (e.target.checked) next.add(c.field);
+                        else next.delete(c.field);
+                        setReplace(next);
+                      }}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+      {pending.length > 0 && (
+        <ul className="dm-warnings">
+          {pending.map((r) => (
+            <li key={r.field}>
+              <strong>{r.field}:</strong> {r.note}
+            </li>
           ))}
-          <tr className={reread.prices.length > 1 ? "is-diff" : "is-same"}>
-            <th scope="row">Precio</th>
-            <td>
-              {detail.settings.priceConflict ? `En conflicto: ${detail.settings.priceConflict}` : price || <em>vacío</em>}
-            </td>
-            <td>{reread.prices.length ? reread.prices.join(" · ") : <em>no encontrado</em>}</td>
-            <td>
-              {reread.prices.length > 1 ? (
-                <button
-                  type="button"
-                  className="button button-small button-outline"
-                  disabled={busy}
-                  onClick={() =>
-                    void onUse(
-                      { action: "settings", settings: { priceConflict: `la publicación muestra ${reread.prices.join(", ")}` } },
-                      "Precio marcado en conflicto: la ficha muestra «Consultar».",
-                    )
-                  }
-                >
-                  Marcar conflicto
-                </button>
-              ) : reread.prices.length === 1 && reread.prices[0] !== price ? (
-                <button
-                  type="button"
-                  className="button button-small button-outline"
-                  disabled={busy}
-                  onClick={() =>
-                    void onUse(
-                      { action: "settings", settings: { price: reread.prices[0], priceConflict: "" } },
-                      "Precio actualizado desde la publicación.",
-                    )
-                  }
-                >
-                  Usar este precio
-                </button>
-              ) : (
-                "—"
-              )}
-            </td>
-          </tr>
-        </tbody>
-      </table>
+        </ul>
+      )}
       <p className="dm-help">
-        Varios importes pueden ser precio y expensas: revisá la publicación antes de decidir. Las fotos nuevas
-        ({reread.photos} encontradas) no se agregan solas.
+        Fotos: la publicación tiene {imported.images.length} de esta propiedad. Las que ya están en la demo conservan
+        sus ambientaciones; las que faltan se agregan y quedan en el orden de la publicación.
       </p>
+      {foreign.length > 0 && (
+        <label className="dm-check">
+          <input type="checkbox" checked={dropForeign} onChange={(e) => setDropForeign(e.target.checked)} />
+          Quitar {foreign.length} fotos de otras propiedades (las que tienen ambientaciones quedan ocultas, no se borran)
+        </label>
+      )}
+      <details className="dm-report-wrap">
+        <summary>Ver todos los datos leídos</summary>
+        <ImportReport report={imported.report} />
+      </details>
+      <button type="button" className="button button-primary" disabled={working} onClick={() => void complete()}>
+        {status || "Completar la demo"}
+      </button>
     </div>
   );
 }

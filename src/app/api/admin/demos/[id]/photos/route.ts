@@ -32,7 +32,7 @@ async function fromUrl(request: Request) {
   } catch {
     // A malformed escape keeps the raw file name.
   }
-  return { bytes: image.body, name: name.replace(/\.[^.]+$/, "") };
+  return { bytes: image.body, name: name.replace(/\.[^.]+$/, ""), reuse: body.reuse === true };
 }
 
 /** An uploaded file: "image" in multipart form data. */
@@ -48,7 +48,7 @@ async function fromUpload(request: Request) {
     !["image/jpeg", "image/png", "image/webp"].includes(file.type)
   )
     throw new HttpError(400, "Subí una imagen JPG, PNG o WebP de hasta 3 MB.");
-  return { bytes: Buffer.from(await file.arrayBuffer()), name: file.name.replace(/\.[^.]+$/, "") };
+  return { bytes: Buffer.from(await file.arrayBuffer()), name: file.name.replace(/\.[^.]+$/, ""), reuse: false };
 }
 
 /** One photo per request (the panel uploads or imports several in sequence, with progress). */
@@ -64,10 +64,10 @@ export async function POST(
       ? await fromUrl(request)
       : await fromUpload(request);
     await rpc("amobla_account", { p_user: actor.id, p_trial: false });
-    const row = await addPhoto(demo, actor.id, photo.bytes, photo.name);
+    const row = await addPhoto(demo, actor.id, photo.bytes, photo.name, { reuse: photo.reuse });
     return Response.json(
-      { id: row.id },
-      { status: 201, headers: { "Cache-Control": "private, no-store" } },
+      { id: row.id, reused: row.reused },
+      { status: row.reused ? 200 : 201, headers: { "Cache-Control": "private, no-store" } },
     );
   } catch (e) {
     return failure(e);
