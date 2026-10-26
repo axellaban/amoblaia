@@ -15,7 +15,7 @@ type Params = { params: Promise<{ id: string }> };
 
 export async function GET(_request: Request, { params }: Params) {
   try {
-    await requireAdmin(undefined, "demos");
+    await requireAdmin();
     const { id } = await params;
     return Response.json(await demoDetail(id), { headers: PRIVATE });
   } catch (e) {
@@ -25,7 +25,7 @@ export async function GET(_request: Request, { params }: Params) {
 
 export async function PATCH(request: Request, { params }: Params) {
   try {
-    const actor = await requireAdmin(request, "demos");
+    const actor = await requireAdmin(request);
     const { id } = await params;
     const demo = await demoRow(id);
     const body = await readJson(request);
@@ -144,7 +144,7 @@ export async function PATCH(request: Request, { params }: Params) {
 /** Deletes the demo, its property and photos, and the files no other demo uses. The agency stays. */
 export async function DELETE(request: Request, { params }: Params) {
   try {
-    const actor = await requireAdmin(request, "demos");
+    const actor = await requireAdmin(request);
     const { id } = await params;
     const demo = await demoRow(id);
     const db = adminClient();

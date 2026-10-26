@@ -9,7 +9,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const actor = await requireAdmin(request, "demos");
+    const actor = await requireAdmin(request);
     if (Number(request.headers.get("content-length") || 0) > MAX_BYTES + 16384)
       throw new HttpError(413, "La foto es demasiado grande.");
     const { id } = await params;

@@ -35,12 +35,9 @@ describe("Admin permission", () => {
     expect(isAdmin("cliente@example.com")).toBe(false);
     expect(isAdmin("equipo@amobla.com.evil")).toBe(false);
   });
-  it("lets demo editors into the demos panel only", () => {
-    vi.stubEnv("ADMIN_EMAILS", "equipo@amobla.com");
-    expect(isAdmin("FacundoGregorini@gmail.com", "demos")).toBe(true);
-    expect(isAdmin("facundogregorini@gmail.com")).toBe(false);
-    expect(isAdmin("equipo@amobla.com", "demos")).toBe(true);
-    expect(isAdmin("cliente@example.com", "demos")).toBe(false);
+  it("includes the temporary admins hardcoded until they are in ADMIN_EMAILS", () => {
+    vi.stubEnv("ADMIN_EMAILS", "");
+    expect(isAdmin("FacundoGregorini@gmail.com")).toBe(true);
   });
 });
 
