@@ -29,10 +29,11 @@ import {
 import { optimizePhoto } from "@/lib/images";
 import { rooms, styles } from "@/lib/catalog";
 import {
+  MAX_DEMO_STYLES,
   adminGenerationUrl,
   adminPhotoUrl,
   generationNote,
-  modeName,
+  orderStyles,
   photoLabel,
   roomName,
   styleName,
@@ -42,8 +43,28 @@ import {
 } from "@/lib/demos/shared";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const isLive = (p: EditorPhoto) =>
-  p.generations.some((g) => g.status === "queued" || g.status === "running");
+const liveStatus = (g: GenerationRow) => g.status === "queued" || g.status === "running";
+const isLive = (p: EditorPhoto, style?: string) =>
+  p.generations.some((g) => liveStatus(g) && (!style || g.style === style));
+type Task = { photoId: string; style: string };
+const taskKey = (t: Task) => `${t.photoId}:${t.style}`;
+/** Styles checked in the panel but not staged yet live only in this browser until they are. */
+const pickedKey = (id: string) => `amoblaia_demo_estilos_${id}`;
+function readPicked(id: string): string[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(pickedKey(id)) || "[]");
+    return Array.isArray(v) ? v.filter((x) => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+function savePicked(id: string, list: string[]) {
+  try {
+    localStorage.setItem(pickedKey(id), JSON.stringify(list));
+  } catch {
+    /* Private mode: the choice lasts until the page reloads. */
+  }
+}
 type Upload = { name: string; state: "waiting" | "uploading" | "done" | "error"; error?: string };
 
 export function DemoEditor({ id }: { id: string }) {
@@ -54,17 +75,24 @@ export function DemoEditor({ id }: { id: string }) {
   const [uploads, setUploads] = useState<Upload[]>([]);
   const [dragging, setDragging] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [batchStyle, setBatchStyle] = useState("modern");
-  const [queue, setQueue] = useState<string[]>([]);
-  const [review, setReview] = useState<{ photoId: string; generationId: string } | null>(null);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [queue, setQueue] = useState<Task[]>([]);
+  const [review, setReview] = useState<{ photoId: string; style: string } | null>(null);
   const [title, setTitle] = useState("");
   const [agency, setAgency] = useState({ name: "", website: "", contact_name: "", notes: "" });
   const [property, setProperty] = useState({ title: "", listing_url: "", location: "", description: "" });
   const base = `/api/admin/demos/${id}`;
   const queueRef = useRef<string | null>(null);
+  const firstLoad = useRef(true);
 
   const apply = useCallback((d: DemoDetail) => {
     setDetail(d);
+    if (firstLoad.current) {
+      firstLoad.current = false;
+      // Every visible photo is staged unless unticked (bathrooms, façades, plans…).
+      setSelected(new Set(d.photos.filter((p) => p.visible).map((p) => p.id)));
+      setPicked(readPicked(d.demo.id));
+    }
     setTitle(d.demo.title === d.property.title ? "" : d.demo.title);
     setAgency({
       name: d.agency.name,
@@ -96,7 +124,7 @@ export function DemoEditor({ id }: { id: string }) {
         demo: {
           ...d.demo,
           photos: photos.length,
-          staged: photos.filter((p) => p.approvedGenerationId).length,
+          staged: photos.filter((p) => Object.keys(p.shown).length).length,
         },
       };
     });
@@ -142,7 +170,7 @@ export function DemoEditor({ id }: { id: string }) {
 
   // Photos still rendering (for example after a reload) are followed until they finish.
   const livePhotos = useMemo(
-    () => (detail?.photos || []).filter(isLive).map((p) => p.id),
+    () => (detail?.photos || []).filter((p) => isLive(p)).map((p) => p.id),
     [detail],
   );
   useEffect(() => {
@@ -161,46 +189,46 @@ export function DemoEditor({ id }: { id: string }) {
     return () => window.removeEventListener("beforeunload", warn);
   }, [queue.length, livePhotos.length]);
 
-  /** One proposal at a time: the account admits one live generation, like the studio. */
-  async function generate(photoIds: string[], style?: string) {
-    setQueue(photoIds);
+  /** One version at a time: the account admits one live generation, like the studio. */
+  async function generate(tasks: Task[]) {
+    setQueue(tasks);
     setError("");
     setNotice("");
     let failures = 0;
-    for (const photoId of photoIds) {
-      queueRef.current = photoId;
-      const photo = detail?.photos.find((p) => p.id === photoId);
+    for (const task of tasks) {
+      queueRef.current = task.photoId;
+      const photo = detail?.photos.find((p) => p.id === task.photoId);
       if (!photo) continue;
       try {
-        await api(`${base}/photos/${photoId}`, {
+        await api(`${base}/photos/${task.photoId}`, {
           method: "POST",
           body: JSON.stringify({
             key: crypto.randomUUID(),
             room: photo.room,
             mode: photo.mode,
-            style: style ?? photo.style,
+            style: task.style,
           }),
         });
-        let current = await poll(photoId);
+        let current = await poll(task.photoId);
         while (current && isLive(current)) {
           await sleep(4000);
-          current = await poll(photoId);
+          current = await poll(task.photoId);
         }
-        if (current?.generations[0]?.status !== "succeeded") failures++;
+        const last = current?.generations.find((g) => g.style === task.style);
+        if (last?.status !== "succeeded") failures++;
       } catch (e) {
         failures++;
         setError(e instanceof Error ? e.message : "No pudimos ambientar la foto.");
         // Quota, capacity or configuration problems would repeat: stop the batch.
         break;
       } finally {
-        setQueue((q) => q.filter((x) => x !== photoId));
+        setQueue((q) => q.filter((x) => taskKey(x) !== taskKey(task)));
       }
     }
     queueRef.current = null;
     setQueue([]);
-    setSelected(new Set());
     if (!failures)
-      setNotice("Propuestas listas. Revisalas y aprobá la que se mostrará en la demo.");
+      setNotice("Ambientaciones listas. Revisalas: las que no sirvan, descartalas o regeneralas.");
   }
 
   async function upload(files: FileList | File[]) {
@@ -259,8 +287,47 @@ export function DemoEditor({ id }: { id: string }) {
   const { demo, photos } = detail;
   const live = demo.status === "published";
   const generating = queue.length > 0;
+  const busyAny = generating || livePhotos.length > 0;
+  // Styles of the demo: the staged ones plus the ones just checked here.
+  const chosen = orderStyles([...detail.styles, ...picked], detail.mainStyle);
+  const main = chosen.includes(detail.mainStyle) ? detail.mainStyle : chosen[0];
+  const pending: Task[] = photos
+    .filter((p) => selected.has(p.id))
+    .flatMap((p) =>
+      chosen.filter((style) => !p.shown[style] && !isLive(p, style)).map((style) => ({ photoId: p.id, style })),
+    );
   const reviewPhoto = review && photos.find((p) => p.id === review.photoId);
-  const reviewGen = reviewPhoto?.generations.find((g) => g.id === review?.generationId);
+  const reviewGenId = review && reviewPhoto?.shown[review.style];
+  const reviewGen = reviewPhoto?.generations.find((g) => g.id === reviewGenId);
+
+  async function toggleStyle(style: string, on: boolean) {
+    if (on) {
+      if (chosen.length >= MAX_DEMO_STYLES) {
+        setError(`Una demo admite hasta ${MAX_DEMO_STYLES} estilos.`);
+        return;
+      }
+      const next = [...picked.filter((s) => s !== style), style];
+      setPicked(next);
+      savePicked(demo.id, next);
+      // The first style becomes the main one.
+      if (!chosen.length) await demoAction({ action: "main-style", style });
+      return;
+    }
+    const staged = photos.filter((p) => p.shown[style]).length;
+    if (
+      staged &&
+      !window.confirm(
+        `Se quitan de la demo las ${staged} ${staged === 1 ? "foto ambientada" : "fotos ambientadas"} en ${styleName(style)}. Quedan en "Descartadas" por si querés recuperarlas. ¿Continuar?`,
+      )
+    )
+      return;
+    const next = picked.filter((s) => s !== style);
+    setPicked(next);
+    savePicked(demo.id, next);
+    if (staged) await demoAction({ action: "hide-style", style }, `${styleName(style)} ya no se muestra en la demo.`);
+    const rest = chosen.filter((s) => s !== style);
+    if (style === main && rest.length) await demoAction({ action: "main-style", style: rest[0] });
+  }
 
   return (
     <div className="account-page container dm-page">
@@ -311,12 +378,80 @@ export function DemoEditor({ id }: { id: string }) {
         </p>
       )}
 
+      <section className="account-panel dm-styles-panel" aria-labelledby="dm-styles-title">
+        <div className="dm-styles-head">
+          <div>
+            <h2 id="dm-styles-title">Estilos de la demo</h2>
+            <p className="dm-help">
+              Elegí qué estilos va a ver la inmobiliaria en cada foto. El principal se usa de portada y
+              en la vista previa de WhatsApp: la primera foto, mitad original y mitad ambientada.
+            </p>
+          </div>
+          <span className="dm-styles-count">
+            {chosen.length} de {MAX_DEMO_STYLES}
+          </span>
+        </div>
+        <ul className="dm-styles">
+          {styles.map((st) => {
+            const on = chosen.includes(st.id);
+            return (
+              <li key={st.id} className={on ? "is-on" : ""}>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    disabled={busy || busyAny}
+                    onChange={(e) => void toggleStyle(st.id, e.target.checked)}
+                  />
+                  <span className="dm-style-swatch" style={{ background: st.color }} aria-hidden="true" />
+                  {st.name}
+                </label>
+                {on && (
+                  <button
+                    type="button"
+                    className={`dm-main ${st.id === main ? "is-main" : ""}`}
+                    aria-pressed={st.id === main}
+                    disabled={busy || st.id === main}
+                    onClick={() =>
+                      demoAction({ action: "main-style", style: st.id }, `${st.name} es ahora el estilo principal.`)
+                    }
+                  >
+                    <Star size={13} /> {st.id === main ? "Principal" : "Hacer principal"}
+                  </button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+        <div className="dm-styles-foot">
+          <p className="dm-help">
+            {chosen.length
+              ? `${selected.size} ${selected.size === 1 ? "foto marcada" : "fotos marcadas"} × ${chosen.length} ${chosen.length === 1 ? "estilo" : "estilos"}. Se ambientan de a una.`
+              : "Elegí al menos un estilo para ambientar las fotos."}
+          </p>
+          <button
+            type="button"
+            className="button button-primary"
+            disabled={!pending.length || busyAny}
+            onClick={() => void generate(pending)}
+          >
+            {generating ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />}
+            {generating
+              ? `Ambientando… quedan ${queue.length}`
+              : pending.length
+                ? `Ambientar ${pending.length} ${pending.length === 1 ? "imagen pendiente" : "imágenes pendientes"}`
+                : "Todo ambientado"}
+          </button>
+        </div>
+      </section>
+
       <div className="dm-editor">
         <section className="account-panel dm-photos" aria-labelledby="dm-photos-title">
           <h2 id="dm-photos-title">Fotos de la propiedad</h2>
           <p className="dm-help">
-            Las originales se conservan sin cambios. Ambientá las que quieras: la IA mantiene encuadre,
-            paredes, aberturas y pisos, pero revisá cada propuesta antes de aprobarla.
+            Las originales se conservan sin cambios. Cada foto marcada se ambienta en los estilos de la
+            demo: la IA mantiene encuadre, paredes, aberturas y pisos, pero revisá cada versión antes de
+            publicar.
           </p>
           <label
             className={`dm-drop ${dragging ? "is-dragging" : ""}`}
@@ -371,54 +506,26 @@ export function DemoEditor({ id }: { id: string }) {
                     setSelected(e.target.checked ? new Set(photos.map((p) => p.id)) : new Set())
                   }
                 />
-                Seleccionar todas
+                Ambientar todas
               </label>
-              <label>
-                Estilo
-                <select
-                  value={batchStyle}
-                  disabled={generating}
-                  onChange={(e) => setBatchStyle(e.target.value)}
-                >
-                  {styles.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button
-                type="button"
-                className="button button-small button-primary"
-                disabled={!selected.size || generating || livePhotos.length > 0}
-                onClick={() =>
-                  void generate(
-                    photos.filter((p) => selected.has(p.id)).map((p) => p.id),
-                    batchStyle,
-                  )
-                }
-              >
-                <Sparkles size={15} />
-                {generating
-                  ? `Ambientando… quedan ${queue.length}`
-                  : `Ambientar seleccionadas (${selected.size})`}
-              </button>
+              <span className="dm-help">Destildá las que se muestran como son (baños, fachadas, planos).</span>
             </div>
           )}
 
           {!photos.length && <p className="dm-empty-photos">Todavía no cargaste fotos.</p>}
           <ol className="dm-photo-list">
             {photos.map((p, i) => {
-              const visible = p.generations.filter((g) => !p.discarded.includes(g.id));
               const discarded = p.generations.filter((g) => p.discarded.includes(g.id));
-              const busyPhoto = isLive(p) || queue.includes(p.id);
+              const busyPhoto = isLive(p) || queue.some((t) => t.photoId === p.id);
               const cover = demo.cover?.id === p.id;
+              const mainVersion = p.shown[main];
               return (
                 <li key={p.id} className={`dm-photo ${p.visible ? "" : "is-hidden"}`}>
                   <div className="dm-photo-head">
                     <input
                       type="checkbox"
-                      aria-label={`Seleccionar ${photoLabel(p)}`}
+                      aria-label={`Ambientar ${photoLabel(p)}`}
+                      title="Ambientar esta foto"
                       checked={selected.has(p.id)}
                       disabled={generating}
                       onChange={(e) => {
@@ -431,17 +538,13 @@ export function DemoEditor({ id }: { id: string }) {
                     <span className="dm-photo-index">{i + 1}</span>
                     <div className="dm-photo-thumb">
                       <img
-                        src={
-                          p.approvedGenerationId
-                            ? adminGenerationUrl(p.approvedGenerationId, 480)
-                            : adminPhotoUrl(p.id, "original", 480)
-                        }
+                        src={mainVersion ? adminGenerationUrl(mainVersion, 480) : adminPhotoUrl(p.id, null, 480)}
                         alt={photoLabel(p)}
                         loading="lazy"
                       />
                       <div className="dm-badges">
                         {cover && <span>Portada</span>}
-                        {p.approvedGenerationId && <span className="is-ai">IA aprobada</span>}
+                        {!selected.has(p.id) && <span className="is-muted">Sin ambientar</span>}
                         {!p.visible && <span className="is-muted">Oculta</span>}
                       </div>
                     </div>
@@ -483,36 +586,9 @@ export function DemoEditor({ id }: { id: string }) {
                           <option value="redesign">Rediseñar (con muebles)</option>
                         </select>
                       </label>
-                      <label>
-                        Estilo
-                        <select
-                          value={p.style}
-                          disabled={busyPhoto}
-                          onChange={(e) => patchPhoto(p.id, { changes: { style: e.target.value } })}
-                        >
-                          {styles.map((s) => (
-                            <option key={s.id} value={s.id}>
-                              {s.name}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
                     </div>
                   </div>
                   <div className="dm-photo-actions">
-                    <button
-                      type="button"
-                      className="button button-small button-primary"
-                      disabled={busyPhoto || generating || livePhotos.length > 0}
-                      onClick={() => void generate([p.id])}
-                    >
-                      {busyPhoto ? <Loader2 size={15} className="spin" /> : <Sparkles size={15} />}
-                      {busyPhoto
-                        ? "Ambientando…"
-                        : p.generations.length
-                          ? "Regenerar con IA"
-                          : "Ambientar con IA"}
-                    </button>
                     <button
                       type="button"
                       className="icon-button"
@@ -572,16 +648,19 @@ export function DemoEditor({ id }: { id: string }) {
                       <Trash2 size={18} />
                     </button>
                   </div>
-                  {visible.length > 0 && (
+                  {chosen.length > 0 && selected.has(p.id) && (
                     <div className="dm-proposals">
-                      <span className="dm-proposals-title">Propuestas</span>
+                      <span className="dm-proposals-title">Estilos</span>
                       <ul>
-                        {visible.map((g) => (
-                          <Proposal
-                            key={g.id}
-                            g={g}
-                            approved={p.approvedGenerationId === g.id}
-                            onOpen={() => setReview({ photoId: p.id, generationId: g.id })}
+                        {chosen.map((style) => (
+                          <StyleCell
+                            key={style}
+                            photo={p}
+                            style={style}
+                            queued={queue.some((t) => t.photoId === p.id && t.style === style)}
+                            disabled={busyAny}
+                            onOpen={() => setReview({ photoId: p.id, style })}
+                            onStage={() => void generate([{ photoId: p.id, style }])}
                           />
                         ))}
                       </ul>
@@ -636,7 +715,9 @@ export function DemoEditor({ id }: { id: string }) {
               </p>
             )}
             <LinkPreview demo={demo} location={detail.property.location} />
-            <p className="dm-help">Así se verá el enlace en WhatsApp. La imagen es la portada.</p>
+            <p className="dm-help">
+              Así se verá el enlace en WhatsApp: la portada, mitad original y mitad en el estilo principal.
+            </p>
             {live && (
               <button
                 type="button"
@@ -705,21 +786,19 @@ export function DemoEditor({ id }: { id: string }) {
         </aside>
       </div>
 
-      {reviewPhoto && reviewGen && (
+      {reviewPhoto && reviewGen && review && (
         <Review
           photo={reviewPhoto}
           g={reviewGen}
-          approved={reviewPhoto.approvedGenerationId === reviewGen.id}
+          busy={busyAny}
           onClose={() => setReview(null)}
-          onApprove={async () => {
-            await patchPhoto(reviewPhoto.id, {
-              approve: reviewPhoto.approvedGenerationId === reviewGen.id ? null : reviewGen.id,
-            });
-            setReview(null);
-          }}
           onDiscard={async () => {
             await patchPhoto(reviewPhoto.id, { discard: reviewGen.id });
             setReview(null);
+          }}
+          onRegenerate={() => {
+            setReview(null);
+            void generate([{ photoId: reviewPhoto.id, style: review.style }]);
           }}
         />
       )}
@@ -727,35 +806,45 @@ export function DemoEditor({ id }: { id: string }) {
   );
 }
 
-function Proposal({
-  g,
-  approved,
+/** One style of one photo: its version, or where it stands. */
+function StyleCell({
+  photo,
+  style,
+  queued,
+  disabled,
   onOpen,
+  onStage,
 }: {
-  g: GenerationRow;
-  approved: boolean;
+  photo: EditorPhoto;
+  style: string;
+  queued: boolean;
+  disabled: boolean;
   onOpen: () => void;
+  onStage: () => void;
 }) {
-  const ready = g.status === "succeeded";
+  const shown = photo.shown[style];
+  const last = photo.generations.find((g) => g.style === style && !photo.discarded.includes(g.id));
+  const running = queued || (last ? liveStatus(last) : false);
+  const failed = !running && !shown && last && ["failed", "needs_review"].includes(last.status);
   return (
-    <li className={`dm-proposal ${approved ? "is-approved" : ""} is-${g.status}`}>
-      {ready ? (
-        <button type="button" onClick={onOpen} aria-label={`Revisar propuesta ${styleName(g.style)}`}>
-          <img src={adminGenerationUrl(g.id, 480)} alt="" loading="lazy" />
-          {approved && (
-            <span className="dm-approved">
-              <Check size={13} /> En la demo
-            </span>
-          )}
+    <li className={`dm-proposal ${shown ? "is-approved" : ""} ${failed ? `is-${last!.status}` : ""}`}>
+      {shown && !running ? (
+        <button type="button" onClick={onOpen} aria-label={`Revisar ${styleName(style)}`}>
+          <img src={adminGenerationUrl(shown, 480)} alt="" loading="lazy" />
         </button>
       ) : (
         <div className="dm-proposal-wait">
-          {["queued", "running"].includes(g.status) && <Loader2 size={18} className="spin" />}
-          <span>{generationNote(g)}</span>
+          {running && <Loader2 size={18} className="spin" />}
+          <span>{running ? (queued && !last ? "En cola" : "Ambientando…") : failed ? generationNote(last!) : "Sin ambientar"}</span>
         </div>
       )}
-      <small>
-        {styleName(g.style)} · {modeName(g.mode)}
+      <small className="dm-cell-foot">
+        <strong>{styleName(style)}</strong>
+        {!running && (
+          <button type="button" className="text-link" disabled={!shown && disabled} onClick={shown ? onOpen : onStage}>
+            {shown ? "Revisar" : failed ? "Reintentar" : "Ambientar"}
+          </button>
+        )}
       </small>
     </li>
   );
@@ -764,17 +853,17 @@ function Proposal({
 function Review({
   photo,
   g,
-  approved,
+  busy,
   onClose,
-  onApprove,
   onDiscard,
+  onRegenerate,
 }: {
   photo: EditorPhoto;
   g: GenerationRow;
-  approved: boolean;
+  busy: boolean;
   onClose: () => void;
-  onApprove: () => Promise<void>;
   onDiscard: () => Promise<void>;
+  onRegenerate: () => void;
 }) {
   const close = useRef<HTMLButtonElement>(null);
   const [saving, setSaving] = useState(false);
@@ -784,11 +873,6 @@ function Review({
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
-  const act = (fn: () => Promise<void>) => async () => {
-    setSaving(true);
-    await fn();
-    setSaving(false);
-  };
   return (
     <div className="dm-modal" role="dialog" aria-modal="true" aria-labelledby="dm-review-title" onClick={onClose}>
       <div className="dm-modal-card" onClick={(e) => e.stopPropagation()}>
@@ -801,25 +885,37 @@ function Review({
           </button>
         </div>
         <Comparison
-          before={adminPhotoUrl(photo.id, "original", 1600)}
+          before={adminPhotoUrl(photo.id, null, 1600)}
           after={adminGenerationUrl(g.id, 1600)}
           beforeLabel="Foto original"
           beforeAlt="Foto original"
-          afterLabel="Propuesta con IA"
-          alt="Propuesta de ambientación con IA"
+          afterLabel={`Ambientación ${styleName(g.style)}`}
+          alt="Ambientación con IA"
           initial={50}
         />
         <p className="dm-help">
-          Antes de aprobar, comprobá que paredes, puertas, ventanas, pisos, dimensiones y vistas sigan
-          iguales y que no aparezcan características que la propiedad no tiene. Si algo cambió,
-          descartala.
+          Esta versión se muestra en la demo. Comprobá que paredes, puertas, ventanas, pisos, dimensiones y
+          vistas sigan iguales y que no aparezcan características que la propiedad no tiene. Si algo
+          cambió, descartala (vuelve la versión anterior de este estilo, si hay) o regenerala.
         </p>
         <div className="dm-modal-actions">
-          <button type="button" className="button button-outline" disabled={saving} onClick={act(onDiscard)}>
+          <button
+            type="button"
+            className="button button-outline"
+            disabled={saving}
+            onClick={async () => {
+              setSaving(true);
+              await onDiscard();
+              setSaving(false);
+            }}
+          >
             <Trash2 size={16} /> Descartar
           </button>
-          <button type="button" className="button button-primary" disabled={saving} onClick={act(onApprove)}>
-            <Check size={16} /> {approved ? "Quitar de la demo" : "Aprobar para la demo"}
+          <button type="button" className="button button-outline" disabled={saving || busy} onClick={onRegenerate}>
+            <RefreshCw size={16} /> Regenerar
+          </button>
+          <button type="button" className="button button-primary" onClick={onClose}>
+            <Check size={16} /> Se ve bien
           </button>
         </div>
       </div>

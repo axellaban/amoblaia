@@ -1,5 +1,6 @@
 import { requireAdmin, failure, HttpError } from "@/lib/commerce/http";
-import { adminImagePath, renderImage } from "@/lib/demos/server";
+import { adminImagePaths, renderImage, renderPreview } from "@/lib/demos/server";
+import { validStyle } from "@/lib/demos/input";
 import { imageWidth } from "@/lib/demos/shared";
 export const runtime = "nodejs";
 
@@ -8,12 +9,17 @@ export async function GET(request: Request) {
   try {
     await requireAdmin();
     const q = new URL(request.url).searchParams;
-    const path = await adminImagePath({
+    const style = q.get("estilo");
+    const paths = await adminImagePaths({
       photoId: q.get("foto"),
-      variant: q.get("v"),
+      style: validStyle(style) ? style : null,
       generationId: q.get("generacion"),
     });
-    const image = path ? await renderImage(path, imageWidth(q.get("w"))) : null;
+    const image = !paths
+      ? null
+      : q.get("og") === "1"
+        ? await renderPreview(paths)
+        : await renderImage(paths.staged ?? paths.original, imageWidth(q.get("w")));
     if (!image) throw new HttpError(404, "No encontramos la imagen.");
     return new Response(new Uint8Array(image), {
       headers: {

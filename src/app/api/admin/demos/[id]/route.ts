@@ -6,7 +6,7 @@ import {
   newToken,
   releaseProjects,
 } from "@/lib/demos/server";
-import { agencyInput, orderInput, propertyInput, readJson } from "@/lib/demos/input";
+import { agencyInput, orderInput, propertyInput, readJson, validStyle } from "@/lib/demos/input";
 import { cleanText, isUuid } from "@/lib/demos/shared";
 import { adminClient } from "@/lib/supabase/server";
 
@@ -121,6 +121,55 @@ export async function PATCH(request: Request, { params }: Params) {
           ),
         );
         if (results.some((r) => r.error)) throw new Error("DEMO_ORDER_FAILED");
+        break;
+      }
+      case "main-style":
+        // Kept on every photo: the cover and the link preview use it.
+        if (!validStyle(body.style)) throw new HttpError(400, "Elegí un estilo válido.");
+        saved(
+          await db.from("demo_photos").update({ style: body.style }).eq("property_id", demo.property_id),
+          "DEMO_STYLE_FAILED",
+        );
+        break;
+      case "hide-style": {
+        // Takes a style out of the demo: its versions go to the discarded
+        // ones of each photo, where they can still be recovered.
+        if (!validStyle(body.style)) throw new HttpError(400, "Elegí un estilo válido.");
+        const { data: rows, error } = await db
+          .from("demo_photos")
+          .select("id,project_id,approved_generation_id,discarded")
+          .eq("property_id", demo.property_id);
+        if (error) throw new Error("DEMO_PHOTOS_LOOKUP_FAILED");
+        const photos = rows as {
+          id: string;
+          project_id: string;
+          approved_generation_id: string | null;
+          discarded: string[] | null;
+        }[];
+        if (!photos.length) break;
+        const { data: gens, error: genError } = await db
+          .from("generations")
+          .select("id,project_id")
+          .in("project_id", photos.map((p) => p.project_id))
+          .eq("style", body.style)
+          .eq("status", "succeeded");
+        if (genError) throw new Error("DEMO_GENERATIONS_LOOKUP_FAILED");
+        const results = await Promise.all(
+          photos.map((p) => {
+            const ids = (gens as { id: string; project_id: string }[])
+              .filter((g) => g.project_id === p.project_id)
+              .map((g) => g.id);
+            if (!ids.length) return { error: null };
+            return db
+              .from("demo_photos")
+              .update({
+                discarded: [...new Set([...(p.discarded || []), ...ids])],
+                ...(ids.includes(p.approved_generation_id ?? "") ? { approved_generation_id: null } : {}),
+              })
+              .eq("id", p.id);
+          }),
+        );
+        if (results.some((r) => r.error)) throw new Error("DEMO_STYLE_FAILED");
         break;
       }
       default:

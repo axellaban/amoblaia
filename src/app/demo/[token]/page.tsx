@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { cache } from "react";
 import { DemoView } from "@/components/demo-view";
 import { publishedDemo } from "@/lib/demos/server";
-import { demoPath, ogImageUrl } from "@/lib/demos/shared";
+import { coverVersion, demoPath, ogImageUrl } from "@/lib/demos/shared";
 import { cloudConfigured } from "@/lib/supabase/config";
 
 // Read on every request: unpublishing or rotating the link takes effect at once.
@@ -28,6 +28,9 @@ export async function generateMetadata({
   const demo = await load(token);
   const robots = { index: false, follow: false };
   if (!demo) return { title: "Demo no disponible", robots };
+  // The first photo, half original and half in the main style.
+  const cover = demo.cover;
+  const version = cover ? coverVersion(cover, demo.styles[0]?.id ?? "") : null;
   const title = `${demo.agencyName} · ${demo.title}`;
   const description = `Mirá cómo podría verse esta propiedad${
     demo.location ? ` en ${demo.location}` : ""
@@ -44,14 +47,14 @@ export async function generateMetadata({
       url: demoPath(token),
       title,
       description,
-      images: demo.cover
+      images: cover
         ? [
             {
-              url: ogImageUrl(token, demo.cover),
+              url: ogImageUrl(token, cover.id, version),
               width: 1200,
               height: 630,
               type: "image/jpeg",
-              alt: `${demo.title}: ${demo.cover.staged ? "ambientación virtual con IA" : "foto de la propiedad"}`,
+              alt: `${demo.title}: ${version ? "foto original y ambientación virtual con IA" : "foto de la propiedad"}`,
             },
           ]
         : undefined,

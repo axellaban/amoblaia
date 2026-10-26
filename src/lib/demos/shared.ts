@@ -31,13 +31,18 @@ export const UUID_PATTERN =
 export const isUuid = (v: unknown): v is string =>
   typeof v === "string" && UUID_PATTERN.test(v);
 
+/** Most styles a demo offers; each one is one more image per photo to stage and review. */
+export const MAX_DEMO_STYLES = 6;
+
+/** One staged version of a photo, in one style. `v` changes when the version does, so caches refresh. */
+export type PhotoVersion = { style: string; v: string };
 export type PublicPhoto = {
   id: string;
   label: string;
-  staged: boolean;
-  /** Changes when another proposal is approved, so caches refresh. */
-  version: string;
+  /** Staged versions, in the demo's style order. Empty: the photo is shown as is. */
+  versions: PhotoVersion[];
 };
+export type StyleOption = { id: string; name: string };
 /** Exactly what the public page receives: no notes, contacts or internal ids of other entities. */
 export type PublicDemo = {
   id: string;
@@ -46,6 +51,8 @@ export type PublicDemo = {
   title: string;
   location: string | null;
   description: string | null;
+  /** Styles with at least one staged photo; the first is the main one (cover and link preview). */
+  styles: StyleOption[];
   cover: PublicPhoto | null;
   photos: PublicPhoto[];
 };
@@ -63,7 +70,7 @@ export type DemoSummary = {
   staged: number;
   coverPhotoId: string | null;
   /** What the link preview shows: the chosen cover, else the first staged or first visible photo. */
-  cover: { id: string; staged: boolean; version: string } | null;
+  cover: { id: string; version: PhotoVersion | null } | null;
   createdAt: string;
   publishedAt: string | null;
 };
@@ -90,10 +97,10 @@ export type EditorPhoto = {
   visible: boolean;
   room: string;
   label: string | null;
-  style: string;
   mode: DemoMode;
-  approvedGenerationId: string | null;
   discarded: string[];
+  /** The version each style shows, by style id: a generation id. */
+  shown: Record<string, string>;
   generations: GenerationRow[];
 };
 export type DemoDetail = {
@@ -107,6 +114,9 @@ export type DemoDetail = {
     description: string | null;
   };
   photos: EditorPhoto[];
+  /** Styles with a staged version, main one first. */
+  styles: string[];
+  mainStyle: string;
 };
 
 export function roomName(id: string) {
@@ -118,25 +128,50 @@ export function styleName(id: string) {
 export function modeName(id: string) {
   return modes.find((m) => m.id === id)?.name ?? id;
 }
-type CoverCandidate = {
+type Candidate = {
   id: string;
-  visible: boolean;
-  approved_generation_id: string | null;
+  style: string;
+  status: string;
+  result_path: string | null;
+  is_free: boolean;
 };
-export function pickCover(photos: CoverCandidate[], coverId: string | null) {
-  const visible = photos.filter((p) => p.visible);
-  const p =
-    visible.find((x) => x.id === coverId) ??
-    visible.find((x) => x.approved_generation_id) ??
-    visible[0];
-  return p
-    ? {
-        id: p.id,
-        staged: Boolean(p.approved_generation_id),
-        version: p.approved_generation_id?.slice(0, 8) ?? "o",
-      }
-    : null;
+/**
+ * The version a photo shows in each style: the one approved in that style if
+ * it can be delivered, else the newest deliverable one. Discarded and free
+ * (watermarked) results never show. `generations` are newest first.
+ */
+export function shownVersions<G extends Candidate>(
+  photo: { approved_generation_id: string | null; discarded: string[] | null },
+  generations: G[],
+) {
+  const discarded = new Set(photo.discarded || []);
+  const shown = new Map<string, G>();
+  const ok = (g: G) => g.status === "succeeded" && Boolean(g.result_path) && !g.is_free && !discarded.has(g.id);
+  const approved = generations.find((g) => g.id === photo.approved_generation_id && ok(g));
+  if (approved) shown.set(approved.style, approved);
+  for (const g of generations) if (ok(g) && !shown.has(g.style)) shown.set(g.style, g);
+  return shown;
 }
+/** Main style first, then the catalog order; unknown styles are left out. */
+export function orderStyles(ids: Iterable<string>, main: string) {
+  const set = new Set(ids);
+  return styles.map((s): string => s.id).filter((id) => set.has(id)).sort((a, b) => Number(b === main) - Number(a === main));
+}
+type CoverCandidate = { id: string; visible: boolean; versions: PhotoVersion[] };
+/** The chosen cover if visible, else the first visible photo staged in the main style, else the first visible. */
+export function pickCover<P extends CoverCandidate>(photos: P[], coverId: string | null, main: string) {
+  const visible = photos.filter((p) => p.visible);
+  return (
+    visible.find((x) => x.id === coverId) ??
+    visible.find((x) => x.versions.some((v) => v.style === main)) ??
+    visible.find((x) => x.versions.length) ??
+    visible[0] ??
+    null
+  );
+}
+/** The version a cover shows: the main style, else the first one it has. */
+export const coverVersion = (photo: { versions: PhotoVersion[] }, main: string) =>
+  photo.versions.find((v) => v.style === main) ?? photo.versions[0] ?? null;
 export const photoLabel = (p: { label: string | null; room: string }) =>
   p.label?.trim() || roomName(p.room);
 
@@ -184,33 +219,26 @@ export function ctaHref(demoId: string, agencyId: string) {
 }
 export const DEMO_REF_KEY = "amoblaia_demo_ref";
 
-export function publicImageUrl(
-  token: string,
-  photo: PublicPhoto,
-  variant: "original" | "staged",
-  width?: number,
-) {
-  const q = new URLSearchParams({ v: variant, r: photo.version });
+/** An image of a published demo: the original, or its version in one style. */
+export function publicImageUrl(token: string, photoId: string, version: PhotoVersion | null, width?: number) {
+  const q = new URLSearchParams(version ? { e: version.style, r: version.v } : { r: "o" });
   if (width) q.set("w", String(width));
-  return `/demo/${token}/imagen/${photo.id}?${q}`;
+  return `/demo/${token}/imagen/${photoId}?${q}`;
 }
-export function ogImageUrl(token: string, photo: PublicPhoto) {
-  const q = new URLSearchParams({
-    v: photo.staged ? "staged" : "original",
-    r: photo.version,
-    og: "1",
-  });
-  return `/demo/${token}/imagen/${photo.id}?${q}`;
+/** The link preview: half original, half staged in the given version. */
+export function ogImageUrl(token: string, photoId: string, version: PhotoVersion | null) {
+  const q = new URLSearchParams(version ? { e: version.style, r: version.v, og: "1" } : { r: "o", og: "1" });
+  return `/demo/${token}/imagen/${photoId}?${q}`;
 }
-export function adminPhotoUrl(
-  photoId: string,
-  variant: "original" | "staged",
-  width?: number,
-  version = "",
-) {
-  const q = new URLSearchParams({ foto: photoId, v: variant });
+/** The same images for the panel and the preview, through the admin route. */
+export function adminPhotoUrl(photoId: string, version: PhotoVersion | null, width?: number, og = false) {
+  const q = new URLSearchParams({ foto: photoId });
+  if (version) {
+    q.set("estilo", version.style);
+    q.set("r", version.v);
+  }
   if (width) q.set("w", String(width));
-  if (version) q.set("r", version);
+  if (og) q.set("og", "1");
   return `/api/admin/demos/imagen?${q}`;
 }
 export function adminGenerationUrl(generationId: string, width?: number) {

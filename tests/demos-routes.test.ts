@@ -77,13 +77,15 @@ import * as photos from "../src/app/api/admin/demos/[id]/photos/route";
 import * as photo from "../src/app/api/admin/demos/[id]/photos/[photoId]/route";
 import * as image from "../src/app/api/admin/demos/imagen/route";
 import * as importar from "../src/app/api/admin/demos/importar/route";
-import { publicImagePath, publishedDemo } from "../src/lib/demos/server";
+import { publicImagePaths, publishedDemo } from "../src/lib/demos/server";
 import { requireAdminPage } from "../src/lib/demos/admin-page";
 
 const DEMO = "00000000-0000-4000-8000-000000000d01";
 const PHOTO = "00000000-0000-4000-8000-000000000f01";
 const HIDDEN = "00000000-0000-4000-8000-000000000f02";
 const GEN = "00000000-0000-4000-8000-000000000e01";
+const GEN2 = "00000000-0000-4000-8000-000000000e02";
+const GEN3 = "00000000-0000-4000-8000-000000000e03";
 const TOKEN = "tok_abcdefghijklmnopqrstuvwx";
 const origin = "https://amoblaia.test";
 const req = (path: string, method = "GET", body?: unknown) =>
@@ -114,7 +116,11 @@ beforeEach(() => {
       { id: PHOTO, property_id: "pr1", project_id: "pj1", position: 0, visible: true, room: "living", label: null, style: "modern", mode: "furnish", approved_generation_id: GEN, discarded: [] },
       { id: HIDDEN, property_id: "pr1", project_id: "pj2", position: 1, visible: false, room: "bedroom", label: "Suite", style: "modern", mode: "furnish", approved_generation_id: null, discarded: [] },
     ],
-    generations: [{ id: GEN, project_id: "pj1", result_path: "u/pj1/g.jpg", status: "succeeded", is_free: false }],
+    generations: [
+      { id: GEN, project_id: "pj1", style: "modern", result_path: "u/pj1/g.jpg", status: "succeeded", is_free: false },
+      { id: GEN2, project_id: "pj1", style: "industrial", result_path: "u/pj1/h.jpg", status: "succeeded", is_free: false },
+      { id: GEN3, project_id: "pj2", style: "modern", result_path: "u/pj2/g.jpg", status: "succeeded", is_free: false },
+    ],
     projects: [
       { id: "pj1", original_path: "u/demos/a.jpg", deleted_at: null },
       { id: "pj2", original_path: "u/demos/b.jpg", deleted_at: null },
@@ -199,10 +205,24 @@ describe("Public demo", () => {
       agencyName: "Sur Propiedades",
       title: "Depto en Palermo",
       location: "Palermo",
-      photos: [{ id: PHOTO, label: "Living", staged: true }],
+      styles: [
+        { id: "modern", name: "Moderno" },
+        { id: "industrial", name: "Industrial" },
+      ],
+      cover: { id: PHOTO },
+      photos: [
+        {
+          id: PHOTO,
+          label: "Living",
+          versions: [
+            { style: "modern", v: GEN.slice(0, 8) },
+            { style: "industrial", v: GEN2.slice(0, 8) },
+          ],
+        },
+      ],
     });
     const json = JSON.stringify(demo);
-    for (const secret of ["Le interesa", "Ana", "sur.test", "portal.test", "u/demos", "u/pj1", "Suite"])
+    for (const secret of ["Le interesa", "Ana", "sur.test", "portal.test", "u/demos", "u/pj1", "Suite", GEN])
       expect(json).not.toContain(secret);
   });
 
@@ -210,15 +230,24 @@ describe("Public demo", () => {
     expect(await publishedDemo("short")).toBeNull();
     state.tables.demos[0].status = "draft";
     expect(await publishedDemo(TOKEN)).toBeNull();
-    expect(await publicImagePath(TOKEN, PHOTO, "original")).toBeNull();
+    expect(await publicImagePaths(TOKEN, PHOTO, null)).toBeNull();
   });
 
-  it("serves images only for visible photos, and the staged version only when approved and delivered", async () => {
-    expect(await publicImagePath(TOKEN, PHOTO, "original")).toBe("u/demos/a.jpg");
-    expect(await publicImagePath(TOKEN, PHOTO, "staged")).toBe("u/pj1/g.jpg");
-    expect(await publicImagePath(TOKEN, HIDDEN, "original")).toBeNull();
+  it("serves images only for visible photos, and a style only when it has a deliverable version", async () => {
+    expect(await publicImagePaths(TOKEN, PHOTO, null)).toEqual({ original: "u/demos/a.jpg", staged: null });
+    expect(await publicImagePaths(TOKEN, PHOTO, "industrial")).toEqual({ original: "u/demos/a.jpg", staged: "u/pj1/h.jpg" });
+    expect(await publicImagePaths(TOKEN, PHOTO, "coastal")).toBeNull();
+    expect(await publicImagePaths(TOKEN, HIDDEN, null)).toBeNull();
     state.tables.generations[0].is_free = true;
-    expect(await publicImagePath(TOKEN, PHOTO, "staged")).toBeNull();
-    expect((await publishedDemo(TOKEN))?.photos[0].staged).toBe(false);
+    expect(await publicImagePaths(TOKEN, PHOTO, "modern")).toBeNull();
+    state.tables.demo_photos[0].discarded = [GEN2];
+    expect((await publishedDemo(TOKEN))?.photos[0].versions).toEqual([]);
+  });
+
+  it("keeps the main style first, for the cover and the link preview", async () => {
+    for (const p of state.tables.demo_photos) p.style = "industrial";
+    const demo = await publishedDemo(TOKEN);
+    expect(demo?.styles.map((s) => s.id)).toEqual(["industrial", "modern"]);
+    expect(demo?.photos[0].versions.map((v) => v.style)).toEqual(["industrial", "modern"]);
   });
 });

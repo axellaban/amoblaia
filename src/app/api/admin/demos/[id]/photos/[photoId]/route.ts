@@ -68,7 +68,7 @@ export async function GET(_request: Request, { params }: Params) {
   }
 }
 
-/** Edits a photo: room, label, style, mode, visibility, and which proposal the demo shows. */
+/** Edits a photo: room, label, mode, visibility, and which versions it discards or recovers. */
 export async function PATCH(request: Request, { params }: Params) {
   try {
     await requireAdmin(request);
@@ -150,7 +150,8 @@ export async function POST(request: Request, { params }: Params) {
     const photo = await photoOf(demo, photoId);
     const body = await readJson(request, 4096);
     const room = validRoom(body.room) ? body.room : photo.room;
-    const style = validStyle(body.style) ? body.style : photo.style;
+    if (!validStyle(body.style)) throw new HttpError(400, "Elegí un estilo válido.");
+    const style = body.style;
     const mode = validMode(body.mode) ? body.mode : photo.mode;
     const notes = cleanText(body.notes, 300) ?? "";
     if (!isUuid(body.key)) throw new HttpError(400, "Identificador de solicitud inválido.");
@@ -168,8 +169,8 @@ export async function POST(request: Request, { params }: Params) {
         ? UNLIMITED_DAILY_LIMIT
         : Number(process.env.MAX_GENERATIONS_PER_DAY || 100),
     });
-    // Remembers the choice for the next proposal of this photo.
-    await adminClient().from("demo_photos").update({ room, style, mode }).eq("id", photo.id);
+    // Remembers the room and operation for the next version of this photo.
+    await adminClient().from("demo_photos").update({ room, mode }).eq("id", photo.id);
     const deadline = started + maxDuration * 1000 - 5000;
     after(async () => {
       await Promise.allSettled(ids.map((job) => runJob(job, deadline)));
