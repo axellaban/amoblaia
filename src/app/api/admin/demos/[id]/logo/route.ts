@@ -1,7 +1,5 @@
-import sharp from "sharp";
-import { createHash } from "node:crypto";
 import { requireAdmin, failure, HttpError } from "@/lib/commerce/http";
-import { brandingOf, demoRow, logoOf, saveJson } from "@/lib/demos/server";
+import { brandingOf, demoRow, logoFromBytes, logoOf, saveJson } from "@/lib/demos/server";
 export const runtime = "nodejs";
 
 type Params = { params: Promise<{ id: string }> };
@@ -40,22 +38,9 @@ export async function POST(request: Request, { params }: Params) {
       !["image/png", "image/jpeg", "image/webp", "image/svg+xml"].includes(file.type)
     )
       throw new HttpError(400, "Subí el logo en PNG, JPG, WebP o SVG de hasta 2 MB.");
-    const png = await sharp(Buffer.from(await file.arrayBuffer()), { limitInputPixels: 20_000_000 })
-      .resize({ width: 480, height: 160, fit: "inside", withoutEnlargement: true })
-      .png({ compressionLevel: 9 })
-      .toBuffer()
-      .catch(() => {
-        throw new HttpError(400, "No pudimos leer el logo. Probá con otro archivo.");
-      });
+    const logo = await logoFromBytes(Buffer.from(await file.arrayBuffer()));
     const branding = await brandingOf(demo.agency_id);
-    await saveJson("agencies", "branding", demo.agency_id, {
-      ...branding,
-      logo: {
-        type: "image/png",
-        data: png.toString("base64"),
-        v: createHash("sha256").update(png).digest("hex").slice(0, 10),
-      },
-    });
+    await saveJson("agencies", "branding", demo.agency_id, { ...branding, logo });
     return Response.json({ saved: true }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (e) {
     return failure(e);

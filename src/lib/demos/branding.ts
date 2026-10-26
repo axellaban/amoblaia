@@ -160,7 +160,7 @@ export function readSettings(raw: unknown): DemoSettings {
         items: list(g?.items)
           .map((i) => cleanText(i, 80))
           .filter((i): i is string => Boolean(i))
-          .slice(0, 16),
+          .slice(0, 40),
       }))
       .filter((g) => g.items.length)
       .slice(0, 4),

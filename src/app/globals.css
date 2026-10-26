@@ -7216,14 +7216,29 @@ h2 .accent {
   top: 14px;
   bottom: auto;
 }
+.dv2-thumbs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
 .dv2-thumbs ol {
+  flex: 1;
+  min-width: 0;
   display: flex;
   gap: 10px;
   margin: 0;
   padding: 3px;
   list-style: none;
   overflow-x: auto;
+  scroll-behavior: smooth;
+  scroll-snap-type: x proximity;
   scrollbar-width: thin;
+}
+/* Every thumbnail keeps its size: many photos scroll, they never shrink. */
+.dv2-thumbs li {
+  flex: 0 0 auto;
+  scroll-snap-align: start;
 }
 .dv2-thumbs li button {
   display: block;
@@ -7240,10 +7255,26 @@ h2 .accent {
 }
 .dv2-thumbs img {
   display: block;
-  width: 120px;
-  height: 84px;
+  width: 112px;
+  min-width: 112px;
+  height: 76px;
   object-fit: cover;
   border-radius: 6px;
+}
+.dv2-thumbs-step {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+}
+.dv2-thumbs-step:hover {
+  border-color: var(--brand-accent);
 }
 .dv2-aside {
   min-width: 0;
@@ -7270,12 +7301,15 @@ h2 .accent {
 }
 .dv2-options {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
+/* Horizontal cards: thumbnail, name, radio. */
 .dv2-options button {
   display: grid;
-  gap: 6px;
-  padding: 6px;
+  grid-template-columns: 88px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px 6px 6px;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: #fff;
@@ -7289,23 +7323,21 @@ h2 .accent {
   border-color: var(--brand-accent);
 }
 .dv2-options button.is-on {
-  border: 2px solid var(--brand-accent);
-  padding: 5px;
+  border-color: var(--brand-accent);
+  box-shadow: inset 0 0 0 1px var(--brand-accent);
   background: color-mix(in srgb, var(--brand-accent) 8%, #fff);
   font-weight: 700;
 }
 .dv2-options img {
-  width: 100%;
-  aspect-ratio: 16 / 10;
+  width: 88px;
+  height: 60px;
   object-fit: cover;
   border-radius: 6px;
   background: #eceef2;
 }
 .dv2-option-name {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 2px 4px 4px;
+  min-width: 0;
+  line-height: 1.25;
 }
 .dv2-radio {
   display: grid;
@@ -7320,6 +7352,27 @@ h2 .accent {
   border-color: var(--brand-accent);
   background: var(--brand-accent);
   color: var(--brand-accent-ink);
+}
+.dv2-more,
+.dv2-more-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: var(--brand);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.dv2-more-link {
+  margin-top: 6px;
+}
+.dv2-side-tech {
+  justify-self: center;
 }
 .dv2-note {
   display: flex;
@@ -7383,7 +7436,7 @@ h2 .accent {
 }
 .dv2-facts {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(124px, 1fr));
   gap: 0;
   margin: 0;
   padding: 16px 8px;
@@ -7727,15 +7780,19 @@ h2 .accent {
     border-radius: 8px;
   }
   .dv2-thumbs img {
-    width: 92px;
-    height: 64px;
+    width: 88px;
+    min-width: 88px;
+    height: 60px;
+  }
+  .dv2-thumbs-step {
+    display: none;
   }
   .dv2-panel {
     padding: 14px;
   }
   .dv2-options {
     grid-auto-flow: column;
-    grid-auto-columns: minmax(150px, 46%);
+    grid-auto-columns: minmax(210px, 78%);
     overflow-x: auto;
     padding-bottom: 4px;
   }
@@ -8749,4 +8806,149 @@ h2 .accent {
   .dm-filters select {
     width: 100% !important;
   }
+}
+
+/* Import from a listing: preview, field report and exceptions (admin only). */
+.dm-narrow .dm-import-row {
+  display: flex;
+}
+.dm-import-result > button {
+  justify-self: start;
+}
+.dm-import-result {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  margin-top: 16px;
+}
+.dm-preview {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+}
+.dm-preview-logo {
+  max-width: 180px;
+  max-height: 48px;
+  object-fit: contain;
+}
+.dm-preview-head {
+  display: grid;
+  gap: 2px;
+}
+.dm-preview-head strong {
+  font-size: 19px;
+}
+.dm-preview-head small,
+.dm-preview-head span {
+  color: var(--muted);
+}
+.dm-preview-photos {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  align-items: center;
+}
+.dm-preview-photos img {
+  flex: none;
+  width: 92px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 6px;
+  background: #eceef2;
+}
+.dm-preview-photos span {
+  flex: none;
+  padding: 0 8px;
+  color: var(--muted);
+  font-weight: 650;
+}
+.dm-preview-text {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  white-space: pre-line;
+}
+.dm-exceptions {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 10px;
+  background: #fff7ec;
+}
+.dm-exceptions h3 {
+  margin: 0;
+  font-size: 16px;
+}
+.dm-exception p {
+  margin: 2px 0 6px;
+  font-size: 14px;
+}
+.dm-exception input[type="text"] {
+  width: 100%;
+}
+.dm-report-wrap summary {
+  cursor: pointer;
+  font-weight: 650;
+}
+.dm-report {
+  width: 100%;
+  margin-top: 8px;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.dm-report th,
+.dm-report td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+.dm-report td {
+  overflow-wrap: anywhere;
+}
+.dm-report td small {
+  display: block;
+  color: var(--muted);
+}
+.dm-report-req {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 12px;
+}
+.dm-status {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+.dm-status-found {
+  background: #e7f4ea;
+  color: #1f5e2e;
+}
+.dm-status-missing {
+  background: #eef0f4;
+  color: #4a5160;
+}
+.dm-status-error {
+  background: #fff1e6;
+  color: #8a3a12;
+}
+.dm-status-conflict {
+  background: #fde8e8;
+  color: #8f1d1d;
+}
+.dm-check {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 14px;
+}
+.dm-reread h3 {
+  margin: 14px 0 6px;
+  font-size: 15px;
 }
