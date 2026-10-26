@@ -62,6 +62,13 @@ export function Header() {
       active = false;
     };
   }, []);
+  // Escape closes the mobile menu, like any overlay.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
   const signedIn = session ?? (privatePage || null);
   const studio = pathname === "/estudio";
   // Signed in, the studio is part of the app: same links as the private pages.
