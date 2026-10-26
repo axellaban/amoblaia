@@ -172,7 +172,7 @@ export function GoogleSignIn({ next }: { next: string | null }) {
       {!ready && !error && !slow && (
         <p role="status">Cargando acceso con Google…</p>
       )}
-      {busy && <p role="status">Ingresando a amoblaIA…</p>}
+      {busy && <p role="status">Ingresando a habita…</p>}
       {error && (
         <p className="inline-error" role="alert">
           {error}

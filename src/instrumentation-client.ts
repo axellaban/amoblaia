@@ -1,5 +1,5 @@
 import posthog from "posthog-js";
-// amoblaIA project token (US Cloud). Public by design; override per environment if needed.
+// habita. project token (US Cloud). Public by design; override per environment if needed.
 const key =
   process.env.NEXT_PUBLIC_POSTHOG_KEY ??
   "phc_sy5S5HWym8wjPi9z4m8g7Motdg7Gp3q99xYGAUyTDcLZ";

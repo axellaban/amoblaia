@@ -188,7 +188,7 @@ export function DemoView({
         <div className="dv2-banner" role="note">
           Demo preparada para {agency.name} ·{" "}
           <a href={ctaHref(demo.id, demo.agencyId)} {...external} onClick={() => log("demo_cta_click")}>
-            Por Amobla IA
+            Por habita.
           </a>
         </div>
       )}
@@ -372,7 +372,7 @@ export function DemoView({
             <a href="#contacto">Contacto</a>
           </nav>
           <span className="dv2-tech">
-            <Sparkles size={12} aria-hidden="true" /> Tecnología de <b>amoblaIA</b>
+            <Sparkles size={12} aria-hidden="true" /> Tecnología de <b>habita.</b>
           </span>
         </div>
       </footer>
@@ -835,7 +835,7 @@ function Gallery({
           {panel}
           {sideAction && <div className="dv2-side-action">{sideAction}</div>}
           <span className="dv2-tech dv2-side-tech">
-            <Sparkles size={12} aria-hidden="true" /> Tecnología de <b>amoblaIA</b>
+            <Sparkles size={12} aria-hidden="true" /> Tecnología de <b>habita.</b>
           </span>
         </aside>
       )}

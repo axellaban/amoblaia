@@ -38,14 +38,14 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
   const version = cover ? coverVersion(cover, demo.styles[0]?.id ?? "") : null;
   const title = demo.share.title ?? `${demo.title} · ${demo.agencyName}`;
   const description = presentation
-    ? `Demo de ambientación virtual preparada para ${demo.agencyName} por amoblaIA.`
+    ? `Demo de ambientación virtual preparada para ${demo.agencyName} por habita.`
     : (demo.share.description ??
       [demo.location, demo.features, demo.price ?? undefined, `Imaginá cada espacio a tu estilo con ${demo.agencyName}.`]
         .filter(Boolean)
         .join(" · "));
   const url = presentation ? `${demoPath(token)}?${PRESENTATION_PARAM}=1` : demoPath(token);
   return {
-    // The agency's listing: no "· amoblaIA" suffix.
+    // The agency's listing: no "· habita." suffix.
     title: { absolute: title },
     description,
     robots,

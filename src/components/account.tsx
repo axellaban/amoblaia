@@ -327,7 +327,7 @@ export function AccountDashboard() {
               subscriptions.map((s) => (
                 <div key={s.id} className="subscription-row">
                   <div>
-                    <h3>{s.orders?.snapshot?.name || "Plan amoblaIA"}</h3>
+                    <h3>{s.orders?.snapshot?.name || "Plan habita."}</h3>
                     <p>
                       {s.status === "pending"
                         ? "Pago sin completar"
@@ -474,7 +474,7 @@ export function AccountDashboard() {
           </section>
           {account.admin && (
             <Link className="button button-dark" href="/administracion">
-              Administrar amoblaIA
+              Administrar habita.
               <ArrowUpRight size={17} />
             </Link>
           )}

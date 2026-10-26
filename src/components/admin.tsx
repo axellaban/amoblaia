@@ -70,7 +70,7 @@ export function AdminDashboard() {
   }
   return (
     <div className="account-page container">
-      <span className="eyebrow">OPERACIÓN DE AMOBLAIA</span>
+      <span className="eyebrow">OPERACIÓN DE HABITA.</span>
       <h1>
         Administración<span className="accent">.</span>
       </h1>

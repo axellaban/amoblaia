@@ -9,7 +9,7 @@ export default function Terms() {
       <p>Actualización: 20 de octubre de 2026.</p>
       <h2>Prestador y alcance</h2>
       <p>
-        amoblaIA permite amoblar, rediseñar o vaciar fotografías de propiedades
+        habita. permite amoblar, rediseñar o vaciar fotografías de propiedades
         con inteligencia artificial. También incluye herramientas pagas para
         mejorar exposición y color o convertir iluminación diurna a atardecer.
         Los productos con cobro solo están disponibles cuando su precio y el

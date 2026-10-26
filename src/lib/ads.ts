@@ -2,11 +2,11 @@
 // (see the root layout), so previews and local runs never report conversions.
 export const GOOGLE_ADS_ID = "AW-18500028132";
 
-// "amoblaIA | Foto subida": a photo of the visitor's own reached the server
+// "habita. | Foto subida": a photo of the visitor's own reached the server
 // and a generation started. Demo examples never count.
 const PHOTO_UPLOADED = `${GOOGLE_ADS_ID}/4ytSCNWLsqYdEOSNwPVE`;
 
-// "amoblaIA | Foto descargada": a click on a button that saves a design
+// "habita. | Foto descargada": a click on a button that saves a design
 // (JPG, before/after, share sheet or the batch download).
 const PHOTO_DOWNLOADED = `${GOOGLE_ADS_ID}/jPd2CKfU1KkdEOSNwPVE`;
 

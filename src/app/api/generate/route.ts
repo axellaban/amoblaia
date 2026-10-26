@@ -158,7 +158,7 @@ export async function POST(request: Request) {
         "Content-Type": "image/jpeg",
         "Cache-Control": "no-store",
         "X-Image-Model": model,
-        "Content-Disposition": 'inline; filename="amoblaia.jpg"',
+        "Content-Disposition": 'inline; filename="habita.jpg"',
       },
     });
   } catch (error) {

@@ -115,13 +115,13 @@ async function renderDesign(
     ctx.fillRect(0, height - size * 3, canvas.width, size * 3);
     ctx.fillStyle = "#fff";
     ctx.fillText(
-      original ? "Original" : "Amoblamiento virtual · amoblaIA",
+      original ? "Original" : "Amoblamiento virtual · habita.",
       size,
       height - size,
     );
     if (original)
       ctx.fillText(
-        "Amoblamiento virtual · amoblaIA",
+        "Amoblamiento virtual · habita.",
         width + size,
         height - size,
       );

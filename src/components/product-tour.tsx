@@ -4,7 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, X, Sparkles } from "lucide-react";
 const steps = [
   {
-    title: "Te damos la bienvenida a amoblaIA",
+    title: "Te damos la bienvenida a habita.",
     text: "¿Listo para transformar tu primer espacio? Te mostramos cómo subir fotos, crear diseños y organizar cada propiedad.",
     path: "/proyectos",
     target: "",
@@ -190,7 +190,7 @@ export function ProductTour() {
           <X size={20} />
         </button>
         <span className="tour-brand">
-          amobla<span>IA</span>
+          habita<span>.</span>
         </span>
         <Sparkles className="tour-spark" size={30} />
         <h2 id="tour-title">{current.title}</h2>
