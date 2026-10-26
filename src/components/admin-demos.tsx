@@ -487,7 +487,7 @@ export function NewDemoForm() {
           ) : (
             <AgencyFields value={agency} onChange={setAgency} />
           )}
-          <p className="dm-help">No necesita tener una cuenta en amoblaIA.</p>
+          <p className="dm-help">No necesita tener una cuenta en habita.</p>
         </section>
         <section className="account-panel">
           <h2>Propiedad</h2>

@@ -1,19 +1,20 @@
 :root {
-  /* amoblaIA brand: terracotta doors, forest greens and warm plaster. See docs/DESIGN.md. */
-  --ink: #161b26;
-  --forest: #141a30;
-  --forest-light: #202740;
-  --clay: #bcfd97;
-  --terracotta: #2e5fcb;
-  --terracotta-dark: #2a55b6;
-  --sand: #edf1f8;
-  --muted: #5c6170;
+  /* habita. brand: forest green, sand and warm white. See docs/DESIGN.md. */
+  --ink: #242824;
+  --forest: #24382e;
+  --forest-light: #2e4638;
+  --clay: #d6c6b4;
+  --terracotta: #24382e;
+  --terracotta-dark: #1b2b22;
+  --sand: #e9dfd0;
+  --muted: #6b6b6b;
   /* Secondary text: at least 4.5:1 on white, --sand and the lime card. */
-  --subtle: #646a7c;
-  --line: #e3e5ed;
+  --subtle: #6b6b6b;
+  --line: #e6dfd3;
   --paper: #ffffff;
-  --font-sans: var(--font-outfit), Arial, sans-serif;
-  --font-display: var(--font-outfit), Arial, sans-serif;
+  --font-sans: var(--font-manrope), Arial, sans-serif;
+  --font-display: var(--font-manrope), Arial, sans-serif;
+  --cream: #f8f5ef;
 }
 * {
   box-sizing: border-box;
@@ -26,7 +27,7 @@ body {
   margin: 0;
   font-family: var(--font-sans);
   color: var(--ink);
-  background: var(--paper);
+  background: var(--cream);
   font-size: 16px;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
@@ -286,10 +287,8 @@ fieldset {
 .logo-ai {
   font-family: var(--font-sans);
   font-weight: 800;
-  font-size: 0.78em;
-  letter-spacing: 0.02em;
-  margin-left: 2px;
-  color: var(--clay);
+  letter-spacing: 0;
+  color: var(--forest);
 }
 .nav-links {
   display: flex;
@@ -508,7 +507,7 @@ fieldset {
   padding: 10px 14px 10px 18px;
   border: 0;
   border-radius: 12px;
-  background: #f5f7ff;
+  background: #f8f5ef;
   color: var(--ink);
   font: inherit;
   font-size: 15px;
@@ -899,7 +898,7 @@ fieldset {
   left: 16px;
   padding: 6px 12px;
   border-radius: 20px;
-  background: #f5f7ff;
+  background: #f8f5ef;
   font-size: 13px;
   font-weight: 700;
 }
@@ -922,7 +921,7 @@ fieldset {
   backdrop-filter: blur(6px);
 }
 .showcase-tabs button.selected {
-  background: #f5f7ff;
+  background: #f8f5ef;
   color: var(--ink);
 }
 .showcase-thumbs {
@@ -995,7 +994,7 @@ fieldset {
 .simple-block small {
   display: block;
   margin-top: 12px;
-  color: #bcc1d1;
+  color: #d6c6b4;
 }
 .simple-block .eyebrow {
   color: var(--clay);
@@ -1019,7 +1018,7 @@ fieldset {
   margin-bottom: 8px;
 }
 .simple-cards p {
-  color: #bcc1d1;
+  color: #d6c6b4;
 }
 .step-cards {
   display: grid;
@@ -1558,7 +1557,7 @@ fieldset {
   font-weight: 600;
 }
 .price-card.featured .per-photo {
-  color: #bcc1d1;
+  color: #d6c6b4;
 }
 .price-card.featured .annual-hint {
   background: #ffffff14;
@@ -2760,7 +2759,7 @@ fieldset {
     font-size: 16px;
   }
   .nav-links .mobile-nav-actions .button-outline {
-    border: 2px solid #a8b5e2;
+    border: 2px solid #d6c6b4;
     color: white;
   }
   .nav-links .mobile-nav-actions .button:hover {
@@ -2822,7 +2821,7 @@ fieldset {
 }
 .price-panel {
   width: 100%;
-  background: #eef0f8;
+  background: #f8f5ef;
   border-radius: 18px;
   padding: 26px 22px 22px;
 }
@@ -3035,7 +3034,7 @@ h2 .accent {
   font-variation-settings: normal;
 }
 .account-nav {
-  border: 2px solid #a8b5e2;
+  border: 2px solid #d6c6b4;
   padding: 8px 25px;
   border-radius: 12px;
   color: white;
@@ -3121,14 +3120,14 @@ h2 .accent {
   background: #f3f4fa;
 }
 .step-cards article {
-  background: #eef0f8;
+  background: #f8f5ef;
   border-radius: 18px;
 }
 .step-cards article::after {
   display: none;
 }
 .compare-us {
-  background: #eef0f8;
+  background: #f8f5ef;
 }
 .compare-us h3 {
   color: var(--terracotta);
@@ -3316,7 +3315,7 @@ h2 .accent {
   padding: 14px 20px;
   max-width: 760px;
   margin-bottom: 48px;
-  background: #f7f8fc;
+  background: #f8f5ef;
 }
 .faq-search input {
   width: 100%;
@@ -3456,7 +3455,7 @@ h2 .accent {
   line-height: 1.8;
 }
 .article-cta {
-  background: #eef0f8;
+  background: #f8f5ef;
   border-radius: 18px;
   padding: 30px;
   margin: 40px 0;
@@ -3725,7 +3724,7 @@ h2 .accent {
   position: relative;
   overflow: hidden;
   border-radius: 18px;
-  background: #eef0f8;
+  background: #f8f5ef;
 }
 .gallery-main-image > img {
   width: 100%;
@@ -3821,7 +3820,7 @@ h2 .accent {
   border-radius: 12px;
   padding: 12px 14px;
   min-height: 48px;
-  background: #f6f7fb;
+  background: #f8f5ef;
   color: var(--ink);
   font-size: 16px;
 }
@@ -3972,7 +3971,7 @@ h2 .accent {
   display: flex;
   align-items: center;
   gap: 20px;
-  background: #eef0f8;
+  background: #f8f5ef;
   padding: 18px;
   border-radius: 12px;
   margin-bottom: 24px;
@@ -4316,13 +4315,13 @@ h2 .accent {
 /* Home: section-by-section replica of the reference landing (Tailwind values
    measured on virtualstagingai.app at 1440 px). */
 .hx {
-  --hx-dark: #141a30;
-  --hx-card: #202740;
-  --hx-lemon: #bcfd97;
-  --hx-primary: #2e5fcb;
-  --hx-navy: #2545b7;
-  --hx-ice: #edf1f8;
-  --hx-black: #111827;
+  --hx-dark: #24382e;
+  --hx-card: #2e4638;
+  --hx-lemon: #d6c6b4;
+  --hx-primary: #24382e;
+  --hx-navy: #1b2b22;
+  --hx-ice: #e9dfd0;
+  --hx-black: #242824;
   background: var(--hx-dark);
   color: var(--hx-black);
 }
@@ -4355,7 +4354,7 @@ h2 .accent {
   transition: background 0.075s;
 }
 .hx-button:hover {
-  background: #2e5fcbe6;
+  background: #24382ee6;
 }
 .hx-button b {
   color: var(--hx-lemon);
@@ -4594,7 +4593,7 @@ h2 .accent {
   padding: 8px 20px;
   border: 0;
   border-radius: 8px;
-  background: #202740b3;
+  background: #2e4638b3;
   backdrop-filter: blur(8px);
   color: #fff;
   font-size: 14px;
@@ -4638,7 +4637,7 @@ h2 .accent {
 }
 .hx-thumbs button.selected {
   border-color: var(--hx-navy);
-  box-shadow: 0 0 0 8px #2e5fcb1a;
+  box-shadow: 0 0 0 8px #24382e1a;
 }
 .hx-thumbs img {
   display: block;
@@ -4793,7 +4792,7 @@ h2 .accent {
   gap: 8px;
   padding: 16px;
   border-radius: 16px;
-  background: #141a3080;
+  background: #24382e80;
   backdrop-filter: blur(8px);
   color: #fff;
   font-size: 14px;
@@ -5178,7 +5177,7 @@ h2 .accent {
    the earlier footer rules and their breakpoints. */
 .footer {
   padding: 64px 0 24px;
-  background: #141a30;
+  background: #24382e;
   color: #fff;
 }
 .footer > .container {
@@ -5188,7 +5187,7 @@ h2 .accent {
 }
 .footer .footer-label {
   margin: 0 0 24px;
-  color: #c7d0e6;
+  color: #e6dfd3;
   font-size: 14px;
   font-weight: 600;
   letter-spacing: normal;
@@ -5221,7 +5220,7 @@ h2 .accent {
   border: 1px solid #c9d3ea;
   border-radius: 12px;
   background: #fff;
-  color: #111827;
+  color: #242824;
   font-size: 18px;
 }
 .footer .newsletter-inline input::placeholder {
@@ -5238,14 +5237,14 @@ h2 .accent {
   padding: 0 32px;
   border: 0;
   border-radius: 8px;
-  background: #2545b7;
+  background: #1b2b22;
   color: #fff;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
 }
 .newsletter-inline button:hover {
-  background: #2545b7e6;
+  background: #1b2b22e6;
 }
 .footer .footer-top {
   display: grid;
@@ -5293,7 +5292,7 @@ h2 .accent {
   font-size: 14px;
 }
 .footer .footer-bottom a {
-  color: #c7d0e6;
+  color: #e6dfd3;
 }
 @media (max-width: 1023px) {
   .footer .footer-top {
@@ -5319,7 +5318,7 @@ h2 .accent {
 .nav-actions .button-small {
   min-height: 0;
   padding: 12px 40px;
-  border: 2px solid #a8b5e2;
+  border: 2px solid #d6c6b4;
   border-radius: 12px;
   font-size: 14px;
   font-weight: 600;
@@ -5418,7 +5417,7 @@ h2 .accent {
   gap: 20px;
   margin: 30px 0 56px;
   padding: 22px 28px;
-  border: 1px solid #bcfd9766;
+  border: 1px solid #d6c6b466;
   border-radius: 18px;
   /* Its own navy: on phones it extends below the dark band. */
   background: var(--forest-light);
@@ -5432,7 +5431,7 @@ h2 .accent {
   font-size: 22px;
 }
 .launch-banner p {
-  color: #c6cbdf;
+  color: #e6dfd3;
   font-size: 15px;
 }
 .launch-banner a {
@@ -5589,7 +5588,7 @@ h2 .accent {
 .batch-item {
   min-width: 0;
   overflow: hidden;
-  background: #f6f7fb;
+  background: #f8f5ef;
   border: 1px solid var(--line);
   border-radius: 12px;
 }
@@ -5913,7 +5912,7 @@ h2 .accent {
   left: 0;
   right: 0;
   margin: 0;
-  color: #c9cfe2;
+  color: #e6dfd3;
   font-size: 13px;
   text-align: center;
 }
@@ -5930,7 +5929,7 @@ h2 .accent {
   padding: 26px 20px;
   border: 1.5px dashed #c3cadf;
   border-radius: 14px;
-  background: #f7f8fc;
+  background: #f8f5ef;
   text-align: center;
   transition:
     background 0.2s,
@@ -6021,7 +6020,7 @@ h2 .accent {
   justify-content: center;
   gap: 6px;
   padding: 20px;
-  background: #141a30b3;
+  background: #24382eb3;
   backdrop-filter: blur(3px);
   color: #fff;
   text-align: center;
@@ -6060,7 +6059,7 @@ h2 .accent {
 }
 .generating-overlay p.generation-hint {
   font-size: 12px;
-  color: #c9cfe2;
+  color: #e6dfd3;
 }
 
 .studio-feedback {
@@ -6306,7 +6305,7 @@ h2 .accent {
   cursor: pointer;
 }
 .example-grid > button:hover:not(:disabled) {
-  border-color: #b7c1e0;
+  border-color: #d6c6b4;
 }
 .example-grid > button.selected {
   border-color: var(--terracotta);
@@ -6390,12 +6389,12 @@ h2 .accent {
   color: var(--terracotta);
 }
 .mode-segment button:hover:not(:disabled) {
-  border-color: #b7c1e0;
+  border-color: #d6c6b4;
 }
 .mode-segment button.selected,
 .mode-tools button.selected {
   border-color: var(--terracotta);
-  background: #edf1fd;
+  background: #e9dfd0;
   box-shadow: inset 0 0 0 1px var(--terracotta);
 }
 /* Locked options stay legible: they say what a plan adds, and a tap on
@@ -6420,7 +6419,7 @@ h2 .accent {
 /* While a design is being created the choice stays readable. */
 .mode-segment button.selected:disabled,
 .mode-tools button.selected:disabled {
-  background: #edf1fd;
+  background: #e9dfd0;
   color: var(--ink);
 }
 .mode-segment .mode-lock {
@@ -6504,7 +6503,7 @@ h2 .accent {
   padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: #f6f7fb;
+  background: #f8f5ef;
   color: var(--ink);
   font-size: 14.5px;
   line-height: 1.45;
@@ -6616,7 +6615,7 @@ h2 .accent {
   gap: 6px 16px;
   margin-top: 12px;
   font-size: 12px;
-  color: #c6cbdf;
+  color: #e6dfd3;
 }
 .studio-bottom > span,
 .studio-bottom > a {
@@ -6714,7 +6713,7 @@ h2 .accent {
     position: sticky;
     bottom: 0;
     z-index: 20;
-    box-shadow: 0 -10px 24px #141a3012;
+    box-shadow: 0 -10px 24px #24382e12;
   }
   /* Above the pinned button, wherever the page is scrolled, and below the
      header so the open menu covers it. */
@@ -6814,9 +6813,9 @@ h2 .accent {
     background:
       linear-gradient(#fff 30%, #fff0) center top / 100% 32px,
       linear-gradient(#fff0, #fff 70%) center bottom / 100% 32px,
-      radial-gradient(farthest-side at 50% 0, #141a3024, #141a3000) center
+      radial-gradient(farthest-side at 50% 0, #24382e24, #24382e00) center
         top / 100% 12px,
-      radial-gradient(farthest-side at 50% 100%, #141a3024, #141a3000) center
+      radial-gradient(farthest-side at 50% 100%, #24382e24, #24382e00) center
         bottom / 100% 12px;
     background-repeat: no-repeat;
     background-attachment: local, local, scroll, scroll;

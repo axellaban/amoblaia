@@ -20,8 +20,8 @@ export default async function Confirm({
         <h2>{recovery ? "Elegí una nueva contraseña" : "Confirmá tu email"}</h2>
         <p>
           {recovery
-            ? "Continuá para cambiar la contraseña de tu cuenta de amoblaIA."
-            : "Continuá para activar tu cuenta de amoblaIA. Si no pediste este enlace, cerrá esta página."}
+            ? "Continuá para cambiar la contraseña de tu cuenta de habita."
+            : "Continuá para activar tu cuenta de habita. Si no pediste este enlace, cerrá esta página."}
         </p>
         <form method="post" action="/auth/confirm">
           <input type="hidden" name="token_hash" value={value("token_hash")} />

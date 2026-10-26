@@ -200,7 +200,7 @@ export async function POST(request: Request) {
                 items: [
                   {
                     id: sku,
-                    title: `amoblaIA · ${snapshot.name}`,
+                    title: `habita. · ${snapshot.name}`,
                     quantity: 1,
                     currency_id: "ARS",
                     unit_price: snapshot.price_cents! / 100,
@@ -222,7 +222,7 @@ export async function POST(request: Request) {
               "/preapproval",
               "POST",
               {
-                reason: `amoblaIA · ${snapshot.name}`,
+                reason: `habita. · ${snapshot.name}`,
                 external_reference: key,
                 payer_email: email,
                 status: "pending",

@@ -32,7 +32,7 @@ export default async function ResourcePage({
   return (
     <article className="resource-page container">
       <div className="page-intro">
-        <span className="eyebrow">AMOBLAIA · ARGENTINA</span>
+        <span className="eyebrow">HABITA. · ARGENTINA</span>
         <h1>{r.title}</h1>
         <p>{r.intro}</p>
       </div>

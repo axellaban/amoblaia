@@ -182,7 +182,7 @@ export async function verifyCheckoutPayer(email: string) {
   if (email.trim().toLowerCase() === merchant.email?.trim().toLowerCase())
     throw new HttpError(
       400,
-      "El email para el pago corresponde a la cuenta que cobra en amoblaIA. Para probar una compra, usá una cuenta compradora distinta de la vendedora.",
+      "El email para el pago corresponde a la cuenta que cobra en habita. Para probar una compra, usá una cuenta compradora distinta de la vendedora.",
     );
 }
 export function validatePayment(payment: Payment, order: Order) {
@@ -408,7 +408,7 @@ export async function syncPayment(id: string, subscriptionId?: string) {
           (!direct || i.preapproval_id === direct.provider_subscription_id),
       );
       if (!invoice) {
-        // An unrelated merchant payment with no amoblaIA reference is ignored;
+        // An unrelated merchant payment with no habita. reference is ignored;
         // an invoice for one of our orders must remain retryable, unless the
         // attempt was refused: it never credits anything.
         if (!direct || ["rejected", "cancelled"].includes(payment.status))

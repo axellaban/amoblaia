@@ -111,7 +111,7 @@ export function ContactForm({
             />
             <span>
               {kind === "newsletter"
-                ? "Quiero recibir novedades de amoblaIA por email."
+                ? "Quiero recibir novedades de habita. por email."
                 : "Acepto que usen estos datos para responder mi solicitud."}
             </span>
           </label>

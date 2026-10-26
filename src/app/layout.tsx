@@ -3,30 +3,30 @@ import Script from "next/script";
 import { GOOGLE_ADS_ID } from "@/lib/ads";
 import { MetaPixel } from "@/components/meta-pixel";
 import type { Metadata, Viewport } from "next";
-import { Outfit } from "next/font/google";
+import { Manrope } from "next/font/google";
 import { Header, Footer } from "@/components/shell";
 import "./globals.css";
-const outfit = Outfit({
+const manrope = Manrope({
   subsets: ["latin"],
   display: "swap",
-  variable: "--font-outfit",
+  variable: "--font-manrope",
 });
-export const viewport: Viewport = { themeColor: "#151a2d" };
+export const viewport: Viewport = { themeColor: "#24382e" };
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.APP_URL || "https://amoblaia.vercel.app"),
   title: {
-    default: "amoblaIA — De espacio vacío a próximo hogar",
-    template: "%s · amoblaIA",
+    default: "habita. — De espacios a hogares",
+    template: "%s · habita.",
   },
   description:
-    "Amoblá tus propiedades con inteligencia artificial. Virtual staging para inmobiliarias, agentes y propietarios de Latinoamérica.",
+    "Transformá espacios vacíos en hogares que inspiran, con inteligencia artificial. Virtual staging para inmobiliarias, agentes y propietarios de Latinoamérica.",
   robots: { index: true, follow: true },
   openGraph: {
-    title: "amoblaIA — Mostrá un hogar",
+    title: "habita. — Imaginá el potencial de cada espacio",
     description:
       "Dale vida a tus propiedades con virtual staging e inteligencia artificial.",
     locale: "es_AR",
-    siteName: "amoblaIA",
+    siteName: "habita.",
     type: "website",
   },
 };
@@ -36,7 +36,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="es" className={outfit.variable}>
+    <html lang="es" className={manrope.variable}>
       <body>
         <a href="#contenido" className="skip-link">
           Saltar al contenido

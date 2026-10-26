@@ -15,7 +15,7 @@ export const DEMO_TEXT = {
   ctaTitle: "¿Querés hacer esto con tus propiedades?",
   ctaBody:
     "Transformá fotografías de inmuebles vacíos en espacios ambientados profesionalmente con inteligencia artificial.",
-  ctaButton: "Probar amoblaIA",
+  ctaButton: "Probar habita.",
 } as const;
 
 /** Display widths offered by the image routes; anything else is rounded up. */
@@ -265,7 +265,7 @@ export function whatsappShareUrl(presentationUrl: string, buyersUrl: string, age
   const text = `Hola ${agency}! Preparamos una muestra de cómo podría verse "${title}" con ambientación virtual: ${presentationUrl}\n\nPara compartir con compradores (sin la franja de la demo): ${buyersUrl}`;
   return `https://wa.me/?text=${encodeURIComponent(text)}`;
 }
-/** Where "Probar amoblaIA" leads: the regular studio, carrying the demo and agency for attribution. */
+/** Where "Probar habita." leads: the regular studio, carrying the demo and agency for attribution. */
 export function ctaHref(demoId: string, agencyId: string) {
   const q = new URLSearchParams({
     utm_source: "demo_comercial",

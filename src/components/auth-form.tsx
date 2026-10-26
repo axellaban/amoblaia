@@ -228,7 +228,7 @@ export function AuthForm() {
           )}
           <h2>
             {mode === "login"
-              ? "Entrá a amoblaIA"
+              ? "Entrá a habita."
               : mode === "signup"
                 ? "Tu próxima publicación empieza acá."
                 : mode === "reset"

@@ -40,7 +40,7 @@ export type DemoSettings = {
   propertyType: "residential" | "office";
   openMode: OpenMode;
   openStyle: string | null;
-  /** Whether the presentation link shows "Demo preparada para… · Por Amobla IA". */
+  /** Whether the presentation link shows "Demo preparada para… · Por habita.". */
   banner: boolean;
   operation: string | null;
   /** As published, with its currency. Shown only when confirmed (no conflict). */
@@ -90,7 +90,7 @@ export const DEFAULT_SETTINGS: DemoSettings = {
   reviewedAt: null,
 };
 
-/** The colors of a page without branding: amoblaIA's neutral blue. */
+/** The colors of a page without branding: the neutral blue of habita. */
 export const DEFAULT_PRIMARY = "#1f3a5f";
 export const DEFAULT_ACCENT = "#6f8f5a";
 const HEX = /^#[0-9a-f]{6}$/i;

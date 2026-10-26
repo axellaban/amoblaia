@@ -26,7 +26,7 @@ import { rooms, styles } from "@/lib/catalog";
 import { exampleRooms, exampleStyles, examplePath } from "@/lib/examples";
 
 // Layout and copy follow the reference landing section by section; figures
-// (minutes, ten styles, prices in pesos) are amoblaIA's own.
+// (minutes, ten styles, prices in pesos) are habita.'s own.
 const STARTING_PRICE = "$24.742"; // Inicial, annual / 12: keep in sync with the products table.
 const roomName = (id: string) => rooms.find((r) => r.id === id)?.name || id;
 const styleName = (id: string) =>
@@ -89,7 +89,7 @@ const faqs: [string, ReactNode][] = [
       <p>
         El amoblamiento virtual con IA es cuando una inteligencia artificial
         agrega muebles a una foto automáticamente, en lugar de un diseñador.
-        amoblaIA puede agregar muebles atractivos y realistas, con iluminación
+        habita. puede agregar muebles atractivos y realistas, con iluminación
         natural, a la foto de un ambiente, respetando paredes, aberturas, pisos
         y perspectiva.
       </p>
@@ -272,7 +272,7 @@ export function Landing({
               <b>Mirá la transformación:</b> galería de antes y después
             </h2>
             <p>
-              Mirá cómo amoblaIA transforma espacios poco atractivos en
+              Mirá cómo habita. transforma espacios poco atractivos en
               propiedades atractivas y <b>listas para publicar en minutos.</b>
             </p>
             <Link href="/galeria" className="hx-button-outline">
@@ -488,7 +488,7 @@ export function Landing({
           <div className="hx-center">
             <Eyebrow icon={Rocket}>Cómo se destaca nuestro servicio</Eyebrow>
             <h2>
-              <b>¿Por qué elegirnos?</b> La ventaja de amoblaIA
+              <b>¿Por qué elegirnos?</b> La ventaja de habita.
             </h2>
           </div>
           <div className="hx-compare">
@@ -496,7 +496,7 @@ export function Landing({
             <div className="hx-compare-us">
               <div className="hx-compare-title">
                 <span>
-                  <b>amobla</b>IA
+                  <b>habita.</b>
                 </span>
               </div>
               {[

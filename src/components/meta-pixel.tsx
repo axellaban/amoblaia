@@ -3,7 +3,7 @@ import Script from "next/script";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
 
-// amoblaIA pixel. Public by design, like the Google Ads and PostHog IDs; override per environment if needed.
+// habita. pixel. Public by design, like the Google Ads and PostHog IDs; override per environment if needed.
 // Only production sends events, unless a pixel ID is set explicitly (for example, to test in a preview).
 const PIXEL_ID =
   process.env.NEXT_PUBLIC_META_PIXEL_ID ||

@@ -1715,7 +1715,7 @@ export function Studio({
             <span className="eyebrow">ACCESO AL PILOTO</span>
             <h2 id="login-title">Tu estudio te espera.</h2>
             <p>
-              Ingresá la clave que te compartió el equipo de amoblaIA para crear
+              Ingresá la clave que te compartió el equipo de habita. para crear
               diseños con tus fotos.
             </p>
             <form onSubmit={login}>

@@ -11,7 +11,7 @@ export const resources: Resource[] = [
     slug: "afiliados",
     title: "Programa de afiliados",
     intro:
-      "Recomendá amoblaIA a agentes, fotógrafos e inmobiliarias de tu comunidad.",
+      "Recomendá habita. a agentes, fotógrafos e inmobiliarias de tu comunidad.",
     kind: "afiliados",
     sections: [
       {
@@ -48,7 +48,7 @@ export const resources: Resource[] = [
   },
   {
     slug: "api",
-    title: "API de amoblaIA",
+    title: "API de habita.",
     intro: "Llevá el amoblamiento virtual a tu plataforma inmobiliaria.",
     kind: "api",
     sections: [
@@ -58,7 +58,7 @@ export const resources: Resource[] = [
       },
       {
         title: "Solicitá acceso",
-        body: "La API para terceros se habilita por acuerdo. Esta solicitud no genera una clave ni autoriza consumos. El estudio y las descargas de tus planes están disponibles desde tu cuenta de amoblaIA.",
+        body: "La API para terceros se habilita por acuerdo. Esta solicitud no genera una clave ni autoriza consumos. El estudio y las descargas de tus planes están disponibles desde tu cuenta de habita.",
       },
     ],
   },
@@ -71,7 +71,7 @@ export const resources: Resource[] = [
     sections: [
       {
         title: "Qué estamos construyendo",
-        body: "amoblaIA ayuda a mostrar el potencial de las propiedades con fotos amobladas digitalmente. El foco está en profesionales y propietarios de Argentina y Latinoamérica.",
+        body: "habita. ayuda a mostrar el potencial de las propiedades con fotos amobladas digitalmente. El foco está en profesionales y propietarios de Argentina y Latinoamérica.",
       },
       {
         title: "Contanos qué hacés",
@@ -212,7 +212,7 @@ export const resources: Resource[] = [
       },
       {
         title: "Revisá el alcance antes de pagar",
-        body: "En amoblaIA podés probar gratis, con marca de agua. Los planes pagos suman todos los ambientes y estilos, retiro de muebles y nuevos resultados sin marca de agua. El detalle y el cupo están en Precios.",
+        body: "En habita. podés probar gratis, con marca de agua. Los planes pagos suman todos los ambientes y estilos, retiro de muebles y nuevos resultados sin marca de agua. El detalle y el cupo están en Precios.",
       },
     ],
   },
@@ -341,7 +341,7 @@ export const articles = [
       },
       {
         title: "Señalá la edición",
-        body: "Incluí una leyenda de amoblamiento virtual y revisá las reglas del portal donde vas a publicar. En amoblaIA podés agregar esa etiqueta desde las opciones de descarga.",
+        body: "Incluí una leyenda de amoblamiento virtual y revisá las reglas del portal donde vas a publicar. En habita. podés agregar esa etiqueta desde las opciones de descarga.",
       },
       {
         title: "No ocultes problemas",

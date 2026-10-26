@@ -823,7 +823,7 @@ export function DemoEditor({ id }: { id: string }) {
                   />
                 </label>
                 <label className="dm-link-label">
-                  Para compradores (sin franja ni marcas de amoblaIA)
+                  Para compradores (sin franja ni marcas de habita)
                   <input className="dm-link" readOnly value={publicLink(demo.token)} onFocus={(e) => e.target.select()} />
                 </label>
                 <div className="dm-share">
@@ -914,7 +914,7 @@ export function DemoEditor({ id }: { id: string }) {
                 disabled={busy || !detail.settingsReady}
                 onChange={(e) => demoAction({ action: "settings", settings: { banner: e.target.checked } }, "Guardado.")}
               />
-              Mostrar «Demo preparada para {demo.agencyName} · Por Amobla IA» en el enlace de presentación
+              Mostrar «Demo preparada para {demo.agencyName} · Por habita.» en el enlace de presentación
             </label>
             <p className="dm-help">Estos ajustes son privados: el comprador nunca los ve.</p>
           </section>
