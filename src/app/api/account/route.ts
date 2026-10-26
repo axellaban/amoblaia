@@ -28,6 +28,8 @@ export async function GET() {
         .from("credit_grants")
         .select("id,remaining,total,expires_at,source_key,revoked")
         .eq("user_id", user.id)
+        // The zero-balance grant that covers commercial demos is not a plan.
+        .not("source_key", "like", "demo:%")
         .order("created_at", { ascending: false })
         .limit(50),
       db

@@ -4,6 +4,26 @@ import { buildPrompt } from "@/lib/catalog";
 import { HttpError } from "./http";
 import { WATERMARK_PNG } from "./watermark";
 export const MAX_BYTES = 3 * 1024 * 1024;
+/** The stored original: upright, at most 2048 px, JPEG. The bytes are decoded for real, not trusted by type. */
+export async function normalizePhoto(bytes: Buffer) {
+  try {
+    return await sharp(bytes, {
+      limitInputPixels: 40_000_000,
+      animated: false,
+    })
+      .rotate()
+      .resize({
+        width: 2048,
+        height: 2048,
+        fit: "inside",
+        withoutEnlargement: true,
+      })
+      .jpeg({ quality: 94 })
+      .toBuffer();
+  } catch {
+    throw new HttpError(400, "No pudimos leer la imagen. Probá con otra foto.");
+  }
+}
 export async function readPhoto(request: Request) {
   if (Number(request.headers.get("content-length") || 0) > MAX_BYTES + 16384)
     throw new HttpError(413, "La foto es demasiado grande.");
@@ -27,24 +47,7 @@ export async function readPhoto(request: Request) {
   } catch {
     throw new HttpError(400, "Elegí un ambiente, estilo y operación válidos.");
   }
-  let image: Buffer;
-  try {
-    image = await sharp(Buffer.from(await file.arrayBuffer()), {
-      limitInputPixels: 40_000_000,
-      animated: false,
-    })
-      .rotate()
-      .resize({
-        width: 2048,
-        height: 2048,
-        fit: "inside",
-        withoutEnlargement: true,
-      })
-      .jpeg({ quality: 94 })
-      .toBuffer();
-  } catch {
-    throw new HttpError(400, "No pudimos leer la imagen. Probá con otra foto.");
-  }
+  const image = await normalizePhoto(Buffer.from(await file.arrayBuffer()));
   return {
     image,
     prompt,

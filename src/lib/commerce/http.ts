@@ -65,6 +65,8 @@ export async function rpc<T>(
     // Matched by substring in order: the per-account codes must come before
     // DAILY_LIMIT and STORAGE_LIMIT, which they contain.
     const messages: Record<string, [number, string]> = {
+      DEMO_PHOTO_NOT_FOUND: [404, "No encontramos la foto de la demo."],
+      INVALID_DEMO_MODE: [400, "Elegí Amoblar o Rediseñar."],
       USER_DAILY_LIMIT: [
         429,
         "Llegaste al máximo de diseños por hoy. Mañana podés seguir.",

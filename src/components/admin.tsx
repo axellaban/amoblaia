@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { formatARS, type Product } from "@/lib/commerce/catalog";
 type AdminData = {
   products: Product[];
@@ -76,6 +77,11 @@ export function AdminDashboard() {
       <p>
         Acceso del equipo. Los cambios de precios se aplican a nuevas compras;
         las suscripciones existentes conservan su importe.
+      </p>
+      <p>
+        <Link href="/admin/demos" className="text-link">
+          Demos comerciales para inmobiliarias →
+        </Link>
       </p>
       {error && (
         <p className="inline-error" role="alert">

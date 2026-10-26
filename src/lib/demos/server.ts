@@ -1,0 +1,614 @@
+import "server-only";
+import { createHash, randomBytes } from "node:crypto";
+import sharp from "sharp";
+import { adminClient } from "@/lib/supabase/server";
+import { BUCKET } from "@/lib/commerce/jobs";
+import { HttpError } from "@/lib/commerce/http";
+import { normalizePhoto } from "@/lib/commerce/images";
+import {
+  TOKEN_PATTERN,
+  isUuid,
+  photoLabel,
+  pickCover,
+  type AgencyRow,
+  type DemoDetail,
+  type DemoMode,
+  type DemoSummary,
+  type EditorPhoto,
+  type GenerationRow,
+  type PublicDemo,
+  type PublicPhoto,
+} from "./shared";
+
+/** 18 random bytes: 24 URL-safe characters, unguessable and stable across publish/unpublish. */
+export const newToken = () => randomBytes(18).toString("base64url");
+export const MAX_PHOTOS_PER_DEMO = 40;
+
+type DemoRow = {
+  id: string;
+  agency_id: string;
+  property_id: string;
+  title: string | null;
+  token: string;
+  status: "draft" | "published";
+  cover_photo_id: string | null;
+  published_at: string | null;
+  created_at: string;
+};
+type PhotoRow = {
+  id: string;
+  property_id: string;
+  project_id: string;
+  position: number;
+  visible: boolean;
+  room: string;
+  label: string | null;
+  style: string;
+  mode: DemoMode;
+  approved_generation_id: string | null;
+  discarded: string[] | null;
+};
+const DEMO_FIELDS =
+  "id,agency_id,property_id,title,token,status,cover_photo_id,published_at,created_at";
+const PHOTO_FIELDS =
+  "id,property_id,project_id,position,visible,room,label,style,mode,approved_generation_id,discarded";
+
+function check<T>(result: { data: T | null; error: unknown }, code: string) {
+  if (result.error) throw new Error(code);
+  return result.data as T;
+}
+
+/** Approved proposals that can really be shown: succeeded, with a stored file, never a free (watermarked) result. */
+async function deliverable(ids: string[]) {
+  if (!ids.length) return new Map<string, string>();
+  const rows = check(
+    await adminClient()
+      .from("generations")
+      .select("id,result_path,status,is_free")
+      .in("id", ids),
+    "DEMO_GENERATIONS_LOOKUP_FAILED",
+  ) as { id: string; result_path: string | null; status: string; is_free: boolean }[];
+  return new Map(
+    rows
+      .filter((g) => g.status === "succeeded" && g.result_path && !g.is_free)
+      .map((g) => [g.id, g.result_path!]),
+  );
+}
+
+export async function listDemos() {
+  const db = adminClient();
+  const demos = check(
+    await db
+      .from("demos")
+      .select(DEMO_FIELDS)
+      .order("created_at", { ascending: false })
+      .limit(300),
+    "DEMO_LIST_FAILED",
+  ) as DemoRow[];
+  const agencyIds = [...new Set(demos.map((d) => d.agency_id))];
+  const propertyIds = demos.map((d) => d.property_id);
+  const [agencies, properties, photos, allAgencies] = await Promise.all([
+    agencyIds.length
+      ? db.from("agencies").select("id,name").in("id", agencyIds)
+      : Promise.resolve({ data: [], error: null }),
+    propertyIds.length
+      ? db.from("demo_properties").select("id,title").in("id", propertyIds)
+      : Promise.resolve({ data: [], error: null }),
+    propertyIds.length
+      ? db
+          .from("demo_photos")
+          .select("id,property_id,approved_generation_id,visible,position")
+          .in("property_id", propertyIds)
+          .order("position")
+      : Promise.resolve({ data: [], error: null }),
+    db
+      .from("agencies")
+      .select("id,name,website,contact_name,notes")
+      .order("name")
+      .limit(500),
+  ]);
+  const agencyName = new Map(
+    (check(agencies, "DEMO_LIST_FAILED") as { id: string; name: string }[]).map(
+      (a) => [a.id, a.name],
+    ),
+  );
+  const propertyTitle = new Map(
+    (check(properties, "DEMO_LIST_FAILED") as { id: string; title: string }[]).map(
+      (p) => [p.id, p.title],
+    ),
+  );
+  const photoRows = check(photos, "DEMO_LIST_FAILED") as {
+    id: string;
+    property_id: string;
+    approved_generation_id: string | null;
+    visible: boolean;
+  }[];
+  const summaries: DemoSummary[] = demos.map((d) => {
+    const own = photoRows.filter((p) => p.property_id === d.property_id);
+    return {
+      id: d.id,
+      token: d.token,
+      status: d.status,
+      title: d.title || propertyTitle.get(d.property_id) || "Demo",
+      agencyId: d.agency_id,
+      agencyName: agencyName.get(d.agency_id) || "",
+      propertyTitle: propertyTitle.get(d.property_id) || "",
+      photos: own.length,
+      staged: own.filter((p) => p.approved_generation_id).length,
+      coverPhotoId: d.cover_photo_id,
+      cover: pickCover(own, d.cover_photo_id),
+      createdAt: d.created_at,
+      publishedAt: d.published_at,
+    };
+  });
+  return {
+    demos: summaries,
+    agencies: check(allAgencies, "AGENCY_LIST_FAILED") as AgencyRow[],
+  };
+}
+
+export async function demoRow(id: string) {
+  if (!isUuid(id)) throw new HttpError(404, "No encontramos la demo.");
+  const demo = check(
+    await adminClient().from("demos").select(DEMO_FIELDS).eq("id", id).maybeSingle(),
+    "DEMO_LOOKUP_FAILED",
+  ) as DemoRow | null;
+  if (!demo) throw new HttpError(404, "No encontramos la demo.");
+  return demo;
+}
+
+async function photosOf(propertyId: string) {
+  return check(
+    await adminClient()
+      .from("demo_photos")
+      .select(PHOTO_FIELDS)
+      .eq("property_id", propertyId)
+      .order("position")
+      .order("created_at"),
+    "DEMO_PHOTOS_LOOKUP_FAILED",
+  ) as PhotoRow[];
+}
+
+export async function demoDetail(id: string): Promise<DemoDetail> {
+  const db = adminClient();
+  const demo = await demoRow(id);
+  const [agency, property, photos] = await Promise.all([
+    db
+      .from("agencies")
+      .select("id,name,website,contact_name,notes")
+      .eq("id", demo.agency_id)
+      .single(),
+    db
+      .from("demo_properties")
+      .select("id,title,location,listing_url,description")
+      .eq("id", demo.property_id)
+      .single(),
+    photosOf(demo.property_id),
+  ]);
+  const projectIds = [...new Set(photos.map((p) => p.project_id))];
+  const generations = projectIds.length
+    ? (check(
+        await db
+          .from("generations")
+          .select("id,project_id,status,style,mode,room,created_at,error_code")
+          .in("project_id", projectIds)
+          .eq("is_free", false)
+          .order("created_at", { ascending: false })
+          .limit(1000),
+        "DEMO_GENERATIONS_LOOKUP_FAILED",
+      ) as (GenerationRow & { project_id: string })[])
+    : [];
+  const prop = check(property, "DEMO_PROPERTY_LOOKUP_FAILED") as DemoDetail["property"];
+  const photoList: EditorPhoto[] = photos.map((p) => ({
+    id: p.id,
+    projectId: p.project_id,
+    position: p.position,
+    visible: p.visible,
+    room: p.room,
+    label: p.label,
+    style: p.style,
+    mode: p.mode,
+    approvedGenerationId: p.approved_generation_id,
+    discarded: p.discarded || [],
+    generations: generations
+      .filter((g) => g.project_id === p.project_id)
+      .map(({ project_id: _ignored, ...g }) => g),
+  }));
+  return {
+    demo: {
+      id: demo.id,
+      token: demo.token,
+      status: demo.status,
+      title: demo.title || prop.title,
+      agencyId: demo.agency_id,
+      agencyName: (check(agency, "DEMO_AGENCY_LOOKUP_FAILED") as AgencyRow).name,
+      propertyTitle: prop.title,
+      photos: photos.length,
+      staged: photos.filter((p) => p.approved_generation_id).length,
+      coverPhotoId: demo.cover_photo_id,
+      cover: pickCover(photos, demo.cover_photo_id),
+      createdAt: demo.created_at,
+      publishedAt: demo.published_at,
+    },
+    agency: check(agency, "DEMO_AGENCY_LOOKUP_FAILED") as AgencyRow,
+    property: prop,
+    photos: photoList,
+  };
+}
+
+/** Builds the minimal public payload. Only visible photos; a staged version only when it can be delivered. */
+async function publicPayload(demo: DemoRow): Promise<PublicDemo> {
+  const db = adminClient();
+  const [agency, property, photos] = await Promise.all([
+    db.from("agencies").select("name").eq("id", demo.agency_id).single(),
+    db
+      .from("demo_properties")
+      .select("title,location,description")
+      .eq("id", demo.property_id)
+      .single(),
+    photosOf(demo.property_id),
+  ]);
+  const visible = photos.filter((p) => p.visible);
+  const ready = await deliverable(
+    visible.flatMap((p) => (p.approved_generation_id ? [p.approved_generation_id] : [])),
+  );
+  const list: PublicPhoto[] = visible.map((p) => {
+    const staged = Boolean(p.approved_generation_id && ready.has(p.approved_generation_id));
+    return {
+      id: p.id,
+      label: photoLabel(p),
+      staged,
+      version: staged ? p.approved_generation_id!.slice(0, 8) : "o",
+    };
+  });
+  const prop = check(property, "DEMO_PROPERTY_LOOKUP_FAILED") as {
+    title: string;
+    location: string | null;
+    description: string | null;
+  };
+  return {
+    id: demo.id,
+    agencyId: demo.agency_id,
+    agencyName: (check(agency, "DEMO_AGENCY_LOOKUP_FAILED") as { name: string }).name,
+    title: demo.title || prop.title,
+    location: prop.location,
+    description: prop.description,
+    cover:
+      list.find((p) => p.id === demo.cover_photo_id) ??
+      list.find((p) => p.staged) ??
+      list[0] ??
+      null,
+    photos: list,
+  };
+}
+
+/** The public demo for a token, or null when the token is malformed, unknown or not published. */
+export async function publishedDemo(token: string) {
+  if (!TOKEN_PATTERN.test(token)) return null;
+  const demo = check(
+    await adminClient()
+      .from("demos")
+      .select(DEMO_FIELDS)
+      .eq("token", token)
+      .eq("status", "published")
+      .maybeSingle(),
+    "DEMO_LOOKUP_FAILED",
+  ) as DemoRow | null;
+  return demo ? publicPayload(demo) : null;
+}
+/** The same payload for an admin preview, whatever the state. */
+export async function previewDemo(id: string) {
+  return publicPayload(await demoRow(id));
+}
+
+/** Storage path of a public image, only for a visible photo of a published demo. */
+export async function publicImagePath(
+  token: string,
+  photoId: string,
+  variant: "original" | "staged",
+) {
+  if (!TOKEN_PATTERN.test(token) || !isUuid(photoId)) return null;
+  const db = adminClient();
+  const demo = check(
+    await db
+      .from("demos")
+      .select("property_id")
+      .eq("token", token)
+      .eq("status", "published")
+      .maybeSingle(),
+    "DEMO_LOOKUP_FAILED",
+  ) as { property_id: string } | null;
+  if (!demo) return null;
+  const photo = check(
+    await db
+      .from("demo_photos")
+      .select(PHOTO_FIELDS)
+      .eq("id", photoId)
+      .eq("property_id", demo.property_id)
+      .eq("visible", true)
+      .maybeSingle(),
+    "DEMO_PHOTO_LOOKUP_FAILED",
+  ) as PhotoRow | null;
+  return photo ? photoPath(photo, variant) : null;
+}
+
+async function photoPath(photo: PhotoRow, variant: "original" | "staged") {
+  if (variant === "staged") {
+    if (!photo.approved_generation_id) return null;
+    return (await deliverable([photo.approved_generation_id])).get(photo.approved_generation_id) ?? null;
+  }
+  const project = check(
+    await adminClient()
+      .from("projects")
+      .select("original_path")
+      .eq("id", photo.project_id)
+      .is("deleted_at", null)
+      .maybeSingle(),
+    "DEMO_PROJECT_LOOKUP_FAILED",
+  ) as { original_path: string } | null;
+  return project?.original_path ?? null;
+}
+
+/** Admin image: a demo photo (original or approved version) or one proposal of a demo photo. */
+export async function adminImagePath(params: {
+  photoId?: string | null;
+  variant?: string | null;
+  generationId?: string | null;
+}) {
+  const db = adminClient();
+  if (params.generationId) {
+    if (!isUuid(params.generationId)) return null;
+    const g = check(
+      await db
+        .from("generations")
+        .select("result_path,status,projects!inner(original_hash)")
+        .eq("id", params.generationId)
+        .eq("status", "succeeded")
+        .like("projects.original_hash", "demo:%")
+        .maybeSingle(),
+      "DEMO_GENERATION_LOOKUP_FAILED",
+    ) as { result_path: string | null } | null;
+    return g?.result_path ?? null;
+  }
+  if (!isUuid(params.photoId)) return null;
+  const photo = check(
+    await db.from("demo_photos").select(PHOTO_FIELDS).eq("id", params.photoId).maybeSingle(),
+    "DEMO_PHOTO_LOOKUP_FAILED",
+  ) as PhotoRow | null;
+  return photo ? photoPath(photo, params.variant === "staged" ? "staged" : "original") : null;
+}
+
+/** Reads a stored image and returns a web-sized JPEG (or a 1200×630 card for link previews). */
+export async function renderImage(path: string, width: number, og = false) {
+  const file = await adminClient().storage.from(BUCKET).download(path);
+  if (file.error || !file.data) return null;
+  const pipeline = sharp(Buffer.from(await file.data.arrayBuffer()), {
+    limitInputPixels: 40_000_000,
+  });
+  return og
+    ? pipeline
+        .resize({ width: 1200, height: 630, fit: "cover", position: "attention" })
+        .jpeg({ quality: 78, progressive: true })
+        .toBuffer()
+    : pipeline
+        .resize({ width, height: width, fit: "inside", withoutEnlargement: true })
+        .jpeg({ quality: 82, progressive: true })
+        .toBuffer();
+}
+
+export type AgencyInput = {
+  name: string;
+  website: string | null;
+  contact_name: string | null;
+  notes: string | null;
+};
+export type PropertyInput = {
+  title: string;
+  location: string | null;
+  listing_url: string | null;
+  description: string | null;
+};
+
+export async function createDemo(input: {
+  actorId: string;
+  agencyId: string | null;
+  agency: AgencyInput | null;
+  property: PropertyInput;
+}) {
+  const db = adminClient();
+  let agencyId = input.agencyId;
+  let createdAgency = false;
+  if (agencyId) {
+    const found = check(
+      await db.from("agencies").select("id").eq("id", agencyId).maybeSingle(),
+      "AGENCY_LOOKUP_FAILED",
+    );
+    if (!found) throw new HttpError(404, "No encontramos esa inmobiliaria.");
+  } else if (input.agency) {
+    const made = check(
+      await db
+        .from("agencies")
+        .insert({ ...input.agency, created_by: input.actorId })
+        .select("id")
+        .single(),
+      "AGENCY_CREATE_FAILED",
+    ) as { id: string };
+    agencyId = made.id;
+    createdAgency = true;
+  } else throw new HttpError(400, "Elegí o creá una inmobiliaria.");
+  const undo = async (propertyId?: string) => {
+    if (propertyId) await db.from("demo_properties").delete().eq("id", propertyId);
+    if (createdAgency) await db.from("agencies").delete().eq("id", agencyId!);
+  };
+  const property = await db
+    .from("demo_properties")
+    .insert({ ...input.property, agency_id: agencyId, created_by: input.actorId })
+    .select("id")
+    .single();
+  if (property.error || !property.data) {
+    await undo();
+    throw new Error("PROPERTY_CREATE_FAILED");
+  }
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const demo = await db
+      .from("demos")
+      .insert({
+        agency_id: agencyId,
+        property_id: property.data.id,
+        token: newToken(),
+        created_by: input.actorId,
+      })
+      .select("id")
+      .single();
+    if (!demo.error && demo.data) return demo.data.id as string;
+    // 23505 on the token: astronomically unlikely, but a retry is free.
+    if (demo.error?.code !== "23505") break;
+  }
+  await undo(property.data.id);
+  throw new Error("DEMO_CREATE_FAILED");
+}
+
+/**
+ * Stores an uploaded original as a demo project of the uploading admin and
+ * appends it to the demo. The same picture uploaded again reuses its
+ * project (and the proposals already made for it).
+ */
+export async function addPhoto(demo: DemoRow, actorId: string, bytes: Buffer, name: string) {
+  const db = adminClient();
+  const existing = await photosOf(demo.property_id);
+  if (existing.length >= MAX_PHOTOS_PER_DEMO)
+    throw new HttpError(409, `Una demo admite hasta ${MAX_PHOTOS_PER_DEMO} fotos.`);
+  const image = await normalizePhoto(bytes);
+  const hash = createHash("sha256").update(image).digest("hex");
+  const originalHash = `demo:${hash}`;
+  const lookup = async () =>
+    check(
+      await db
+        .from("projects")
+        .select("id")
+        .eq("original_hash", originalHash)
+        .is("deleted_at", null)
+        .order("created_at")
+        .limit(1)
+        .maybeSingle(),
+      "PROJECT_LOOKUP_FAILED",
+    ) as { id: string } | null;
+  let project = await lookup();
+  if (!project) {
+    const path = `${actorId}/demos/${hash}.jpg`;
+    const upload = await db.storage
+      .from(BUCKET)
+      .upload(path, image, { contentType: "image/jpeg", upsert: false });
+    if (
+      upload.error &&
+      !["409", "Duplicate"].includes(String((upload.error as { statusCode?: string }).statusCode)) &&
+      !/already exists/i.test(upload.error.message)
+    )
+      throw new HttpError(503, "No pudimos guardar la foto. Revisá el almacenamiento disponible.");
+    const made = await db
+      .from("projects")
+      .insert({
+        user_id: actorId,
+        original_hash: originalHash,
+        original_path: path,
+        original_bytes: image.length,
+        name: name.slice(0, 100) || "Foto de la demo",
+      })
+      .select("id")
+      .single();
+    if (made.error?.code === "23505") project = await lookup();
+    else if (made.error || !made.data) throw new Error("PROJECT_CREATE_FAILED");
+    else project = made.data;
+    if (!project) throw new Error("PROJECT_CREATE_FAILED");
+  }
+  if (existing.some((p) => p.project_id === project!.id))
+    throw new HttpError(409, "Esta foto ya está en la demo.");
+  const inserted = await db
+    .from("demo_photos")
+    .insert({
+      property_id: demo.property_id,
+      project_id: project.id,
+      position: existing.reduce((n, p) => Math.max(n, p.position + 1), 0),
+    })
+    .select(PHOTO_FIELDS)
+    .single();
+  if (inserted.error?.code === "23505") throw new HttpError(409, "Esta foto ya está en la demo.");
+  if (inserted.error || !inserted.data) throw new Error("DEMO_PHOTO_CREATE_FAILED");
+  return inserted.data as PhotoRow;
+}
+
+export async function photoOf(demo: DemoRow, photoId: string) {
+  if (!isUuid(photoId)) throw new HttpError(404, "No encontramos la foto.");
+  const photo = check(
+    await adminClient()
+      .from("demo_photos")
+      .select(PHOTO_FIELDS)
+      .eq("id", photoId)
+      .eq("property_id", demo.property_id)
+      .maybeSingle(),
+    "DEMO_PHOTO_LOOKUP_FAILED",
+  ) as PhotoRow | null;
+  if (!photo) throw new HttpError(404, "No encontramos la foto.");
+  return photo;
+}
+
+async function liveJobs(projectIds: string[]) {
+  if (!projectIds.length) return false;
+  const { count, error } = await adminClient()
+    .from("generations")
+    .select("id", { count: "exact", head: true })
+    .in("project_id", projectIds)
+    .in("status", ["queued", "running"]);
+  if (error) throw new Error("DEMO_JOBS_LOOKUP_FAILED");
+  return (count || 0) > 0;
+}
+export async function assertNoLiveJobs(projectIds: string[]) {
+  if (await liveJobs(projectIds))
+    throw new HttpError(409, "Esperá a que terminen las ambientaciones en curso.");
+}
+
+/**
+ * Deletes demo projects no demo uses any more, with their files. Projects
+ * with a result under review are kept so the team can still resolve it.
+ */
+export async function releaseProjects(projectIds: string[]) {
+  const db = adminClient();
+  for (const id of [...new Set(projectIds)]) {
+    try {
+      const { count } = await db
+        .from("demo_photos")
+        .select("id", { count: "exact", head: true })
+        .eq("project_id", id);
+      if (count !== 0) continue;
+      const project = check(
+        await db
+          .from("projects")
+          .select("id,original_path,original_hash,generations(status,result_path)")
+          .eq("id", id)
+          .is("deleted_at", null)
+          .maybeSingle(),
+        "PROJECT_LOOKUP_FAILED",
+      ) as {
+        original_path: string;
+        original_hash: string;
+        generations: { status: string; result_path: string | null }[];
+      } | null;
+      if (!project || !project.original_hash.startsWith("demo:")) continue;
+      if (project.generations.some((g) => ["queued", "running", "needs_review"].includes(g.status)))
+        continue;
+      const marked = await db
+        .from("projects")
+        .update({ deleted_at: new Date().toISOString() })
+        .eq("id", id);
+      if (marked.error) continue;
+      const paths = [
+        project.original_path,
+        ...project.generations.flatMap((g) => (g.result_path ? [g.result_path] : [])),
+      ];
+      const removed = await db.storage.from(BUCKET).remove(paths);
+      if (removed.error) console.error("demo_image_delete_deferred", id);
+    } catch {
+      console.error("demo_project_release_failed", id);
+    }
+  }
+}

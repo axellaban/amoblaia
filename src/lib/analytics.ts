@@ -23,3 +23,14 @@ export function track(
     /* Tracking is best effort. */
   }
 }
+
+/** Keeps the commercial demo a visitor came from on every later event
+ * (registro, foto_subida, compra_confirmada…), for attribution. */
+export function registerSuperProperties(properties: EventProperties) {
+  try {
+    if (!posthog.__loaded) return;
+    posthog.register(properties);
+  } catch {
+    /* Tracking is best effort. */
+  }
+}
