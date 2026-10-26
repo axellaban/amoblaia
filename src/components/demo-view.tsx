@@ -541,10 +541,12 @@ function Gallery({
   );
   const name = (style: string) => styleNames[style] ?? style;
   const [index, setIndex] = useState(0);
-  // Remembered per photo during the visit. The first photo may open staged (opening mode B).
+  // Remembered per photo during the visit. The first photo may open compared 50/50 with its staging (opening mode B).
   const [states, setStates] = useState<Record<string, PhotoState>>(() =>
-    demo.openStyle && photos[0] ? { [photos[0].id]: { style: demo.openStyle, compare: false, position: 50 } } : {},
+    demo.openStyle && photos[0] ? { [photos[0].id]: { style: demo.openStyle, compare: true, position: 50 } } : {},
   );
+  // Where the comparison line was last left, on any photo.
+  const lastPosition = useRef(50);
   const [failed, setFailed] = useState<Record<string, boolean>>({});
   const [retries, setRetries] = useState<Record<string, number>>({});
   const [ratios, setRatios] = useState<Record<string, number>>({});
@@ -572,8 +574,9 @@ function Gallery({
     [photos.length],
   );
   const choose = (style: string) => {
-    // Back to a style already explored on this photo: its line stays where it was.
-    setState({ style, compare: true, position: state.style === style ? state.position : 50 });
+    // The line stays where the buyer left it: moved all the way to one side,
+    // the next style is seen the same way, not from the middle again.
+    setState({ style, compare: true, position: state.style && state.compare ? state.position : lastPosition.current });
     log("demo_estilo", { estilo: style });
   };
   const backToOriginal = () => {
@@ -744,9 +747,10 @@ function Gallery({
                 beforeLabel={TEXT.original}
                 afterLabel={TEXT.staged}
                 initial={state.position}
-                onPositionChange={(position) =>
-                  setStates((s) => ({ ...s, [photo.id]: { ...(s[photo.id] ?? state), position } }))
-                }
+                onPositionChange={(position) => {
+                  lastPosition.current = position;
+                  setStates((s) => ({ ...s, [photo.id]: { ...(s[photo.id] ?? state), position } }));
+                }}
                 onAfterError={() => setFailed((f) => ({ ...f, [stagedKey]: true }))}
               />
             ) : (
