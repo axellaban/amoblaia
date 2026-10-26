@@ -18,6 +18,10 @@ export type Listing = {
   title: string;
   location: string | null;
   description: string | null;
+  /** The longest description block on the page, as published (up to 6000 characters). */
+  fullDescription: string | null;
+  /** Every amount the page shows, in order and without repeats: more than one may be a conflict. */
+  prices: string[];
   listingUrl: string;
   agency: { name: string; website: string };
   images: string[];
@@ -178,6 +182,59 @@ function trimTitle(title: string, agency: string) {
   return title;
 }
 
+/** Text of an element, keeping its paragraphs and line breaks. */
+const blockText = (html: string) =>
+  decodeEntities(
+    html
+      .replace(/<(script|style)[\s\S]*?<\/\1>/gi, " ")
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/(p|div|li|h\d)>/gi, "\n")
+      .replace(/<li\b[^>]*>/gi, "\n- ")
+      .replace(/<[^>]+>/g, " "),
+  )
+    .replace(/[ \t]+/g, " ")
+    .replace(/ *\n */g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+/** Inner HTML of every element whose id or class mentions one of the words (no nesting tricks: good enough for listings). */
+function blocksNamed(html: string, words: RegExp) {
+  const out: string[] = [];
+  const open = /<(div|section|p|span|article|ul|h\d)\b([^>]*)>/gi;
+  for (const m of html.matchAll(open)) {
+    const attrs = m[2];
+    const name = /\b(?:id|class)\s*=\s*("[^"]*"|'[^']*')/gi;
+    if (![...attrs.matchAll(name)].some((a) => words.test(a[1]))) continue;
+    const tag = m[1].toLowerCase();
+    const start = (m.index ?? 0) + m[0].length;
+    // The matching close tag, counting nested tags of the same name.
+    let depth = 1;
+    let end = html.length;
+    for (const t of html.slice(start).matchAll(new RegExp(`<(/?)${tag}\\b[^>]*>`, "gi"))) {
+      depth += t[1] ? -1 : 1;
+      if (!depth) {
+        end = start + (t.index ?? 0);
+        break;
+      }
+    }
+    out.push(html.slice(start, end));
+  }
+  return out;
+}
+
+const MONEY = /(USD|U\$S|US\$|\$)\s?(\d{1,3}(?:[.,]\d{3})+|\d{4,})(?![\d.,]*\d)/gi;
+/** Amounts as published ("$ 1.100.000", "USD 95.000"), without repeats. */
+export function moneyMentions(text: string) {
+  const seen = new Map<string, string>();
+  for (const m of text.matchAll(MONEY)) {
+    const currency = /^\$$/.test(m[1]) ? "$" : "USD";
+    const amount = m[2].replace(/[.,]/g, "");
+    const key = `${currency}${amount}`;
+    if (!seen.has(key)) seen.set(key, `${currency} ${Number(amount).toLocaleString("es-AR")}`);
+  }
+  return [...seen.values()];
+}
+
 export function parseListing(html: string, pageUrl: string): Listing {
   const page = new URL(pageUrl);
   const ld = jsonLd(html);
@@ -275,10 +332,23 @@ export function parseListing(html: string, pageUrl: string): Listing {
     images.push(full);
   }
 
+  const longest = blocksNamed(html, /descrip/i)
+    .map(blockText)
+    .sort((a, b) => b.length - a.length)[0];
+  const fullDescription = cleanText(
+    longest && longest.length > (description?.length ?? 0) ? longest : description,
+    6000,
+    true,
+  );
+  const priceText = blocksNamed(html, /(price|precio|valor)/i).map(blockText).join("\n");
+  const prices = moneyMentions(`${priceText}\n${title}\n${fullDescription ?? ""}`);
+
   return {
     title,
     location,
     description,
+    fullDescription,
+    prices,
     listingUrl: page.toString(),
     agency: { name: agencyName, website: `${page.protocol}//${page.host}/` },
     images,

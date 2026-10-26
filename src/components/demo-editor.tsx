@@ -27,7 +27,9 @@ import {
   publicLink,
 } from "./admin-demos";
 import { optimizePhoto } from "@/lib/images";
-import { rooms, styles } from "@/lib/catalog";
+import { rooms } from "@/lib/catalog";
+import { DEMO_STYLES, PROPERTY_TYPE_NAMES, styleFits, type PropertyType } from "@/lib/demos/styles";
+import { ListingForm } from "./demo-listing-form";
 import {
   MAX_DEMO_STYLES,
   adminGenerationUrl,
@@ -51,7 +53,6 @@ const emptyBrand = {
   contactValue: "",
   visitUrl: "",
 };
-const emptyListing = { operation: "", price: "", features: "", reference: "" };
 const CONTACT_LABELS = {
   whatsapp: ["WhatsApp", "+54 9 223 555-1234"],
   url: ["Formulario o página de contacto", "https://inmobiliaria.com/contacto"],
@@ -97,7 +98,7 @@ export function DemoEditor({ id }: { id: string }) {
   const [agency, setAgency] = useState({ name: "", website: "", contact_name: "", notes: "" });
   const [property, setProperty] = useState({ title: "", listing_url: "", location: "", description: "" });
   const [brand, setBrand] = useState(emptyBrand);
-  const [listing, setListing] = useState(emptyListing);
+  const [reread, setReread] = useState<Reread | null>(null);
   const base = `/api/admin/demos/${id}`;
   const queueRef = useRef<string | null>(null);
   const firstLoad = useRef(true);
@@ -130,12 +131,6 @@ export function DemoEditor({ id }: { id: string }) {
       contactKind: d.branding.contactKind ?? "whatsapp",
       contactValue: d.branding.contactValue ?? "",
       visitUrl: d.branding.visitUrl ?? "",
-    });
-    setListing({
-      operation: d.settings.operation ?? "",
-      price: d.settings.price ?? "",
-      features: d.settings.features ?? "",
-      reference: d.settings.reference ?? "",
     });
   }, []);
   const load = useCallback(async () => apply(await api<DemoDetail>(base)), [apply, base]);
@@ -320,7 +315,10 @@ export function DemoEditor({ id }: { id: string }) {
   const generating = queue.length > 0;
   const busyAny = generating || livePhotos.length > 0;
   // Styles of the demo: the staged ones plus the ones just checked here.
-  const chosen = orderStyles([...detail.styles, ...picked], detail.mainStyle);
+  const type: PropertyType = detail.settings.propertyType;
+  // Only styles that fit the property: an office never offers a living room.
+  const typeStyles = DEMO_STYLES[type];
+  const chosen = orderStyles([...detail.styles, ...picked], detail.mainStyle).filter((st) => styleFits(st, type));
   const main = chosen.includes(detail.mainStyle) ? detail.mainStyle : chosen[0];
   const pending: Task[] = photos
     .filter((p) => selected.has(p.id))
@@ -333,6 +331,13 @@ export function DemoEditor({ id }: { id: string }) {
   const reviewPhoto = review && photos.find((p) => p.id === review.photoId);
   const reviewGenId = review && reviewPhoto?.shown[review.style];
   const reviewGen = reviewPhoto?.generations.find((g) => g.id === reviewGenId);
+
+  /** The ambientaciones follow the property: other types' styles stop showing (they are not deleted). */
+  async function changeType(next: PropertyType) {
+    await demoAction({ action: "settings", settings: { propertyType: next } }, `Tipo de inmueble: ${PROPERTY_TYPE_NAMES[next]}.`);
+    if (!styleFits(detail!.mainStyle, next))
+      await demoAction({ action: "main-style", style: DEMO_STYLES[next][0].id });
+  }
 
   async function toggleStyle(style: string, on: boolean) {
     if (on) {
@@ -412,10 +417,79 @@ export function DemoEditor({ id }: { id: string }) {
         </p>
       )}
 
+      <section className="account-panel dm-review" aria-labelledby="dm-review-title-2">
+        <div className="dm-styles-head">
+          <div>
+            <h2 id="dm-review-title-2">Antes de compartir</h2>
+            <p className="dm-help">
+              {detail.settings.reviewedAt
+                ? `Revisada contra la publicación el ${new Date(detail.settings.reviewedAt).toLocaleDateString("es-AR")}.`
+                : "Todavía sin revisar contra la publicación original."}{" "}
+              Solo lo ve el equipo.
+            </p>
+          </div>
+          <div className="dm-review-actions">
+            <button
+              type="button"
+              className="button button-small button-outline"
+              disabled={busy || !detail.property.listing_url}
+              onClick={() =>
+                run(async () => {
+                  setReread(await api<Reread>(`${base}/publicacion`));
+                })
+              }
+            >
+              Volver a leer la publicación
+            </button>
+            <button
+              type="button"
+              className="button button-small"
+              disabled={busy || !detail.settingsReady}
+              onClick={() => demoAction({ action: "settings", settings: { reviewedAt: "now" } }, "Marcada como revisada hoy.")}
+            >
+              Marcar como revisada
+            </button>
+          </div>
+        </div>
+        {!detail.settingsReady && <MigrationNote />}
+        {detail.warnings.length > 0 ? (
+          <ul className="dm-warnings">
+            {detail.warnings.map((w) => (
+              <li key={w}>{w}</li>
+            ))}
+          </ul>
+        ) : (
+          <p className="inline-notice">Todo listo para compartir.</p>
+        )}
+        {reread && (
+          <RereadDiff
+            reread={reread}
+            detail={detail}
+            busy={busy}
+            onClose={() => setReread(null)}
+            onUse={(body, done) => demoAction(body, done)}
+          />
+        )}
+      </section>
+
       <section className="account-panel dm-styles-panel" aria-labelledby="dm-styles-title">
         <div className="dm-styles-head">
           <div>
             <h2 id="dm-styles-title">Estilos de la demo</h2>
+            <label className="dm-select dm-type">
+              Tipo de inmueble
+              <select
+                value={type}
+                disabled={busy || busyAny || !detail.settingsReady}
+                onChange={(e) => void changeType(e.target.value as PropertyType)}
+              >
+                {(Object.keys(PROPERTY_TYPE_NAMES) as PropertyType[]).map((t) => (
+                  <option key={t} value={t}>
+                    {PROPERTY_TYPE_NAMES[t]}
+                  </option>
+                ))}
+              </select>
+            </label>
             <p className="dm-help">
               Elegí qué estilos va a ver la inmobiliaria en cada foto. El principal se usa de portada y
               en la vista previa de WhatsApp: la primera foto, mitad original y mitad ambientada.
@@ -426,7 +500,7 @@ export function DemoEditor({ id }: { id: string }) {
           </span>
         </div>
         <ul className="dm-styles">
-          {styles.map((st) => {
+          {typeStyles.map((st) => {
             const on = chosen.includes(st.id);
             return (
               <li key={st.id} className={on ? "is-on" : ""}>
@@ -583,7 +657,7 @@ export function DemoEditor({ id }: { id: string }) {
                       </div>
                     </div>
                     <div className="dm-photo-fields">
-                      <label>
+                      <label hidden={type === "office"}>
                         Ambiente
                         <select
                           value={p.room}
@@ -1012,52 +1086,11 @@ export function DemoEditor({ id }: { id: string }) {
                 e.preventDefault();
                 void run(async () => {
                   await api(base, { method: "PATCH", body: JSON.stringify({ action: "property", property }) });
-                  if (detail.settingsReady)
-                    await api(base, { method: "PATCH", body: JSON.stringify({ action: "settings", settings: listing }) });
                   await load();
                 }, "Propiedad guardada.");
               }}
             >
               <PropertyFields value={property} onChange={setProperty} />
-              <div className="dm-fields">
-                <label>
-                  Operación
-                  <input
-                    value={listing.operation}
-                    maxLength={40}
-                    placeholder="Venta"
-                    onChange={(e) => setListing({ ...listing, operation: e.target.value })}
-                  />
-                </label>
-                <label>
-                  Precio <small>(tal como lo publica)</small>
-                  <input
-                    value={listing.price}
-                    maxLength={40}
-                    placeholder="USD 265.000"
-                    onChange={(e) => setListing({ ...listing, price: e.target.value })}
-                  />
-                </label>
-                <label>
-                  Características
-                  <input
-                    value={listing.features}
-                    maxLength={120}
-                    placeholder="3 ambientes · 101 m² · 2 dormitorios"
-                    onChange={(e) => setListing({ ...listing, features: e.target.value })}
-                  />
-                </label>
-                <label>
-                  Código de referencia
-                  <input
-                    value={listing.reference}
-                    maxLength={40}
-                    placeholder="RAP12025427"
-                    onChange={(e) => setListing({ ...listing, reference: e.target.value })}
-                  />
-                </label>
-              </div>
-              <p className="dm-help">Solo se muestra lo que cargues: copialo de la publicación original.</p>
               <button className="button button-small" disabled={busy}>
                 Guardar propiedad
               </button>
@@ -1065,6 +1098,20 @@ export function DemoEditor({ id }: { id: string }) {
           </section>
         </aside>
       </div>
+
+      <section className="account-panel dm-listing-panel" aria-labelledby="dm-listing-title">
+        <h2 id="dm-listing-title">Ficha de la propiedad</h2>
+        <p className="dm-help">
+          Todo lo que el comprador ve además de las fotos. Copiá los datos de la publicación original; los campos
+          vacíos no se muestran.
+        </p>
+        {!detail.settingsReady && <MigrationNote />}
+        <ListingForm
+          settings={detail.settings}
+          disabled={busy || !detail.settingsReady}
+          onSave={(settings) => demoAction({ action: "settings", settings }, "Ficha guardada.")}
+        />
+      </section>
 
       {reviewPhoto && reviewGen && review && (
         <Review
@@ -1086,6 +1133,18 @@ export function DemoEditor({ id }: { id: string }) {
   );
 }
 
+/** Natural width/height of an image, once loaded. */
+function useImageRatio(url: string | null) {
+  const [ratio, setRatio] = useState<number | null>(null);
+  useEffect(() => {
+    if (!url) return;
+    const img = new Image();
+    img.onload = () => img.naturalHeight && setRatio(img.naturalWidth / img.naturalHeight);
+    img.src = url;
+  }, [url]);
+  return url ? ratio : null;
+}
+
 /** One style of one photo: its version, or where it stands. */
 function StyleCell({
   photo,
@@ -1104,6 +1163,11 @@ function StyleCell({
 }) {
   const shown = photo.shown[style];
   const last = photo.generations.find((g) => g.style === style && !photo.discarded.includes(g.id));
+  // A version framed differently from the original cannot be compared cleanly.
+  const originalRatio = useImageRatio(shown ? adminPhotoUrl(photo.id, null, 480) : null);
+  const stagedRatio = useImageRatio(shown ? adminGenerationUrl(shown, 480) : null);
+  const mismatch =
+    originalRatio && stagedRatio ? Math.abs(stagedRatio - originalRatio) / originalRatio > 0.03 : false;
   const running = queued || (last ? liveStatus(last) : false);
   const failed = !running && !shown && last && ["failed", "needs_review"].includes(last.status);
   return (
@@ -1117,6 +1181,11 @@ function StyleCell({
           {running && <Loader2 size={18} className="spin" />}
           <span>{running ? (queued && !last ? "En cola" : "Ambientando…") : failed ? generationNote(last!) : "Sin ambientar"}</span>
         </div>
+      )}
+      {mismatch && (
+        <span className="dm-cell-warn" role="note">
+          Encuadre distinto al original: revisalo antes de publicar.
+        </span>
       )}
       <small className="dm-cell-foot">
         <strong>{styleName(style)}</strong>
@@ -1210,5 +1279,149 @@ function MigrationNote() {
       <code>202610270001_demo_branding.sql</code> en Supabase. Mientras tanto la demo abre con la foto
       original y sin marca propia.
     </p>
+  );
+}
+
+type Reread = {
+  title: string;
+  location: string | null;
+  description: string | null;
+  prices: string[];
+  photos: number;
+  checkedAt: string;
+};
+
+/**
+ * What the original listing says now, next to what the demo has. Nothing
+ * changes until the admin chooses, field by field: manual corrections are
+ * never overwritten silently.
+ */
+function RereadDiff({
+  reread,
+  detail,
+  busy,
+  onClose,
+  onUse,
+}: {
+  reread: Reread;
+  detail: DemoDetail;
+  busy: boolean;
+  onClose: () => void;
+  onUse: (body: Record<string, unknown>, done: string) => Promise<void>;
+}) {
+  const p = detail.property;
+  const property = (changes: Partial<typeof p>) => ({
+    action: "property",
+    property: { title: p.title, location: p.location, listing_url: p.listing_url, description: p.description, ...changes },
+  });
+  const same = (a: string | null | undefined, b: string | null | undefined) =>
+    (a ?? "").replace(/\s+/g, " ").trim() === (b ?? "").replace(/\s+/g, " ").trim();
+  const rows: { label: string; current: string | null; listing: string | null; use: () => Promise<void> }[] = [
+    {
+      label: "Título",
+      current: p.title,
+      listing: reread.title,
+      use: () => onUse(property({ title: reread.title }), "Título actualizado desde la publicación."),
+    },
+    {
+      label: "Ubicación",
+      current: p.location,
+      listing: reread.location,
+      use: () => onUse(property({ location: reread.location }), "Ubicación actualizada desde la publicación."),
+    },
+    {
+      label: "Descripción",
+      current: detail.settings.description ?? p.description,
+      listing: reread.description,
+      use: () =>
+        onUse({ action: "settings", settings: { description: reread.description } }, "Descripción actualizada desde la publicación."),
+    },
+  ];
+  const price = detail.settings.price;
+  return (
+    <div className="dm-reread" role="region" aria-label="Comparación con la publicación">
+      <div className="dm-reread-head">
+        <strong>Publicación leída el {new Date(reread.checkedAt).toLocaleString("es-AR")}</strong>
+        <button type="button" className="text-link" onClick={onClose}>
+          Cerrar
+        </button>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Dato</th>
+            <th scope="col">En la demo</th>
+            <th scope="col">En la publicación</th>
+            <th scope="col">
+              <span className="dv2-sr">Acción</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.label} className={same(r.current, r.listing) ? "is-same" : "is-diff"}>
+              <th scope="row">{r.label}</th>
+              <td>{r.current || <em>vacío</em>}</td>
+              <td>{r.listing || <em>no encontrado</em>}</td>
+              <td>
+                {same(r.current, r.listing) ? (
+                  "Igual"
+                ) : r.listing ? (
+                  <button type="button" className="button button-small button-outline" disabled={busy} onClick={() => void r.use()}>
+                    Usar el de la publicación
+                  </button>
+                ) : (
+                  "—"
+                )}
+              </td>
+            </tr>
+          ))}
+          <tr className={reread.prices.length > 1 ? "is-diff" : "is-same"}>
+            <th scope="row">Precio</th>
+            <td>
+              {detail.settings.priceConflict ? `En conflicto: ${detail.settings.priceConflict}` : price || <em>vacío</em>}
+            </td>
+            <td>{reread.prices.length ? reread.prices.join(" · ") : <em>no encontrado</em>}</td>
+            <td>
+              {reread.prices.length > 1 ? (
+                <button
+                  type="button"
+                  className="button button-small button-outline"
+                  disabled={busy}
+                  onClick={() =>
+                    void onUse(
+                      { action: "settings", settings: { priceConflict: `la publicación muestra ${reread.prices.join(", ")}` } },
+                      "Precio marcado en conflicto: la ficha muestra «Consultar».",
+                    )
+                  }
+                >
+                  Marcar conflicto
+                </button>
+              ) : reread.prices.length === 1 && reread.prices[0] !== price ? (
+                <button
+                  type="button"
+                  className="button button-small button-outline"
+                  disabled={busy}
+                  onClick={() =>
+                    void onUse(
+                      { action: "settings", settings: { price: reread.prices[0], priceConflict: "" } },
+                      "Precio actualizado desde la publicación.",
+                    )
+                  }
+                >
+                  Usar este precio
+                </button>
+              ) : (
+                "—"
+              )}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <p className="dm-help">
+        Varios importes pueden ser precio y expensas: revisá la publicación antes de decidir. Las fotos nuevas
+        ({reread.photos} encontradas) no se agregan solas.
+      </p>
+    </div>
   );
 }

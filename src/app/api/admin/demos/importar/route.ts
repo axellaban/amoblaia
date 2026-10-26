@@ -1,5 +1,6 @@
 import { requireAdmin, failure, rpc } from "@/lib/commerce/http";
-import { createDemo } from "@/lib/demos/server";
+import { createDemo, saveJson } from "@/lib/demos/server";
+import { DEFAULT_SETTINGS } from "@/lib/demos/branding";
 import { readJson } from "@/lib/demos/input";
 import { readListing } from "@/lib/demos/listing";
 import { adminClient } from "@/lib/supabase/server";
@@ -49,6 +50,15 @@ export async function POST(request: Request) {
         description: listing.description,
       },
     });
+    // The full description and the price, as published. Several different
+    // amounts are not resolved here: the admin sees the conflict and decides.
+    await saveJson("demos", "settings", id, {
+      ...DEFAULT_SETTINGS,
+      description: listing.fullDescription,
+      price: listing.prices.length === 1 ? listing.prices[0] : null,
+      priceConflict:
+        listing.prices.length > 1 ? `la publicación muestra ${listing.prices.join(", ")}` : null,
+    }).catch(() => null);
     await db.from("admin_audit").insert({
       actor_id: actor.id,
       action: "demo_create",

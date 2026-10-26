@@ -36,12 +36,13 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
   // The first photo, half original and half in the main style.
   const cover = demo.cover;
   const version = cover ? coverVersion(cover, demo.styles[0]?.id ?? "") : null;
-  const title = `${demo.title} · ${demo.agencyName}`;
+  const title = demo.share.title ?? `${demo.title} · ${demo.agencyName}`;
   const description = presentation
     ? `Demo de ambientación virtual preparada para ${demo.agencyName} por amoblaIA.`
-    : [demo.location, demo.features, `Imaginá cada espacio a tu estilo con ${demo.agencyName}.`]
+    : (demo.share.description ??
+      [demo.location, demo.features, demo.price ?? undefined, `Imaginá cada espacio a tu estilo con ${demo.agencyName}.`]
         .filter(Boolean)
-        .join(" · ");
+        .join(" · "));
   const url = presentation ? `${demoPath(token)}?${PRESENTATION_PARAM}=1` : demoPath(token);
   return {
     // The agency's listing: no "· amoblaIA" suffix.
@@ -63,7 +64,7 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
               width: 1200,
               height: 630,
               type: "image/jpeg",
-              alt: `${demo.title}: ${version ? "foto original y ambientación virtual ilustrativa" : "foto de la propiedad"}`,
+              alt: `${demo.title}: ${version ? "foto original y ambientación ilustrativa con IA" : "foto de la propiedad"}`,
             },
           ]
         : undefined,

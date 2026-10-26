@@ -1,7 +1,7 @@
 import { after } from "next/server";
 import { requireAdmin, failure, HttpError, rpc } from "@/lib/commerce/http";
 import { runJob } from "@/lib/commerce/jobs";
-import { buildPrompt } from "@/lib/catalog";
+import { buildDemoPrompt } from "@/lib/demos/styles";
 import {
   assertNoLiveJobs,
   demoDetail,
@@ -165,7 +165,7 @@ export async function POST(request: Request, { params }: Params) {
       p_style: style,
       p_mode: mode,
       p_notes: notes,
-      p_prompt: buildPrompt(room, style, mode, notes),
+      p_prompt: buildDemoPrompt(room, style, mode, notes),
       // Demos are prepared by the team: no daily cap. The storage budget,
       // one live generation per account and the demo grant still apply.
       p_daily_limit: DEMO_DAILY_LIMIT,

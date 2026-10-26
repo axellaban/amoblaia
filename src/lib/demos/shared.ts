@@ -1,6 +1,7 @@
 // Commercial demos: types, texts and helpers shared by the admin panel, the
 // server routes and the public page. Nothing here reads secrets.
-import { modes, rooms, styles } from "@/lib/catalog";
+import { modes, rooms } from "@/lib/catalog";
+import { demoStyleName, demoStyleOrder } from "./styles";
 
 export const DEMO_MODES = ["furnish", "redesign"] as const;
 export type DemoMode = (typeof DEMO_MODES)[number];
@@ -66,12 +67,32 @@ export type PublicDemo = {
   agency: PublicAgency;
   title: string;
   location: string | null;
+  /** The full description as published (falls back to the short one). */
   description: string | null;
   listingUrl: string | null;
+  propertyType: "residential" | "office";
   operation: string | null;
+  /** Null when not confirmed (missing or contradictory): the page invites to ask. */
   price: string | null;
+  expenses: string | null;
+  availability: string | null;
+  requirements: string | null;
   features: string | null;
   reference: string | null;
+  facts: import("./branding").Fact[];
+  amenities: import("./branding").AmenityGroup[];
+  /** Coordinates rounded to the published precision; null without a verified location. */
+  map: { precision: "zone" | "approx" | "exact"; lat: number; lng: number } | null;
+  agent: { name: string; role: string | null; photoUrl: string | null; initials: string } | null;
+  /** Where inquiries go, already resolved (agent first, then the agency). */
+  contact: {
+    whatsapp: string | null;
+    phone: string | null;
+    email: string | null;
+    url: string | null;
+  };
+  closingTitle: string;
+  closingText: string | null;
   /** Styles with at least one staged photo; the first is the main one (cover and link preview). */
   styles: StyleOption[];
   cover: PublicPhoto | null;
@@ -80,6 +101,7 @@ export type PublicDemo = {
   openStyle: string | null;
   /** The presentation link may show "Demo preparada para…"; the buyers' link never does. */
   banner: boolean;
+  share: { title: string | null; description: string | null };
 };
 
 export type DemoStatus = "draft" | "published";
@@ -146,13 +168,15 @@ export type DemoDetail = {
   settings: import("./branding").DemoSettings;
   /** False until migration 202610270001_demo_branding.sql is applied: branding and settings cannot be saved. */
   settingsReady: boolean;
+  /** Private: what to check or complete before sharing. */
+  warnings: string[];
 };
 
 export function roomName(id: string) {
   return rooms.find((r) => r.id === id)?.name ?? "Ambiente";
 }
 export function styleName(id: string) {
-  return styles.find((s) => s.id === id)?.name ?? id;
+  return demoStyleName(id);
 }
 export function modeName(id: string) {
   return modes.find((m) => m.id === id)?.name ?? id;
@@ -184,7 +208,7 @@ export function shownVersions<G extends Candidate>(
 /** Main style first, then the catalog order; unknown styles are left out. */
 export function orderStyles(ids: Iterable<string>, main: string) {
   const set = new Set(ids);
-  return styles.map((s): string => s.id).filter((id) => set.has(id)).sort((a, b) => Number(b === main) - Number(a === main));
+  return demoStyleOrder.filter((id) => set.has(id)).sort((a, b) => Number(b === main) - Number(a === main));
 }
 type CoverCandidate = { id: string; visible: boolean; versions: PhotoVersion[] };
 /** The chosen cover if visible, else the first visible photo staged in the main style, else the first visible. */

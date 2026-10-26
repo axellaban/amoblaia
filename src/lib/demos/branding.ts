@@ -20,24 +20,74 @@ export type AgencyBranding = {
 };
 export type OpenMode = "original" | "styled";
 /** Stored in demos.settings. Private: the buyer's page only gets their effect. */
+/** Icons of the key facts, chosen per property (no empty or invented fields). */
+export const FACT_ICONS = ["area", "rooms", "bedrooms", "offices", "bathrooms", "floor", "parking", "age", "other"] as const;
+export type FactIcon = (typeof FACT_ICONS)[number];
+export type Fact = { icon: FactIcon; value: string; label: string };
+export type AmenityGroup = { title: string; items: string[] };
+/** How precise the published location is: the map never shows more. */
+export type MapPrecision = "none" | "zone" | "approx" | "exact";
+export type Agent = {
+  name: string;
+  role: string | null;
+  whatsapp: string | null;
+  phone: string | null;
+  email: string | null;
+  photoUrl: string | null;
+};
+/** Stored in demos.settings. Private: the buyer's page only gets their effect. */
 export type DemoSettings = {
+  propertyType: "residential" | "office";
   openMode: OpenMode;
   openStyle: string | null;
   /** Whether the presentation link shows "Demo preparada para… · Por Amobla IA". */
   banner: boolean;
   operation: string | null;
+  /** As published, with its currency. Shown only when confirmed (no conflict). */
   price: string | null;
+  /** Private note: the listing shows different prices. The page then invites to ask. */
+  priceConflict: string | null;
+  expenses: string | null;
+  availability: string | null;
+  requirements: string | null;
   features: string | null;
   reference: string | null;
+  facts: Fact[];
+  /** The listing's full description, as published. */
+  description: string | null;
+  amenities: AmenityGroup[];
+  map: { precision: MapPrecision; lat: number | null; lng: number | null };
+  agent: Agent | null;
+  closingTitle: string | null;
+  closingText: string | null;
+  shareTitle: string | null;
+  shareDescription: string | null;
+  /** When the admin last checked the demo against the listing (ISO date). */
+  reviewedAt: string | null;
 };
 export const DEFAULT_SETTINGS: DemoSettings = {
+  propertyType: "residential",
   openMode: "original",
   openStyle: null,
   banner: true,
   operation: null,
   price: null,
+  priceConflict: null,
+  expenses: null,
+  availability: null,
+  requirements: null,
   features: null,
   reference: null,
+  facts: [],
+  description: null,
+  amenities: [],
+  map: { precision: "none", lat: null, lng: null },
+  agent: null,
+  closingTitle: null,
+  closingText: null,
+  shareTitle: null,
+  shareDescription: null,
+  reviewedAt: null,
 };
 
 /** The colors of a page without branding: amoblaIA's neutral blue. */
@@ -72,17 +122,68 @@ export function readBranding(raw: unknown): AgencyBranding {
   };
 }
 
+const MAP_PRECISIONS: MapPrecision[] = ["none", "zone", "approx", "exact"];
+const list = (v: unknown) => (Array.isArray(v) ? v : []);
+const num = (v: unknown, min: number, max: number) =>
+  typeof v === "number" && Number.isFinite(v) && v >= min && v <= max ? v : null;
+
+/** Reads stored settings leniently: anything malformed becomes empty, never an error on the page. */
 export function readSettings(raw: unknown): DemoSettings {
   const v = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
-  const text = (x: unknown, max: number) => cleanText(x, max);
+  const text = (x: unknown, max: number, multiline = false) => cleanText(x, max, multiline);
+  const map = (v.map && typeof v.map === "object" ? v.map : {}) as Record<string, unknown>;
+  const agent = (v.agent && typeof v.agent === "object" ? v.agent : null) as Record<string, unknown> | null;
+  const agentName = agent ? text(agent.name, 80) : null;
   return {
+    propertyType: v.propertyType === "office" ? "office" : "residential",
     openMode: v.openMode === "styled" ? "styled" : "original",
     openStyle: typeof v.openStyle === "string" ? v.openStyle : null,
     banner: v.banner !== false,
     operation: text(v.operation, 40),
     price: text(v.price, 40),
+    priceConflict: text(v.priceConflict, 200),
+    expenses: text(v.expenses, 60),
+    availability: text(v.availability, 80),
+    requirements: text(v.requirements, 300, true),
     features: text(v.features, 120),
     reference: text(v.reference, 40),
+    facts: list(v.facts)
+      .map((f) => f as Record<string, unknown>)
+      .filter((f) => FACT_ICONS.includes(f?.icon as FactIcon) && cleanText(f.value, 30))
+      .slice(0, 8)
+      .map((f) => ({ icon: f.icon as FactIcon, value: cleanText(f.value, 30)!, label: cleanText(f.label, 40) ?? "" })),
+    description: text(v.description, 6000, true),
+    amenities: list(v.amenities)
+      .map((g) => g as Record<string, unknown>)
+      .map((g) => ({
+        title: cleanText(g?.title, 40) ?? "",
+        items: list(g?.items)
+          .map((i) => cleanText(i, 80))
+          .filter((i): i is string => Boolean(i))
+          .slice(0, 16),
+      }))
+      .filter((g) => g.items.length)
+      .slice(0, 4),
+    map: {
+      precision: MAP_PRECISIONS.includes(map.precision as MapPrecision) ? (map.precision as MapPrecision) : "none",
+      lat: num(map.lat, -90, 90),
+      lng: num(map.lng, -180, 180),
+    },
+    agent: agentName
+      ? {
+          name: agentName,
+          role: text(agent!.role, 60),
+          whatsapp: text(agent!.whatsapp, 30),
+          phone: text(agent!.phone, 30),
+          email: text(agent!.email, 120),
+          photoUrl: typeof agent!.photoUrl === "string" && /^https:\/\//.test(agent!.photoUrl) ? agent!.photoUrl : null,
+        }
+      : null,
+    closingTitle: text(v.closingTitle, 80),
+    closingText: text(v.closingText, 160),
+    shareTitle: text(v.shareTitle, 90),
+    shareDescription: text(v.shareDescription, 200),
+    reviewedAt: typeof v.reviewedAt === "string" && !Number.isNaN(Date.parse(v.reviewedAt)) ? v.reviewedAt : null,
   };
 }
 
