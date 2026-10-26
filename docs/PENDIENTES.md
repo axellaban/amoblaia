@@ -4,6 +4,13 @@ Se detiene el trabajo a pedido del usuario para conservar créditos. Los cambios
 
 Producción: https://amoblaia.vercel.app/
 
+## Demos comerciales — 26 de octubre de 2026 (rama `claude/demos-comerciales`)
+
+- Nuevo panel `/admin/demos` y página pública `/demo/<token>`. Guía completa: [DEMOS_COMERCIALES.md](DEMOS_COMERCIALES.md).
+- **Pendiente: aplicar en Supabase `202610260001_commercial_demos.sql`** antes de desplegar, y agregar los emails del equipo a `ADMIN_EMAILS`.
+- Las ambientaciones de demos no descuentan créditos (asignación `demo:<usuario>` con saldo cero) y respetan cupo diario, presupuesto de almacenamiento y una generación en curso por cuenta.
+- Verificado en CI: lint, typecheck, tests (incluye migración en PGlite y autorización de rutas) y build. Falta probar con Supabase y OpenAI reales: crear una demo, ambientar, publicar y abrir el enlace desde WhatsApp en un teléfono (vista previa del enlace incluida).
+
 ## Cuentas ilimitadas y varias fotos por tanda — 23 de octubre de 2026
 
 - `UNLIMITED_EMAILS` (Vercel, separada por comas) marca cuentas del equipo que generan sin descontar fotos. Al entrar, la app les abre una asignación de 1.000.000 de fotos sin vencimiento (`credit_grants.source_key = unlimited:<id>`) y les sube el cupo diario a 1000. Si un email sale de la lista, esa asignación vence en su próximo ingreso. No requiere migración. Siguen valiendo el espacio por cuenta (320 MB) y el máximo de 150 fotos guardadas.

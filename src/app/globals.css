@@ -7166,9 +7166,10 @@ h2 .accent {
     width: 100%;
   }
   .demo-toggle button {
-    flex: 1;
-    padding: 9px 6px;
-    font-size: 13.5px;
+    flex: 1 1 auto;
+    padding: 9px 4px;
+    font-size: 13px;
+    white-space: nowrap;
   }
   .demo-stage,
   .demo-stage .comparison {
