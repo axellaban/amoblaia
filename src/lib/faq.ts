@@ -39,7 +39,7 @@ export const faqItems = [
     id: "demora",
     category: "Diseños",
     q: "¿Cuánto tarda una generación?",
-    a: "Puede demorar unos minutos por resultado. Los trabajos iniciados quedan guardados en tu cuenta; si cerrás la pestaña, podés retomarlos desde Mis proyectos. Una tanda gratuita procesa hasta tres resultados consecutivos.",
+    a: "Puede demorar unos minutos por resultado. Los trabajos iniciados quedan guardados en tu cuenta; si cerrás la pestaña, podés retomarlos desde Mis fotos. Una tanda gratuita procesa hasta tres resultados consecutivos.",
   },
   {
     id: "publicar",

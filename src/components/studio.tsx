@@ -43,6 +43,7 @@ import {
   modes,
   normalizeStyle,
   freeRooms,
+  freeAllows,
   type RoomId,
   type StyleId,
   type ModeId,
@@ -435,7 +436,9 @@ export function Studio({
     };
     try {
       await saveProject(p);
-      if (status?.mode === "cloud") await refreshCloud();
+      // Examples stay in this browser: a signed-out visitor has no cloud
+      // library to reload.
+      if (status?.mode === "cloud") setProjects((previous) => [...previous, p]);
       else setProjects(await listProjects());
       setNotice("Diseño guardado en este navegador.");
     } catch {
@@ -488,7 +491,7 @@ export function Studio({
     if (job.status === "succeeded") {
       if (!job.result || !job.variant)
         throw new Error(
-          "No pudimos recuperar esta imagen. Volvé a abrir la foto desde tus proyectos.",
+          "No pudimos recuperar esta imagen. Volvé a abrir la foto desde Mis fotos.",
         );
       if (!current()) return job.projectId || null;
       // Publish the finished image before fetching the rest of the library.
@@ -572,6 +575,23 @@ export function Studio({
     (!status.authenticated || free) &&
     !demo &&
     !(projectId && variants?.some((v) => v.free === false));
+  // A paid account with no photos left can only regenerate what it has.
+  const outOfPhotos =
+    status?.mode === "cloud" &&
+    status.authenticated &&
+    cloudReady &&
+    !free &&
+    !unlimited &&
+    credits === 0 &&
+    !demo &&
+    !projectId;
+  // A restored draft or opened project can carry options the trial does not
+  // include: fall back to what it does, instead of a refusal on generating.
+  useEffect(() => {
+    if (!freeTier || busy) return;
+    if (!freeAllows(room, "furnish")) setRoom("living");
+    if (!freeAllows("living", mode)) setMode("furnish");
+  }, [freeTier, busy, room, mode]);
   // Several photos at once is part of the paid plans.
   const batchAllowed =
     status?.mode === "cloud" &&
@@ -643,6 +663,7 @@ export function Studio({
           setCredits(guest.credits ?? 0);
           setFree(true);
           setFreeRemaining(availableFree);
+          setCloudReady(true);
         } catch (e) {
           setError(
             e instanceof Error
@@ -658,6 +679,11 @@ export function Studio({
         setShowLogin(true);
         return;
       }
+    }
+    if (outOfPhotos) {
+      track("limite_planes_visto", { motivo: "sin_fotos" }, true);
+      window.location.assign("/precios");
+      return;
     }
     if (activeFreeTier && availableFree <= 0) {
       track("limite_planes_visto", { motivo: "sin_prueba_gratis" }, true);
@@ -957,6 +983,10 @@ export function Studio({
     "Calidad alta · Acceso de piloto"
   ) : unlimited ? (
     "Calidad alta · No descuenta fotos"
+  ) : outOfPhotos ? (
+    <>
+      No te quedan fotos · <Link href="/precios">Ver planes</Link>
+    </>
   ) : projectId ? (
     "Calidad alta · Regeneraciones incluidas"
   ) : (
@@ -1360,7 +1390,8 @@ export function Studio({
               <legend>¿Qué querés hacer?</legend>
               <div className="mode-segment">
                 {stagingModes.map(({ id, icon: Icon }) => {
-                  const paidOnly = freeTier && id !== "furnish";
+                  // The trial covers furnishing and redesigning; emptying is paid.
+                  const paidOnly = freeTier && id === "remove";
                   return (
                     <button
                       key={id}
@@ -1519,7 +1550,7 @@ export function Studio({
                   {[
                     "Sin marca de agua",
                     "Alta resolución",
-                    "Todos los ambientes y estilos",
+                    "Todos los ambientes",
                     "Retiro de muebles incluido",
                   ].map((t) => (
                     <li key={t}>
@@ -1592,9 +1623,11 @@ export function Studio({
                         ? freeRemaining > 0
                           ? `Crear ${freeBatchSize(freeRemaining)} diseños gratis`
                           : "Ver planes"
-                        : result
-                          ? "Generar otra variante"
-                          : "Generar mi diseño"}
+                        : outOfPhotos
+                          ? "Ver planes"
+                          : result || hasVariants
+                            ? "Generar otra variante"
+                            : "Generar mi diseño"}
                 </button>
                 <p>{hint}</p>
               </>

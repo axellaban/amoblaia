@@ -73,7 +73,12 @@ function Captcha({
 export function AuthForm() {
   const params = useSearchParams();
   const [mode, setMode] = useState<"login" | "signup" | "reset" | "update">(
-    params.get("modo") === "actualizar" ? "update" : "login",
+    params.get("modo") === "actualizar"
+      ? "update"
+      : params.get("modo") === "registro" &&
+          process.env.NEXT_PUBLIC_EMAIL_AUTH_ENABLED === "true"
+        ? "signup"
+        : "login",
   );
   const [email, setEmail] = useState(""),
     [password, setPassword] = useState(""),
@@ -230,7 +235,8 @@ export function AuthForm() {
                   ? "Recuperá tu acceso."
                   : "Elegí una nueva contraseña."}
           </h2>
-          {mode === "login" && available && (
+          {/* Only Google creates the account on the first sign-in. */}
+          {mode === "login" && available && googleEnabled && (
             <p className="auth-sub">
               Si es tu primera vez, tu cuenta se crea en el momento.
             </p>

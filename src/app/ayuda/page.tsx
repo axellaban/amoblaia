@@ -1,5 +1,7 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { ContactForm } from "@/components/contact-form";
+export const metadata: Metadata = { title: "Ayuda y soporte" };
 export default function Help() {
   return (
     <article className="legal-page container">

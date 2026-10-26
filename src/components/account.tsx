@@ -15,6 +15,7 @@ import { formatARS, isFullyReversed } from "@/lib/commerce/catalog";
 import { CheckoutReturn } from "./checkout-return";
 import { clearDraft } from "@/lib/studio-draft";
 import { browserClient } from "@/lib/supabase/client";
+import { FREE_RESULT_LIMIT } from "@/lib/free-tier";
 type Account = {
   email: string;
   admin: boolean;
@@ -264,7 +265,7 @@ export function AccountDashboard() {
                 {account.unlimited
                   ? "Cuenta del equipo: tus diseños no descuentan fotos."
                   : account.free
-                    ? "Diseños con marca de agua, de a 3 por tanda. Para fotos sin marca, elegí un plan."
+                    ? `Te quedan ${account.freeRemaining} de ${FREE_RESULT_LIMIT} diseños con marca de agua, de a 3 por tanda. Para fotos sin marca, elegí un plan.`
                     : period.total
                       ? `Te quedan ${account.credits} de ${period.total} fotos${period.renews ? ` hasta el ${date(period.renews)}` : ""}. Cada foto incluye sus regeneraciones.`
                       : "Regeneraciones incluidas durante tu período pago."}
@@ -278,11 +279,11 @@ export function AccountDashboard() {
               <ShieldCheck size={22} />
               <h2>Tu próxima publicación</h2>
               <p>
-                Encontrá tus originales y variantes en Mis proyectos. Las
-                descargas no consumen tu cupo.
+                Encontrá tus originales y variantes en Mis fotos. Las descargas
+                no consumen tu cupo.
               </p>
               <Link className="text-link" href="/proyectos">
-                Ver mis proyectos
+                Ver mis fotos
                 <ArrowUpRight size={16} />
               </Link>
               <Link className="text-link" href="/precios">

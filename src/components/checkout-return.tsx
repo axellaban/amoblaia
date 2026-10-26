@@ -149,7 +149,7 @@ export function CheckoutReturn({
           <a href={result.url} className="button button-primary">
             Continuar en Mercado Pago <ArrowUpRight size={17} />
           </a>
-        ) : result?.state === "cancelled" ? (
+        ) : result?.state === "cancelled" || result?.state === "rejected" ? (
           <Link href="/precios" className="button button-primary">
             Elegir un plan
           </Link>

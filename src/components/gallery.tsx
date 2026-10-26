@@ -2,17 +2,13 @@
 import Link from "next/link";
 import { useState } from "react";
 import { ArrowUpRight } from "lucide-react";
-import {
-  rooms,
-  demoRooms,
-  demoStyles,
-  styles,
-  beforeImage,
-  afterImage,
-  type RoomId,
-  type StyleId,
-} from "@/lib/catalog";
+import { rooms, styles, type RoomId, type StyleId } from "@/lib/catalog";
+import { examplePath } from "@/lib/examples";
 import { Comparison } from "./comparison";
+// Every room has an empty photo and one scene per style in public/ejemplos.
+const roomName = (id: RoomId) => rooms.find((r) => r.id === id)?.name || id;
+const styleName = (id: StyleId | "original") =>
+  id === "original" ? "Original" : styles.find((s) => s.id === id)?.name || id;
 export function Gallery() {
   const [room, setRoom] = useState<RoomId>("living"),
     [style, setStyle] = useState<StyleId | "original">("modern"),
@@ -37,13 +33,14 @@ export function Gallery() {
           role="group"
           aria-label="Tipo de ambiente"
         >
-          {demoRooms.map((id) => (
+          {rooms.map(({ id }) => (
             <button
               key={id}
               className={id === room ? "selected" : ""}
+              aria-pressed={id === room}
               onClick={() => setRoom(id)}
             >
-              {rooms.find((r) => r.id === id)?.name}
+              {roomName(id)}
             </button>
           ))}
         </div>
@@ -51,53 +48,33 @@ export function Gallery() {
           <div className="gallery-main-image">
             {compare && style !== "original" ? (
               <Comparison
-                before={beforeImage(room)}
-                after={afterImage(room, style)}
+                before={examplePath(room, "original")}
+                after={examplePath(room, style)}
               />
             ) : (
               <img
-                src={
-                  style === "original"
-                    ? beforeImage(room)
-                    : afterImage(room, style)
-                }
-                alt={`${rooms.find((r) => r.id === room)?.name}, ${style === "original" ? "foto original" : styles.find((s) => s.id === style)?.name}`}
+                key={`${room}-${style}`}
+                src={examplePath(room, style)}
+                alt={`${roomName(room)}, ${style === "original" ? "foto original" : styleName(style)}`}
               />
             )}
-            <div
-              className="gallery-style-tabs"
-              role="group"
-              aria-label="Estilo de la galería"
-            >
-              {(["original", ...demoStyles] as const).map((id) => (
-                <button
-                  key={id}
-                  className={style === id ? "selected" : ""}
-                  onClick={() => setStyle(id)}
-                >
-                  {id === "original"
-                    ? "Original"
-                    : styles.find((s) => s.id === id)?.name}
-                </button>
-              ))}
-            </div>
           </div>
-          <div className="gallery-thumbnails" aria-label="Escenas disponibles">
-            {demoRooms.flatMap((r) =>
-              demoStyles.map((s) => (
-                <button
-                  key={`${r}-${s}`}
-                  className={r === room && s === style ? "selected" : ""}
-                  onClick={() => {
-                    setRoom(r);
-                    setStyle(s);
-                  }}
-                  aria-label={`${rooms.find((v) => v.id === r)?.name}, ${styles.find((v) => v.id === s)?.name}`}
-                >
-                  <img src={afterImage(r, s)} alt="" />
-                </button>
-              )),
-            )}
+          <div
+            className="gallery-thumbnails"
+            role="group"
+            aria-label="Estilo de la galería"
+          >
+            {(["original", ...styles.map((s) => s.id)] as const).map((s) => (
+              <button
+                key={s}
+                className={s === style ? "selected" : ""}
+                aria-pressed={s === style}
+                onClick={() => setStyle(s)}
+              >
+                <img src={examplePath(room, s)} alt="" loading="lazy" />
+                <span>{styleName(s)}</span>
+              </button>
+            ))}
           </div>
         </div>
         <div className="gallery-toolbar">
@@ -105,6 +82,7 @@ export function Gallery() {
             <input
               type="checkbox"
               checked={compare}
+              disabled={style === "original"}
               onChange={(e) => setCompare(e.target.checked)}
             />
             Comparar antes y después con deslizador
