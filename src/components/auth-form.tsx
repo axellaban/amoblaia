@@ -20,7 +20,7 @@ declare global {
     };
   }
 }
-function Captcha({
+export function Captcha({
   onToken,
   reset,
 }: {

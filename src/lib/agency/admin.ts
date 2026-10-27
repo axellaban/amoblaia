@@ -2,6 +2,7 @@ import "server-only";
 import { randomBytes } from "node:crypto";
 import { HttpError, rpc } from "@/lib/commerce/http";
 import { adminClient } from "@/lib/supabase/server";
+import { agencyCredits } from "./panel";
 import { claimHash } from "./server";
 import { claimState, type AdminAgencyDetail, type AdminAgencyRow } from "./stage";
 
@@ -96,6 +97,11 @@ export async function adminAgency(id: string): Promise<AdminAgencyDetail> {
     rpc<{ total: number; published: number; staged: number; review: number }>("habita_agency_counts", { p_agency: id }),
   ]);
   if (claims.error || members.error || imports.error || demos.error) throw new Error("ADMIN_AGENCY_FAILED");
+  // Before 202610300001_agency_free_credits.sql there is nothing pending: shown as unknown.
+  const [pending, balance] = await Promise.all([
+    db.from("agencies").select("free_credits_pending").eq("id", id).maybeSingle(),
+    agencyCredits(a.owner_id),
+  ]);
   const now = Date.now();
   const claimRows = (claims.data ?? []) as { id: string; created_at: string; expires_at: string; used_at: string | null; revoked_at: string | null }[];
   return {
@@ -112,6 +118,10 @@ export async function adminAgency(id: string): Promise<AdminAgencyDetail> {
       notes: a.notes,
     },
     counts,
+    credits: {
+      balance,
+      pending: pending.error ? null : ((pending.data as { free_credits_pending: number } | null)?.free_credits_pending ?? 0),
+    },
     claims: claimRows.map((c) => ({
       id: c.id,
       createdAt: c.created_at,
@@ -196,4 +206,36 @@ export async function revokeClaim(agencyId: string, claimId: string, actorId: st
   if (!(data ?? []).length) throw new HttpError(409, "Esa invitación ya se usó o ya estaba revocada.");
   await rpc("amobla_account", { p_user: actorId, p_trial: false });
   await db.from("admin_audit").insert({ actor_id: actorId, action: "agency_claim_revoke", subject_id: agencyId, details: { claim: claimId } });
+}
+
+/**
+ * Free credits for an agency (1 credit = 1 photo): to its owner's balance at
+ * once, or waiting until the agency claims its account. Audited with reason.
+ */
+export async function giveAgencyCredits(actorId: string, agencyId: string, photos: unknown, reason: unknown) {
+  const n = Number(photos);
+  const why = typeof reason === "string" ? reason.trim().slice(0, 200) : "";
+  if (!Number.isInteger(n) || n < 1 || n > 1000) throw new HttpError(400, "Ingresá entre 1 y 1000 créditos.");
+  if (why.length < 5) throw new HttpError(400, "Contá en pocas palabras por qué (por ejemplo, «Regalo de bienvenida»).");
+  await rpc("amobla_account", { p_user: actorId, p_trial: false });
+  // Anything still waiting moves first, so nothing stays pending on an agency with an owner.
+  await applyAgencyCredits(agencyId);
+  try {
+    return await rpc<{ applied: "owner" | "pending"; pending: number }>("habita_agency_credit", {
+      p_actor: actorId,
+      p_agency: agencyId,
+      p_photos: n,
+      p_reason: why,
+    });
+  } catch (e) {
+    const code = e instanceof Error ? e.message : "";
+    if (code.includes("AGENCY_NOT_FOUND")) throw new HttpError(404, "No encontramos la inmobiliaria.");
+    if (code.includes("INVALID_ADJUSTMENT")) throw new HttpError(400, "Ingresá entre 1 y 1000 créditos (en total pendientes) y el motivo.");
+    throw e;
+  }
+}
+
+/** Moves the credits waiting for an agency to its owner, if it has one. Never fails the caller. */
+export async function applyAgencyCredits(agencyId: string) {
+  return rpc<number>("habita_apply_agency_credits", { p_agency: agencyId }).catch(() => 0);
 }

@@ -314,3 +314,46 @@ días y sirve una vez) y revocar uno pendiente; las dos acciones quedan en
   mapa publican. Russillo se verificó con su HTML real guardado.
 - Compartir nativo en teléfonos reales: se probó con `navigator.share` simulado
   (aceptado, cancelado, no permitido) y con el portapapeles rechazado.
+
+## 10. Invitación por WhatsApp y créditos de regalo (2026-10-27)
+
+### 10.1 Invitar a una inmobiliaria a su panel
+
+En `/admin/demos`, cada demo de una inmobiliaria sin cuenta tiene **Invitar a su
+panel**. El botón crea un enlace personal (sirve una vez y vence a los 30 días) y
+abre WhatsApp con el mensaje listo; también se puede copiar el enlace. Al abrirlo,
+la inmobiliaria solo carga **email y contraseña** y entra directo a su panel con
+sus demos, fotos y ambientaciones. Si el email ya tiene cuenta, entra con su
+contraseña (o con Google) y las demos pasan a esa cuenta.
+
+- El enlace es la prueba de la invitación: la cuenta nueva se crea ya verificada,
+  sin el email de confirmación. Por eso el enlace es de un solo uso y se puede
+  revocar desde `/admin/inmobiliarias/<id>`.
+- Si el traspaso falla, la cuenta recién creada se borra: no quedan cuentas a medias.
+- Requisitos en Supabase: **Authentication → Providers → Email** habilitado (el
+  ingreso con contraseña lo usa). Si está activa la verificación anti-bots
+  (Turnstile), el formulario la muestra.
+
+### 10.2 Créditos de regalo
+
+En `/admin/inmobiliarias/<id>`, **Créditos de regalo**: cantidad (1 a 1000) y motivo.
+
+- Con cuenta: se suman al saldo de la inmobiliaria (la cuenta del dueño).
+- Sin cuenta: quedan reservados y pasan a su saldo cuando acepta la invitación.
+  La invitación lo dice («Incluye N créditos de regalo»).
+- Todo queda en `credit_ledger` y en `admin_audit` con el motivo.
+
+### 10.3 Migración `202610300001_agency_free_credits.sql`
+
+Es aditiva e idempotente y va después de `202610290001`. No redefine ninguna función
+anterior. Agrega `agencies.free_credits_pending`, `habita_agency_credit` y
+`habita_apply_agency_credits` (solo para `service_role`). Se aplica igual que las
+anteriores: en el SQL Editor, pegar el archivo completo y ejecutar **Run**.
+Verificación: `select free_credits_pending from agencies limit 1;`.
+Sin esta migración, la sección de créditos avisa que falta y no deja regalar.
+
+### 10.4 Apertura con ambientación
+
+«Ambientación predeterminada» se puede elegir cuando al menos una foto visible tiene
+un estilo listo (antes solo se miraba la primera foto). Las fotos con ese estilo
+abren comparadas; las demás, con la original.

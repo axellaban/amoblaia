@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { AgencyInvitations } from "@/components/admin-agencies";
+import { AgencyCredits, AgencyInvitations } from "@/components/admin-agencies";
 import { HttpError } from "@/lib/commerce/http";
 import { adminAgency } from "@/lib/agency/admin";
 import { agencyStage, STAGE_LABEL } from "@/lib/agency/stage";
@@ -91,6 +91,8 @@ export default async function AgencyPage({ params }: { params: Promise<{ id: str
           <dd>{counts.review}</dd>
         </div>
       </dl>
+
+      <AgencyCredits agencyId={agency.id} hasOwner={agency.hasOwner} credits={data.credits} />
 
       <AgencyInvitations agencyId={agency.id} claims={data.claims} hasOwner={agency.hasOwner} />
 

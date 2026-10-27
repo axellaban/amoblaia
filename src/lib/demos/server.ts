@@ -222,9 +222,13 @@ export async function listDemos() {
   ) as DemoRow[];
   const agencyIds = [...new Set(demos.map((d) => d.agency_id))];
   const propertyIds = demos.map((d) => d.property_id);
-  const [agencies, properties, photos, allAgencies] = await Promise.all([
+  const [agencies, owners, properties, photos, allAgencies] = await Promise.all([
     agencyIds.length
       ? db.from("agencies").select("id,name").in("id", agencyIds)
+      : Promise.resolve({ data: [], error: null }),
+    // Whether each agency already has its account (unknown before 202610280001).
+    agencyIds.length
+      ? db.from("agencies").select("id,owner_id").in("id", agencyIds)
       : Promise.resolve({ data: [], error: null }),
     propertyIds.length
       ? db.from("demo_properties").select("id,title").in("id", propertyIds)
@@ -246,6 +250,9 @@ export async function listDemos() {
     (check(agencies, "DEMO_LIST_FAILED") as { id: string; name: string }[]).map(
       (a) => [a.id, a.name],
     ),
+  );
+  const claimed = new Map(
+    owners.error ? [] : ((owners.data ?? []) as { id: string; owner_id: string | null }[]).map((a) => [a.id, Boolean(a.owner_id)]),
   );
   const propertyTitle = new Map(
     (check(properties, "DEMO_LIST_FAILED") as { id: string; title: string }[]).map(
@@ -271,6 +278,7 @@ export async function listDemos() {
       title: d.title || propertyTitle.get(d.property_id) || "Demo",
       agencyId: d.agency_id,
       agencyName: agencyName.get(d.agency_id) || "",
+      agencyClaimed: claimed.get(d.agency_id) ?? null,
       propertyTitle: propertyTitle.get(d.property_id) || "",
       photos: own.length,
       staged: withVersions.filter((p) => p.versions.length).length,
@@ -383,6 +391,7 @@ export async function demoDetail(id: string): Promise<DemoDetail> {
       title: demo.title || prop.title,
       agencyId: demo.agency_id,
       agencyName: (check(agency, "DEMO_AGENCY_LOOKUP_FAILED") as AgencyRow).name,
+      agencyClaimed: null,
       propertyTitle: prop.title,
       photos: photos.length,
       staged: withVersions.filter((p) => p.versions.length).length,
@@ -403,7 +412,6 @@ export async function demoDetail(id: string): Promise<DemoDetail> {
       settings: saved.settings,
       branding,
       listingUrl: prop.listing_url,
-      firstVisible: photoList.find((p) => p.visible) ?? null,
       photos: photoList,
     }),
   };
@@ -414,7 +422,6 @@ export function reviewWarnings(input: {
   settings: DemoSettings;
   branding: AgencyBranding;
   listingUrl: string | null;
-  firstVisible: EditorPhoto | null;
   photos: EditorPhoto[];
 }) {
   const { settings, branding, listingUrl } = input;
@@ -442,9 +449,11 @@ export function reviewWarnings(input: {
     );
   if (
     settings.openMode === "styled" &&
-    (!settings.openStyle || !input.firstVisible?.shown[settings.openStyle] || !styleFits(settings.openStyle, settings.propertyType))
+    (!settings.openStyle ||
+      !input.photos.some((p) => p.visible && p.shown[settings.openStyle!]) ||
+      !styleFits(settings.openStyle, settings.propertyType))
   )
-    out.push("La ambientación de apertura no está disponible en la primera foto: la ficha abre con la original.");
+    out.push("La ambientación de apertura no está en ninguna foto visible: la ficha abre con las originales.");
   if (!settings.reviewedAt) out.push("Todavía no marcaste la ficha como revisada contra la publicación.");
   return out;
 }
@@ -496,12 +505,11 @@ async function publicPayload(demo: DemoRow, logoUrl: (v: string) => string): Pro
     demo.cover_photo_id,
     main,
   );
-  // Opening mode B: the first photo in the configured style, only if it has it.
-  const first = list[0];
+  // Opening mode B: the configured style, while some visible photo has it (each photo with stagings opens compared).
   const openStyle =
     settings.openMode === "styled" &&
     settings.openStyle &&
-    first?.versions.some((v) => v.style === settings.openStyle)
+    list.some((p) => p.versions.some((v) => v.style === settings.openStyle))
       ? settings.openStyle
       : null;
   const version = logoVersion(branding);

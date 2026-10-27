@@ -112,7 +112,6 @@ describe("Listing data", () => {
       settings: readSettings({ priceConflict: "dos importes", propertyType: "office" }),
       branding: {},
       listingUrl: "https://inmo.test/p/1",
-      firstVisible: null,
       photos: [
         { id: "p", projectId: "x", position: 0, visible: true, room: "living", label: null, mode: "furnish", discarded: [], source: null, charged: false, shown: { modern: "g" }, generations: [] },
       ],

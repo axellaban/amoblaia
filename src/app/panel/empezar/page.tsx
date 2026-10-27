@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { InvitationSignup } from "@/components/agency-invitation";
 import { AgencyOnboarding } from "@/components/agency-panel";
+import { invitationOf } from "@/lib/agency/invitation";
 import { membershipOf } from "@/lib/agency/server";
 import { publishedDemo } from "@/lib/demos/server";
 import { currentUser } from "@/lib/supabase/server";
@@ -26,6 +28,12 @@ export default async function StartPage({ searchParams }: Props) {
   const signedIn = Boolean(user && !user.is_anonymous && user.email_confirmed_at);
   // Not knowing whether the account already has an agency is an error, not a "no".
   const membership = signedIn ? await membershipOf(user!.id) : null;
+  // The team's invitation: only an e-mail and a password to enter.
+  if (code && !signedIn) {
+    const invitation = await invitationOf(code);
+    const here = `/panel/empezar?${new URLSearchParams({ codigo: code, ...(token ? { demo: token } : {}) })}`;
+    return <InvitationSignup code={code} here={here} invitation={invitation} />;
+  }
   const demo = token ? await publishedDemo(token).catch(() => null) : null;
   return (
     <AgencyOnboarding
