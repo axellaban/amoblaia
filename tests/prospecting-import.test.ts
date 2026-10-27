@@ -79,6 +79,18 @@ describe("Sheet import", () => {
     });
   });
 
+  it("splits cells with several emails and keeps same-name branches apart", () => {
+    const t = parseCsv(
+      "Inmobiliaria,Email,Dirección\nFICTICIA Red,a@ficticia.test / b@ficticia.test,Calle 1\nFICTICIA Red,\"c@ficticia.test, d@ficticia.test\",Calle 2\nFICTICIA Red,,\n",
+    );
+    const r = buildRows(t, guessMapping(t.headers));
+    expect(r[0].contacts.map((c) => c.address)).toEqual(["a@ficticia.test", "b@ficticia.test"]);
+    expect(r[0].contacts.map((c) => c.is_primary)).toEqual([true, false]);
+    expect(r[1]).toMatchObject({ source_key: "nombre:ficticia-red:dir:calle-2", error: null });
+    expect(r[1].messages.join(" ")).toMatch(/fila 2 con otra dirección/);
+    expect(r[2].error).toMatch(/Clave repetida/);
+  });
+
   it("parses Argentine numbers and dates strictly", () => {
     expect(parseNumber("1.234,5")).toBe(1234.5);
     expect(parseNumber("88")).toBe(88);

@@ -258,8 +258,13 @@ export function buildRows(parsed: { headers: string[]; rows: string[][] }, mappi
     const messages: string[] = [];
     const name = get("name").slice(0, 120);
     const externalId = get("external_id");
-    const source_key = externalId ? `id:${externalId}` : name ? `nombre:${slug(name)}` : "";
+    let source_key = externalId ? `id:${externalId}` : name ? `nombre:${slug(name)}` : "";
     let error: string | null = null;
+    // Same name, different address (e.g. two branches): its own stable key, flagged for review, never merged.
+    if (name && !externalId && keys.has(source_key) && get("address")) {
+      messages.push(`Mismo nombre que la fila ${keys.get(source_key)} con otra dirección: se importa aparte, revisá si es una sucursal o un duplicado`);
+      source_key = `${source_key}:dir:${slug(get("address"))}`;
+    }
     if (!name) error = "Falta el nombre de la inmobiliaria";
     else if (keys.has(source_key)) error = `Clave repetida: la fila ${keys.get(source_key)} tiene la misma inmobiliaria. Revisá cuál conservar`;
     else keys.set(source_key, row_number);
@@ -302,13 +307,15 @@ export function buildRows(parsed: { headers: string[]; rows: string[][] }, mappi
       });
       if (wa.review) messages.push(wa.review);
     } else if (legacy_status === "invalid") messages.push("Número incorrecto sin número cargado");
-    const email = get("email").toLowerCase();
-    if (email) {
-      if (EMAIL_RE.test(email))
-        contacts.push({ channel: "email", address: email, address_original: get("email"), source: "planilla", is_primary: !contacts.some((c) => c.is_primary) });
-      else {
-        contacts.push({ channel: "email", address: null, address_original: get("email"), source: "planilla", needs_review: true, review_reason: "Email con formato inválido" });
-        messages.push(`Email «${get("email")}» con formato inválido`);
+    // A cell may hold several addresses ("a@x.com / b@x.com"): one contact each, in their order.
+    for (const part of get("email").split(/\s*[/,;]\s*|\s+/).map((p) => p.trim()).filter(Boolean)) {
+      const email = part.toLowerCase();
+      if (EMAIL_RE.test(email)) {
+        if (contacts.some((c) => c.channel === "email" && c.address === email)) continue;
+        contacts.push({ channel: "email", address: email, address_original: part, source: "planilla", is_primary: !contacts.some((c) => c.is_primary) });
+      } else {
+        contacts.push({ channel: "email", address: null, address_original: part, source: "planilla", needs_review: true, review_reason: "Email con formato inválido" });
+        messages.push(`Email «${part}» con formato inválido`);
       }
     }
     for (const part of get("other_phones").split(/[/;|,]|\s{2,}/).map((p) => p.trim()).filter(Boolean)) {
