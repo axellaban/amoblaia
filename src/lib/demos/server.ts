@@ -567,7 +567,8 @@ async function publicPayload(demo: DemoRow, logoUrl: (v: string) => string): Pro
     ...listingFields(settings, branding),
     styles: order.map((id) => ({ id, name: styleName(id) })),
     cover: cover ? list.find((p) => p.id === cover.id)! : null,
-    photos: list,
+    // The cover the agency chose opens the gallery; the rest keep their order.
+    photos: demo.cover_photo_id && cover?.id === demo.cover_photo_id ? [...list.filter((p) => p.id === cover.id), ...list.filter((p) => p.id !== cover.id)] : list,
     openStyle,
     banner: settings.banner,
     share: { title: settings.shareTitle, description: settings.shareDescription },

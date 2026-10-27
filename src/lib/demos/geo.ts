@@ -253,9 +253,11 @@ export function geoCandidates(rawHtml: string, ownEnd = rawHtml.length): GeoCand
   // Google Maps JavaScript API.
   for (const m of html.matchAll(re(`google\\.maps\\.LatLng\\(\\s*${NUM}\\s*,\\s*${NUM}\\s*\\)`)))
     add(Number(m[1]), Number(m[2]), "google-latlng", 0.7, m.index ?? 0);
-  // Object literals in scripts and JSON state: {lat: …, lng: …} in either order, quoted or not.
-  const KEY_LAT = `["']?(?:lat|latitude|latitud)["']?\\s*:\\s*["']?${NUM}["']?`;
-  const KEY_LNG = `["']?(?:lng|lon|long|longitude|longitud)["']?\\s*:\\s*["']?${NUM}["']?`;
+  // Object literals in scripts and JSON state: {lat: …, lng: …} in either order, quoted or not,
+  // also inside JSON written as a string (\"lat\":-38.01, as in Next.js page data).
+  const Q = `(?:\\\\?["'])?`;
+  const KEY_LAT = `${Q}(?:lat|latitude|latitud)${Q}\\s*:\\s*${Q}${NUM}${Q}`;
+  const KEY_LNG = `${Q}(?:lng|lon|long|longitude|longitud)${Q}\\s*:\\s*${Q}${NUM}${Q}`;
   for (const m of html.matchAll(re(`${KEY_LAT}\\s*,\\s*${KEY_LNG}`))) add(Number(m[1]), Number(m[2]), "lat-lng-object", 0.6, m.index ?? 0);
   for (const m of html.matchAll(re(`${KEY_LNG}\\s*,\\s*${KEY_LAT}`))) add(Number(m[2]), Number(m[1]), "lat-lng-object", 0.6, m.index ?? 0);
   // Data attributes of one element.
