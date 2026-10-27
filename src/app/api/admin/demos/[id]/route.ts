@@ -1,5 +1,5 @@
 import { failure, HttpError, rpc } from "@/lib/commerce/http";
-import { requireDemoAccess } from "@/lib/agency/server";
+import { requireDemoAccess, stagingRule } from "@/lib/agency/server";
 import {
   assertNoLiveJobs,
   brandingOf,
@@ -32,8 +32,11 @@ function viewOf(detail: Awaited<ReturnType<typeof demoDetail>>, admin: boolean) 
 export async function GET(_request: Request, { params }: Params) {
   try {
     const { id } = await params;
-    const { demo, admin } = await requireDemoAccess(undefined, id);
-    return Response.json(viewOf(await demoDetail(demo.id), admin), { headers: PRIVATE });
+    const access = await requireDemoAccess(undefined, id);
+    return Response.json(
+      { ...viewOf(await demoDetail(access.demo.id), access.admin), staging: stagingRule(access) },
+      { headers: PRIVATE },
+    );
   } catch (e) {
     return failure(e);
   }
@@ -42,7 +45,8 @@ export async function GET(_request: Request, { params }: Params) {
 export async function PATCH(request: Request, { params }: Params) {
   try {
     const { id } = await params;
-    const { actor, demo, admin, role } = await requireDemoAccess(request, id);
+    const access = await requireDemoAccess(request, id);
+    const { actor, demo, admin, role } = access;
     const body = await readJson(request);
     const db = adminClient();
     // The team's notes and contact person are its own; the agency's identity
@@ -220,7 +224,7 @@ export async function PATCH(request: Request, { params }: Params) {
         details: {},
       });
     }
-    return Response.json(viewOf(await demoDetail(demo.id), admin), { headers: PRIVATE });
+    return Response.json({ ...viewOf(await demoDetail(demo.id), admin), staging: stagingRule(access) }, { headers: PRIVATE });
   } catch (e) {
     return failure(e);
   }

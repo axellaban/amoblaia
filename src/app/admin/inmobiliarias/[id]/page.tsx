@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { AgencyCredits, AgencyInvitations } from "@/components/admin-agencies";
+import { AgencyCredits, AgencyInvitations, AgencyProperties } from "@/components/admin-agencies";
 import { HttpError } from "@/lib/commerce/http";
 import { adminAgency } from "@/lib/agency/admin";
 import { agencyStage, STAGE_LABEL } from "@/lib/agency/stage";
@@ -42,7 +42,7 @@ export default async function AgencyPage({ params }: { params: Promise<{ id: str
     );
   const { agency, counts } = data;
   const pending = data.claims.find((c) => c.state === "pending");
-  const stage = agencyStage({ hasOwner: agency.hasOwner, liveClaimExpires: pending?.expiresAt ?? null, published: counts.published });
+  const stage = agencyStage({ hasOwner: agency.hasOwner, claimedAt: agency.claimedAt, liveClaimExpires: pending?.expiresAt ?? null, published: counts.published });
   return (
     <div className="account-page container dm-page">
       <p className="aa-back">
@@ -62,7 +62,7 @@ export default async function AgencyPage({ params }: { params: Promise<{ id: str
             {agency.hasOwner
               ? agency.claimedAt
                 ? `Reclamó su cuenta el ${date(agency.claimedAt)}.`
-                : "Creó su cuenta desde el panel."
+                : "Creó su cuenta directamente desde el panel."
               : "Todavía no tiene cuenta en habita."}
           </p>
         </div>
@@ -92,7 +92,7 @@ export default async function AgencyPage({ params }: { params: Promise<{ id: str
         </div>
       </dl>
 
-      <AgencyCredits agencyId={agency.id} hasOwner={agency.hasOwner} credits={data.credits} />
+      <AgencyCredits agency={{ id: agency.id, name: agency.name, hasOwner: agency.hasOwner }} credits={data.credits} />
 
       <AgencyInvitations agencyId={agency.id} claims={data.claims} hasOwner={agency.hasOwner} />
 
@@ -126,32 +126,13 @@ export default async function AgencyPage({ params }: { params: Promise<{ id: str
       </section>
 
       <section className="account-panel aa-section" aria-labelledby="aa-props">
-        <h2 id="aa-props">Propiedades</h2>
-        {data.properties.length ? (
-          <>
-            {data.propertiesTotal > data.properties.length && (
-              <p className="aa-help">
-                Se muestran las {data.properties.length} más recientes de {data.propertiesTotal}.
-              </p>
-            )}
-            <ul className="aa-list">
-              {data.properties.map((p) => (
-                <li key={p.id}>
-                  <span className={`dm-status ${p.status === "published" ? "is-live" : ""}`}>{p.status === "published" ? "Publicada" : "Borrador"}</span>
-                  <span>
-                    {p.title}
-                    <small>{date(p.createdAt)}</small>
-                  </span>
-                  <Link href={`/admin/demos/${p.id}`} className="button button-small button-outline">
-                    Abrir
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </>
-        ) : (
-          <p className="aa-empty">Todavía no tiene propiedades.</p>
-        )}
+        <div className="aa-section-head">
+          <h2 id="aa-props">Propiedades ({data.propertiesTotal})</h2>
+          <Link href={`/admin/demos/nueva?inmobiliaria=${agency.id}`} className="button button-small">
+            Agregar propiedad
+          </Link>
+        </div>
+        <AgencyProperties agencyId={agency.id} backTo={`/admin/inmobiliarias/${agency.id}`} />
       </section>
 
       <section className="account-panel aa-section" aria-labelledby="aa-team">

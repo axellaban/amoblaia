@@ -3,6 +3,7 @@ import { failure, HttpError, rpc } from "@/lib/commerce/http";
 import { requireDemoAccess } from "@/lib/agency/server";
 import { MAX_BYTES } from "@/lib/commerce/images";
 import { addPhoto } from "@/lib/demos/server";
+import { assignPhotos } from "@/lib/demos/spaces";
 import { readJson } from "@/lib/demos/input";
 import { fetchPublic } from "@/lib/demos/listing";
 import { cleanUrl } from "@/lib/demos/shared";
@@ -33,7 +34,7 @@ async function fromUrl(request: Request) {
   } catch {
     // A malformed escape keeps the raw file name.
   }
-  return { bytes: image.body, name: name.replace(/\.[^.]+$/, ""), reuse: body.reuse === true };
+  return { bytes: image.body, name: name.replace(/\.[^.]+$/, ""), reuse: body.reuse === true, space: null as string | null };
 }
 
 /** An uploaded file: "image" in multipart form data. */
@@ -49,7 +50,13 @@ async function fromUpload(request: Request) {
     !["image/jpeg", "image/png", "image/webp"].includes(file.type)
   )
     throw new HttpError(400, "Subí una imagen JPG, PNG o WebP de hasta 3 MB.");
-  return { bytes: Buffer.from(await file.arrayBuffer()), name: file.name.replace(/\.[^.]+$/, ""), reuse: false };
+  const space = data?.get("space");
+  return {
+    bytes: Buffer.from(await file.arrayBuffer()),
+    name: file.name.replace(/\.[^.]+$/, ""),
+    reuse: false,
+    space: typeof space === "string" && space ? space : null,
+  };
 }
 
 /** One photo per request (the panel uploads or imports several in sequence, with progress). */
@@ -71,8 +78,14 @@ export async function POST(
       reuse: photo.reuse,
       ownOnly: Boolean(billingUser),
     });
+    // Uploaded straight into a space: the photo is saved either way; a failed grouping is said, not hidden.
+    let spaceError: string | null = null;
+    if (photo.space)
+      await assignPhotos(demo.property_id, [row.id], photo.space).catch((e) => {
+        spaceError = e instanceof HttpError ? e.message : "No pudimos ubicarla en el espacio.";
+      });
     return Response.json(
-      { id: row.id, reused: row.reused },
+      { id: row.id, reused: row.reused, spaceError },
       { status: row.reused ? 200 : 201, headers: { "Cache-Control": "private, no-store" } },
     );
   } catch (e) {

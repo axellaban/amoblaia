@@ -1,10 +1,10 @@
-import { requireAdmin, failure, rpc } from "@/lib/commerce/http";
+import { requireAdmin, failure, HttpError, rpc } from "@/lib/commerce/http";
 import { completeAgency, createDemo, saveJson } from "@/lib/demos/server";
 import { DEFAULT_SETTINGS } from "@/lib/demos/branding";
 import { importedMap, readJson } from "@/lib/demos/input";
 import { readListing } from "@/lib/demos/listing";
 import { applyImport, IMPORT_FIELDS } from "@/lib/demos/import";
-import { cleanText } from "@/lib/demos/shared";
+import { cleanText, isUuid } from "@/lib/demos/shared";
 import { adminClient } from "@/lib/supabase/server";
 export const runtime = "nodejs";
 
@@ -39,10 +39,18 @@ export async function POST(request: Request) {
       .limit(1000);
     if (error) throw new Error("AGENCY_LIST_FAILED");
     const site = host(listing.agency.website);
-    const agency =
-      (agencies as { id: string; name: string; website: string | null }[]).find(
-        (a) => host(a.website) === site,
-      ) ?? null;
+    // Created from an agency's page: that agency (validated here), never a new one by name.
+    let agency: { id: string; name: string } | null = null;
+    if (isUuid(body.agencyId)) {
+      const chosen = await db.from("agencies").select("id,name").eq("id", body.agencyId).maybeSingle();
+      if (chosen.error) throw new Error("AGENCY_LOOKUP_FAILED");
+      if (!chosen.data) throw new HttpError(404, "No encontramos esa inmobiliaria.");
+      agency = chosen.data as { id: string; name: string };
+    } else
+      agency =
+        (agencies as { id: string; name: string; website: string | null }[]).find(
+          (a) => host(a.website) === site,
+        ) ?? null;
     if (body.preview === true)
       return Response.json(
         { ...imp, listingUrl: listing.listingUrl, existingAgency: agency?.name ?? null },

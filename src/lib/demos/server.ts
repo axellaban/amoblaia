@@ -35,6 +35,7 @@ import {
   type PhotoVersion,
   type PublicDemo,
   type PublicPhoto,
+  type PropertySpace,
 } from "./shared";
 
 /** 18 random bytes: 24 URL-safe characters, unguessable and stable across publish/unpublish. */
@@ -319,7 +320,7 @@ async function photosOf(propertyId: string) {
 export async function demoDetail(id: string): Promise<DemoDetail> {
   const db = adminClient();
   const demo = await demoRow(id);
-  const [agency, property, photos] = await Promise.all([
+  const [agency, property, photos, spaces] = await Promise.all([
     db
       .from("agencies")
       .select("id,name,website,contact_name,notes")
@@ -331,6 +332,7 @@ export async function demoDetail(id: string): Promise<DemoDetail> {
       .eq("id", demo.property_id)
       .single(),
     photosOf(demo.property_id),
+    spacesOf(demo.property_id),
   ]);
   const projectIds = [...new Set(photos.map((p) => p.project_id))];
   // File name and whether the photo already used a credit (further versions are included).
@@ -364,6 +366,7 @@ export async function demoDetail(id: string): Promise<DemoDetail> {
   const order = orderStyles(photos.flatMap((p) => [...(shown.get(p.id)?.keys() ?? [])]), main);
   const photoList: EditorPhoto[] = photos.map((p) => ({
     id: p.id,
+    spaceId: spaces.photoSpace.get(p.id) ?? null,
     projectId: p.project_id,
     position: p.position,
     visible: p.visible,
@@ -414,6 +417,33 @@ export async function demoDetail(id: string): Promise<DemoDetail> {
       listingUrl: prop.listing_url,
       photos: photoList,
     }),
+    spaces: spaces.list,
+    spacesReady: spaces.ready,
+  };
+}
+
+/**
+ * The spaces of a property and which photo is in each. Before migration
+ * 202610310001_property_spaces.sql there are none: every photo is "Sin organizar".
+ */
+export async function spacesOf(propertyId: string) {
+  const db = adminClient();
+  const [list, links] = await Promise.all([
+    db.from("property_spaces").select("id,name,room_type,position").eq("property_id", propertyId).order("position").order("created_at"),
+    db.from("demo_photos").select("id,space_id").eq("property_id", propertyId),
+  ]);
+  if (list.error || links.error) return { ready: false, list: [] as PropertySpace[], photoSpace: new Map<string, string>() };
+  return {
+    ready: true,
+    list: ((list.data ?? []) as { id: string; name: string; room_type: string; position: number }[]).map((r) => ({
+      id: r.id,
+      name: r.name,
+      roomType: r.room_type,
+      position: r.position,
+    })),
+    photoSpace: new Map(
+      ((links.data ?? []) as { id: string; space_id: string | null }[]).filter((r) => r.space_id).map((r) => [r.id, r.space_id!]),
+    ),
   };
 }
 

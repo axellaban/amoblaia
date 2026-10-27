@@ -2,7 +2,7 @@ import { requireUser, failure, HttpError } from "@/lib/commerce/http";
 import { canSeeImage } from "@/lib/agency/server";
 import { adminImagePaths, renderImage, renderPreview } from "@/lib/demos/server";
 import { validStyle } from "@/lib/demos/input";
-import { imageWidth } from "@/lib/demos/shared";
+import { downloadName, imageWidth } from "@/lib/demos/shared";
 export const runtime = "nodejs";
 
 /** Web-sized copies of demo photos and proposals for the panel and the preview: the team, or members of the photo's agency. */
@@ -24,11 +24,16 @@ export async function GET(request: Request) {
         ? await renderPreview(paths)
         : await renderImage(paths.staged ?? paths.original, imageWidth(q.get("w")));
     if (!image) throw new HttpError(404, "No encontramos la imagen.");
+    // ?descargar=1&nombre=…: the same JPEG, saved as a file with a useful name. Downloading costs nothing.
+    const download = q.get("descargar") === "1" ? downloadName(q.get("nombre")) : null;
     return new Response(new Uint8Array(image), {
       headers: {
         "Content-Type": "image/jpeg",
         // Each URL names one immutable file (versions change the URL).
         "Cache-Control": "private, max-age=3600",
+        ...(download
+          ? { "Content-Disposition": `attachment; filename="${download.ascii}"; filename*=UTF-8''${encodeURIComponent(download.full)}` }
+          : {}),
       },
     });
   } catch (e) {

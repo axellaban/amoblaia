@@ -1,74 +1,52 @@
 "use client";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  ArrowDown,
-  ArrowUp,
-  Check,
-  Eye,
-  EyeOff,
-  ImagePlus,
-  Loader2,
-  RefreshCw,
-  Sparkles,
-  Star,
-  Trash2,
-  Undo2,
-  X,
-} from "lucide-react";
+import { Check, ChevronDown, Eye, ImagePlus, Loader2, RefreshCw, Sparkles, Star, Trash2, X } from "lucide-react";
 import { Comparison } from "./comparison";
-import {
-  AgencyFields,
-  LinkPreview,
-  PropertyFields,
-  ShareButtons,
-  StatusChip,
-  api,
-  publicLink,
-} from "./admin-demos";
+import { AgencyFields, LinkPreview, PropertyFields, ShareButtons, StatusChip, api, publicLink } from "./admin-demos";
+import { NewSpace, PhotoCard, SpaceHeader, type CardActions } from "./editor-photos";
+import { useStagingQueue, type QueueReport } from "./use-staging-queue";
 import { optimizePhoto } from "@/lib/images";
-import { rooms } from "@/lib/catalog";
 import { DEMO_STYLES, PROPERTY_TYPE_NAMES, styleFits, type PropertyType } from "@/lib/demos/styles";
-import { ListingForm } from "./demo-listing-form";
+import { ListingForm, type ListingPart } from "./demo-listing-form";
 import { ImportPreview, ImportReport, exceptions, foreignPhotos, syncPhotos } from "./demo-import";
 import type { ImportChange, ImportField, ImportedDemo } from "@/lib/demos/import";
 import { track } from "@/lib/analytics";
+import { safeReturn } from "@/lib/agency/shared";
 import { shareLink, whatsappOpened } from "@/lib/agency/share";
+import {
+  MAP_SUMMARY,
+  groupBySpace,
+  isLive,
+  isSection,
+  missingData,
+  missingTasks,
+  photoSummary,
+  versionFileName,
+  type Section,
+} from "@/lib/demos/editor-logic";
 import {
   MAX_DEMO_STYLES,
   adminGenerationUrl,
   adminPhotoUrl,
-  generationNote,
+  downloadName,
+  generationDownloadUrl,
   orderStyles,
   photoLabel,
-  roomName,
   styleName,
   type DemoDetail,
   type EditorPhoto,
   type GenerationRow,
+  type PropertySpace,
 } from "@/lib/demos/shared";
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const emptyBrand = {
-  primary: "",
-  accent: "",
-  titleFont: "sans" as "sans" | "serif",
-  contactKind: "whatsapp" as "whatsapp" | "url" | "phone" | "email",
-  contactValue: "",
-  visitUrl: "",
-};
 const CONTACT_LABELS = {
   whatsapp: ["WhatsApp", "+54 9 223 555-1234"],
   url: ["Formulario o página de contacto", "https://inmobiliaria.com/contacto"],
   phone: ["Teléfono", "+54 223 555-1234"],
   email: ["Email", "consultas@inmobiliaria.com"],
 } as const;
-const liveStatus = (g: GenerationRow) => g.status === "queued" || g.status === "running";
-const isLive = (p: EditorPhoto, style?: string) =>
-  p.generations.some((g) => liveStatus(g) && (!style || g.style === style));
-type Task = { photoId: string; style: string };
-const taskKey = (t: Task) => `${t.photoId}:${t.style}`;
-/** Styles checked in the panel but not staged yet live only in this browser until they are. */
+/** Styles checked for the batch live only in this browser (they are not part of the property until a version exists). */
 const pickedKey = (id: string) => `amoblaia_demo_estilos_${id}`;
 function readPicked(id: string): string[] {
   try {
@@ -86,126 +64,177 @@ function savePicked(id: string, list: string[]) {
   }
 }
 type Upload = { name: string; state: "waiting" | "uploading" | "done" | "error"; error?: string };
+type SpaceState = { spaces: PropertySpace[]; assignments: Record<string, string> };
+type Message = { tone: "error" | "notice"; text: string; section?: Section };
+
+const formsOf = (d: DemoDetail) => ({
+  title: d.demo.title === d.property.title ? "" : d.demo.title,
+  agency: { name: d.agency.name, website: d.agency.website ?? "", contact_name: d.agency.contact_name ?? "", notes: d.agency.notes ?? "" },
+  property: {
+    title: d.property.title,
+    listing_url: d.property.listing_url ?? "",
+    location: d.property.location ?? "",
+    description: d.property.description ?? "",
+  },
+  brand: {
+    primary: d.branding.primary ?? "",
+    accent: d.branding.accent ?? "",
+    titleFont: d.branding.titleFont ?? ("sans" as const),
+    contactKind: d.branding.contactKind ?? ("whatsapp" as const),
+    contactValue: d.branding.contactValue ?? "",
+    visitUrl: d.branding.visitUrl ?? "",
+  },
+});
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
+/** A fold of the editor: its header always says what is inside; folding saves, clears or stops nothing. */
+function Fold({
+  id,
+  title,
+  summary,
+  open,
+  onToggle,
+  dirty,
+  children,
+}: {
+  id: Section;
+  title: string;
+  summary: React.ReactNode;
+  open: boolean;
+  onToggle: () => void;
+  dirty?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className={`account-panel ed-fold ${open ? "is-open" : ""}`} id={id} aria-labelledby={`${id}-title`}>
+      <h2 id={`${id}-title`} className="ed-fold-title">
+        <button type="button" aria-expanded={open} aria-controls={`${id}-body`} onClick={onToggle}>
+          <ChevronDown size={18} aria-hidden="true" className="ed-chevron" />
+          <span className="ed-fold-name">{title}</span>
+          <span className="ed-fold-summary">
+            {summary}
+            {dirty && <span className="ed-dirty"> · Cambios sin guardar</span>}
+          </span>
+        </button>
+      </h2>
+      {/* Folded content stays mounted (hidden): drafts, selections and progress are kept. */}
+      <div id={`${id}-body`} className="ed-fold-body" hidden={!open}>
+        {children}
+      </div>
+    </section>
+  );
+}
 
 /**
- * The property page. "admin": the team prepares a commercial demo (free
- * stagings, presentation link). "agency": an agency works on its own
- * property: stagings use its credits, confirmed before they start, and the
- * team's tools (notes, presentation strip, claim links) are not shown.
+ * The property page, shared by the team ("admin": commercial demos) and by
+ * agencies ("agency": its own properties, staged with its credits). Photos
+ * and spaces first; everything else in folds that keep their drafts.
  */
 export function DemoEditor({ id, mode = "admin" }: { id: string; mode?: "admin" | "agency" }) {
   const agencyMode = mode === "agency";
   const [detail, setDetail] = useState<DemoDetail | null>(null);
-  const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
+  const [message, setMessage] = useState<Message | null>(null);
+  const [loadError, setLoadError] = useState("");
   const [busy, setBusy] = useState(false);
   const [uploads, setUploads] = useState<Upload[]>([]);
   const [dragging, setDragging] = useState(false);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [included, setIncluded] = useState<Set<string>>(new Set());
   const [picked, setPicked] = useState<string[]>([]);
-  const [queue, setQueue] = useState<Task[]>([]);
-  const [review, setReview] = useState<{ photoId: string; style: string } | null>(null);
-  const [title, setTitle] = useState("");
-  const [agency, setAgency] = useState({ name: "", website: "", contact_name: "", notes: "" });
-  const [property, setProperty] = useState({ title: "", listing_url: "", location: "", description: "" });
-  const [brand, setBrand] = useState(emptyBrand);
+  const [review, setReview] = useState<{ photoId: string; generationId: string } | null>(null);
+  const [open, setOpen] = useState<Set<Section>>(new Set(["fotos"]));
+  const [organizing, setOrganizing] = useState(false);
+  const [toMove, setToMove] = useState<Set<string>>(new Set());
+  const [moveTarget, setMoveTarget] = useState("");
+  const [downloading, setDownloading] = useState<string | null>(null);
+  // Drafts of the forms: set once, and again only when that same form is saved.
+  const [forms, setForms] = useState<ReturnType<typeof formsOf> | null>(null);
+  const [dirtyParts, setDirtyParts] = useState<Set<ListingPart>>(new Set());
   const [reread, setReread] = useState<Reread | null>(null);
+  const [backTo, setBackTo] = useState(agencyMode ? "/panel/propiedades" : "/admin/inmobiliarias");
   const base = `/api/admin/demos/${id}`;
-  const queueRef = useRef<string | null>(null);
   const firstLoad = useRef(true);
 
+  const say = useCallback((m: Message) => {
+    setMessage(m);
+    if (m.section) setOpen((o) => new Set(o).add(m.section!));
+  }, []);
+  const report = useCallback((r: QueueReport) => say({ ...r, section: r.tone === "error" ? "fotos" : undefined }), [say]);
+
+  /** New server data. Form drafts are never replaced here (see `saved`). */
   const apply = useCallback((d: DemoDetail) => {
-    setDetail(d);
+    setDetail((prev) => ({ ...d, staging: d.staging ?? prev?.staging }));
     if (firstLoad.current) {
       firstLoad.current = false;
-      // Every visible photo is staged unless unticked (bathrooms, façades, plans…).
-      setSelected(new Set(d.photos.filter((p) => p.visible).map((p) => p.id)));
+      setForms(formsOf(d));
+      // Every visible photo goes in the batch unless unticked (bathrooms, façades, plans…).
+      setIncluded(new Set(d.photos.filter((p) => p.visible).map((p) => p.id)));
       setPicked(readPicked(d.demo.id));
     }
-    setTitle(d.demo.title === d.property.title ? "" : d.demo.title);
-    setAgency({
-      name: d.agency.name,
-      website: d.agency.website ?? "",
-      contact_name: d.agency.contact_name ?? "",
-      notes: d.agency.notes ?? "",
-    });
-    setProperty({
-      title: d.property.title,
-      listing_url: d.property.listing_url ?? "",
-      location: d.property.location ?? "",
-      description: d.property.description ?? "",
-    });
-    setBrand({
-      primary: d.branding.primary ?? "",
-      accent: d.branding.accent ?? "",
-      titleFont: d.branding.titleFont ?? "sans",
-      contactKind: d.branding.contactKind ?? "whatsapp",
-      contactValue: d.branding.contactValue ?? "",
-      visitUrl: d.branding.visitUrl ?? "",
-    });
   }, []);
+  /** After a form was saved: only that form takes the server's values. */
+  const saved = useCallback((d: DemoDetail, keys: (keyof ReturnType<typeof formsOf>)[]) => {
+    apply(d);
+    const fresh = formsOf(d);
+    setForms((f) => (f ? { ...f, ...Object.fromEntries(keys.map((k) => [k, fresh[k]])) } : fresh));
+  }, [apply]);
   const load = useCallback(async () => apply(await api<DemoDetail>(base)), [apply, base]);
   useEffect(() => {
-    void load().catch((e) => setError(e.message));
+    void load().catch((e) => setLoadError(e instanceof Error ? e.message : "No pudimos cargar la propiedad."));
   }, [load]);
+
+  // Deep links: ?seccion=… or #section opens that fold and takes the focus there; ?volver= is the way back.
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    setBackTo(safeReturn(q.get("volver"), agencyMode ? "/panel/propiedades" : "/admin/inmobiliarias"));
+    const target = q.get("seccion") ?? window.location.hash.slice(1);
+    if (isSection(target)) setOpen((o) => new Set(o).add(target));
+  }, [agencyMode]);
+  const focusDone = useRef(false);
+  useEffect(() => {
+    if (!detail || focusDone.current) return;
+    focusDone.current = true;
+    const q = new URLSearchParams(window.location.search);
+    const target = q.get("seccion") ?? window.location.hash.slice(1);
+    if (isSection(target) && target !== "fotos")
+      requestAnimationFrame(() => {
+        const el = document.getElementById(`${target}-title`)?.querySelector("button");
+        el?.focus();
+        el?.scrollIntoView({ block: "start" });
+      });
+  }, [detail]);
+  const toggle = (s: Section) =>
+    setOpen((o) => {
+      const n = new Set(o);
+      if (n.has(s)) n.delete(s);
+      else n.add(s);
+      return n;
+    });
+
   // From an import that could not save the property's data: open the completion right away.
   const completeOpened = useRef(false);
   useEffect(() => {
     if (!agencyMode || completeOpened.current || !detail?.property.listing_url) return;
     if (new URLSearchParams(window.location.search).get("completar") !== "1") return;
     completeOpened.current = true;
+    setOpen((o) => new Set(o).add("publicacion"));
     api<Reread>(`${base}/publicacion`)
       .then(setReread)
-      .catch((e) => setError(e instanceof Error ? e.message : "No pudimos leer la publicación."));
-  }, [agencyMode, base, detail?.property.listing_url]);
+      .catch((e) => say({ tone: "error", text: e instanceof Error ? e.message : "No pudimos leer la publicación.", section: "publicacion" }));
+  }, [agencyMode, base, detail?.property.listing_url, say]);
 
+  /** One photo's new state: only the photos change, never the forms. */
   const updatePhoto = useCallback((photo: EditorPhoto | null, photoId: string) => {
     setDetail((d) => {
       if (!d) return d;
-      const photos = photo
-        ? d.photos.map((p) => (p.id === photo.id ? photo : p))
-        : d.photos.filter((p) => p.id !== photoId);
-      return {
-        ...d,
-        photos,
-        demo: {
-          ...d.demo,
-          photos: photos.length,
-          staged: photos.filter((p) => Object.keys(p.shown).length).length,
-        },
-      };
+      const photos = photo ? d.photos.map((p) => (p.id === photo.id ? photo : p)) : d.photos.filter((p) => p.id !== photoId);
+      return { ...d, photos, demo: { ...d.demo, photos: photos.length, staged: photos.filter((p) => Object.keys(p.shown).length).length } };
     });
   }, []);
-
-  async function run(task: () => Promise<void>, done?: string) {
-    setBusy(true);
-    setError("");
-    setNotice("");
-    try {
-      await task();
-      if (done) setNotice(done);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "No pudimos guardar.");
-    } finally {
-      setBusy(false);
-    }
-  }
-  const demoAction = (body: Record<string, unknown>, done?: string) =>
-    run(async () => {
-      apply(await api<DemoDetail>(base, { method: "PATCH", body: JSON.stringify(body) }));
-    }, done);
-  async function patchPhoto(photoId: string, body: Record<string, unknown>) {
-    setError("");
-    try {
-      const { photo } = await api<{ photo: EditorPhoto }>(`${base}/photos/${photoId}`, {
-        method: "PATCH",
-        body: JSON.stringify(body),
-      });
-      updatePhoto(photo, photoId);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "No pudimos guardar la foto.");
-    }
-  }
+  const applySpaces = useCallback((s: SpaceState) => {
+    setDetail((d) =>
+      d ? { ...d, spaces: s.spaces, photos: d.photos.map((p) => ({ ...p, spaceId: s.assignments[p.id] ?? null })) } : d,
+    );
+  }, []);
   const poll = useCallback(
     async (photoId: string) => {
       const { photo } = await api<{ photo: EditorPhoto | null }>(`${base}/photos/${photoId}`);
@@ -214,125 +243,171 @@ export function DemoEditor({ id, mode = "admin" }: { id: string; mode?: "admin" 
     },
     [base, updatePhoto],
   );
+  const staging = useStagingQueue({ base, detail, poll, report, trackAgency: agencyMode });
 
-  // Photos still rendering (for example after a reload) are followed until they finish.
-  const livePhotos = useMemo(
-    () => (detail?.photos || []).filter((p) => isLive(p)).map((p) => p.id),
-    [detail],
-  );
+  // Versions already on the server (also after a reload) are followed until they finish; nothing is sent again.
+  const livePhotos = useMemo(() => (detail?.photos || []).filter((p) => isLive(p)).map((p) => p.id), [detail]);
+  const currentPhoto = staging.current?.photoId ?? null;
   useEffect(() => {
     if (!livePhotos.length) return;
     const timer = setInterval(() => {
-      for (const photoId of livePhotos)
-        if (photoId !== queueRef.current) void poll(photoId).catch(() => null);
+      for (const photoId of livePhotos) if (photoId !== currentPhoto) void poll(photoId).catch(() => null);
     }, 5000);
     return () => clearInterval(timer);
-  }, [livePhotos, poll]);
-  // Keeps the screen awake and warns before leaving while proposals render.
+  }, [livePhotos, poll, currentPhoto]);
+
+  const formsDirty =
+    Boolean(detail && forms) &&
+    (() => {
+      const now = formsOf(detail!);
+      return {
+        title: !same(forms!.title, now.title),
+        property: !same(forms!.property, now.property),
+        agency: !agencyMode && !same(forms!.agency, now.agency),
+        brand: !agencyMode && !same(forms!.brand, now.brand),
+      };
+    })();
+  const dirtyAny = dirtyParts.size > 0 || (formsDirty && Object.values(formsDirty).some(Boolean));
+  // Warns before leaving with unsaved changes or versions still being created.
   useEffect(() => {
-    if (!queue.length && !livePhotos.length) return;
+    if (!staging.busy && !livePhotos.length && !dirtyAny) return;
     const warn = (e: BeforeUnloadEvent) => e.preventDefault();
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [queue.length, livePhotos.length]);
+  }, [staging.busy, livePhotos.length, dirtyAny]);
+  const partDirty = useCallback(
+    (part: ListingPart) => (dirty: boolean) =>
+      setDirtyParts((s) => {
+        if (s.has(part) === dirty) return s;
+        const n = new Set(s);
+        if (dirty) n.add(part);
+        else n.delete(part);
+        return n;
+      }),
+    [],
+  );
+  const partHandlers = useMemo(
+    () => ({
+      datos: partDirty("datos"),
+      condiciones: partDirty("condiciones"),
+      mapa: partDirty("mapa"),
+      contacto: partDirty("contacto"),
+      compartir: partDirty("compartir"),
+    }),
+    [partDirty],
+  );
 
-  /** One version at a time: the account admits one live generation, like the studio. */
-  async function generate(tasks: Task[]) {
-    setError("");
-    setNotice("");
-    if (agencyMode) {
-      // What it costs, from the server (who pays, balance, photos still
-      // unpaid, coverage), shown before anything starts.
-      const photoIds = [...new Set(tasks.map((t) => t.photoId))];
-      let cost: { payer: string; credits: number | null; newPhotos: number; blocked: string | null };
-      try {
-        cost = await api(`${base}/costo`, { method: "POST", body: JSON.stringify({ photoIds }) });
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "No pudimos calcular el costo. Probá de nuevo.");
-        return;
-      }
-      if (cost.blocked) {
-        setError(`${cost.blocked} Podés ver el saldo en «Créditos IA».`);
-        return;
-      }
-      const firstTime = cost.newPhotos;
-      if (
-        !window.confirm(
-          [
-            `Vas a crear ${tasks.length} ${tasks.length === 1 ? "versión" : "versiones"} de ${photoIds.length} ${photoIds.length === 1 ? "foto" : "fotos"}.`,
-            firstTime
-              ? `Usa ${firstTime} ${firstTime === 1 ? "crédito" : "créditos"} del saldo de la inmobiliaria (uno por foto nueva). Quedarían ${(cost.credits ?? 0) - firstTime}.`
-              : "No usa créditos: esas fotos ya están ambientadas y las versiones nuevas están incluidas.",
-            "¿Continuar?",
-          ].join("\n"),
-        )
-      )
-        return;
-      track("property_ai_generation_started", { photos: photoIds.length, versions: tasks.length, credits: firstTime });
+  async function run(task: () => Promise<void>, done?: string, section?: Section) {
+    setBusy(true);
+    setMessage(null);
+    try {
+      await task();
+      if (done) setMessage({ tone: "notice", text: done });
+      return true;
+    } catch (e) {
+      say({ tone: "error", text: e instanceof Error ? e.message : "No pudimos guardar.", section });
+      return false;
+    } finally {
+      setBusy(false);
     }
-    setQueue(tasks);
-    let failures = 0;
-    for (const task of tasks) {
-      queueRef.current = task.photoId;
-      const photo = detail?.photos.find((p) => p.id === task.photoId);
-      if (!photo) continue;
-      try {
-        await api(`${base}/photos/${task.photoId}`, {
-          method: "POST",
-          body: JSON.stringify({
-            key: crypto.randomUUID(),
-            room: photo.room,
-            mode: photo.mode,
-            style: task.style,
-          }),
-        });
-        let current = await poll(task.photoId);
-        while (current && isLive(current)) {
-          await sleep(4000);
-          current = await poll(task.photoId);
-        }
-        const last = current?.generations.find((g) => g.style === task.style);
-        if (last?.status !== "succeeded") failures++;
-      } catch (e) {
-        failures++;
-        setError(e instanceof Error ? e.message : "No pudimos ambientar la foto.");
-        // Quota, capacity or configuration problems would repeat: stop the batch.
-        break;
-      } finally {
-        setQueue((q) => q.filter((x) => taskKey(x) !== taskKey(task)));
-      }
+  }
+  const demoAction = (body: Record<string, unknown>, done?: string, section?: Section) =>
+    run(async () => apply(await api<DemoDetail>(base, { method: "PATCH", body: JSON.stringify(body) })), done, section);
+  /** Saves a listing part; fails loudly so the form keeps its draft. */
+  const saveSettings = (section: Section) => async (settings: Record<string, unknown>) => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      apply(await api<DemoDetail>(base, { method: "PATCH", body: JSON.stringify({ action: "settings", settings }) }));
+      setMessage({ tone: "notice", text: "Guardado." });
+    } catch (e) {
+      say({ tone: "error", text: e instanceof Error ? e.message : "No pudimos guardar.", section });
+      throw e;
+    } finally {
+      setBusy(false);
     }
-    queueRef.current = null;
-    setQueue([]);
-    if (agencyMode)
-      track("property_ai_generation_completed", { versions: tasks.length, failed: failures, status: failures ? "partial" : "ok" });
-    if (!failures)
-      setNotice("Ambientaciones listas. Revisalas: las que no sirvan, descartalas o regeneralas.");
+  };
+  async function patchPhoto(photoId: string, body: Record<string, unknown>) {
+    try {
+      const { photo } = await api<{ photo: EditorPhoto }>(`${base}/photos/${photoId}`, { method: "PATCH", body: JSON.stringify(body) });
+      updatePhoto(photo, photoId);
+      return true;
+    } catch (e) {
+      say({ tone: "error", text: e instanceof Error ? e.message : "No pudimos guardar la foto.", section: "fotos" });
+      return false;
+    }
+  }
+  async function spaces(path: string, init: RequestInit, done?: string) {
+    try {
+      applySpaces(await api<SpaceState>(`${base}/espacios${path}`, init));
+      if (done) setMessage({ tone: "notice", text: done });
+      return true;
+    } catch (e) {
+      say({ tone: "error", text: e instanceof Error ? e.message : "No pudimos guardar el espacio.", section: "fotos" });
+      return false;
+    }
   }
 
-  async function upload(files: FileList | File[]) {
+  /** The file as stored (JPEG up to 2048 px); a failed download is said, never shown as done. */
+  async function download(generationId: string, name: string) {
+    setDownloading(generationId);
+    try {
+      const r = await fetch(generationDownloadUrl(generationId, name), { cache: "no-store" });
+      if (!r.ok) throw new Error();
+      const blob = await r.blob();
+      // Only a real image is saved: an error page is never offered as the file.
+      if (!blob.type.startsWith("image/") || !blob.size) throw new Error();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = downloadName(name).full;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      setMessage({ tone: "notice", text: `Descarga lista: ${downloadName(name).full}.` });
+    } catch {
+      say({ tone: "error", text: "No pudimos descargar la imagen. Probá de nuevo.", section: "fotos" });
+    } finally {
+      setDownloading(null);
+    }
+  }
+
+  async function upload(files: FileList | File[], spaceId: string | null = null) {
     const list = Array.from(files).filter((f) => f.type.startsWith("image/"));
     if (!list.length) return;
-    setError("");
-    setNotice("");
+    setMessage(null);
     setUploads(list.map((f) => ({ name: f.name, state: "waiting" })));
     let ok = 0;
+    const added: string[] = [];
+    let spaceProblem = "";
     for (const [i, file] of list.entries()) {
       setUploads((u) => u.map((x, j) => (j === i ? { ...x, state: "uploading" } : x)));
       try {
         const { file: optimized } = await optimizePhoto(file);
         const form = new FormData();
         form.set("image", optimized);
-        await api(`${base}/photos`, { method: "POST", body: form });
+        if (spaceId) form.set("space", spaceId);
+        const made = await api<{ id: string; spaceError?: string | null }>(`${base}/photos`, { method: "POST", body: form });
+        if (made.spaceError) spaceProblem = made.spaceError;
+        added.push(made.id);
         ok++;
         setUploads((u) => u.map((x, j) => (j === i ? { ...x, state: "done" } : x)));
       } catch (e) {
-        const message = e instanceof Error ? e.message : "No pudimos subir la foto.";
-        setUploads((u) => u.map((x, j) => (j === i ? { ...x, state: "error", error: message } : x)));
+        const text = e instanceof Error ? e.message : "No pudimos subir la foto.";
+        setUploads((u) => u.map((x, j) => (j === i ? { ...x, state: "error", error: text } : x)));
       }
     }
-    await load().catch(() => null);
-    if (ok) setNotice(`${ok} ${ok === 1 ? "foto cargada" : "fotos cargadas"}. Indicá el ambiente de cada una.`);
+    // Only the photos are refreshed: drafts elsewhere are kept.
+    try {
+      const fresh = await api<DemoDetail>(base);
+      setDetail((d) => (d ? { ...d, photos: fresh.photos, spaces: fresh.spaces, demo: fresh.demo } : fresh));
+      setIncluded((s) => new Set([...s, ...added]));
+    } catch {
+      /* The next action reloads it. */
+    }
+    if (spaceProblem) say({ tone: "error", text: `Las fotos se guardaron, pero sin espacio: ${spaceProblem}`, section: "fotos" });
+    else if (ok) setMessage({ tone: "notice", text: `${ok} ${ok === 1 ? "foto cargada" : "fotos cargadas"}.` });
     setTimeout(() => setUploads((u) => u.filter((x) => x.state === "error")), 2500);
   }
 
@@ -343,296 +418,186 @@ export function DemoEditor({ id, mode = "admin" }: { id: string; mode?: "admin" 
       to = from + step;
     if (to < 0 || to >= ids.length) return;
     [ids[from], ids[to]] = [ids[to], ids[from]];
-    setDetail({
-      ...detail,
-      photos: ids.map((pid) => detail.photos.find((p) => p.id === pid)!),
-    });
-    await demoAction({ action: "order", ids });
+    setDetail({ ...detail, photos: ids.map((pid) => detail.photos.find((p) => p.id === pid)!) });
+    await run(async () => {
+      const d = await api<DemoDetail>(base, { method: "PATCH", body: JSON.stringify({ action: "order", ids }) });
+      setDetail((cur) => (cur ? { ...cur, photos: d.photos } : d));
+    }, undefined, "fotos");
   }
 
-  if (!detail)
+  if (!detail || !forms)
     return (
       <div className="account-page container dm-page">
-        {error ? (
-          <p className="inline-error" role="alert">
-            {error}
-          </p>
+        {loadError ? (
+          <div className="account-panel" role="alert">
+            <p className="inline-error">{loadError}</p>
+            <button type="button" className="button button-small" onClick={() => (setLoadError(""), void load().catch((e) => setLoadError(e.message)))}>
+              Reintentar
+            </button>
+          </div>
         ) : (
-          <p>Cargando demo…</p>
+          <p role="status">Cargando la propiedad…</p>
         )}
       </div>
     );
 
   const { demo, photos } = detail;
   const live = demo.status === "published";
-  const generating = queue.length > 0;
-  const busyAny = generating || livePhotos.length > 0;
-  // Styles of the demo: the staged ones plus the ones just checked here.
   const type: PropertyType = detail.settings.propertyType;
-  // Only styles that fit the property: an office never offers a living room.
   const typeStyles = DEMO_STYLES[type];
-  const chosen = orderStyles([...detail.styles, ...picked], detail.mainStyle).filter((st) => styleFits(st, type));
-  const main = chosen.includes(detail.mainStyle) ? detail.mainStyle : chosen[0];
-  const pending: Task[] = photos
-    .filter((p) => selected.has(p.id))
-    .flatMap((p) =>
-      chosen.filter((style) => !p.shown[style] && !isLive(p, style)).map((style) => ({ photoId: p.id, style })),
-    );
-  // Opening mode B: a style staged in at least one visible photo (those photos open compared, the rest original).
+  // The property's styles: the ones with a version, plus the ones checked for the batch.
+  const demoStyles = orderStyles([...detail.styles, ...picked], detail.mainStyle).filter((st) => styleFits(st, type));
+  const main = demoStyles.includes(detail.mainStyle) ? detail.mainStyle : demoStyles[0];
+  const canAddStyle = demoStyles.length < MAX_DEMO_STYLES;
+  const batchStyles = demoStyles;
+  const missing = missingTasks(photos, included, batchStyles, staging.waiting);
+  const summary = photoSummary(photos, detail.spaces);
+  const groups = groupBySpace(photos, detail.spaces);
+  const blocked = detail.staging?.blocked ?? null;
   const visiblePhotos = photos.filter((p) => p.visible);
-  const openStyles = chosen.filter((st) => visiblePhotos.some((p) => p.shown[st]));
+  const openStyles = demoStyles.filter((st) => visiblePhotos.some((p) => p.shown[st]));
   const reviewPhoto = review && photos.find((p) => p.id === review.photoId);
-  const reviewGenId = review && reviewPhoto?.shown[review.style];
-  const reviewGen = reviewPhoto?.generations.find((g) => g.id === reviewGenId);
+  const reviewGen = reviewPhoto?.generations.find((g) => g.id === review!.generationId);
+  const absent = missingData(detail.settings, { title: detail.property.title, location: detail.property.location });
 
-  /** The ambientaciones follow the property: other types' styles stop showing (they are not deleted). */
-  async function changeType(next: PropertyType) {
-    await demoAction({ action: "settings", settings: { propertyType: next } }, `Tipo de inmueble: ${PROPERTY_TYPE_NAMES[next]}.`);
-    if (!styleFits(detail!.mainStyle, next))
-      await demoAction({ action: "main-style", style: DEMO_STYLES[next][0].id });
+  function addStyle(style: string) {
+    if (demoStyles.includes(style)) return true;
+    if (!canAddStyle) {
+      say({ tone: "error", text: `Una propiedad admite hasta ${MAX_DEMO_STYLES} estilos.`, section: "fotos" });
+      return false;
+    }
+    const next = [...picked.filter((s) => s !== style), style];
+    setPicked(next);
+    savePicked(demo.id, next);
+    return true;
   }
-
-  async function toggleStyle(style: string, on: boolean) {
+  function toggleBatchStyle(style: string, on: boolean) {
     if (on) {
-      if (chosen.length >= MAX_DEMO_STYLES) {
-        setError(`Una demo admite hasta ${MAX_DEMO_STYLES} estilos.`);
-        return;
-      }
-      const next = [...picked.filter((s) => s !== style), style];
-      setPicked(next);
-      savePicked(demo.id, next);
-      // The first style becomes the main one.
-      if (!chosen.length) await demoAction({ action: "main-style", style });
+      addStyle(style);
       return;
     }
-    const staged = photos.filter((p) => p.shown[style]).length;
-    if (
-      staged &&
-      !window.confirm(
-        `Se quitan de la demo las ${staged} ${staged === 1 ? "foto ambientada" : "fotos ambientadas"} en ${styleName(style)}. Quedan en "Descartadas" por si querés recuperarlas. ¿Continuar?`,
-      )
-    )
-      return;
+    // Unticking only leaves it out of the next batch: versions already created stay.
     const next = picked.filter((s) => s !== style);
     setPicked(next);
     savePicked(demo.id, next);
-    if (staged) await demoAction({ action: "hide-style", style }, `${styleName(style)} ya no se muestra en la demo.`);
-    const rest = chosen.filter((s) => s !== style);
-    if (style === main && rest.length) await demoAction({ action: "main-style", style: rest[0] });
   }
+  const spaceName = (p: EditorPhoto) => detail.spaces.find((s) => s.id === p.spaceId)?.name ?? photoLabel(p);
+
+  const actionsFor = (p: EditorPhoto): CardActions => ({
+    include: (on) =>
+      setIncluded((s) => {
+        const n = new Set(s);
+        if (on) n.add(p.id);
+        else n.delete(p.id);
+        return n;
+      }),
+    patch: (changes) => void patchPhoto(p.id, { changes }),
+    move: (step) => void move(p.id, step),
+    assign: (spaceId) => void spaces("", { method: "PATCH", body: JSON.stringify({ photoIds: [p.id], spaceId }) }),
+    cover: () => void demoAction({ action: "cover", photoId: demo.coverPhotoId === p.id ? null : p.id }, undefined, "fotos"),
+    remove: () => {
+      if (!window.confirm("¿Quitar esta foto de la propiedad? También se borran sus versiones.")) return;
+      void run(async () => {
+        await api(`${base}/photos/${p.id}`, { method: "DELETE" });
+        updatePhoto(null, p.id);
+      }, "Foto eliminada.", "fotos");
+    },
+    create: (style, fresh) => {
+      if (addStyle(style)) void staging.request([{ photoId: p.id, style }], { fresh });
+    },
+    review: (generationId) => setReview({ photoId: p.id, generationId }),
+    download: (generationId, style) => void download(generationId, versionFileName(demo.title, spaceName(p), styleName(style))),
+    discard: (generationId) => void patchPhoto(p.id, { discard: generationId }),
+    restore: (generationId) => void patchPhoto(p.id, { restore: generationId }),
+    approve: (generationId) => void patchPhoto(p.id, { approve: generationId }),
+    retryUncertain: async (generationId, style) => {
+      if (!window.confirm("Se descarta el resultado en revisión y se crea una versión nueva de este estilo. ¿Continuar?")) return;
+      if (await patchPhoto(p.id, { discard: generationId })) void staging.request([{ photoId: p.id, style }], { fresh: true });
+    },
+  });
+
+  const photosSummary = (
+    <>
+      {summary.photos} {summary.photos === 1 ? "foto" : "fotos"}
+      {summary.spaces ? ` · ${summary.spaces} ${summary.spaces === 1 ? "espacio" : "espacios"}` : ""}
+      {summary.unassigned ? ` · ${summary.unassigned} sin organizar` : ""} · {summary.ready}{" "}
+      {summary.ready === 1 ? "versión lista" : "versiones listas"}
+      {summary.running ? ` · ${summary.running} en curso` : ""}
+      {summary.issues ? ` · ${summary.issues} con problemas` : ""}
+    </>
+  );
 
   return (
-    <div className="account-page container dm-page">
-      <Link href={agencyMode ? "/panel/propiedades" : "/admin/demos"} className="text-link">
-        {agencyMode ? "← Mis propiedades" : "← Demos comerciales"}
-      </Link>
-      <div className="dm-heading">
-        <div>
-          <span className="eyebrow">{demo.agencyName}</span>
-          <h1>
-            {demo.title}
-            <span className="accent">.</span>
-          </h1>
-          <p>
-            <StatusChip status={demo.status} /> {demo.photos} {demo.photos === 1 ? "foto" : "fotos"} ·{" "}
-            {demo.staged} {demo.staged === 1 ? "ambientada" : "ambientadas"}
-          </p>
-        </div>
-        <div className="dm-heading-actions">
-          <Link
-            href={agencyMode ? `/panel/propiedades/${id}/vista-previa` : `/admin/demos/${id}/vista-previa`}
-            className="button button-outline"
-          >
-            <Eye size={17} /> Vista previa
-          </Link>
-          <button
-            type="button"
-            className={`button ${live ? "button-outline" : "button-primary"}`}
-            disabled={busy}
-            onClick={() =>
-              void run(async () => {
-                const next = await api<DemoDetail>(base, { method: "PATCH", body: JSON.stringify({ action: live ? "unpublish" : "publish" }) });
-                apply(next);
-                // Counted once the server confirmed it.
-                if (agencyMode) track(live ? "property_unpublished" : "property_published", { property_id: demo.id, photos: demo.photos, staged: demo.staged });
-              }, live
-                ? `${agencyMode ? "Ficha despublicada" : "Demo despublicada"}: el enlace dejó de estar disponible.`
-                : `${agencyMode ? "Ficha publicada" : "Demo publicada"}. Ya podés compartir el enlace.`)
-            }
-          >
-            {live ? "Despublicar" : agencyMode ? "Publicar ficha" : "Publicar demo"}
-          </button>
-        </div>
-      </div>
-      {agencyMode && (
-        <nav className="dm-local-nav" aria-label="Secciones de la propiedad">
-          <a href="#datos">1. Datos</a>
-          <a href="#fotos">2. Fotos y ambientación</a>
-          <a href="#compartir">3. Revisar y compartir</a>
-        </nav>
-      )}
-      {error && (
-        <p className="inline-error" role="alert">
-          {error}
-        </p>
-      )}
-      {notice && (
-        <p className="inline-notice" role="status">
-          {notice}
-        </p>
-      )}
-
-      <section className="account-panel dm-review" aria-labelledby="dm-review-title-2">
-        <div className="dm-styles-head">
+    <div className="account-page container dm-page ed-page">
+      <header className="ed-header">
+        <Link href={backTo} className="text-link">
+          ← {backTo.startsWith("/panel") ? "Mis propiedades" : backTo.startsWith("/admin/demos") ? "Demos" : "Inmobiliarias"}
+        </Link>
+        <div className="ed-header-row">
           <div>
-            <h2 id="dm-review-title-2">{agencyMode ? "Revisar antes de publicar" : "Antes de compartir"}</h2>
-            <p className="dm-help">
-              {detail.settings.reviewedAt
-                ? `Revisada contra la publicación el ${new Date(detail.settings.reviewedAt).toLocaleDateString("es-AR")}.`
-                : "Todavía sin revisar contra la publicación original."}{" "}
-              {agencyMode ? "Solo lo ven las personas de tu inmobiliaria." : "Solo lo ve el equipo."}
+            <span className="eyebrow">{demo.agencyName}</span>
+            <h1>
+              {demo.title}
+              <span className="accent">.</span>
+            </h1>
+            <p className="ed-header-meta">
+              <StatusChip status={demo.status} />{" "}
+              <span role="status">
+                {staging.busy || livePhotos.length
+                  ? "Creando versiones…"
+                  : dirtyAny
+                    ? "Hay cambios sin guardar"
+                    : busy
+                      ? "Guardando…"
+                      : "Todo guardado"}
+              </span>
             </p>
           </div>
-          <div className="dm-review-actions">
+          <div className="dm-heading-actions">
+            <Link href={agencyMode ? `/panel/propiedades/${id}/vista-previa` : `/admin/demos/${id}/vista-previa`} className="button button-outline">
+              <Eye size={17} /> Vista previa
+            </Link>
             <button
               type="button"
-              className="button button-small button-outline"
-              disabled={busy || !detail.property.listing_url}
+              className={`button ${live ? "button-outline" : "button-primary"}`}
+              disabled={busy}
               onClick={() =>
-                run(async () => {
-                  setReread(await api<Reread>(`${base}/publicacion`));
-                })
+                void run(
+                  async () => {
+                    apply(await api<DemoDetail>(base, { method: "PATCH", body: JSON.stringify({ action: live ? "unpublish" : "publish" }) }));
+                    // Counted once the server confirmed it.
+                    if (agencyMode) track(live ? "property_unpublished" : "property_published", { property_id: demo.id, photos: demo.photos, staged: demo.staged });
+                  },
+                  live
+                    ? `${agencyMode ? "Ficha despublicada" : "Demo despublicada"}: el enlace dejó de estar disponible.`
+                    : `${agencyMode ? "Ficha publicada" : "Demo publicada"}. Ya podés compartir el enlace.`,
+                  "publicacion",
+                )
               }
             >
-              Completar desde la publicación
-            </button>
-            <button
-              type="button"
-              className="button button-small"
-              disabled={busy || !detail.settingsReady}
-              onClick={() => demoAction({ action: "settings", settings: { reviewedAt: "now" } }, "Marcada como revisada hoy.")}
-            >
-              Marcar como revisada
+              {live ? "Despublicar" : agencyMode ? "Publicar ficha" : "Publicar demo"}
             </button>
           </div>
         </div>
-        {!detail.settingsReady && <MigrationNote />}
-        {detail.warnings.length > 0 ? (
-          <ul className="dm-warnings">
-            {detail.warnings.map((w) => (
-              <li key={w}>{w}</li>
-            ))}
-          </ul>
-        ) : (
-          <p className="inline-notice">Todo listo para compartir.</p>
-        )}
-        {reread && (
-          <ListingSync
-            reread={reread}
-            detail={detail}
-            base={base}
-            busy={busy}
-            onClose={() => setReread(null)}
-            onDone={(d, done) => {
-              apply(d);
-              setReread(null);
-              setNotice(done);
-            }}
-          />
-        )}
-      </section>
-
-      <section className="account-panel dm-styles-panel" aria-labelledby="dm-styles-title">
-        <div className="dm-styles-head">
-          <div>
-            <h2 id="dm-styles-title">{agencyMode ? "Estilos para ambientar" : "Estilos de la demo"}</h2>
-            <label className="dm-select dm-type">
-              Tipo de inmueble
-              <select
-                value={type}
-                disabled={busy || busyAny || !detail.settingsReady}
-                onChange={(e) => void changeType(e.target.value as PropertyType)}
-              >
-                {(Object.keys(PROPERTY_TYPE_NAMES) as PropertyType[]).map((t) => (
-                  <option key={t} value={t}>
-                    {PROPERTY_TYPE_NAMES[t]}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <p className="dm-help">
-              Elegí qué estilos va a ver la inmobiliaria en cada foto. El principal se usa de portada y
-              en la vista previa de WhatsApp: la primera foto, mitad original y mitad ambientada.
-            </p>
-          </div>
-          <span className="dm-styles-count">
-            {chosen.length} de {MAX_DEMO_STYLES}
-          </span>
-        </div>
-        <ul className="dm-styles">
-          {typeStyles.map((st) => {
-            const on = chosen.includes(st.id);
-            return (
-              <li key={st.id} className={on ? "is-on" : ""}>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={on}
-                    disabled={busy || busyAny}
-                    onChange={(e) => void toggleStyle(st.id, e.target.checked)}
-                  />
-                  <span className="dm-style-swatch" style={{ background: st.color }} aria-hidden="true" />
-                  {st.name}
-                </label>
-                {on && (
-                  <button
-                    type="button"
-                    className={`dm-main ${st.id === main ? "is-main" : ""}`}
-                    aria-pressed={st.id === main}
-                    disabled={busy || st.id === main}
-                    onClick={() =>
-                      demoAction({ action: "main-style", style: st.id }, `${st.name} es ahora el estilo principal.`)
-                    }
-                  >
-                    <Star size={13} /> {st.id === main ? "Principal" : "Hacer principal"}
-                  </button>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-        <div className="dm-styles-foot">
-          <p className="dm-help">
-            {chosen.length
-              ? `${selected.size} ${selected.size === 1 ? "foto marcada" : "fotos marcadas"} × ${chosen.length} ${chosen.length === 1 ? "estilo" : "estilos"}. Se ambientan de a una.`
-              : "Elegí al menos un estilo para ambientar las fotos."}
-          </p>
-          <button
-            type="button"
-            className="button button-primary"
-            disabled={!pending.length || busyAny}
-            onClick={() => void generate(pending)}
-          >
-            {generating ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />}
-            {generating
-              ? `Ambientando… quedan ${queue.length}`
-              : pending.length
-                ? `Ambientar ${pending.length} ${pending.length === 1 ? "imagen pendiente" : "imágenes pendientes"}`
-                : "Todo ambientado"}
+      </header>
+      {message && (
+        <p className={message.tone === "error" ? "inline-error" : "inline-notice"} role={message.tone === "error" ? "alert" : "status"}>
+          {message.text}
+          <button type="button" className="icon-button ed-dismiss" aria-label="Cerrar mensaje" onClick={() => setMessage(null)}>
+            <X size={14} />
           </button>
-        </div>
-      </section>
+        </p>
+      )}
 
-      <div className="dm-editor">
-        <section className="account-panel dm-photos" id="fotos" aria-labelledby="dm-photos-title">
-          <h2 id="dm-photos-title">Fotos de la propiedad</h2>
-          <p className="dm-help">
-            Las originales se conservan sin cambios. Cada foto marcada se ambienta en los estilos de la
-            demo: la IA mantiene encuadre, paredes, aberturas y pisos, pero revisá cada versión antes de
-            publicar.
+      <Fold id="fotos" title="Fotos y espacios" summary={photosSummary} open={open.has("fotos")} onToggle={() => toggle("fotos")}>
+        {blocked && (
+          <p className="inline-error" role="note">
+            {blocked} Desde acá podés ver y descargar lo creado.
           </p>
+        )}
+        <div className="ed-photo-tools">
           <label
-            className={`dm-drop ${dragging ? "is-dragging" : ""}`}
+            className={`dm-drop ed-drop ${dragging ? "is-dragging" : ""}`}
             onDragOver={(e) => {
               e.preventDefault();
               setDragging(true);
@@ -644,11 +609,10 @@ export function DemoEditor({ id, mode = "admin" }: { id: string; mode?: "admin" 
               void upload(e.dataTransfer.files);
             }}
           >
-            <ImagePlus size={26} aria-hidden="true" />
+            <ImagePlus size={20} aria-hidden="true" />
             <span>
-              <strong>Arrastrá las fotos acá</strong> o tocá para elegirlas
+              <strong>Agregar fotos</strong> (arrastrá o tocá) · JPG, PNG o WebP de hasta 10 MB
             </span>
-            <small>JPG, PNG o WebP de hasta 10 MB. Se optimizan antes de subir.</small>
             <input
               type="file"
               accept="image/jpeg,image/png,image/webp"
@@ -659,221 +623,502 @@ export function DemoEditor({ id, mode = "admin" }: { id: string; mode?: "admin" 
               }}
             />
           </label>
-          {uploads.length > 0 && (
-            <ul className="dm-uploads" aria-live="polite">
-              {uploads.map((u, i) => (
-                <li key={`${u.name}-${i}`} className={`is-${u.state}`}>
-                  {u.state === "uploading" && <Loader2 size={15} className="spin" />}
-                  {u.state === "done" && <Check size={15} />}
-                  {u.state === "error" && <X size={15} />}
-                  <span>{u.name}</span>
-                  {u.error && <em>{u.error}</em>}
-                </li>
-              ))}
-            </ul>
+          {detail.spacesReady ? (
+            <NewSpace
+              disabled={busy}
+              onCreate={(name, roomType) => spaces("", { method: "POST", body: JSON.stringify({ name, roomType }) }, `Espacio «${name.trim()}» creado.`)}
+            />
+          ) : (
+            <p className="dm-help">Para organizar por espacios falta aplicar la migración 202610310001_property_spaces.sql.</p>
           )}
+        </div>
+        {uploads.length > 0 && (
+          <ul className="dm-uploads" aria-live="polite">
+            {uploads.map((u, i) => (
+              <li key={`${u.name}-${i}`} className={`is-${u.state}`}>
+                {u.state === "uploading" && <Loader2 size={15} className="spin" />}
+                {u.state === "done" && <Check size={15} />}
+                {u.state === "error" && <X size={15} />}
+                <span>{u.name}</span>
+                {u.error && <em>{u.error}</em>}
+              </li>
+            ))}
+          </ul>
+        )}
 
-          {photos.length > 0 && (
-            <div className="dm-batch">
-              <label className="checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={selected.size === photos.length}
-                  disabled={generating}
-                  onChange={(e) =>
-                    setSelected(e.target.checked ? new Set(photos.map((p) => p.id)) : new Set())
-                  }
-                />
-                Ambientar todas
-              </label>
-              <span className="dm-help">Destildá las que se muestran como son (baños, fachadas, planos).</span>
-            </div>
-          )}
-
-          {!photos.length && <p className="dm-empty-photos">Todavía no cargaste fotos.</p>}
-          <ol className="dm-photo-list">
-            {photos.map((p, i) => {
-              const discarded = p.generations.filter((g) => p.discarded.includes(g.id));
-              const busyPhoto = isLive(p) || queue.some((t) => t.photoId === p.id);
-              const cover = demo.cover?.id === p.id;
-              const mainVersion = p.shown[main];
-              return (
-                <li key={p.id} className={`dm-photo ${p.visible ? "" : "is-hidden"}`}>
-                  <div className="dm-photo-head">
+        {photos.length > 0 && (
+          <div className="ed-batch" role="region" aria-label="Crear en lote">
+            <div className="ed-batch-styles">
+              <span className="ed-batch-label">Lote · estilos</span>
+              {typeStyles.map((st) => {
+                const on = batchStyles.includes(st.id);
+                const hasVersions = detail.styles.includes(st.id);
+                return (
+                  <label key={st.id} className={`ed-chip ${on ? "is-on" : ""}`}>
                     <input
                       type="checkbox"
-                      aria-label={`Ambientar ${photoLabel(p)}`}
-                      title="Ambientar esta foto"
-                      checked={selected.has(p.id)}
-                      disabled={generating}
-                      onChange={(e) => {
-                        const next = new Set(selected);
-                        if (e.target.checked) next.add(p.id);
-                        else next.delete(p.id);
-                        setSelected(next);
-                      }}
+                      checked={on}
+                      disabled={(!on && !canAddStyle) || (on && hasVersions)}
+                      title={on && hasVersions ? "Ya tiene versiones: queda en la propiedad (se quita desde Publicación)" : undefined}
+                      onChange={(e) => toggleBatchStyle(st.id, e.target.checked)}
                     />
-                    <span className="dm-photo-index">{i + 1}</span>
-                    <div className="dm-photo-thumb">
-                      <img
-                        src={mainVersion ? adminGenerationUrl(mainVersion, 480) : adminPhotoUrl(p.id, null, 480)}
-                        alt={photoLabel(p)}
-                        loading="lazy"
-                      />
-                      <div className="dm-badges">
-                        {cover && <span>Portada</span>}
-                        {!selected.has(p.id) && <span className="is-muted">Sin ambientar</span>}
-                        {!p.visible && <span className="is-muted">Oculta</span>}
-                      </div>
-                    </div>
-                    <div className="dm-photo-fields">
-                      <label hidden={type === "office"}>
-                        Ambiente
-                        <select
-                          value={p.room}
-                          disabled={busyPhoto}
-                          onChange={(e) => patchPhoto(p.id, { changes: { room: e.target.value } })}
-                        >
-                          {rooms.map((r) => (
-                            <option key={r.id} value={r.id}>
-                              {r.name}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label>
-                        Nombre visible
-                        <input
-                          defaultValue={p.label ?? ""}
-                          placeholder={roomName(p.room)}
-                          maxLength={80}
-                          onBlur={(e) => {
-                            if ((p.label ?? "") !== e.target.value.trim())
-                              void patchPhoto(p.id, { changes: { label: e.target.value } });
-                          }}
-                        />
-                      </label>
-                      <label>
-                        Operación
-                        <select
-                          value={p.mode}
-                          disabled={busyPhoto}
-                          onChange={(e) => patchPhoto(p.id, { changes: { mode: e.target.value } })}
-                        >
-                          <option value="furnish">Amoblar (vacío)</option>
-                          <option value="redesign">Rediseñar (con muebles)</option>
-                        </select>
-                      </label>
-                    </div>
-                  </div>
-                  <div className="dm-photo-actions">
+                    <span className="dm-style-swatch" style={{ background: st.color }} aria-hidden="true" />
+                    {st.name}
+                  </label>
+                );
+              })}
+            </div>
+            <div className="ed-batch-foot">
+              <span>
+                {included.size} {included.size === 1 ? "foto incluida" : "fotos incluidas"} · {missing.length}{" "}
+                {missing.length === 1 ? "versión faltante" : "versiones faltantes"} · máx. {MAX_DEMO_STYLES} estilos
+                {staging.queue.length || staging.current
+                  ? ` · ${staging.queue.length + (staging.current ? 1 : 0)} en esta pestaña (si la cerrás, solo sigue la que se está creando)`
+                  : ""}
+              </span>
+              <span className="ed-batch-buttons">
+                <button type="button" className="text-link" onClick={() => setIncluded(new Set(photos.map((p) => p.id)))}>
+                  Incluir todas
+                </button>
+                <button type="button" className="text-link" onClick={() => setIncluded(new Set())}>
+                  Ninguna
+                </button>
+                {staging.queue.length > 0 && (
+                  <button
+                    type="button"
+                    className="text-link"
+                    onClick={() => {
+                      const n = staging.cancelPending();
+                      setMessage({ tone: "notice", text: `${n} ${n === 1 ? "versión pendiente quitada" : "versiones pendientes quitadas"}; la que se está creando sigue.` });
+                    }}
+                  >
+                    Quitar pendientes
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="button button-primary"
+                  disabled={!missing.length || staging.starting || Boolean(blocked)}
+                  onClick={() => void staging.request(missing)}
+                >
+                  {staging.starting ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />}
+                  {missing.length ? `Crear ${missing.length} ${missing.length === 1 ? "versión faltante" : "versiones faltantes"}` : "Nada faltante en el lote"}
+                </button>
+              </span>
+            </div>
+          </div>
+        )}
+
+        {detail.spaces.length > 0 && (
+          <div className="ed-organize">
+            <button type="button" className="text-link" aria-pressed={organizing} onClick={() => (setOrganizing((v) => !v), setToMove(new Set()))}>
+              {organizing ? "Terminar de organizar" : "Organizar varias fotos"}
+            </button>
+            {organizing && (
+              <span className="ed-organize-bar">
+                {toMove.size} elegidas · mover a
+                <select value={moveTarget} onChange={(e) => setMoveTarget(e.target.value)} aria-label="Espacio de destino">
+                  <option value="">Sin organizar</option>
+                  {detail.spaces.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="button button-small"
+                  disabled={!toMove.size}
+                  onClick={async () => {
+                    if (await spaces("", { method: "PATCH", body: JSON.stringify({ photoIds: [...toMove], spaceId: moveTarget || null }) }, "Fotos movidas."))
+                      setToMove(new Set());
+                  }}
+                >
+                  Mover
+                </button>
+              </span>
+            )}
+          </div>
+        )}
+
+        {!photos.length && <p className="dm-empty-photos">Todavía no hay fotos. Agregalas arriba o dentro de un espacio.</p>}
+        {groups.map((g, gi) => (
+          <div key={g.space?.id ?? "loose"} className="ed-space">
+            {(detail.spaces.length > 0 || g.space) && (
+              <SpaceHeader
+                space={g.space}
+                count={g.photos.length}
+                first={gi === 0}
+                last={!g.space || gi === detail.spaces.length - 1}
+                spaces={detail.spaces}
+                onRename={(name) => g.space && void spaces(`/${g.space.id}`, { method: "PATCH", body: JSON.stringify({ name }) })}
+                onType={(roomType) => g.space && void spaces(`/${g.space.id}`, { method: "PATCH", body: JSON.stringify({ roomType }) })}
+                onMove={(step) => {
+                  const ids = detail.spaces.map((s) => s.id);
+                  const from = ids.indexOf(g.space!.id);
+                  const to = from + step;
+                  if (to < 0 || to >= ids.length) return;
+                  [ids[from], ids[to]] = [ids[to], ids[from]];
+                  void spaces("", { method: "PATCH", body: JSON.stringify({ order: ids }) });
+                }}
+                onDelete={(moveTo) =>
+                  g.space &&
+                  void spaces(
+                    `/${g.space.id}${moveTo ? `?destino=${moveTo}` : ""}`,
+                    { method: "DELETE" },
+                    `Espacio eliminado; sus fotos quedaron en ${moveTo ? detail.spaces.find((s) => s.id === moveTo)?.name : "Sin organizar"}.`,
+                  )
+                }
+                onUpload={(files) => void upload(files, g.space?.id ?? null)}
+                onIncludeAll={() => setIncluded((s) => new Set([...s, ...g.photos.map((p) => p.id)]))}
+              />
+            )}
+            <ol className="pc-list">
+              {g.photos.map((p) => (
+                <PhotoCard
+                  key={p.id}
+                  photo={p}
+                  index={photos.indexOf(p)}
+                  total={photos.length}
+                  spaces={detail.spaces}
+                  propertyType={type}
+                  demoStyles={demoStyles}
+                  compatibleStyles={typeStyles}
+                  canAddStyle={canAddStyle}
+                  isCover={demo.cover?.id === p.id}
+                  included={included.has(p.id)}
+                  waiting={staging.waiting}
+                  blocked={blocked}
+                  downloading={downloading}
+                  organizing={organizing}
+                  organizeSelected={toMove.has(p.id)}
+                  onOrganizeSelect={(on) =>
+                    setToMove((s) => {
+                      const n = new Set(s);
+                      if (on) n.add(p.id);
+                      else n.delete(p.id);
+                      return n;
+                    })
+                  }
+                  actions={actionsFor(p)}
+                  mainStyle={main}
+                />
+              ))}
+            </ol>
+          </div>
+        ))}
+        <p className="dm-help">
+          Agrupar fotos en un espacio ordena la ficha; cada foto se crea por separado, así que los muebles pueden variar entre ángulos
+          del mismo espacio. Las descargas son JPEG de hasta 2048 px y no consumen créditos.
+        </p>
+      </Fold>
+
+      <Fold
+        id="datos"
+        title="Datos de la propiedad"
+        summary={absent.length ? `Falta: ${absent.join(", ")}` : "Completos"}
+        open={open.has("datos")}
+        onToggle={() => toggle("datos")}
+        dirty={formsDirty ? formsDirty.property || formsDirty.title || dirtyParts.has("datos") : false}
+      >
+        <label className="dm-select dm-type">
+          Tipo de inmueble
+          <select
+            value={type}
+            disabled={busy || staging.busy || livePhotos.length > 0 || !detail.settingsReady}
+            onChange={(e) => void demoAction({ action: "settings", settings: { propertyType: e.target.value } }, `Tipo de inmueble: ${PROPERTY_TYPE_NAMES[e.target.value as PropertyType]}.`, "datos")}
+          >
+            {(Object.keys(PROPERTY_TYPE_NAMES) as PropertyType[]).map((t) => (
+              <option key={t} value={t}>
+                {PROPERTY_TYPE_NAMES[t]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <p className="dm-help">
+          Cambiar el tipo no borra ni renombra versiones: las de estilos del otro tipo quedan guardadas (se ven y descargan desde cada foto) pero no se
+          muestran en la ficha.
+        </p>
+        <form
+          className="ed-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void run(async () => {
+              await api(base, { method: "PATCH", body: JSON.stringify({ action: "property", property: forms.property }) });
+              saved(await api<DemoDetail>(base), ["property"]);
+            }, "Propiedad guardada.", "datos");
+          }}
+        >
+          <PropertyFields value={forms.property} onChange={(property) => setForms({ ...forms, property })} />
+          <button className="button button-small" disabled={busy || !formsDirty || !formsDirty.property}>
+            Guardar propiedad
+          </button>
+        </form>
+        <form
+          className="dm-inline-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void run(async () => saved(await api<DemoDetail>(base, { method: "PATCH", body: JSON.stringify({ action: "demo", title: forms.title }) }), ["title"]), "Título guardado.", "datos");
+          }}
+        >
+          <label className="dm-wide">
+            Título que se muestra <small>(vacío usa el de la propiedad)</small>
+            <input value={forms.title} maxLength={160} placeholder={detail.property.title} onChange={(e) => setForms({ ...forms, title: e.target.value })} />
+          </label>
+          <button className="button button-small" disabled={busy || !formsDirty || !formsDirty.title}>
+            Guardar título
+          </button>
+        </form>
+        {!detail.settingsReady && <MigrationNote />}
+        <ListingForm
+          parts={["datos"]}
+          settings={detail.settings}
+          disabled={busy || !detail.settingsReady}
+          onSave={saveSettings("datos")}
+          onDirty={partHandlers.datos}
+          saveLabel="Guardar datos"
+        />
+      </Fold>
+
+      <Fold
+        id="mapa"
+        title="Ubicación y mapa"
+        summary={MAP_SUMMARY[detail.settings.map.precision]}
+        open={open.has("mapa")}
+        onToggle={() => toggle("mapa")}
+        dirty={dirtyParts.has("mapa")}
+      >
+        <ListingForm parts={["mapa"]} settings={detail.settings} disabled={busy || !detail.settingsReady} onSave={saveSettings("mapa")} onDirty={partHandlers.mapa} saveLabel="Guardar mapa" />
+      </Fold>
+
+      <Fold
+        id="condiciones"
+        title="Características y condiciones"
+        summary={`${detail.settings.facts.length} datos con íconos · ${detail.settings.amenities.length} grupos de características`}
+        open={open.has("condiciones")}
+        onToggle={() => toggle("condiciones")}
+        dirty={dirtyParts.has("condiciones")}
+      >
+        <ListingForm
+          parts={["condiciones"]}
+          settings={detail.settings}
+          disabled={busy || !detail.settingsReady}
+          onSave={saveSettings("condiciones")}
+          onDirty={partHandlers.condiciones}
+          saveLabel="Guardar características"
+        />
+      </Fold>
+
+      <Fold
+        id="marca"
+        title="Marca y contacto"
+        summary={
+          detail.settings.agent?.name
+            ? `Agente: ${detail.settings.agent.name}`
+            : detail.branding.contactKind && detail.branding.contactValue
+              ? "Contacto de la inmobiliaria"
+              : "Sin contacto para consultas"
+        }
+        open={open.has("marca")}
+        onToggle={() => toggle("marca")}
+        dirty={dirtyParts.has("contacto") || (formsDirty ? formsDirty.agency || formsDirty.brand : false)}
+      >
+        {agencyMode ? (
+          <p className="dm-help">
+            El logo, los colores y el canal de consultas de la inmobiliaria se cambian en <Link href="/panel/sitio">Mi sitio web</Link> (solo el dueño).
+            Acá podés asignar el agente de esta propiedad.
+          </p>
+        ) : (
+          <AgencyBrand
+            detail={detail}
+            forms={forms}
+            setForms={setForms}
+            busy={busy}
+            base={base}
+            run={run}
+            onSaved={(d) => saved(d, ["agency", "brand"])}
+            reload={load}
+          />
+        )}
+        <ListingForm
+          parts={["contacto"]}
+          settings={detail.settings}
+          disabled={busy || !detail.settingsReady}
+          onSave={saveSettings("marca")}
+          onDirty={partHandlers.contacto}
+          saveLabel="Guardar agente"
+        />
+      </Fold>
+
+      <Fold
+        id="publicacion"
+        title="Publicación y compartir"
+        summary={`${live ? "Publicada" : "Borrador"}${detail.warnings.length ? ` · ${detail.warnings.length} ${detail.warnings.length === 1 ? "aviso" : "avisos"}` : ""}`}
+        open={open.has("publicacion")}
+        onToggle={() => toggle("publicacion")}
+        dirty={dirtyParts.has("compartir")}
+      >
+        <div className="ed-publish">
+          <div>
+            <h3>{agencyMode ? "Revisar antes de publicar" : "Antes de compartir"}</h3>
+            <p className="dm-help">
+              {detail.settings.reviewedAt
+                ? `Revisada contra la publicación el ${new Date(detail.settings.reviewedAt).toLocaleDateString("es-AR")}.`
+                : "Todavía sin revisar contra la publicación original."}{" "}
+              {agencyMode ? "Solo lo ven las personas de tu inmobiliaria." : "Solo lo ve el equipo."}
+            </p>
+            <div className="dm-review-actions">
+              <button
+                type="button"
+                className="button button-small button-outline"
+                disabled={busy || !detail.property.listing_url}
+                onClick={() => run(async () => setReread(await api<Reread>(`${base}/publicacion`)), undefined, "publicacion")}
+              >
+                Completar desde la publicación
+              </button>
+              <button
+                type="button"
+                className="button button-small"
+                disabled={busy || !detail.settingsReady}
+                onClick={() => demoAction({ action: "settings", settings: { reviewedAt: "now" } }, "Marcada como revisada hoy.", "publicacion")}
+              >
+                Marcar como revisada
+              </button>
+            </div>
+            {detail.warnings.length > 0 ? (
+              <ul className="dm-warnings">
+                {detail.warnings.map((w) => (
+                  <li key={w}>{w}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="inline-notice">Todo listo para compartir.</p>
+            )}
+            {reread && (
+              <ListingSync
+                reread={reread}
+                detail={detail}
+                base={base}
+                busy={busy}
+                onClose={() => setReread(null)}
+                onDone={(d, done) => {
+                  apply(d);
+                  setReread(null);
+                  setMessage({ tone: "notice", text: done });
+                }}
+              />
+            )}
+
+            <h3>Estilos que ve el comprador</h3>
+            {detail.styles.length ? (
+              <ul className="ed-buyer-styles">
+                {orderStyles(detail.styles, detail.mainStyle).map((st) => (
+                  <li key={st}>
+                    <span>
+                      {styleName(st)}
+                      {!styleFits(st, type) && <small> · de otro tipo de inmueble, no se muestra</small>}
+                    </span>
                     <button
                       type="button"
-                      className="icon-button"
-                      aria-label="Subir"
-                      disabled={i === 0 || busy}
-                      onClick={() => move(p.id, -1)}
+                      className={`dm-main ${st === detail.mainStyle ? "is-main" : ""}`}
+                      aria-pressed={st === detail.mainStyle}
+                      disabled={busy || st === detail.mainStyle}
+                      onClick={() => demoAction({ action: "main-style", style: st }, `${styleName(st)} es ahora el estilo principal.`, "publicacion")}
                     >
-                      <ArrowUp size={18} />
+                      <Star size={13} /> {st === detail.mainStyle ? "Principal" : "Hacer principal"}
                     </button>
                     <button
                       type="button"
-                      className="icon-button"
-                      aria-label="Bajar"
-                      disabled={i === photos.length - 1 || busy}
-                      onClick={() => move(p.id, 1)}
-                    >
-                      <ArrowDown size={18} />
-                    </button>
-                    <button
-                      type="button"
-                      className="icon-button"
-                      aria-label={p.visible ? "Ocultar en la demo" : "Mostrar en la demo"}
-                      title={p.visible ? "Ocultar en la demo" : "Mostrar en la demo"}
-                      onClick={() => patchPhoto(p.id, { changes: { visible: !p.visible } })}
-                    >
-                      {p.visible ? <Eye size={18} /> : <EyeOff size={18} />}
-                    </button>
-                    <button
-                      type="button"
-                      className={`icon-button ${demo.coverPhotoId === p.id ? "is-on" : ""}`}
-                      aria-label="Usar como portada"
-                      aria-pressed={demo.coverPhotoId === p.id}
-                      title="Usar como portada"
+                      className="text-link"
                       disabled={busy}
                       onClick={() =>
-                        demoAction({
-                          action: "cover",
-                          photoId: demo.coverPhotoId === p.id ? null : p.id,
-                        })
+                        window.confirm(`Las versiones en ${styleName(st)} dejan de mostrarse en la ficha (quedan en el historial de cada foto). ¿Continuar?`) &&
+                        demoAction({ action: "hide-style", style: st }, `${styleName(st)} ya no se muestra en la ficha.`, "publicacion")
                       }
                     >
-                      <Star size={18} />
+                      Quitar de la ficha
                     </button>
-                    <button
-                      type="button"
-                      className="icon-button dm-danger"
-                      aria-label="Eliminar foto"
-                      disabled={busyPhoto}
-                      onClick={() =>
-                        window.confirm("¿Quitar esta foto de la demo? También se borran sus propuestas.") &&
-                        run(async () => {
-                          await api(`${base}/photos/${p.id}`, { method: "DELETE" });
-                          updatePhoto(null, p.id);
-                        }, "Foto eliminada.")
-                      }
-                    >
-                      <Trash2 size={18} />
-                    </button>
-                  </div>
-                  {chosen.length > 0 && selected.has(p.id) && (
-                    <div className="dm-proposals">
-                      <span className="dm-proposals-title">Estilos</span>
-                      <ul>
-                        {chosen.map((style) => (
-                          <StyleCell
-                            key={style}
-                            photo={p}
-                            style={style}
-                            queued={queue.some((t) => t.photoId === p.id && t.style === style)}
-                            disabled={busyAny}
-                            onOpen={() => setReview({ photoId: p.id, style })}
-                            onStage={() => void generate([{ photoId: p.id, style }])}
-                          />
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  {discarded.length > 0 && (
-                    <details className="dm-discarded">
-                      <summary>Descartadas ({discarded.length})</summary>
-                      <ul>
-                        {discarded.map((g) => (
-                          <li key={g.id}>
-                            {g.status === "succeeded" && (
-                              <img src={adminGenerationUrl(g.id, 480)} alt="" loading="lazy" />
-                            )}
-                            <button
-                              type="button"
-                              className="button button-small button-outline"
-                              onClick={() => patchPhoto(p.id, { restore: g.id })}
-                            >
-                              <Undo2 size={14} /> Recuperar
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    </details>
-                  )}
-                </li>
-              );
-            })}
-          </ol>
-        </section>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="dm-help">Todavía no hay versiones creadas.</p>
+            )}
 
-        <aside className="dm-side">
-          <section className="account-panel" id="compartir">
-            <h2>Compartir</h2>
+            <h3>Al abrir la ficha</h3>
+            {!detail.settingsReady && <MigrationNote />}
+            <div className="dm-choice dm-choice-column" role="radiogroup" aria-label="Modo de apertura">
+              <label>
+                <input
+                  type="radio"
+                  name="open-mode"
+                  checked={detail.settings.openMode === "original"}
+                  disabled={busy || !detail.settingsReady}
+                  onChange={() => demoAction({ action: "settings", settings: { openMode: "original" } }, "Guardado.", "publicacion")}
+                />
+                Foto original (recomendado)
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  name="open-mode"
+                  checked={detail.settings.openMode === "styled"}
+                  disabled={busy || !detail.settingsReady || !openStyles.length}
+                  onChange={() =>
+                    demoAction(
+                      { action: "settings", settings: { openMode: "styled", openStyle: detail.settings.openStyle ?? openStyles[0] } },
+                      "Guardado.",
+                      "publicacion",
+                    )
+                  }
+                />
+                Ambientación predeterminada
+              </label>
+            </div>
+            {detail.settings.openMode === "styled" && (
+              <label className="dm-select">
+                Estilo al abrir
+                <select
+                  value={openStyles.includes(detail.settings.openStyle ?? "") ? detail.settings.openStyle! : ""}
+                  disabled={busy}
+                  onChange={(e) => demoAction({ action: "settings", settings: { openStyle: e.target.value } }, "Guardado.", "publicacion")}
+                >
+                  {!openStyles.includes(detail.settings.openStyle ?? "") && <option value="">Elegí un estilo…</option>}
+                  {openStyles.map((st) => (
+                    <option key={st} value={st}>
+                      {styleName(st)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <p className="dm-help">
+              {openStyles.length
+                ? "Con ambientación, cada foto que tenga versiones abre comparada (mitad original y mitad creada) en este estilo; las demás, con la original."
+                : "Para abrir con una ambientación, primero creá al menos una versión de una foto visible."}
+            </p>
+            {!agencyMode && (
+              <label className="checkbox-label dm-check">
+                <input
+                  type="checkbox"
+                  checked={detail.settings.banner}
+                  disabled={busy || !detail.settingsReady}
+                  onChange={(e) => demoAction({ action: "settings", settings: { banner: e.target.checked } }, "Guardado.", "publicacion")}
+                />
+                Mostrar «Demo preparada para {demo.agencyName} · Por habita.» en el enlace de presentación
+              </label>
+            )}
+            <ListingForm
+              parts={["compartir"]}
+              settings={detail.settings}
+              disabled={busy || !detail.settingsReady}
+              onSave={saveSettings("publicacion")}
+              onDirty={partHandlers.compartir}
+              saveLabel="Guardar textos"
+            />
+          </div>
+          <aside className="ed-share" id="compartir">
+            <h3>Compartir</h3>
             {live && agencyMode ? (
               <>
                 <label className="dm-link-label">
@@ -892,8 +1137,8 @@ export function DemoEditor({ id, mode = "admin" }: { id: string; mode?: "admin" 
                     className="button button-small"
                     onClick={async () => {
                       const outcome = await shareLink(publicLink(demo.token), demo.title, demo.id);
-                      if (outcome === "copied") setNotice("Enlace copiado.");
-                      else if (outcome === "failed") setError("No pudimos copiar el enlace: seleccionalo en el campo y copialo.");
+                      if (outcome === "copied") setMessage({ tone: "notice", text: "Enlace copiado." });
+                      else if (outcome === "failed") say({ tone: "error", text: "No pudimos copiar el enlace: seleccionalo en el campo y copialo." });
                     }}
                   >
                     Compartir
@@ -914,12 +1159,7 @@ export function DemoEditor({ id, mode = "admin" }: { id: string; mode?: "admin" 
               <>
                 <label className="dm-link-label">
                   Para presentar a la inmobiliaria {detail.settings.banner ? "(con la franja de la demo)" : ""}
-                  <input
-                    className="dm-link"
-                    readOnly
-                    value={publicLink(demo.token, true)}
-                    onFocus={(e) => e.target.select()}
-                  />
+                  <input className="dm-link" readOnly value={publicLink(demo.token, true)} onFocus={(e) => e.target.select()} />
                 </label>
                 <label className="dm-link-label">
                   Para compradores (sin franja ni marcas de habita)
@@ -928,315 +1168,48 @@ export function DemoEditor({ id, mode = "admin" }: { id: string; mode?: "admin" 
                 <div className="dm-share">
                   <ShareButtons demo={demo} />
                 </div>
-                <p className="dm-help">WhatsApp envía a la inmobiliaria los dos enlaces.</p>
               </>
             ) : (
-              <p className="dm-help">
-                Es un borrador: nadie puede verla. Publicala para obtener el enlace.
-              </p>
+              <p className="dm-help">Es un borrador: nadie puede verla. Publicala para obtener el enlace.</p>
             )}
             {!agencyMode && <ClaimLink base={base} busy={busy} />}
             <LinkPreview demo={demo} location={detail.property.location} />
-            <p className="dm-help">
-              Así se verá el enlace en WhatsApp: la portada, mitad original y mitad en el estilo principal.
-            </p>
+            <p className="dm-help">Así se verá el enlace en WhatsApp: la portada, mitad original y mitad en el estilo principal.</p>
             {live && (
               <button
                 type="button"
                 className="text-link dm-rotate"
                 disabled={busy}
                 onClick={() =>
-                  window.confirm(
-                    "El enlace actual dejará de funcionar y vas a tener que enviar el nuevo. ¿Continuar?",
-                  ) && demoAction({ action: "token" }, "Enlace nuevo generado; el anterior ya no funciona.")
+                  window.confirm("El enlace actual dejará de funcionar y vas a tener que enviar el nuevo. ¿Continuar?") &&
+                  demoAction({ action: "token" }, "Enlace nuevo generado; el anterior ya no funciona.", "publicacion")
                 }
               >
                 <RefreshCw size={14} /> Generar un enlace nuevo
               </button>
             )}
-          </section>
-          <section className="account-panel">
-            <h2>Al abrir la demo</h2>
-            {!detail.settingsReady && <MigrationNote />}
-            <div className="dm-choice dm-choice-column" role="radiogroup" aria-label="Modo de apertura">
-              <label>
-                <input
-                  type="radio"
-                  name="open-mode"
-                  checked={detail.settings.openMode === "original"}
-                  disabled={busy || !detail.settingsReady}
-                  onChange={() => demoAction({ action: "settings", settings: { openMode: "original" } }, "Guardado.")}
-                />
-                Foto original (recomendado)
-              </label>
-              <label>
-                <input
-                  type="radio"
-                  name="open-mode"
-                  checked={detail.settings.openMode === "styled"}
-                  disabled={busy || !detail.settingsReady || !openStyles.length}
-                  onChange={() =>
-                    demoAction(
-                      { action: "settings", settings: { openMode: "styled", openStyle: detail.settings.openStyle ?? openStyles[0] } },
-                      "Guardado.",
-                    )
-                  }
-                />
-                Ambientación predeterminada
-              </label>
-            </div>
-            {detail.settings.openMode === "styled" && (
-              <label className="dm-select">
-                Estilo de la primera foto
-                <select
-                  value={openStyles.includes(detail.settings.openStyle ?? "") ? detail.settings.openStyle! : ""}
-                  disabled={busy}
-                  onChange={(e) => demoAction({ action: "settings", settings: { openStyle: e.target.value } }, "Guardado.")}
-                >
-                  {!openStyles.includes(detail.settings.openStyle ?? "") && <option value="">Elegí un estilo…</option>}
-                  {openStyles.map((st) => (
-                    <option key={st} value={st}>
-                      {styleName(st)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-            <p className="dm-help">
-              {openStyles.length
-                ? "Con ambientación, cada foto que tenga ambientaciones abre comparada: mitad original y mitad ambientada, con la barra al medio, en este estilo (o el último que eligió el comprador). Las fotos sin ambientaciones abren con la original."
-                : "Para abrir con una ambientación, primero ambientá al menos una foto visible (en «2. Fotos y ambientación»)."}
-            </p>
-            {!agencyMode && (
-            <label className="checkbox-label dm-check">
-              <input
-                type="checkbox"
-                checked={detail.settings.banner}
-                disabled={busy || !detail.settingsReady}
-                onChange={(e) => demoAction({ action: "settings", settings: { banner: e.target.checked } }, "Guardado.")}
-              />
-              Mostrar «Demo preparada para {demo.agencyName} · Por habita.» en el enlace de presentación
-            </label>
-            )}
-            <p className="dm-help">Estos ajustes son privados: el comprador nunca los ve.</p>
-          </section>
-          <section className="account-panel">
-            <h2>Título de la demo</h2>
-            <form
-              className="dm-inline-form"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void demoAction({ action: "demo", title }, "Título guardado.");
-              }}
-            >
-              <input
-                value={title}
-                maxLength={160}
-                placeholder={detail.property.title}
-                onChange={(e) => setTitle(e.target.value)}
-                aria-label="Título de la demo"
-              />
-              <button className="button button-small" disabled={busy}>
-                Guardar
-              </button>
-            </form>
-            <p className="dm-help">Vacío usa el título de la propiedad.</p>
-          </section>
-          {!agencyMode && (
-          <section className="account-panel">
-            <h2>Inmobiliaria</h2>
-            {!detail.settingsReady && <MigrationNote />}
-            <div className="dm-logo">
-              {detail.branding.logo ? (
-                <img src={detail.branding.logo} alt={`Logo de ${demo.agencyName}`} />
-              ) : (
-                <span className="dm-logo-empty">Sin logo: se muestra el nombre</span>
-              )}
-              <div className="dm-logo-actions">
-                <label className="button button-small button-outline">
-                  {detail.branding.logo ? "Cambiar logo" : "Subir logo"}
-                  <input
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp,image/svg+xml"
-                    className="dm-hidden-input"
-                    disabled={busy || !detail.settingsReady}
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      e.target.value = "";
-                      if (!file) return;
-                      const form = new FormData();
-                      form.set("logo", file);
-                      void run(async () => {
-                        await api(`${base}/logo`, { method: "POST", body: form });
-                        await load();
-                      }, "Logo guardado.");
-                    }}
-                  />
-                </label>
-                {detail.branding.logo && (
-                  <button
-                    type="button"
-                    className="text-link"
-                    disabled={busy}
-                    onClick={() =>
-                      run(async () => {
-                        await api(`${base}/logo`, { method: "DELETE" });
-                        await load();
-                      }, "Logo quitado.")
-                    }
-                  >
-                    Quitar
-                  </button>
-                )}
-              </div>
-            </div>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                void run(async () => {
-                  await api(base, { method: "PATCH", body: JSON.stringify({ action: "agency", agency }) });
-                  if (detail.settingsReady)
-                    await api(base, { method: "PATCH", body: JSON.stringify({ action: "branding", branding: brand }) });
-                  await load();
-                }, "Inmobiliaria guardada.");
-              }}
-            >
-              <AgencyFields value={agency} onChange={setAgency} />
-              <div className="dm-fields">
-                <label>
-                  Color principal <small>(botones)</small>
-                  <span className="dm-color">
-                    <input
-                      type="color"
-                      value={brand.primary || "#1f3a5f"}
-                      onChange={(e) => setBrand({ ...brand, primary: e.target.value })}
-                      aria-label="Color principal"
-                    />
-                    <input
-                      value={brand.primary}
-                      placeholder="#1f3a5f"
-                      maxLength={7}
-                      onChange={(e) => setBrand({ ...brand, primary: e.target.value })}
-                    />
-                  </span>
-                </label>
-                <label>
-                  Color secundario <small>(selección y etiquetas)</small>
-                  <span className="dm-color">
-                    <input
-                      type="color"
-                      value={brand.accent || "#6f8f5a"}
-                      onChange={(e) => setBrand({ ...brand, accent: e.target.value })}
-                      aria-label="Color secundario"
-                    />
-                    <input
-                      value={brand.accent}
-                      placeholder="#6f8f5a"
-                      maxLength={7}
-                      onChange={(e) => setBrand({ ...brand, accent: e.target.value })}
-                    />
-                  </span>
-                </label>
-                <label>
-                  Tipografía de títulos
-                  <select
-                    value={brand.titleFont}
-                    onChange={(e) => setBrand({ ...brand, titleFont: e.target.value as "sans" | "serif" })}
-                  >
-                    <option value="sans">Sin serif (moderna)</option>
-                    <option value="serif">Con serif (clásica)</option>
-                  </select>
-                </label>
-                <label>
-                  Cómo la contactan los compradores
-                  <select
-                    value={brand.contactKind}
-                    onChange={(e) => setBrand({ ...brand, contactKind: e.target.value as typeof brand.contactKind })}
-                  >
-                    {Object.entries(CONTACT_LABELS).map(([k, [label]]) => (
-                      <option key={k} value={k}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="dm-wide">
-                  {CONTACT_LABELS[brand.contactKind][0]} <small>(el mismo canal que usa en su sitio)</small>
-                  <input
-                    value={brand.contactValue}
-                    maxLength={300}
-                    placeholder={CONTACT_LABELS[brand.contactKind][1]}
-                    onChange={(e) => setBrand({ ...brand, contactValue: e.target.value })}
-                  />
-                </label>
-                <label className="dm-wide">
-                  Enlace para coordinar visitas <small>(opcional: solo si existe)</small>
-                  <input
-                    value={brand.visitUrl}
-                    maxLength={300}
-                    inputMode="url"
-                    placeholder="https://…"
-                    onChange={(e) => setBrand({ ...brand, visitUrl: e.target.value })}
-                  />
-                </label>
-              </div>
-              <p className="dm-help">
-                «Consultar a {demo.agencyName}» usa este canal. Con WhatsApp se prepara un mensaje con la
-                propiedad; el comprador decide enviarlo. Sin contacto cargado, el botón no aparece.
-              </p>
-              <button className="button button-small" disabled={busy}>
-                Guardar inmobiliaria
-              </button>
-            </form>
-          </section>
-          )}
-          <section className="account-panel">
-            <h2>Propiedad</h2>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                void run(async () => {
-                  await api(base, { method: "PATCH", body: JSON.stringify({ action: "property", property }) });
-                  await load();
-                }, "Propiedad guardada.");
-              }}
-            >
-              <PropertyFields value={property} onChange={setProperty} />
-              <button className="button button-small" disabled={busy}>
-                Guardar propiedad
-              </button>
-            </form>
-          </section>
-        </aside>
-      </div>
+          </aside>
+        </div>
+      </Fold>
 
-      <section className="account-panel dm-listing-panel" id="datos" aria-labelledby="dm-listing-title">
-        <h2 id="dm-listing-title">Ficha de la propiedad</h2>
-        <p className="dm-help">
-          Todo lo que el comprador ve además de las fotos. Copiá los datos de la publicación original; los campos
-          vacíos no se muestran.
-        </p>
-        {!detail.settingsReady && <MigrationNote />}
-        <ListingForm
-          settings={detail.settings}
-          disabled={busy || !detail.settingsReady}
-          onSave={(settings) => demoAction({ action: "settings", settings }, "Ficha guardada.")}
-        />
-      </section>
-
-      {reviewPhoto && reviewGen && review && (
+      {reviewPhoto && reviewGen && (
         <Review
           photo={reviewPhoto}
           g={reviewGen}
-          busy={busyAny}
+          shown={reviewPhoto.shown[reviewGen.style] === reviewGen.id}
+          blocked={blocked}
+          downloading={downloading === reviewGen.id}
           onClose={() => setReview(null)}
+          onDownload={() => void download(reviewGen.id, versionFileName(demo.title, spaceName(reviewPhoto), styleName(reviewGen.style)))}
+          onShow={async () => {
+            await patchPhoto(reviewPhoto.id, { approve: reviewGen.id });
+          }}
           onDiscard={async () => {
-            await patchPhoto(reviewPhoto.id, { discard: reviewGen.id });
-            setReview(null);
+            if (await patchPhoto(reviewPhoto.id, { discard: reviewGen.id })) setReview(null);
           }}
           onRegenerate={() => {
             setReview(null);
-            void generate([{ photoId: reviewPhoto.id, style: review.style }]);
+            void staging.request([{ photoId: reviewPhoto.id, style: reviewGen.style }], { fresh: true });
           }}
         />
       )}
@@ -1244,101 +1217,188 @@ export function DemoEditor({ id, mode = "admin" }: { id: string; mode?: "admin" 
   );
 }
 
-/** Natural width/height of an image, once loaded. */
-function useImageRatio(url: string | null) {
-  const [ratio, setRatio] = useState<number | null>(null);
-  useEffect(() => {
-    if (!url) return;
-    const img = new Image();
-    img.onload = () => img.naturalHeight && setRatio(img.naturalWidth / img.naturalHeight);
-    img.src = url;
-  }, [url]);
-  return url ? ratio : null;
-}
-
-/** One style of one photo: its version, or where it stands. */
-function StyleCell({
-  photo,
-  style,
-  queued,
-  disabled,
-  onOpen,
-  onStage,
+/** The team's fields about the agency: identity, private notes, logo, colors and the inquiries channel. */
+function AgencyBrand({
+  detail,
+  forms,
+  setForms,
+  busy,
+  base,
+  run,
+  onSaved,
+  reload,
 }: {
-  photo: EditorPhoto;
-  style: string;
-  queued: boolean;
-  disabled: boolean;
-  onOpen: () => void;
-  onStage: () => void;
+  detail: DemoDetail;
+  forms: ReturnType<typeof formsOf>;
+  setForms: (f: ReturnType<typeof formsOf>) => void;
+  busy: boolean;
+  base: string;
+  run: (task: () => Promise<void>, done?: string, section?: Section) => Promise<boolean>;
+  onSaved: (d: DemoDetail) => void;
+  reload: () => Promise<void>;
 }) {
-  const shown = photo.shown[style];
-  const last = photo.generations.find((g) => g.style === style && !photo.discarded.includes(g.id));
-  // A version framed differently from the original cannot be compared cleanly.
-  const originalRatio = useImageRatio(shown ? adminPhotoUrl(photo.id, null, 480) : null);
-  const stagedRatio = useImageRatio(shown ? adminGenerationUrl(shown, 480) : null);
-  const mismatch =
-    originalRatio && stagedRatio ? Math.abs(stagedRatio - originalRatio) / originalRatio > 0.03 : false;
-  const running = queued || (last ? liveStatus(last) : false);
-  const failed = !running && !shown && last && ["failed", "needs_review"].includes(last.status);
+  const brand = forms.brand;
+  const setBrand = (b: typeof brand) => setForms({ ...forms, brand: b });
+  const name = detail.demo.agencyName;
   return (
-    <li className={`dm-proposal ${shown ? "is-approved" : ""} ${failed ? `is-${last!.status}` : ""}`}>
-      {shown && !running ? (
-        <button type="button" onClick={onOpen} aria-label={`Revisar ${styleName(style)}`}>
-          <img src={adminGenerationUrl(shown, 480)} alt="" loading="lazy" />
-        </button>
-      ) : (
-        <div className="dm-proposal-wait">
-          {running && <Loader2 size={18} className="spin" />}
-          <span>{running ? (queued && !last ? "En cola" : "Ambientando…") : failed ? generationNote(last!) : "Sin ambientar"}</span>
+    <>
+      {!detail.settingsReady && <MigrationNote />}
+      <div className="dm-logo">
+        {detail.branding.logo ? <img src={detail.branding.logo} alt={`Logo de ${name}`} /> : <span className="dm-logo-empty">Sin logo: se muestra el nombre</span>}
+        <div className="dm-logo-actions">
+          <label className="button button-small button-outline">
+            {detail.branding.logo ? "Cambiar logo" : "Subir logo"}
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/svg+xml"
+              className="dm-hidden-input"
+              disabled={busy || !detail.settingsReady}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (!file) return;
+                const form = new FormData();
+                form.set("logo", file);
+                void run(async () => {
+                  await api(`${base}/logo`, { method: "POST", body: form });
+                  await reload();
+                }, "Logo guardado.", "marca");
+              }}
+            />
+          </label>
+          {detail.branding.logo && (
+            <button
+              type="button"
+              className="text-link"
+              disabled={busy}
+              onClick={() =>
+                run(async () => {
+                  await api(`${base}/logo`, { method: "DELETE" });
+                  await reload();
+                }, "Logo quitado.", "marca")
+              }
+            >
+              Quitar
+            </button>
+          )}
         </div>
-      )}
-      {mismatch && (
-        <span className="dm-cell-warn" role="note">
-          Encuadre distinto al original: revisalo antes de publicar.
-        </span>
-      )}
-      <small className="dm-cell-foot">
-        <strong>{styleName(style)}</strong>
-        {!running && (
-          <button type="button" className="text-link" disabled={!shown && disabled} onClick={shown ? onOpen : onStage}>
-            {shown ? "Revisar" : failed ? "Reintentar" : "Ambientar"}
-          </button>
-        )}
-      </small>
-    </li>
+      </div>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          void run(async () => {
+            await api(base, { method: "PATCH", body: JSON.stringify({ action: "agency", agency: forms.agency }) });
+            if (detail.settingsReady) await api(base, { method: "PATCH", body: JSON.stringify({ action: "branding", branding: brand }) });
+            onSaved(await api<DemoDetail>(base));
+          }, "Inmobiliaria guardada.", "marca");
+        }}
+      >
+        <AgencyFields value={forms.agency} onChange={(agency) => setForms({ ...forms, agency })} />
+        <div className="dm-fields">
+          <label>
+            Color principal <small>(botones)</small>
+            <span className="dm-color">
+              <input type="color" value={brand.primary || "#1f3a5f"} onChange={(e) => setBrand({ ...brand, primary: e.target.value })} aria-label="Color principal" />
+              <input value={brand.primary} placeholder="#1f3a5f" maxLength={7} onChange={(e) => setBrand({ ...brand, primary: e.target.value })} />
+            </span>
+          </label>
+          <label>
+            Color secundario <small>(selección y etiquetas)</small>
+            <span className="dm-color">
+              <input type="color" value={brand.accent || "#6f8f5a"} onChange={(e) => setBrand({ ...brand, accent: e.target.value })} aria-label="Color secundario" />
+              <input value={brand.accent} placeholder="#6f8f5a" maxLength={7} onChange={(e) => setBrand({ ...brand, accent: e.target.value })} />
+            </span>
+          </label>
+          <label>
+            Tipografía de títulos
+            <select value={brand.titleFont} onChange={(e) => setBrand({ ...brand, titleFont: e.target.value as "sans" | "serif" })}>
+              <option value="sans">Sin serif (moderna)</option>
+              <option value="serif">Con serif (clásica)</option>
+            </select>
+          </label>
+          <label>
+            Cómo la contactan los compradores
+            <select value={brand.contactKind} onChange={(e) => setBrand({ ...brand, contactKind: e.target.value as typeof brand.contactKind })}>
+              {Object.entries(CONTACT_LABELS).map(([k, [label]]) => (
+                <option key={k} value={k}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="dm-wide">
+            {CONTACT_LABELS[brand.contactKind][0]} <small>(el mismo canal que usa en su sitio)</small>
+            <input value={brand.contactValue} maxLength={300} placeholder={CONTACT_LABELS[brand.contactKind][1]} onChange={(e) => setBrand({ ...brand, contactValue: e.target.value })} />
+          </label>
+          <label className="dm-wide">
+            Enlace para coordinar visitas <small>(opcional: solo si existe)</small>
+            <input value={brand.visitUrl} maxLength={300} inputMode="url" placeholder="https://…" onChange={(e) => setBrand({ ...brand, visitUrl: e.target.value })} />
+          </label>
+        </div>
+        <p className="dm-help">
+          «Consultar a {name}» usa este canal. Con WhatsApp se prepara un mensaje con la propiedad; el comprador decide enviarlo. Sin contacto cargado, el
+          botón no aparece.
+        </p>
+        <button className="button button-small" disabled={busy}>
+          Guardar inmobiliaria
+        </button>
+      </form>
+    </>
   );
 }
 
+/** One created version, large: compare, download, choose it for the listing, discard or create another. Closing saves nothing. */
 function Review({
   photo,
   g,
-  busy,
+  shown,
+  blocked,
+  downloading,
   onClose,
+  onDownload,
+  onShow,
   onDiscard,
   onRegenerate,
 }: {
   photo: EditorPhoto;
   g: GenerationRow;
-  busy: boolean;
+  shown: boolean;
+  blocked: string | null;
+  downloading: boolean;
   onClose: () => void;
+  onDownload: () => void;
+  onShow: () => Promise<void>;
   onDiscard: () => Promise<void>;
   onRegenerate: () => void;
 }) {
   const close = useRef<HTMLButtonElement>(null);
   const [saving, setSaving] = useState(false);
+  const discarded = photo.discarded.includes(g.id);
   useEffect(() => {
+    const before = document.activeElement as HTMLElement | null;
     close.current?.focus();
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      before?.focus?.();
+    };
   }, [onClose]);
+  const act = async (f: () => Promise<void>) => {
+    setSaving(true);
+    try {
+      await f();
+    } finally {
+      setSaving(false);
+    }
+  };
   return (
     <div className="dm-modal" role="dialog" aria-modal="true" aria-labelledby="dm-review-title" onClick={onClose}>
       <div className="dm-modal-card" onClick={(e) => e.stopPropagation()}>
         <div className="dm-modal-head">
           <h2 id="dm-review-title">
             {photoLabel(photo)} · {styleName(g.style)}
+            <small className="ed-review-state">{discarded ? "Descartada" : shown ? "Se muestra en la ficha" : "Guardada, no se muestra"}</small>
           </h2>
           <button ref={close} type="button" className="icon-button" aria-label="Cerrar" onClick={onClose}>
             <X size={20} />
@@ -1349,36 +1409,33 @@ function Review({
           after={adminGenerationUrl(g.id, 1600)}
           beforeLabel="Foto original"
           beforeAlt="Foto original"
-          afterLabel={`Ambientación ${styleName(g.style)}`}
-          alt="Ambientación con IA"
+          afterLabel={`Versión ${styleName(g.style)}`}
+          alt="Versión creada con IA"
           initial={50}
         />
         <p className="dm-help">
-          Esta versión se muestra en la demo. Comprobá que paredes, puertas, ventanas, pisos, dimensiones y
-          vistas sigan iguales y que no aparezcan características que la propiedad no tiene. Si algo
-          cambió, descartala (vuelve la versión anterior de este estilo, si hay) o regenerala.
+          Comprobá que paredes, puertas, ventanas, pisos, dimensiones y vistas sigan iguales y que no aparezcan características que la propiedad no
+          tiene. La descarga es un JPEG de hasta 2048 px.
         </p>
         <div className="dm-modal-actions">
-          <button
-            type="button"
-            className="button button-outline"
-            disabled={saving}
-            onClick={async () => {
-              setSaving(true);
-              await onDiscard();
-              setSaving(false);
-            }}
-          >
-            <Trash2 size={16} /> Descartar
+          <button type="button" className="button button-outline" disabled={downloading} onClick={onDownload}>
+            {downloading ? <Loader2 size={16} className="spin" /> : null} Descargar
           </button>
-          <button type="button" className="button button-outline" disabled={saving || busy} onClick={onRegenerate}>
-            <RefreshCw size={16} /> Regenerar
+          {!shown && !discarded && (
+            <button type="button" className="button button-outline" disabled={saving} onClick={() => act(onShow)}>
+              <Check size={16} /> Mostrar esta en la ficha
+            </button>
+          )}
+          {!discarded && (
+            <button type="button" className="button button-outline" disabled={saving} onClick={() => act(onDiscard)}>
+              <Trash2 size={16} /> Descartar
+            </button>
+          )}
+          <button type="button" className="button button-outline" disabled={saving || Boolean(blocked)} title={blocked ?? undefined} onClick={onRegenerate}>
+            <RefreshCw size={16} /> Crear otra versión
           </button>
-          <a className="button button-outline" href={adminGenerationUrl(g.id, 2048)} download={`habita-${styleName(g.style).toLowerCase()}.jpg`}>
-            Descargar
-          </a>
           <button type="button" className="button button-primary" onClick={onClose}>
-            <Check size={16} /> Se ve bien
+            Cerrar
           </button>
         </div>
       </div>

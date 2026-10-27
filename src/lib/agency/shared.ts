@@ -25,10 +25,19 @@ export type PanelProperty = {
   id: string;
   title: string;
   location: string | null;
+  /** The agency's own reference for the listing, if entered. */
+  reference: string | null;
+  /** Where it was created: by the team (admin) or by the agency in its panel. Not whether it is a demo. */
+  origin: "admin" | "agency";
   price: string | null;
   operation: string | null;
   photos: number;
+  /** Photos with at least one ready version. */
   staged: number;
+  /** Versions by their real state: ready (created), active (queued or running), issues (failed or uncertain). */
+  versions: { ready: number; active: number; issues: number };
+  /** Spaces it is organized in; null when unknown. */
+  spaces: number | null;
   status: "draft" | "published";
   token: string;
   coverPhotoId: string | null;
@@ -84,4 +93,35 @@ export const validSlug = (s: unknown): s is string =>
  */
 export function propertyLink(origin: string, p: { token: string }, site?: { slug: string | null; sitePublished: boolean }) {
   return site?.slug && site.sitePublished ? `${origin}${agencyPropertyPath(site.slug, p.token)}` : `${origin}/demo/${p.token}`;
+}
+
+export const ORIGIN_LABEL: Record<PanelProperty["origin"], string> = {
+  admin: "Creada por el equipo",
+  agency: "Creada por la inmobiliaria",
+};
+
+/** The one most useful thing to do next with a property, from its real state. */
+export function nextAction(p: Pick<PanelProperty, "photos" | "versions" | "staged" | "status">): {
+  label: string;
+  section: "fotos" | "publicacion";
+} {
+  if (!p.photos) return { label: "Agregar fotos", section: "fotos" };
+  if (p.versions.active) return { label: "Ver progreso", section: "fotos" };
+  if (p.versions.issues) return { label: "Revisar fallos", section: "fotos" };
+  if (!p.staged) return { label: "Crear versiones", section: "fotos" };
+  if (p.status === "draft") return { label: "Revisar y publicar", section: "publicacion" };
+  return { label: "Compartir", section: "publicacion" };
+}
+
+/** A path inside the panel or the admin to come back to; anything else (other sites, protocol-relative) is refused. */
+export function safeReturn(raw: string | null | undefined, fallback: string) {
+  if (!raw || raw.length > 600) return fallback;
+  if (!raw.startsWith("/") || raw.startsWith("//") || raw.includes("\\")) return fallback;
+  if (!/^\/(panel|admin)(\/|\?|$)/.test(raw)) return fallback;
+  try {
+    const url = new URL(raw, "https://x.local");
+    return url.origin === "https://x.local" ? `${url.pathname}${url.search}` : fallback;
+  } catch {
+    return fallback;
+  }
 }

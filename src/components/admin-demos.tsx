@@ -485,11 +485,11 @@ export function PropertyFields({
  * returns the photos found, imported here one by one so progress is visible
  * and the order of the listing is kept.
  */
-export function NewDemoForm() {
+export function NewDemoForm({ agencyId: fixedAgency = null }: { agencyId?: string | null } = {}) {
   const router = useRouter();
   const [agencies, setAgencies] = useState<AgencyRow[] | null>(null);
-  const [mode, setMode] = useState<"existing" | "new">("new");
-  const [agencyId, setAgencyId] = useState("");
+  const [mode, setMode] = useState<"existing" | "new">(fixedAgency ? "existing" : "new");
+  const [agencyId, setAgencyId] = useState(fixedAgency ?? "");
   const [agency, setAgency] = useState(emptyAgency);
   const [property, setProperty] = useState(emptyProperty);
   const [error, setError] = useState("");
@@ -499,6 +499,7 @@ export function NewDemoForm() {
       .then((d) => {
         setAgencies(d.agencies);
         if (d.agencies.length) setMode("existing");
+        if (fixedAgency && !d.agencies.some((a) => a.id === fixedAgency)) setError("No encontramos esa inmobiliaria. Elegila de la lista.");
       })
       .catch((e) => setError(e.message));
   }, []);
@@ -521,14 +522,20 @@ export function NewDemoForm() {
   }
   return (
     <div className="account-page container dm-page dm-narrow">
-      <Link href="/admin/demos" className="text-link">
-        ← Demos comerciales
+      <Link href={fixedAgency ? `/admin/inmobiliarias/${fixedAgency}` : "/admin/inmobiliarias"} className="text-link">
+        ← {fixedAgency ? "Volver a la inmobiliaria" : "Inmobiliarias"}
       </Link>
       <h1>
-        Nueva demo<span className="accent">.</span>
+        {fixedAgency ? "Agregar propiedad" : "Nueva demo"}
+        <span className="accent">.</span>
       </h1>
+      {fixedAgency && agencies && (
+        <p className="inline-notice">
+          Se agrega a <strong>{agencies.find((a) => a.id === fixedAgency)?.name ?? "la inmobiliaria elegida"}</strong>.
+        </p>
+      )}
       <p>Pegá la URL de la ficha y la armamos sola, o cargá los datos a mano.</p>
-      <ImportFromListing />
+      <ImportFromListing agencyId={fixedAgency} />
       <h2 className="dm-or">O a mano</h2>
       <p className="dm-help">Primero la inmobiliaria y la propiedad. Las fotos se cargan en el paso siguiente.</p>
       {error && (

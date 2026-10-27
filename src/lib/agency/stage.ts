@@ -2,17 +2,19 @@
 // database (owner, invitations, published properties). Pure: shared with
 // the browser.
 
-export type AgencyStage = "no-account" | "invited" | "account" | "live";
+export type AgencyStage = "no-account" | "invited" | "claimed" | "own-account" | "live";
 
 export const STAGE_LABEL: Record<AgencyStage, string> = {
   "no-account": "Sin cuenta",
-  invited: "Invitación pendiente",
-  account: "Cuenta reclamada",
+  // Created (and maybe copied): whether it was sent or read is not known.
+  invited: "Invitación creada, sin aceptar",
+  claimed: "Cuenta reclamada",
+  "own-account": "Cuenta creada por la inmobiliaria",
   live: "Primera propiedad publicada",
 };
 
-export function agencyStage(a: { hasOwner: boolean; liveClaimExpires: string | null; published: number }): AgencyStage {
-  if (a.hasOwner) return a.published > 0 ? "live" : "account";
+export function agencyStage(a: { hasOwner: boolean; claimedAt?: string | null; liveClaimExpires: string | null; published: number }): AgencyStage {
+  if (a.hasOwner) return a.published > 0 ? "live" : a.claimedAt ? "claimed" : "own-account";
   return a.liveClaimExpires ? "invited" : "no-account";
 }
 
@@ -45,6 +47,10 @@ export type AdminAgencyRow = {
   review: number;
   liveClaimExpires: string | null;
   lastClaimAt: string | null;
+  /** The owner's balance; null: no owner yet or unknown (never shown as 0). */
+  available: number | null;
+  /** Free credits waiting for the agency to accept its invitation; null: unknown. */
+  reserved: number | null;
 };
 
 export type AdminAgencyDetail = {

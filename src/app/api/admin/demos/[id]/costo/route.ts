@@ -1,6 +1,6 @@
 import { failure, HttpError } from "@/lib/commerce/http";
 import { agencyCredits } from "@/lib/agency/panel";
-import { requireDemoAccess } from "@/lib/agency/server";
+import { requireDemoAccess, stagingRule } from "@/lib/agency/server";
 import { readJson } from "@/lib/demos/input";
 import { isUuid } from "@/lib/demos/shared";
 import { adminClient } from "@/lib/supabase/server";
@@ -23,12 +23,15 @@ type Project = {
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const { demo, admin, billingUser } = await requireDemoAccess(request, id);
+    const access = await requireDemoAccess(request, id);
+    const { demo, billingUser } = access;
     const body = await readJson(request, 8192);
     const ids = (Array.isArray(body.photoIds) ? body.photoIds : []).filter(isUuid).slice(0, 100);
+    // The same rule as the reservation: an admin who owns the agency pays like its owner.
+    const rule = stagingRule(access);
     if (!billingUser)
       return Response.json({ payer: "team", credits: null, newPhotos: 0, cost: 0, blocked: null }, { headers: { "Cache-Control": "private, no-store" } });
-    if (admin) throw new HttpError(409, "Esta inmobiliaria ya tiene su cuenta: las ambientaciones se crean desde su panel.");
+    if (rule.blocked) throw new HttpError(409, rule.blocked);
     const db = adminClient();
     const { data: photos, error } = await db.from("demo_photos").select("id,project_id").eq("property_id", demo.property_id).in("id", ids);
     if (error) throw new Error("COST_PHOTOS_FAILED");

@@ -66,6 +66,24 @@ export async function requireDemoAccess(request: Request | undefined, demoId: st
 }
 export type DemoAccess = Awaited<ReturnType<typeof requireDemoAccess>>;
 
+/** Why the team cannot stage an agency's photos from the admin panel. */
+export const TEAM_ON_AGENCY = "Esta inmobiliaria ya tiene su cuenta: las ambientaciones se crean desde su panel, con sus créditos.";
+
+/**
+ * Who pays a new version of a property's photo, and whether this account may
+ * create it here. The quote, the reservation and the editor use this same
+ * rule: the team stages demos of agencies without an account (free); an
+ * agency with an account pays with its owner's credits, and the team never
+ * spends them, unless the team member is that owner.
+ */
+export function stagingRule(access: Pick<DemoAccess, "actor" | "admin" | "billingUser">) {
+  if (!access.billingUser) return { payer: "team" as const, blocked: null };
+  return {
+    payer: "agency" as const,
+    blocked: access.admin && access.billingUser !== access.actor.id ? TEAM_ON_AGENCY : null,
+  };
+}
+
 /**
  * The agency a demo photo or a proposal belongs to, for the panel's image
  * route: members only see their own agency's pictures.

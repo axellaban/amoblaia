@@ -24,7 +24,7 @@ import { ApiError, api } from "./admin-demos";
 import { ImportPreview, MapReview, exceptions, initialMapChoice, mapOverride, syncPhotos, type MapChoice } from "./demo-import";
 import { track } from "@/lib/analytics";
 import { shareLink } from "@/lib/agency/share";
-import { agencySitePath, propertyLink, type PanelImport, type PanelProperty, type PanelSummary } from "@/lib/agency/shared";
+import { agencySitePath, nextAction, propertyLink, type PanelImport, type PanelProperty, type PanelSummary } from "@/lib/agency/shared";
 import type { ImportedDemo } from "@/lib/demos/import";
 import { adminPhotoUrl } from "@/lib/demos/shared";
 
@@ -202,7 +202,7 @@ function PanelHome({ data, reload }: { data: PanelSummary; reload: () => Promise
         {data.properties.length ? (
           <div className="ap-grid">
             {data.properties.map((p) => (
-              <PropertyCard key={p.id} property={p} agency={data.agency} reload={reload} canDelete={data.role === "owner"} />
+              <PropertyCard key={p.id} property={p} agency={data.agency} reload={reload} canDelete={data.role === "owner"} backTo="/panel" />
             ))}
           </div>
         ) : (
@@ -326,31 +326,61 @@ function PropertiesSection({ data, reload }: { data: PanelSummary; reload: () =>
     },
     [params, pathname, router],
   );
+  // Each request has a number: an older answer that arrives late is ignored and its fetch cancelled.
+  const seq = useRef(0);
+  const inflight = useRef<AbortController | null>(null);
   const load = useCallback(async () => {
     const query = new URLSearchParams({ pagina: String(page), por: String(PER_PAGE) });
     if (q) query.set("q", q);
     if (status) query.set("estado", status);
     if (operation) query.set("operacion", operation);
+    const n = ++seq.current;
+    inflight.current?.abort();
+    const ctrl = new AbortController();
+    inflight.current = ctrl;
     try {
-      setResult(await api<{ items: PanelProperty[]; total: number }>(`/api/panel/propiedades?${query}`));
+      const data = await api<{ items: PanelProperty[]; total: number }>(`/api/panel/propiedades?${query}`, { signal: ctrl.signal });
+      if (n !== seq.current) return;
+      setResult(data);
       setError("");
     } catch (e) {
+      if (n !== seq.current || ctrl.signal.aborted) return;
       setError(message(e, "No pudimos cargar tus propiedades."));
     }
   }, [page, q, status, operation]);
   useEffect(() => {
     void load();
+    return () => inflight.current?.abort();
   }, [load]);
+  // The search box follows the URL (back/forward, links), unless it is what was just typed.
+  const sent = useRef(q);
+  useEffect(() => {
+    if (q !== sent.current) {
+      sent.current = q;
+      setText(q);
+    }
+  }, [q]);
   // Typing filters after a short pause, without one request per key.
   useEffect(() => {
-    if (text === q) return;
-    const t = setTimeout(() => setParams({ q: text.trim() }), 350);
+    if (text.trim() === q) return;
+    const t = setTimeout(() => {
+      sent.current = text.trim();
+      setParams({ q: text.trim() });
+    }, 350);
     return () => clearTimeout(t);
   }, [text, q, setParams]);
+  // While versions are being created, the list refreshes on its own.
+  const active = result?.items.some((p) => p.versions.active > 0) ?? false;
+  useEffect(() => {
+    if (!active) return;
+    const t = setInterval(() => void load(), 15000);
+    return () => clearInterval(t);
+  }, [active, load]);
   const refresh = async () => {
     await Promise.all([load(), reload()]);
   };
   const pages = result ? Math.max(1, Math.ceil(result.total / PER_PAGE)) : 1;
+  const backHere = `${pathname}${params.toString() ? `?${params}` : ""}`;
   return (
     <>
       <div className="ap-head">
@@ -406,11 +436,11 @@ function PropertiesSection({ data, reload }: { data: PanelSummary; reload: () =>
             {q || status || operation ? " con estos filtros" : ""}
           </p>
           {view === "tabla" ? (
-            <PropertyTable items={result.items} agency={data.agency} reload={refresh} canDelete={data.role === "owner"} />
+            <PropertyTable items={result.items} agency={data.agency} reload={refresh} canDelete={data.role === "owner"} backTo={backHere} />
           ) : (
             <div className="ap-grid">
               {result.items.map((p) => (
-                <PropertyCard key={p.id} property={p} agency={data.agency} reload={refresh} canDelete={data.role === "owner"} />
+                <PropertyCard key={p.id} property={p} agency={data.agency} reload={refresh} canDelete={data.role === "owner"} backTo={backHere} />
               ))}
             </div>
           )}
@@ -436,6 +466,23 @@ function PropertiesSection({ data, reload }: { data: PanelSummary; reload: () =>
 }
 
 type Note = { text: string; link?: string; error?: boolean } | null;
+
+/** The editor at one section, with the way back to this exact list (filters, page, view). */
+const editorLink = (id: string, section: "fotos" | "publicacion" | "datos", backTo: string) =>
+  `/panel/propiedades/${id}?${new URLSearchParams({ seccion: section, volver: backTo })}`;
+
+/** Photos, spaces and versions by their real state (ready is "created", never "approved"). */
+function ProgressLine({ p }: { p: PanelProperty }) {
+  return (
+    <>
+      {p.photos} {p.photos === 1 ? "foto" : "fotos"}
+      {p.spaces ? ` · ${p.spaces} ${p.spaces === 1 ? "espacio" : "espacios"}` : ""} · <Sparkles size={13} aria-hidden="true" /> {p.versions.ready}{" "}
+      {p.versions.ready === 1 ? "versión lista" : "versiones listas"}
+      {p.versions.active ? ` · ${p.versions.active} en curso` : ""}
+      {p.versions.issues ? <span className="ap-issue"> · {p.versions.issues} con problemas</span> : null}
+    </>
+  );
+}
 
 /** Publish/unpublish, share and delete of one property, with outcomes that match the server's. */
 function usePropertyActions(p: PanelProperty, agency: PanelSummary["agency"], reload: () => Promise<unknown>) {
@@ -490,17 +537,17 @@ function ActionNote({ note }: { note: Note }) {
 }
 
 /** The secondary actions of a property, in an accessible menu (details/summary). */
-function MoreMenu({ p, actions, canDelete }: { p: PanelProperty; actions: ReturnType<typeof usePropertyActions>; canDelete: boolean }) {
+function MoreMenu({ p, actions, canDelete, backTo }: { p: PanelProperty; actions: ReturnType<typeof usePropertyActions>; canDelete: boolean; backTo: string }) {
   return (
     <details className="ap-menu">
       <summary aria-label={`Más acciones de ${p.title}`}>
         <MoreHorizontal size={16} aria-hidden="true" /> Más
       </summary>
       <div className="ap-menu-list">
-        <Link href={`/panel/propiedades/${p.id}`}>Editar datos</Link>
-        <Link href={`/panel/propiedades/${p.id}#fotos`}>
-          <Sparkles size={14} aria-hidden="true" /> Ambientar con IA
+        <Link href={editorLink(p.id, "fotos", backTo)}>
+          <Sparkles size={14} aria-hidden="true" /> Fotos y espacios
         </Link>
+        <Link href={editorLink(p.id, "datos", backTo)}>Editar datos</Link>
         {actions.live ? (
           <a href={actions.link} target="_blank" rel="noopener noreferrer">
             <ExternalLink size={14} aria-hidden="true" /> Ver ficha
@@ -528,42 +575,50 @@ function PropertyCard({
   agency,
   reload,
   canDelete,
+  backTo,
 }: {
   property: PanelProperty;
   agency: PanelSummary["agency"];
   reload: () => Promise<unknown>;
   canDelete: boolean;
+  backTo: string;
 }) {
   const actions = usePropertyActions(p, agency, reload);
+  const next = nextAction(p);
   return (
     <article className="ap-card">
-      <Link href={`/panel/propiedades/${p.id}`} className="ap-card-photo">
+      <Link href={editorLink(p.id, "fotos", backTo)} className="ap-card-photo" aria-label={`Fotos y espacios de ${p.title}`}>
         {p.coverPhotoId ? <img src={adminPhotoUrl(p.coverPhotoId, null, 480)} alt="" loading="lazy" /> : <span>Sin fotos</span>}
         <span className={`ap-badge ${actions.live ? "is-live" : ""}`}>{actions.live ? "Publicada" : "Borrador"}</span>
       </Link>
       <div className="ap-card-body">
         <h3>
-          <Link href={`/panel/propiedades/${p.id}`}>{p.title}</Link>
+          <Link href={editorLink(p.id, "fotos", backTo)}>{p.title}</Link>
         </h3>
-        {p.location && <p className="ap-card-location">{p.location}</p>}
+        {(p.location || p.reference) && (
+          <p className="ap-card-location">
+            {p.location}
+            {p.reference ? `${p.location ? " · " : ""}Ref. ${p.reference}` : ""}
+          </p>
+        )}
         <p className="ap-card-price">
           {p.operation && <span className="ap-chip">{p.operation}</span>}
           {p.price ?? "Precio a consultar"}
         </p>
         <p className="ap-card-meta">
-          {p.photos} {p.photos === 1 ? "foto" : "fotos"} · <Sparkles size={13} aria-hidden="true" /> {p.staged} con IA
+          <ProgressLine p={p} />
         </p>
         <div className="ap-card-actions">
-          {actions.live ? (
+          {next.label === "Compartir" ? (
             <button type="button" className="button button-small button-primary" onClick={() => void actions.share()}>
               <Share2 size={14} aria-hidden="true" /> Compartir
             </button>
           ) : (
-            <Link href={`/panel/propiedades/${p.id}`} className="button button-small button-primary">
-              Revisar y publicar
+            <Link href={editorLink(p.id, next.section, backTo)} className="button button-small button-primary">
+              {next.label}
             </Link>
           )}
-          <MoreMenu p={p} actions={actions} canDelete={canDelete} />
+          <MoreMenu p={p} actions={actions} canDelete={canDelete} backTo={backTo} />
         </div>
         <ActionNote note={actions.note} />
       </div>
@@ -576,20 +631,24 @@ function PropertyTable({
   agency,
   reload,
   canDelete,
+  backTo,
 }: {
   items: PanelProperty[];
   agency: PanelSummary["agency"];
   reload: () => Promise<unknown>;
   canDelete: boolean;
+  backTo: string;
 }) {
   return (
     <div className="ap-table-wrap">
       <table className="ap-table">
         <thead>
           <tr>
+            <th scope="col">
+              <span className="dv2-sr">Portada</span>
+            </th>
             <th scope="col">Propiedad</th>
-            <th scope="col">Precio</th>
-            <th scope="col">Fotos</th>
+            <th scope="col">Fotos y versiones</th>
             <th scope="col">Estado</th>
             <th scope="col">
               <span className="dv2-sr">Acciones</span>
@@ -598,7 +657,7 @@ function PropertyTable({
         </thead>
         <tbody>
           {items.map((p) => (
-            <PropertyRow key={p.id} p={p} agency={agency} reload={reload} canDelete={canDelete} />
+            <PropertyRow key={p.id} p={p} agency={agency} reload={reload} canDelete={canDelete} backTo={backTo} />
           ))}
         </tbody>
       </table>
@@ -606,35 +665,50 @@ function PropertyTable({
   );
 }
 
-function PropertyRow({ p, agency, reload, canDelete }: { p: PanelProperty; agency: PanelSummary["agency"]; reload: () => Promise<unknown>; canDelete: boolean }) {
+function PropertyRow({
+  p,
+  agency,
+  reload,
+  canDelete,
+  backTo,
+}: {
+  p: PanelProperty;
+  agency: PanelSummary["agency"];
+  reload: () => Promise<unknown>;
+  canDelete: boolean;
+  backTo: string;
+}) {
   const actions = usePropertyActions(p, agency, reload);
+  const next = nextAction(p);
   return (
     <tr>
+      <td className="ap-table-cover">
+        {p.coverPhotoId ? <img src={adminPhotoUrl(p.coverPhotoId, null, 480)} alt="" loading="lazy" /> : <span>—</span>}
+      </td>
       <th scope="row">
-        <Link href={`/panel/propiedades/${p.id}`}>{p.title}</Link>
-        {p.location && <small>{p.location}</small>}
+        <Link href={editorLink(p.id, "fotos", backTo)}>{p.title}</Link>
+        <small>
+          {[p.location, p.reference ? `Ref. ${p.reference}` : null, p.operation, p.price].filter(Boolean).join(" · ") || "Sin datos"}
+        </small>
         <ActionNote note={actions.note} />
       </th>
       <td>
-        {p.operation && <span className="ap-chip">{p.operation}</span>} {p.price ?? "A consultar"}
-      </td>
-      <td>
-        {p.photos} · {p.staged} IA
+        <ProgressLine p={p} />
       </td>
       <td>
         <span className={`ap-badge ${actions.live ? "is-live" : ""}`}>{actions.live ? "Publicada" : "Borrador"}</span>
       </td>
       <td className="ap-table-actions">
-        {actions.live ? (
+        {next.label === "Compartir" ? (
           <button type="button" className="button button-small" onClick={() => void actions.share()}>
             Compartir
           </button>
         ) : (
-          <Link href={`/panel/propiedades/${p.id}`} className="button button-small">
-            Revisar
+          <Link href={editorLink(p.id, next.section, backTo)} className="button button-small">
+            {next.label}
           </Link>
         )}
-        <MoreMenu p={p} actions={actions} canDelete={canDelete} />
+        <MoreMenu p={p} actions={actions} canDelete={canDelete} backTo={backTo} />
       </td>
     </tr>
   );

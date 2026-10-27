@@ -142,8 +142,22 @@ export type GenerationRow = {
   created_at: string;
   error_code: string | null;
 };
+/** Kinds of space: the catalog's rooms (they can be staged) plus a few that are shown as they are. */
+export const EXTRA_SPACE_TYPES = [
+  { id: "bathroom", name: "Baño" },
+  { id: "exterior", name: "Exterior o fachada" },
+  { id: "other", name: "Otro" },
+] as const;
+export const SPACE_TYPES: { id: string; name: string }[] = [...rooms.map((r) => ({ id: r.id, name: r.name })), ...EXTRA_SPACE_TYPES];
+export const spaceTypeName = (id: string) => SPACE_TYPES.find((t) => t.id === id)?.name ?? "Otro";
+/** A space whose kind is a catalog room expects its photos to be staged as that room. */
+export const stagingRoomOf = (roomType: string) => (rooms.some((r) => r.id === roomType) ? roomType : null);
+export type PropertySpace = { id: string; name: string; roomType: string; position: number };
+
 export type EditorPhoto = {
   id: string;
+  /** The space it belongs to; null: "Sin organizar". */
+  spaceId: string | null;
   projectId: string;
   position: number;
   visible: boolean;
@@ -179,6 +193,15 @@ export type DemoDetail = {
   settingsReady: boolean;
   /** Private: what to check or complete before sharing. */
   warnings: string[];
+  /** The property's spaces, in order. */
+  spaces: PropertySpace[];
+  /** False until migration 202610310001_property_spaces.sql is applied: spaces cannot be saved. */
+  spacesReady: boolean;
+  /**
+   * Who pays new versions and whether this account may create them here,
+   * with the same rule the quote and the reservation apply.
+   */
+  staging?: { payer: "team" | "agency"; blocked: string | null };
 };
 
 export function roomName(id: string) {
@@ -315,6 +338,35 @@ export function adminPhotoUrl(photoId: string, version: PhotoVersion | null, wid
 export function adminGenerationUrl(generationId: string, width?: number) {
   const q = new URLSearchParams({ generacion: generationId });
   if (width) q.set("w", String(width));
+  return `/api/admin/demos/imagen?${q}`;
+}
+
+/** A safe file name: letters, digits, dashes; always .jpg. */
+export function downloadName(raw: string | null) {
+  const full =
+    (raw ?? "habita")
+      .normalize("NFC")
+      // Separators, reserved characters and control characters (code points below 32).
+      .replace(/[\\/:*?"<>|]+/g, " ")
+      .replace(/[^\P{Cc}]+/gu, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 100)
+      .replace(/\.jpe?g$/i, "")
+      .replace(/^[.\s]+/, "") || "habita";
+  const ascii =
+    full
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^A-Za-z0-9._-]+/g, "-")
+      .replace(/-{2,}/g, "-")
+      .replace(/^[.-]+|-+$/g, "") || "habita";
+  return { full: `${full}.jpg`, ascii: `${ascii}.jpg` };
+}
+
+/** The download link of one created version: a JPEG up to 2048 px, named after the property, space and style. */
+export function generationDownloadUrl(generationId: string, name: string) {
+  const q = new URLSearchParams({ generacion: generationId, w: "2048", descargar: "1", nombre: name });
   return `/api/admin/demos/imagen?${q}`;
 }
 
