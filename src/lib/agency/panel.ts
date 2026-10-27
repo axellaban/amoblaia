@@ -36,33 +36,52 @@ export async function createAgency(userId: string, name: string) {
   return agencyRpc<string>("habita_create_agency", { p_user: userId, p_name: name, p_slug: slugify(name) });
 }
 
-/** Every property of the agency, newest first, with what the list shows. */
-export async function agencyProperties(agencyId: string): Promise<PanelProperty[]> {
+export type PropertyQuery = { page?: number; perPage?: number; q?: string | null; status?: string | null; operation?: string | null };
+type DemoListRow = {
+  id: string;
+  property_id: string;
+  token: string;
+  status: "draft" | "published";
+  cover_photo_id: string | null;
+  created_at: string;
+  settings: unknown;
+  demo_properties: { title: string; location: string | null; listing_url: string | null } | null;
+};
+
+/**
+ * A page of the agency's properties, newest first, filtered on the server,
+ * with the real total of what matches (no silent limit).
+ */
+export async function agencyProperties(agencyId: string, query: PropertyQuery = {}): Promise<{ items: PanelProperty[]; total: number }> {
   const db = adminClient();
-  const demos = check(
-    await db
-      .from("demos")
-      .select("id,property_id,token,status,cover_photo_id,created_at,settings,demo_properties(title,location,listing_url)")
-      .eq("agency_id", agencyId)
-      .order("created_at", { ascending: false })
-      .limit(300),
-    "PANEL_DEMOS_FAILED",
-  ) as unknown as {
-    id: string;
-    property_id: string;
-    token: string;
-    status: "draft" | "published";
-    cover_photo_id: string | null;
-    created_at: string;
-    settings: unknown;
-    demo_properties: { title: string; location: string | null; listing_url: string | null } | null;
-  }[];
+  const perPage = Math.min(48, Math.max(1, Math.trunc(query.perPage ?? 24)));
+  const page = Math.max(1, Math.trunc(query.page ?? 1));
+  let list = db
+    .from("demos")
+    .select("id,property_id,token,status,cover_photo_id,created_at,settings,demo_properties!inner(title,location,listing_url)", { count: "exact" })
+    .eq("agency_id", agencyId);
+  if (query.status === "draft" || query.status === "published") list = list.eq("status", query.status);
+  const op = query.operation?.trim().slice(0, 40);
+  if (op) list = list.eq("settings->>operation", op);
+  // Searched in PostgREST's filter syntax: characters with a meaning there are dropped.
+  const q = query.q?.replace(/[%_,().*\\]/g, " ").trim().slice(0, 80);
+  if (q) list = list.or(`title.ilike.%${q}%,location.ilike.%${q}%`, { referencedTable: "demo_properties" });
+  const res = await list.order("created_at", { ascending: false }).range((page - 1) * perPage, page * perPage - 1);
+  if (res.error) throw new Error("PANEL_DEMOS_FAILED");
+  const demos = (res.data ?? []) as unknown as DemoListRow[];
+  return { items: await withPhotos(demos), total: res.count ?? demos.length };
+}
+
+/** Photos and staged photos of a page of properties (bounded by the page size). */
+async function withPhotos(demos: DemoListRow[]): Promise<PanelProperty[]> {
   if (!demos.length) return [];
+  const db = adminClient();
   const photos = check(
     await db
       .from("demo_photos")
       .select("id,property_id,project_id,position,visible")
-      .in("property_id", demos.map((d) => d.property_id)),
+      .in("property_id", demos.map((d) => d.property_id))
+      .limit(2000),
     "PANEL_PHOTOS_FAILED",
   ) as { id: string; property_id: string; project_id: string; position: number; visible: boolean }[];
   const projectIds = [...new Set(photos.map((p) => p.project_id))];
@@ -75,7 +94,8 @@ export async function agencyProperties(agencyId: string): Promise<PanelProperty[
               .select("project_id")
               .in("project_id", projectIds)
               .eq("status", "succeeded")
-              .eq("is_free", false),
+              .eq("is_free", false)
+              .limit(5000),
             "PANEL_STAGED_FAILED",
           ) as { project_id: string }[]
         ).map((g) => g.project_id)
@@ -101,23 +121,44 @@ export async function agencyProperties(agencyId: string): Promise<PanelProperty[
   });
 }
 
-/** Everything the panel's home shows. Credits are the owner's: one balance per agency. */
+/** Real totals for the home: never derived from a truncated list. */
+export async function agencyCounts(agencyId: string) {
+  return rpc<{ total: number; published: number; staged: number; review: number; operations: string[] }>("habita_agency_counts", {
+    p_agency: agencyId,
+  });
+}
+
+/**
+ * The agency's balance: its owner's credits, the one account that pays its
+ * stagings. A failed lookup is reported as unknown, never as zero.
+ */
+export async function agencyCredits(ownerId: string | null): Promise<number | null> {
+  if (!ownerId) return null;
+  try {
+    return (await rpc<{ credits: number }>("amobla_account", { p_user: ownerId, p_trial: false })).credits;
+  } catch {
+    return null;
+  }
+}
+
+/** Everything the panel's home shows. */
 export async function panelSummary(membership: Membership): Promise<PanelSummary> {
   const { agency } = membership;
   const db = adminClient();
-  const [branding, properties, imports, account] = await Promise.all([
+  const [branding, latest, counts, imports, credits] = await Promise.all([
     brandingOf(agency.id),
-    agencyProperties(agency.id),
+    agencyProperties(agency.id, { perPage: 6 }),
+    agencyCounts(agency.id),
     db
       .from("property_imports")
-      .select("id,url,status,error,created_at,property_id")
+      .select("id,url,status,error,created_at,demo_id,photos_total,photos_done,pending_images,settings_saved")
       .eq("agency_id", agency.id)
+      .in("status", ["partial", "failed"])
       .order("created_at", { ascending: false })
       .limit(10),
-    agency.owner_id
-      ? rpc<{ credits: number }>("amobla_account", { p_user: agency.owner_id, p_trial: false })
-      : Promise.resolve({ credits: 0 }),
+    agencyCredits(agency.owner_id),
   ]);
+  if (imports.error) throw new Error("PANEL_IMPORTS_FAILED");
   return {
     agency: {
       id: agency.id,
@@ -127,15 +168,36 @@ export async function panelSummary(membership: Membership): Promise<PanelSummary
       sitePublished: agency.site_published,
       logo: branding.logo ? `/api/panel/logo?v=${branding.logo.v}` : null,
       primary: branding.primary ?? null,
-      whatsapp: branding.contactKind === "whatsapp" ? (branding.contactValue ?? null) : null,
-      email: branding.contactKind === "email" ? (branding.contactValue ?? null) : null,
+      contactKind: branding.contactKind ?? null,
+      contactValue: branding.contactValue ?? null,
     },
     role: membership.role,
-    credits: account.credits,
-    properties,
-    imports: ((imports.data ?? []) as { id: string; url: string; status: string; error: string | null; created_at: string; property_id: string | null }[]).map(
-      (i) => ({ id: i.id, url: i.url, status: i.status, error: i.error, createdAt: i.created_at, propertyId: i.property_id }),
-    ),
+    credits,
+    counts: { ...counts, drafts: counts.total - counts.published },
+    properties: latest.items,
+    imports: (imports.data as unknown as {
+      id: string;
+      url: string;
+      status: "partial" | "failed";
+      error: string | null;
+      created_at: string;
+      demo_id: string | null;
+      photos_total: number | null;
+      photos_done: number | null;
+      pending_images: string[] | null;
+      settings_saved: boolean | null;
+    }[]).map((i) => ({
+      id: i.id,
+      url: i.url,
+      status: i.status,
+      error: i.error,
+      createdAt: i.created_at,
+      propertyId: i.demo_id,
+      photosTotal: i.photos_total ?? 0,
+      photosDone: i.photos_done ?? 0,
+      pendingImages: i.pending_images ?? [],
+      settingsSaved: i.settings_saved !== false,
+    })),
   };
 }
 

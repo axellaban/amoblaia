@@ -521,27 +521,43 @@ function LazyMap({ map, title }: { map: NonNullable<PublicDemo["map"]>; title: s
     io.observe(el);
     return () => io.disconnect();
   }, []);
-  const d = map.precision === "zone" ? 0.012 : map.precision === "approx" ? 0.006 : 0.004;
-  const bbox = [map.lng - d * 1.6, map.lat - d, map.lng + d * 1.6, map.lat + d].map((n) => n.toFixed(5)).join(",");
+  // The area drawn decides the zoom: the listing's radius, rounded on the server to the chosen precision.
+  const meters = map.radius ?? 350;
+  const dLat = (meters * 2.2) / 111320;
+  const dLng = dLat / Math.max(0.2, Math.cos((map.lat * Math.PI) / 180));
+  const bbox = [map.lng - dLng * 1.6, map.lat - dLat, map.lng + dLng * 1.6, map.lat + dLat].map((n) => n.toFixed(5)).join(",");
   const src = `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik${
     map.precision === "exact" ? `&marker=${map.lat},${map.lng}` : ""
   }`;
+  // Opening the map elsewhere shows the same precision: a pin only when exact.
+  const zoom = map.precision === "zone" ? 14 : map.precision === "approx" ? 16 : 17;
+  const open =
+    map.precision === "exact"
+      ? `https://www.openstreetmap.org/?mlat=${map.lat}&mlon=${map.lng}#map=${zoom}/${map.lat}/${map.lng}`
+      : `https://www.openstreetmap.org/#map=${zoom}/${map.lat}/${map.lng}`;
+  // The circle covers the radius over the frame's height (2.2 radii tall).
+  const area = `${Math.min(90, Math.round(100 / 2.2))}%`;
   return (
-    <div className="dv2-map" ref={box}>
-      {visible ? (
-        <iframe src={src} title={`Mapa: ${title}`} loading="lazy" referrerPolicy="no-referrer" />
-      ) : (
-        <span className="dv2-map-wait">Cargando mapa…</span>
-      )}
-      {map.precision !== "exact" && (
-        <>
-          <span className={`dv2-map-area is-${map.precision}`} aria-hidden="true" />
-          <span className="dv2-map-note">
-            {map.precision === "zone" ? "Zona de la propiedad" : "Ubicación aproximada"}
-          </span>
-        </>
-      )}
-    </div>
+    <>
+      <div className="dv2-map" ref={box}>
+        {visible ? (
+          <iframe src={src} title={`Mapa: ${title}`} loading="lazy" referrerPolicy="no-referrer" />
+        ) : (
+          <span className="dv2-map-wait">Cargando mapa…</span>
+        )}
+        {map.precision !== "exact" && (
+          <>
+            <span className={`dv2-map-area is-${map.precision}`} style={{ height: area }} aria-hidden="true" />
+            <span className="dv2-map-note">
+              {map.precision === "zone" ? "Zona de la propiedad" : "Ubicación aproximada"}
+            </span>
+          </>
+        )}
+      </div>
+      <a className="dv2-map-open" href={open} target="_blank" rel="noopener noreferrer">
+        Abrir el mapa en otra pestaña
+      </a>
+    </>
   );
 }
 

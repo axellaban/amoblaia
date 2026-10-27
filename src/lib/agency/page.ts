@@ -15,7 +15,9 @@ export async function requirePanelPage(next: string) {
   const user = await currentUser().catch(() => null);
   if (!user || user.is_anonymous || !user.email_confirmed_at)
     redirect(`/acceso?modo=registro&next=${encodeURIComponent(next)}`);
-  const membership = await membershipOf(user.id).catch(() => null);
+  // A failed lookup is an error (the panel's error page offers to retry),
+  // never a reason to send the account to create another agency.
+  const membership = await membershipOf(user.id);
   if (!membership) redirect("/panel/empezar");
   return { user, membership };
 }

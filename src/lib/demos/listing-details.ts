@@ -8,7 +8,9 @@
 export type Money = { text: string; currency: "USD" | "$"; amount: number };
 export type Pair = { label: string; value: string; section: string };
 export type FeatureGroup = { title: string; items: string[] };
-export type MapData = { lat: number; lng: number; precision: "zone" | "approx" | "exact"; radius: number | null };
+import { extractLocation, type GeoMap, type GeoResult } from "./geo";
+
+export type MapData = GeoMap;
 export type Person = {
   name: string | null;
   photoUrl: string | null;
@@ -35,6 +37,8 @@ export type ListingDetails = {
   features: FeatureGroup[];
   description: string | null;
   map: MapData | null;
+  /** How the map was found: one clear place, something to review, or nothing. */
+  geo: GeoResult;
   agent: Person | null;
   agency: Person & { logoUrl: string | null; address: string | null };
   images: string[];
@@ -275,18 +279,10 @@ export function extractDetails(html: string, pageUrl: string): ListingDetails {
     }))
     .filter((g) => g.items.length >= 2);
 
-  // Map: Leaflet or Google Maps calls with literal coordinates.
-  const num = "(-?\\d{1,3}\\.\\d{3,})";
-  const circle = html.match(new RegExp(`L\\.circle\\(\\s*\\[\\s*${num}\\s*,\\s*${num}\\s*\\]\\s*,\\s*(\\d+)`));
-  const marker = html.match(new RegExp(`L\\.marker\\(\\s*\\[\\s*${num}\\s*,\\s*${num}`)) ?? html.match(new RegExp(`LatLng\\(\\s*${num}\\s*,\\s*${num}\\s*\\)`));
-  const view = html.match(new RegExp(`setView\\(\\s*\\[\\s*${num}\\s*,\\s*${num}`));
-  let map: MapData | null = null;
-  if (circle) {
-    const radius = Number(circle[3]);
-    map = { lat: Number(circle[1]), lng: Number(circle[2]), precision: radius > 600 ? "zone" : "approx", radius };
-  } else if (marker) map = { lat: Number(marker[1]), lng: Number(marker[2]), precision: "exact", radius: null };
-  else if (view) map = { lat: Number(view[1]), lng: Number(view[2]), precision: "approx", radius: null };
-  if (map && (Math.abs(map.lat) > 90 || Math.abs(map.lng) > 180 || (map.lat === 0 && map.lng === 0))) map = null;
+  // Map: every location the page gives, with its context; the office's
+  // (footer, "Sucursal" sections) and other listings' are left out.
+  const geo = extractLocation(html, ownHtmlEnd);
+  const map: MapData | null = geo.map;
 
   // Agent: the first named contact block of the property (before other listings).
   let agent: Person | null = null;
@@ -348,6 +344,7 @@ export function extractDetails(html: string, pageUrl: string): ListingDetails {
     features,
     description,
     map,
+    geo,
     agent,
     agency: {
       name: siteName,

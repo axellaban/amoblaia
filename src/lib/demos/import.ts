@@ -1,7 +1,8 @@
 // From what a listing page publishes to the demo's data, with the state of
 // each field: found, not published, not extracted (the page has the section
 // but nothing could be read) or contradictory. Pure: no network, no database.
-import { DEFAULT_SETTINGS, type AmenityGroup, type DemoSettings, type Fact, type FactIcon } from "./branding";
+import { DEFAULT_SETTINGS, type AmenityGroup, type DemoSettings, type Fact, type FactIcon, type MapSettings } from "./branding";
+import { placesOf, sourceName } from "./geo";
 import { norm, type ListingDetails } from "./listing-details";
 
 export type FieldStatus = "found" | "missing" | "error" | "conflict";
@@ -30,7 +31,13 @@ export type ImportedDemo = {
   facts: Fact[];
   description: string | null;
   amenities: AmenityGroup[];
-  map: { precision: "zone" | "approx" | "exact"; lat: number; lng: number } | null;
+  map: MapSettings | null;
+  /** found: saved as is. review: shown, saved only once confirmed. none: not on the page. */
+  mapStatus: "found" | "review" | "none";
+  /** Why the map needs a look, or why it was not found. */
+  mapNote: string | null;
+  /** Places to choose from when the map needs a review. */
+  mapPlaces: { lat: number; lng: number; source: MapSettings["source"]; radius: number | null }[];
   agent: { name: string; role: null; whatsapp: string | null; phone: string | null; email: string | null; photoUrl: string | null } | null;
   agency: {
     name: string | null;
@@ -72,6 +79,29 @@ export type Fallback = {
   agencyName: string;
   website: string;
 };
+
+/** The page has a location section but its map is drawn later by the browser (or not at all). */
+const NO_MAP_IN_HTML =
+  "La ficha tiene una sección de ubicación, pero el mapa no está en el código de la página (se carga después). Pegá el enlace del mapa o las coordenadas.";
+
+const PRECISION_NAMES = { zone: "zona", approx: "ubicación aproximada", exact: "ubicación exacta", none: "sin mapa" } as const;
+function mapRow(d: ListingDetails): ReportRow {
+  const map = d.map;
+  const value = map
+    ? `${PRECISION_NAMES[map.precision]}${map.radius ? ` (${map.radius} m)` : ""} · ${sourceName(map.source)}`
+    : null;
+  if (d.geo.status === "review")
+    return { field: "Mapa", status: "conflict", value, note: d.geo.note, required: false };
+  if (map) return { field: "Mapa", status: "found", value, note: null, required: false };
+  const section = d.headings.some((h) => /^(ubicaci|mapa)/i.test(h));
+  return {
+    field: "Mapa",
+    status: section ? "error" : "missing",
+    value: null,
+    note: d.geo.note ?? (section ? NO_MAP_IN_HTML : "No figura en la publicación."),
+    required: false,
+  };
+}
 
 export function toDemo(d: ListingDetails, fallback: Fallback): ImportedDemo {
   const value = (re: RegExp) => d.pairs.find((p) => re.test(norm(p.label)) && !UNSPECIFIED.test(p.value))?.value ?? null;
@@ -136,7 +166,7 @@ export function toDemo(d: ListingDetails, fallback: Fallback): ImportedDemo {
         ? { field: "Precio", status: "error", value: null, note: priceNote, required: false }
         : row("Precio", price, { error: has(/^precio|^valor/i) }),
     row("Ubicación", d.location ?? fallback.location),
-    row("Mapa", d.map ? `${d.map.precision === "exact" ? "ubicación exacta" : d.map.precision === "zone" ? "zona" : "ubicación aproximada"}${d.map.radius ? ` (${d.map.radius} m)` : ""}` : null, { error: !d.map && has(/^ubicaci/i) }),
+    mapRow(d),
     row("Superficies", [value(/^(total construido|superficie total)$/), value(/^(superficie cubierta|cubierta)$/), value(/^(superficie semicubierta|semicubierta)$/)].filter(Boolean).join(" · ") || null, { error: has(/superficie/i) && !total }),
     row("Ambientes y dormitorios", [amb && `${amb} amb.`, dorm && `${dorm} dorm.`].filter(Boolean).join(" · ") || null),
     row("Baños", [value(/^banos$/) && `${value(/^banos$/)} baño`, value(/^toilettes?$/) && `${value(/^toilettes?$/)} toilette`].filter(Boolean).join(" · ") || null),
@@ -166,7 +196,10 @@ export function toDemo(d: ListingDetails, fallback: Fallback): ImportedDemo {
     facts,
     description,
     amenities,
-    map: d.map ? { precision: d.map.precision, lat: d.map.lat, lng: d.map.lng } : null,
+    map: d.map ? { precision: d.map.precision, lat: d.map.lat, lng: d.map.lng, radius: d.map.radius, source: d.map.source } : null,
+    mapStatus: d.geo.status,
+    mapPlaces: d.geo.status === "review" ? placesOf(d.geo) : [],
+    mapNote: d.geo.note ?? (d.geo.status === "none" && has(/^(ubicaci|mapa)/i) ? NO_MAP_IN_HTML : null),
     agent,
     agency: {
       name: d.agency.name,
@@ -234,7 +267,9 @@ function shown(field: ImportField, v: Values): string {
     case "amenities":
       return v.amenities.map((g) => `${g.title} (${g.items.length})`).join(" · ") || "—";
     case "map":
-      return v.map.precision === "none" ? "—" : `Ubicación ${PRECISION[v.map.precision]}`;
+      return v.map.precision === "none"
+        ? "—"
+        : `Ubicación ${PRECISION[v.map.precision]}${v.map.source ? ` · ${sourceName(v.map.source)}` : ""}`;
     case "agent":
       return v.agent ? [v.agent.name, v.agent.email, v.agent.whatsapp ?? v.agent.phone].filter(Boolean).join(" · ") : "—";
     case "description":
@@ -245,6 +280,9 @@ function shown(field: ImportField, v: Values): string {
 }
 /** The comparable content of a field (formatting differences are not changes). */
 function key(field: ImportField, v: Values) {
+  // Maps: the same place (to ~100 m) and the same precision is the same map.
+  if (field === "map")
+    return v.map.precision === "none" ? "none" : `${v.map.precision}:${v.map.lat?.toFixed(3)},${v.map.lng?.toFixed(3)}`;
   const raw = field === "price" ? [v.price, v.priceConflict] : v[field];
   return JSON.stringify(raw ?? null).replace(/\s+/g, " ").toLowerCase();
 }
@@ -281,7 +319,8 @@ function importedValues(imp: ImportedDemo): Values {
     facts: imp.facts,
     description: imp.description,
     amenities: imp.amenities,
-    map: imp.map ? { precision: imp.map.precision, lat: imp.map.lat, lng: imp.map.lng } : { precision: "none", lat: null, lng: null },
+    // A doubtful map (two places, or only where a map was centered) is never taken without a person confirming it.
+    map: imp.map && imp.mapStatus === "found" ? imp.map : { precision: "none", lat: null, lng: null, radius: null, source: null },
     agent: imp.agent,
   };
 }
@@ -297,6 +336,11 @@ export function planImport(cur: CurrentDemo, imp: ImportedDemo) {
   const next = importedValues(imp);
   const fill: ImportChange[] = [];
   const conflicts: ImportChange[] = [];
+  if (imp.map && imp.mapStatus === "review") {
+    const doubtful = { ...next, map: imp.map };
+    if (key("map", now) !== key("map", doubtful))
+      conflicts.push({ field: "map", label: "Mapa (requiere revisión)", current: shown("map", now), imported: `${shown("map", doubtful)}. ${imp.mapNote ?? ""}`.trim() });
+  }
   for (const field of IMPORT_FIELDS) {
     if (empty(field, next) || key(field, now) === key(field, next)) continue;
     const change = { field, label: FIELD_LABELS[field], current: shown(field, now), imported: shown(field, next) };

@@ -577,11 +577,17 @@ const initials = (name: string) =>
 
 /** Never more precise than the listing: zones to ~1 km, approximate locations to ~100 m. */
 export function publicMap(settings: Pick<DemoSettings, "map">): PublicDemo["map"] {
-  const { precision, lat, lng } = settings.map;
+  const { precision, lat, lng, radius } = settings.map;
   if (precision === "none" || lat === null || lng === null) return null;
   const digits = precision === "zone" ? 2 : precision === "approx" ? 3 : 5;
   const round = (n: number) => Math.round(n * 10 ** digits) / 10 ** digits;
-  return { precision, lat: round(lat), lng: round(lng) };
+  // The area drawn: the listing's own when it has one, never smaller than
+  // what the rounding hides (about 1 km for a zone, 100 m for an approximate place).
+  const area =
+    precision === "exact"
+      ? null
+      : Math.min(3000, Math.max(precision === "zone" ? 700 : 150, radius ?? (precision === "zone" ? 1000 : 300)));
+  return { precision, lat: round(lat), lng: round(lng), radius: area };
 }
 
 /** Inquiries go to the assigned agent first, then to the agency's own channel. */

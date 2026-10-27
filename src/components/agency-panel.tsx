@@ -1,10 +1,11 @@
 "use client";
 // The agency's panel: home, properties, AI credits and its own website.
 // Everything goes through /api/panel and the property routes, which check
-// the agency membership on every request.
+// the agency membership on every request. States say what really happened:
+// a failed lookup is "not available", never zero or "create an agency".
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   CreditCard,
   ExternalLink,
@@ -12,17 +13,18 @@ import {
   Home,
   ImagePlus,
   LayoutGrid,
+  LayoutList,
   Link2,
-  Pencil,
+  MoreHorizontal,
   Search,
   Share2,
   Sparkles,
-  Trash2,
 } from "lucide-react";
-import { api, publicLink } from "./admin-demos";
-import { ImportPreview, exceptions, syncPhotos } from "./demo-import";
+import { ApiError, api } from "./admin-demos";
+import { ImportPreview, MapReview, exceptions, initialMapChoice, mapOverride, syncPhotos, type MapChoice } from "./demo-import";
 import { track } from "@/lib/analytics";
-import { agencyPropertyPath, agencySitePath, type PanelProperty, type PanelSummary } from "@/lib/agency/shared";
+import { shareLink } from "@/lib/agency/share";
+import { agencySitePath, propertyLink, type PanelImport, type PanelProperty, type PanelSummary } from "@/lib/agency/shared";
 import type { ImportedDemo } from "@/lib/demos/import";
 import { adminPhotoUrl } from "@/lib/demos/shared";
 
@@ -51,16 +53,34 @@ export function PanelNav({ section, agencyName }: { section: Section; agencyName
   );
 }
 
+const message = (e: unknown, fallback: string) => (e instanceof Error && e.message ? e.message : fallback);
+
+function RetryRow({ error, onRetry, busy = false }: { error: string; onRetry: () => void; busy?: boolean }) {
+  return (
+    <div className="inline-error ap-retry-row" role="alert">
+      <span>{error}</span>
+      <button type="button" className="button button-small button-outline" disabled={busy} onClick={onRetry}>
+        {busy ? "Reintentando…" : "Reintentar"}
+      </button>
+    </div>
+  );
+}
+
 export function AgencyPanel({ section }: { section: Section }) {
   const [data, setData] = useState<PanelSummary | null>(null);
   const [error, setError] = useState("");
-  const load = useCallback(
-    () =>
-      api<PanelSummary>("/api/panel")
-        .then(setData)
-        .catch((e) => setError(e instanceof Error ? e.message : "No pudimos cargar el panel.")),
-    [],
-  );
+  const [loading, setLoading] = useState(true);
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      setData(await api<PanelSummary>("/api/panel"));
+      setError("");
+    } catch (e) {
+      setError(message(e, "No pudimos cargar el panel."));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
   useEffect(() => {
     void load();
   }, [load]);
@@ -68,30 +88,45 @@ export function AgencyPanel({ section }: { section: Section }) {
     <>
       <PanelNav section={section} agencyName={data?.agency.name} />
       <div className="account-page container ap-page">
-        {error && (
-          <p className="inline-error" role="alert">
-            {error}
-          </p>
-        )}
+        {error && <RetryRow error={error} busy={loading} onRetry={() => void load()} />}
         {!data ? (
-          !error && <p>Cargando tu panel…</p>
+          !error && <p role="status">Cargando tu panel…</p>
         ) : section === "inicio" ? (
           <PanelHome data={data} reload={load} />
         ) : section === "propiedades" ? (
           <PropertiesSection data={data} reload={load} />
         ) : section === "creditos" ? (
-          <CreditsSection credits={data.credits} />
+          <CreditsSection />
         ) : (
-          <SiteSection data={data} reload={load} setData={setData} />
+          <SiteSection data={data} setData={setData} reload={load} />
         )}
       </div>
     </>
   );
 }
 
+/** The one thing to do next, from the agency's real state. */
+function nextStep(d: PanelSummary): { text: string; href: string; action: string } | null {
+  if (d.counts.total === 0) return null;
+  if (d.counts.published === 0)
+    return {
+      text: "Revisá los datos y las fotos de tu propiedad y publicá su ficha.",
+      href: d.properties[0] ? `/panel/propiedades/${d.properties[0].id}` : "/panel/propiedades",
+      action: "Revisar y publicar",
+    };
+  if (d.counts.review > 0)
+    return {
+      text: `${d.counts.review} ${d.counts.review === 1 ? "propiedad tiene" : "propiedades tienen"} ambientaciones para revisar.`,
+      href: "/panel/propiedades",
+      action: "Ver propiedades",
+    };
+  if (!d.agency.sitePublished) return { text: "Tus fichas ya se pueden compartir. Cuando quieras, publicá tu catálogo.", href: "/panel/sitio", action: "Ver mi sitio" };
+  return null;
+}
+
 function PanelHome({ data, reload }: { data: PanelSummary; reload: () => Promise<unknown> }) {
-  const staged = data.properties.filter((p) => p.staged > 0).length;
-  const failed = data.imports.filter((i) => i.status === "failed");
+  const step = nextStep(data);
+  const firstSteps = data.counts.published === 0;
   return (
     <>
       <div className="ap-head">
@@ -99,46 +134,60 @@ function PanelHome({ data, reload }: { data: PanelSummary; reload: () => Promise
           <span className="eyebrow">Tu inmobiliaria</span>
           <h1>{data.agency.name}</h1>
         </div>
-        {data.agency.slug && (
-          <Link href={agencySitePath(data.agency.slug)} className="button button-outline" target="_blank">
-            <Globe size={17} aria-hidden="true" /> Ver mi sitio
-          </Link>
-        )}
+        <SiteLink agency={data.agency} />
       </div>
+      {step && (
+        <section className="ap-next" aria-label="Siguiente paso">
+          <p>{step.text}</p>
+          <Link href={step.href} className="button button-primary">
+            {step.action}
+          </Link>
+        </section>
+      )}
       <section className="ap-import-hero" aria-labelledby="ap-import-title">
         <h2 id="ap-import-title">
           <ImagePlus size={22} aria-hidden="true" /> Agregar propiedad
         </h2>
         <ImportProperty onDone={reload} />
       </section>
+      {firstSteps && (
+        <ol className="ap-steps" aria-label="Primeros pasos">
+          <li className={data.counts.total ? "is-done" : ""}>Agregá una propiedad pegando su enlace</li>
+          <li>Revisá datos y fotos</li>
+          <li>Ambientá con IA, si querés (es opcional y usa créditos)</li>
+          <li>Publicá la ficha y compartila: importar y publicar no usan créditos</li>
+        </ol>
+      )}
       <dl className="ap-stats">
         <div>
           <dt>Propiedades</dt>
-          <dd>{data.properties.length}</dd>
+          <dd>{data.counts.total}</dd>
+        </div>
+        <div>
+          <dt>Publicadas</dt>
+          <dd>{data.counts.published}</dd>
+        </div>
+        <div>
+          <dt>Borradores</dt>
+          <dd>{data.counts.drafts}</dd>
         </div>
         <div>
           <dt>Con imágenes IA</dt>
-          <dd>{staged}</dd>
+          <dd>{data.counts.staged}</dd>
         </div>
         <div>
           <dt>Créditos IA</dt>
           <dd>
-            {data.credits} <Link href="/panel/creditos">Ver</Link>
+            {data.credits === null ? <span className="ap-unknown">No disponible</span> : data.credits} <Link href="/panel/creditos">Ver</Link>
           </dd>
         </div>
       </dl>
-      {failed.length > 0 && (
-        <section className="account-panel">
-          <h2>Importaciones con error</h2>
+      {data.imports.length > 0 && (
+        <section className="account-panel" aria-labelledby="ap-imports-title">
+          <h2 id="ap-imports-title">Importaciones pendientes</h2>
           <ul className="ap-failed">
-            {failed.slice(0, 5).map((i) => (
-              <li key={i.id}>
-                <span>
-                  <strong>{shortUrl(i.url)}</strong>
-                  <small>{i.error}</small>
-                </span>
-                <RetryImport url={i.url} onDone={reload} />
-              </li>
+            {data.imports.map((i) => (
+              <ImportIssue key={i.id} item={i} onDone={reload} />
             ))}
           </ul>
         </section>
@@ -147,13 +196,13 @@ function PanelHome({ data, reload }: { data: PanelSummary; reload: () => Promise
         <div className="ap-section-head">
           <h2>Últimas propiedades</h2>
           <Link href="/panel/propiedades" className="text-link">
-            Ver todas
+            Ver todas ({data.counts.total})
           </Link>
         </div>
         {data.properties.length ? (
           <div className="ap-grid">
-            {data.properties.slice(0, 6).map((p) => (
-              <PropertyCard key={p.id} property={p} slug={data.agency.slug} reload={reload} canDelete={data.role === "owner"} />
+            {data.properties.map((p) => (
+              <PropertyCard key={p.id} property={p} agency={data.agency} reload={reload} canDelete={data.role === "owner"} />
             ))}
           </div>
         ) : (
@@ -161,6 +210,20 @@ function PanelHome({ data, reload }: { data: PanelSummary; reload: () => Promise
         )}
       </section>
     </>
+  );
+}
+
+/** "Ver mi sitio": the public catalog when published, its private preview otherwise. */
+function SiteLink({ agency }: { agency: PanelSummary["agency"] }) {
+  if (!agency.slug) return null;
+  return agency.sitePublished ? (
+    <Link href={agencySitePath(agency.slug)} className="button button-outline" target="_blank">
+      <Globe size={17} aria-hidden="true" /> Ver mi sitio
+    </Link>
+  ) : (
+    <Link href="/panel/sitio/vista-previa" className="button button-outline" title="Tu catálogo todavía no es público">
+      <Globe size={17} aria-hidden="true" /> Vista previa de mi sitio
+    </Link>
   );
 }
 
@@ -173,35 +236,121 @@ const shortUrl = (url: string) => {
   }
 };
 
-function RetryImport({ url, onDone }: { url: string; onDone: () => Promise<unknown> }) {
-  const [open, setOpen] = useState(false);
-  return open ? (
-    <div className="ap-retry">
-      <ImportProperty initialUrl={url} onDone={onDone} />
-    </div>
-  ) : (
-    <button type="button" className="button button-small button-outline" onClick={() => setOpen(true)}>
-      Reintentar
-    </button>
+/** A partial or failed import, with the retry of only what is missing. */
+function ImportIssue({ item, onDone }: { item: PanelImport; onDone: () => Promise<unknown> }) {
+  const [status, setStatus] = useState("");
+  const [error, setError] = useState("");
+  const [retryUrl, setRetryUrl] = useState(false);
+  async function retryPhotos() {
+    if (!item.propertyId) return;
+    setError("");
+    try {
+      const sync = await syncPhotos(`/api/admin/demos/${item.propertyId}`, item.pendingImages, setStatus);
+      await api("/api/panel/importar", { method: "PATCH", body: JSON.stringify({ importId: item.id, done: sync.done, failed: sync.failedUrls }) });
+      await onDone();
+    } catch (e) {
+      setError(message(e, "No pudimos reintentar."));
+    } finally {
+      setStatus("");
+    }
+  }
+  return (
+    <li>
+      <span>
+        <strong>{shortUrl(item.url)}</strong>
+        <small>
+          {item.status === "partial"
+            ? `Importada parcialmente: ${item.photosDone} de ${item.photosTotal} fotos${item.settingsSaved ? "" : " y faltan los datos de la ficha"}.`
+            : (item.error ?? "No se pudo importar.")}
+        </small>
+        {status && <small role="status">{status}</small>}
+        {error && <small className="ap-error-text">{error}</small>}
+      </span>
+      <span className="ap-issue-actions">
+        {item.propertyId && (
+          <Link href={`/panel/propiedades/${item.propertyId}${item.settingsSaved ? "" : "?completar=1"}`} className="button button-small button-outline">
+            {item.settingsSaved ? "Abrir propiedad" : "Completar datos"}
+          </Link>
+        )}
+        {item.status === "partial" && item.pendingImages.length > 0 && (
+          <button type="button" className="button button-small" disabled={Boolean(status)} onClick={() => void retryPhotos()}>
+            Reintentar {item.pendingImages.length} {item.pendingImages.length === 1 ? "foto" : "fotos"}
+          </button>
+        )}
+        {item.status === "failed" && !item.propertyId && !retryUrl && (
+          <button type="button" className="button button-small button-outline" onClick={() => setRetryUrl(true)}>
+            Reintentar
+          </button>
+        )}
+      </span>
+      {retryUrl && (
+        <div className="ap-retry">
+          <ImportProperty initialUrl={item.url} onDone={onDone} />
+        </div>
+      )}
+    </li>
   );
 }
 
+const PER_PAGE = 24;
+
+/**
+ * "Mis propiedades": paged and filtered on the server with the real total;
+ * the filters live in the URL, so they are kept when coming back from a
+ * property. Cards for a few properties, a compact table for many.
+ */
 function PropertiesSection({ data, reload }: { data: PanelSummary; reload: () => Promise<unknown> }) {
-  const [query, setQuery] = useState("");
-  const [status, setStatus] = useState<"" | "draft" | "published">("");
-  const [operation, setOperation] = useState("");
+  const router = useRouter();
+  const pathname = usePathname();
+  const params = useSearchParams();
+  const q = params.get("q") ?? "";
+  const status = params.get("estado") ?? "";
+  const operation = params.get("operacion") ?? "";
+  const page = Math.max(1, Number(params.get("pagina")) || 1);
+  const [text, setText] = useState(q);
+  const [result, setResult] = useState<{ items: PanelProperty[]; total: number } | null>(null);
+  const [error, setError] = useState("");
   const [adding, setAdding] = useState(false);
-  const operations = useMemo(
-    () => [...new Set(data.properties.map((p) => p.operation).filter((o): o is string => Boolean(o)))],
-    [data.properties],
+  const view = params.get("vista") ?? ((result?.total ?? 0) > 12 ? "tabla" : "tarjetas");
+
+  const setParams = useCallback(
+    (patch: Record<string, string>) => {
+      const next = new URLSearchParams(params.toString());
+      for (const [k, v] of Object.entries(patch)) {
+        if (v) next.set(k, v);
+        else next.delete(k);
+      }
+      if (!("pagina" in patch)) next.delete("pagina");
+      const qs = next.toString();
+      router.replace(`${pathname}${qs ? `?${qs}` : ""}`, { scroll: false });
+    },
+    [params, pathname, router],
   );
-  const shown = data.properties.filter(
-    (p) =>
-      (!status || p.status === status) &&
-      (!operation || p.operation === operation) &&
-      (!query.trim() ||
-        `${p.title} ${p.location ?? ""}`.toLowerCase().includes(query.trim().toLowerCase())),
-  );
+  const load = useCallback(async () => {
+    const query = new URLSearchParams({ pagina: String(page), por: String(PER_PAGE) });
+    if (q) query.set("q", q);
+    if (status) query.set("estado", status);
+    if (operation) query.set("operacion", operation);
+    try {
+      setResult(await api<{ items: PanelProperty[]; total: number }>(`/api/panel/propiedades?${query}`));
+      setError("");
+    } catch (e) {
+      setError(message(e, "No pudimos cargar tus propiedades."));
+    }
+  }, [page, q, status, operation]);
+  useEffect(() => {
+    void load();
+  }, [load]);
+  // Typing filters after a short pause, without one request per key.
+  useEffect(() => {
+    if (text === q) return;
+    const t = setTimeout(() => setParams({ q: text.trim() }), 350);
+    return () => clearTimeout(t);
+  }, [text, q, setParams]);
+  const refresh = async () => {
+    await Promise.all([load(), reload()]);
+  };
+  const pages = result ? Math.max(1, Math.ceil(result.total / PER_PAGE)) : 1;
   return (
     <>
       <div className="ap-head">
@@ -209,92 +358,188 @@ function PropertiesSection({ data, reload }: { data: PanelSummary; reload: () =>
           <span className="eyebrow">{data.agency.name}</span>
           <h1>Mis propiedades</h1>
         </div>
-        <button type="button" className="button button-primary" onClick={() => setAdding((a) => !a)}>
+        <button type="button" className="button button-primary" aria-expanded={adding} onClick={() => setAdding((a) => !a)}>
           + Agregar propiedad
         </button>
       </div>
       {adding && (
         <section className="ap-import-hero">
-          <ImportProperty onDone={reload} />
+          <ImportProperty onDone={refresh} />
         </section>
       )}
       <div className="ap-filters" role="search">
         <label className="ap-search">
           <Search size={16} aria-hidden="true" />
-          <input
-            type="search"
-            placeholder="Buscar por título o ubicación"
-            aria-label="Buscar propiedades"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
+          <input type="search" placeholder="Buscar por título o ubicación" aria-label="Buscar propiedades" value={text} onChange={(e) => setText(e.target.value)} />
         </label>
-        <select aria-label="Estado" value={status} onChange={(e) => setStatus(e.target.value as typeof status)}>
+        <select aria-label="Estado" value={status} onChange={(e) => setParams({ estado: e.target.value })}>
           <option value="">Todos los estados</option>
           <option value="published">Publicadas</option>
           <option value="draft">Borradores</option>
         </select>
-        {operations.length > 1 && (
-          <select aria-label="Operación" value={operation} onChange={(e) => setOperation(e.target.value)}>
+        {data.counts.operations.length > 1 && (
+          <select aria-label="Operación" value={operation} onChange={(e) => setParams({ operacion: e.target.value })}>
             <option value="">Todas las operaciones</option>
-            {operations.map((o) => (
+            {data.counts.operations.map((o) => (
               <option key={o}>{o}</option>
             ))}
           </select>
         )}
-      </div>
-      {shown.length ? (
-        <div className="ap-grid">
-          {shown.map((p) => (
-            <PropertyCard key={p.id} property={p} slug={data.agency.slug} reload={reload} canDelete={data.role === "owner"} />
-          ))}
+        <div className="ap-view" role="group" aria-label="Vista">
+          <button type="button" aria-pressed={view === "tarjetas"} onClick={() => setParams({ vista: "tarjetas" })} title="Tarjetas">
+            <LayoutGrid size={16} aria-hidden="true" />
+            <span className="dv2-sr">Tarjetas</span>
+          </button>
+          <button type="button" aria-pressed={view === "tabla"} onClick={() => setParams({ vista: "tabla" })} title="Tabla">
+            <LayoutList size={16} aria-hidden="true" />
+            <span className="dv2-sr">Tabla</span>
+          </button>
         </div>
+      </div>
+      {error && <RetryRow error={error} onRetry={() => void load()} />}
+      {!result ? (
+        !error && <p role="status">Cargando propiedades…</p>
+      ) : result.items.length ? (
+        <>
+          <p className="ap-count" role="status">
+            {result.total} {result.total === 1 ? "propiedad" : "propiedades"}
+            {q || status || operation ? " con estos filtros" : ""}
+          </p>
+          {view === "tabla" ? (
+            <PropertyTable items={result.items} agency={data.agency} reload={refresh} canDelete={data.role === "owner"} />
+          ) : (
+            <div className="ap-grid">
+              {result.items.map((p) => (
+                <PropertyCard key={p.id} property={p} agency={data.agency} reload={refresh} canDelete={data.role === "owner"} />
+              ))}
+            </div>
+          )}
+          {pages > 1 && (
+            <nav className="ap-pages" aria-label="Páginas">
+              <button type="button" className="button button-small button-outline" disabled={page <= 1} onClick={() => setParams({ pagina: String(page - 1) })}>
+                Anterior
+              </button>
+              <span>
+                Página {page} de {pages}
+              </span>
+              <button type="button" className="button button-small button-outline" disabled={page >= pages} onClick={() => setParams({ pagina: String(page + 1) })}>
+                Siguiente
+              </button>
+            </nav>
+          )}
+        </>
       ) : (
-        <p className="ap-empty">
-          {data.properties.length ? "Ninguna propiedad coincide con la búsqueda." : "Todavía no cargaste propiedades."}
-        </p>
+        <p className="ap-empty">{data.counts.total ? "Ninguna propiedad coincide con la búsqueda." : "Todavía no cargaste propiedades."}</p>
       )}
     </>
   );
 }
 
+type Note = { text: string; link?: string; error?: boolean } | null;
+
+/** Publish/unpublish, share and delete of one property, with outcomes that match the server's. */
+function usePropertyActions(p: PanelProperty, agency: PanelSummary["agency"], reload: () => Promise<unknown>) {
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<Note>(null);
+  const live = p.status === "published";
+  const link = typeof window === "undefined" ? "" : propertyLink(window.location.origin, p, agency);
+  async function publish() {
+    setBusy(true);
+    setNote(null);
+    try {
+      await api(`/api/admin/demos/${p.id}`, { method: "PATCH", body: JSON.stringify({ action: live ? "unpublish" : "publish" }) });
+      // Counted only after the server confirmed it.
+      track(live ? "property_unpublished" : "property_published", { property_id: p.id, photos: p.photos, staged: p.staged });
+      setNote({ text: live ? "Ficha despublicada: su enlace dejó de funcionar." : "Ficha publicada. Ya podés compartirla." });
+      await reload();
+    } catch (e) {
+      track("property_publish_failed", { property_id: p.id });
+      setNote({ text: message(e, "No pudimos cambiar la publicación."), error: true });
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function share() {
+    const outcome = await shareLink(link, p.title, p.id);
+    if (outcome === "copied") setNote({ text: "Enlace copiado." });
+    else if (outcome === "failed") setNote({ text: "No pudimos copiar el enlace. Copialo desde acá:", link, error: true });
+    else setNote(null);
+  }
+  async function remove() {
+    if (!window.confirm(`¿Eliminar "${p.title}"? Se borran sus fotos y sus imágenes con IA, y su enlace deja de funcionar. No se puede deshacer.`)) return;
+    setBusy(true);
+    try {
+      await api(`/api/admin/demos/${p.id}`, { method: "DELETE" });
+      await reload();
+    } catch (e) {
+      setNote({ text: message(e, "No pudimos eliminarla."), error: true });
+      setBusy(false);
+    }
+  }
+  return { busy, note, live, link, publish, share, remove };
+}
+
+function ActionNote({ note }: { note: Note }) {
+  if (!note) return null;
+  return (
+    <p className={`ap-card-message ${note.error ? "ap-error-text" : ""}`} role={note.error ? "alert" : "status"}>
+      {note.text}
+      {note.link && <input className="dm-link" readOnly value={note.link} onFocus={(e) => e.target.select()} aria-label="Enlace de la ficha" />}
+    </p>
+  );
+}
+
+/** The secondary actions of a property, in an accessible menu (details/summary). */
+function MoreMenu({ p, actions, canDelete }: { p: PanelProperty; actions: ReturnType<typeof usePropertyActions>; canDelete: boolean }) {
+  return (
+    <details className="ap-menu">
+      <summary aria-label={`Más acciones de ${p.title}`}>
+        <MoreHorizontal size={16} aria-hidden="true" /> Más
+      </summary>
+      <div className="ap-menu-list">
+        <Link href={`/panel/propiedades/${p.id}`}>Editar datos</Link>
+        <Link href={`/panel/propiedades/${p.id}#fotos`}>
+          <Sparkles size={14} aria-hidden="true" /> Ambientar con IA
+        </Link>
+        {actions.live ? (
+          <a href={actions.link} target="_blank" rel="noopener noreferrer">
+            <ExternalLink size={14} aria-hidden="true" /> Ver ficha
+          </a>
+        ) : (
+          <Link href={`/panel/propiedades/${p.id}/vista-previa`}>
+            <ExternalLink size={14} aria-hidden="true" /> Vista previa
+          </Link>
+        )}
+        <button type="button" disabled={actions.busy} onClick={() => void actions.publish()}>
+          {actions.live ? "Despublicar ficha" : "Publicar ficha"}
+        </button>
+        {canDelete && (
+          <button type="button" className="ap-danger" disabled={actions.busy} onClick={() => void actions.remove()}>
+            Eliminar
+          </button>
+        )}
+      </div>
+    </details>
+  );
+}
+
 function PropertyCard({
   property: p,
-  slug,
+  agency,
   reload,
   canDelete,
 }: {
   property: PanelProperty;
-  slug: string | null;
+  agency: PanelSummary["agency"];
   reload: () => Promise<unknown>;
   canDelete: boolean;
 }) {
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
-  const live = p.status === "published";
-  const link = slug ? `${window.location.origin}${agencyPropertyPath(slug, p.token)}` : publicLink(p.token);
-  const act = async (task: () => Promise<unknown>, done?: string) => {
-    setBusy(true);
-    setMessage("");
-    try {
-      await task();
-      if (done) setMessage(done);
-      await reload();
-    } catch (e) {
-      setMessage(e instanceof Error ? e.message : "No pudimos completar la acción.");
-    } finally {
-      setBusy(false);
-    }
-  };
+  const actions = usePropertyActions(p, agency, reload);
   return (
     <article className="ap-card">
       <Link href={`/panel/propiedades/${p.id}`} className="ap-card-photo">
-        {p.coverPhotoId ? (
-          <img src={adminPhotoUrl(p.coverPhotoId, null, 480)} alt="" loading="lazy" />
-        ) : (
-          <span>Sin fotos</span>
-        )}
-        <span className={`ap-badge ${live ? "is-live" : ""}`}>{live ? "Publicada" : "Borrador"}</span>
+        {p.coverPhotoId ? <img src={adminPhotoUrl(p.coverPhotoId, null, 480)} alt="" loading="lazy" /> : <span>Sin fotos</span>}
+        <span className={`ap-badge ${actions.live ? "is-live" : ""}`}>{actions.live ? "Publicada" : "Borrador"}</span>
       </Link>
       <div className="ap-card-body">
         <h3>
@@ -309,90 +554,128 @@ function PropertyCard({
           {p.photos} {p.photos === 1 ? "foto" : "fotos"} · <Sparkles size={13} aria-hidden="true" /> {p.staged} con IA
         </p>
         <div className="ap-card-actions">
-          <Link href={`/panel/propiedades/${p.id}`} className="button button-small button-outline" title="Editar información">
-            <Pencil size={14} aria-hidden="true" /> Editar
-          </Link>
-          <Link href={`/panel/propiedades/${p.id}#fotos`} className="button button-small button-outline" title="Generar imágenes IA">
-            <Sparkles size={14} aria-hidden="true" /> IA
-          </Link>
-          {live ? (
-            <a href={link} target="_blank" rel="noopener noreferrer" className="button button-small button-outline" title="Ver ficha">
-              <ExternalLink size={14} aria-hidden="true" /> Ver
-            </a>
-          ) : (
-            <Link href={`/panel/propiedades/${p.id}/vista-previa`} className="button button-small button-outline" title="Ver ficha">
-              <ExternalLink size={14} aria-hidden="true" /> Ver
-            </Link>
-          )}
-          {live && (
-            <button
-              type="button"
-              className="button button-small button-outline"
-              title="Compartir"
-              onClick={async () => {
-                track("property_shared", { property_id: p.id, channel: "copy" });
-                const shared =
-                  typeof navigator.share === "function"
-                    ? await navigator.share({ title: p.title, url: link }).then(() => true, () => false)
-                    : false;
-                if (!shared) {
-                  await navigator.clipboard?.writeText(link).catch(() => null);
-                  setMessage("Enlace copiado.");
-                }
-              }}
-            >
+          {actions.live ? (
+            <button type="button" className="button button-small button-primary" onClick={() => void actions.share()}>
               <Share2 size={14} aria-hidden="true" /> Compartir
             </button>
+          ) : (
+            <Link href={`/panel/propiedades/${p.id}`} className="button button-small button-primary">
+              Revisar y publicar
+            </Link>
           )}
+          <MoreMenu p={p} actions={actions} canDelete={canDelete} />
         </div>
-        <div className="ap-card-actions">
-          <button
-            type="button"
-            className={`button button-small ${live ? "button-outline" : "button-primary"}`}
-            disabled={busy}
-            onClick={() => {
-              if (!live) track("property_published", { property_id: p.id, photos: p.photos, staged: p.staged });
-              void act(
-                () => api(`/api/admin/demos/${p.id}`, { method: "PATCH", body: JSON.stringify({ action: live ? "unpublish" : "publish" }) }),
-                live ? "Despublicada." : "Publicada.",
-              );
-            }}
-          >
-            {live ? "Despublicar" : "Publicar"}
-          </button>
-          {canDelete && (
-            <button
-              type="button"
-              className="button button-small button-outline ap-danger"
-              disabled={busy}
-              onClick={() =>
-                window.confirm(
-                  `¿Eliminar "${p.title}"? Se borran sus fotos y sus imágenes con IA, y su enlace deja de funcionar. No se puede deshacer.`,
-                ) && void act(() => api(`/api/admin/demos/${p.id}`, { method: "DELETE" }))
-              }
-            >
-              <Trash2 size={14} aria-hidden="true" /> Eliminar
-            </button>
-          )}
-        </div>
-        {message && (
-          <p className="ap-card-message" role="status">
-            {message}
-          </p>
-        )}
+        <ActionNote note={actions.note} />
       </div>
     </article>
   );
 }
 
-type Preview = ImportedDemo & { listingUrl: string; duplicateOf: string | null };
+function PropertyTable({
+  items,
+  agency,
+  reload,
+  canDelete,
+}: {
+  items: PanelProperty[];
+  agency: PanelSummary["agency"];
+  reload: () => Promise<unknown>;
+  canDelete: boolean;
+}) {
+  return (
+    <div className="ap-table-wrap">
+      <table className="ap-table">
+        <thead>
+          <tr>
+            <th scope="col">Propiedad</th>
+            <th scope="col">Precio</th>
+            <th scope="col">Fotos</th>
+            <th scope="col">Estado</th>
+            <th scope="col">
+              <span className="dv2-sr">Acciones</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((p) => (
+            <PropertyRow key={p.id} p={p} agency={agency} reload={reload} canDelete={canDelete} />
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function PropertyRow({ p, agency, reload, canDelete }: { p: PanelProperty; agency: PanelSummary["agency"]; reload: () => Promise<unknown>; canDelete: boolean }) {
+  const actions = usePropertyActions(p, agency, reload);
+  return (
+    <tr>
+      <th scope="row">
+        <Link href={`/panel/propiedades/${p.id}`}>{p.title}</Link>
+        {p.location && <small>{p.location}</small>}
+        <ActionNote note={actions.note} />
+      </th>
+      <td>
+        {p.operation && <span className="ap-chip">{p.operation}</span>} {p.price ?? "A consultar"}
+      </td>
+      <td>
+        {p.photos} · {p.staged} IA
+      </td>
+      <td>
+        <span className={`ap-badge ${actions.live ? "is-live" : ""}`}>{actions.live ? "Publicada" : "Borrador"}</span>
+      </td>
+      <td className="ap-table-actions">
+        {actions.live ? (
+          <button type="button" className="button button-small" onClick={() => void actions.share()}>
+            Compartir
+          </button>
+        ) : (
+          <Link href={`/panel/propiedades/${p.id}`} className="button button-small">
+            Revisar
+          </Link>
+        )}
+        <MoreMenu p={p} actions={actions} canDelete={canDelete} />
+      </td>
+    </tr>
+  );
+}
+
+type Preview = ImportedDemo & { listingUrl: string; duplicateOf: string | null; snapshot: string };
+type Created = {
+  importId: string;
+  id: string | null;
+  title?: string;
+  status: string;
+  settingsSaved: boolean;
+  photosTotal: number;
+  photosDone: number;
+  images: string[];
+};
+
+/** Downloads the photos of a created import and reports them: what it says is what happened. */
+async function finishPhotos(made: Created, onStatus: (t: string) => void) {
+  if (!made.id) return made;
+  const sync = await syncPhotos(`/api/admin/demos/${made.id}`, made.images, onStatus);
+  return api<Created>("/api/panel/importar", {
+    method: "PATCH",
+    body: JSON.stringify({ importId: made.importId, done: sync.done, failed: sync.failedUrls }),
+  });
+}
+
+const hostOf = (url: string) => {
+  try {
+    return new URL(/^https?:/i.test(url) ? url : `https://${url}`).hostname.replace(/^www\./, "");
+  } catch {
+    return "invalida";
+  }
+};
 
 /**
  * Paste a listing URL → its data is read (nothing is asked that was found)
- * → every field can be corrected and each photo kept or left out → the
- * property is created as a draft and its photos imported in order. No
- * staging starts and no credit is used. "Varias URLs" does the same for up
- * to 10 listings, one after another, after reviewing what was found.
+ * → every field can be corrected, each photo kept or left out, the map
+ * confirmed → the property is created once (a request key), as a draft,
+ * and its photos imported; the result says if anything is missing. No
+ * staging starts and no credit is used.
  */
 export function ImportProperty({ initialUrl = "", onDone }: { initialUrl?: string; onDone?: () => Promise<unknown> }) {
   const router = useRouter();
@@ -401,30 +684,41 @@ export function ImportProperty({ initialUrl = "", onDone }: { initialUrl?: strin
   const [preview, setPreview] = useState<Preview | null>(null);
   const [fields, setFields] = useState({ title: "", location: "", price: "", operation: "", description: "" });
   const [keep, setKeep] = useState<Set<string>>(new Set());
+  const [mapChoice, setMapChoice] = useState<MapChoice | null>(null);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [partial, setPartial] = useState<Created | null>(null);
+  // One key per confirmed preview: sending it twice creates one property.
+  const key = useRef("");
   const busy = Boolean(status);
+
+  const show = (data: Preview) => {
+    setPreview(data);
+    setFields({
+      title: data.title,
+      location: data.location ?? "",
+      price: data.priceConflict ? "" : (data.price ?? ""),
+      operation: data.operation ?? "",
+      description: data.description ?? "",
+    });
+    setKeep(new Set(data.images));
+    setMapChoice(initialMapChoice(data));
+    key.current = crypto.randomUUID();
+  };
 
   async function read(e?: React.FormEvent) {
     e?.preventDefault();
     setError("");
+    setNotice("");
+    setPartial(null);
     setPreview(null);
     setStatus("Leyendo la publicación…");
     track("property_import_started", { source: hostOf(url), mode: "single" });
     try {
-      const data = await api<Preview>("/api/panel/importar", { method: "POST", body: JSON.stringify({ url, preview: true }) });
-      setPreview(data);
-      setFields({
-        title: data.title,
-        location: data.location ?? "",
-        price: data.priceConflict ? "" : (data.price ?? ""),
-        operation: data.operation ?? "",
-        description: data.description ?? "",
-      });
-      setKeep(new Set(data.images));
+      show(await api<Preview>("/api/panel/importar", { method: "POST", body: JSON.stringify({ url, preview: true }) }));
     } catch (err) {
-      const message = err instanceof Error ? err.message : "No pudimos leer la publicación.";
-      setError(message);
+      setError(message(err, "No pudimos leer la publicación."));
       track("property_import_failed", { source: hostOf(url), status: "preview" });
     } finally {
       setStatus("");
@@ -434,28 +728,60 @@ export function ImportProperty({ initialUrl = "", onDone }: { initialUrl?: strin
   async function create() {
     if (!preview) return;
     setError("");
+    setNotice("");
     setStatus("Creando la propiedad…");
+    let made: Created;
     try {
-      const made = await api<{ id: string; title: string; images: string[] }>("/api/panel/importar", {
+      made = await api<Created>("/api/panel/importar", {
         method: "POST",
         body: JSON.stringify({
           url: preview.listingUrl,
-          overrides: fields,
+          key: key.current,
+          snapshot: preview.snapshot,
+          overrides: { ...fields, map: mapChoice ? mapOverride(preview, mapChoice) : undefined },
           images: preview.images.filter((src) => keep.has(src)),
         }),
       });
-      const { failed } = await syncPhotos(`/api/admin/demos/${made.id}`, made.images, (t) => setStatus(`${made.title}. ${t}`));
-      track("property_import_completed", {
-        source: hostOf(preview.listingUrl),
-        photos: made.images.length - failed,
-        failed_photos: failed,
-        mode: "single",
-      });
-      await onDone?.();
-      router.push(`/panel/propiedades/${made.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No pudimos crear la propiedad.");
+      const body = err instanceof ApiError ? err.body : null;
+      if (body?.changed && body.preview) {
+        show(body.preview as Preview);
+        setNotice("La publicación cambió desde que la revisaste: estos son los datos actuales. Revisalos y volvé a confirmar.");
+      } else if (body?.duplicateOf) {
+        setPreview({ ...preview, duplicateOf: String(body.duplicateOf) });
+      } else setError(message(err, "No pudimos crear la propiedad."));
       track("property_import_failed", { source: hostOf(preview.listingUrl), status: "create" });
+      setStatus("");
+      return;
+    }
+    try {
+      const done = await finishPhotos(made, (t) => setStatus(`${made.title ?? "Propiedad"}. ${t}`));
+      track("property_import_completed", { source: hostOf(preview.listingUrl), photos: done.photosDone, mode: "single", status: done.status });
+      await onDone?.();
+      if (done.status === "completed") {
+        router.push(`/panel/propiedades/${made.id}`);
+        return;
+      }
+      setPartial(done);
+      setPreview(null);
+    } catch (err) {
+      // The property exists: the panel's home lists what is missing.
+      setError(`${message(err, "No pudimos terminar de importar las fotos.")} La propiedad quedó como borrador; podés reintentar desde el inicio.`);
+    } finally {
+      setStatus("");
+    }
+  }
+
+  async function retryPartial() {
+    if (!partial) return;
+    setStatus("Reintentando fotos…");
+    try {
+      const done = await finishPhotos(partial, setStatus);
+      if (done.status === "completed") router.push(`/panel/propiedades/${partial.id}`);
+      else setPartial(done);
+    } catch (err) {
+      setError(message(err, "No pudimos reintentar."));
+    } finally {
       setStatus("");
     }
   }
@@ -487,6 +813,7 @@ export function ImportProperty({ initialUrl = "", onDone }: { initialUrl?: strin
             {status && !preview ? "Leyendo…" : preview ? "Volver a leer" : "Importar propiedad"}
           </button>
         </div>
+        <p className="ap-import-help">Importar y publicar no usan créditos. Ambientar con IA es opcional.</p>
         <button type="button" className="text-link ap-many-link" onClick={() => setMany(true)}>
           <Link2 size={14} aria-hidden="true" /> Tengo varias URLs
         </button>
@@ -501,12 +828,34 @@ export function ImportProperty({ initialUrl = "", onDone }: { initialUrl?: strin
           {status}
         </p>
       )}
+      {partial && (
+        <div className="ap-import-result" role="status">
+          <p>
+            <strong>Importada parcialmente:</strong> {partial.photosDone} de {partial.photosTotal} fotos
+            {partial.settingsSaved ? "" : ", y faltan los datos de la ficha"}. La propiedad quedó como borrador.
+          </p>
+          <div className="ap-card-actions">
+            <Link href={`/panel/propiedades/${partial.id}${partial.settingsSaved ? "" : "?completar=1"}`} className="button button-small button-primary">
+              Abrir la propiedad
+            </Link>
+            {partial.images.length > 0 && (
+              <button type="button" className="button button-small" disabled={busy} onClick={() => void retryPartial()}>
+                Reintentar {partial.images.length} {partial.images.length === 1 ? "foto" : "fotos"}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
       {preview && (
         <div className="ap-import-result">
+          {notice && (
+            <p className="inline-notice" role="status">
+              {notice}
+            </p>
+          )}
           {preview.duplicateOf ? (
             <p className="inline-notice">
-              Esta propiedad ya está en tu panel.{" "}
-              <Link href={`/panel/propiedades/${preview.duplicateOf}`}>Abrirla</Link>
+              Esta propiedad ya está en tu panel. <Link href={`/panel/propiedades/${preview.duplicateOf}`}>Abrirla</Link>
             </p>
           ) : null}
           <ImportPreview data={{ ...preview, images: preview.images.filter((src) => keep.has(src)) }} />
@@ -537,6 +886,7 @@ export function ImportProperty({ initialUrl = "", onDone }: { initialUrl?: strin
               <textarea rows={5} maxLength={6000} value={fields.description} onChange={(e) => setFields({ ...fields, description: e.target.value })} />
             </label>
           </div>
+          {mapChoice && <MapReview data={preview} value={mapChoice} onChange={setMapChoice} />}
           {pending.length > 0 && (
             <ul className="dm-warnings">
               {pending.map((r) => (
@@ -588,18 +938,18 @@ export function ImportProperty({ initialUrl = "", onDone }: { initialUrl?: strin
   );
 }
 
-const hostOf = (url: string) => {
-  try {
-    return new URL(/^https?:/i.test(url) ? url : `https://${url}`).hostname.replace(/^www\./, "");
-  } catch {
-    return "invalida";
-  }
+const MAX_BATCH = 10;
+type Row = {
+  url: string;
+  state: "waiting" | "reading" | "ready" | "duplicate" | "error" | "importing" | "done" | "partial";
+  data?: Preview;
+  error?: string;
+  pick: boolean;
+  key: string;
+  result?: Created;
 };
 
-const MAX_BATCH = 10;
-type Row = { url: string; state: "waiting" | "reading" | "ready" | "duplicate" | "error" | "importing" | "done"; data?: Preview; error?: string; pick: boolean };
-
-/** Up to 10 listings: read one by one, reviewed, then imported one by one. */
+/** Up to 10 listings: read one by one, reviewed, then imported one by one, each saying what it got. */
 function ImportMany({ onDone, onSingle }: { onDone?: () => Promise<unknown>; onSingle: () => void }) {
   const [text, setText] = useState("");
   const [rows, setRows] = useState<Row[]>([]);
@@ -608,7 +958,7 @@ function ImportMany({ onDone, onSingle }: { onDone?: () => Promise<unknown>; onS
   const urls = [...new Set(text.split(/\s+/).map((u) => u.trim()).filter(Boolean))];
 
   async function readAll() {
-    const list = urls.slice(0, MAX_BATCH).map((url) => ({ url, state: "waiting" as const, pick: true }));
+    const list: Row[] = urls.slice(0, MAX_BATCH).map((url) => ({ url, state: "waiting", pick: true, key: crypto.randomUUID() }));
     setRows(list);
     setRunning(true);
     for (const [i, row] of list.entries()) {
@@ -618,7 +968,7 @@ function ImportMany({ onDone, onSingle }: { onDone?: () => Promise<unknown>; onS
         const data = await api<Preview>("/api/panel/importar", { method: "POST", body: JSON.stringify({ url: row.url, preview: true }) });
         update(i, { state: data.duplicateOf ? "duplicate" : "ready", data, pick: !data.duplicateOf });
       } catch (e) {
-        update(i, { state: "error", error: e instanceof Error ? e.message : "No pudimos leerla.", pick: false });
+        update(i, { state: "error", error: message(e, "No pudimos leerla."), pick: false });
         track("property_import_failed", { source: hostOf(row.url), status: "preview", mode: "batch" });
       }
     }
@@ -631,15 +981,16 @@ function ImportMany({ onDone, onSingle }: { onDone?: () => Promise<unknown>; onS
       if (!row.pick || row.state !== "ready" || !row.data) continue;
       update(i, { state: "importing" });
       try {
-        const made = await api<{ id: string; images: string[] }>("/api/panel/importar", {
+        // A doubtful map is not saved without a person looking at it.
+        const made = await api<Created>("/api/panel/importar", {
           method: "POST",
-          body: JSON.stringify({ url: row.data.listingUrl }),
+          body: JSON.stringify({ url: row.data.listingUrl, key: row.key, snapshot: row.data.snapshot }),
         });
-        const { failed } = await syncPhotos(`/api/admin/demos/${made.id}`, made.images, () => null);
-        update(i, { state: "done" });
-        track("property_import_completed", { source: hostOf(row.url), photos: made.images.length - failed, mode: "batch" });
+        const done = await finishPhotos(made, () => null);
+        update(i, { state: done.status === "completed" ? "done" : "partial", result: done });
+        track("property_import_completed", { source: hostOf(row.url), photos: done.photosDone, mode: "batch", status: done.status });
       } catch (e) {
-        update(i, { state: "error", error: e instanceof Error ? e.message : "No pudimos importarla." });
+        update(i, { state: "error", error: message(e, "No pudimos importarla.") });
         track("property_import_failed", { source: hostOf(row.url), status: "create", mode: "batch" });
       }
     }
@@ -647,15 +998,17 @@ function ImportMany({ onDone, onSingle }: { onDone?: () => Promise<unknown>; onS
     await onDone?.();
   }
 
-  const LABEL: Record<Row["state"], string> = {
-    waiting: "En espera",
-    reading: "Leyendo…",
-    ready: "Lista",
-    duplicate: "Ya está en tu panel",
-    error: "Con error",
-    importing: "Importando…",
-    done: "Importada",
-  };
+  const label = (r: Row) =>
+    ({
+      waiting: "En espera",
+      reading: "Leyendo…",
+      ready: "Lista",
+      duplicate: "Ya está en tu panel",
+      error: "Con error",
+      importing: "Importando…",
+      done: `Importada: ${r.result?.photosDone ?? 0} fotos`,
+      partial: `Importada parcialmente: ${r.result?.photosDone ?? 0} de ${r.result?.photosTotal ?? 0} fotos`,
+    })[r.state];
   return (
     <div className="ap-import">
       <label className="ap-import-label" htmlFor="ap-many">
@@ -686,10 +1039,16 @@ function ImportMany({ onDone, onSingle }: { onDone?: () => Promise<unknown>; onS
                 <span>
                   <strong>{r.data?.title ?? shortUrl(r.url)}</strong>
                   <small>
-                    {LABEL[r.state]}
+                    {label(r)}
                     {r.data && r.state === "ready" ? ` · ${r.data.images.length} fotos · ${r.data.price ?? "sin precio"}` : ""}
+                    {r.data && r.state === "ready" && r.data.mapStatus === "review" ? " · mapa para revisar después" : ""}
                     {r.error ? ` · ${r.error}` : ""}
                   </small>
+                  {r.result?.id && (
+                    <Link href={`/panel/propiedades/${r.result.id}`} className="text-link">
+                      Abrir
+                    </Link>
+                  )}
                 </span>
               </li>
             ))}
@@ -708,46 +1067,75 @@ function ImportMany({ onDone, onSingle }: { onDone?: () => Promise<unknown>; onS
   );
 }
 
-type AccountInfo = {
-  credits: number;
-  free: boolean;
-  grants: { id: string; remaining: number; total: number; expires_at: string | null; source_key: string; revoked: boolean }[] | null;
+type CreditsInfo = {
+  role: "owner" | "collaborator";
+  payer: { agency: string; isYou: boolean };
+  credits: number | null;
+  creditsError: boolean;
+  grants?: { id: string; remaining: number; total: number; expires_at: string | null; source_key: string; revoked: boolean }[];
+  ledger?: { delta: number; reason: string; created_at: string }[];
+};
+const REASONS: Record<string, string> = {
+  photo_reserved: "Foto ambientada",
+  technical_failure: "Devolución por falla técnica",
+  payment: "Compra",
+  annual_period: "Plan anual",
+  admin_adjustment: "Ajuste del equipo",
+  trial: "Prueba",
 };
 
-/** The same credits as the rest of habita: one balance, bought from Precios. */
-function CreditsSection({ credits }: { credits: number }) {
-  const [account, setAccount] = useState<AccountInfo | null>(null);
-  useEffect(() => {
-    api<AccountInfo>("/api/account").then(setAccount).catch(() => null);
+/** The agency's credits: one balance, its owner's; the owner manages plans and purchases. */
+function CreditsSection() {
+  const [info, setInfo] = useState<CreditsInfo | null>(null);
+  const [error, setError] = useState("");
+  const load = useCallback(async () => {
+    try {
+      setInfo(await api<CreditsInfo>("/api/panel/creditos"));
+      setError("");
+    } catch (e) {
+      setError(message(e, "No pudimos consultar los créditos."));
+    }
   }, []);
-  const grants = (account?.grants ?? []).filter((g) => !g.revoked && !g.source_key.startsWith("demo:"));
-  const used = grants.reduce((n, g) => n + (g.total - g.remaining), 0);
+  useEffect(() => {
+    void load();
+  }, [load]);
+  if (!info) return error ? <RetryRow error={error} onRetry={() => void load()} /> : <p role="status">Cargando créditos…</p>;
+  const owner = info.role === "owner";
+  const grants = (info.grants ?? []).filter((g) => !g.revoked);
   return (
     <>
       <div className="ap-head">
         <div>
-          <span className="eyebrow">Créditos IA</span>
-          <h1>{credits} {credits === 1 ? "crédito disponible" : "créditos disponibles"}</h1>
+          <span className="eyebrow">Créditos IA de {info.payer.agency}</span>
+          <h1>{info.credits === null ? "Saldo no disponible" : `${info.credits} ${info.credits === 1 ? "crédito disponible" : "créditos disponibles"}`}</h1>
         </div>
-        <Link href="/precios" className="button button-primary">
-          Comprar créditos
-        </Link>
+        {owner && (
+          <Link href="/precios" className="button button-primary">
+            Comprar créditos
+          </Link>
+        )}
       </div>
+      {info.creditsError && <RetryRow error="No pudimos consultar el saldo ahora. No significa que no tengas créditos." onRetry={() => void load()} />}
       <section className="account-panel">
-        <h2>Cómo se usan</h2>
+        <h2>Quién paga</h2>
         <p>
-          Cada foto que transformás con IA usa 1 crédito la primera vez. Las demás versiones y estilos de esa misma foto
-          no consumen créditos mientras tu plan esté vigente. Si una generación falla por un problema técnico, el
-          crédito vuelve solo. Importar propiedades, publicarlas y compartirlas no usa créditos.
+          Las ambientaciones de las propiedades de {info.payer.agency} usan un solo saldo: el de la cuenta dueña de la inmobiliaria
+          {info.payer.isYou ? " (tu cuenta)" : ""}.{" "}
+          {owner ? "Lo que compres con esta cuenta suma a ese saldo." : "Para sumar créditos, pedíselo al dueño de la inmobiliaria."}
         </p>
       </section>
       <section className="account-panel">
-        <h2>Consumo</h2>
-        {grants.length ? (
-          <>
-            <p>
-              Usaste {used} de {grants.reduce((n, g) => n + g.total, 0)} créditos de tus planes y packs.
-            </p>
+        <h2>Cómo se usan</h2>
+        <p>
+          Cada foto que transformás con IA usa 1 crédito la primera vez. Las demás versiones y estilos de esa misma foto no consumen créditos
+          mientras el plan esté vigente. Si una generación falla por un problema técnico, el crédito vuelve solo. Importar propiedades,
+          publicarlas y compartirlas no usa créditos.
+        </p>
+      </section>
+      {owner && (
+        <section className="account-panel">
+          <h2>Planes y movimientos</h2>
+          {grants.length ? (
             <ul className="ap-grants">
               {grants.map((g) => (
                 <li key={g.id}>
@@ -758,50 +1146,110 @@ function CreditsSection({ credits }: { credits: number }) {
                 </li>
               ))}
             </ul>
-          </>
-        ) : (
-          <p>Todavía no tenés créditos. Elegí un plan o un pack para transformar las fotos de tus propiedades.</p>
-        )}
-        <Link href="/cuenta" className="text-link">
-          Ver pagos y suscripciones
-        </Link>
-      </section>
+          ) : (
+            <p>Todavía no hay planes ni packs. Elegí uno para transformar las fotos de tus propiedades.</p>
+          )}
+          {info.ledger && info.ledger.length > 0 && (
+            <ul className="ap-grants" aria-label="Últimos movimientos">
+              {info.ledger.map((l, i) => (
+                <li key={i}>
+                  <span>
+                    {REASONS[l.reason] ?? l.reason}: {l.delta > 0 ? `+${l.delta}` : l.delta}
+                  </span>
+                  <small>{new Date(l.created_at).toLocaleDateString("es-AR")}</small>
+                </li>
+              ))}
+            </ul>
+          )}
+          <Link href="/cuenta" className="text-link">
+            Ver pagos y suscripciones
+          </Link>
+        </section>
+      )}
     </>
   );
 }
 
-/** "Mi sitio web": identity, contact, color, logo and what is public. */
-function SiteSection({
-  data,
-  reload,
-  setData,
-}: {
-  data: PanelSummary;
-  reload: () => Promise<unknown>;
-  setData: (d: PanelSummary) => void;
-}) {
+const CONTACT_KINDS = [
+  ["whatsapp", "WhatsApp"],
+  ["phone", "Teléfono"],
+  ["email", "Email"],
+  ["url", "Formulario o página de contacto"],
+] as const;
+type ContactKind = (typeof CONTACT_KINDS)[number][0];
+
+/** "Mi sitio web": identity, contact, color, logo and whether the catalog is public. Saves only what changed. */
+function SiteSection({ data, setData, reload }: { data: PanelSummary; setData: (d: PanelSummary) => void; reload: () => Promise<unknown> }) {
   const a = data.agency;
-  const [form, setForm] = useState({
+  const initial = {
     name: a.name,
     slug: a.slug ?? "",
     website: a.website ?? "",
-    whatsapp: a.whatsapp ?? "",
+    contactKind: (a.contactKind ?? "whatsapp") as ContactKind,
+    contactValue: a.contactValue ?? "",
     primary: a.primary ?? "#24382e",
-  });
+  };
+  const [form, setForm] = useState(initial);
+  const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const owner = data.role === "owner";
-  const published = data.properties.filter((p) => p.status === "published").length;
+  const changed = (Object.keys(initial) as (keyof typeof initial)[]).filter((k) => form[k] !== initial[k]);
+  const dirty = changed.length > 0;
+  // Unsaved changes are not lost by leaving the page by accident.
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+
   async function save(body: Record<string, unknown>, done: string) {
+    setSaving(true);
     setError("");
     setStatus("");
     try {
-      setData(await api<PanelSummary>("/api/panel", { method: "PATCH", body: JSON.stringify(body) }));
+      const next = await api<PanelSummary>("/api/panel", { method: "PATCH", body: JSON.stringify(body) });
+      setData(next);
       setStatus(done);
+      return next;
     } catch (e) {
-      setError(e instanceof Error ? e.message : "No pudimos guardar.");
+      setError(`${message(e, "No pudimos guardar.")} No se cambió nada.`);
+      return null;
+    } finally {
+      setSaving(false);
     }
   }
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!dirty) return;
+    if (
+      changed.includes("slug") &&
+      a.slug &&
+      a.sitePublished &&
+      !window.confirm("Cambiar la dirección deja sin funcionar los enlaces al catálogo anterior. Los enlaces de cada ficha (/demo/…) siguen funcionando. ¿Continuar?")
+    )
+      return;
+    // Only what changed: a new color never touches the contact.
+    const body: Record<string, unknown> = {};
+    for (const k of changed) {
+      if (k === "contactKind" || k === "contactValue") {
+        body.contactKind = form.contactKind;
+        body.contactValue = form.contactValue.trim();
+      } else body[k] = form[k];
+    }
+    const next = await save(body, "Cambios guardados.");
+    if (next)
+      setForm({
+        name: next.agency.name,
+        slug: next.agency.slug ?? "",
+        website: next.agency.website ?? "",
+        contactKind: (next.agency.contactKind ?? "whatsapp") as ContactKind,
+        contactValue: next.agency.contactValue ?? "",
+        primary: next.agency.primary ?? "#24382e",
+      });
+  }
+  const published = data.counts.published;
   return (
     <>
       <div className="ap-head">
@@ -809,11 +1257,7 @@ function SiteSection({
           <span className="eyebrow">Mi sitio web</span>
           <h1>Tu catálogo en habita</h1>
         </div>
-        {a.slug && (
-          <Link href={agencySitePath(a.slug)} target="_blank" className="button button-outline">
-            <ExternalLink size={16} aria-hidden="true" /> Ver mi sitio
-          </Link>
-        )}
+        <SiteLink agency={a} />
       </div>
       {!owner && <p className="inline-notice">Solo el dueño de la inmobiliaria puede cambiar el sitio.</p>}
       {error && (
@@ -821,46 +1265,29 @@ function SiteSection({
           {error}
         </p>
       )}
-      {status && (
+      {status && !dirty && (
         <p className="inline-notice" role="status">
           {status}
         </p>
       )}
       <section className="account-panel ap-site-state">
         <div>
-          <h2>{a.sitePublished ? "Tu sitio está publicado" : "Tu sitio no está publicado"}</h2>
+          <h2>{a.sitePublished ? "Tu catálogo está publicado" : "Tu catálogo no está publicado"}</h2>
           <p>
-            {a.slug ? `${typeof window === "undefined" ? "" : window.location.host}${agencySitePath(a.slug)}` : "Elegí la dirección de tu sitio."} ·{" "}
-            {published} {published === 1 ? "propiedad publicada" : "propiedades publicadas"}. Solo se muestran las propiedades
-            publicadas.
+            {a.slug ? agencySitePath(a.slug) : "Elegí la dirección de tu catálogo."} · {published} {published === 1 ? "ficha publicada" : "fichas publicadas"}. El
+            catálogo muestra solo las fichas publicadas; cada ficha publicada se puede compartir con su enlace aunque el catálogo no sea público.
           </p>
         </div>
         <button
           type="button"
           className={`button ${a.sitePublished ? "button-outline" : "button-primary"}`}
-          disabled={!owner || !a.slug}
-          onClick={() => void save({ sitePublished: !a.sitePublished }, a.sitePublished ? "Sitio despublicado." : "Sitio publicado.")}
+          disabled={!owner || !a.slug || saving}
+          onClick={() => void save({ sitePublished: !a.sitePublished }, a.sitePublished ? "Catálogo despublicado." : "Catálogo publicado.")}
         >
-          {a.sitePublished ? "Despublicar sitio" : "Publicar sitio"}
+          {a.sitePublished ? "Despublicar catálogo" : "Publicar catálogo"}
         </button>
       </section>
-      <form
-        className="account-panel ap-site-form"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void save(
-            {
-              name: form.name,
-              slug: form.slug,
-              website: form.website,
-              primary: form.primary,
-              contactKind: "whatsapp",
-              contactValue: form.whatsapp,
-            },
-            "Datos guardados.",
-          );
-        }}
-      >
+      <form className="account-panel ap-site-form" onSubmit={(e) => void submit(e)}>
         <h2>Marca y contacto</h2>
         <div className="ap-fields">
           <label>
@@ -868,7 +1295,7 @@ function SiteSection({
             <input required maxLength={120} disabled={!owner} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           </label>
           <label>
-            Dirección del sitio
+            Dirección del catálogo
             <span className="ap-slug">
               <span>/inmobiliaria/</span>
               <input
@@ -880,16 +1307,35 @@ function SiteSection({
                 onChange={(e) => setForm({ ...form, slug: e.target.value.toLowerCase() })}
               />
             </span>
+            {form.slug !== initial.slug && a.slug && <small className="ap-warn">Los enlaces al catálogo anterior dejarán de funcionar.</small>}
           </label>
           <label>
-            WhatsApp para consultas
+            Canal principal de consultas
+            <select disabled={!owner} value={form.contactKind} onChange={(e) => setForm({ ...form, contactKind: e.target.value as ContactKind })}>
+              {CONTACT_KINDS.map(([id, label]) => (
+                <option key={id} value={id}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            {CONTACT_KINDS.find(([id]) => id === form.contactKind)?.[1]}
             <input
-              inputMode="tel"
-              maxLength={30}
-              placeholder="+54 9 223 555-1234"
+              inputMode={form.contactKind === "email" ? "email" : form.contactKind === "url" ? "url" : "tel"}
+              maxLength={300}
+              placeholder={
+                form.contactKind === "whatsapp"
+                  ? "+54 9 223 555-1234"
+                  : form.contactKind === "email"
+                    ? "consultas@inmobiliaria.com"
+                    : form.contactKind === "url"
+                      ? "inmobiliaria.com/contacto"
+                      : "0223 555-1234"
+              }
               disabled={!owner}
-              value={form.whatsapp}
-              onChange={(e) => setForm({ ...form, whatsapp: e.target.value })}
+              value={form.contactValue}
+              onChange={(e) => setForm({ ...form, contactValue: e.target.value })}
             />
           </label>
           <label>
@@ -904,18 +1350,19 @@ function SiteSection({
             </span>
           </label>
         </div>
-        <button className="button button-primary" disabled={!owner}>
-          Guardar
-        </button>
+        <div className="ap-save-row">
+          <button className="button button-primary" disabled={!owner || !dirty || saving}>
+            {saving ? "Guardando…" : "Guardar cambios"}
+          </button>
+          <span className="dm-help" role="status">
+            {dirty ? "Hay cambios sin guardar." : "Todo guardado."}
+          </span>
+        </div>
       </form>
       <section className="account-panel">
         <h2>Logo</h2>
         <div className="dm-logo">
-          {a.logo ? (
-              <img src={a.logo} alt={`Logo de ${a.name}`} />
-          ) : (
-            <span className="dm-logo-empty">Sin logo: se muestra el nombre</span>
-          )}
+          {a.logo ? <img src={a.logo} alt={`Logo de ${a.name}`} /> : <span className="dm-logo-empty">Sin logo: se muestra el nombre</span>}
           {owner && (
             <div className="dm-logo-actions">
               <label className="button button-small button-outline">
@@ -924,20 +1371,33 @@ function SiteSection({
                   type="file"
                   accept="image/png,image/jpeg,image/webp,image/svg+xml"
                   className="dm-hidden-input"
+                  disabled={saving}
                   onChange={async (e) => {
                     const file = e.target.files?.[0];
                     if (!file) return;
                     const body = new FormData();
                     body.set("logo", file);
+                    setSaving(true);
+                    setError("");
                     await api("/api/panel/logo", { method: "POST", body })
                       .then(() => reload())
                       .then(() => setStatus("Logo guardado."))
-                      .catch((err) => setError(err instanceof Error ? err.message : "No pudimos guardar el logo."));
+                      .catch((err) => setError(message(err, "No pudimos guardar el logo.")))
+                      .finally(() => setSaving(false));
                   }}
                 />
               </label>
               {a.logo && (
-                <button type="button" className="text-link" onClick={() => void api("/api/panel/logo", { method: "DELETE" }).then(() => reload())}>
+                <button
+                  type="button"
+                  className="text-link"
+                  disabled={saving}
+                  onClick={() =>
+                    void api("/api/panel/logo", { method: "DELETE" })
+                      .then(() => reload())
+                      .catch((err) => setError(message(err, "No pudimos quitar el logo.")))
+                  }
+                >
                   Quitar
                 </button>
               )}
@@ -946,16 +1406,13 @@ function SiteSection({
         </div>
       </section>
       <section className="account-panel">
-        <h2>Propiedades en el sitio</h2>
-        <p>Publicá o despublicá cada propiedad desde «Mis propiedades». Las publicadas aparecen en tu sitio.</p>
-        <ul className="ap-site-list">
-          {data.properties.map((p) => (
-            <li key={p.id}>
-              <span>{p.title}</span>
-              <span className={`ap-badge ${p.status === "published" ? "is-live" : ""}`}>{p.status === "published" ? "Publicada" : "Borrador"}</span>
-            </li>
-          ))}
-        </ul>
+        <h2>Fichas en el catálogo</h2>
+        <p>
+          Publicá o despublicá cada ficha desde «Mis propiedades». Hoy hay {published} {published === 1 ? "ficha publicada" : "fichas publicadas"} de {data.counts.total}.
+        </p>
+        <Link href="/panel/propiedades?estado=draft" className="text-link">
+          Ver borradores
+        </Link>
       </section>
     </>
   );
@@ -963,8 +1420,9 @@ function SiteSection({
 
 /**
  * The first step: create the agency, or take over the demos the team
- * prepared for it with the one-time code it received. From a demo, its
- * public listing can be imported right away.
+ * prepared for it with the one-time link it received. A takeover shows the
+ * properties received (nothing to import again); a new agency coming from a
+ * demo is offered to import that demo's public listing.
  */
 export function AgencyOnboarding({
   signedIn,
@@ -979,10 +1437,9 @@ export function AgencyOnboarding({
 }) {
   const router = useRouter();
   const [name, setName] = useState(demo?.agencyName ?? "");
-  const claim = code ?? "";
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [created, setCreated] = useState(false);
+  const [done, setDone] = useState<{ kind: "created" | "claimed"; summary: PanelSummary } | null>(null);
   const here = `/panel/empezar${demo || code ? `?${new URLSearchParams({ ...(demo ? { demo: demo.token } : {}), ...(code ? { codigo: code } : {}) })}` : ""}`;
   const origin = demo ? "demo" : "direct";
   useEffect(() => {
@@ -993,10 +1450,11 @@ export function AgencyOnboarding({
     return (
       <div className="account-page container ap-start">
         <span className="eyebrow">habita para inmobiliarias</span>
-        <h1>Creá tu inmobiliaria gratis</h1>
+        <h1>{code ? "Quedate con tus demos" : "Creá tu inmobiliaria gratis"}</h1>
         <p>
-          Importá tus propiedades desde sus publicaciones, transformalas con IA y compartí fichas interactivas.
-          Sin tarjeta de crédito.
+          {code
+            ? "Creá tu cuenta (o entrá) para que las demos que preparamos para tu inmobiliaria pasen a tu panel."
+            : "Importá tus propiedades desde sus publicaciones, transformalas con IA y compartí fichas interactivas. Sin tarjeta de crédito."}
         </p>
         <div className="ap-start-actions">
           <Link href={`/acceso?modo=registro&next=${encodeURIComponent(here)}`} className="button button-primary button-large">
@@ -1009,41 +1467,69 @@ export function AgencyOnboarding({
       </div>
     );
 
-  if (hasAgency && !created)
+  if (hasAgency && !done)
     return (
       <div className="account-page container ap-start">
         <h1>Ya tenés tu inmobiliaria</h1>
-        {code && <p>Tu cuenta ya tiene una inmobiliaria, así que ese código no se puede usar con ella.</p>}
+        {code && <p>Tu cuenta ya tiene una inmobiliaria, así que ese enlace no se puede usar con ella. Pedile al equipo de habita que lo revise.</p>}
         <Link href="/panel" className="button button-primary">
           Ir a mi panel
         </Link>
       </div>
     );
 
-  async function run(task: () => Promise<unknown>, event: string) {
+  async function run(kind: "created" | "claimed") {
     setBusy(true);
     setError("");
     try {
-      await task();
-      track(event, { origin, ...(demo ? { demo_id: demo.id } : {}) });
-      if (demo) track("demo_to_agency_signup_completed", { demo_id: demo.id, claimed: event === "agency_claimed" });
-      setCreated(true);
+      const summary =
+        kind === "claimed"
+          ? await api<PanelSummary>("/api/panel/reclamar", { method: "POST", body: JSON.stringify({ code }) })
+          : await api<PanelSummary>("/api/panel", { method: "POST", body: JSON.stringify({ name }) });
+      track(kind === "claimed" ? "agency_claimed" : "agency_created", { origin, ...(demo ? { demo_id: demo.id } : {}) });
+      if (demo) track("demo_to_agency_signup_completed", { demo_id: demo.id, claimed: kind === "claimed" });
+      setDone({ kind, summary });
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "No pudimos crear tu inmobiliaria.");
+      setError(message(e, kind === "claimed" ? "No pudimos pasar las demos a tu cuenta." : "No pudimos crear tu inmobiliaria."));
     } finally {
       setBusy(false);
     }
   }
 
-  if (created)
+  if (done?.kind === "claimed")
+    return (
+      <div className="account-page container ap-start">
+        <span className="eyebrow">Listo</span>
+        <h1>Tus demos ya están en tu cuenta</h1>
+        <p>
+          Recibiste {done.summary.counts.total} {done.summary.counts.total === 1 ? "propiedad" : "propiedades"} con sus fotos y ambientaciones. Desde ahora, las
+          nuevas ambientaciones usan los créditos de {done.summary.agency.name}; las que ya estaban no cuestan nada.
+        </p>
+        <ul className="ap-site-list">
+          {done.summary.properties.map((p) => (
+            <li key={p.id}>
+              <span>{p.title}</span>
+              <Link href={`/panel/propiedades/${p.id}`} className="button button-small">
+                Abrir
+              </Link>
+            </li>
+          ))}
+        </ul>
+        <Link href="/panel" className="button button-primary">
+          Ir a mi panel
+        </Link>
+      </div>
+    );
+
+  if (done)
     return (
       <div className="account-page container ap-start">
         <span className="eyebrow">Listo</span>
         <h1>Tu inmobiliaria ya está en habita</h1>
         {demo?.listingUrl ? (
           <>
-            <p>Sumá ahora la propiedad de la demo: la leemos de su publicación original.</p>
+            <p>Sumá la propiedad de la demo: la leemos de su publicación original.</p>
             <section className="ap-import-hero">
               <ImportProperty initialUrl={demo.listingUrl} />
             </section>
@@ -1063,8 +1549,8 @@ export function AgencyOnboarding({
   return (
     <div className="account-page container ap-start">
       <span className="eyebrow">habita para inmobiliarias</span>
-      <h1>Creá tu inmobiliaria</h1>
-      {demo && (
+      <h1>{code ? "Quedate con tus demos" : "Creá tu inmobiliaria"}</h1>
+      {demo && !code && (
         <p>
           Viste la demo de <strong>{demo.title}</strong>. En tu panel podés traer todas tus propiedades y transformarlas así.
         </p>
@@ -1079,11 +1565,13 @@ export function AgencyOnboarding({
           className="account-panel ap-start-form"
           onSubmit={(e) => {
             e.preventDefault();
-            void run(() => api("/api/panel/reclamar", { method: "POST", body: JSON.stringify({ code: claim }) }), "agency_claimed");
+            void run("claimed");
           }}
         >
-          <h2>Quedate con tus demos</h2>
-          <p>El equipo de habita te envió este enlace para que tus demos, con sus ambientaciones, pasen a tu cuenta.</p>
+          <p>
+            El equipo de habita te envió este enlace para que tus demos, con sus fotos y ambientaciones, pasen a tu cuenta. Tu cuenta va a ser la
+            dueña de la inmobiliaria y sus créditos pagarán las ambientaciones nuevas.
+          </p>
           <button className="button button-primary" disabled={busy}>
             {busy ? "Un momento…" : "Pasar las demos a mi cuenta"}
           </button>
@@ -1093,7 +1581,7 @@ export function AgencyOnboarding({
           className="account-panel ap-start-form"
           onSubmit={(e) => {
             e.preventDefault();
-            void run(() => api("/api/panel", { method: "POST", body: JSON.stringify({ name }) }), "agency_created");
+            void run("created");
           }}
         >
           <label>

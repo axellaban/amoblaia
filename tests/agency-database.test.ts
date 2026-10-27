@@ -7,6 +7,7 @@ let n = 0;
 const id = () => `00000000-0000-4000-8000-${String(800000000000 + ++n).padStart(12, "0")}`;
 const one = async <T>(sql: string, params: unknown[] = []) => (await db.query<T>(sql, params)).rows[0];
 const MIGRATION = "supabase/migrations/202610280001_agency_accounts.sql";
+const RELIABILITY = "supabase/migrations/202610290001_panel_reliability.sql";
 
 beforeAll(async () => {
   db = new PGlite();
@@ -140,6 +141,85 @@ describe("Taking over a demo with a code", () => {
   });
 });
 
+describe("Imports and invitations that reflect what happened", () => {
+  it("records partial imports, refuses a second concurrent import of the same URL and repeats a request once", async () => {
+    const owner = await account();
+    const agency = await createAgency(owner, "Concurrente", "concurrente");
+    const start = (url: string, key: string | null = null) =>
+      db.query("insert into property_imports(agency_id,user_id,url,status,request_key) values($1,$2,$3,'started',$4) returning id", [agency, owner, url, key]);
+    const first = (await start("https://x.test/p/1", id())).rows[0] as { id: string };
+    await expect(start("https://x.test/p/1")).rejects.toThrow(/property_imports_running/);
+    // Another URL can run at the same time.
+    await start("https://x.test/p/2");
+    await db.query(
+      "update property_imports set status='partial',photos_total=12,photos_done=8,pending_images=$2 where id=$1",
+      [first.id, JSON.stringify(["https://x.test/a.jpg"])],
+    );
+    // Once finished, the URL can be imported again (the duplicate check is the server's).
+    await start("https://x.test/p/1");
+    const key = id();
+    await start("https://x.test/p/3", key);
+    await db.query("update property_imports set status='completed' where request_key=$1", [key]);
+    await expect(start("https://x.test/p/4", key)).rejects.toThrow(/property_imports_request/);
+    await expect(db.query("update property_imports set status='lost' where id=$1", [first.id])).rejects.toThrow();
+  });
+
+  it("counts an agency's properties without any list limit", async () => {
+    const admin = await account();
+    const { agency, property } = await prospect(admin);
+    for (let i = 0; i < 320; i++) {
+      const pr = (await one<{ id: string }>("insert into demo_properties(agency_id,title) values($1,$2) returning id", [agency, `P${i}`]))!.id;
+      await db.query("insert into demos(agency_id,property_id,token,status,settings) values($1,$2,$3,$4,$5)", [
+        agency,
+        pr,
+        `tok_${id().replace(/-/g, "")}`,
+        i % 2 ? "published" : "draft",
+        JSON.stringify({ operation: i % 3 ? "Venta" : "Alquiler" }),
+      ]);
+    }
+    void property;
+    const counts = (await one<{ c: { total: number; published: number; staged: number; operations: string[] } }>("select habita_agency_counts($1) as c", [agency]))!.c;
+    expect(counts).toMatchObject({ total: 321, published: 160, staged: 1 });
+    expect(counts.operations.sort()).toEqual(["Alquiler", "Venta"]);
+  });
+
+  it("refuses a revoked invitation", async () => {
+    const admin = await account();
+    const { agency } = await prospect(admin);
+    const hash = await claimCode(agency, admin);
+    await db.query("update agency_claims set revoked_at=now() where code_hash=$1", [hash]);
+    await expect(claim(await account(), hash)).rejects.toThrow(/CLAIM_INVALID/);
+  });
+
+  it("lists agencies for the team with the facts of their stage", async () => {
+    const admin = await account();
+    const waiting = await prospect(admin);
+    await db.query("update agencies set name='Lista Espera' where id=$1", [waiting.agency]);
+    await claimCode(waiting.agency, admin);
+    const expired = await prospect(admin);
+    await db.query("update agencies set name='Lista Vencida' where id=$1", [expired.agency]);
+    await claimCode(expired.agency, admin, "now()-interval '1 day'");
+    const owner = await account();
+    const claimed = await prospect(admin);
+    await db.query("update agencies set name='Lista Reclamada' where id=$1", [claimed.agency]);
+    await claim(owner, await claimCode(claimed.agency, admin), "lista-reclamada");
+    await db.query("update demos set status='published' where agency_id=$1", [claimed.agency]);
+    await db.query("insert into property_imports(agency_id,url,status) values($1,'https://x.test/1','partial')", [claimed.agency]);
+    type Row = { name: string; owner_id: string | null; properties: number; published: number; partial_imports: number; live_claim_expires: string | null; total: number };
+    const rows = (await db.query<Row>("select * from habita_admin_agencies('lista',10,0)")).rows;
+    const by = Object.fromEntries(rows.map((r) => [r.name, r]));
+    expect(rows).toHaveLength(3);
+    expect(Number(rows[0].total)).toBe(3);
+    expect(by["Lista Espera"].live_claim_expires).not.toBeNull();
+    expect(by["Lista Vencida"].live_claim_expires).toBeNull();
+    expect(by["Lista Reclamada"]).toMatchObject({ owner_id: owner });
+    expect(Number(by["Lista Reclamada"].published)).toBe(1);
+    expect(Number(by["Lista Reclamada"].partial_imports)).toBe(1);
+    // A search with wildcard characters is taken literally.
+    expect((await db.query("select * from habita_admin_agencies('%',10,0)")).rows).toEqual([]);
+  });
+});
+
 describe("Isolation between agencies (RLS)", () => {
   const as = async <T>(user: string, sql: string) => {
     await db.exec("set role authenticated");
@@ -178,12 +258,20 @@ describe("Isolation between agencies (RLS)", () => {
       "public.habita_create_agency(uuid,text,text)",
       "public.habita_claim_agency(uuid,text,text)",
       "public.habita_free_slug(text,uuid)",
+      "public.habita_agency_counts(uuid)",
+      "public.habita_admin_agencies(text,integer,integer)",
     ])
       for (const role of ["anon", "authenticated"])
         expect((await one<{ ok: boolean }>("select has_function_privilege($1,$2,'execute') as ok", [role, fn]))!.ok).toBe(false);
   });
 
-  it("can be applied again without errors", async () => {
+  it("can be applied again without errors, and keeps refusing revoked invitations", async () => {
     await expect(db.exec(readFileSync(MIGRATION, "utf8"))).resolves.toBeTruthy();
+    await expect(db.exec(readFileSync(RELIABILITY, "utf8"))).resolves.toBeTruthy();
+    const admin = await account();
+    const { agency } = await prospect(admin);
+    const hash = await claimCode(agency, admin);
+    await db.query("update agency_claims set revoked_at=now() where code_hash=$1", [hash]);
+    await expect(claim(await account(), hash)).rejects.toThrow(/CLAIM_INVALID/);
   });
 });

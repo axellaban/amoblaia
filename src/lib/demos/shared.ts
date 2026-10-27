@@ -82,7 +82,8 @@ export type PublicDemo = {
   facts: import("./branding").Fact[];
   amenities: import("./branding").AmenityGroup[];
   /** Coordinates rounded to the published precision; null without a verified location. */
-  map: { precision: "zone" | "approx" | "exact"; lat: number; lng: number } | null;
+  /** Rounded to its precision (a zone to ~1 km): never the exact point when the agency chose an area. */
+  map: { precision: "zone" | "approx" | "exact"; lat: number; lng: number; radius: number | null } | null;
   agent: { name: string; role: string | null; photoUrl: string | null; initials: string } | null;
   /** Where inquiries go, already resolved (agent first, then the agency). */
   contact: {

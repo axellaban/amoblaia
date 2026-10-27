@@ -7,12 +7,13 @@ import { MapPin, MessageCircle, Search, Sparkles } from "lucide-react";
 import { track } from "@/lib/analytics";
 import type { PublicSite } from "@/lib/agency/site";
 
-export function AgencySite({ site }: { site: PublicSite }) {
+/** `preview`: the members' look at a private catalog; its cards open each property's own link. */
+export function AgencySite({ site, preview = false }: { site: PublicSite; preview?: boolean }) {
   const [query, setQuery] = useState("");
   const [operation, setOperation] = useState("");
   useEffect(() => {
-    track("agency_website_viewed", { agency_id: site.agencyId, properties: site.properties.length });
-  }, [site.agencyId, site.properties.length]);
+    if (!preview) track("agency_website_viewed", { agency_id: site.agencyId, properties: site.properties.length });
+  }, [site.agencyId, site.properties.length, preview]);
   const operations = useMemo(
     () => [...new Set(site.properties.map((p) => p.operation).filter((o): o is string => Boolean(o)))],
     [site.properties],
@@ -73,7 +74,7 @@ export function AgencySite({ site }: { site: PublicSite }) {
           <ul className="as-grid">
             {shown.map((p) => (
               <li key={p.token}>
-                <Link href={`/inmobiliaria/${site.slug}/${p.token}`} className="as-card">
+                <Link href={preview ? `/demo/${p.token}` : `/inmobiliaria/${site.slug}/${p.token}`} className="as-card">
                   <span className="as-photo">
                     {p.cover ? <img src={p.cover} alt="" loading="lazy" /> : null}
                     {p.staged && (

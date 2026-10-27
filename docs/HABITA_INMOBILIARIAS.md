@@ -192,9 +192,125 @@ Para importar entre 100 y 300 propiedades por inmobiliaria haría falta:
   rutas con base simulada) y con Playwright usando las APIs interceptadas.
 - Créditos de prueba para inmobiliarias nuevas. Hoy generar requiere saldo pago.
   Regalar créditos al crear la cuenta es una decisión comercial.
-- Invitar colaboradores. El rol existe en el modelo, pero falta la pantalla de invitación.
+- Invitar colaboradores. El rol existe en el modelo, pero falta la pantalla de invitación (no se agregó una a medias).
 - Que los sitios se indexen en buscadores. Hoy son `noindex`, para no competir con el
   sitio propio de la inmobiliaria. También quedan pendientes los dominios propios, el
   constructor visual y el CRM: la estructura de `agencies`/`slug`/`site_published`
   ya lo contempla.
 - Importación masiva del lado del servidor (sección 6).
+
+## 9. Correcciones del panel (2026-10-27)
+
+### 9.1 Mapas: diagnóstico
+
+Al crear fichas desde una URL, el mapa se perdía o quedaba mal por cinco motivos,
+reproducidos con la página real de Russillo y con casos sintéticos:
+
+1. El lector buscaba solo `L.marker([lat, lng])`. Russillo publica
+   `L.circle([lat, lng], {radius: 400})`: se tomaba el centro, pero el radio se
+   descartaba y la ficha mostraba otra área.
+2. Coordenadas en JSON-LD (`geo`), en `data-lat`/`data-lng`, en `google.maps.LatLng`,
+   en objetos `{lat, lng}` o en enlaces e iframes de mapas no se leían.
+3. La primera coordenada de la página ganaba aunque fuera la de la oficina (pie de
+   página, sección «Sucursales», `Organization` del JSON-LD) o la de una propiedad
+   relacionada.
+4. El mapa detectado se guardaba aunque hubiera dos ubicaciones distintas, sin
+   avisar.
+5. En el panel de inmobiliarias, el mapa elegido en la vista previa no llegaba a
+   la ficha creada.
+
+### 9.2 Cómo se detecta ahora (`src/lib/demos/geo.ts`)
+
+- **Formatos leídos:** JSON-LD (`geo` de la propiedad, no del vendedor o la oficina),
+  `meta` `place:location` / `geo.position`, Leaflet `L.circle` (con su radio),
+  `L.marker` / `circleMarker` / `L.latLng`, `setView` / `flyTo` / `center` (solo como
+  vista, de baja confianza), `google.maps.LatLng`, objetos `{lat, lng}` en cualquier
+  orden, atributos `data-lat`/`data-lng` y enlaces o iframes de Google Maps
+  (`?q=`, `ll=`, `/place/lat,lng`, `!3d!4d`, `@lat,lng,zoom`, `embed pb`),
+  OpenStreetMap (`mlat/mlon`, `#map=`, `bbox`), Waze, Apple Maps, Bing y `geo:`.
+- **Contexto:** se descarta lo que está en el pie, en secciones de oficina o
+  sucursal y después del final de la ficha (relacionadas). Los candidatos a menos
+  de 300 m se agrupan; varias fuentes que coinciden suben la confianza.
+- **Resultado:** «Mapa detectado» (se guarda), «Requiere revisión» (dos lugares
+  parecidos o solo una vista del mapa: se muestra pero no se guarda sin elegir) o
+  «No encontrado».
+- **Precisión:** nunca se marca «Exacta» sola. Un círculo de más de 600 m o una
+  vista del mapa es «Zona»; lo demás, «Aproximada».
+- **Límites:** solo se lee el HTML que entrega el servidor (sin ejecutar
+  JavaScript remoto ni `eval`). Los mapas que se cargan después por API o en un
+  iframe de otro sitio sin coordenadas en el enlace no se ven: la vista previa lo
+  dice y pide el enlace. Los enlaces cortos (`maps.app.goo.gl`, `goo.gl/maps`) no
+  se siguen, para no abrir conexiones nuevas: hay que abrirlos y pegar el enlace
+  largo o las coordenadas. No hay geocodificación de direcciones ni credenciales
+  nuevas. Se mantienen las protecciones de lectura (direcciones públicas,
+  redirecciones, tamaño y TLS).
+
+### 9.3 Guías cortas
+
+**Importar y corregir un mapa.** Pegá la URL y tocá «Importar propiedad». En la
+vista previa, el bloque **Mapa** dice el estado. Si «Requiere revisión», abrí
+«ver en el mapa» de cada opción y elegí la de la propiedad. Si «No encontrado», elegí
+«Cargar otra ubicación» y pegá el enlace de Google Maps, OpenStreetMap, Waze o Apple
+Maps (o la latitud y la longitud; acepta coma decimal). En «Qué mostrar» elegí
+Zona, Aproximada o Exacta. Después se puede cambiar en la ficha: Datos → Mapa.
+
+**Recuperar una importación parcial.** En Inicio, «Importaciones pendientes» muestra
+«Importada parcialmente: X de Y fotos». «Reintentar N fotos» descarga solo las
+que faltan. Si faltan los datos, «Completar datos» abre la ficha con «Volver a leer
+la publicación». Una fallida se reintenta con «Reintentar». Confirmar dos veces la
+misma importación crea una sola propiedad, y dos importaciones simultáneas de la
+misma URL se rechazan.
+
+**Publicar y compartir con catálogo privado.** «Publicar ficha» hace visible esa
+propiedad en su enlace propio (`/demo/<token>`) aunque el catálogo no esté
+publicado. «Publicar catálogo» (Mi sitio web) publica `/inmobiliaria/<slug>`; desde
+ahí, el enlace para compartir pasa a ser el del catálogo. Si el catálogo es privado,
+«Vista previa de mi sitio» lo muestra solo a tu equipo. Cambiar la dirección del
+catálogo avisa que los enlaces viejos del catálogo dejan de funcionar; los de
+`/demo/` siguen andando.
+
+**Saldo y permisos.** La inmobiliaria tiene un solo saldo: el de la cuenta del dueño,
+que paga todas las ambientaciones. Los colaboradores ven ese saldo y quién paga,
+nunca su saldo personal, y no ven planes ni historial. Antes de ambientar, el panel
+muestra cuántas fotos usan crédito y cuántas son versiones gratis (foto ya pagada
+con cobertura vigente). Si el saldo no se puede leer, se muestra «No disponible», no 0.
+
+### 9.4 Migración `202610290001_panel_reliability.sql`
+
+Es aditiva e idempotente y va **después** de `202610280001_agency_accounts.sql`.
+Agrega el estado `partial` y las columnas de seguimiento en `property_imports`
+(fotos totales, hechas y pendientes, datos guardados, clave de pedido, huella de la
+vista previa), un índice único que impide dos importaciones simultáneas de la misma
+URL, `agency_claims.revoked_at`, la nueva `habita_claim_agency` (rechaza invitaciones
+revocadas), `habita_agency_counts` y `habita_admin_agencies`. Las funciones son solo
+para `service_role`.
+
+1. En un proyecto de prueba (no en producción): abrí el SQL Editor y ejecutá el
+   archivo completo.
+2. Verificá: `select habita_agency_counts('<id de una inmobiliaria>');` y
+   `select * from habita_admin_agencies(null, 5, 0);`.
+3. Si volvés a ejecutar `202610280001`, ejecutá después `202610290001` otra vez:
+   la primera redefine `habita_claim_agency` sin el control de revocación.
+4. Sin esta migración, el panel muestra error con «Reintentar» (no un panel vacío) y
+   la importación responde error, porque necesita las columnas nuevas.
+
+### 9.5 Vista del equipo
+
+`/admin/inmobiliarias` lista las inmobiliarias con su etapa, calculada a partir
+de los datos: Sin cuenta, Invitación pendiente, Cuenta reclamada y Primera propiedad
+publicada. También muestra las importaciones parciales o fallidas y las
+ambientaciones en revisión. Tiene búsqueda y paginación con el total real. El
+detalle es de solo lectura, salvo las invitaciones: crear un enlace (vence a los 30
+días y sirve una vez) y revocar uno pendiente; las dos acciones quedan en
+`admin_audit`. No se implementó la vista de soporte como cliente.
+
+### 9.6 Sin validar en este entorno
+
+- Supabase real: la migración se probó con PGlite (todas las migraciones en orden,
+  RLS, conteos de más de 300, concurrencia, revocación), pero no se aplicó en
+  ningún proyecto.
+- Las URLs reales de otros portales (Zonaprop, Argenprop, MercadoLibre, sitios con
+  Tokko o Properati). Hace falta una URL de cada uno para confirmar qué formato de
+  mapa publican. Russillo se verificó con su HTML real guardado.
+- Compartir nativo en teléfonos reales: se probó con `navigator.share` simulado
+  (aceptado, cancelado, no permitido) y con el portapapeles rechazado.

@@ -27,6 +27,28 @@ export type Fact = { icon: FactIcon; value: string; label: string };
 export type AmenityGroup = { title: string; items: string[] };
 /** How precise the published location is: the map never shows more. */
 export type MapPrecision = "none" | "zone" | "approx" | "exact";
+/** Where the map's coordinates came from: what the listing published, or a person. */
+export const MAP_SOURCES = [
+  "json-ld",
+  "meta",
+  "leaflet-circle",
+  "leaflet-marker",
+  "google-latlng",
+  "data-attribute",
+  "lat-lng-object",
+  "map-link",
+  "map-view",
+  "manual",
+] as const;
+export type MapSource = (typeof MAP_SOURCES)[number];
+export type MapSettings = {
+  precision: MapPrecision;
+  lat: number | null;
+  lng: number | null;
+  /** Meters of the area the listing draws, when it draws one. */
+  radius: number | null;
+  source: MapSource | null;
+};
 export type Agent = {
   name: string;
   role: string | null;
@@ -56,7 +78,7 @@ export type DemoSettings = {
   /** The listing's full description, as published. */
   description: string | null;
   amenities: AmenityGroup[];
-  map: { precision: MapPrecision; lat: number | null; lng: number | null };
+  map: MapSettings;
   agent: Agent | null;
   closingTitle: string | null;
   closingText: string | null;
@@ -81,7 +103,7 @@ export const DEFAULT_SETTINGS: DemoSettings = {
   facts: [],
   description: null,
   amenities: [],
-  map: { precision: "none", lat: null, lng: null },
+  map: { precision: "none", lat: null, lng: null, radius: null, source: null },
   agent: null,
   closingTitle: null,
   closingText: null,
@@ -168,6 +190,8 @@ export function readSettings(raw: unknown): DemoSettings {
       precision: MAP_PRECISIONS.includes(map.precision as MapPrecision) ? (map.precision as MapPrecision) : "none",
       lat: num(map.lat, -90, 90),
       lng: num(map.lng, -180, 180),
+      radius: num(map.radius, 50, 5000),
+      source: MAP_SOURCES.includes(map.source as MapSource) ? (map.source as MapSource) : null,
     },
     agent: agentName
       ? {

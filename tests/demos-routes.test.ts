@@ -397,10 +397,10 @@ describe("Public demo", () => {
     };
     const demo = await publishedDemo(TOKEN);
     expect(demo?.price).toBeNull();
-    expect(demo?.map).toEqual({ precision: "approx", lat: -38.005, lng: -57.551 });
+    expect(demo?.map).toEqual({ precision: "approx", lat: -38.005, lng: -57.551, radius: 300 });
     expect(JSON.stringify(demo)).not.toContain("950.000");
     (state.tables.demos[0] as Row).settings = { map: { precision: "zone", lat: -38.004871, lng: -57.551234 } };
-    expect((await publishedDemo(TOKEN))?.map).toEqual({ precision: "zone", lat: -38, lng: -57.55 });
+    expect((await publishedDemo(TOKEN))?.map).toEqual({ precision: "zone", lat: -38, lng: -57.55, radius: 1000 });
   });
 
   it("routes inquiries to the assigned agent first, then to the agency", async () => {

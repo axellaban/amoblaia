@@ -1,4 +1,5 @@
 "use client";
+import { sourceName } from "@/lib/demos/geo";
 import { useEffect, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { FACT_ICONS, type DemoSettings, type FactIcon } from "@/lib/demos/branding";
@@ -36,6 +37,9 @@ type Form = {
   precision: DemoSettings["map"]["precision"];
   lat: string;
   lng: string;
+  /** A map link pasted instead of the coordinates. */
+  mapLink: string;
+  mapSource: DemoSettings["map"]["source"];
   agentName: string;
   agentRole: string;
   agentWhatsapp: string;
@@ -62,6 +66,8 @@ const toForm = (s: DemoSettings): Form => ({
   precision: s.map.precision,
   lat: s.map.lat?.toString() ?? "",
   lng: s.map.lng?.toString() ?? "",
+  mapLink: "",
+  mapSource: s.map.source,
   agentName: s.agent?.name ?? "",
   agentRole: s.agent?.role ?? "",
   agentWhatsapp: s.agent?.whatsapp ?? "",
@@ -85,7 +91,9 @@ const toSettings = (f: Form) => ({
   description: f.description,
   facts: f.facts.filter((x) => x.value.trim()),
   amenities: f.amenities.map((g) => ({ title: g.title, items: g.items.split("\n") })),
-  map: { precision: f.precision, lat: f.lat.trim() || null, lng: f.lng.trim() || null },
+  map: f.mapLink.trim()
+    ? { precision: f.precision, link: f.mapLink.trim() }
+    : { precision: f.precision, lat: f.lat.trim() || null, lng: f.lng.trim() || null },
   agent: {
     name: f.agentName,
     role: f.agentRole,
@@ -305,6 +313,15 @@ export function ListingForm({
           </label>
           {form.precision !== "none" && (
             <>
+              <label className="dm-wide">
+                Enlace del mapa <small>(Google Maps, OpenStreetMap, Waze o Apple Maps, con el punto marcado)</small>
+                <input
+                  value={form.mapLink}
+                  inputMode="url"
+                  placeholder="https://www.google.com/maps/place/…"
+                  onChange={set("mapLink")}
+                />
+              </label>
               <label>
                 Latitud
                 <input value={form.lat} inputMode="decimal" placeholder="-38.0055" onChange={set("lat")} />
@@ -316,10 +333,13 @@ export function ListingForm({
             </>
           )}
         </div>
+        {form.precision !== "none" && form.mapSource && !form.mapLink && (
+          <p className="dm-help">Origen del punto: {sourceName(form.mapSource)}.</p>
+        )}
         <p className="dm-help">
-          El texto de ubicación se edita en «Propiedad». Para el mapa, copiá las coordenadas del centro de la zona
-          publicada (en Google Maps: clic derecho sobre el punto). Zonas y ubicaciones aproximadas se muestran como
-          un área, sin marcador, y se redondean.
+          El texto de ubicación se edita en «Propiedad». Pegá el enlace del mapa o las coordenadas (en Google Maps:
+          clic derecho sobre el punto). Zonas y ubicaciones aproximadas se muestran como un área, sin marcador, y se
+          redondean antes de llegar al navegador.
         </p>
       </fieldset>
 
