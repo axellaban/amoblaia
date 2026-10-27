@@ -24,7 +24,8 @@ export default async function StartPage({ searchParams }: Props) {
   const code = one(q.codigo);
   const user = await currentUser().catch(() => null);
   const signedIn = Boolean(user && !user.is_anonymous && user.email_confirmed_at);
-  const membership = signedIn ? await membershipOf(user!.id).catch(() => null) : null;
+  // Not knowing whether the account already has an agency is an error, not a "no".
+  const membership = signedIn ? await membershipOf(user!.id) : null;
   const demo = token ? await publishedDemo(token).catch(() => null) : null;
   return (
     <AgencyOnboarding

@@ -35,8 +35,18 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     window.location.assign(`/acceso?next=${encodeURIComponent(window.location.pathname)}`);
     throw new Error("Tu sesión venció. Volvé a ingresar.");
   }
-  if (!r.ok) throw new Error(payload.error || "No pudimos completar la operación.");
+  if (!r.ok) throw new ApiError(payload.error || "No pudimos completar la operación.", r.status, payload);
   return payload as T;
+}
+/** A failed request, with its status and the server's answer (e.g. the new preview of a changed listing). */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+    public body: Record<string, unknown>,
+  ) {
+    super(message);
+  }
 }
 
 /** The buyers' link, or the one for presenting the demo to the agency (it may show the strip). */
@@ -300,6 +310,10 @@ export function DemoList() {
         ))}
       </ul>
       <p className="dm-footer-link">
+        <Link href="/admin/inmobiliarias" className="text-link">
+          Ver inmobiliarias
+        </Link>
+        {" · "}
         <Link href="/administracion" className="text-link">
           Ir a Administración
         </Link>

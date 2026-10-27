@@ -1,5 +1,6 @@
 import { failure, HttpError } from "@/lib/commerce/http";
 import { requireDemoAccess } from "@/lib/agency/server";
+import { markSettingsSaved } from "@/lib/agency/imports";
 import { completeAgency, demoRow, saveJson, settingsOf } from "@/lib/demos/server";
 import { readJson } from "@/lib/demos/input";
 import { readListing } from "@/lib/demos/listing";
@@ -71,7 +72,12 @@ export async function POST(request: Request, { params }: Params) {
       ...plan.fill.map((c) => c.field),
       ...plan.conflicts.map((c) => c.field).filter((f) => replace.includes(f)),
     ];
-    const next = applyImport(current, listing.imported, fields);
+    // A map that needed a review is taken only when the admin chose to replace it.
+    const imported =
+      listing.imported.mapStatus === "review" && replace.includes("map")
+        ? { ...listing.imported, mapStatus: "found" as const }
+        : listing.imported;
+    const next = applyImport(current, imported, fields);
     if (fields.includes("title") || fields.includes("location")) {
       const { error } = await adminClient()
         .from("demo_properties")
@@ -80,6 +86,8 @@ export async function POST(request: Request, { params }: Params) {
       if (error) throw new Error("PROPERTY_UPDATE_FAILED");
     }
     if (fields.length) await saveJson("demos", "settings", demo.id, next.settings);
+    // An import that could not save these data is no longer missing them.
+    await markSettingsSaved(demo.id).catch(() => null);
     const completed = await completeAgency(demo.agency_id, listing.imported).catch(() => ({ logo: false, contact: false }));
     return Response.json(
       {

@@ -32,15 +32,13 @@ export type PublicSite = {
  * published properties, with what a listing card shows. No notes, settings
  * or private paths: images go through the public demo image route.
  */
-export async function publicSite(slug: string): Promise<PublicSite | null> {
+export async function publicSite(slug: string, opts: { preview?: boolean } = {}): Promise<PublicSite | null> {
   if (!validSlug(slug)) return null;
   const db = adminClient();
-  const { data: agency } = await db
-    .from("agencies")
-    .select("id,name,slug,website")
-    .eq("slug", slug)
-    .eq("site_published", true)
-    .maybeSingle();
+  // A private catalog is only read for its own members' preview.
+  let query = db.from("agencies").select("id,name,slug,website").eq("slug", slug);
+  if (!opts.preview) query = query.eq("site_published", true);
+  const { data: agency } = await query.maybeSingle();
   if (!agency) return null;
   const a = agency as { id: string; name: string; slug: string; website: string | null };
   const [branding, demos] = await Promise.all([

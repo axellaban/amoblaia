@@ -1,7 +1,7 @@
 import { requireAdmin, failure, rpc } from "@/lib/commerce/http";
 import { completeAgency, createDemo, saveJson } from "@/lib/demos/server";
 import { DEFAULT_SETTINGS } from "@/lib/demos/branding";
-import { readJson } from "@/lib/demos/input";
+import { importedMap, readJson } from "@/lib/demos/input";
 import { readListing } from "@/lib/demos/listing";
 import { applyImport, IMPORT_FIELDS } from "@/lib/demos/import";
 import { cleanText } from "@/lib/demos/shared";
@@ -56,6 +56,7 @@ export async function POST(request: Request) {
       imp,
       [...IMPORT_FIELDS],
     );
+    settings = { ...settings, settings: { ...settings.settings, map: importedMap(imp, body.map, settings.settings.map) } };
     const chosen = typeof body.price === "string" ? body.price : null;
     if (imp.priceConflict && chosen && imp.priceOptions.includes(chosen))
       settings = { ...settings, settings: { ...settings.settings, price: chosen, priceConflict: null } };

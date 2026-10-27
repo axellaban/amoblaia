@@ -36,6 +36,21 @@ export type PanelProperty = {
   createdAt: string;
 };
 
+export type PanelImport = {
+  id: string;
+  url: string;
+  status: "partial" | "failed";
+  error: string | null;
+  createdAt: string;
+  /** The property page it created, if it got that far. */
+  propertyId: string | null;
+  photosTotal: number;
+  photosDone: number;
+  /** Photos still to download: retried alone. */
+  pendingImages: string[];
+  settingsSaved: boolean;
+};
+
 export type PanelSummary = {
   agency: {
     id: string;
@@ -45,15 +60,28 @@ export type PanelSummary = {
     sitePublished: boolean;
     logo: string | null;
     primary: string | null;
-    whatsapp: string | null;
-    email: string | null;
+    contactKind: "whatsapp" | "url" | "phone" | "email" | null;
+    contactValue: string | null;
   };
   role: AgencyRole;
-  credits: number;
+  /** The agency's balance (its owner's credits); null when it could not be read. */
+  credits: number | null;
+  counts: { total: number; published: number; drafts: number; staged: number; review: number; operations: string[] };
+  /** The latest properties (the full list is paged: /api/panel/propiedades). */
   properties: PanelProperty[];
-  imports: { id: string; url: string; status: string; error: string | null; createdAt: string; propertyId: string | null }[];
+  /** Imports that need something: partial (data or photos missing) or failed. */
+  imports: PanelImport[];
 };
 
 /** A slug as the database accepts it: lowercase letters, digits and dashes. */
 export const validSlug = (s: unknown): s is string =>
   typeof s === "string" && /^[a-z0-9]([a-z0-9-]{1,40}[a-z0-9])$/.test(s);
+
+/**
+ * The link to share a published property. /demo/<token> works whether or
+ * not the agency's catalog is public; inside a public catalog the same page
+ * is also at /inmobiliaria/<slug>/<token>.
+ */
+export function propertyLink(origin: string, p: { token: string }, site?: { slug: string | null; sitePublished: boolean }) {
+  return site?.slug && site.sitePublished ? `${origin}${agencyPropertyPath(site.slug, p.token)}` : `${origin}/demo/${p.token}`;
+}

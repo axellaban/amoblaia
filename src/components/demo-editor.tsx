@@ -33,6 +33,7 @@ import { ListingForm } from "./demo-listing-form";
 import { ImportPreview, ImportReport, exceptions, foreignPhotos, syncPhotos } from "./demo-import";
 import type { ImportChange, ImportField, ImportedDemo } from "@/lib/demos/import";
 import { track } from "@/lib/analytics";
+import { shareLink, whatsappOpened } from "@/lib/agency/share";
 import {
   MAX_DEMO_STYLES,
   adminGenerationUrl,
@@ -147,6 +148,16 @@ export function DemoEditor({ id, mode = "admin" }: { id: string; mode?: "admin" 
   useEffect(() => {
     void load().catch((e) => setError(e.message));
   }, [load]);
+  // From an import that could not save the property's data: open the completion right away.
+  const completeOpened = useRef(false);
+  useEffect(() => {
+    if (!agencyMode || completeOpened.current || !detail?.property.listing_url) return;
+    if (new URLSearchParams(window.location.search).get("completar") !== "1") return;
+    completeOpened.current = true;
+    api<Reread>(`${base}/publicacion`)
+      .then(setReread)
+      .catch((e) => setError(e instanceof Error ? e.message : "No pudimos leer la publicación."));
+  }, [agencyMode, base, detail?.property.listing_url]);
 
   const updatePhoto = useCallback((photo: EditorPhoto | null, photoId: string) => {
     setDetail((d) => {
@@ -230,27 +241,34 @@ export function DemoEditor({ id, mode = "admin" }: { id: string; mode?: "admin" 
     setError("");
     setNotice("");
     if (agencyMode) {
-      // One credit per photo the first time it is staged; more versions of a
-      // paid photo are included. Shown before anything starts.
-      const firstTime = new Set(
-        tasks.filter((t) => !detail?.photos.find((p) => p.id === t.photoId)?.charged).map((t) => t.photoId),
-      ).size;
-      if (firstTime > 0) {
-        const { credits } = await api<{ credits: number }>("/api/panel").catch(() => ({ credits: 0 }));
-        if (credits < firstTime) {
-          setError(
-            `Para ambientar ${firstTime === 1 ? "esta foto" : `estas ${firstTime} fotos`} necesitás ${firstTime} ${firstTime === 1 ? "crédito" : "créditos"} y te ${credits === 1 ? "queda 1" : `quedan ${credits}`}. Sumá créditos desde «Créditos IA».`,
-          );
-          return;
-        }
-        if (
-          !window.confirm(
-            `Vas a usar ${firstTime} ${firstTime === 1 ? "crédito" : "créditos"} (uno por foto nueva; las demás versiones de una foto ya ambientada no consumen). Te ${credits === 1 ? "queda 1" : `quedan ${credits}`}. ¿Continuar?`,
-          )
-        )
-          return;
+      // What it costs, from the server (who pays, balance, photos still
+      // unpaid, coverage), shown before anything starts.
+      const photoIds = [...new Set(tasks.map((t) => t.photoId))];
+      let cost: { payer: string; credits: number | null; newPhotos: number; blocked: string | null };
+      try {
+        cost = await api(`${base}/costo`, { method: "POST", body: JSON.stringify({ photoIds }) });
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "No pudimos calcular el costo. Probá de nuevo.");
+        return;
       }
-      track("property_ai_generation_started", { photos: new Set(tasks.map((t) => t.photoId)).size, versions: tasks.length, credits: firstTime });
+      if (cost.blocked) {
+        setError(`${cost.blocked} Podés ver el saldo en «Créditos IA».`);
+        return;
+      }
+      const firstTime = cost.newPhotos;
+      if (
+        !window.confirm(
+          [
+            `Vas a crear ${tasks.length} ${tasks.length === 1 ? "versión" : "versiones"} de ${photoIds.length} ${photoIds.length === 1 ? "foto" : "fotos"}.`,
+            firstTime
+              ? `Usa ${firstTime} ${firstTime === 1 ? "crédito" : "créditos"} del saldo de la inmobiliaria (uno por foto nueva). Quedarían ${(cost.credits ?? 0) - firstTime}.`
+              : "No usa créditos: esas fotos ya están ambientadas y las versiones nuevas están incluidas.",
+            "¿Continuar?",
+          ].join("\n"),
+        )
+      )
+        return;
+      track("property_ai_generation_started", { photos: photoIds.length, versions: tasks.length, credits: firstTime });
     }
     setQueue(tasks);
     let failures = 0;
@@ -431,20 +449,28 @@ export function DemoEditor({ id, mode = "admin" }: { id: string; mode?: "admin" 
             type="button"
             className={`button ${live ? "button-outline" : "button-primary"}`}
             disabled={busy}
-            onClick={() => {
-              if (agencyMode && !live) track("property_published", { property_id: demo.id, photos: demo.photos, staged: demo.staged });
-              void demoAction(
-                { action: live ? "unpublish" : "publish" },
-                live
-                  ? `${agencyMode ? "Ficha despublicada" : "Demo despublicada"}: el enlace dejó de estar disponible.`
-                  : `${agencyMode ? "Ficha publicada" : "Demo publicada"}. Ya podés compartir el enlace.`,
-              );
-            }}
+            onClick={() =>
+              void run(async () => {
+                const next = await api<DemoDetail>(base, { method: "PATCH", body: JSON.stringify({ action: live ? "unpublish" : "publish" }) });
+                apply(next);
+                // Counted once the server confirmed it.
+                if (agencyMode) track(live ? "property_unpublished" : "property_published", { property_id: demo.id, photos: demo.photos, staged: demo.staged });
+              }, live
+                ? `${agencyMode ? "Ficha despublicada" : "Demo despublicada"}: el enlace dejó de estar disponible.`
+                : `${agencyMode ? "Ficha publicada" : "Demo publicada"}. Ya podés compartir el enlace.`)
+            }
           >
             {live ? "Despublicar" : agencyMode ? "Publicar ficha" : "Publicar demo"}
           </button>
         </div>
       </div>
+      {agencyMode && (
+        <nav className="dm-local-nav" aria-label="Secciones de la propiedad">
+          <a href="#datos">1. Datos</a>
+          <a href="#fotos">2. Fotos y ambientación</a>
+          <a href="#compartir">3. Revisar y compartir</a>
+        </nav>
+      )}
       {error && (
         <p className="inline-error" role="alert">
           {error}
@@ -459,12 +485,12 @@ export function DemoEditor({ id, mode = "admin" }: { id: string; mode?: "admin" 
       <section className="account-panel dm-review" aria-labelledby="dm-review-title-2">
         <div className="dm-styles-head">
           <div>
-            <h2 id="dm-review-title-2">Antes de compartir</h2>
+            <h2 id="dm-review-title-2">{agencyMode ? "Revisar antes de publicar" : "Antes de compartir"}</h2>
             <p className="dm-help">
               {detail.settings.reviewedAt
                 ? `Revisada contra la publicación el ${new Date(detail.settings.reviewedAt).toLocaleDateString("es-AR")}.`
                 : "Todavía sin revisar contra la publicación original."}{" "}
-              Solo lo ve el equipo.
+              {agencyMode ? "Solo lo ven las personas de tu inmobiliaria." : "Solo lo ve el equipo."}
             </p>
           </div>
           <div className="dm-review-actions">
@@ -519,7 +545,7 @@ export function DemoEditor({ id, mode = "admin" }: { id: string; mode?: "admin" 
       <section className="account-panel dm-styles-panel" aria-labelledby="dm-styles-title">
         <div className="dm-styles-head">
           <div>
-            <h2 id="dm-styles-title">Estilos de la demo</h2>
+            <h2 id="dm-styles-title">{agencyMode ? "Estilos para ambientar" : "Estilos de la demo"}</h2>
             <label className="dm-select dm-type">
               Tipo de inmueble
               <select
@@ -598,7 +624,7 @@ export function DemoEditor({ id, mode = "admin" }: { id: string; mode?: "admin" 
       </section>
 
       <div className="dm-editor">
-        <section className="account-panel dm-photos" aria-labelledby="dm-photos-title">
+        <section className="account-panel dm-photos" id="fotos" aria-labelledby="dm-photos-title">
           <h2 id="dm-photos-title">Fotos de la propiedad</h2>
           <p className="dm-help">
             Las originales se conservan sin cambios. Cada foto marcada se ambienta en los estilos de la
@@ -846,7 +872,7 @@ export function DemoEditor({ id, mode = "admin" }: { id: string; mode?: "admin" 
         </section>
 
         <aside className="dm-side">
-          <section className="account-panel">
+          <section className="account-panel" id="compartir">
             <h2>Compartir</h2>
             {live && agencyMode ? (
               <>
@@ -857,20 +883,32 @@ export function DemoEditor({ id, mode = "admin" }: { id: string; mode?: "admin" 
                     readOnly
                     value={publicLink(demo.token)}
                     onFocus={(e) => e.target.select()}
-                    onCopy={() => track("property_shared", { property_id: demo.id, channel: "link" })}
+                    onCopy={() => track("property_shared", { property_id: demo.id, channel: "manual_copy" })}
                   />
                 </label>
                 <div className="dm-share">
-                  <a
+                  <button
+                    type="button"
                     className="button button-small"
+                    onClick={async () => {
+                      const outcome = await shareLink(publicLink(demo.token), demo.title, demo.id);
+                      if (outcome === "copied") setNotice("Enlace copiado.");
+                      else if (outcome === "failed") setError("No pudimos copiar el enlace: seleccionalo en el campo y copialo.");
+                    }}
+                  >
+                    Compartir
+                  </button>
+                  <a
+                    className="button button-small button-outline"
                     href={`https://wa.me/?text=${encodeURIComponent(`${demo.title}: ${publicLink(demo.token)}`)}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    onClick={() => track("property_shared", { property_id: demo.id, channel: "whatsapp" })}
+                    onClick={() => whatsappOpened(demo.id)}
                   >
-                    Compartir por WhatsApp
+                    Abrir WhatsApp
                   </a>
                 </div>
+                <p className="dm-help">Este enlace funciona aunque tu catálogo no esté publicado.</p>
               </>
             ) : live ? (
               <>
@@ -1172,7 +1210,7 @@ export function DemoEditor({ id, mode = "admin" }: { id: string; mode?: "admin" 
         </aside>
       </div>
 
-      <section className="account-panel dm-listing-panel" aria-labelledby="dm-listing-title">
+      <section className="account-panel dm-listing-panel" id="datos" aria-labelledby="dm-listing-title">
         <h2 id="dm-listing-title">Ficha de la propiedad</h2>
         <p className="dm-help">
           Todo lo que el comprador ve además de las fotos. Copiá los datos de la publicación original; los campos
@@ -1389,6 +1427,8 @@ function ListingSync({
 }) {
   const [replace, setReplace] = useState<Set<ImportField>>(new Set());
   const [dropForeign, setDropForeign] = useState(true);
+  // Completing the data (a missing map, say) does not download the photos again unless asked.
+  const [withPhotos, setWithPhotos] = useState(detail.photos.length === 0);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const imported = reread.imported;
@@ -1406,7 +1446,7 @@ function ListingSync({
       );
       let removed = 0;
       let hidden = 0;
-      if (dropForeign)
+      if (withPhotos && dropForeign)
         for (const p of foreign) {
           setStatus(`Quitando fotos de otras propiedades: ${removed + hidden + 1} de ${foreign.length}…`);
           // Without stagings nothing is lost; with them, the photo is only hidden.
@@ -1418,18 +1458,20 @@ function ListingSync({
             removed++;
           }
         }
-      const { ids, failed } = await syncPhotos(base, done.images, setStatus);
-      const fresh = await api<DemoDetail>(base);
-      const rest = fresh.photos.map((p) => p.id).filter((id) => !ids.includes(id));
-      const order = [...ids.filter((id) => fresh.photos.some((p) => p.id === id)), ...rest];
-      if (order.join() !== fresh.photos.map((p) => p.id).join())
-        await api(base, { method: "PATCH", body: JSON.stringify({ action: "order", ids: order }) });
+      const { ids, failed } = withPhotos ? await syncPhotos(base, done.images, setStatus) : { ids: [] as string[], failed: 0 };
+      if (withPhotos) {
+        const fresh = await api<DemoDetail>(base);
+        const rest = fresh.photos.map((p) => p.id).filter((id) => !ids.includes(id));
+        const order = [...ids.filter((id) => fresh.photos.some((p) => p.id === id)), ...rest];
+        if (order.join() !== fresh.photos.map((p) => p.id).join())
+          await api(base, { method: "PATCH", body: JSON.stringify({ action: "order", ids: order }) });
+      }
       const added = ids.length - detail.photos.filter((p) => ids.includes(p.id)).length;
       onDone(
         await api<DemoDetail>(base),
         [
           `${done.fields.length} datos completados desde la publicación`,
-          `${added} fotos agregadas, ${ids.length - added} ya estaban`,
+          withPhotos ? `${added} fotos agregadas, ${ids.length - added} ya estaban` : "",
           failed ? `${failed} no se pudieron descargar` : "",
           removed + hidden ? `${removed + hidden} de otras propiedades quitadas${hidden ? ` (${hidden} ocultas por tener ambientaciones)` : ""}` : "",
           done.completed.logo ? "logo importado" : "",
@@ -1524,11 +1566,15 @@ function ListingSync({
           ))}
         </ul>
       )}
+      <label className="dm-check">
+        <input type="checkbox" checked={withPhotos} onChange={(e) => setWithPhotos(e.target.checked)} />
+        Agregar también las fotos que faltan ({imported.images.length} en la publicación)
+      </label>
       <p className="dm-help">
-        Fotos: la publicación tiene {imported.images.length} de esta propiedad. Las que ya están en la demo conservan
-        sus ambientaciones; las que faltan se agregan y quedan en el orden de la publicación.
+        Las fotos que ya están conservan sus ambientaciones; las que faltan se agregan en el orden de la
+        publicación. Sin marcar, solo se completan los datos (por ejemplo, el mapa).
       </p>
-      {foreign.length > 0 && (
+      {withPhotos && foreign.length > 0 && (
         <label className="dm-check">
           <input type="checkbox" checked={dropForeign} onChange={(e) => setDropForeign(e.target.checked)} />
           Quitar {foreign.length} fotos de otras propiedades (las que tienen ambientaciones quedan ocultas, no se borran)

@@ -100,6 +100,8 @@ describe("Listing data", () => {
       precision: "zone",
       lat: -38,
       lng: -57.55,
+      radius: null,
+      source: "manual",
     });
     expect(() => settingsInput({ agent: { name: "Ana", whatsapp: "12" } }, readSettings({}))).toThrow(/WhatsApp/);
     expect(() => settingsInput({ agent: { name: "Ana", photoUrl: "http://x.test/a.jpg" } }, readSettings({}))).toThrow(/https/);

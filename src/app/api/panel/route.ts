@@ -48,6 +48,7 @@ export async function PATCH(request: Request) {
     if (role !== "owner") throw new HttpError(403, "Solo el dueño de la inmobiliaria puede cambiar su sitio.");
     const body = await readJson(request, 4096);
     const db = adminClient();
+    // Everything is validated first: a wrong field never leaves a half-saved change.
     const changes: Record<string, unknown> = {};
     if ("name" in body) {
       const name = cleanText(body.name, 120);
@@ -59,7 +60,7 @@ export async function PATCH(request: Request) {
       if (website === undefined) throw new HttpError(400, "Revisá el sitio web: usá una dirección como inmobiliaria.com.ar.");
       changes.website = website;
     }
-    if ("slug" in body) {
+    if ("slug" in body && body.slug !== agency.slug) {
       if (!validSlug(body.slug)) throw new HttpError(400, "La dirección del sitio admite letras minúsculas, números y guiones.");
       const { data: taken } = await db.from("agencies").select("id").eq("slug", body.slug).neq("id", agency.id).maybeSingle();
       if (taken) throw new HttpError(409, "Esa dirección ya la usa otra inmobiliaria.");
@@ -67,25 +68,23 @@ export async function PATCH(request: Request) {
     }
     if ("sitePublished" in body) {
       if (typeof body.sitePublished !== "boolean") throw new HttpError(400, "Valor inválido.");
+      if (body.sitePublished && !(changes.slug ?? agency.slug)) throw new HttpError(400, "Elegí la dirección del catálogo antes de publicarlo.");
       changes.site_published = body.sitePublished;
     }
+    // The contact for inquiries: only sent when it changes; color alone never touches it.
+    const brandingPatch = {
+      ...("primary" in body ? { primary: body.primary } : {}),
+      ...("contactKind" in body || "contactValue" in body ? { contactKind: body.contactKind, contactValue: body.contactValue } : {}),
+    };
+    const branding = Object.keys(brandingPatch).length ? brandingInput(brandingPatch, await brandingOf(agency.id)) : null;
     if (Object.keys(changes).length) {
       const { error } = await db.from("agencies").update(changes).eq("id", agency.id);
       if (error) throw new Error("AGENCY_UPDATE_FAILED");
     }
-    if ("primary" in body || "contactValue" in body) {
-      const current = await brandingOf(agency.id);
-      const next = brandingInput(
-        {
-          ...("primary" in body ? { primary: body.primary } : {}),
-          ...("contactValue" in body ? { contactKind: body.contactKind, contactValue: body.contactValue } : {}),
-        },
-        current,
-      );
-      await saveJson("agencies", "branding", agency.id, next);
-    }
+    if (branding) await saveJson("agencies", "branding", agency.id, branding);
     const membership = await membershipOf(user.id);
-    return Response.json(await panelSummary(membership!), { headers: PRIVATE });
+    if (!membership) throw new Error("MEMBERSHIP_LOST");
+    return Response.json(await panelSummary(membership), { headers: PRIVATE });
   } catch (e) {
     return failure(e);
   }

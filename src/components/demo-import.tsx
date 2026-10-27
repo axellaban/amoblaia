@@ -16,7 +16,8 @@ const STATUS: Record<FieldStatus, string> = {
 
 /** Rows that need someone: required and not found, or contradictory. */
 export const exceptions = (report: ReportRow[]) =>
-  report.filter((r) => r.status === "conflict" || (r.required && r.status !== "found"));
+  // The map has its own review (MapReview).
+  report.filter((r) => r.field !== "Mapa" && (r.status === "conflict" || (r.required && r.status !== "found")));
 
 export function ImportReport({ report }: { report: ReportRow[] }) {
   return (
@@ -94,10 +95,122 @@ export function ImportPreview({ data }: { data: ImportedDemo }) {
   );
 }
 
+export type MapChoice = {
+  mode: "detected" | "manual" | "none";
+  /** Which of the suggested places, when the map needs a review. */
+  place: number;
+  precision: "zone" | "approx" | "exact";
+  link: string;
+  lat: string;
+  lng: string;
+};
+/** Found: use it. Needs a review: nothing until a person picks a place. Not found: nothing. */
+export const initialMapChoice = (data: ImportedDemo): MapChoice => ({
+  mode: data.mapStatus === "found" && data.map ? "detected" : "none",
+  place: 0,
+  precision: data.map && data.map.precision !== "none" ? data.map.precision : "approx",
+  link: "",
+  lat: "",
+  lng: "",
+});
+/** What the server receives: nothing for a map used as found, otherwise the person's choice. */
+export function mapOverride(data: ImportedDemo, c: MapChoice): Record<string, unknown> | undefined {
+  if (c.mode === "none") return { precision: "none" };
+  if (c.mode === "manual") return c.link.trim() ? { precision: c.precision, link: c.link.trim() } : { precision: c.precision, lat: c.lat, lng: c.lng };
+  const place = data.mapStatus === "review" ? data.mapPlaces[c.place] : data.map;
+  if (!place) return { precision: "none" };
+  if (data.mapStatus === "found" && data.map && c.precision === data.map.precision) return undefined;
+  return { precision: c.precision, lat: place.lat, lng: place.lng };
+}
+
+const PRECISION_LABELS = {
+  zone: "Zona (área amplia, sin punto)",
+  approx: "Aproximada (área chica, sin punto)",
+  exact: "Exacta (con marcador)",
+} as const;
+const osm = (lat: number, lng: number) => `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=16/${lat}/${lng}`;
+
+/**
+ * The map of an import: detected, to review or not found, with its source
+ * and a link to check it; a place can be picked, pasted as a map link or
+ * typed, and the property can always be saved without a map.
+ */
+export function MapReview({ data, value, onChange }: { data: ImportedDemo; value: MapChoice; onChange: (v: MapChoice) => void }) {
+  const row = data.report.find((r) => r.field === "Mapa");
+  const status = data.mapStatus === "found" ? "Mapa detectado" : data.mapStatus === "review" ? "Requiere revisión" : "No encontrado";
+  const set = (patch: Partial<MapChoice>) => onChange({ ...value, ...patch });
+  const choices = data.mapStatus === "review" ? data.mapPlaces : data.map ? [data.map] : [];
+  return (
+    <fieldset className="dm-mapreview">
+      <legend>
+        Mapa <span className={`dm-status dm-status-${data.mapStatus === "found" ? "found" : data.mapStatus === "review" ? "conflict" : "missing"}`}>{status}</span>
+      </legend>
+      {row?.value && <p className="dm-help">{row.value}</p>}
+      {data.mapNote && <p className="dm-help">{data.mapNote}</p>}
+      <div className="dm-choice dm-choice-column" role="radiogroup" aria-label="Mapa de la propiedad">
+        {choices.map((p, i) => (
+          <label key={`${p.lat},${p.lng}`}>
+            <input
+              type="radio"
+              name="dm-map-mode"
+              checked={value.mode === "detected" && value.place === i}
+              onChange={() => set({ mode: "detected", place: i })}
+            />
+            <span>
+              {data.mapStatus === "review" ? `Usar la ubicación ${i + 1}` : "Usar la ubicación detectada"} ({Number(p.lat).toFixed(4)}, {Number(p.lng).toFixed(4)}) ·{" "}
+              <a href={osm(Number(p.lat), Number(p.lng))} target="_blank" rel="noopener noreferrer">
+                ver en el mapa
+              </a>
+            </span>
+          </label>
+        ))}
+        <label>
+          <input type="radio" name="dm-map-mode" checked={value.mode === "manual"} onChange={() => set({ mode: "manual" })} />
+          <span>Cargar otra ubicación</span>
+        </label>
+        <label>
+          <input type="radio" name="dm-map-mode" checked={value.mode === "none"} onChange={() => set({ mode: "none" })} />
+          <span>Sin mapa por ahora (se muestra solo el texto de la ubicación)</span>
+        </label>
+      </div>
+      {value.mode === "manual" && (
+        <div className="dm-mapreview-manual">
+          <label>
+            Enlace del mapa (Google Maps, OpenStreetMap, Waze, Apple Maps)
+            <input value={value.link} inputMode="url" placeholder="https://www.google.com/maps/place/…" onChange={(e) => set({ link: e.target.value })} />
+          </label>
+          <span className="dm-help">o las coordenadas:</span>
+          <label>
+            Latitud
+            <input value={value.lat} inputMode="decimal" placeholder="-38.0055" onChange={(e) => set({ lat: e.target.value })} />
+          </label>
+          <label>
+            Longitud
+            <input value={value.lng} inputMode="decimal" placeholder="-57.5426" onChange={(e) => set({ lng: e.target.value })} />
+          </label>
+        </div>
+      )}
+      {value.mode !== "none" && (
+        <label className="dm-mapreview-precision">
+          Qué mostrar
+          <select value={value.precision} onChange={(e) => set({ precision: e.target.value as MapChoice["precision"] })}>
+            {(Object.keys(PRECISION_LABELS) as MapChoice["precision"][]).map((p) => (
+              <option key={p} value={p}>
+                {PRECISION_LABELS[p]}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+    </fieldset>
+  );
+}
+
 /** The listing's own photos in a demo: added if missing (the ones already there keep their stagings), in the listing's order. */
 export async function syncPhotos(base: string, images: string[], onStatus: (text: string) => void) {
   const ids: string[] = [];
-  let failed = 0;
+  const done: string[] = [];
+  const failedUrls: string[] = [];
   for (const [i, url] of images.entries()) {
     onStatus(`Fotos de la publicación: ${i + 1} de ${images.length}…`);
     try {
@@ -106,11 +219,12 @@ export async function syncPhotos(base: string, images: string[], onStatus: (text
         body: JSON.stringify({ url, reuse: true }),
       });
       if (!ids.includes(id)) ids.push(id);
+      done.push(url);
     } catch {
-      failed++;
+      failedUrls.push(url);
     }
   }
-  return { ids, failed };
+  return { ids, failed: failedUrls.length, done, failedUrls };
 }
 
 /** Photos imported from another listing of the same site (their file starts with another property id). */
@@ -134,6 +248,7 @@ export function ImportFromListing() {
   const [url, setUrl] = useState("");
   const [preview, setPreview] = useState<Preview | null>(null);
   const [price, setPrice] = useState("");
+  const [mapChoice, setMapChoice] = useState<MapChoice | null>(null);
   const [contact, setContact] = useState("");
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
@@ -152,6 +267,7 @@ export function ImportFromListing() {
       });
       setPreview(data);
       setPrice(data.priceOptions[0] ?? "");
+      setMapChoice(initialMapChoice(data));
     } catch (err) {
       setError(err instanceof Error ? err.message : "No pudimos leer la publicación.");
     } finally {
@@ -170,6 +286,7 @@ export function ImportFromListing() {
           url: preview.listingUrl,
           price: preview.priceConflict ? price || null : undefined,
           contact: missingContact && contact.trim() ? contact.trim() : undefined,
+          map: mapChoice ? mapOverride(preview, mapChoice) : undefined,
         }),
       });
       await syncPhotos(`/api/admin/demos/${made.id}`, made.images, (t) => setStatus(`${made.title}. ${t}`));
@@ -220,6 +337,7 @@ export function ImportFromListing() {
       {preview && (
         <div className="dm-import-result">
           <ImportPreview data={preview} />
+          {mapChoice && <MapReview data={preview} value={mapChoice} onChange={setMapChoice} />}
           {preview.existingAgency && (
             <p className="dm-help">
               Se agrega a <strong>{preview.existingAgency}</strong> (ya cargada): solo completamos su logo y

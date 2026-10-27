@@ -3,8 +3,10 @@ import { HttpError } from "@/lib/commerce/http";
 import { rooms } from "@/lib/catalog";
 import { isDemoStyle } from "./styles";
 import { cleanText, cleanUrl, DEMO_MODES, type DemoMode } from "./shared";
+import { parseMapLink, validPair } from "./geo";
 import {
   CONTACT_KINDS,
+  DEFAULT_SETTINGS,
   FACT_ICONS,
   TITLE_FONTS,
   color,
@@ -14,6 +16,8 @@ import {
   type AgencyBranding,
   type ContactKind,
   type DemoSettings,
+  type MapPrecision,
+  type MapSettings,
   type TitleFont,
 } from "./branding";
 
@@ -184,16 +188,7 @@ export function settingsInput(raw: unknown, current: DemoSettings): DemoSettings
     out.facts = v.facts;
   }
   if ("amenities" in v) out.amenities = v.amenities;
-  if ("map" in v) {
-    const m = (v.map ?? {}) as Record<string, unknown>;
-    const precision = m.precision;
-    if (!["none", "zone", "approx", "exact"].includes(String(precision))) throw new HttpError(400, "Precisión de mapa inválida.");
-    const lat = m.lat === null || m.lat === "" ? null : Number(m.lat);
-    const lng = m.lng === null || m.lng === "" ? null : Number(m.lng);
-    if (precision !== "none" && (lat === null || lng === null || !Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180))
-      throw new HttpError(400, "Para mostrar el mapa cargá latitud y longitud (por ejemplo -38.0055, -57.5426).");
-    out.map = { precision, lat, lng };
-  }
+  if ("map" in v) out.map = mapInput(v.map, current.map);
   if ("agent" in v) {
     const a = (v.agent ?? {}) as Record<string, unknown>;
     if (!cleanText(a.name, 80)) out.agent = null;
@@ -209,4 +204,64 @@ export function settingsInput(raw: unknown, current: DemoSettings): DemoSettings
   }
   if ("reviewedAt" in v) out.reviewedAt = v.reviewedAt === null ? null : new Date().toISOString();
   return readSettings(out);
+}
+
+/**
+ * A map entered by a person: a link of a known map provider (Google Maps,
+ * OpenStreetMap, Waze, Apple Maps, Bing, geo:) or the coordinates, plus how
+ * precisely to show it. The link is only read for its coordinates: it is
+ * never embedded. "none" keeps the coordinates out of the page.
+ */
+export function mapInput(raw: unknown, current: MapSettings = DEFAULT_SETTINGS.map): MapSettings {
+  const m = (raw ?? {}) as Record<string, unknown>;
+  const precision = m.precision;
+  if (!["none", "zone", "approx", "exact"].includes(String(precision))) throw new HttpError(400, "Precisión de mapa inválida.");
+  if (precision === "none") return { precision: "none", lat: null, lng: null, radius: null, source: null };
+  const link = cleanText(m.link, 4000);
+  if (link) {
+    const found = parseMapLink(link);
+    if (!found)
+      throw new HttpError(
+        400,
+        "No reconocemos ese enlace. Pegá un enlace de Google Maps u OpenStreetMap con el punto marcado, o escribí las coordenadas.",
+      );
+    return { precision: precision as MapPrecision, lat: found.lat, lng: found.lng, radius: null, source: "manual" };
+  }
+  const blank = (x: unknown) => x === null || x === undefined || x === "";
+  const lat = blank(m.lat) ? NaN : Number(String(m.lat).replace(",", "."));
+  const lng = blank(m.lng) ? NaN : Number(String(m.lng).replace(",", "."));
+  if (!validPair(lat, lng))
+    throw new HttpError(400, "Para mostrar el mapa pegá el enlace del mapa o cargá latitud y longitud (por ejemplo -38.0055, -57.5426).");
+  // The same point as before keeps its origin and area; a new one is a manual choice.
+  const same = current.lat !== null && current.lng !== null && Math.abs(current.lat - lat) < 1e-6 && Math.abs(current.lng - lng) < 1e-6;
+  return {
+    precision: precision as MapPrecision,
+    lat,
+    lng,
+    radius: same ? current.radius : null,
+    source: same ? current.source : "manual",
+  };
+}
+
+/**
+ * The map chosen on an import's preview. A place the listing published keeps
+ * its origin and area; anything else is a manual location. Absent: the map
+ * as found (or none when it needed a review).
+ */
+export function importedMap(
+  imp: { map: MapSettings | null; mapPlaces: { lat: number; lng: number; source: MapSettings["source"]; radius: number | null }[] },
+  raw: unknown,
+  fallback: MapSettings,
+): MapSettings {
+  if (raw === undefined || raw === null) return fallback;
+  const m = raw as Record<string, unknown>;
+  const lat = Number(m.lat);
+  const lng = Number(m.lng);
+  const published = [...(imp.map ? [imp.map] : []), ...imp.mapPlaces].find(
+    (p) => p.lat !== null && p.lng !== null && Math.abs(p.lat - lat) < 1e-6 && Math.abs(p.lng - lng) < 1e-6,
+  );
+  return mapInput(
+    raw,
+    published ? { precision: "approx", lat: published.lat, lng: published.lng, radius: published.radius, source: published.source } : fallback,
+  );
 }
