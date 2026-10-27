@@ -1,6 +1,7 @@
 import sharp from "sharp";
 import { failure, HttpError, rpc } from "@/lib/commerce/http";
 import { requireDemoAccess } from "@/lib/agency/server";
+import { auditAgencyEdit } from "@/lib/agency/edit-context";
 import { MAX_BYTES } from "@/lib/commerce/images";
 import { addPhoto } from "@/lib/demos/server";
 import { assignPhotos } from "@/lib/demos/spaces";
@@ -66,7 +67,8 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const { actor, demo, billingUser } = await requireDemoAccess(request, id);
+    const access = await requireDemoAccess(request, id);
+    const { actor, demo, billingUser } = access;
     const photo = /json/i.test(request.headers.get("content-type") || "")
       ? await fromUrl(request)
       : await fromUpload(request);
@@ -84,6 +86,7 @@ export async function POST(
       await assignPhotos(demo.property_id, [row.id], photo.space).catch((e) => {
         spaceError = e instanceof HttpError ? e.message : "No pudimos ubicarla en el espacio.";
       });
+    await auditAgencyEdit(access, "photo_add", { photo: row.id, reused: row.reused });
     return Response.json(
       { id: row.id, reused: row.reused, spaceError },
       { status: row.reused ? 200 : 201, headers: { "Cache-Control": "private, no-store" } },

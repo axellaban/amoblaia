@@ -1,5 +1,6 @@
 import { failure } from "@/lib/commerce/http";
 import { requireDemoAccess } from "@/lib/agency/server";
+import { auditAgencyEdit } from "@/lib/agency/edit-context";
 import { readJson } from "@/lib/demos/input";
 import { isUuid } from "@/lib/demos/shared";
 import { deleteSpace, spaceState, updateSpace } from "@/lib/demos/spaces";
@@ -12,8 +13,10 @@ type Params = { params: Promise<{ id: string; spaceId: string }> };
 export async function PATCH(request: Request, { params }: Params) {
   try {
     const { id, spaceId } = await params;
-    const { demo } = await requireDemoAccess(request, id);
+    const access = await requireDemoAccess(request, id);
+    const { demo } = access;
     await updateSpace(demo.property_id, spaceId, await readJson(request, 2048));
+    await auditAgencyEdit(access, "space_update", { space: spaceId });
     return Response.json(await spaceState(demo.property_id), { headers: PRIVATE });
   } catch (e) {
     return failure(e);
@@ -24,9 +27,11 @@ export async function PATCH(request: Request, { params }: Params) {
 export async function DELETE(request: Request, { params }: Params) {
   try {
     const { id, spaceId } = await params;
-    const { demo } = await requireDemoAccess(request, id);
+    const access = await requireDemoAccess(request, id);
+    const { demo } = access;
     const target = new URL(request.url).searchParams.get("destino");
     const moved = await deleteSpace(demo.property_id, spaceId, isUuid(target) ? target : null);
+    await auditAgencyEdit(access, "space_delete", { space: spaceId, moved });
     return Response.json({ moved, ...(await spaceState(demo.property_id)) }, { headers: PRIVATE });
   } catch (e) {
     return failure(e);

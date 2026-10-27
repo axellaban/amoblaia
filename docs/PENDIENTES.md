@@ -4,6 +4,11 @@ Se detiene el trabajo a pedido del usuario para conservar créditos. Los cambios
 
 Producción: https://amoblaia.vercel.app/
 
+## Edición administrativa y editor por foto — 27 de octubre de 2026 (rama `claude/admiring-faraday-p44fxt`)
+
+- Guía, permisos, verificación e integración con Prospección: [EDICION_ADMINISTRATIVA.md](EDICION_ADMINISTRATIVA.md).
+- **Pendiente: aplicar en Supabase (staging primero) `202611010001_admin_editing.sql`** y recorrer el flujo con una cuenta del equipo. No se aplicó en producción.
+
 ## Demos comerciales — 26 de octubre de 2026 (rama `claude/demos-comerciales`)
 
 - Nuevo panel `/admin/demos` y página pública `/demo/<token>`. Guía completa: [DEMOS_COMERCIALES.md](DEMOS_COMERCIALES.md).

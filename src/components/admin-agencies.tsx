@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { ChevronDown, Copy, Eye, Gift, Link2, Plus, Sparkles } from "lucide-react";
+import { ChevronDown, Copy, Eye, Gift, Link2, PencilLine, Plus } from "lucide-react";
 import { ApiError, api } from "@/components/admin-demos";
-import { nextAction, ORIGIN_LABEL, type PanelProperty } from "@/lib/agency/shared";
+import { nextStep, ORIGIN_LABEL, type PanelProperty } from "@/lib/agency/shared";
 import { CLAIM_LABEL, STAGE_LABEL, agencyStage, type AdminAgencyDetail, type AdminAgencyRow } from "@/lib/agency/stage";
 import { adminPhotoUrl } from "@/lib/demos/shared";
 
@@ -116,16 +116,16 @@ export function AgencyInvitations({ agencyId, claims, hasOwner }: { agencyId: st
 }
 
 /** Opens the agency's panel as its owner sees it, read only (a support view, audited). */
-export function SupportViewButton({ agencyId, small = true }: { agencyId: string; small?: boolean }) {
+export function SupportViewButton({ agencyId, small = true, quiet = false }: { agencyId: string; small?: boolean; quiet?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   return (
     <>
       <button
         type="button"
-        className={`button ${small ? "button-small " : ""}button-outline`}
+        className={quiet ? "text-link aa-support-link" : `button ${small ? "button-small " : ""}button-outline`}
         disabled={busy}
-        title="Abre su panel tal como lo ve la inmobiliaria, solo lectura, por una hora. Queda registrado."
+        title="Soporte: abre su panel tal como lo ve la inmobiliaria, solo lectura, por una hora. Queda registrado."
         onClick={async () => {
           setBusy(true);
           setError("");
@@ -138,7 +138,7 @@ export function SupportViewButton({ agencyId, small = true }: { agencyId: string
           }
         }}
       >
-        <Eye size={15} /> {busy ? "Abriendo…" : "Ver su panel"}
+        <Eye size={15} /> {busy ? "Abriendo…" : "Ver como cliente"}
       </button>
       {error && (
         <span className="inline-error" role="alert">
@@ -374,7 +374,8 @@ export function AgencyProperties({ agencyId, backTo, pageParam = "ppag" }: { age
     else next.delete(pageParam);
     router.replace(`${pathname}?${next}`, { scroll: false });
   };
-  const edit = (id: string, section: string) => `/admin/demos/${id}?${new URLSearchParams({ seccion: section, volver: backTo })}`;
+  // Opened inside the agency's edit (its banner, its context), coming back here.
+  const edit = (id: string, section: string) => `/admin/inmobiliarias/${agencyId}/propiedades/${id}?${new URLSearchParams({ seccion: section, volver: backTo })}`;
   if (error)
     return (
       <div className="ap-retry-row" role="alert">
@@ -400,18 +401,15 @@ export function AgencyProperties({ agencyId, backTo, pageParam = "ppag" }: { age
               </small>
               <small>
                 {p.photos} {p.photos === 1 ? "foto" : "fotos"}
-                {p.spaces ? ` · ${p.spaces} espacios` : ""} · {p.versions.ready} {p.versions.ready === 1 ? "versión lista" : "versiones listas"}
+                {p.spaces ? ` · ${p.spaces} espacios` : ""} · {p.versions.ready} {p.versions.ready === 1 ? "versión creada" : "versiones creadas"}
                 {p.versions.active ? ` · ${p.versions.active} en curso` : ""}
-                {p.versions.issues ? ` · ${p.versions.issues} con problemas` : ""} · próximo paso: {nextAction(p).label.toLowerCase()}
+                {p.versions.issues ? ` · ${p.versions.issues} para revisar` : ""}
               </small>
             </span>
             <span className={`dm-status ${p.status === "published" ? "is-live" : ""}`}>{p.status === "published" ? "Publicada" : "Borrador"}</span>
             <span className="aa-prop-actions">
-              <Link href={edit(p.id, "fotos")} className="button button-small">
-                <Sparkles size={14} /> Editar fotos
-              </Link>
-              <Link href={edit(p.id, "datos")} className="button button-small button-outline">
-                Abrir ficha
+              <Link href={edit(p.id, nextStep(p).section)} className={`button button-small ${nextStep(p).primary ? "" : "button-outline"}`}>
+                {nextStep(p).cta} →
               </Link>
             </span>
           </li>
@@ -434,7 +432,12 @@ export function AgencyProperties({ agencyId, backTo, pageParam = "ppag" }: { age
   );
 }
 
-/** The team's agencies, one row each: stage, properties, credits, and the three daily actions. */
+/**
+ * The team's agencies, one row each: stage, properties and credits, with
+ * one main action (Editar inmobiliaria), three secondary ones (properties,
+ * add a property, credits) and the read-only support view as a quiet link.
+ * Search, page and the open row live in the URL, so coming back keeps them.
+ */
 export function AgenciesTable({ items }: { items: AdminAgencyRow[] }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -442,7 +445,13 @@ export function AgenciesTable({ items }: { items: AdminAgencyRow[] }) {
   const openId = params.get("abierta");
   const [target, setTarget] = useState<CreditTarget | null>(null);
   const [notice, setNotice] = useState("");
-  const here = `${pathname}${params.toString() ? `?${params}` : ""}`;
+  /** This list with one row open: where an agency's pages come back to. */
+  const backFor = (id: string) => {
+    const next = new URLSearchParams(params.toString());
+    next.set("abierta", id);
+    next.delete("ppag");
+    return `${pathname}?${next}`;
+  };
   const setOpen = (id: string | null) => {
     const next = new URLSearchParams(params.toString());
     if (id) next.set("abierta", id);
@@ -450,6 +459,15 @@ export function AgenciesTable({ items }: { items: AdminAgencyRow[] }) {
     next.delete("ppag");
     router.replace(`${pathname}${next.toString() ? `?${next}` : ""}`, { scroll: false });
   };
+  // Back from an agency: its row is where it was left.
+  const scrolled = useRef(false);
+  useEffect(() => {
+    if (scrolled.current || !openId) return;
+    scrolled.current = true;
+    const row = document.getElementById(`inmobiliaria-${openId}`);
+    row?.scrollIntoView({ block: "center" });
+    row?.querySelector<HTMLElement>(".aa-edit")?.focus({ preventScroll: true });
+  }, [openId]);
   return (
     <>
       {notice && (
@@ -462,6 +480,7 @@ export function AgenciesTable({ items }: { items: AdminAgencyRow[] }) {
           const stage = agencyStage(a);
           const open = openId === a.id;
           const pending = a.properties - a.published;
+          const back = backFor(a.id);
           return (
             <li key={a.id} className={`account-panel aa-row ${open ? "is-open" : ""}`} id={`inmobiliaria-${a.id}`}>
               <div className="aa-row-main">
@@ -479,11 +498,11 @@ export function AgenciesTable({ items }: { items: AdminAgencyRow[] }) {
                     </dd>
                   </div>
                   <div>
-                    <dt>Saldo</dt>
+                    <dt>Saldo disponible</dt>
                     <dd>{a.hasOwner ? credits(a.available) : "Sin cuenta"}</dd>
                   </div>
                   <div>
-                    <dt>Reservados</dt>
+                    <dt>Créditos reservados</dt>
                     <dd>{credits(a.reserved)}</dd>
                   </div>
                   {a.partialImports + a.failedImports + a.review > 0 && (
@@ -503,26 +522,32 @@ export function AgenciesTable({ items }: { items: AdminAgencyRow[] }) {
                 </dl>
               </div>
               <div className="aa-row-actions">
+                <Link href={`/admin/inmobiliarias/${a.id}/editar?${new URLSearchParams({ volver: back })}`} className="button button-small button-primary aa-edit">
+                  <PencilLine size={15} /> Editar inmobiliaria →
+                </Link>
                 <button type="button" className="button button-small button-outline" aria-expanded={open} aria-controls={`props-${a.id}`} onClick={() => setOpen(open ? null : a.id)}>
                   <ChevronDown size={15} className={open ? "aa-rot" : ""} /> {open ? "Ocultar propiedades" : "Ver propiedades"}
                 </button>
-                <Link href={`/admin/demos/nueva?inmobiliaria=${a.id}`} className="button button-small button-outline">
+                <Link
+                  href={`/admin/inmobiliarias/${a.id}/propiedades/nueva?${new URLSearchParams({ volver: back })}`}
+                  className="button button-small button-outline"
+                >
                   <Plus size={15} /> Agregar propiedad
                 </Link>
-                <SupportViewButton agencyId={a.id} />
                 <button
                   type="button"
-                  className="button button-small"
+                  className="button button-small button-outline"
                   disabled={a.reserved === null}
-                  title={a.reserved === null ? "Falta aplicar la migración de créditos" : undefined}
+                  title={a.reserved === null ? "Falta aplicar la migración de créditos" : "Regalo o ajuste con motivo; no es una venta"}
                   onClick={() => setTarget({ id: a.id, name: a.name, hasOwner: a.hasOwner, available: a.available, reserved: a.reserved })}
                 >
-                  <Gift size={15} /> Agregar créditos
+                  <Gift size={15} /> Créditos
                 </button>
+                <SupportViewButton agencyId={a.id} quiet />
               </div>
               {open && (
                 <div id={`props-${a.id}`} className="aa-row-props">
-                  <AgencyProperties agencyId={a.id} backTo={here} />
+                  <AgencyProperties agencyId={a.id} backTo={back} />
                 </div>
               )}
             </li>

@@ -1,5 +1,6 @@
 import { failure, HttpError } from "@/lib/commerce/http";
 import { requireDemoAccess } from "@/lib/agency/server";
+import { auditAgencyEdit } from "@/lib/agency/edit-context";
 import { brandingOf, logoFromBytes, logoOf, saveJson } from "@/lib/demos/server";
 export const runtime = "nodejs";
 
@@ -29,7 +30,8 @@ export async function POST(request: Request, { params }: Params) {
     if (Number(request.headers.get("content-length") || 0) > MAX_UPLOAD + 16384)
       throw new HttpError(413, "El logo es demasiado grande.");
     const { id } = await params;
-    const { demo, admin, role } = await requireDemoAccess(request, id);
+    const access = await requireDemoAccess(request, id);
+    const { demo, admin, role } = access;
     if (!admin && role !== "owner") throw new HttpError(403, "Solo el dueño de la inmobiliaria puede cambiar su marca.");
     const file = (await request.formData().catch(() => null))?.get("logo");
     if (
@@ -42,6 +44,7 @@ export async function POST(request: Request, { params }: Params) {
     const logo = await logoFromBytes(Buffer.from(await file.arrayBuffer()));
     const branding = await brandingOf(demo.agency_id);
     await saveJson("agencies", "branding", demo.agency_id, { ...branding, logo });
+    await auditAgencyEdit(access, "logo_set");
     return Response.json({ saved: true }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (e) {
     return failure(e);
@@ -51,10 +54,12 @@ export async function POST(request: Request, { params }: Params) {
 export async function DELETE(request: Request, { params }: Params) {
   try {
     const { id } = await params;
-    const { demo, admin, role } = await requireDemoAccess(request, id);
+    const access = await requireDemoAccess(request, id);
+    const { demo, admin, role } = access;
     if (!admin && role !== "owner") throw new HttpError(403, "Solo el dueño de la inmobiliaria puede cambiar su marca.");
     const { logo: _removed, ...rest } = await brandingOf(demo.agency_id);
     await saveJson("agencies", "branding", demo.agency_id, rest);
+    await auditAgencyEdit(access, "logo_remove");
     return Response.json({ saved: true }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (e) {
     return failure(e);

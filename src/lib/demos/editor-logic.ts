@@ -5,7 +5,8 @@
 import type { DemoSettings } from "./branding";
 import { stagingRoomOf, type EditorPhoto, type GenerationRow, type PropertySpace } from "./shared";
 
-export type Task = { photoId: string; style: string };
+/** A version to create. room and mode: chosen in "Crear otra versión"; otherwise the photo's own settings. */
+export type Task = { photoId: string; style: string; room?: string; mode?: "furnish" | "redesign" };
 export const taskKey = (t: Task) => `${t.photoId}:${t.style}`;
 export const liveStatus = (g: Pick<GenerationRow, "status">) => g.status === "queued" || g.status === "running";
 export const isLive = (p: EditorPhoto, style?: string) => p.generations.some((g) => liveStatus(g) && (!style || g.style === style));
@@ -128,7 +129,71 @@ export const SECTIONS = ["fotos", "datos", "mapa", "condiciones", "marca", "publ
 export type Section = (typeof SECTIONS)[number];
 export const isSection = (v: unknown): v is Section => typeof v === "string" && (SECTIONS as readonly string[]).includes(v);
 
-/** The download name of a version: property, space or photo, and style. */
-export function versionFileName(propertyTitle: string, photoName: string, styleLabel: string) {
-  return [propertyTitle, photoName, styleLabel].map((s) => s.trim()).filter(Boolean).join(" - ").slice(0, 100);
+/**
+ * The download name of a version: property, space or photo, style and its
+ * number in that style ("Depto Güemes - Living - Moderno - v2"; saved as
+ * Depto-Guemes-Living-Moderno-v2.jpg). The version number keeps two
+ * versions of one style apart.
+ */
+export function versionFileName(propertyTitle: string, photoName: string, styleLabel: string, version?: number | null) {
+  const parts = [propertyTitle, photoName, styleLabel].map((s) => s.trim().slice(0, 40)).filter(Boolean);
+  return [...parts, version ? `v${version}` : ""].filter(Boolean).join(" - ").slice(0, 100);
+}
+
+/** The created versions of a photo in one style, oldest first, numbered from 1 (discarded ones keep their number). */
+export function versionNumber(photo: Pick<EditorPhoto, "generations">, generationId: string) {
+  const g = photo.generations.find((x) => x.id === generationId);
+  if (!g) return null;
+  const same = photo.generations
+    .filter((x) => x.style === g.style && x.status === "succeeded")
+    .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id));
+  const i = same.findIndex((x) => x.id === generationId);
+  return i < 0 ? null : i + 1;
+}
+
+/** What the large image is showing, in words: never ambiguous between the original, a version and a comparison. */
+export type ViewMode = "original" | "version" | "compare";
+export function viewLabel(mode: ViewMode, styleLabel: string | null, version?: number | null, versions = 1) {
+  if (mode === "original" || !styleLabel) return "Original";
+  const name = versions > 1 && version ? `${styleLabel} v${version}` : styleLabel;
+  return mode === "compare" ? `Comparando original y ${name}` : `${name} · versión creada`;
+}
+
+export type StyleVersions = {
+  style: string;
+  state: CellState;
+  /** Created versions of the style that are not discarded, the one shown on the listing first, then newest first. */
+  versions: { generation: GenerationRow; shown: boolean; number: number | null }[];
+};
+/** Every style of a photo with its real state and its versions, for the versions panel. */
+export function photoVersions(photo: EditorPhoto, demoStyles: string[], waiting: Set<string>): StyleVersions[] {
+  const discarded = new Set(photo.discarded);
+  return cardStyles(photo, demoStyles)
+    .map((style) => {
+      const versions = photo.generations
+        .filter((g) => g.style === style && g.status === "succeeded" && !discarded.has(g.id))
+        .map((generation) => ({ generation, shown: photo.shown[style] === generation.id, number: versionNumber(photo, generation.id) }))
+        .sort((a, b) => Number(b.shown) - Number(a.shown) || b.generation.created_at.localeCompare(a.generation.created_at));
+      return { style, state: cellState(photo, style, waiting.has(taskKey({ photoId: photo.id, style }))), versions };
+    })
+    .filter((s) => s.state.kind !== "none" || s.versions.length > 0);
+}
+
+/**
+ * The version the workspace opens a photo with: the one shown on the
+ * listing in the main style, else any shown one, else the original. Only a
+ * view: nothing is published or chosen by opening it.
+ */
+export function initialView(photo: EditorPhoto, mainStyle: string): string | null {
+  return photo.shown[mainStyle] ?? Object.values(photo.shown)[0] ?? null;
+}
+
+/**
+ * The room a new version starts with: the space's kind when it can be
+ * staged, else the photo's own setting. A photo whose own setting differs
+ * from its space is reported as a conflict, never changed silently.
+ */
+export function initialRoom(photo: Pick<EditorPhoto, "room">, space: PropertySpace | null) {
+  const fromSpace = space ? stagingRoomOf(space.roomType) : null;
+  return { room: fromSpace ?? photo.room, conflict: fromSpace && fromSpace !== photo.room ? photo.room : null };
 }

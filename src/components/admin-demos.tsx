@@ -15,6 +15,7 @@ import {
   UserPlus,
 } from "lucide-react";
 import { ImportFromListing } from "./demo-import";
+import { EDIT_HEADER } from "@/lib/agency/edit-scope";
 import {
   adminPhotoUrl,
   demoUrl,
@@ -24,19 +25,35 @@ import {
   type DemoSummary,
 } from "@/lib/demos/shared";
 
+/**
+ * The edit context of this tab ("Editar inmobiliaria"), sent with every
+ * call to the admin API while it is set. It lives in this page's memory
+ * only, so another tab editing another agency never sends it.
+ */
+let editContext: string | null = null;
+export function setEditContext(token: string | null) {
+  editContext = token;
+}
+export const EDIT_EXPIRED_EVENT = "habita:edicion-vencida";
+
 /** fetch for the admin API: JSON in and out, the server's message on errors. */
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const json = typeof init.body === "string";
+  const headers = new Headers(init.headers);
+  if (json && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  if (editContext && path.startsWith("/api/admin/") && !headers.has(EDIT_HEADER)) headers.set(EDIT_HEADER, editContext);
   const r = await fetch(path, {
     cache: "no-store",
     ...init,
-    headers: json ? { "Content-Type": "application/json", ...init.headers } : init.headers,
+    headers,
   });
   const payload = await r.json().catch(() => ({}));
   if (r.status === 401) {
     window.location.assign(`/acceso?next=${encodeURIComponent(window.location.pathname)}`);
     throw new Error("Tu sesión venció. Volvé a ingresar.");
   }
+  // The edit context ran out: the banner offers to renew it; nothing was saved and drafts stay.
+  if (r.status === 412 && editContext) window.dispatchEvent(new Event(EDIT_EXPIRED_EVENT));
   if (!r.ok) throw new ApiError(payload.error || "No pudimos completar la operación.", r.status, payload);
   return payload as T;
 }
