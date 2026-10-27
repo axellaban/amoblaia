@@ -325,11 +325,13 @@ export async function demoDetail(id: string): Promise<DemoDetail> {
     photosOf(demo.property_id),
   ]);
   const projectIds = [...new Set(photos.map((p) => p.project_id))];
-  const names = new Map(
+  // File name and whether the photo already used a credit (further versions are included).
+  type ProjectInfo = { id: string; name: string | null; grant_id: string | null; credit_grants: { source_key: string } | null };
+  const projectInfo = new Map(
     projectIds.length
-      ? ((await db.from("projects").select("id,name").in("id", projectIds)).data as { id: string; name: string | null }[] | null ?? []).map(
-          (p) => [p.id, p.name],
-        )
+      ? (((await db.from("projects").select("id,name,grant_id,credit_grants(source_key)").in("id", projectIds)).data as unknown as
+          | ProjectInfo[]
+          | null) ?? []).map((p) => [p.id, p])
       : [],
   );
   const generations = projectIds.length
@@ -361,7 +363,11 @@ export async function demoDetail(id: string): Promise<DemoDetail> {
     label: p.label,
     mode: p.mode,
     discarded: p.discarded || [],
-    source: names.get(p.project_id) ?? null,
+    source: projectInfo.get(p.project_id)?.name ?? null,
+    charged: Boolean(
+      projectInfo.get(p.project_id)?.grant_id &&
+        !/^(trial|demo):/.test(projectInfo.get(p.project_id)?.credit_grants?.source_key ?? ""),
+    ),
     shown: Object.fromEntries([...(shown.get(p.id) ?? new Map<string, StagedRow>())].map(([k, g]) => [k, g.id])),
     generations: generations
       .filter((g) => g.project_id === p.project_id)
@@ -446,8 +452,15 @@ export function reviewWarnings(input: {
 /** Builds the minimal public payload. Only visible photos; a staged version only when it can be delivered. */
 async function publicPayload(demo: DemoRow, logoUrl: (v: string) => string): Promise<PublicDemo> {
   const db = adminClient();
-  const [agency, property, photos, branding, { settings }] = await Promise.all([
+  const [agency, prospect, property, photos, branding, { settings }] = await Promise.all([
     db.from("agencies").select("name,website").eq("id", demo.agency_id).single(),
+    // Before 202610280001_agency_accounts.sql every agency is a prospect.
+    db
+      .from("agencies")
+      .select("owner_id")
+      .eq("id", demo.agency_id)
+      .maybeSingle()
+      .then((r) => !(r.data as { owner_id?: string | null } | null)?.owner_id),
     db
       .from("demo_properties")
       .select("title,location,listing_url,description")
@@ -520,6 +533,7 @@ async function publicPayload(demo: DemoRow, logoUrl: (v: string) => string): Pro
     openStyle,
     banner: settings.banner,
     share: { title: settings.shareTitle, description: settings.shareDescription },
+    prospect,
   };
 }
 
@@ -758,7 +772,8 @@ export async function createDemo(input: {
   actorId: string;
   agencyId: string | null;
   agency: AgencyInput | null;
-  property: PropertyInput;
+  /** origin: who added it ("agency" from its own panel; the team's by default). */
+  property: PropertyInput & { origin?: "admin" | "agency" };
 }) {
   const db = adminClient();
   let agencyId = input.agencyId;
@@ -823,7 +838,8 @@ export async function addPhoto(
   actorId: string,
   bytes: Buffer,
   name: string,
-  opts: { reuse?: boolean } = {},
+  /** ownOnly: an agency's photos reuse only its owner's copy, never another account's. */
+  opts: { reuse?: boolean; ownOnly?: boolean } = {},
 ) {
   const db = adminClient();
   const existing = await photosOf(demo.property_id);
@@ -840,18 +856,13 @@ export async function addPhoto(
   }
   if (existing.length >= MAX_PHOTOS_PER_DEMO)
     throw new HttpError(409, `Una demo admite hasta ${MAX_PHOTOS_PER_DEMO} fotos.`);
-  const lookup = async () =>
-    check(
-      await db
-        .from("projects")
-        .select("id")
-        .eq("original_hash", originalHash)
-        .is("deleted_at", null)
-        .order("created_at")
-        .limit(1)
-        .maybeSingle(),
-      "PROJECT_LOOKUP_FAILED",
-    ) as { id: string } | null;
+  const lookup = async () => {
+    let query = db.from("projects").select("id").eq("original_hash", originalHash).is("deleted_at", null);
+    if (opts.ownOnly) query = query.eq("user_id", actorId);
+    return check(await query.order("created_at").limit(1).maybeSingle(), "PROJECT_LOOKUP_FAILED") as {
+      id: string;
+    } | null;
+  };
   let project = await lookup();
   if (!project) {
     const path = `${actorId}/demos/${hash}.jpg`;

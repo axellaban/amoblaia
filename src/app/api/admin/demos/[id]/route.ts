@@ -1,9 +1,9 @@
-import { requireAdmin, failure, HttpError, rpc } from "@/lib/commerce/http";
+import { failure, HttpError, rpc } from "@/lib/commerce/http";
+import { requireDemoAccess } from "@/lib/agency/server";
 import {
   assertNoLiveJobs,
   brandingOf,
   demoDetail,
-  demoRow,
   newToken,
   releaseProjects,
   saveJson,
@@ -24,11 +24,16 @@ import { adminClient } from "@/lib/supabase/server";
 const PRIVATE = { "Cache-Control": "private, no-store" };
 type Params = { params: Promise<{ id: string }> };
 
+/** The team's notes and contact person about an agency are never shown to the agency. */
+function viewOf(detail: Awaited<ReturnType<typeof demoDetail>>, admin: boolean) {
+  return admin ? detail : { ...detail, agency: { ...detail.agency, notes: null, contact_name: null } };
+}
+
 export async function GET(_request: Request, { params }: Params) {
   try {
-    await requireAdmin();
     const { id } = await params;
-    return Response.json(await demoDetail(id), { headers: PRIVATE });
+    const { demo, admin } = await requireDemoAccess(undefined, id);
+    return Response.json(viewOf(await demoDetail(demo.id), admin), { headers: PRIVATE });
   } catch (e) {
     return failure(e);
   }
@@ -36,11 +41,15 @@ export async function GET(_request: Request, { params }: Params) {
 
 export async function PATCH(request: Request, { params }: Params) {
   try {
-    const actor = await requireAdmin(request);
     const { id } = await params;
-    const demo = await demoRow(id);
+    const { actor, demo, admin, role } = await requireDemoAccess(request, id);
     const body = await readJson(request);
     const db = adminClient();
+    // The team's notes and contact person are its own; the agency's identity
+    // is edited by the team or the agency's owner.
+    if (body.action === "agency" && !admin) throw new HttpError(403, "Acceso reservado al equipo.");
+    if (body.action === "branding" && !admin && role !== "owner")
+      throw new HttpError(403, "Solo el dueño de la inmobiliaria puede cambiar su marca.");
     const saved = (r: { error: unknown }, code: string) => {
       if (r.error) throw new Error(code);
     };
@@ -211,7 +220,7 @@ export async function PATCH(request: Request, { params }: Params) {
         details: {},
       });
     }
-    return Response.json(await demoDetail(demo.id), { headers: PRIVATE });
+    return Response.json(viewOf(await demoDetail(demo.id), admin), { headers: PRIVATE });
   } catch (e) {
     return failure(e);
   }
@@ -220,9 +229,9 @@ export async function PATCH(request: Request, { params }: Params) {
 /** Deletes the demo, its property and photos, and the files no other demo uses. The agency stays. */
 export async function DELETE(request: Request, { params }: Params) {
   try {
-    const actor = await requireAdmin(request);
     const { id } = await params;
-    const demo = await demoRow(id);
+    const { actor, demo, admin, role } = await requireDemoAccess(request, id);
+    if (!admin && role !== "owner") throw new HttpError(403, "Solo el dueño de la inmobiliaria puede eliminar propiedades.");
     const db = adminClient();
     const { data, error } = await db
       .from("demo_photos")

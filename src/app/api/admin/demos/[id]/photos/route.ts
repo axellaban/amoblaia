@@ -1,7 +1,8 @@
 import sharp from "sharp";
-import { requireAdmin, failure, HttpError, rpc } from "@/lib/commerce/http";
+import { failure, HttpError, rpc } from "@/lib/commerce/http";
+import { requireDemoAccess } from "@/lib/agency/server";
 import { MAX_BYTES } from "@/lib/commerce/images";
-import { addPhoto, demoRow } from "@/lib/demos/server";
+import { addPhoto } from "@/lib/demos/server";
 import { readJson } from "@/lib/demos/input";
 import { fetchPublic } from "@/lib/demos/listing";
 import { cleanUrl } from "@/lib/demos/shared";
@@ -57,14 +58,19 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const actor = await requireAdmin(request);
     const { id } = await params;
-    const demo = await demoRow(id);
+    const { actor, demo, billingUser } = await requireDemoAccess(request, id);
     const photo = /json/i.test(request.headers.get("content-type") || "")
       ? await fromUrl(request)
       : await fromUpload(request);
-    await rpc("amobla_account", { p_user: actor.id, p_trial: false });
-    const row = await addPhoto(demo, actor.id, photo.bytes, photo.name, { reuse: photo.reuse });
+    // An agency's photos belong to its owner (whose credits stage them) and
+    // never reuse another account's copy; the team's demos share theirs.
+    const owner = billingUser ?? actor.id;
+    await rpc("amobla_account", { p_user: owner, p_trial: false });
+    const row = await addPhoto(demo, owner, photo.bytes, photo.name, {
+      reuse: photo.reuse,
+      ownOnly: Boolean(billingUser),
+    });
     return Response.json(
       { id: row.id, reused: row.reused },
       { status: row.reused ? 200 : 201, headers: { "Cache-Control": "private, no-store" } },

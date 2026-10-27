@@ -5,9 +5,11 @@ const state = vi.hoisted(() => ({
   admin: true as boolean,
   user: null as null | { id: string; email: string; is_anonymous?: boolean; email_confirmed_at?: string },
   dbCalls: 0,
+  touched: [] as string[],
   tables: {} as Record<string, Record<string, unknown>[]>,
   rpcs: [] as { name: string; args: Record<string, unknown> }[],
   after: [] as (() => unknown)[],
+  freeTier: false,
 }));
 
 /** In-memory stand-in for the service-role client: filters work, everything else is a no-op. */
@@ -15,6 +17,7 @@ function fakeDb() {
   return {
     from(table: string) {
       state.dbCalls++;
+      state.touched.push(table);
       let rows: Row[] = [...(state.tables[table] ?? [])];
       const q = {
         select: () => q,
@@ -55,7 +58,11 @@ vi.mock("@/lib/supabase/server", () => ({
   currentUser: async () => state.user,
   userClient: async () => ({}),
 }));
-vi.mock("@/lib/commerce/jobs", () => ({ BUCKET: "property-images", runJob: async () => {} }));
+vi.mock("@/lib/commerce/jobs", () => ({
+  BUCKET: "property-images",
+  runJob: async () => {},
+  onFreeTier: async () => state.freeTier,
+}));
 vi.mock("@/lib/commerce/http", async (original) => {
   const real = await original<typeof import("../src/lib/commerce/http")>();
   return {
@@ -63,6 +70,12 @@ vi.mock("@/lib/commerce/http", async (original) => {
     requireAdmin: async () => {
       if (!state.admin) throw new real.HttpError(403, "Acceso reservado al equipo.");
       return { id: "00000000-0000-4000-8000-0000000000aa", email: "equipo@amobla.test" };
+    },
+    // The team's account, or the signed-in visitor of each test.
+    requireUser: async () => {
+      if (state.admin) return { id: "00000000-0000-4000-8000-0000000000aa", email: "equipo@amobla.test" };
+      if (!state.user) throw new real.HttpError(401, "Ingresá a tu cuenta y verificá tu email.");
+      return state.user;
     },
     rpc: async (name: string, args: Record<string, unknown> = {}) => {
       state.rpcs.push({ name, args });
@@ -100,6 +113,8 @@ beforeEach(() => {
   state.admin = true;
   state.user = null;
   state.dbCalls = 0;
+  state.touched = [];
+  state.freeTier = false;
   state.rpcs = [];
   state.after = [];
   state.tables = {
@@ -135,8 +150,9 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("Admin API authorization", () => {
-  it("rejects every demo operation for accounts that are not admins, before touching data", async () => {
+  it("rejects every demo operation for accounts that are neither admins nor members, before reading any demo", async () => {
     state.admin = false;
+    state.user = { id: "00000000-0000-4000-8000-0000000000cc", email: "cliente@example.com", email_confirmed_at: "2026-01-01" };
     const responses = await Promise.all([
       list.GET(),
       list.POST(req("/api/admin/demos", "POST", { agency: { name: "X" }, property: { title: "Y" } })),
@@ -152,8 +168,10 @@ describe("Admin API authorization", () => {
       photo.POST(req("/x", "POST", { key: GEN }), params({ id: DEMO, photoId: PHOTO })),
       image.GET(req(`/api/admin/demos/imagen?foto=${PHOTO}&v=original`)),
     ]);
-    for (const r of responses) expect(r.status).toBe(403);
-    expect(state.dbCalls).toBe(0);
+    // The team-only listing, creation and import say so; a property of an
+    // agency the account does not work for is not even revealed.
+    expect(responses.map((r) => r.status)).toEqual([403, 403, 403, 404, 404, 404, 404, 404, 404, 404, 404, 404, 404]);
+    expect(new Set(state.touched)).toEqual(new Set(["agency_members"]));
     expect(state.rpcs).toEqual([]);
   });
 
@@ -165,6 +183,79 @@ describe("Admin API authorization", () => {
     await expect(requireAdminPage("/admin/demos")).rejects.toThrow(/REDIRECT/);
     state.user = { id: "u3", email: "equipo@amobla.test", email_confirmed_at: "2026-01-01" };
     await expect(requireAdminPage("/admin/demos")).resolves.toMatchObject({ id: "u3" });
+  });
+});
+
+const OWNER = "00000000-0000-4000-8000-0000000000b1";
+const HELPER = "00000000-0000-4000-8000-0000000000b2";
+/** Turns the test agency into an account with an owner and a collaborator; `who` signs in. */
+function agencyAccount(who: string, ownerPaidPhoto = false) {
+  state.admin = false;
+  const agency = { id: "ag1", name: "Sur Propiedades", website: "https://sur.test/", slug: "sur", owner_id: OWNER, site_published: false };
+  Object.assign(state.tables.agencies[0], { owner_id: OWNER, slug: "sur" });
+  state.tables.agency_members = [
+    { agency_id: "ag1", user_id: OWNER, role: "owner", agencies: agency },
+    { agency_id: "ag1", user_id: HELPER, role: "collaborator", agencies: agency },
+  ];
+  for (const p of state.tables.projects) Object.assign(p, { user_id: OWNER, grant_id: ownerPaidPhoto ? "gr1" : null, credit_grants: ownerPaidPhoto ? { source_key: "payment:1" } : null });
+  state.user = { id: who, email: `${who}@inmo.test`, email_confirmed_at: "2026-01-01" };
+}
+
+describe("Agency members on their own properties", () => {
+  it("lets members open their property, and not one of another agency", async () => {
+    agencyAccount(HELPER);
+    expect((await one.GET(req(`/api/admin/demos/${DEMO}`), params({ id: DEMO }))).status).toBe(200);
+    state.tables.agency_members[1].agency_id = "ag2";
+    (state.tables.agency_members[1].agencies as Row).id = "ag2";
+    expect((await one.GET(req(`/api/admin/demos/${DEMO}`), params({ id: DEMO }))).status).toBe(404);
+  });
+
+  it("stages with the owner's credits through the regular reservation, never the team's demo grant", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "test-key-never-real");
+    agencyAccount(HELPER, true);
+    const r = await photo.POST(
+      req("/x", "POST", { key: GEN, room: "living", style: "modern", mode: "furnish" }),
+      params({ id: DEMO, photoId: PHOTO }),
+    );
+    expect(r.status).toBe(202);
+    expect(state.rpcs.map((c) => c.name)).not.toContain("amobla_reserve_demo_generation");
+    expect(state.rpcs.find((c) => c.name === "amobla_reserve_batch")!.args).toMatchObject({
+      p_user: OWNER,
+      p_project: "pj1",
+      p_key: GEN,
+      p_daily_limit: 100,
+    });
+  });
+
+  it("asks for credits instead of producing a marked result that could not be published", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "test-key-never-real");
+    agencyAccount(OWNER);
+    state.freeTier = true;
+    const r = await photo.POST(req("/x", "POST", { key: GEN, style: "modern" }), params({ id: DEMO, photoId: PHOTO }));
+    expect(r.status).toBe(402);
+    expect(state.rpcs.map((c) => c.name)).not.toContain("amobla_reserve_batch");
+  });
+
+  it("does not let the team spend an agency's credits", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "test-key-never-real");
+    agencyAccount(OWNER, true);
+    state.admin = true;
+    const r = await photo.POST(req("/x", "POST", { key: GEN, style: "modern" }), params({ id: DEMO, photoId: PHOTO }));
+    expect(r.status).toBe(409);
+    expect(state.rpcs.filter((c) => /reserve/.test(c.name))).toEqual([]);
+  });
+
+  it("keeps the team's notes, the brand and deleting for the right people", async () => {
+    agencyAccount(HELPER);
+    const notes = await one.PATCH(req(`/api/admin/demos/${DEMO}`, "PATCH", { action: "agency", agency: { name: "X", notes: "y" } }), params({ id: DEMO }));
+    expect(notes.status).toBe(403);
+    const brand = await one.PATCH(req(`/api/admin/demos/${DEMO}`, "PATCH", { action: "branding", branding: { primary: "#24382e" } }), params({ id: DEMO }));
+    expect(brand.status).toBe(403);
+    expect((await one.DELETE(req(`/api/admin/demos/${DEMO}`, "DELETE"), params({ id: DEMO }))).status).toBe(403);
+    // The team's private notes never reach a member's view of the property.
+    const detail = JSON.stringify(await (await one.GET(req(`/api/admin/demos/${DEMO}`), params({ id: DEMO }))).json());
+    expect(detail).not.toContain("Le interesa");
+    expect(detail).not.toContain('"Ana"');
   });
 });
 

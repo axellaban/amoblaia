@@ -1,11 +1,12 @@
 import { after } from "next/server";
-import { requireAdmin, failure, HttpError, rpc } from "@/lib/commerce/http";
+import { failure, HttpError, rpc } from "@/lib/commerce/http";
+import { requireDemoAccess } from "@/lib/agency/server";
+import { onFreeTier } from "@/lib/commerce/jobs";
 import { runJob } from "@/lib/commerce/jobs";
 import { buildDemoPrompt } from "@/lib/demos/styles";
 import {
   assertNoLiveJobs,
   demoDetail,
-  demoRow,
   photoOf,
   releaseProjects,
 } from "@/lib/demos/server";
@@ -26,6 +27,49 @@ const DEMO_DAILY_LIMIT = 1_000_000;
 const PRIVATE = { "Cache-Control": "private, no-store" };
 type Params = { params: Promise<{ id: string; photoId: string }> };
 
+/**
+ * A staging of an agency's photo through the regular reservation: one
+ * credit the first time the photo is staged, further versions included
+ * while the coverage lasts, refunded on a technical failure. Free (marked)
+ * results cannot be published on a listing, so an account without credits
+ * is asked to get them instead of producing one.
+ */
+async function stageWithCredits(
+  owner: string,
+  projectId: string,
+  key: string,
+  room: string,
+  style: string,
+  mode: string,
+  notes: string,
+) {
+  const db = adminClient();
+  const { data, error } = await db
+    .from("projects")
+    .select("user_id,grant_id,credit_grants(source_key)")
+    .eq("id", projectId)
+    .single();
+  if (error) throw new Error("PROJECT_LOOKUP_FAILED");
+  const project = data as unknown as { user_id: string; grant_id: string | null; credit_grants: { source_key: string } | null };
+  if (project.user_id !== owner)
+    throw new HttpError(409, "Esta foto es compartida con otra demo. Volvé a subirla para ambientarla.");
+  const charged = Boolean(project.grant_id) && !/^(trial|demo):/.test(project.credit_grants?.source_key ?? "");
+  await rpc("amobla_account", { p_user: owner, p_trial: false });
+  if (!charged && (await onFreeTier(owner)))
+    throw new HttpError(402, "No te quedan créditos. Sumá créditos para ambientar esta foto.");
+  return rpc<string[]>("amobla_reserve_batch", {
+    p_user: owner,
+    p_project: projectId,
+    p_key: key,
+    p_room: room,
+    p_style: style,
+    p_mode: mode,
+    p_notes: notes,
+    p_prompts: [buildDemoPrompt(room, style, mode, notes)],
+    p_daily_limit: Number(process.env.MAX_GENERATIONS_PER_DAY || 100),
+  });
+}
+
 async function editorPhoto(demoId: string, photoId: string) {
   const detail = await demoDetail(demoId);
   return detail.photos.find((p) => p.id === photoId) ?? null;
@@ -39,9 +83,8 @@ async function editorPhoto(demoId: string, photoId: string) {
 export async function GET(_request: Request, { params }: Params) {
   const deadline = Date.now() + maxDuration * 1000 - 5000;
   try {
-    await requireAdmin();
     const { id, photoId } = await params;
-    const demo = await demoRow(id);
+    const { demo } = await requireDemoAccess(undefined, id);
     const photo = await photoOf(demo, photoId);
     const db = adminClient();
     const { data: jobs, error } = await db
@@ -72,9 +115,8 @@ export async function GET(_request: Request, { params }: Params) {
 /** Edits a photo: room, label, mode, visibility, and which versions it discards or recovers. */
 export async function PATCH(request: Request, { params }: Params) {
   try {
-    await requireAdmin(request);
     const { id, photoId } = await params;
-    const demo = await demoRow(id);
+    const { demo } = await requireDemoAccess(request, id);
     const photo = await photoOf(demo, photoId);
     const body = await readJson(request);
     const changes = photoChanges(body.changes);
@@ -121,9 +163,8 @@ export async function PATCH(request: Request, { params }: Params) {
 /** Removes the photo from the demo; its files go too unless another demo uses them. */
 export async function DELETE(request: Request, { params }: Params) {
   try {
-    await requireAdmin(request);
     const { id, photoId } = await params;
-    const demo = await demoRow(id);
+    const { demo } = await requireDemoAccess(request, id);
     const photo = await photoOf(demo, photoId);
     await assertNoLiveJobs([photo.project_id]);
     const removed = await adminClient().from("demo_photos").delete().eq("id", photo.id);
@@ -143,11 +184,10 @@ export async function DELETE(request: Request, { params }: Params) {
 export async function POST(request: Request, { params }: Params) {
   const started = Date.now();
   try {
-    const actor = await requireAdmin(request);
+    const { id, photoId } = await params;
+    const { actor, demo, admin, billingUser } = await requireDemoAccess(request, id);
     if (!process.env.OPENAI_API_KEY)
       throw new HttpError(503, "La generación todavía no está habilitada.");
-    const { id, photoId } = await params;
-    const demo = await demoRow(id);
     const photo = await photoOf(demo, photoId);
     const body = await readJson(request, 4096);
     const room = validRoom(body.room) ? body.room : photo.room;
@@ -156,6 +196,18 @@ export async function POST(request: Request, { params }: Params) {
     const mode = validMode(body.mode) ? body.mode : photo.mode;
     const notes = cleanText(body.notes, 300) ?? "";
     if (!isUuid(body.key)) throw new HttpError(400, "Identificador de solicitud inválido.");
+    if (billingUser) {
+      // The agency's own account: its owner's credits pay, like any photo.
+      if (admin && billingUser !== actor.id)
+        throw new HttpError(409, "Esta inmobiliaria ya tiene su cuenta: las ambientaciones se crean desde su panel.");
+      const ids = await stageWithCredits(billingUser, photo.project_id, body.key, room, style, mode, notes);
+      await adminClient().from("demo_photos").update({ room, mode }).eq("id", photo.id);
+      const deadline = started + maxDuration * 1000 - 5000;
+      after(async () => {
+        await Promise.allSettled(ids.map((job) => runJob(job, deadline)));
+      });
+      return Response.json({ ids }, { status: 202, headers: PRIVATE });
+    }
     await rpc("amobla_account", { p_user: actor.id, p_trial: false });
     const ids = await rpc<string[]>("amobla_reserve_demo_generation", {
       p_actor: actor.id,

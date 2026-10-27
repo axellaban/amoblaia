@@ -166,13 +166,15 @@ describe("Demo generations", () => {
 });
 
 describe("Access control of the demo tables", () => {
-  it("gives browsers no access to demo data and no access to the demo RPC", async () => {
+  it("gives browsers no write access to demo data and no access to the demo RPC", async () => {
+    // Signed-in members may only read their own agency's rows (RLS, see
+    // agency-database.test.ts); visitors read nothing and nobody writes.
     for (const table of ["agencies", "demo_properties", "demo_photos", "demos"])
       for (const role of ["anon", "authenticated"])
         for (const privilege of ["select", "insert", "update", "delete"])
           expect(
             (await one<{ ok: boolean }>("select has_table_privilege($1,$2,$3) as ok", [role, `public.${table}`, privilege]))!.ok,
-          ).toBe(false);
+          ).toBe(role === "authenticated" && privilege === "select" && table !== "agencies");
     const fn = "public.amobla_reserve_demo_generation(uuid,uuid,uuid,text,text,text,text,text,integer)";
     for (const role of ["anon", "authenticated"])
       expect((await one<{ ok: boolean }>("select has_function_privilege($1,$2,'execute') as ok", [role, fn]))!.ok).toBe(false);
