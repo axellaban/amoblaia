@@ -22,9 +22,9 @@ export const IMPORT_FIELDS = {
   listings: "Propiedades publicadas",
   sample: "Avisos vistos en muestra",
   pts_contact: "Puntos contacto",
-  pts_decision: "Puntos quién decide",
-  pts_stock: "Puntos stock",
-  pts_activity: "Puntos actividad",
+  pts_decision: "Puntos decisión / quién decide",
+  pts_stock: "Puntos cartera / stock",
+  pts_activity: "Puntos encaje / actividad",
   address: "Dirección",
   zone: "Zona",
   website: "Web",
@@ -40,16 +40,16 @@ export type Mapping = Partial<Record<ImportField, string>>;
 // Order matters: specific patterns before generic ones.
 const GUESS: [ImportField, RegExp][] = [
   ["pts_contact", /(puntos?|pts).*contacto/i],
-  ["pts_decision", /(puntos?|pts).*(decide|decisor)/i],
-  ["pts_stock", /(puntos?|pts).*stock/i],
-  ["pts_activity", /(puntos?|pts).*actividad/i],
+  ["pts_decision", /(puntos?|pts).*(decide|decisor|decisi[oó]n)/i],
+  ["pts_stock", /(puntos?|pts).*(stock|cartera)/i],
+  ["pts_activity", /(puntos?|pts).*(actividad|encaje)/i],
   ["other_phones", /otros?\s+tel|tel[eé]fonos?\s+alternativ/i],
   ["whatsapp_link", /abrir\s+whatsapp|link.*whatsapp|wa\.me/i],
   ["phone_confidence", /confianza/i],
   ["phone_source", /fuente/i],
   ["external_id", /^(id|clave|row\s*id)$/i],
   ["priority", /prioridad/i],
-  ["score", /^(score|puntaje)(\s+total)?$/i],
+  ["score", /^(score|puntaje)\b/i],
   ["sdr", /\bsdr\b|responsable/i],
   ["campaign", /campa[nñ]a/i],
   ["decision_maker", /qui[eé]n\s+decide|decisor/i],
@@ -267,14 +267,11 @@ export function buildRows(parsed: { headers: string[]; rows: string[][] }, mappi
     const scoreText = get("score");
     const score = parseNumber(scoreText);
     if (scoreText && score == null) messages.push(`Score «${scoreText}» no es numérico: se conserva en los datos originales`);
+    // Components keep the sheet's own column names (e.g. "Pts cartera /25"): the scale is part of the meaning.
     const score_components: Record<string, number | string> = {};
-    for (const [f, label] of [["pts_contact", "contacto"], ["pts_decision", "decisor"], ["pts_stock", "stock"], ["pts_activity", "actividad"]] as const) {
+    for (const f of ["pts_contact", "pts_decision", "pts_stock", "pts_activity", "listings", "sample"] as const) {
       const v = get(f);
-      if (v) score_components[label] = parseNumber(v) ?? v;
-    }
-    for (const [f, label] of [["listings", "propiedades_publicadas"], ["sample", "avisos_vistos_en_muestra"]] as const) {
-      const v = get(f);
-      if (v) score_components[label] = parseNumber(v) ?? v;
+      if (v) score_components[mapping[f]!] = parseNumber(v) ?? v;
     }
 
     const statusText = get("status");

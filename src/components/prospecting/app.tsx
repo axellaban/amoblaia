@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
-import Link from "next/link";
 import type { Filters } from "@/lib/prospecting/metrics";
 import { formatWhen } from "@/lib/prospecting/time";
 import type { Dataset } from "@/lib/prospecting/types";
@@ -92,21 +91,7 @@ export function ProspectingApp({ initialTab }: { initialTab: Tab }) {
   };
 
   return (
-    <div className="pr-layout">
-      <aside className="pr-side" aria-label="Operación comercial">
-        <div className="pr-side-brand">
-          habita<span>.</span>
-          <small>Operación comercial</small>
-        </div>
-        <nav>
-          <Link href="/admin/prospeccion" className="is-on" aria-current="page">
-            Adquisición
-          </Link>
-          <Link href="/admin/demos">Demos existentes</Link>
-          <Link href="/admin/inmobiliarias">Inmobiliarias</Link>
-        </nav>
-        <p className="pr-side-foot">Privado del equipo. Sin conexión automática a WhatsApp ni Gmail: cada envío y respuesta se registra.</p>
-      </aside>
+    <>
       <main className="pr-main">
         <div className="pr-top">
           <div>
@@ -173,6 +158,6 @@ export function ProspectingApp({ initialTab }: { initialTab: Tab }) {
           onPrepare={prepareFor}
         />
       )}
-    </div>
+    </>
   );
 }
