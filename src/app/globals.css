@@ -10638,7 +10638,8 @@ a.dm-agency:hover {
 .pc-card {
   display: grid;
   /* The photo takes about a third of the card: enough to judge it, without each card filling the screen. */
-  grid-template-columns: minmax(200px, 340px) minmax(0, 1fr);
+  grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
+  gap: 16px;
   gap: 18px;
   padding: 14px;
   border: 1px solid var(--line);
@@ -11271,4 +11272,117 @@ a.dm-agency:hover {
 }
 .support-banner-error {
   color: #ffd5c2;
+}
+
+/* Photo card, compact: photo, its settings and its controls on the left; styles as tiles on the right. */
+.pc-left {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+}
+.pc-left .pc-media > img {
+  aspect-ratio: 3 / 2;
+}
+.pc-panel .pc-fields {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.pc-panel .pc-fields select {
+  padding: 5px 7px;
+  font-size: 13px;
+}
+.pc-left .pc-controls {
+  gap: 4px;
+}
+.pc-left .pc-controls .button {
+  padding-inline: 9px;
+  font-size: 12.5px;
+}
+.pc-panel {
+  gap: 8px;
+}
+.pc-styles {
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 6px;
+}
+.pc-head h3 {
+  font-size: 16px;
+}
+.pc-head .pc-include {
+  padding: 3px 9px;
+  font-size: 12.5px;
+}
+.pc-style {
+  grid-template-columns: 64px minmax(0, 1fr);
+  grid-template-areas: "thumb text" "thumb actions";
+  align-items: start;
+  gap: 2px 10px;
+}
+.pc-style > .pc-style-thumb {
+  grid-area: thumb;
+  width: 64px;
+  height: 48px;
+}
+.pc-style > .pc-style-text {
+  grid-area: text;
+}
+.pc-style > .pc-style-actions {
+  grid-area: actions;
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  gap: 4px;
+  margin-top: 4px;
+}
+.pc-style .pc-style-actions .button {
+  min-height: 28px;
+  padding: 0 9px;
+  font-size: 12.5px;
+}
+/* A failed or uncertain style explains itself: it takes the whole row. */
+.pc-style.is-failed,
+.pc-style.is-uncertain {
+  grid-column: 1 / -1;
+}
+@media (max-width: 860px) {
+  .pc-left .pc-media {
+    max-width: none;
+  }
+}
+@media (max-width: 640px) {
+  .pc-panel .pc-fields {
+    grid-template-columns: 1fr 1fr;
+  }
+  .pc-panel .pc-fields label:first-child {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 520px) {
+  .pc-style {
+    grid-template-columns: 56px minmax(0, 1fr);
+  }
+  .pc-style > .pc-style-thumb {
+    width: 56px;
+    height: 42px;
+  }
+  .pc-style > .pc-style-actions {
+    grid-column: auto;
+  }
+}
+.pc-head .pc-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+}
+.pc-head .pc-title .eyebrow {
+  order: 2;
+  margin: 0;
+  color: var(--muted);
+}
+.pc-head .pc-title h3 {
+  margin: 0;
+}
+.pc-chip {
+  padding: 4px 10px;
 }

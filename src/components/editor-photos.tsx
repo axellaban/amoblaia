@@ -278,43 +278,84 @@ export function PhotoCard({
 
   return (
     <li className={`pc-card ${photo.visible ? "" : "is-hidden"} ${included ? "is-included" : ""}`} id={`foto-${photo.id}`}>
-      <div className="pc-media">
-        {shownId && compare ? (
-          <Comparison
-            before={adminPhotoUrl(photo.id, null, 960)}
-            after={adminGenerationUrl(shownId, 960)}
-            beforeLabel="Original"
-            beforeAlt={`${name}, foto original`}
-            afterLabel={styleName(preview!)}
-            alt={`${name}, ${styleName(preview!)}`}
-            initial={50}
-          />
-        ) : (
-          <img
-            src={shownId ? adminGenerationUrl(shownId, 960) : adminPhotoUrl(photo.id, null, 960)}
-            alt={shownId ? `${name}, ${styleName(preview!)}` : `${name}, foto original`}
-            loading="lazy"
-          />
-        )}
-        <div className="dm-badges">
-          {isCover && <span>Portada</span>}
-          {!photo.visible && <span className="is-muted">Oculta en la ficha</span>}
-        </div>
-        <div className="pc-media-switch" role="group" aria-label="Qué ver en la foto grande">
-          <button type="button" aria-pressed={!shownId} onClick={() => (setPreview(null), setCompare(false))}>
-            Original
-          </button>
-          {firstReady && (
-            <>
-              <button type="button" aria-pressed={Boolean(shownId) && !compare} onClick={() => (setPreview(preview && photo.shown[preview] ? preview : firstReady), setCompare(false))}>
-                Versión
-              </button>
-              <button type="button" aria-pressed={Boolean(shownId) && compare} onClick={() => (setPreview(preview && photo.shown[preview] ? preview : firstReady), setCompare(true))}>
-                Comparar
-              </button>
-            </>
+      <div className="pc-left">
+        <div className="pc-media">
+          {shownId && compare ? (
+            <Comparison
+              before={adminPhotoUrl(photo.id, null, 960)}
+              after={adminGenerationUrl(shownId, 960)}
+              beforeLabel="Original"
+              beforeAlt={`${name}, foto original`}
+              afterLabel={styleName(preview!)}
+              alt={`${name}, ${styleName(preview!)}`}
+              initial={50}
+            />
+          ) : (
+            <img
+              src={shownId ? adminGenerationUrl(shownId, 960) : adminPhotoUrl(photo.id, null, 960)}
+              alt={shownId ? `${name}, ${styleName(preview!)}` : `${name}, foto original`}
+              loading="lazy"
+            />
           )}
+          <div className="dm-badges">
+            {isCover && <span>Portada</span>}
+            {!photo.visible && <span className="is-muted">Oculta en la ficha</span>}
+          </div>
+          <div className="pc-media-switch" role="group" aria-label="Qué ver en la foto grande">
+            <button type="button" aria-pressed={!shownId} onClick={() => (setPreview(null), setCompare(false))}>
+              Original
+            </button>
+            {firstReady && (
+              <>
+                <button type="button" aria-pressed={Boolean(shownId) && !compare} onClick={() => (setPreview(preview && photo.shown[preview] ? preview : firstReady), setCompare(false))}>
+                  Versión
+                </button>
+                <button type="button" aria-pressed={Boolean(shownId) && compare} onClick={() => (setPreview(preview && photo.shown[preview] ? preview : firstReady), setCompare(true))}>
+                  Comparar
+                </button>
+              </>
+            )}
+          </div>
         </div>
+          <div className="pc-controls">
+            <button
+              type="button"
+              className={`button button-small button-outline ${photo.visible ? "" : "is-off"}`}
+              aria-pressed={!photo.visible}
+              onClick={() => actions.patch({ visible: !photo.visible })}
+            >
+              {photo.visible ? <Eye size={14} /> : <EyeOff size={14} />} {photo.visible ? "Se muestra" : "Oculta"}
+            </button>
+            <button
+            type="button"
+            className={`button button-small button-outline ${isCover ? "is-on" : ""}`}
+            aria-pressed={isCover}
+            title={isCover ? "Es la portada: abre la ficha y la vista previa del enlace" : "Usar como portada: abre la ficha"}
+            onClick={actions.cover}
+          >
+              <Star size={14} /> Portada
+            </button>
+            <details className="ap-menu pc-more">
+              <summary>
+                <MoreHorizontal size={15} /> Más
+              </summary>
+              <div className="ap-menu-list pc-more-list">
+                <button type="button" disabled={index === 0} onClick={() => actions.move(-1)}>
+                  <ArrowUp size={14} /> Subir
+                </button>
+                <button type="button" disabled={index === total - 1} onClick={() => actions.move(1)}>
+                  <ArrowDown size={14} /> Bajar
+                </button>
+                <details className="pc-history-wrap">
+                  <summary>Historial de versiones</summary>
+                  <History photo={photo} actions={actions} downloading={downloading} />
+                </details>
+                <button type="button" className="dm-danger" disabled={live} onClick={actions.remove}>
+                  <Trash2 size={14} /> Eliminar foto
+                </button>
+              </div>
+            </details>
+          </div>
       </div>
 
       <div className="pc-panel">
@@ -472,39 +513,6 @@ export function PhotoCard({
           </div>
         )}
 
-        <div className="pc-controls">
-          <button
-            type="button"
-            className={`button button-small button-outline ${photo.visible ? "" : "is-off"}`}
-            aria-pressed={!photo.visible}
-            onClick={() => actions.patch({ visible: !photo.visible })}
-          >
-            {photo.visible ? <Eye size={14} /> : <EyeOff size={14} />} {photo.visible ? "Se muestra" : "Oculta"}
-          </button>
-          <button type="button" className={`button button-small button-outline ${isCover ? "is-on" : ""}`} aria-pressed={isCover} onClick={actions.cover}>
-            <Star size={14} /> {isCover ? "Es la portada (abre la ficha)" : "Usar de portada"}
-          </button>
-          <details className="ap-menu pc-more">
-            <summary>
-              <MoreHorizontal size={15} /> Más
-            </summary>
-            <div className="ap-menu-list pc-more-list">
-              <button type="button" disabled={index === 0} onClick={() => actions.move(-1)}>
-                <ArrowUp size={14} /> Subir
-              </button>
-              <button type="button" disabled={index === total - 1} onClick={() => actions.move(1)}>
-                <ArrowDown size={14} /> Bajar
-              </button>
-              <details className="pc-history-wrap">
-                <summary>Historial de versiones</summary>
-                <History photo={photo} actions={actions} downloading={downloading} />
-              </details>
-              <button type="button" className="dm-danger" disabled={live} onClick={actions.remove}>
-                <Trash2 size={14} /> Eliminar foto
-              </button>
-            </div>
-          </details>
-        </div>
       </div>
     </li>
   );
