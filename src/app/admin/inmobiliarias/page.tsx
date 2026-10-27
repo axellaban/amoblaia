@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { adminAgencies } from "@/lib/agency/admin";
 import { AgenciesTable } from "@/components/admin-agencies";
-import { AdminNav } from "@/components/admin-nav";
 import { requireAdminPage } from "@/lib/demos/admin-page";
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
@@ -24,7 +23,6 @@ export default async function AgenciesPage({ searchParams }: Props) {
   const href = (p: number) => `/admin/inmobiliarias?${new URLSearchParams({ ...(q ? { q } : {}), ...(p > 1 ? { pagina: String(p) } : {}) })}`;
   return (
     <div className="account-page container dm-page">
-      <AdminNav current="inmobiliarias" />
       <div className="dm-heading">
         <div>
           <span className="eyebrow">Administración / Inmobiliarias</span>

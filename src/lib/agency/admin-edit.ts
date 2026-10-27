@@ -23,7 +23,7 @@ export async function requireAgencyEdit(request: Request, id: string) {
   return { actor, editContext, admin: true as const, agency: data as { id: string; name: string; owner_id: string | null } };
 }
 
-const MIGRATION = "Para esto falta aplicar la migración 202611010001_admin_editing.sql en Supabase.";
+const MIGRATION = "Para esto falta aplicar la migración 202611030001_admin_editing.sql en Supabase.";
 const validEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) && v.length <= 200;
 /** A missing column (the migration is not applied yet) as PostgREST or Postgres report it. */
 const missingColumn = (e: { code?: string; message?: string } | null) =>
@@ -41,7 +41,7 @@ async function candidates(): Promise<DuplicateCandidate[]> {
   const db = adminClient();
   const withEmail = await db.from("agencies").select("id,name,website,contact_email").order("created_at", { ascending: false }).limit(5000);
   if (!withEmail.error) return (withEmail.data ?? []) as DuplicateCandidate[];
-  // Before 202611010001 there is no contact e-mail to compare.
+  // Before 202611030001 there is no contact e-mail to compare.
   const plain = await db.from("agencies").select("id,name,website").order("created_at", { ascending: false }).limit(5000);
   if (plain.error) throw new Error("AGENCY_LIST_FAILED");
   return (plain.data ?? []) as DuplicateCandidate[];

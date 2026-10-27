@@ -7,7 +7,6 @@ import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
 import { Loader2, Plus } from "lucide-react";
 import { ApiError, api } from "./admin-demos";
-import { AdminNav } from "./admin-nav";
 import { REASON_LABEL, type DuplicateMatch } from "@/lib/agency/duplicates";
 
 export function NewAgencyForm() {
@@ -107,7 +106,6 @@ export function NewAgencyForm() {
 
   return (
     <div className="account-page container dm-page na-page">
-      <AdminNav current="nueva" />
       <div className="dm-heading">
         <div>
           <span className="eyebrow">Administración / Nueva inmobiliaria</span>

@@ -37,7 +37,7 @@ Rama `claude/admiring-faraday-p44fxt`, sobre `main` `02a736d` (incluye #29–#32
 
 **Aislamiento.** `contact_email` queda fuera del permiso por columnas de los miembros, igual que `notes` y `contact_name` (probado con RLS en PGlite).
 
-## 3. Migración `202611010001_admin_editing.sql` (aditiva e idempotente)
+## 3. Migración `202611030001_admin_editing.sql` (aditiva e idempotente)
 
 - `agencies.contact_email` (privado) y `agencies.request_key`, con índice único parcial.
 - `demo_properties.request_key`, con índice único parcial por inmobiliaria.
@@ -53,7 +53,7 @@ Pasos en local o staging (no en producción sin aprobación):
    3. Abrir el editor, organizar las fotos y descargar una versión.
    4. Revisar «Actividad del equipo».
 
-Sin la migración, lo existente sigue funcionando. El email de contacto aparece deshabilitado, y el alta independiente y el alta manual responden con un mensaje que pide aplicarla.
+Sin la migración, lo existente sigue funcionando y los datos de la inmobiliaria se pueden guardar (sin el email). El email de contacto aparece deshabilitado, y el alta independiente y el alta manual responden con un mensaje que pide aplicarla.
 
 ## 4. Guía breve
 
@@ -102,15 +102,12 @@ Sin la migración, lo existente sigue funcionando. El email de contacto aparece 
 - El panel de la inmobiliaria conserva su importación por enlace. La carga a mano con pasos se agregó solo al flujo administrativo.
 - Las páginas viejas `/admin/demos/<id>` y `/admin/demos/nueva` siguen funcionando, sin contexto de edición. Sus cambios quedan auditados con `via: admin_demo`.
 
-## 7. Integración con Prospección (`design/prospeccion-entrega`)
+## 7. Integración con Prospección (#33 y #34, ya en `main`)
 
-Hoy solo existe la rama de diseño (documentos y capturas, basada en #28). No hay implementación publicada ni PR. Este trabajo **no** hace merge con esa rama. Puntos de contacto:
+Antes de pasar a producción se mergeó `main` (con el Centro de adquisición y el panel lateral fijo de `/admin`) en esta rama y se corrieron lint, typecheck, test y build sobre el resultado combinado.
 
-- **Inmobiliarias**: prospección debe colgar `prospect_accounts.agency_id` de `agencies`, como ya se hace aquí. No se creó ningún modelo paralelo.
-- **Altas**: `createAgencyRecord` y `possibleDuplicates`/`findDuplicates` (`src/lib/agency/admin-edit.ts`, `duplicates.ts`) sirven para crear cuentas desde la planilla. Tienen clave idempotente y detectan duplicados por nombre, sitio o email sin fusionar, igual que pide su especificación.
-- **Contactos**: `agencies.contact_name` y `contact_email` son el contacto interno básico. Los contactos comerciales múltiples de prospección (`prospect_contacts`) deben vivir en sus propias tablas, sin reutilizar estas columnas.
-- **Navegación**: `ADMIN_SECTIONS` en `src/components/admin-nav.tsx`. Agregar «Prospección» es una línea.
-- **Auditoría**: `admin_audit` con `subject_id` = inmobiliaria y el índice nuevo. Los eventos de prospección deben ir a su tabla `prospect_events`, no a esta.
-- **Migraciones**: `202611010001` solo agrega columnas e índices, y no toca tablas que prospección vaya a crear. Al integrar, ordenar por nombre y volver a correr `tests/agency-database.test.ts` con ambas.
-
-Antes de integrar: `git diff` entre ambas ramas sobre `src/lib/agency/*`, `src/app/admin/inmobiliarias/*` y `src/app/globals.css`, y ejecutar lint, typecheck, test y build sobre el resultado combinado.
+- **Navegación**: queda el panel lateral de #34 (`src/components/admin-nav.tsx`, en `src/app/admin/layout.tsx`). Se quitó la barra horizontal que había agregado esta rama. «Nueva inmobiliaria» está en la cabecera de la lista.
+- **Inmobiliarias**: prospección cuelga de `agencies` y esta rama también; no hay modelos paralelos. La ficha `/admin/inmobiliarias/<id>` conserva «Base de prospección» junto a «Editar inmobiliaria» y «Ver como cliente».
+- **Altas**: `createAgencyRecord` y `findDuplicates` (`src/lib/agency/admin-edit.ts`, `duplicates.ts`) pueden servir a la importación de la planilla para no duplicar inmobiliarias.
+- **Contactos**: `agencies.contact_name` y `contact_email` son el contacto interno básico. Los contactos comerciales de prospección siguen en sus tablas.
+- **Migraciones**: la de esta rama se renombró a `202611030001_admin_editing.sql` para correr después de `202611010001_prospecting.sql` y `202611020001_prospect_import_options.sql`. Solo agrega columnas e índices que las de prospección no tocan.

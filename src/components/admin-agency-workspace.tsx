@@ -335,7 +335,12 @@ function BrandTab({ agencyId, edit }: { agencyId: string; edit: AgencyEdit }) {
     try {
       const r = await api<Record_>(`/api/admin/inmobiliarias/${agencyId}`, {
         method: "PATCH",
-        body: JSON.stringify(kind === "data" ? { action: "agency", agency: data } : { action: "branding", branding: brand }),
+        body: JSON.stringify(
+          kind === "data"
+            ? // Before the migration there is no e-mail column: it is not sent, so the rest still saves.
+              { action: "agency", agency: record?.emailReady ? data : { ...data, contact_email: undefined } }
+            : { action: "branding", branding: brand },
+        ),
       });
       setRecord(r);
       if (kind === "data") setData(dataForm(r));
@@ -427,7 +432,7 @@ function BrandTab({ agencyId, edit }: { agencyId: string; edit: AgencyEdit }) {
               maxLength={200}
               value={data.contact_email}
               disabled={!record.emailReady}
-              title={record.emailReady ? undefined : "Falta aplicar la migración 202611010001_admin_editing.sql"}
+              title={record.emailReady ? undefined : "Falta aplicar la migración 202611030001_admin_editing.sql"}
               onChange={set("contact_email")}
             />
           </label>

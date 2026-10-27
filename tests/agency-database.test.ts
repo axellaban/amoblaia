@@ -397,7 +397,7 @@ describe("Isolation between agencies (RLS)", () => {
   });
 });
 
-describe("Administrative editing (202611010001)", () => {
+describe("Administrative editing (202611030001)", () => {
   const as = async <T>(user: string, sql: string) => {
     await db.query("select set_config('request.jwt.claim.sub',$1,false)", [user]);
     await db.exec("set role authenticated");
@@ -435,6 +435,6 @@ describe("Administrative editing (202611010001)", () => {
   });
 
   it("can be applied again without errors", async () => {
-    await expect(db.exec(readFileSync("supabase/migrations/202611010001_admin_editing.sql", "utf8"))).resolves.toBeTruthy();
+    await expect(db.exec(readFileSync("supabase/migrations/202611030001_admin_editing.sql", "utf8"))).resolves.toBeTruthy();
   });
 });
