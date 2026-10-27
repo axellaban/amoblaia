@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { HttpError, requireAdmin } from "@/lib/commerce/http";
 import { isUuid } from "@/lib/demos/shared";
-import { buildRows, guessMapping, IMPORT_FIELDS, MAX_IMPORT_BYTES, MAX_IMPORT_ROWS, parseCsv, preview, type Mapping } from "@/lib/prospecting/import";
+import { buildRows, guessMapping, IMPORT_FIELDS, LEGACY_CHANNELS, MAX_IMPORT_BYTES, MAX_IMPORT_ROWS, parseCsv, preview, type Mapping } from "@/lib/prospecting/import";
 import { body, existingAgencies, NO_STORE, prospectFailure, prospectRpc, text } from "@/lib/prospecting/server";
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -11,7 +11,9 @@ export const maxDuration = 60;
  * returns the detected mapping, each row with its action, duplicate
  * candidates and messages. mode "apply" re-parses the same file on the
  * server with the reviewed mapping and links, and applies it in one
- * transaction, idempotent by importId and by (source, row key).
+ * transaction, idempotent by importId and by (source, row key). The team
+ * states the channel of the sheet's past sends (legacyChannel); their
+ * variant always stays unknown.
  */
 export async function POST(request: Request) {
   try {
@@ -90,6 +92,7 @@ export async function POST(request: Request) {
       p_mapping: mapping,
       p_rows: apply,
       p_overwrite: b.overwrite === true,
+      p_legacy_channel: typeof b.legacyChannel === "string" && b.legacyChannel in LEGACY_CHANNELS ? b.legacyChannel : "unknown",
     });
     const errors = rows.filter((r) => r.action === "error").map((r) => ({ row: r.row_number, error: r.error }));
     return Response.json({ ...report, rejected: errors }, { headers: NO_STORE });

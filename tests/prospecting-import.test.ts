@@ -91,6 +91,16 @@ describe("Sheet import", () => {
     expect(r[2].error).toMatch(/Clave repetida/);
   });
 
+  it("only the sheet's explicit 'WhatsApp verificado' counts as verified", () => {
+    const t = parseCsv(
+      "Inmobiliaria,Número (sin 0 ni 15),Confianza del número\nFICTICIA A,2230000011,WhatsApp verificado\nFICTICIA B,2230000012,Celular 223 (probable WhatsApp)\n",
+    );
+    const [a, b] = buildRows(t, guessMapping(t.headers));
+    expect(a.contacts[0]).toMatchObject({ address: "+5492230000011", verified: true, needs_review: false });
+    expect(a.messages).toEqual([]);
+    expect(b.contacts[0]).toMatchObject({ verified: false, needs_review: true });
+  });
+
   it("parses Argentine numbers and dates strictly", () => {
     expect(parseNumber("1.234,5")).toBe(1234.5);
     expect(parseNumber("88")).toBe(88);

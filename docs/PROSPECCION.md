@@ -45,7 +45,7 @@ Todas las escrituras pasan por RPC transaccionales (`habita_prospect_*`), ejecut
 ## 4. Aplicar y probar (local o staging, nunca producción con este cambio)
 
 1. Usar un proyecto Supabase de staging, o uno local (`supabase start`), con las migraciones anteriores ya aplicadas.
-2. Aplicar `supabase/migrations/202611010001_prospecting.sql` en el SQL Editor o con `psql`. Es aditiva e idempotente. No modifica tablas existentes, salvo que agrega filas a `agencies` al importar o al agregar cuentas.
+2. Aplicar, en orden, `supabase/migrations/202611010001_prospecting.sql` y `supabase/migrations/202611020001_prospect_import_options.sql` en el SQL Editor o con `psql`. La segunda redefine la importación para aceptar contactos verificados por la planilla y el canal de los envíos históricos. Es aditiva e idempotente. No modifica tablas existentes, salvo que agrega filas a `agencies` al importar o al agregar cuentas.
 3. Verificar:
    - `select habita_prospect_dataset();` devuelve listas vacías.
    - Como `authenticated`, `select * from prospect_accounts` da `permission denied`.
@@ -120,6 +120,10 @@ Flujo:
   - Los números sin 9, con formato desconocido o alternativos quedan por revisar.
   - «Número incorrecto» invalida ese contacto, no la cuenta.
 - **Duplicados.** Mismo dominio, mismo WhatsApp o mismo email no genérico se marcan como «posible duplicado». Si coincide con una inmobiliaria existente (por nombre o dominio), se propone vincularla con una casilla. Nunca se fusiona automáticamente.
+- **Contactos verificados.** Solo el texto exacto «WhatsApp verificado» en «Confianza del número» importa el contacto como verificado. Textos como «probable WhatsApp» o «por confirmar» quedan por revisar.
+- **Varios emails en una celda.** Celdas como «a / b» o «a, b» generan un contacto por email; el primero queda como principal.
+- **Mismo nombre con otra dirección.** Probablemente sea una sucursal: se importa aparte con clave `nombre:<slug>:dir:<slug de dirección>` y se marca para revisar.
+- **Canal de los envíos históricos.** Lo indica el equipo al aplicar la importación: WhatsApp, email o desconocido. La variante siempre queda desconocida.
 - **Errores.** Las filas sin nombre o con clave repetida se rechazan y figuran en el reporte. Un score no numérico, una fecha inválida o un «Enviado» sin fecha se informan; en esos casos no se inventa un valor ni un envío.
 
 **Reporte con datos sintéticos.** Archivo: `tests/fixtures/prospeccion-sintetica.csv`, 6 filas.
@@ -132,7 +136,25 @@ Flujo:
 | Mensajes informados | Score «abc», fecha «sin fecha», número de 5 dígitos, 9 candidato y posible duplicado por dominio |
 | Reimportación | Sin cambios y sin duplicados (cubierto por tests) |
 
-**Importación real.** No se hizo: no se proporcionó el archivo ni hay autorización para importarlo. El archivo real contiene contactos comerciales y debe quedar fuera de Git.
+**Vista previa de la planilla real** «Prospecting amobla IA», pestaña «Prospectos», 27/10/2026. Se hizo solo en local, sin escribir en ninguna base; el archivo quedó fuera del repo.
+
+- **Filas:** 605, todas válidas. El mapeo automático reconoce 25 de 27 columnas. «Grupo Habita» y «Motivo / próximo paso» se conservan en los datos originales, por decisión del equipo.
+- **Estados:**
+  - 65 «Enviado» con fecha (23, 24 y 27/10). Se importan como envíos históricos por WhatsApp, con precisión de día y variante desconocida.
+  - 539 «Pendiente».
+  - 1 «Número incorrecto»: invalida su número, no la cuenta.
+  - Dos filas tienen fecha sin estado «Enviado» y no generan envío.
+- **WhatsApp:** 486 números de 10 dígitos. La planilla arma `wa.me/549` + número.
+  - 42 entran verificados («WhatsApp verificado»).
+  - 444 quedan por revisar.
+  - 1 queda inválido.
+- **Emails:** 606, después de separar 48 celdas con varios. Uno está mal escrito en la planilla (dominio cortado) y queda por revisar.
+- **Posibles duplicados para revisar:**
+  - 3 por mismo dominio web y 1 por mismo email.
+  - «Depaoli Propiedades» aparece dos veces con direcciones distintas; se importa como dos cuentas.
+- **Contactos:** 56 cuentas quedan sin un contacto de WhatsApp o email usable sin revisión previa.
+
+**Importación real.** No se aplicó: se hace desde Prospectos → Importar planilla, con las migraciones ya aplicadas. Hay que exportar la pestaña «Prospectos» a CSV y elegir el canal «WhatsApp» para los envíos históricos. El archivo contiene contactos comerciales y debe quedar fuera de Git.
 
 ## 8. Validación realizada
 

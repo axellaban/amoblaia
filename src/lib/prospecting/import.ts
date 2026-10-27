@@ -155,6 +155,10 @@ export function normalizeWhatsapp(link: string, phone: string): { address: strin
   return { address: null, review: "Formato no reconocido (¿falta la característica?): corregilo a mano", original: raw };
 }
 
+export const VERIFIED_WHATSAPP = /^\s*whatsapp verificado\s*\.?\s*$/i;
+export const LEGACY_CHANNELS = { unknown: "Desconocido", whatsapp: "WhatsApp", email: "Email" } as const;
+export type LegacyChannel = keyof typeof LEGACY_CHANNELS;
+
 export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const GENERIC_MAILBOX = /^(info|contacto|ventas|hola|admin|administracion|consultas|inmobiliaria|office|mail)@/i;
 const domain = (url: string) => {
@@ -213,6 +217,8 @@ export type ImportContact = {
   source_url?: string | null;
   needs_review?: boolean;
   review_reason?: string | null;
+  /** The sheet itself records it as verified (e.g. "WhatsApp verificado"). */
+  verified?: boolean;
   invalid?: boolean;
   invalid_reason?: string | null;
   is_primary?: boolean;
@@ -292,6 +298,9 @@ export function buildRows(parsed: { headers: string[]; rows: string[][] }, mappi
     const wa = normalizeWhatsapp(get("whatsapp_link"), get("phone"));
     if (wa.address || wa.original) {
       const invalid = legacy_status === "invalid";
+      // Only the sheet's explicit "WhatsApp verificado" counts as a review; "probable", "por confirmar"… do not.
+      const verified = !invalid && !!wa.address && VERIFIED_WHATSAPP.test(get("phone_confidence"));
+      if (verified) wa.review = null;
       contacts.push({
         channel: "whatsapp",
         address: wa.address,
@@ -301,6 +310,7 @@ export function buildRows(parsed: { headers: string[]; rows: string[][] }, mappi
         source_url: /^https?:\/\//i.test(get("phone_source")) ? get("phone_source") : null,
         needs_review: !!wa.review,
         review_reason: wa.review,
+        verified,
         invalid,
         invalid_reason: invalid ? `Planilla: ${statusText}` : null,
         is_primary: !invalid,

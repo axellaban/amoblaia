@@ -165,8 +165,10 @@ describe("Validation", () => {
     expect(state.rpcs.map((x) => x.name)).toEqual(["habita_prospect_agencies"]);
     expect((await importar.POST(req("/x", "POST", { csv, source: "fixture", mode: "apply" }))).status).toBe(400);
     state.rpcs = [];
-    await importar.POST(req("/x", "POST", { csv, source: "fixture", mode: "apply", importId: ID2, links: { "nombre:ficticia-dos": ID, "nombre:ficticia-tres": ID } }));
-    const rows = state.rpcs.find((x) => x.name === "habita_prospect_import")!.args.p_rows as { source_key: string; agency_id: string | null }[];
+    await importar.POST(req("/x", "POST", { csv, source: "fixture", mode: "apply", importId: ID2, legacyChannel: "whatsapp", links: { "nombre:ficticia-dos": ID, "nombre:ficticia-tres": ID } }));
+    const args = state.rpcs.find((x) => x.name === "habita_prospect_import")!.args;
+    expect(args.p_legacy_channel).toBe("whatsapp");
+    const rows = args.p_rows as { source_key: string; agency_id: string | null }[];
     expect(rows).toHaveLength(4);
     expect(rows.find((r) => r.source_key === "nombre:ficticia-dos")!.agency_id).toBe(ID);
     expect(rows.find((r) => r.source_key === "nombre:ficticia-tres")!.agency_id).toBeNull();
