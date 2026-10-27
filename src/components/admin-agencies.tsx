@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { ChevronDown, Copy, Gift, Link2, Plus, Sparkles } from "lucide-react";
+import { ChevronDown, Copy, Eye, Gift, Link2, Plus, Sparkles } from "lucide-react";
 import { ApiError, api } from "@/components/admin-demos";
 import { nextAction, ORIGIN_LABEL, type PanelProperty } from "@/lib/agency/shared";
 import { CLAIM_LABEL, STAGE_LABEL, agencyStage, type AdminAgencyDetail, type AdminAgencyRow } from "@/lib/agency/stage";
@@ -112,6 +112,40 @@ export function AgencyInvitations({ agencyId, claims, hasOwner }: { agencyId: st
         <p className="aa-empty">Todavía no se creó ninguna invitación.</p>
       )}
     </section>
+  );
+}
+
+/** Opens the agency's panel as its owner sees it, read only (a support view, audited). */
+export function SupportViewButton({ agencyId, small = true }: { agencyId: string; small?: boolean }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  return (
+    <>
+      <button
+        type="button"
+        className={`button ${small ? "button-small " : ""}button-outline`}
+        disabled={busy}
+        title="Abre su panel tal como lo ve la inmobiliaria, solo lectura, por una hora. Queda registrado."
+        onClick={async () => {
+          setBusy(true);
+          setError("");
+          try {
+            const { url } = await api<{ url: string }>(`/api/admin/inmobiliarias/${agencyId}/soporte`, { method: "POST" });
+            window.location.assign(url);
+          } catch (e) {
+            setError(e instanceof Error ? e.message : "No pudimos abrir su panel.");
+            setBusy(false);
+          }
+        }}
+      >
+        <Eye size={15} /> {busy ? "Abriendo…" : "Ver su panel"}
+      </button>
+      {error && (
+        <span className="inline-error" role="alert">
+          {error}
+        </span>
+      )}
+    </>
   );
 }
 
@@ -475,6 +509,7 @@ export function AgenciesTable({ items }: { items: AdminAgencyRow[] }) {
                 <Link href={`/admin/demos/nueva?inmobiliaria=${a.id}`} className="button button-small button-outline">
                   <Plus size={15} /> Agregar propiedad
                 </Link>
+                <SupportViewButton agencyId={a.id} />
                 <button
                   type="button"
                   className="button button-small"

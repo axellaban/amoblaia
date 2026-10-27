@@ -11249,3 +11249,26 @@ a.dm-agency:hover {
     grid-template-columns: minmax(0, 1fr) 320px;
   }
 }
+
+/* Team support view of an agency's panel */
+.support-banner {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px 14px;
+  padding: 10px 16px;
+  background: #2b3a55;
+  color: #fff;
+  font-size: 14px;
+}
+.support-banner .button {
+  background: #fff;
+  color: #2b3a55;
+}
+.support-banner-error {
+  color: #ffd5c2;
+}

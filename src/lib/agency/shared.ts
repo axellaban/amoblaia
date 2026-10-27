@@ -80,6 +80,8 @@ export type PanelSummary = {
   properties: PanelProperty[];
   /** Imports that need something: partial (data or photos missing) or failed. */
   imports: PanelImport[];
+  /** A team member looking at this panel in a support view (read only). */
+  support?: boolean;
 };
 
 /** A slug as the database accepts it: lowercase letters, digits and dashes. */

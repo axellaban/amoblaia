@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { AgencyCredits, AgencyInvitations, AgencyProperties } from "@/components/admin-agencies";
+import { AgencyCredits, AgencyInvitations, AgencyProperties, SupportViewButton } from "@/components/admin-agencies";
 import { HttpError } from "@/lib/commerce/http";
 import { adminAgency } from "@/lib/agency/admin";
 import { agencyStage, STAGE_LABEL } from "@/lib/agency/stage";
@@ -66,11 +66,14 @@ export default async function AgencyPage({ params }: { params: Promise<{ id: str
               : "Todavía no tiene cuenta en habita."}
           </p>
         </div>
-        {agency.slug && agency.sitePublished && (
-          <a href={`/inmobiliaria/${agency.slug}`} className="button button-outline" target="_blank" rel="noreferrer">
-            Ver catálogo público
-          </a>
-        )}
+        <div className="dm-heading-actions">
+          <SupportViewButton agencyId={agency.id} small={false} />
+          {agency.slug && agency.sitePublished && (
+            <a href={`/inmobiliaria/${agency.slug}`} className="button button-outline" target="_blank" rel="noreferrer">
+              Ver catálogo público
+            </a>
+          )}
+        </div>
       </div>
 
       <dl className="aa-stats">

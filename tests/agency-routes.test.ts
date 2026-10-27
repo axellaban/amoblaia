@@ -15,6 +15,7 @@ const state = vi.hoisted(() => ({
   creditsError: false,
   claimOk: false,
   applyError: false,
+  cookies: new Map<string, string>(),
   pendingToApply: 0,
   authUsers: [] as { id: string; email: string; email_confirm?: boolean }[],
   deletedUsers: [] as string[],
@@ -102,6 +103,13 @@ function fakeDb() {
 
 vi.mock("server-only", () => ({}));
 vi.mock("next/server", () => ({ after: () => {} }));
+vi.mock("next/headers", () => ({
+  cookies: async () => ({
+    get: (k: string) => (state.cookies.has(k) ? { value: state.cookies.get(k) } : undefined),
+    set: (k: string, v: string) => void state.cookies.set(k, v),
+    delete: (k: string) => void state.cookies.delete(k),
+  }),
+}));
 vi.mock("@/lib/commerce/jobs", () => ({ onFreeTier: async () => false, runJob: async () => {} }));
 vi.mock("@/lib/supabase/server", () => ({
   adminClient: () => fakeDb(),
@@ -160,6 +168,8 @@ import * as costo from "../src/app/api/admin/demos/[id]/costo/route";
 import * as invitaciones from "../src/app/api/admin/inmobiliarias/[id]/invitaciones/route";
 import * as invitacion from "../src/app/api/admin/inmobiliarias/[id]/invitaciones/[claimId]/route";
 import * as invitacionPanel from "../src/app/api/panel/invitacion/route";
+import * as soporte from "../src/app/api/admin/inmobiliarias/[id]/soporte/route";
+import { readSupportToken, supportToken } from "../src/lib/agency/support";
 import * as espacios from "../src/app/api/admin/demos/[id]/espacios/route";
 import * as espacio from "../src/app/api/admin/demos/[id]/espacios/[spaceId]/route";
 import * as fotoDemo from "../src/app/api/admin/demos/[id]/photos/[photoId]/route";
@@ -220,6 +230,7 @@ beforeEach(() => {
   state.claimOk = false;
   state.authUsers = [];
   state.applyError = false;
+  state.cookies = new Map();
   state.pendingToApply = 0;
   state.deletedUsers = [];
   state.tables = {
@@ -877,5 +888,66 @@ describe("Adding a property from an agency's row", () => {
     expect(r.status).toBe(201);
     expect(state.inserts.find((i) => i.table === "demo_properties")!.row.agency_id).toBe(AG3);
     expect(state.inserts.filter((i) => i.table === "agencies")).toEqual([]);
+  });
+});
+
+describe("Support view: the team sees an agency's panel, read only", () => {
+  const TEAM = { id: "00000000-0000-4000-8000-0000000000aa", email: "equipo@amobla.test", email_confirmed_at: "2026-01-01" };
+  const AG = "00000000-0000-4000-8000-00000000a001";
+  const params = { params: Promise.resolve({ id: AG }) };
+  beforeEach(() => {
+    vi.stubEnv("ADMIN_EMAILS", "equipo@amobla.test");
+    state.tables.agencies.push({ id: AG, name: "Russillo", website: null, slug: "russillo", owner_id: OWNER, site_published: false });
+    state.tables.admin_audit = [];
+  });
+
+  it("signs a token for one team member and one agency, that expires", () => {
+    const now = Date.parse("2026-10-27T12:00:00Z");
+    const t = supportToken(AG, TEAM.id, now);
+    expect(readSupportToken(t, TEAM.id, now)).toBe(AG);
+    expect(readSupportToken(t, OWNER, now)).toBeNull();
+    expect(readSupportToken(t, TEAM.id, now + 61 * 60 * 1000)).toBeNull();
+    expect(readSupportToken(t.replace(AG, "00000000-0000-4000-8000-00000000a002"), TEAM.id, now)).toBeNull();
+    expect(readSupportToken(`${t.slice(0, -1)}0`, TEAM.id, now)).toBeNull();
+  });
+
+  it("is only for the team, audited before it opens", async () => {
+    expect((await soporte.POST(req(`/api/admin/inmobiliarias/${AG}/soporte`, "POST"), params)).status).toBe(403);
+    expect(state.cookies.size).toBe(0);
+    state.user = TEAM;
+    const r = await soporte.POST(req(`/api/admin/inmobiliarias/${AG}/soporte`, "POST"), params);
+    expect(r.status).toBe(201);
+    expect(state.inserts.find((i) => i.table === "admin_audit")!.row).toMatchObject({ actor_id: TEAM.id, action: "agency_support_view", subject_id: AG });
+    expect(readSupportToken(state.cookies.get("habita_soporte"), TEAM.id)).toBe(AG);
+  });
+
+  it("shows the agency's panel as its owner sees it, and refuses every write", async () => {
+    state.user = TEAM;
+    state.tables.agency_members = [];
+    state.cookies.set("habita_soporte", supportToken(AG, TEAM.id));
+    const home = await (await panel.GET()).json();
+    expect(home).toMatchObject({ agency: { id: AG, name: "Russillo" }, role: "owner", support: true });
+    const write = await panel.PATCH(req("/api/panel", "PATCH", { name: "Otro nombre" }));
+    expect(write.status).toBe(403);
+    expect((await write.json()).error).toMatch(/solo lectura/);
+    expect((await panel.POST(req("/api/panel", "POST", { name: "Mía" }))).status).toBe(403);
+    expect(state.updates).toEqual([]);
+    expect(state.rpcs.filter((c) => c.name === "habita_create_agency")).toEqual([]);
+  });
+
+  it("does nothing for an account that is not on the team, even with the cookie", async () => {
+    state.cookies.set("habita_soporte", supportToken(AG, OWNER));
+    const home = await (await panel.GET()).json();
+    expect(home.agency.id).toBe("ag1");
+    expect(home.support).toBe(false);
+  });
+
+  it("ends when the team member leaves", async () => {
+    state.user = TEAM;
+    state.cookies.set("habita_soporte", supportToken(AG, TEAM.id));
+    const r = await soporte.DELETE(req(`/api/admin/inmobiliarias/${AG}/soporte`, "DELETE"), params);
+    expect(r.status).toBe(200);
+    expect(state.cookies.has("habita_soporte")).toBe(false);
+    expect(state.inserts.find((i) => i.table === "admin_audit")!.row).toMatchObject({ action: "agency_support_end", subject_id: AG });
   });
 });

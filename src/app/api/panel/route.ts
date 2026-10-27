@@ -1,6 +1,7 @@
 import { failure, HttpError, requireUser } from "@/lib/commerce/http";
 import { createAgency, panelSummary } from "@/lib/agency/panel";
-import { membershipOf, requireAgency } from "@/lib/agency/server";
+import { membershipFor, membershipOf, requireAgency } from "@/lib/agency/server";
+import { READ_ONLY } from "@/lib/agency/support";
 import { validSlug } from "@/lib/agency/shared";
 import { brandingOf, saveJson } from "@/lib/demos/server";
 import { brandingInput, readJson } from "@/lib/demos/input";
@@ -14,9 +15,9 @@ const PRIVATE = { "Cache-Control": "private, no-store" };
 export async function GET() {
   try {
     const user = await requireUser();
-    const membership = await membershipOf(user.id);
+    const membership = await membershipFor(user);
     if (!membership) return Response.json({ agency: null }, { headers: PRIVATE });
-    return Response.json(await panelSummary(membership), { headers: PRIVATE });
+    return Response.json({ ...(await panelSummary(membership)), support: Boolean(membership.support) }, { headers: PRIVATE });
   } catch (e) {
     return failure(e);
   }
@@ -26,6 +27,8 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const user = await requireUser(request);
+    // A team member in a support view never creates an agency of their own by mistake.
+    if ((await membershipFor(user))?.support) throw new HttpError(403, READ_ONLY);
     const body = await readJson(request, 2048);
     const name = cleanText(body.name, 120);
     if (!name) throw new HttpError(400, "Ingresá el nombre de tu inmobiliaria.");
