@@ -345,12 +345,17 @@ describe("Public demo", () => {
     expect(demo?.photos[0].versions.map((v) => v.style)).toEqual(["industrial", "modern"]);
   });
 
-  it("opens in the configured style only when the first photo has it, else with the original", async () => {
+  it("opens in the configured style when some visible photo has it, else with the original", async () => {
     expect((await publishedDemo(TOKEN))?.openStyle).toBeNull();
     (state.tables.demos[0] as Row).settings = { openMode: "styled", openStyle: "industrial" };
     expect((await publishedDemo(TOKEN))?.openStyle).toBe("industrial");
     (state.tables.demos[0] as Row).settings = { openMode: "styled", openStyle: "coastal" };
     expect((await publishedDemo(TOKEN))?.openStyle).toBeNull();
+    // A style staged only in the second photo: still available while that photo is visible.
+    state.tables.generations.push({ id: "00000000-0000-4000-8000-0000000000f4", project_id: "pj2", style: "coastal", result_path: "u/pj2/c.jpg", status: "succeeded", is_free: false });
+    expect((await publishedDemo(TOKEN))?.openStyle).toBeNull();
+    state.tables.demo_photos[1].visible = true;
+    expect((await publishedDemo(TOKEN))?.openStyle).toBe("coastal");
     (state.tables.demos[0] as Row).settings = { openMode: "original", openStyle: "industrial" };
     expect((await publishedDemo(TOKEN))?.openStyle).toBeNull();
   });

@@ -12,11 +12,13 @@ import {
   Plus,
   Search,
   Trash2,
+  UserPlus,
 } from "lucide-react";
 import { ImportFromListing } from "./demo-import";
 import {
   adminPhotoUrl,
   demoUrl,
+  invitationWhatsappUrl,
   whatsappShareUrl,
   type AgencyRow,
   type DemoSummary,
@@ -112,6 +114,75 @@ export function ShareButtons({
         </button>
       )}
     </>
+  );
+}
+
+/**
+ * Invites the agency of a demo to its own panel: creates a one-time link
+ * (only an e-mail and a password to enter) and opens WhatsApp with it.
+ * The link is created on click, so each one is fresh and can be revoked
+ * from the agency's page.
+ */
+export function InviteAgency({ demo }: { demo: Pick<DemoSummary, "id" | "agencyName" | "title"> }) {
+  const [state, setState] = useState<{ url: string; whatsapp: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [copied, setCopied] = useState(false);
+  async function create() {
+    setBusy(true);
+    setError("");
+    // Opened now, while the click still counts, so the browser does not block it.
+    const tab = window.open("about:blank", "_blank");
+    try {
+      const { url } = await api<{ url: string }>(`/api/admin/demos/${demo.id}/reclamo`, { method: "POST" });
+      const whatsapp = invitationWhatsappUrl(url, demo.agencyName, demo.title);
+      setState({ url, whatsapp });
+      if (tab) {
+        tab.opener = null;
+        tab.location.href = whatsapp;
+      }
+    } catch (e) {
+      tab?.close();
+      setError(e instanceof Error ? e.message : "No pudimos crear la invitación.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <span className="dm-invite">
+      <button
+        type="button"
+        className="button button-small dm-whatsapp"
+        disabled={busy}
+        onClick={create}
+        title="Crea un enlace personal para que la inmobiliaria entre a su panel con email y contraseña"
+      >
+        <UserPlus size={15} /> {busy ? "Creando…" : "Invitar a su panel"}
+      </button>
+      {error && (
+        <span className="inline-error dm-invite-note" role="alert">
+          {error}
+        </span>
+      )}
+      {state && (
+        <span className="dm-invite-note" role="status">
+          Invitación creada (vence en 30 días).{" "}
+          <a href={state.whatsapp} target="_blank" rel="noopener noreferrer" className="text-link">
+            Abrir WhatsApp
+          </a>{" "}
+          ·{" "}
+          <button
+            type="button"
+            className="text-link"
+            onClick={async () => {
+              if (await copyText(state.url)) setCopied(true);
+            }}
+          >
+            {copied ? "Enlace copiado" : "Copiar enlace"}
+          </button>
+        </span>
+      )}
+    </span>
   );
 }
 
@@ -268,7 +339,10 @@ export function DemoList() {
               )}
             </Link>
             <div className="dm-row-main">
-              <span className="dm-agency">{d.agencyName}</span>
+              <Link href={`/admin/inmobiliarias/${d.agencyId}`} className="dm-agency">
+                {d.agencyName}
+                {d.agencyClaimed && <span className="dm-claimed"> · ya tiene su panel</span>}
+              </Link>
               <strong>{d.propertyTitle}</strong>
               <span className="dm-meta">
                 {d.photos} {d.photos === 1 ? "foto" : "fotos"} · {d.staged}{" "}
@@ -288,6 +362,7 @@ export function DemoList() {
                 <Eye size={15} /> Vista previa
               </Link>
               <ShareButtons demo={d} compact />
+              {d.agencyClaimed !== true && <InviteAgency demo={d} />}
               <button
                 type="button"
                 className="button button-small"

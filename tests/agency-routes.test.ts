@@ -14,6 +14,8 @@ const state = vi.hoisted(() => ({
   fail: {} as Record<string, { code?: string }>,
   creditsError: false,
   claimOk: false,
+  authUsers: [] as { id: string; email: string; email_confirm?: boolean }[],
+  deletedUsers: [] as string[],
 }));
 
 /**
@@ -22,6 +24,18 @@ const state = vi.hoisted(() => ({
  */
 function fakeDb() {
   return {
+    auth: {
+      admin: {
+        createUser: async (u: { email: string; password: string; email_confirm?: boolean }) => {
+          if (state.authUsers.some((x) => x.email === u.email))
+            return { data: { user: null }, error: { code: "email_exists", message: "A user with this email address has already been registered" } };
+          const user = { id: `00000000-0000-4000-8000-${String(900000000000 + state.authUsers.length)}`, email: u.email, email_confirm: u.email_confirm };
+          state.authUsers.push(user);
+          return { data: { user }, error: null };
+        },
+        deleteUser: async (id: string) => (state.deletedUsers.push(id), { error: null }),
+      },
+    },
     from(table: string) {
       let rows: Row[] = [...(state.tables[table] ?? [])];
       let patch: Row | null = null;
@@ -135,6 +149,8 @@ import * as propiedades from "../src/app/api/panel/propiedades/route";
 import * as costo from "../src/app/api/admin/demos/[id]/costo/route";
 import * as invitaciones from "../src/app/api/admin/inmobiliarias/[id]/invitaciones/route";
 import * as invitacion from "../src/app/api/admin/inmobiliarias/[id]/invitaciones/[claimId]/route";
+import * as invitacionPanel from "../src/app/api/panel/invitacion/route";
+import * as creditosAgencia from "../src/app/api/admin/inmobiliarias/[id]/creditos/route";
 import { agencyStage, claimState } from "../src/lib/agency/stage";
 import { publicSite } from "../src/lib/agency/site";
 
@@ -189,6 +205,8 @@ beforeEach(() => {
   state.fail = {};
   state.creditsError = false;
   state.claimOk = false;
+  state.authUsers = [];
+  state.deletedUsers = [];
   state.tables = {
     agency_members: [{ user_id: OWNER, role: "owner", agencies: AGENCY }],
     agencies: [{ ...AGENCY, notes: "Le interesa el plan Agente", contact_name: "Ana", branding: {} }],
@@ -618,5 +636,87 @@ describe("The team's view of agencies", () => {
     expect((await r.json()).url).toMatch(/^https:\/\/habita\.test\/panel\/empezar\?codigo=[\w-]{32}$/);
     state.tables.agencies.at(-1)!.owner_id = OWNER;
     expect((await invitaciones.POST(req(`/api/admin/inmobiliarias/${AG}/invitaciones`, "POST"), params)).status).toBe(409);
+  });
+});
+
+describe("Invitation from WhatsApp with only an e-mail and a password", () => {
+  const CODE = "z".repeat(32);
+  const HASH = createHash("sha256").update(CODE).digest("hex");
+  const accept = (body: Record<string, unknown>) => invitacionPanel.POST(req("/api/panel/invitacion", "POST", { code: CODE, email: "Duenia@Nueva.test", password: "segura123", ...body }));
+  beforeEach(() => {
+    state.user = null;
+    state.tables.agencies[0].owner_id = null;
+    state.tables.agency_claims = [{ code_hash: HASH, agency_id: "ag1", expires_at: "2999-01-01T00:00:00Z", used_at: null, revoked_at: null, agencies: { name: "Sur Propiedades", owner_id: null } }];
+    state.claimOk = true;
+  });
+
+  it("creates the account, takes over the agency and moves its waiting credits", async () => {
+    const r = await accept({});
+    expect(r.status).toBe(201);
+    expect(await r.json()).toEqual({ email: "duenia@nueva.test" });
+    expect(state.authUsers).toEqual([expect.objectContaining({ email: "duenia@nueva.test", email_confirm: true })]);
+    const claim = state.rpcs.find((c) => c.name === "habita_claim_agency")!;
+    expect(claim.args).toMatchObject({ p_user: state.authUsers[0].id, p_code_hash: HASH, p_slug: "sur-propiedades" });
+    expect(state.rpcs.map((c) => c.name)).toContain("habita_apply_agency_credits");
+    expect(state.deletedUsers).toEqual([]);
+  });
+
+  it("creates no account for an unknown, used, revoked or expired invitation", async () => {
+    for (const change of [{ used_at: "2026-01-01" }, { revoked_at: "2026-01-01" }, { expires_at: "2020-01-01T00:00:00Z" }, { agencies: { name: "Sur", owner_id: OWNER } }]) {
+      Object.assign(state.tables.agency_claims[0], change);
+      expect((await accept({})).status).toBe(404);
+      state.tables.agency_claims[0] = { code_hash: HASH, agency_id: "ag1", expires_at: "2999-01-01T00:00:00Z", used_at: null, revoked_at: null, agencies: { name: "Sur Propiedades", owner_id: null } };
+    }
+    expect((await accept({ code: "y".repeat(32) })).status).toBe(404);
+    expect(state.authUsers).toEqual([]);
+  });
+
+  it("asks to sign in when the e-mail already has an account", async () => {
+    state.authUsers.push({ id: "x", email: "duenia@nueva.test" });
+    const r = await accept({});
+    expect(r.status).toBe(409);
+    expect((await r.json()).error).toMatch(/ya tiene una cuenta/);
+    expect(state.rpcs.filter((c) => c.name === "habita_claim_agency")).toEqual([]);
+  });
+
+  it("removes the new account when the agency could not be taken over", async () => {
+    state.claimOk = false;
+    expect((await accept({})).status).toBe(404);
+    expect(state.deletedUsers).toEqual([state.authUsers[0].id]);
+  });
+
+  it("checks the password, the e-mail and where the request comes from", async () => {
+    expect((await accept({ password: "corta" })).status).toBe(400);
+    expect((await accept({ email: "no-es-email" })).status).toBe(400);
+    const foreign = new Request(`${origin}/api/panel/invitacion`, {
+      method: "POST",
+      headers: { origin: "https://evil.test", "content-type": "application/json" },
+      body: JSON.stringify({ code: CODE, email: "a@b.test", password: "segura123" }),
+    });
+    expect((await invitacionPanel.POST(foreign)).status).toBe(403);
+    expect(state.authUsers).toEqual([]);
+  });
+});
+
+describe("Free credits for an agency from the admin panel", () => {
+  const AG = "00000000-0000-4000-8000-00000000a001";
+  const params = { params: Promise.resolve({ id: AG }) };
+  const give = (body: Record<string, unknown>) => creditosAgencia.POST(req(`/api/admin/inmobiliarias/${AG}/creditos`, "POST", body), params);
+
+  it("is only for the team, with an amount and a reason", async () => {
+    expect((await give({ photos: 5, reason: "Regalo de bienvenida" })).status).toBe(403);
+    state.user = { id: "00000000-0000-4000-8000-0000000000aa", email: "equipo@amobla.test", email_confirmed_at: "2026-01-01" };
+    expect((await give({ photos: 0, reason: "Regalo de bienvenida" })).status).toBe(400);
+    expect((await give({ photos: 2.5, reason: "Regalo de bienvenida" })).status).toBe(400);
+    expect((await give({ photos: 5, reason: "x" })).status).toBe(400);
+    expect(state.rpcs.filter((c) => c.name === "habita_agency_credit")).toEqual([]);
+    const r = await give({ photos: 5, reason: "Regalo de bienvenida" });
+    expect(r.status).toBe(201);
+    expect(state.rpcs.find((c) => c.name === "habita_agency_credit")!.args).toEqual({
+      p_actor: "00000000-0000-4000-8000-0000000000aa",
+      p_agency: AG,
+      p_photos: 5,
+      p_reason: "Regalo de bienvenida",
+    });
   });
 });

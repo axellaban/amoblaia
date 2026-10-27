@@ -378,9 +378,9 @@ export function DemoEditor({ id, mode = "admin" }: { id: string; mode?: "admin" 
     .flatMap((p) =>
       chosen.filter((style) => !p.shown[style] && !isLive(p, style)).map((style) => ({ photoId: p.id, style })),
     );
-  // Opening mode B uses a style of the first photo the buyer sees.
-  const firstVisible = photos.find((p) => p.visible);
-  const openStyles = firstVisible ? chosen.filter((st) => firstVisible.shown[st]) : [];
+  // Opening mode B: a style staged in at least one visible photo (those photos open compared, the rest original).
+  const visiblePhotos = photos.filter((p) => p.visible);
+  const openStyles = chosen.filter((st) => visiblePhotos.some((p) => p.shown[st]));
   const reviewPhoto = review && photos.find((p) => p.id === review.photoId);
   const reviewGenId = review && reviewPhoto?.shown[review.style];
   const reviewGen = reviewPhoto?.generations.find((g) => g.id === reviewGenId);
@@ -1005,7 +1005,7 @@ export function DemoEditor({ id, mode = "admin" }: { id: string; mode?: "admin" 
             <p className="dm-help">
               {openStyles.length
                 ? "Con ambientación, cada foto que tenga ambientaciones abre comparada: mitad original y mitad ambientada, con la barra al medio, en este estilo (o el último que eligió el comprador). Las fotos sin ambientaciones abren con la original."
-                : "Para abrir con una ambientación, la primera foto visible tiene que tener al menos un estilo listo."}
+                : "Para abrir con una ambientación, primero ambientá al menos una foto visible (en «2. Fotos y ambientación»)."}
             </p>
             {!agencyMode && (
             <label className="checkbox-label dm-check">

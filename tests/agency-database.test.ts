@@ -220,6 +220,46 @@ describe("Imports and invitations that reflect what happened", () => {
   });
 });
 
+describe("Free credits for an agency", () => {
+  const give = (actor: string, agency: string, photos: number, reason = "Regalo de bienvenida") =>
+    one<{ r: { applied: string; pending: number } }>("select habita_agency_credit($1,$2,$3,$4) as r", [actor, agency, photos, reason]);
+
+  it("waits for an agency without an account and moves to its owner when claimed", async () => {
+    const admin = await account();
+    const { agency } = await prospect(admin);
+    expect((await give(admin, agency, 5))!.r).toEqual({ applied: "pending", pending: 5 });
+    expect((await give(admin, agency, 3))!.r).toEqual({ applied: "pending", pending: 8 });
+    const owner = await account();
+    const before = await credits(owner);
+    await claim(owner, await claimCode(agency, admin), `free-${id().slice(-6)}`);
+    expect((await one<{ n: number }>("select habita_apply_agency_credits($1) as n", [agency]))!.n).toBe(8);
+    expect(await credits(owner)).toBe(before + 8);
+    // Applied once: calling again moves nothing.
+    expect((await one<{ n: number }>("select habita_apply_agency_credits($1) as n", [agency]))!.n).toBe(0);
+    expect(await credits(owner)).toBe(before + 8);
+  });
+
+  it("goes to the owner at once when the agency has an account, and is audited", async () => {
+    const admin = await account();
+    const owner = await account();
+    const agency = await createAgency(owner, "Con Cuenta", `con-cuenta-${id().slice(-6)}`);
+    const before = await credits(owner);
+    expect((await give(admin, agency, 4))!.r).toMatchObject({ applied: "owner" });
+    expect(await credits(owner)).toBe(before + 4);
+    const audit = await one<{ n: number }>("select count(*)::int as n from admin_audit where action='agency_credit' and subject_id=$1", [agency]);
+    expect(audit!.n).toBe(1);
+  });
+
+  it("refuses invalid amounts, missing reasons and unknown agencies", async () => {
+    const admin = await account();
+    const { agency } = await prospect(admin);
+    await expect(give(admin, agency, 0)).rejects.toThrow(/INVALID_ADJUSTMENT/);
+    await expect(give(admin, agency, 1001)).rejects.toThrow(/INVALID_ADJUSTMENT/);
+    await expect(give(admin, agency, 2, "x")).rejects.toThrow(/INVALID_ADJUSTMENT/);
+    await expect(give(admin, id(), 2)).rejects.toThrow(/AGENCY_NOT_FOUND/);
+  });
+});
+
 describe("Isolation between agencies (RLS)", () => {
   const as = async <T>(user: string, sql: string) => {
     await db.exec("set role authenticated");
@@ -260,6 +300,8 @@ describe("Isolation between agencies (RLS)", () => {
       "public.habita_free_slug(text,uuid)",
       "public.habita_agency_counts(uuid)",
       "public.habita_admin_agencies(text,integer,integer)",
+      "public.habita_agency_credit(uuid,uuid,integer,text)",
+      "public.habita_apply_agency_credits(uuid)",
     ])
       for (const role of ["anon", "authenticated"])
         expect((await one<{ ok: boolean }>("select has_function_privilege($1,$2,'execute') as ok", [role, fn]))!.ok).toBe(false);
@@ -268,6 +310,7 @@ describe("Isolation between agencies (RLS)", () => {
   it("can be applied again without errors, and keeps refusing revoked invitations", async () => {
     await expect(db.exec(readFileSync(MIGRATION, "utf8"))).resolves.toBeTruthy();
     await expect(db.exec(readFileSync(RELIABILITY, "utf8"))).resolves.toBeTruthy();
+    await expect(db.exec(readFileSync("supabase/migrations/202610300001_agency_free_credits.sql", "utf8"))).resolves.toBeTruthy();
     const admin = await account();
     const { agency } = await prospect(admin);
     const hash = await claimCode(agency, admin);

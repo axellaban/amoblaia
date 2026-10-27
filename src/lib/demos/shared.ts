@@ -115,6 +115,8 @@ export type DemoSummary = {
   title: string;
   agencyId: string;
   agencyName: string;
+  /** Whether the agency already has its habita account (null: unknown). */
+  agencyClaimed: boolean | null;
   propertyTitle: string;
   photos: number;
   staged: number;
@@ -268,6 +270,11 @@ export function demoUrl(origin: string, token: string, presentation = false) {
 /** wa.me opens WhatsApp Web or the app; the recipient needs nothing installed to open the link itself. */
 export function whatsappShareUrl(presentationUrl: string, buyersUrl: string, agency: string, title: string) {
   const text = `Hola ${agency}! Preparamos una muestra de cómo podría verse "${title}" con ambientación virtual: ${presentationUrl}\n\nPara compartir con compradores (sin la franja de la demo): ${buyersUrl}`;
+  return `https://wa.me/?text=${encodeURIComponent(text)}`;
+}
+/** The team's WhatsApp message inviting an agency to its panel, with its one-time link. */
+export function invitationWhatsappUrl(link: string, agency: string, title: string) {
+  const text = `Hola ${agency}! Les armamos su panel en habita con la demo de "${title}" ya cargada. Para entrar solo necesitan un email y una contraseña: ${link}\n\nEl enlace es personal, sirve una sola vez y vence en 30 días.`;
   return `https://wa.me/?text=${encodeURIComponent(text)}`;
 }
 /** Where "Probar habita." leads: the regular studio, carrying the demo and agency for attribution. */
