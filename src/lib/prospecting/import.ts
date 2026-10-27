@@ -22,9 +22,9 @@ export const IMPORT_FIELDS = {
   listings: "Propiedades publicadas",
   sample: "Avisos vistos en muestra",
   pts_contact: "Puntos contacto",
-  pts_decision: "Puntos quién decide",
-  pts_stock: "Puntos stock",
-  pts_activity: "Puntos actividad",
+  pts_decision: "Puntos decisión / quién decide",
+  pts_stock: "Puntos cartera / stock",
+  pts_activity: "Puntos encaje / actividad",
   address: "Dirección",
   zone: "Zona",
   website: "Web",
@@ -40,16 +40,16 @@ export type Mapping = Partial<Record<ImportField, string>>;
 // Order matters: specific patterns before generic ones.
 const GUESS: [ImportField, RegExp][] = [
   ["pts_contact", /(puntos?|pts).*contacto/i],
-  ["pts_decision", /(puntos?|pts).*(decide|decisor)/i],
-  ["pts_stock", /(puntos?|pts).*stock/i],
-  ["pts_activity", /(puntos?|pts).*actividad/i],
+  ["pts_decision", /(puntos?|pts).*(decide|decisor|decisi[oó]n)/i],
+  ["pts_stock", /(puntos?|pts).*(stock|cartera)/i],
+  ["pts_activity", /(puntos?|pts).*(actividad|encaje)/i],
   ["other_phones", /otros?\s+tel|tel[eé]fonos?\s+alternativ/i],
   ["whatsapp_link", /abrir\s+whatsapp|link.*whatsapp|wa\.me/i],
   ["phone_confidence", /confianza/i],
   ["phone_source", /fuente/i],
   ["external_id", /^(id|clave|row\s*id)$/i],
   ["priority", /prioridad/i],
-  ["score", /^(score|puntaje)(\s+total)?$/i],
+  ["score", /^(score|puntaje)\b/i],
   ["sdr", /\bsdr\b|responsable/i],
   ["campaign", /campa[nñ]a/i],
   ["decision_maker", /qui[eé]n\s+decide|decisor/i],
@@ -155,6 +155,10 @@ export function normalizeWhatsapp(link: string, phone: string): { address: strin
   return { address: null, review: "Formato no reconocido (¿falta la característica?): corregilo a mano", original: raw };
 }
 
+export const VERIFIED_WHATSAPP = /^\s*whatsapp verificado\s*\.?\s*$/i;
+export const LEGACY_CHANNELS = { unknown: "Desconocido", whatsapp: "WhatsApp", email: "Email" } as const;
+export type LegacyChannel = keyof typeof LEGACY_CHANNELS;
+
 export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const GENERIC_MAILBOX = /^(info|contacto|ventas|hola|admin|administracion|consultas|inmobiliaria|office|mail)@/i;
 const domain = (url: string) => {
@@ -213,6 +217,8 @@ export type ImportContact = {
   source_url?: string | null;
   needs_review?: boolean;
   review_reason?: string | null;
+  /** The sheet itself records it as verified (e.g. "WhatsApp verificado"). */
+  verified?: boolean;
   invalid?: boolean;
   invalid_reason?: string | null;
   is_primary?: boolean;
@@ -258,8 +264,13 @@ export function buildRows(parsed: { headers: string[]; rows: string[][] }, mappi
     const messages: string[] = [];
     const name = get("name").slice(0, 120);
     const externalId = get("external_id");
-    const source_key = externalId ? `id:${externalId}` : name ? `nombre:${slug(name)}` : "";
+    let source_key = externalId ? `id:${externalId}` : name ? `nombre:${slug(name)}` : "";
     let error: string | null = null;
+    // Same name, different address (e.g. two branches): its own stable key, flagged for review, never merged.
+    if (name && !externalId && keys.has(source_key) && get("address")) {
+      messages.push(`Mismo nombre que la fila ${keys.get(source_key)} con otra dirección: se importa aparte, revisá si es una sucursal o un duplicado`);
+      source_key = `${source_key}:dir:${slug(get("address"))}`;
+    }
     if (!name) error = "Falta el nombre de la inmobiliaria";
     else if (keys.has(source_key)) error = `Clave repetida: la fila ${keys.get(source_key)} tiene la misma inmobiliaria. Revisá cuál conservar`;
     else keys.set(source_key, row_number);
@@ -267,14 +278,11 @@ export function buildRows(parsed: { headers: string[]; rows: string[][] }, mappi
     const scoreText = get("score");
     const score = parseNumber(scoreText);
     if (scoreText && score == null) messages.push(`Score «${scoreText}» no es numérico: se conserva en los datos originales`);
+    // Components keep the sheet's own column names (e.g. "Pts cartera /25"): the scale is part of the meaning.
     const score_components: Record<string, number | string> = {};
-    for (const [f, label] of [["pts_contact", "contacto"], ["pts_decision", "decisor"], ["pts_stock", "stock"], ["pts_activity", "actividad"]] as const) {
+    for (const f of ["pts_contact", "pts_decision", "pts_stock", "pts_activity", "listings", "sample"] as const) {
       const v = get(f);
-      if (v) score_components[label] = parseNumber(v) ?? v;
-    }
-    for (const [f, label] of [["listings", "propiedades_publicadas"], ["sample", "avisos_vistos_en_muestra"]] as const) {
-      const v = get(f);
-      if (v) score_components[label] = parseNumber(v) ?? v;
+      if (v) score_components[mapping[f]!] = parseNumber(v) ?? v;
     }
 
     const statusText = get("status");
@@ -290,6 +298,9 @@ export function buildRows(parsed: { headers: string[]; rows: string[][] }, mappi
     const wa = normalizeWhatsapp(get("whatsapp_link"), get("phone"));
     if (wa.address || wa.original) {
       const invalid = legacy_status === "invalid";
+      // Only the sheet's explicit "WhatsApp verificado" counts as a review; "probable", "por confirmar"… do not.
+      const verified = !invalid && !!wa.address && VERIFIED_WHATSAPP.test(get("phone_confidence"));
+      if (verified) wa.review = null;
       contacts.push({
         channel: "whatsapp",
         address: wa.address,
@@ -299,19 +310,22 @@ export function buildRows(parsed: { headers: string[]; rows: string[][] }, mappi
         source_url: /^https?:\/\//i.test(get("phone_source")) ? get("phone_source") : null,
         needs_review: !!wa.review,
         review_reason: wa.review,
+        verified,
         invalid,
         invalid_reason: invalid ? `Planilla: ${statusText}` : null,
         is_primary: !invalid,
       });
       if (wa.review) messages.push(wa.review);
     } else if (legacy_status === "invalid") messages.push("Número incorrecto sin número cargado");
-    const email = get("email").toLowerCase();
-    if (email) {
-      if (EMAIL_RE.test(email))
-        contacts.push({ channel: "email", address: email, address_original: get("email"), source: "planilla", is_primary: !contacts.some((c) => c.is_primary) });
-      else {
-        contacts.push({ channel: "email", address: null, address_original: get("email"), source: "planilla", needs_review: true, review_reason: "Email con formato inválido" });
-        messages.push(`Email «${get("email")}» con formato inválido`);
+    // A cell may hold several addresses ("a@x.com / b@x.com"): one contact each, in their order.
+    for (const part of get("email").split(/\s*[/,;]\s*|\s+/).map((p) => p.trim()).filter(Boolean)) {
+      const email = part.toLowerCase();
+      if (EMAIL_RE.test(email)) {
+        if (contacts.some((c) => c.channel === "email" && c.address === email)) continue;
+        contacts.push({ channel: "email", address: email, address_original: part, source: "planilla", is_primary: !contacts.some((c) => c.is_primary) });
+      } else {
+        contacts.push({ channel: "email", address: null, address_original: part, source: "planilla", needs_review: true, review_reason: "Email con formato inválido" });
+        messages.push(`Email «${part}» con formato inválido`);
       }
     }
     for (const part of get("other_phones").split(/[/;|,]|\s{2,}/).map((p) => p.trim()).filter(Boolean)) {

@@ -71,7 +71,7 @@ export async function prospectRpc<T>(name: string, args: Record<string, unknown>
     const m = /^([A-Z_]+)(?::(.*))?$/.exec(error.message ?? "");
     if (m && ERRORS[m[1]]) throw new ProspectError(ERRORS[m[1]][0], ERRORS[m[1]][1], m[1], m[2] ?? null);
     if (error.code === "PGRST202" || error.code === "42883" || error.code === "42P01")
-      throw new ProspectError(503, "Falta aplicar la migración 202611010001_prospecting.sql en Supabase.", "MIGRATION_MISSING");
+      throw new ProspectError(503, "Faltan las migraciones de prospección en Supabase: aplicá 202611010001_prospecting.sql y 202611020001_prospect_import_options.sql.", "MIGRATION_MISSING");
     throw new Error(`DATABASE_${error.code}`);
   }
   return data as T;

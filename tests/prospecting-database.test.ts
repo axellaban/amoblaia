@@ -278,7 +278,7 @@ describe("Import", () => {
     },
   ];
   const apply = (rs: unknown[], overwrite = false) =>
-    json<Record<string, number | boolean>>("select habita_prospect_import($1,$2,'planilla-test','f.csv',null,'{}',$3,$4) as r", [admin, id(), JSON.stringify(rs), overwrite]);
+    json<Record<string, number | boolean>>("select habita_prospect_import($1,$2,'planilla-test','f.csv',null,'{}',$3,$4,'unknown') as r", [admin, id(), JSON.stringify(rs), overwrite]);
 
   it("re-importing never duplicates accounts, contacts or legacy sends and keeps the team's SDR", async () => {
     const first = await apply(rows("corto v2"));
@@ -306,11 +306,40 @@ describe("Import", () => {
     expect(await count("select count(*) as n from prospect_contacts where account_id=$1 and invalid_at is not null", [sur.id])).toBe(1);
   });
 
+  it("imports sheet-verified contacts as verified and past sends with the channel the team states", async () => {
+    const rs = [
+      {
+        row_number: 2,
+        source_key: "nombre:fixture-verificada",
+        name: "Fixture Verificada",
+        legacy_status: "sent",
+        sent_date: "2026-10-23",
+        contacts: [{ channel: "whatsapp", address: "+5492230000077", address_original: "2230000077", verified: true, is_primary: true }],
+        raw: {},
+      },
+    ];
+    await json("select habita_prospect_import($1,$2,'planilla-canal',null,null,'{}',$3,false,'whatsapp') as r", [admin, id(), JSON.stringify(rs)]);
+    const acc = (await one<{ id: string }>("select id from prospect_accounts where source='planilla-canal'"))!.id;
+    const c = (await one<{ verified_at: string | null; needs_review: boolean }>("select verified_at,needs_review from prospect_contacts where account_id=$1", [acc]))!;
+    expect(c.verified_at).not.toBeNull();
+    expect(c.needs_review).toBe(false);
+    expect(await one("select channel,variant_label,template_version_id,sent_precision from outreach_attempts where account_id=$1", [acc])).toEqual({
+      channel: "whatsapp",
+      variant_label: null,
+      template_version_id: null,
+      sent_precision: "day",
+    });
+    // The verified contact is usable right away; nothing else is.
+    await expect(
+      json("select habita_prospect_prepare($1,$2,$3,(select id from prospect_contacts where account_id=$3),2,'test',null,true,null,'Texto','SDR',true) as r", [admin, id(), acc]),
+    ).resolves.toMatchObject({ status: "prepared" });
+  });
+
   it("the same import id applied twice returns its report", async () => {
     const key = id();
     const rs = [{ row_number: 2, source_key: "nombre:fixture-once", name: "Fixture Once", raw: {} }];
-    await json("select habita_prospect_import($1,$2,'planilla-once',null,null,'{}',$3,false) as r", [admin, key, JSON.stringify(rs)]);
-    const second = await json<{ replayed: boolean }>("select habita_prospect_import($1,$2,'planilla-once',null,null,'{}',$3,false) as r", [admin, key, JSON.stringify(rs)]);
+    await json("select habita_prospect_import($1,$2,'planilla-once',null,null,'{}',$3,false,'unknown') as r", [admin, key, JSON.stringify(rs)]);
+    const second = await json<{ replayed: boolean }>("select habita_prospect_import($1,$2,'planilla-once',null,null,'{}',$3,false,'unknown') as r", [admin, key, JSON.stringify(rs)]);
     expect(second.replayed).toBe(true);
     expect(await count("select count(*) as n from prospect_accounts where source='planilla-once'")).toBe(1);
   });

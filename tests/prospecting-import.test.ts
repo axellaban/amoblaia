@@ -30,7 +30,7 @@ describe("Sheet import", () => {
   });
 
   it("keeps score, its four components and every original cell; does not recompute", () => {
-    expect(rows[0]).toMatchObject({ score: 96, score_components: { contacto: 35, decisor: 30, stock: 25, actividad: 6, propiedades_publicadas: 128 } });
+    expect(rows[0]).toMatchObject({ score: 96, score_components: { "Puntos contacto": 35, "Puntos quién decide": 30, "Puntos stock": 25, "Puntos actividad": 6, "Propiedades publicadas": 128 } });
     expect(rows[0].raw["Notas"]).toBe('corto v2, "muestra" sintética');
     expect(rows[3].score).toBeNull();
     expect(rows[3].messages.join(" ")).toMatch(/no es numérico/);
@@ -64,6 +64,41 @@ describe("Sheet import", () => {
     expect(p[3].duplicates.join(" ")).toMatch(/fila 2 \(mismo dominio web\)/);
     // Generic mailboxes are not a duplicate signal.
     expect(p[1].duplicates).toEqual([]);
+  });
+
+  it("recognizes the real sheet's headers (scores with their scale)", () => {
+    expect(
+      guessMapping(["Score Habita /100", "Pts contacto /20", "Pts decisión /15", "Pts cartera /25", "Pts encaje /40", "Propiedades publicadas (Argenprop)", "Grupo Habita"]),
+    ).toEqual({
+      score: "Score Habita /100",
+      pts_contact: "Pts contacto /20",
+      pts_decision: "Pts decisión /15",
+      pts_stock: "Pts cartera /25",
+      pts_activity: "Pts encaje /40",
+      listings: "Propiedades publicadas (Argenprop)",
+    });
+  });
+
+  it("splits cells with several emails and keeps same-name branches apart", () => {
+    const t = parseCsv(
+      "Inmobiliaria,Email,Dirección\nFICTICIA Red,a@ficticia.test / b@ficticia.test,Calle 1\nFICTICIA Red,\"c@ficticia.test, d@ficticia.test\",Calle 2\nFICTICIA Red,,\n",
+    );
+    const r = buildRows(t, guessMapping(t.headers));
+    expect(r[0].contacts.map((c) => c.address)).toEqual(["a@ficticia.test", "b@ficticia.test"]);
+    expect(r[0].contacts.map((c) => c.is_primary)).toEqual([true, false]);
+    expect(r[1]).toMatchObject({ source_key: "nombre:ficticia-red:dir:calle-2", error: null });
+    expect(r[1].messages.join(" ")).toMatch(/fila 2 con otra dirección/);
+    expect(r[2].error).toMatch(/Clave repetida/);
+  });
+
+  it("only the sheet's explicit 'WhatsApp verificado' counts as verified", () => {
+    const t = parseCsv(
+      "Inmobiliaria,Número (sin 0 ni 15),Confianza del número\nFICTICIA A,2230000011,WhatsApp verificado\nFICTICIA B,2230000012,Celular 223 (probable WhatsApp)\n",
+    );
+    const [a, b] = buildRows(t, guessMapping(t.headers));
+    expect(a.contacts[0]).toMatchObject({ address: "+5492230000011", verified: true, needs_review: false });
+    expect(a.messages).toEqual([]);
+    expect(b.contacts[0]).toMatchObject({ verified: false, needs_review: true });
   });
 
   it("parses Argentine numbers and dates strictly", () => {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { IMPORT_FIELDS, type ImportField, type Mapping, type PreviewRow } from "@/lib/prospecting/import";
+import { IMPORT_FIELDS, LEGACY_CHANNELS, type ImportField, type LegacyChannel, type Mapping, type PreviewRow } from "@/lib/prospecting/import";
 import { formatWhen } from "@/lib/prospecting/time";
 import type { Dataset } from "@/lib/prospecting/types";
 import { ErrorNote, Pill, api, useOperationKey } from "./shared";
@@ -28,6 +28,7 @@ export function ImportPanel({ onDone, lastImport }: { onDone: () => Promise<void
   const [preview, setPreview] = useState<Preview | null>(null);
   const [links, setLinks] = useState<Record<string, string>>({});
   const [overwrite, setOverwrite] = useState(false);
+  const [legacyChannel, setLegacyChannel] = useState<LegacyChannel>("unknown");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [report, setReport] = useState<Report | null>(null);
@@ -63,7 +64,7 @@ export function ImportPanel({ onDone, lastImport }: { onDone: () => Promise<void
         // Matches are proposed, not accepted: the team ticks each one.
         setLinks({});
       } else {
-        setReport(await api<Report>("/api/admin/prospeccion/importar", { method: "POST", body: JSON.stringify({ csv, source, mapping, mode, links, overwrite, importId, fileName }) }));
+        setReport(await api<Report>("/api/admin/prospeccion/importar", { method: "POST", body: JSON.stringify({ csv, source, mapping, mode, links, overwrite, legacyChannel, importId, fileName }) }));
         await onDone();
       }
     } catch (e) {
@@ -170,7 +171,7 @@ export function ImportPanel({ onDone, lastImport }: { onDone: () => Promise<void
                       {r.contacts.map((c, i) => (
                         <small key={i}>
                           {c.channel}: {c.address ?? c.address_original}
-                          {c.invalid ? " (inválido)" : c.needs_review ? " (revisar)" : ""}
+                          {c.invalid ? " (inválido)" : c.verified ? " (verificado en la planilla)" : c.needs_review ? " (revisar)" : ""}
                         </small>
                       ))}
                     </td>
@@ -188,6 +189,18 @@ export function ImportPanel({ onDone, lastImport }: { onDone: () => Promise<void
               </tbody>
             </table>
           </div>
+          {preview.totals.legacySends > 0 && (
+            <label>
+              <span>Canal de los {preview.totals.legacySends} envíos históricos (la variante queda desconocida)</span>
+              <select value={legacyChannel} onChange={(e) => setLegacyChannel(e.target.value as LegacyChannel)} data-testid="import-legacy-channel">
+                {(Object.keys(LEGACY_CHANNELS) as LegacyChannel[]).map((c) => (
+                  <option key={c} value={c}>
+                    {LEGACY_CHANNELS[c]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <label className="pr-check">
             <input type="checkbox" checked={overwrite} onChange={(e) => setOverwrite(e.target.checked)} />
             En cuentas existentes, reemplazar también SDR y campaña con los de la planilla (por defecto se conservan los del equipo). Historial y próximas acciones nunca se pisan.

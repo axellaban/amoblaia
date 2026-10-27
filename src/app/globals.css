@@ -11399,7 +11399,7 @@ a.dm-agency:hover {
   white-space: nowrap;
   border: 0;
 }
-.pr-layout {
+.adm-shell {
   --pr-bg: #f5f6f2;
   --pr-ink: #243d36;
   --pr-side: #173e33;
@@ -11410,9 +11410,10 @@ a.dm-agency:hover {
   display: grid;
   grid-template-columns: 205px minmax(0, 1fr);
   background: var(--pr-bg);
-  color: var(--pr-ink);
   min-height: calc(100vh - 72px);
-  font-size: 14px;
+}
+.adm-content {
+  min-width: 0;
 }
 .pr-side {
   background: var(--pr-side);
@@ -11462,6 +11463,8 @@ a.dm-agency:hover {
   color: #b1c5b7;
 }
 .pr-main {
+  color: var(--pr-ink);
+  font-size: 14px;
   padding: 28px 32px 60px;
   min-width: 0;
   max-width: 1700px;
@@ -12050,7 +12053,7 @@ a.dm-agency:hover {
   }
 }
 @media (max-width: 760px) {
-  .pr-layout {
+  .adm-shell {
     grid-template-columns: minmax(0, 1fr);
   }
   .pr-side {
