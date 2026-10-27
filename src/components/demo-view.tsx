@@ -769,6 +769,12 @@ function Gallery({
               if (w && h) setRatios((r) => (r[photo.id] ? r : { ...r, [photo.id]: w / h }));
             }}
           />
+          {/* The same photo, blurred, fills the sides: a photo narrower than the stage never sits on gray bars. */}
+          <div
+            className="dv2-backdrop"
+            aria-hidden="true"
+            style={{ backgroundImage: `url("${urlFor(source, photo.id, comparing ? null : showing, 480)}")` }}
+          />
           <div className="dv2-frame" style={{ "--ratio": String(ratio) } as React.CSSProperties}>
             {failed[originalKey] ? (
               <div className="dv2-broken">
