@@ -433,3 +433,11 @@ Pasos en local o staging (no en producción sin revisar):
 - «Revisada» no se inventa: no hay una aprobación persistida por versión. Existen «Se muestra» (la versión elegida para ese estilo), «Oculta» (la foto) y «Publicada» (la ficha). Cerrar la vista ampliada no guarda nada.
 - La cola pendiente no sobrevive a cerrar la pestaña. Solo se persiste el trabajo que ya está en el servidor.
 - No se validó contra Supabase ni OpenAI reales: se usaron tests con PGlite (SQL, RLS, idempotencia), tests de rutas con base simulada y Playwright con las APIs interceptadas. No se generaron imágenes ni se otorgaron créditos reales.
+
+## 12. Vista de soporte (ver el panel como una inmobiliaria)
+
+En `/admin/inmobiliarias`, cada inmobiliaria tiene **Ver su panel**. Abre `/panel` tal como lo ve su dueño (propiedades, créditos, sitio y editor), con un banner que lo indica y un botón para salir.
+
+- No se inicia sesión con la cuenta de la inmobiliaria. Una cookie firmada (`habita_soporte`) nombra al miembro del equipo y a la inmobiliaria y vence en una hora. Solo vale para esa persona del equipo: otra cuenta con la misma cookie ve su propio panel.
+- Es **solo lectura**: el servidor rechaza todo cambio hecho desde el panel mientras dure la vista, incluido crear versiones con IA, que además nunca usan el saldo de la inmobiliaria.
+- Entrar y salir quedan registrados en `admin_audit` (`agency_support_view`, `agency_support_end`). Si no se puede registrar, la vista no se abre.

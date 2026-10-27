@@ -505,6 +505,19 @@ export function DemoEditor({ id, mode = "admin" }: { id: string; mode?: "admin" 
     create: (style, fresh) => {
       if (addStyle(style)) void staging.request([{ photoId: p.id, style }], { fresh });
     },
+    createMany: (list) => {
+      const fresh = list.filter((st) => !demoStyles.includes(st));
+      if (demoStyles.length + fresh.length > MAX_DEMO_STYLES) {
+        say({ tone: "error", text: `Una propiedad admite hasta ${MAX_DEMO_STYLES} estilos.`, section: "fotos" });
+        return;
+      }
+      if (fresh.length) {
+        const next = [...picked.filter((s) => !fresh.includes(s)), ...fresh];
+        setPicked(next);
+        savePicked(demo.id, next);
+      }
+      void staging.request(list.map((style) => ({ photoId: p.id, style })));
+    },
     review: (generationId) => setReview({ photoId: p.id, generationId }),
     download: (generationId, style) => void download(generationId, versionFileName(demo.title, spaceName(p), styleName(style))),
     discard: (generationId) => void patchPhoto(p.id, { discard: generationId }),
@@ -784,7 +797,7 @@ export function DemoEditor({ id, mode = "admin" }: { id: string; mode?: "admin" 
                   propertyType={type}
                   demoStyles={demoStyles}
                   compatibleStyles={typeStyles}
-                  canAddStyle={canAddStyle}
+                  roomForStyles={MAX_DEMO_STYLES - demoStyles.length}
                   isCover={demo.cover?.id === p.id}
                   included={included.has(p.id)}
                   waiting={staging.waiting}

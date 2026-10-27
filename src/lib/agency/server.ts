@@ -6,6 +6,7 @@ import { demoRow } from "@/lib/demos/server";
 import { isUuid } from "@/lib/demos/shared";
 import { adminClient } from "@/lib/supabase/server";
 import type { AgencyRole } from "./shared";
+import { assertReadable, supportAgency } from "./support";
 
 export type AgencyAccount = {
   id: string;
@@ -15,7 +16,8 @@ export type AgencyAccount = {
   owner_id: string | null;
   site_published: boolean;
 };
-export type Membership = { role: AgencyRole; agency: AgencyAccount };
+/** support: a team member looking at this agency's panel (read only). */
+export type Membership = { role: AgencyRole; agency: AgencyAccount; support?: boolean };
 const AGENCY_FIELDS = "id,name,website,slug,owner_id,site_published";
 
 /** The agency this account works for, if any (one per account for now). */
@@ -30,11 +32,22 @@ export async function membershipOf(userId: string): Promise<Membership | null> {
   return row?.agencies ? { role: row.role, agency: row.agencies } : null;
 }
 
-/** A verified account that works for an agency. */
+/**
+ * The panel this account sees: a team member's active support view (the
+ * agency as its owner sees it, read only), else the agency it works for.
+ */
+export async function membershipFor(user: Pick<User, "id" | "email">): Promise<Membership | null> {
+  const viewing = await supportAgency(user);
+  if (viewing) return { role: "owner", agency: viewing, support: true };
+  return membershipOf(user.id);
+}
+
+/** A verified account that works for an agency (or the team in a support view, which only reads). */
 export async function requireAgency(request?: Request) {
   const user = await requireUser(request);
-  const membership = await membershipOf(user.id);
+  const membership = await membershipFor(user);
   if (!membership) throw new HttpError(404, "Todavía no creaste tu inmobiliaria.");
+  if (membership.support) assertReadable(request);
   return { user, ...membership };
 }
 
@@ -48,6 +61,16 @@ export async function requireAgency(request?: Request) {
 export async function requireDemoAccess(request: Request | undefined, demoId: string) {
   const actor = await requireUser(request);
   const admin = isAdmin(actor.email);
+  // From the panel in a support view the team only reads, like the agency's panel itself.
+  if (admin && request && request.method !== "GET") {
+    let fromPanel = false;
+    try {
+      fromPanel = new URL(request.headers.get("referer") ?? "").pathname.startsWith("/panel");
+    } catch {
+      // No referer: not the panel.
+    }
+    if (fromPanel && (await supportAgency(actor))) assertReadable(request);
+  }
   // Accounts outside any agency are turned away before any property is read.
   const membership = admin ? null : await membershipOf(actor.id);
   if (!admin && !membership) throw new HttpError(404, "No encontramos la demo.");
