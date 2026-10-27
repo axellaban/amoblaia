@@ -86,6 +86,10 @@ export function AdminDashboard() {
         <Link href="/admin/demos" className="text-link">
           Todas las demos →
         </Link>
+        {" · "}
+        <Link href="/admin/prospeccion" className="text-link">
+          Adquisición: prospección, mensajes y ejecución →
+        </Link>
       </p>
       {error && (
         <p className="inline-error" role="alert">

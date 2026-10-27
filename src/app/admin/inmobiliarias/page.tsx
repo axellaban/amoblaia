@@ -32,6 +32,9 @@ export default async function AgenciesPage({ searchParams }: Props) {
           <p>Cada inmobiliaria con su etapa, sus propiedades y sus créditos. Solo el equipo ve este panel.</p>
         </div>
         <div className="dm-heading-actions">
+          <Link href="/admin/prospeccion" className="button button-outline">
+            Adquisición
+          </Link>
           <Link href="/admin/demos" className="button button-outline">
             Todas las demos
           </Link>
