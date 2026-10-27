@@ -7095,6 +7095,18 @@ h2 .accent {
   border-radius: 0;
   background: #0d0f14;
 }
+.dv2-backdrop {
+  position: absolute;
+  inset: -40px;
+  background-position: center;
+  background-size: cover;
+  filter: blur(28px) saturate(1.1) brightness(0.92);
+  transform: scale(1.08);
+  pointer-events: none;
+}
+.dv2-stage.is-full .dv2-backdrop {
+  filter: blur(36px) brightness(0.45);
+}
 .dv2-measure {
   position: absolute;
   width: 1px;
@@ -11151,5 +11163,18 @@ a.dm-agency:hover {
   .aa-prop-actions {
     grid-column: 2;
     justify-self: start;
+  }
+}
+
+/* The listing uses more of a wide screen: a larger gallery, like the portals. */
+@media (min-width: 1280px) {
+  .dv2-page .container {
+    max-width: 1440px;
+  }
+  .dv2-stage {
+    height: clamp(420px, 72vh, 820px);
+  }
+  .dv2-gallery.has-panel {
+    grid-template-columns: minmax(0, 1fr) 320px;
   }
 }
