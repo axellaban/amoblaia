@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AgencyCredits, AgencyInvitations, AgencyProperties, SupportViewButton } from "@/components/admin-agencies";
+import { AddToProspecting } from "@/components/prospecting/add-agency";
 import { HttpError } from "@/lib/commerce/http";
 import { adminAgency } from "@/lib/agency/admin";
 import { agencyStage, STAGE_LABEL } from "@/lib/agency/stage";
@@ -68,6 +69,7 @@ export default async function AgencyPage({ params }: { params: Promise<{ id: str
         </div>
         <div className="dm-heading-actions">
           <SupportViewButton agencyId={agency.id} small={false} />
+          <AddToProspecting agencyId={agency.id} />
           {agency.slug && agency.sitePublished && (
             <a href={`/inmobiliaria/${agency.slug}`} className="button button-outline" target="_blank" rel="noreferrer">
               Ver catálogo público

@@ -1,0 +1,7 @@
+Prioridad,Score,Inmobiliaria,SDR,Quién decide,Abrir WhatsApp,Número sin 0 ni 15,Confianza número,Fuente número,Estado,Fecha envío,Notas,Propiedades publicadas,Avisos vistos en muestra,Puntos contacto,Puntos quién decide,Puntos stock,Puntos actividad,Dirección,Zona,Web,Instagram,Email,Perfil Argenprop,Otros teléfonos
+1,96,FICTICIA Uno Propiedades,SDR Prueba,Dueña (ficticia),https://wa.me/5492230000101,2230000101,Alta,https://ejemplo.test/contacto,Enviado,10/10/2026,"corto v2, ""muestra"" sintética",128,11,35,30,25,6,Calle Falsa 123,Zona Ficticia Norte,https://www.ficticia-uno.test,@ficticiauno,ventas@ficticia-uno.test,https://argenprop.test/ficticia-uno,0223 400-0000
+1,93,FICTICIA Dos,SDR Prueba,,,2230000202,Media,Google Maps,Pendiente,,,40,5,20,10,10,5,,Zona Ficticia Sur,ficticia-dos.test,,info@ficticia-dos.test,,
+2,71,FICTICIA Tres,Otro SDR,,,2230000303,Baja,Planilla,Número incorrecto,,,,,,,,,,Zona Ficticia Sur,,,,,
+2,abc,FICTICIA Cuatro,,,,12345,,,Enviado,sin fecha,mail,,,,,,,,,https://www.ficticia-uno.test/otra,,,,
+,,,,,,,,,Pendiente,,fila sin nombre,,,,,,,,,,,,,
+3,50,FICTICIA Uno Propiedades,,,,,,,,,repetida,,,,,,,,,,,,,

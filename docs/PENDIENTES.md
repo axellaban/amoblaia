@@ -4,6 +4,12 @@ Se detiene el trabajo a pedido del usuario para conservar créditos. Los cambios
 
 Producción: https://amoblaia.vercel.app/
 
+## Centro de adquisición — 27 de octubre de 2026
+
+- Nuevo `/admin/prospeccion`: resumen, prospectos, mensajes y bandeja de ejecución. Guía completa, métricas y pendientes: [PROSPECCION.md](PROSPECCION.md).
+- **Pendiente: aplicar `202611010001_prospecting.sql` en staging** y probar con Supabase real; no aplicada en producción. Importación real de la planilla pendiente del archivo CSV y de autorización.
+- Verificado: lint, typecheck, 481 tests, build y recorrido de la UI contra un sustituto local de Supabase sobre PGlite. Sin envíos ni proveedores reales.
+
 ## Demos comerciales — 26 de octubre de 2026 (rama `claude/demos-comerciales`)
 
 - Nuevo panel `/admin/demos` y página pública `/demo/<token>`. Guía completa: [DEMOS_COMERCIALES.md](DEMOS_COMERCIALES.md).
