@@ -32,6 +32,7 @@ import { DEMO_STYLES, PROPERTY_TYPE_NAMES, styleFits, type PropertyType } from "
 import { ListingForm } from "./demo-listing-form";
 import { ImportPreview, ImportReport, exceptions, foreignPhotos, syncPhotos } from "./demo-import";
 import type { ImportChange, ImportField, ImportedDemo } from "@/lib/demos/import";
+import { track } from "@/lib/analytics";
 import {
   MAX_DEMO_STYLES,
   adminGenerationUrl,
@@ -85,7 +86,14 @@ function savePicked(id: string, list: string[]) {
 }
 type Upload = { name: string; state: "waiting" | "uploading" | "done" | "error"; error?: string };
 
-export function DemoEditor({ id }: { id: string }) {
+/**
+ * The property page. "admin": the team prepares a commercial demo (free
+ * stagings, presentation link). "agency": an agency works on its own
+ * property: stagings use its credits, confirmed before they start, and the
+ * team's tools (notes, presentation strip, claim links) are not shown.
+ */
+export function DemoEditor({ id, mode = "admin" }: { id: string; mode?: "admin" | "agency" }) {
+  const agencyMode = mode === "agency";
   const [detail, setDetail] = useState<DemoDetail | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -219,9 +227,32 @@ export function DemoEditor({ id }: { id: string }) {
 
   /** One version at a time: the account admits one live generation, like the studio. */
   async function generate(tasks: Task[]) {
-    setQueue(tasks);
     setError("");
     setNotice("");
+    if (agencyMode) {
+      // One credit per photo the first time it is staged; more versions of a
+      // paid photo are included. Shown before anything starts.
+      const firstTime = new Set(
+        tasks.filter((t) => !detail?.photos.find((p) => p.id === t.photoId)?.charged).map((t) => t.photoId),
+      ).size;
+      if (firstTime > 0) {
+        const { credits } = await api<{ credits: number }>("/api/panel").catch(() => ({ credits: 0 }));
+        if (credits < firstTime) {
+          setError(
+            `Para ambientar ${firstTime === 1 ? "esta foto" : `estas ${firstTime} fotos`} necesitás ${firstTime} ${firstTime === 1 ? "crédito" : "créditos"} y te ${credits === 1 ? "queda 1" : `quedan ${credits}`}. Sumá créditos desde «Créditos IA».`,
+          );
+          return;
+        }
+        if (
+          !window.confirm(
+            `Vas a usar ${firstTime} ${firstTime === 1 ? "crédito" : "créditos"} (uno por foto nueva; las demás versiones de una foto ya ambientada no consumen). Te ${credits === 1 ? "queda 1" : `quedan ${credits}`}. ¿Continuar?`,
+          )
+        )
+          return;
+      }
+      track("property_ai_generation_started", { photos: new Set(tasks.map((t) => t.photoId)).size, versions: tasks.length, credits: firstTime });
+    }
+    setQueue(tasks);
     let failures = 0;
     for (const task of tasks) {
       queueRef.current = task.photoId;
@@ -255,6 +286,8 @@ export function DemoEditor({ id }: { id: string }) {
     }
     queueRef.current = null;
     setQueue([]);
+    if (agencyMode)
+      track("property_ai_generation_completed", { versions: tasks.length, failed: failures, status: failures ? "partial" : "ok" });
     if (!failures)
       setNotice("Ambientaciones listas. Revisalas: las que no sirvan, descartalas o regeneralas.");
   }
@@ -372,8 +405,8 @@ export function DemoEditor({ id }: { id: string }) {
 
   return (
     <div className="account-page container dm-page">
-      <Link href="/admin/demos" className="text-link">
-        ← Demos comerciales
+      <Link href={agencyMode ? "/panel/propiedades" : "/admin/demos"} className="text-link">
+        {agencyMode ? "← Mis propiedades" : "← Demos comerciales"}
       </Link>
       <div className="dm-heading">
         <div>
@@ -388,23 +421,27 @@ export function DemoEditor({ id }: { id: string }) {
           </p>
         </div>
         <div className="dm-heading-actions">
-          <Link href={`/admin/demos/${id}/vista-previa`} className="button button-outline">
+          <Link
+            href={agencyMode ? `/panel/propiedades/${id}/vista-previa` : `/admin/demos/${id}/vista-previa`}
+            className="button button-outline"
+          >
             <Eye size={17} /> Vista previa
           </Link>
           <button
             type="button"
             className={`button ${live ? "button-outline" : "button-primary"}`}
             disabled={busy}
-            onClick={() =>
-              demoAction(
+            onClick={() => {
+              if (agencyMode && !live) track("property_published", { property_id: demo.id, photos: demo.photos, staged: demo.staged });
+              void demoAction(
                 { action: live ? "unpublish" : "publish" },
                 live
-                  ? "Demo despublicada: el enlace dejó de estar disponible."
-                  : "Demo publicada. Ya podés compartir el enlace.",
-              )
-            }
+                  ? `${agencyMode ? "Ficha despublicada" : "Demo despublicada"}: el enlace dejó de estar disponible.`
+                  : `${agencyMode ? "Ficha publicada" : "Demo publicada"}. Ya podés compartir el enlace.`,
+              );
+            }}
           >
-            {live ? "Despublicar" : "Publicar demo"}
+            {live ? "Despublicar" : agencyMode ? "Publicar ficha" : "Publicar demo"}
           </button>
         </div>
       </div>
@@ -811,7 +848,31 @@ export function DemoEditor({ id }: { id: string }) {
         <aside className="dm-side">
           <section className="account-panel">
             <h2>Compartir</h2>
-            {live ? (
+            {live && agencyMode ? (
+              <>
+                <label className="dm-link-label">
+                  Enlace de la ficha
+                  <input
+                    className="dm-link"
+                    readOnly
+                    value={publicLink(demo.token)}
+                    onFocus={(e) => e.target.select()}
+                    onCopy={() => track("property_shared", { property_id: demo.id, channel: "link" })}
+                  />
+                </label>
+                <div className="dm-share">
+                  <a
+                    className="button button-small"
+                    href={`https://wa.me/?text=${encodeURIComponent(`${demo.title}: ${publicLink(demo.token)}`)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => track("property_shared", { property_id: demo.id, channel: "whatsapp" })}
+                  >
+                    Compartir por WhatsApp
+                  </a>
+                </div>
+              </>
+            ) : live ? (
               <>
                 <label className="dm-link-label">
                   Para presentar a la inmobiliaria {detail.settings.banner ? "(con la franja de la demo)" : ""}
@@ -836,6 +897,7 @@ export function DemoEditor({ id }: { id: string }) {
                 Es un borrador: nadie puede verla. Publicala para obtener el enlace.
               </p>
             )}
+            {!agencyMode && <ClaimLink base={base} busy={busy} />}
             <LinkPreview demo={demo} location={detail.property.location} />
             <p className="dm-help">
               Así se verá el enlace en WhatsApp: la portada, mitad original y mitad en el estilo principal.
@@ -907,6 +969,7 @@ export function DemoEditor({ id }: { id: string }) {
                 ? "Con ambientación, cada foto que tenga ambientaciones abre comparada: mitad original y mitad ambientada, con la barra al medio, en este estilo (o el último que eligió el comprador). Las fotos sin ambientaciones abren con la original."
                 : "Para abrir con una ambientación, la primera foto visible tiene que tener al menos un estilo listo."}
             </p>
+            {!agencyMode && (
             <label className="checkbox-label dm-check">
               <input
                 type="checkbox"
@@ -916,6 +979,7 @@ export function DemoEditor({ id }: { id: string }) {
               />
               Mostrar «Demo preparada para {demo.agencyName} · Por habita.» en el enlace de presentación
             </label>
+            )}
             <p className="dm-help">Estos ajustes son privados: el comprador nunca los ve.</p>
           </section>
           <section className="account-panel">
@@ -940,6 +1004,7 @@ export function DemoEditor({ id }: { id: string }) {
             </form>
             <p className="dm-help">Vacío usa el título de la propiedad.</p>
           </section>
+          {!agencyMode && (
           <section className="account-panel">
             <h2>Inmobiliaria</h2>
             {!detail.settingsReady && <MigrationNote />}
@@ -1086,6 +1151,7 @@ export function DemoEditor({ id }: { id: string }) {
               </button>
             </form>
           </section>
+          )}
           <section className="account-panel">
             <h2>Propiedad</h2>
             <form
@@ -1270,6 +1336,9 @@ function Review({
           <button type="button" className="button button-outline" disabled={saving || busy} onClick={onRegenerate}>
             <RefreshCw size={16} /> Regenerar
           </button>
+          <a className="button button-outline" href={adminGenerationUrl(g.id, 2048)} download={`habita-${styleName(g.style).toLowerCase()}.jpg`}>
+            Descargar
+          </a>
           <button type="button" className="button button-primary" onClick={onClose}>
             <Check size={16} /> Se ve bien
           </button>
@@ -1472,6 +1541,40 @@ function ListingSync({
       <button type="button" className="button button-primary" disabled={working} onClick={() => void complete()}>
         {status || "Completar la demo"}
       </button>
+    </div>
+  );
+}
+
+/**
+ * A one-time link for the agency to take over its demos (with their
+ * stagings) in its own account. The team creates it and sends it: opening
+ * a demo is never enough to take it.
+ */
+function ClaimLink({ base, busy }: { base: string; busy: boolean }) {
+  const [link, setLink] = useState<{ url: string; expiresAt: string } | null>(null);
+  const [error, setError] = useState("");
+  return (
+    <div className="dm-claim">
+      {link ? (
+        <label className="dm-link-label">
+          Para que la inmobiliaria se quede con sus demos (vence el {new Date(link.expiresAt).toLocaleDateString("es-AR")}, sirve una vez)
+          <input className="dm-link" readOnly value={link.url} onFocus={(e) => e.target.select()} />
+        </label>
+      ) : (
+        <button
+          type="button"
+          className="text-link"
+          disabled={busy}
+          onClick={() =>
+            api<{ url: string; expiresAt: string }>(`${base}/reclamo`, { method: "POST" })
+              .then(setLink)
+              .catch((e) => setError(e instanceof Error ? e.message : "No pudimos crear el enlace."))
+          }
+        >
+          Crear enlace para que la inmobiliaria se quede con sus demos
+        </button>
+      )}
+      {error && <p className="inline-error">{error}</p>}
     </div>
   );
 }

@@ -17,7 +17,9 @@ export function Header() {
   const pathname = usePathname();
   const privatePage =
     ["/proyectos", "/cuenta", "/administracion"].includes(pathname) ||
-    pathname.startsWith("/admin/");
+    pathname.startsWith("/admin/") ||
+    pathname === "/panel" ||
+    pathname.startsWith("/panel/");
   // The layout is static, so the session is read here. Private pages send
   // signed-out visitors to /acceso, so they can assume one until it loads.
   const [session, setSession] = useState<boolean | null>(null);
@@ -70,6 +72,13 @@ export function Header() {
             onClick={() => setOpen(false)}
           >
             {appNav ? "Mis fotos" : "Inicio"}
+          </Link>
+          <Link
+            className={pathname.startsWith("/panel") ? "active" : ""}
+            href={appNav ? "/panel" : "/#inmobiliarias"}
+            onClick={() => setOpen(false)}
+          >
+            {appNav ? "Mi inmobiliaria" : "Para inmobiliarias"}
           </Link>
           <Link
             className={pathname === "/galeria" ? "active" : ""}
@@ -199,8 +208,8 @@ export function Header() {
     </header>
   );
 }
-/** /demo/<token>: the buyer-facing listing of an agency. */
-const isDemoPage = (pathname: string) => pathname.startsWith("/demo/");
+/** /demo/<token> and an agency's site: the agency's own pages, with its brand. */
+const isDemoPage = (pathname: string) => pathname.startsWith("/demo/") || pathname.startsWith("/inmobiliaria/");
 
 export function Footer() {
   const pathname = usePathname();

@@ -102,6 +102,8 @@ export type PublicDemo = {
   /** The presentation link may show "Demo preparada para…"; the buyers' link never does. */
   banner: boolean;
   share: { title: string | null; description: string | null };
+  /** Prepared by the team for an agency without a habita account: its presentation link invites it to create one. */
+  prospect: boolean;
 };
 
 export type DemoStatus = "draft" | "published";
@@ -148,6 +150,8 @@ export type EditorPhoto = {
   discarded: string[];
   /** The file name it was imported or uploaded with (listing photos carry the property's id). */
   source: string | null;
+  /** Already paid with a credit: further versions of it cost nothing. */
+  charged: boolean;
   /** The version each style shows, by style id: a generation id. */
   shown: Record<string, string>;
   generations: GenerationRow[];

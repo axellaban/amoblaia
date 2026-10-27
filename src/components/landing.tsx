@@ -5,6 +5,7 @@ import { Studio } from "./studio";
 import { StagePicker } from "./stage-picker";
 import {
   ArrowUp,
+  Building2,
   Check,
   ChevronDown,
   CircleHelp,
@@ -481,6 +482,57 @@ export function Landing({
                 </div>
               </article>
             ))}
+          </div>
+        </section>
+
+        <section className="hx-container hx-agencies" id="inmobiliarias" aria-labelledby="hx-agencies-title">
+          <div className="hx-agencies-copy">
+            <Eyebrow icon={Building2}>Para inmobiliarias</Eyebrow>
+            <h2 id="hx-agencies-title">
+              Todas tus propiedades. <b>Todo su potencial.</b>
+            </h2>
+            <p>
+              Importá tus publicaciones, transformá espacios con IA y compartí
+              fichas que inspiran. Todo desde un solo lugar.
+            </p>
+            <div className="hx-agencies-actions">
+              <Link href="/panel/empezar" className="button button-primary button-large">
+                Crear mi inmobiliaria gratis
+              </Link>
+              <a href="#inmobiliarias-pasos" className="button button-outline button-large">
+                Ver cómo funciona
+              </a>
+            </div>
+            <ol className="hx-agencies-steps" id="inmobiliarias-pasos">
+              <li>
+                <b>Pegá el enlace</b> de una publicación y traemos fotos y datos.
+              </li>
+              <li>
+                <b>Elegí una foto</b> y transformala con el estilo que quieras.
+              </li>
+              <li>
+                <b>Compartí la ficha</b> o publicala en tu catálogo de habita.
+              </li>
+            </ol>
+          </div>
+          {/* An illustration of the panel with the site's own example photos: no real data. */}
+          <div className="hx-panel-mock" role="img" aria-label="Vista ilustrativa del panel de una inmobiliaria en habita">
+            <div className="hx-panel-bar">
+              <span />
+              <span />
+              <span />
+              <i>Mis propiedades</i>
+            </div>
+            <div className="hx-panel-import">Pegá el enlace de una propiedad</div>
+            <div className="hx-panel-cards">
+              {(["original", "modern"] as const).map((v, i) => (
+                <div key={v} className="hx-panel-card">
+                  <img src={examplePath(stepRoom, v)} alt="" loading="lazy" />
+                  <span className={i ? "is-ai" : ""}>{i ? "Con IA" : "Original"}</span>
+                </div>
+              ))}
+            </div>
+            <small>Vista ilustrativa</small>
           </div>
         </section>
 

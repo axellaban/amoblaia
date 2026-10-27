@@ -33,5 +33,7 @@ export const config = {
     "/api/session",
     "/admin/:path*",
     "/api/admin/:path*",
+    "/panel/:path*",
+    "/api/panel/:path*",
   ],
 };

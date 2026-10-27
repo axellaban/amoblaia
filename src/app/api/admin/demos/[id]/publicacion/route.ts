@@ -1,4 +1,5 @@
-import { requireAdmin, failure, HttpError } from "@/lib/commerce/http";
+import { failure, HttpError } from "@/lib/commerce/http";
+import { requireDemoAccess } from "@/lib/agency/server";
 import { completeAgency, demoRow, saveJson, settingsOf } from "@/lib/demos/server";
 import { readJson } from "@/lib/demos/input";
 import { readListing } from "@/lib/demos/listing";
@@ -38,8 +39,8 @@ async function read(id: string) {
  */
 export async function GET(_request: Request, { params }: Params) {
   try {
-    await requireAdmin();
     const { id } = await params;
+    await requireDemoAccess(undefined, id);
     const { listing, current } = await read(id);
     return Response.json(
       { imported: listing.imported, ...planImport(current, listing.imported), checkedAt: new Date().toISOString() },
@@ -58,8 +59,8 @@ export async function GET(_request: Request, { params }: Params) {
  */
 export async function POST(request: Request, { params }: Params) {
   try {
-    await requireAdmin(request);
     const { id } = await params;
+    await requireDemoAccess(request, id);
     const body = await readJson(request);
     const replace = (Array.isArray(body.replace) ? body.replace : []).filter((f: unknown): f is ImportField =>
       IMPORT_FIELDS.includes(f as ImportField),

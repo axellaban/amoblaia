@@ -345,6 +345,29 @@ export function DemoView({
           </section>
         )}
 
+        {/* Only on the team's presentation link of an agency without an account: buyers never see it. */}
+        {presentation && demo.prospect && (
+          <section className="dv2-habita" aria-labelledby="dv2-habita">
+            <div>
+              <h2 id="dv2-habita">¿Te imaginás todas tus propiedades así?</h2>
+              <p>
+                Con habita podés transformar las fotos de tus propiedades con IA, compartir fichas interactivas y crear
+                tu propio catálogo inmobiliario.
+              </p>
+            </div>
+            <div className="dv2-habita-actions">
+              <a
+                className="dv2-habita-cta"
+                href={source.kind === "public" ? `/panel/empezar?demo=${source.token}` : "/panel/empezar"}
+                onClick={() => log("demo_agency_cta_clicked", { origen: "demo" })}
+              >
+                Crear mi inmobiliaria gratis
+              </a>
+              <small>Sin tarjeta de crédito.</small>
+            </div>
+          </section>
+        )}
+
         <section className="dv2-closing" aria-labelledby="dv2-closing">
           <div>
             <h2 id="dv2-closing">{demo.closingTitle}</h2>

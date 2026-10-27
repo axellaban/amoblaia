@@ -1,5 +1,6 @@
-import { requireAdmin, failure, HttpError } from "@/lib/commerce/http";
-import { brandingOf, demoRow, logoFromBytes, logoOf, saveJson } from "@/lib/demos/server";
+import { failure, HttpError } from "@/lib/commerce/http";
+import { requireDemoAccess } from "@/lib/agency/server";
+import { brandingOf, logoFromBytes, logoOf, saveJson } from "@/lib/demos/server";
 export const runtime = "nodejs";
 
 type Params = { params: Promise<{ id: string }> };
@@ -7,9 +8,9 @@ const MAX_UPLOAD = 2 * 1024 * 1024;
 
 export async function GET(_request: Request, { params }: Params) {
   try {
-    await requireAdmin();
     const { id } = await params;
-    const logo = await logoOf((await demoRow(id)).agency_id);
+    const { demo } = await requireDemoAccess(undefined, id);
+    const logo = await logoOf(demo.agency_id);
     if (!logo) throw new HttpError(404, "La inmobiliaria no tiene logo.");
     return new Response(new Uint8Array(logo.bytes), {
       headers: { "Content-Type": logo.type, "Cache-Control": "private, max-age=3600" },
@@ -25,11 +26,11 @@ export async function GET(_request: Request, { params }: Params) {
  */
 export async function POST(request: Request, { params }: Params) {
   try {
-    await requireAdmin(request);
     if (Number(request.headers.get("content-length") || 0) > MAX_UPLOAD + 16384)
       throw new HttpError(413, "El logo es demasiado grande.");
     const { id } = await params;
-    const demo = await demoRow(id);
+    const { demo, admin, role } = await requireDemoAccess(request, id);
+    if (!admin && role !== "owner") throw new HttpError(403, "Solo el dueño de la inmobiliaria puede cambiar su marca.");
     const file = (await request.formData().catch(() => null))?.get("logo");
     if (
       !(file instanceof File) ||
@@ -49,9 +50,9 @@ export async function POST(request: Request, { params }: Params) {
 
 export async function DELETE(request: Request, { params }: Params) {
   try {
-    await requireAdmin(request);
     const { id } = await params;
-    const demo = await demoRow(id);
+    const { demo, admin, role } = await requireDemoAccess(request, id);
+    if (!admin && role !== "owner") throw new HttpError(403, "Solo el dueño de la inmobiliaria puede cambiar su marca.");
     const { logo: _removed, ...rest } = await brandingOf(demo.agency_id);
     await saveJson("agencies", "branding", demo.agency_id, rest);
     return Response.json({ saved: true }, { headers: { "Cache-Control": "private, no-store" } });
