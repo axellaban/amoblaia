@@ -10637,7 +10637,8 @@ a.dm-agency:hover {
 }
 .pc-card {
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  /* The photo takes about a third of the card: enough to judge it, without each card filling the screen. */
+  grid-template-columns: minmax(200px, 340px) minmax(0, 1fr);
   gap: 18px;
   padding: 14px;
   border: 1px solid var(--line);
@@ -10822,6 +10823,73 @@ a.dm-agency:hover {
   justify-content: flex-end;
   gap: 6px;
 }
+.pc-pick {
+  display: grid;
+  gap: 8px;
+}
+.pc-pick-title {
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.pc-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.pc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  border: 1px solid #e3e0d8;
+  border-radius: 999px;
+  background: #f3f1ec;
+  color: #8a8d85;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.pc-chip .dm-style-swatch {
+  opacity: 0.45;
+}
+.pc-chip:hover:not(:disabled) {
+  border-color: #bdb9ad;
+  color: var(--ink, #1f2a1f);
+}
+.pc-chip.is-on,
+.pc-chip.is-on:hover:not(:disabled) {
+  border-color: #3d5a2f;
+  background: #4f7a3a;
+  color: #fff;
+  font-weight: 700;
+}
+.pc-chip.is-on .dm-style-swatch {
+  opacity: 1;
+  box-shadow: 0 0 0 2px #fff;
+}
+.pc-chip:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.pc-chip:focus-visible {
+  outline: 3px solid #a8c290;
+  outline-offset: 2px;
+}
+.pc-pick-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.pc-pick-foot .text-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
 .pc-other {
   display: flex;
   flex-wrap: wrap;
@@ -10947,7 +11015,10 @@ a.dm-agency:hover {
 }
 @media (max-width: 860px) {
   .pc-card {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .pc-media {
+    max-width: 420px;
   }
   .ed-photo-tools,
   .ed-publish {

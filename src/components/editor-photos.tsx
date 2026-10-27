@@ -46,6 +46,8 @@ export type CardActions = {
   cover: () => void;
   remove: () => void;
   create: (style: string, fresh?: boolean) => void;
+  /** Several new styles of this photo at once: one quote, one confirmation. */
+  createMany: (styles: string[]) => void;
   review: (generationId: string) => void;
   download: (generationId: string, style: string) => void;
   discard: (generationId: string) => void;
@@ -215,7 +217,7 @@ export function PhotoCard({
   propertyType,
   demoStyles,
   compatibleStyles,
-  canAddStyle,
+  roomForStyles,
   isCover,
   included,
   waiting,
@@ -233,9 +235,9 @@ export function PhotoCard({
   spaces: PropertySpace[];
   propertyType: PropertyType;
   demoStyles: string[];
-  compatibleStyles: { id: string; name: string }[];
-  /** False when the property already has the most styles allowed. */
-  canAddStyle: boolean;
+  compatibleStyles: { id: string; name: string; color: string }[];
+  /** How many styles the property can still add (6 at most). */
+  roomForStyles: number;
   isCover: boolean;
   included: boolean;
   waiting: Set<string>;
@@ -247,12 +249,16 @@ export function PhotoCard({
   actions: CardActions;
   mainStyle: string;
 }) {
-  const uid = useId();
-  const styles = cardStyles(photo, demoStyles);
+  const allStyles = cardStyles(photo, demoStyles);
+  const stateOf = (st: string) => cellState(photo, st, waiting.has(taskKey({ photoId: photo.id, style: st })));
+  // Above: styles with something to show or follow (created, in progress, failed, in review). Below: the rest, as boxes.
+  const styles = allStyles
+    .filter((st) => stateOf(st).kind !== "none")
+    .sort((a, b) => Number(stateOf(b).kind === "ready") - Number(stateOf(a).kind === "ready"));
+  const [picking, setPicking] = useState<Set<string>>(new Set());
   const firstReady = styles.find((st) => photo.shown[st]);
   const [preview, setPreview] = useState<string | null>(photo.shown[mainStyle] ? mainStyle : (firstReady ?? null));
   const [compare, setCompare] = useState(false);
-  const [other, setOther] = useState("");
   const [naming, setNaming] = useState(false);
   // A version that disappears (discarded) stops being previewed.
   useEffect(() => {
@@ -262,7 +268,9 @@ export function PhotoCard({
   const conflict = roomConflict(photo, space);
   const shownId = preview ? photo.shown[preview] : null;
   const name = photoLabel(photo);
-  const others = compatibleStyles.filter((s) => !styles.includes(s.id));
+  const choices = compatibleStyles.filter((s) => stateOf(s.id).kind === "none");
+  // New styles for the property count against its limit; styles it already has do not.
+  const newPicked = [...picking].filter((st) => !demoStyles.includes(st)).length;
   const live = styles.some((st) => {
     const s = cellState(photo, st, waiting.has(taskKey({ photoId: photo.id, style: st })));
     return s.kind === "running" || s.kind === "queued";
@@ -412,31 +420,56 @@ export function PhotoCard({
               onPreview={() => (setPreview(st), setCompare(false))}
             />
           ))}
-          {!styles.length && <li className="dm-help">Elegí un estilo abajo o en el lote para crear la primera versión.</li>}
         </ul>
-        {others.length > 0 && (
-          <form
-            className="pc-other"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (other) actions.create(other);
-              setOther("");
-            }}
-          >
-            <label htmlFor={`${uid}-other`}>Otro estilo</label>
-            <select id={`${uid}-other`} value={other} onChange={(e) => setOther(e.target.value)}>
-              <option value="">Elegí…</option>
-              {others.map((s) => (
-                <option key={s.id} value={s.id} disabled={!canAddStyle}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-            <button className="button button-small button-outline" disabled={!other || Boolean(blocked)}>
-              <Sparkles size={14} /> Crear
-            </button>
-            {!canAddStyle && <small className="dm-help">La propiedad ya tiene el máximo de estilos.</small>}
-          </form>
+        {choices.length > 0 && (
+          <div className="pc-pick">
+            <span className="pc-pick-title">{styles.length ? "Crear más estilos" : "Elegí estilos para crear"}</span>
+            <div className="pc-chips" role="group" aria-label={`Estilos para crear en ${name}`}>
+              {choices.map((st) => {
+                const on = picking.has(st.id);
+                const full = !on && !demoStyles.includes(st.id) && newPicked >= roomForStyles;
+                return (
+                  <button
+                    key={st.id}
+                    type="button"
+                    className={`pc-chip ${on ? "is-on" : ""}`}
+                    aria-pressed={on}
+                    disabled={full || Boolean(blocked)}
+                    title={full ? "La propiedad ya tiene el máximo de estilos" : undefined}
+                    onClick={() =>
+                      setPicking((cur) => {
+                        const n = new Set(cur);
+                        if (n.has(st.id)) n.delete(st.id);
+                        else n.add(st.id);
+                        return n;
+                      })
+                    }
+                  >
+                    <span className="dm-style-swatch" style={{ background: st.color }} aria-hidden="true" />
+                    {st.name}
+                  </button>
+                );
+              })}
+            </div>
+            {picking.size > 0 && (
+              <div className="pc-pick-foot">
+                <button
+                  type="button"
+                  className="button button-small button-primary"
+                  disabled={Boolean(blocked)}
+                  onClick={() => {
+                    actions.createMany([...picking]);
+                    setPicking(new Set());
+                  }}
+                >
+                  <Sparkles size={14} /> Crear {picking.size} {picking.size === 1 ? "estilo" : "estilos"}
+                </button>
+                <button type="button" className="text-link" onClick={() => setPicking(new Set())}>
+                  Limpiar
+                </button>
+              </div>
+            )}
+          </div>
         )}
 
         <div className="pc-controls">
