@@ -449,7 +449,7 @@ export function PhotoCard({
             {photo.visible ? <Eye size={14} /> : <EyeOff size={14} />} {photo.visible ? "Se muestra" : "Oculta"}
           </button>
           <button type="button" className={`button button-small button-outline ${isCover ? "is-on" : ""}`} aria-pressed={isCover} onClick={actions.cover}>
-            <Star size={14} /> {isCover ? "Es la portada" : "Usar de portada"}
+            <Star size={14} /> {isCover ? "Es la portada (abre la ficha)" : "Usar de portada"}
           </button>
           <details className="ap-menu pc-more">
             <summary>

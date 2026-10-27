@@ -338,6 +338,18 @@ describe("Public demo", () => {
     expect((await publishedDemo(TOKEN))?.photos[0].versions).toEqual([]);
   });
 
+  it("opens the gallery on the cover the agency chose, keeping the rest in order", async () => {
+    state.tables.demo_photos[1].visible = true;
+    expect((await publishedDemo(TOKEN))?.photos.map((p) => p.id)).toEqual([PHOTO, HIDDEN]);
+    (state.tables.demos[0] as Row).cover_photo_id = HIDDEN;
+    const demo = await publishedDemo(TOKEN);
+    expect(demo?.photos.map((p) => p.id)).toEqual([HIDDEN, PHOTO]);
+    expect(demo?.cover?.id).toBe(HIDDEN);
+    // A hidden cover is not shown: the order stays as it was.
+    state.tables.demo_photos[1].visible = false;
+    expect((await publishedDemo(TOKEN))?.photos.map((p) => p.id)).toEqual([PHOTO]);
+  });
+
   it("keeps the main style first, for the cover and the link preview", async () => {
     for (const p of state.tables.demo_photos) p.style = "industrial";
     const demo = await publishedDemo(TOKEN);
