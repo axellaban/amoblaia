@@ -70,6 +70,11 @@ function lines(html: string): Line[] {
   const marked = html
     .replace(/<(script|style|noscript|svg)\b[\s\S]*?<\/\1>/gi, " ")
     .replace(/<!--[\s\S]*?-->/g, " ")
+    // Definition lists (<dt>Ambientes</dt><dd>3</dd>) are labelled data, like "Ambientes: 3".
+    .replace(
+      /<dt\b[^>]*>([\s\S]*?)<\/dt>\s*<dd\b[^>]*>([\s\S]*?)<\/dd>/gi,
+      (_m, label: string, value: string) => `\n${squash(label).replace(/:$/, "")}: ${squash(value)}\n`,
+    )
     .replace(/<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]>/gi, (_m, t: string) => `\n\u0001${squash(t)}\n`)
     .replace(/<li\b[^>]*>/gi, "\n\u0002")
     .replace(/<br\s*\/?>/gi, "\n")
@@ -94,7 +99,7 @@ function lines(html: string): Line[] {
 
 const PAGE_TABS = /^(categor[ií]a|videos?|fotos|planos?|mapa|ubicaci[oó]n|tour( 360)?|descripci[oó]n)$/i;
 /** Where the property ends: lists of other properties and the site footer come after. */
-const OTHERS = /^(propiedades similares|similares|te puede interesar|otras propiedades|propiedades relacionadas|tambi[eé]n te puede)/i;
+const OTHERS = /^(propiedades similares|similares|te puede interesar|otras propiedades|propiedades relacionadas|propiedades cercanas|tambi[eé]n te puede)/i;
 
 type Section = { title: string; lines: Line[] };
 function sections(all: Line[]) {
@@ -191,6 +196,33 @@ function personNear(html: string, at: number, base: string): Person {
   };
 }
 
+/**
+ * The price the page declares for search engines (JSON-LD Offer: price and
+ * currency) when no price element is marked as such. Only the page's own
+ * item: lists of other properties are not read.
+ */
+function offerPrice(html: string): Money | null {
+  for (const m of html.matchAll(/<script[^>]*application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi)) {
+    let data: unknown;
+    try {
+      data = JSON.parse(m[1]);
+    } catch {
+      continue;
+    }
+    const items = (Array.isArray(data) ? data : [data]) as Record<string, unknown>[];
+    for (const item of items) {
+      if (!item || typeof item !== "object" || item["@type"] === "ItemList") continue;
+      const offers = (Array.isArray(item.offers) ? item.offers[0] : item.offers) as Record<string, unknown> | undefined;
+      const amount = Number(offers?.price);
+      const currency = String(offers?.priceCurrency ?? "").toUpperCase();
+      if (!Number.isFinite(amount) || amount <= 0 || !/^(USD|ARS)$/.test(currency)) continue;
+      const text = `${currency === "USD" ? "USD" : "$"} ${Math.round(amount).toLocaleString("es-AR")}`;
+      return moneyIn(text)[0] ?? null;
+    }
+  }
+  return null;
+}
+
 const capitalize = (s: string) => (s ? s[0].toUpperCase() + s.slice(1).toLowerCase() : s);
 
 export function extractDetails(html: string, pageUrl: string): ListingDetails {
@@ -220,7 +252,10 @@ export function extractDetails(html: string, pageUrl: string): ListingDetails {
   const og = ogTitle?.match(/^(.+?) en (Venta|Alquiler(?: temporario)?|Alquiler temporal) en (.+?)(?: - |$)/i);
   const propertyKind = kindFromRef ?? og?.[1]?.trim() ?? null;
   const opTag = blocks(ownHtml, /(op-tag|operation|operacion)/i).map(squash).find((t) => /^(venta|alquiler)/i.test(t));
-  const operation = opTag ? capitalize(opTag.split(/\s/)[0]) : og ? capitalize(og[2].split(" ")[0]) : null;
+  // Else the operation the title opens with ("VENTA DEPARTAMENTO…") or the page's path (/venta/, /alquiler/).
+  const opWord =
+    docTitle?.match(/^(venta|alquiler)\b/i)?.[1] ?? page.pathname.match(/\/(venta|alquiler)(?:\/|-)/i)?.[1] ?? null;
+  const operation = opTag ? capitalize(opTag.split(/\s/)[0]) : og ? capitalize(og[2].split(" ")[0]) : opWord ? capitalize(opWord) : null;
   const neighbourhood = og?.[3]?.trim() ?? null;
   const shortTitle = propertyKind && neighbourhood ? `${propertyKind} en ${neighbourhood}` : null;
   const titleH = own.find((s) => s.title && s.title.length > 8 && !/^(detalles|informaci|superficie|descripci|servicios|ambientes|adicionales|ubicaci|contacto|videos?)/i.test(s.title));
@@ -237,7 +272,7 @@ export function extractDetails(html: string, pageUrl: string): ListingDetails {
   const headline = priceTexts.length ? moneyIn(priceTexts.sort((a, b) => a.length - b.length)[0])[0] : null;
   const pairs = own.flatMap(pairsOf);
   const pricePair = pairs.find((p) => /^(precio|valor)$/i.test(norm(p.label)) && moneyIn(p.value).length);
-  const price = headline ?? (pricePair ? moneyIn(pricePair.value)[0] : null);
+  const price = headline ?? offerPrice(html) ?? (pricePair ? moneyIn(pricePair.value)[0] : null);
 
   // Description.
   const descHtml = blocks(ownHtml, /(full-description|description|descripcion)/i).sort((a, b) => b.length - a.length)[0];
@@ -275,9 +310,12 @@ export function extractDetails(html: string, pageUrl: string): ListingDetails {
       items: s.lines
         // Page tabs ("Videos", "Categoría") are list items too, not features.
         .filter((l) => l.item && l.text.length <= 60 && !/:/.test(l.text) && !PAGE_TABS.test(l.text))
+        // Bare figures ("134 m²", "3") are the headline's data, not features.
+        .filter((l) => !/^[\d.,]+\s*(m²|m2|mts2?)?$/i.test(l.text))
         .map((l) => l.text),
     }))
-    .filter((g) => g.items.length >= 2);
+    // The listing's own title is not a list of features.
+    .filter((g) => g.items.length >= 2 && norm(g.title) !== norm(docTitle ?? ""));
 
   // Map: every location the page gives, with its context; the office's
   // (footer, "Sucursal" sections) and other listings' are left out.

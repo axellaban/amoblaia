@@ -27,6 +27,8 @@ export type ImportedDemo = {
   priceConflict: string | null;
   /** When the price conflicts: the amounts to choose from, as published. */
   priceOptions: string[];
+  /** Monthly expenses as published (a bare amount is in pesos). */
+  expenses: string | null;
   features: string | null;
   facts: Fact[];
   description: string | null;
@@ -53,16 +55,20 @@ export type ImportedDemo = {
 
 /** Labels as sites publish them → the fact they are. First match wins. */
 const FACTS: { icon: FactIcon; labels: RegExp; label: (v: string) => string }[] = [
-  { icon: "area", labels: /^(total construido|superficie total|sup\. total|total)$/, label: () => "totales" },
-  { icon: "area", labels: /^(superficie cubierta|cubierta|sup\. cubierta)$/, label: () => "cubiertos" },
+  { icon: "area", labels: /^(total construido|superficie total|sup\. total|total|superficie terreno\/total|superficie total\/terreno)$/, label: () => "totales" },
+  // Century 21 calls the covered area "Superficie Construcción".
+  { icon: "area", labels: /^(superficie cubierta|cubierta|sup\. cubierta|superficie construccion|superficie construida)$/, label: () => "cubiertos" },
   { icon: "area", labels: /^(superficie semicubierta|semicubierta|sup\. semicubierta)$/, label: () => "semicubiertos" },
-  { icon: "rooms", labels: /^ambientes$/, label: (v) => (v === "1" ? "ambiente" : "ambientes") },
-  { icon: "bedrooms", labels: /^dormitorios$/, label: (v) => (v === "1" ? "dormitorio" : "dormitorios") },
-  { icon: "bathrooms", labels: /^banos$/, label: (v) => (v === "1" ? "baño" : "baños") },
+  { icon: "rooms", labels: /^(ambientes|cantidad de ambientes)$/, label: (v) => (v === "1" ? "ambiente" : "ambientes") },
+  { icon: "bedrooms", labels: /^(dormitorios|dormitorios totales|cantidad de dormitorios)$/, label: (v) => (v === "1" ? "dormitorio" : "dormitorios") },
+  { icon: "bathrooms", labels: /^(banos|banos completos|cantidad de banos)$/, label: (v) => (v === "1" ? "baño" : "baños") },
   { icon: "bathrooms", labels: /^toilettes?$/, label: (v) => (v === "1" ? "toilette" : "toilettes") },
-  { icon: "parking", labels: /^cocheras?$/, label: (v) => (v === "1" ? "cochera" : "cocheras") },
+  { icon: "parking", labels: /^(cocheras?|cantidad de cocheras)$/, label: (v) => (v === "1" ? "cochera" : "cocheras") },
+  { icon: "floor", labels: /^(piso en que se encuentra|piso del departamento|ubicacion en el piso)$/, label: () => "piso" },
   { icon: "age", labels: /^antiguedad$/, label: () => "antigüedad" },
 ];
+/** An area published as a bare number ("119,9") is in square meters. */
+const withUnit = (icon: FactIcon, v: string) => (icon === "area" && /^\d+(?:[.,]\d+)?$/.test(v.trim()) ? `${v.trim()} m²` : v);
 /** General data worth showing as text (not icons); "No especificado" is not data. */
 const INFO = /^(condicion|situacion|orientacion|disposicion|apto profesional|apto credito|credito|plantas|piso|luminosidad|estado)$/;
 const UNSPECIFIED = /^(no especificado|-|n\/a|sin datos?)$/i;
@@ -108,14 +114,20 @@ export function toDemo(d: ListingDetails, fallback: Fallback): ImportedDemo {
   const facts: Fact[] = [];
   for (const f of FACTS) {
     const v = value(f.labels);
-    if (v && facts.length < 8) facts.push({ icon: f.icon, value: v, label: f.label(v) });
+    // One fact per kind of area/count: the first label that matches wins.
+    if (v && facts.length < 8 && !facts.some((x) => x.label === f.label(v) && x.icon === f.icon))
+      facts.push({ icon: f.icon, value: withUnit(f.icon, v), label: f.label(v) });
   }
-  const amb = value(/^ambientes$/);
-  const total = value(/^(total construido|superficie total)$/) ?? value(/^(superficie cubierta|cubierta)$/);
-  const dorm = value(/^dormitorios$/);
+  const amb = value(/^(ambientes|cantidad de ambientes)$/);
+  const totalRaw = value(/^(total construido|superficie total|superficie terreno\/total)$/) ?? value(/^(superficie cubierta|cubierta|superficie construccion)$/);
+  const total = totalRaw ? withUnit("area", totalRaw) : null;
+  const dorm = value(/^(dormitorios|dormitorios totales)$/);
   const features = [amb && `${amb} ${amb === "1" ? "ambiente" : "ambientes"}`, total, dorm && `${dorm} ${dorm === "1" ? "dormitorio" : "dormitorios"}`]
     .filter(Boolean)
     .join(" · ");
+  const expensesRaw = value(/^(expensas|expensas mensuales|valor de expensas)$/);
+  // "350.000" with no currency: expenses in Argentina are in pesos.
+  const expenses = expensesRaw ? (/^\d{1,3}(?:[.,]\d{3})+$|^\d+$/.test(expensesRaw.trim()) ? `$ ${expensesRaw.trim()}` : expensesRaw) : null;
   // Same label, different values on the page: a real contradiction.
   const contradictions = new Map<string, Set<string>>();
   // Only the property's own data: phones and e-mails of the agent and the branch differ by nature.
@@ -165,11 +177,12 @@ export function toDemo(d: ListingDetails, fallback: Fallback): ImportedDemo {
       : priceNote
         ? { field: "Precio", status: "error", value: null, note: priceNote, required: false }
         : row("Precio", price, { error: has(/^precio|^valor/i) }),
+    row("Expensas", expenses, { note: expensesRaw && expenses !== expensesRaw ? "La publicación no indica la moneda: se muestran en pesos." : undefined }),
     row("Ubicación", d.location ?? fallback.location),
     mapRow(d),
-    row("Superficies", [value(/^(total construido|superficie total)$/), value(/^(superficie cubierta|cubierta)$/), value(/^(superficie semicubierta|semicubierta)$/)].filter(Boolean).join(" · ") || null, { error: has(/superficie/i) && !total }),
+    row("Superficies", [value(/^(total construido|superficie total|superficie terreno\/total)$/), value(/^(superficie cubierta|cubierta|superficie construccion)$/), value(/^(superficie semicubierta|semicubierta)$/)].filter(Boolean).join(" · ") || null, { error: has(/superficie/i) && !total }),
     row("Ambientes y dormitorios", [amb && `${amb} amb.`, dorm && `${dorm} dorm.`].filter(Boolean).join(" · ") || null),
-    row("Baños", [value(/^banos$/) && `${value(/^banos$/)} baño`, value(/^toilettes?$/) && `${value(/^toilettes?$/)} toilette`].filter(Boolean).join(" · ") || null),
+    row("Baños", [value(/^(banos|banos completos)$/) && `${value(/^(banos|banos completos)$/)} baño`, value(/^toilettes?$/) && `${value(/^toilettes?$/)} toilette`].filter(Boolean).join(" · ") || null),
     row("Descripción", description ? `${description.length} caracteres` : null, { error: !description && has(/^descripci/i) }),
     row("Características y servicios", amenities.length ? amenities.map((g) => `${g.title} (${g.items.length})`).join(" · ") : null),
     row("Fotos de la propiedad", images.length ? `${images.length}` : null, { required: true, note: d.images.length ? "Solo las de esta propiedad, sin las de propiedades similares." : "Revisá que todas sean de esta propiedad." }),
@@ -192,6 +205,7 @@ export function toDemo(d: ListingDetails, fallback: Fallback): ImportedDemo {
     price,
     priceConflict: d.priceConflict,
     priceOptions: d.priceOptions,
+    expenses,
     features: features || null,
     facts,
     description,
@@ -222,6 +236,7 @@ export const IMPORT_FIELDS = [
   "operation",
   "reference",
   "price",
+  "expenses",
   "features",
   "facts",
   "description",
@@ -237,6 +252,7 @@ const FIELD_LABELS: Record<ImportField, string> = {
   operation: "Operación",
   reference: "Referencia",
   price: "Precio",
+  expenses: "Expensas",
   features: "Resumen",
   facts: "Datos principales",
   description: "Descripción",
@@ -315,6 +331,7 @@ function importedValues(imp: ImportedDemo): Values {
     reference: imp.reference,
     price: imp.priceConflict ? null : imp.price,
     priceConflict: imp.priceConflict,
+    expenses: imp.expenses ?? null,
     features: imp.features,
     facts: imp.facts,
     description: imp.description,
