@@ -45,7 +45,7 @@ type DemoListRow = {
   cover_photo_id: string | null;
   created_at: string;
   settings: unknown;
-  demo_properties: { title: string; location: string | null; listing_url: string | null } | null;
+  demo_properties: { title: string; location: string | null; listing_url: string | null; origin?: string | null } | null;
 };
 
 /**
@@ -58,7 +58,7 @@ export async function agencyProperties(agencyId: string, query: PropertyQuery = 
   const page = Math.max(1, Math.trunc(query.page ?? 1));
   let list = db
     .from("demos")
-    .select("id,property_id,token,status,cover_photo_id,created_at,settings,demo_properties!inner(title,location,listing_url)", { count: "exact" })
+    .select("id,property_id,token,status,cover_photo_id,created_at,settings,demo_properties!inner(title,location,listing_url,origin)", { count: "exact" })
     .eq("agency_id", agencyId);
   if (query.status === "draft" || query.status === "published") list = list.eq("status", query.status);
   const op = query.operation?.trim().slice(0, 40);
@@ -72,46 +72,79 @@ export async function agencyProperties(agencyId: string, query: PropertyQuery = 
   return { items: await withPhotos(demos), total: res.count ?? demos.length };
 }
 
-/** Photos and staged photos of a page of properties (bounded by the page size). */
+/**
+ * Photos, spaces and the real state of their versions for a page of
+ * properties (bounded by the page size): ready, still running and failed or
+ * uncertain. A succeeded version is "ready", never "approved" or "published".
+ */
 async function withPhotos(demos: DemoListRow[]): Promise<PanelProperty[]> {
   if (!demos.length) return [];
   const db = adminClient();
-  const photos = check(
-    await db
+  const propertyIds = demos.map((d) => d.property_id);
+  const [photoRes, spaceRes] = await Promise.all([
+    db
       .from("demo_photos")
-      .select("id,property_id,project_id,position,visible")
-      .in("property_id", demos.map((d) => d.property_id))
+      .select("id,property_id,project_id,position,visible,discarded")
+      .in("property_id", propertyIds)
       .limit(2000),
-    "PANEL_PHOTOS_FAILED",
-  ) as { id: string; property_id: string; project_id: string; position: number; visible: boolean }[];
+    db.from("property_spaces").select("property_id").in("property_id", propertyIds).limit(2000),
+  ]);
+  const photos = check(photoRes, "PANEL_PHOTOS_FAILED") as {
+    id: string;
+    property_id: string;
+    project_id: string;
+    position: number;
+    visible: boolean;
+    discarded: string[] | null;
+  }[];
+  // Before 202610310001 there are no spaces: unknown, shown as nothing.
+  const spaces = spaceRes.error ? null : ((spaceRes.data ?? []) as { property_id: string }[]);
   const projectIds = [...new Set(photos.map((p) => p.project_id))];
-  const staged = new Set(
-    projectIds.length
-      ? (
-          check(
-            await db
-              .from("generations")
-              .select("project_id")
-              .in("project_id", projectIds)
-              .eq("status", "succeeded")
-              .eq("is_free", false)
-              .limit(5000),
-            "PANEL_STAGED_FAILED",
-          ) as { project_id: string }[]
-        ).map((g) => g.project_id)
-      : [],
-  );
+  const generations = projectIds.length
+    ? (check(
+        await db
+          .from("generations")
+          .select("id,project_id,style,status,result_path,created_at")
+          .in("project_id", projectIds)
+          .eq("is_free", false)
+          .order("created_at", { ascending: false })
+          .limit(5000),
+        "PANEL_STAGED_FAILED",
+      ) as { id: string; project_id: string; style: string; status: string; result_path: string | null }[])
+    : [];
   return demos.map((d) => {
     const own = photos.filter((p) => p.property_id === d.property_id).sort((a, b) => a.position - b.position);
+    let ready = 0;
+    let active = 0;
+    let issues = 0;
+    let stagedPhotos = 0;
+    for (const p of own) {
+      const discarded = new Set(p.discarded ?? []);
+      const mine = generations.filter((g) => g.project_id === p.project_id && !discarded.has(g.id));
+      // The newest attempt of each style says where that style stands.
+      const latest = new Map<string, (typeof mine)[number]>();
+      for (const g of mine) if (!latest.has(g.style)) latest.set(g.style, g);
+      const readyStyles = new Set(mine.filter((g) => g.status === "succeeded" && g.result_path).map((g) => g.style));
+      ready += readyStyles.size;
+      if (readyStyles.size) stagedPhotos++;
+      for (const g of latest.values()) {
+        if (g.status === "queued" || g.status === "running") active++;
+        else if ((g.status === "failed" || g.status === "needs_review") && !readyStyles.has(g.style)) issues++;
+      }
+    }
     const settings = readSettings(d.settings);
     return {
       id: d.id,
       title: d.demo_properties?.title ?? "Propiedad",
       location: d.demo_properties?.location ?? null,
+      reference: settings.reference,
+      origin: d.demo_properties?.origin === "agency" ? "agency" : "admin",
       price: settings.priceConflict ? null : settings.price,
       operation: settings.operation,
       photos: own.length,
-      staged: own.filter((p) => staged.has(p.project_id)).length,
+      staged: stagedPhotos,
+      versions: { ready, active, issues },
+      spaces: spaces ? spaces.filter((s) => s.property_id === d.property_id).length : null,
       status: d.status,
       token: d.token,
       coverPhotoId: d.cover_photo_id ?? own.find((p) => p.visible)?.id ?? null,

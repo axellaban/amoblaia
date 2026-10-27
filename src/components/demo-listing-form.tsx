@@ -1,6 +1,6 @@
 "use client";
 import { sourceName } from "@/lib/demos/geo";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { FACT_ICONS, type DemoSettings, type FactIcon } from "@/lib/demos/branding";
 
@@ -113,17 +113,58 @@ const toSettings = (f: Form) => ({
  * Only what is entered is shown: empty fields never appear, and nothing is
  * filled in automatically except from the original listing.
  */
+/** The parts of the listing, each one in its own section of the editor and saved on its own. */
+export type ListingPart = "datos" | "condiciones" | "mapa" | "contacto" | "compartir";
+const PART_KEYS: Record<ListingPart, (keyof ReturnType<typeof toSettings>)[]> = {
+  datos: ["operation", "reference", "features", "description"],
+  condiciones: ["price", "priceConflict", "expenses", "availability", "requirements", "facts", "amenities"],
+  mapa: ["map"],
+  contacto: ["agent"],
+  compartir: ["closingTitle", "closingText", "shareTitle", "shareDescription"],
+};
+const pick = (f: Form, parts: ListingPart[]) => {
+  const all = toSettings(f);
+  return Object.fromEntries(parts.flatMap((p) => PART_KEYS[p]).map((k) => [k, all[k]])) as Partial<ReturnType<typeof toSettings>>;
+};
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
 export function ListingForm({
   settings,
   disabled,
   onSave,
+  parts = ["datos", "condiciones", "mapa", "contacto", "compartir"],
+  onDirty,
+  saveLabel = "Guardar ficha",
 }: {
   settings: DemoSettings;
   disabled: boolean;
-  onSave: (settings: ReturnType<typeof toSettings>) => Promise<void>;
+  onSave: (settings: Partial<ReturnType<typeof toSettings>>) => Promise<void>;
+  /** Which parts this form shows and saves (only their fields are sent). */
+  parts?: ListingPart[];
+  /** Reports unsaved changes, so the section can say so and leaving can warn. */
+  onDirty?: (dirty: boolean) => void;
+  saveLabel?: string;
 }) {
   const [form, setForm] = useState(() => toForm(settings));
-  useEffect(() => setForm(toForm(settings)), [settings]);
+  // What the server has for these parts. New data from the server (a finished
+  // staging, another section saved) only replaces fields not being edited.
+  const base = useRef(toForm(settings));
+  const formRef = useRef(form);
+  formRef.current = form;
+  // Set when this form saved: the server's (normalized) values replace the draft.
+  const saved = useRef(false);
+  const key = parts.join(",");
+  useEffect(() => {
+    const incoming = toForm(settings);
+    const ps = key.split(",") as ListingPart[];
+    const editing = !saved.current && !same(pick(formRef.current, ps), pick(base.current, ps));
+    saved.current = false;
+    base.current = incoming;
+    if (!editing) setForm(incoming);
+  }, [settings, key]);
+  const dirty = !same(pick(form, parts), pick(toForm(settings), parts));
+  useEffect(() => onDirty?.(dirty), [dirty, onDirty]);
+  const show = (p: ListingPart) => parts.includes(p);
   const set = <K extends keyof Form>(k: K) => (e: { target: { value: string } }) =>
     setForm({ ...form, [k]: e.target.value as Form[K] });
   const ask = /alquiler/i.test(form.operation) ? "Consultar alquiler" : "Consultar precio";
@@ -132,9 +173,13 @@ export function ListingForm({
       className="dm-listing"
       onSubmit={(e) => {
         e.preventDefault();
-        void onSave(toSettings(form));
+        saved.current = true;
+        void onSave(pick(form, parts)).catch(() => {
+          saved.current = false;
+        });
       }}
     >
+      {show("datos") && (
       <fieldset>
         <legend>Identificación</legend>
         <div className="dm-fields">
@@ -152,7 +197,9 @@ export function ListingForm({
           </label>
         </div>
       </fieldset>
+      )}
 
+      {show("condiciones") && (
       <fieldset>
         <legend>Precio y condiciones</legend>
         <div className="dm-fields">
@@ -190,7 +237,9 @@ export function ListingForm({
               : `Sin precio confirmado, la ficha muestra «${ask}».`}
         </p>
       </fieldset>
+      )}
 
+      {show("condiciones") && (
       <fieldset>
         <legend>Datos con íconos</legend>
         {form.facts.map((f, i) => (
@@ -246,7 +295,9 @@ export function ListingForm({
           </button>
         )}
       </fieldset>
+      )}
 
+      {show("datos") && (
       <fieldset>
         <legend>Descripción completa</legend>
         <label className="dm-wide">
@@ -254,7 +305,9 @@ export function ListingForm({
           <textarea rows={8} maxLength={6000} value={form.description} onChange={set("description")} />
         </label>
       </fieldset>
+      )}
 
+      {show("condiciones") && (
       <fieldset>
         <legend>Características y servicios</legend>
         {form.amenities.map((g, i) => (
@@ -297,7 +350,9 @@ export function ListingForm({
           </button>
         )}
       </fieldset>
+      )}
 
+      {show("mapa") && (
       <fieldset>
         <legend>Mapa</legend>
         <div className="dm-fields">
@@ -342,7 +397,9 @@ export function ListingForm({
           redondean antes de llegar al navegador.
         </p>
       </fieldset>
+      )}
 
+      {show("contacto") && (
       <fieldset>
         <legend>Agente asignado</legend>
         <div className="dm-fields">
@@ -376,7 +433,9 @@ export function ListingForm({
           publicados o confirmados por la inmobiliaria.
         </p>
       </fieldset>
+      )}
 
+      {show("compartir") && (
       <fieldset>
         <legend>Cierre y vista previa al compartir</legend>
         <div className="dm-fields">
@@ -398,10 +457,16 @@ export function ListingForm({
           </label>
         </div>
       </fieldset>
+      )}
 
-      <button className="button button-primary" disabled={disabled}>
-        Guardar ficha
-      </button>
+      <div className="dm-save-row">
+        <button className="button button-primary" disabled={disabled || !dirty}>
+          {saveLabel}
+        </button>
+        <span className="dm-help" role="status">
+          {dirty ? "Cambios sin guardar." : "Guardado."}
+        </span>
+      </div>
     </form>
   );
 }

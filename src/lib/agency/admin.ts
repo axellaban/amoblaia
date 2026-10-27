@@ -1,6 +1,7 @@
 import "server-only";
 import { randomBytes } from "node:crypto";
 import { HttpError, rpc } from "@/lib/commerce/http";
+import { isUuid } from "@/lib/demos/shared";
 import { adminClient } from "@/lib/supabase/server";
 import { agencyCredits } from "./panel";
 import { claimHash } from "./server";
@@ -47,7 +48,11 @@ export async function adminAgencies(query: { q?: string | null; page?: number; p
     review: Number(r.review),
     liveClaimExpires: r.live_claim_expires,
     lastClaimAt: r.last_claim_at,
+    available: null,
+    reserved: null,
   }));
+  const balances = await agencyBalances(items.map((i) => i.id));
+  for (const item of items) Object.assign(item, balances.get(item.id) ?? {});
   return { items, total: rows?.length ? Number(rows[0].total) : 0, page, perPage };
 }
 
@@ -212,7 +217,8 @@ export async function revokeClaim(agencyId: string, claimId: string, actorId: st
  * Free credits for an agency (1 credit = 1 photo): to its owner's balance at
  * once, or waiting until the agency claims its account. Audited with reason.
  */
-export async function giveAgencyCredits(actorId: string, agencyId: string, photos: unknown, reason: unknown) {
+export async function giveAgencyCredits(actorId: string, agencyId: string, photos: unknown, reason: unknown, key: unknown) {
+  if (!isUuid(key)) throw new HttpError(400, "Volvé a abrir el formulario e intentá de nuevo.");
   const n = Number(photos);
   const why = typeof reason === "string" ? reason.trim().slice(0, 200) : "";
   if (!Number.isInteger(n) || n < 1 || n > 1000) throw new HttpError(400, "Ingresá entre 1 y 1000 créditos.");
@@ -221,7 +227,9 @@ export async function giveAgencyCredits(actorId: string, agencyId: string, photo
   // Anything still waiting moves first, so nothing stays pending on an agency with an owner.
   await applyAgencyCredits(agencyId);
   try {
-    return await rpc<{ applied: "owner" | "pending"; pending: number }>("habita_agency_credit", {
+    // One grant per request key: a double click, a retry after a timeout or two tabs credit once.
+    return await rpc<{ applied: "owner" | "pending"; pending: number; replay: boolean }>("habita_agency_credit_once", {
+      p_key: key,
       p_actor: actorId,
       p_agency: agencyId,
       p_photos: n,
@@ -231,11 +239,38 @@ export async function giveAgencyCredits(actorId: string, agencyId: string, photo
     const code = e instanceof Error ? e.message : "";
     if (code.includes("AGENCY_NOT_FOUND")) throw new HttpError(404, "No encontramos la inmobiliaria.");
     if (code.includes("INVALID_ADJUSTMENT")) throw new HttpError(400, "Ingresá entre 1 y 1000 créditos (en total pendientes) y el motivo.");
+    if (code.includes("KEY_REUSED")) throw new HttpError(409, "Ese pedido ya se usó con otra cantidad. Volvé a abrir el formulario.");
+    if (/habita_agency_credit_once|function/i.test(code))
+      throw new HttpError(409, "Para esto falta aplicar la migración 202610310001_property_spaces.sql en Supabase.");
     throw e;
   }
 }
 
-/** Moves the credits waiting for an agency to its owner, if it has one. Never fails the caller. */
+/** Moves the credits waiting for an agency to its owner, if it has one. Never fails the caller (claims, invitations). */
 export async function applyAgencyCredits(agencyId: string) {
   return rpc<number>("habita_apply_agency_credits", { p_agency: agencyId }).catch(() => 0);
+}
+
+/** The team's explicit "Aplicar ahora": how many moved, and a failure is a failure (never shown as 0). */
+export async function applyAgencyCreditsNow(agencyId: string) {
+  try {
+    return await rpc<number>("habita_apply_agency_credits", { p_agency: agencyId });
+  } catch {
+    throw new HttpError(502, "No pudimos aplicar los créditos reservados. No se movió nada: probá de nuevo.");
+  }
+}
+
+/** Available (the owner's balance) and reserved credits of a page of agencies; unknown stays null, never 0. */
+export async function agencyBalances(ids: string[]) {
+  const out = new Map<string, { available: number | null; reserved: number | null }>();
+  if (!ids.length) return out;
+  try {
+    const rows = await rpc<{ agency_id: string; available: number | null; reserved: number | null }[]>("habita_admin_agency_balances", {
+      p_agencies: ids,
+    });
+    for (const r of rows ?? []) out.set(r.agency_id, { available: r.available, reserved: r.reserved });
+  } catch {
+    // Before 202610310001 or on a failed lookup: unknown.
+  }
+  return out;
 }

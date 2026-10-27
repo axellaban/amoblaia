@@ -79,8 +79,12 @@ export function AdminDashboard() {
         las suscripciones existentes conservan su importe.
       </p>
       <p>
+        <Link href="/admin/inmobiliarias" className="text-link">
+          Inmobiliarias: propiedades, créditos e invitaciones →
+        </Link>
+        {" · "}
         <Link href="/admin/demos" className="text-link">
-          Demos comerciales para inmobiliarias →
+          Todas las demos →
         </Link>
       </p>
       {error && (

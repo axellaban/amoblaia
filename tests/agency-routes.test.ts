@@ -14,6 +14,8 @@ const state = vi.hoisted(() => ({
   fail: {} as Record<string, { code?: string }>,
   creditsError: false,
   claimOk: false,
+  applyError: false,
+  pendingToApply: 0,
   authUsers: [] as { id: string; email: string; email_confirm?: boolean }[],
   deletedUsers: [] as string[],
 }));
@@ -42,9 +44,14 @@ function fakeDb() {
       let count = false;
       let total: number | null = null;
       let op = "select";
+      let removing = false;
       const error = () => state.fail[`${table}:${op}`] ?? null;
       const apply = () => {
         if (error()) return;
+        if (removing) {
+          state.tables[table] = (state.tables[table] ?? []).filter((r) => !rows.includes(r));
+          removing = false;
+        }
         if (patch) for (const r of rows) Object.assign(r, patch);
         patch = null;
       };
@@ -57,8 +64,8 @@ function fakeDb() {
           op = "insert";
           if (error()) return q;
           state.inserts.push({ table, row });
-          const made = { id: table === "property_imports" ? crypto.randomUUID() : `new-${table}-${state.inserts.length}`, ...row };
-          if (table === "property_imports") state.tables[table].push(made);
+          const made = { id: crypto.randomUUID(), ...row };
+          if (table === "property_imports" || table === "property_spaces") (state.tables[table] ??= []).push(made);
           rows = [made];
           return q;
         },
@@ -69,7 +76,7 @@ function fakeDb() {
           patch = row;
           return q;
         },
-        delete: () => q,
+        delete: () => ((op = "delete"), (patch = null), (removing = true), q),
         eq: (k: string, v: unknown) => ((rows = rows.filter((r) => r[k] === v)), q),
         neq: (k: string, v: unknown) => ((rows = rows.filter((r) => r[k] !== v)), q),
         in: (k: string, v: unknown[]) => ((rows = rows.filter((r) => v.includes(r[k]))), q),
@@ -95,6 +102,7 @@ function fakeDb() {
 
 vi.mock("server-only", () => ({}));
 vi.mock("next/server", () => ({ after: () => {} }));
+vi.mock("@/lib/commerce/jobs", () => ({ onFreeTier: async () => false, runJob: async () => {} }));
 vi.mock("@/lib/supabase/server", () => ({
   adminClient: () => fakeDb(),
   currentUser: async () => state.user,
@@ -133,6 +141,8 @@ vi.mock("@/lib/commerce/http", async (original) => {
         state.tables.agency_members.push({ user_id: args.p_user, role: "owner", agencies: { ...AGENCY, owner_id: args.p_user } });
         return "ag1";
       }
+      if (name === "habita_apply_agency_credits" && state.applyError) throw new Error("boom");
+      if (name === "habita_apply_agency_credits") return state.pendingToApply;
       if (name === "habita_agency_counts") return { total: 2, published: 1, staged: 0, review: 0, operations: [] };
       return null;
     },
@@ -150,6 +160,9 @@ import * as costo from "../src/app/api/admin/demos/[id]/costo/route";
 import * as invitaciones from "../src/app/api/admin/inmobiliarias/[id]/invitaciones/route";
 import * as invitacion from "../src/app/api/admin/inmobiliarias/[id]/invitaciones/[claimId]/route";
 import * as invitacionPanel from "../src/app/api/panel/invitacion/route";
+import * as espacios from "../src/app/api/admin/demos/[id]/espacios/route";
+import * as espacio from "../src/app/api/admin/demos/[id]/espacios/[spaceId]/route";
+import * as fotoDemo from "../src/app/api/admin/demos/[id]/photos/[photoId]/route";
 import * as creditosAgencia from "../src/app/api/admin/inmobiliarias/[id]/creditos/route";
 import { agencyStage, claimState } from "../src/lib/agency/stage";
 import { publicSite } from "../src/lib/agency/site";
@@ -206,6 +219,8 @@ beforeEach(() => {
   state.creditsError = false;
   state.claimOk = false;
   state.authUsers = [];
+  state.applyError = false;
+  state.pendingToApply = 0;
   state.deletedUsers = [];
   state.tables = {
     agency_members: [{ user_id: OWNER, role: "owner", agencies: AGENCY }],
@@ -606,7 +621,9 @@ describe("The team's view of agencies", () => {
   it("derives the stage only from facts", () => {
     expect(agencyStage({ hasOwner: false, liveClaimExpires: null, published: 0 })).toBe("no-account");
     expect(agencyStage({ hasOwner: false, liveClaimExpires: "2999-01-01", published: 3 })).toBe("invited");
-    expect(agencyStage({ hasOwner: true, liveClaimExpires: null, published: 0 })).toBe("account");
+    expect(agencyStage({ hasOwner: true, claimedAt: "2026-10-01", liveClaimExpires: null, published: 0 })).toBe("claimed");
+    // An account created directly is not a claimed one.
+    expect(agencyStage({ hasOwner: true, claimedAt: null, liveClaimExpires: null, published: 0 })).toBe("own-account");
     expect(agencyStage({ hasOwner: true, liveClaimExpires: null, published: 1 })).toBe("live");
     const now = Date.parse("2026-06-01");
     expect(claimState({ expires_at: "2026-07-01", used_at: null, revoked_at: null }, now)).toBe("pending");
@@ -703,20 +720,162 @@ describe("Free credits for an agency from the admin panel", () => {
   const params = { params: Promise.resolve({ id: AG }) };
   const give = (body: Record<string, unknown>) => creditosAgencia.POST(req(`/api/admin/inmobiliarias/${AG}/creditos`, "POST", body), params);
 
-  it("is only for the team, with an amount and a reason", async () => {
-    expect((await give({ photos: 5, reason: "Regalo de bienvenida" })).status).toBe(403);
+  it("is only for the team, with an amount, a reason and a request key", async () => {
+    const key = crypto.randomUUID();
+    expect((await give({ key, photos: 5, reason: "Regalo de bienvenida" })).status).toBe(403);
     state.user = { id: "00000000-0000-4000-8000-0000000000aa", email: "equipo@amobla.test", email_confirmed_at: "2026-01-01" };
-    expect((await give({ photos: 0, reason: "Regalo de bienvenida" })).status).toBe(400);
-    expect((await give({ photos: 2.5, reason: "Regalo de bienvenida" })).status).toBe(400);
-    expect((await give({ photos: 5, reason: "x" })).status).toBe(400);
-    expect(state.rpcs.filter((c) => c.name === "habita_agency_credit")).toEqual([]);
-    const r = await give({ photos: 5, reason: "Regalo de bienvenida" });
+    expect((await give({ key, photos: 0, reason: "Regalo de bienvenida" })).status).toBe(400);
+    expect((await give({ key, photos: 2.5, reason: "Regalo de bienvenida" })).status).toBe(400);
+    expect((await give({ key, photos: 5, reason: "x" })).status).toBe(400);
+    expect((await give({ photos: 5, reason: "Regalo de bienvenida" })).status).toBe(400);
+    expect(state.rpcs.filter((c) => /habita_agency_credit/.test(c.name))).toEqual([]);
+    const r = await give({ key, photos: 5, reason: "Regalo de bienvenida", owner: "00000000-0000-4000-8000-0000000000ff" });
     expect(r.status).toBe(201);
-    expect(state.rpcs.find((c) => c.name === "habita_agency_credit")!.args).toEqual({
+    // The owner is never taken from the client: only the agency of the URL.
+    expect(state.rpcs.find((c) => c.name === "habita_agency_credit_once")!.args).toEqual({
+      p_key: key,
       p_actor: "00000000-0000-4000-8000-0000000000aa",
       p_agency: AG,
       p_photos: 5,
       p_reason: "Regalo de bienvenida",
     });
+  });
+
+  it("says how many reserved credits moved, none, or that it failed (never a failure as 0)", async () => {
+    state.user = { id: "00000000-0000-4000-8000-0000000000aa", email: "equipo@amobla.test", email_confirmed_at: "2026-01-01" };
+    state.pendingToApply = 4;
+    expect(await (await give({ apply: true })).json()).toEqual({ applied: 4 });
+    state.pendingToApply = 0;
+    expect(await (await give({ apply: true })).json()).toEqual({ applied: 0 });
+    state.applyError = true;
+    const failed = await give({ apply: true });
+    expect(failed.status).toBe(502);
+    expect((await failed.json()).error).toMatch(/No se movió nada/);
+  });
+});
+
+describe("Spaces of a property", () => {
+  const P1 = "00000000-0000-4000-8000-00000000f0a1";
+  const P2 = "00000000-0000-4000-8000-00000000f0a2";
+  const FOREIGN = "00000000-0000-4000-8000-00000000f0b1";
+  const params = { params: Promise.resolve({ id: DEMO }) };
+  beforeEach(() => {
+    state.tables.demo_photos = [
+      { id: P1, property_id: "pr1", project_id: "pj1", position: 0, visible: true, room: "bedroom", label: null, mode: "furnish", space_id: null },
+      { id: P2, property_id: "pr1", project_id: "pj2", position: 1, visible: true, room: "bedroom", label: null, mode: "furnish", space_id: null },
+      { id: FOREIGN, property_id: "pr9", project_id: "pj9", position: 0, visible: true, room: "living", label: null, mode: "furnish", space_id: null },
+    ];
+    state.tables.property_spaces = [];
+  });
+  const create = (name: string) => espacios.POST(req(`/api/admin/demos/${DEMO}/espacios`, "POST", { name, roomType: "bedroom" }), params);
+  const assign = (photoIds: string[], spaceId: string | null) =>
+    espacios.PATCH(req(`/api/admin/demos/${DEMO}/espacios`, "PATCH", { photoIds, spaceId }), params);
+
+  it("keeps two bedrooms as two spaces and moves photos without touching anything else", async () => {
+    const a = await (await create("Dormitorio principal")).json();
+    const b = await (await create("Dormitorio 2")).json();
+    expect(a.id).not.toBe(b.id);
+    expect(b.spaces.map((s: { name: string; roomType: string }) => [s.name, s.roomType])).toEqual([
+      ["Dormitorio principal", "bedroom"],
+      ["Dormitorio 2", "bedroom"],
+    ]);
+    state.updates = [];
+    const moved = await assign([P1], b.id);
+    expect(moved.status).toBe(200);
+    expect(state.updates).toEqual([{ table: "demo_photos", row: { space_id: b.id } }]);
+    expect((await moved.json()).assignments).toEqual({ [P1]: b.id });
+    // Nothing about generations, projects or credits.
+    expect(state.rpcs).toEqual([]);
+  });
+
+  it("refuses photos or spaces of another property", async () => {
+    const mine = await (await create("Living")).json();
+    expect((await assign([FOREIGN], mine.id)).status).toBe(404);
+    state.tables.property_spaces.push({ id: "00000000-0000-4000-8000-00000000f0c9", property_id: "pr9", name: "Ajeno", room_type: "living", position: 0 });
+    expect((await assign([P1], "00000000-0000-4000-8000-00000000f0c9")).status).toBe(404);
+    expect(state.updates.filter((u) => u.table === "demo_photos")).toEqual([]);
+  });
+
+  it("deletes a space after moving its photos, never the photos", async () => {
+    const a = await (await create("Dormitorio 2")).json();
+    const b = await (await create("Dormitorio principal")).json();
+    await assign([P1, P2], a.id);
+    const r = await espacio.DELETE(req(`/api/admin/demos/${DEMO}/espacios/${a.id}?destino=${b.id}`, "DELETE"), {
+      params: Promise.resolve({ id: DEMO, spaceId: a.id }),
+    });
+    expect(r.status).toBe(200);
+    const body = await r.json();
+    expect(body.moved).toBe(2);
+    expect(body.spaces.map((s: { name: string }) => s.name)).toEqual(["Dormitorio principal"]);
+    expect(state.tables.demo_photos.filter((p) => p.property_id === "pr1")).toHaveLength(2);
+    expect(body.assignments).toEqual({ [P1]: b.id, [P2]: b.id });
+  });
+
+  it("is not reachable from another agency", async () => {
+    state.tables.agency_members = [{ user_id: OWNER, role: "owner", agencies: { ...AGENCY, id: "ag2" } }];
+    expect((await create("Living")).status).toBe(404);
+  });
+});
+
+describe("One rule for who pays a version", () => {
+  const PHOTO = "00000000-0000-4000-8000-00000000f0d1";
+  const TEAM = { id: "00000000-0000-4000-8000-0000000000aa", email: "equipo@amobla.test", email_confirmed_at: "2026-01-01" };
+  const stage = (style = "modern") =>
+    fotoDemo.POST(req(`/api/admin/demos/${DEMO}/photos/${PHOTO}`, "POST", { key: crypto.randomUUID(), style }), {
+      params: Promise.resolve({ id: DEMO, photoId: PHOTO }),
+    });
+  beforeEach(() => {
+    vi.stubEnv("OPENAI_API_KEY", "test");
+    vi.stubEnv("ADMIN_EMAILS", "equipo@amobla.test");
+    state.tables.demo_photos = [{ id: PHOTO, property_id: "pr1", project_id: "pj1", position: 0, visible: true, room: "living", label: null, mode: "furnish", discarded: [] }];
+    state.tables.generations = [];
+  });
+
+  it("never lets the team spend an agency's credits from the admin panel, and says why", async () => {
+    state.user = TEAM;
+    const r = await stage();
+    expect(r.status).toBe(409);
+    expect((await r.json()).error).toMatch(/ya tiene su cuenta/);
+    const quote = await costo.POST(req(`/api/admin/demos/${DEMO}/costo`, "POST", { photoIds: [PHOTO] }), { params: Promise.resolve({ id: DEMO }) });
+    expect(quote.status).toBe(409);
+    expect(state.rpcs.filter((c) => /reserve/.test(c.name))).toEqual([]);
+  });
+
+  it("quotes like it reserves for a team member who owns the agency", async () => {
+    state.user = TEAM;
+    state.tables.agencies[0].owner_id = TEAM.id;
+    state.tables.projects = [{ id: "pj1", user_id: TEAM.id, grant_id: null, credit_grants: null }];
+    const quote = await costo.POST(req(`/api/admin/demos/${DEMO}/costo`, "POST", { photoIds: [PHOTO] }), { params: Promise.resolve({ id: DEMO }) });
+    expect(quote.status).toBe(200);
+    expect(await quote.json()).toMatchObject({ payer: "agency", cost: 1 });
+  });
+
+  it("does not start another version while the last one of that style is uncertain", async () => {
+    state.tables.generations = [{ id: "00000000-0000-4000-8000-00000000f0e1", project_id: "pj1", style: "modern", status: "needs_review", is_free: false, created_at: "2026-10-01" }];
+    const r = await stage("modern");
+    expect(r.status).toBe(409);
+    expect((await r.json()).error).toMatch(/revisión técnica/);
+    expect(state.rpcs.filter((c) => /reserve/.test(c.name))).toEqual([]);
+    // Once discarded (settled), a new one can start.
+    state.tables.demo_photos[0].discarded = ["00000000-0000-4000-8000-00000000f0e1"];
+    state.tables.projects = [{ id: "pj1", user_id: OWNER, grant_id: null, credit_grants: null }];
+    expect((await stage("modern")).status).toBe(202);
+    expect(state.rpcs.filter((c) => c.name === "amobla_reserve_batch")).toHaveLength(1);
+  });
+});
+
+describe("Adding a property from an agency's row", () => {
+  const TEAM = { id: "00000000-0000-4000-8000-0000000000aa", email: "equipo@amobla.test", email_confirmed_at: "2026-01-01" };
+  const AG3 = "00000000-0000-4000-8000-00000000a003";
+  it("creates it in that agency (validated on the server), never a new one by name", async () => {
+    state.user = TEAM;
+    state.tables.agencies.push({ id: AG3, name: "Costa Bienes Raíces", website: "https://otra.test/" });
+    const missing = await adminImport.POST(req("/api/admin/demos/importar", "POST", { url: "https://sur.test/p/123", agencyId: "00000000-0000-4000-8000-00000000a0ff" }));
+    expect(missing.status).toBe(404);
+    expect(state.inserts.filter((i) => i.table === "demo_properties")).toEqual([]);
+    const r = await adminImport.POST(req("/api/admin/demos/importar", "POST", { url: "https://sur.test/p/123", agencyId: AG3 }));
+    expect(r.status).toBe(201);
+    expect(state.inserts.find((i) => i.table === "demo_properties")!.row.agency_id).toBe(AG3);
+    expect(state.inserts.filter((i) => i.table === "agencies")).toEqual([]);
   });
 });

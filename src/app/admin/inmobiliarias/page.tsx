@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { adminAgencies } from "@/lib/agency/admin";
-import { agencyStage, STAGE_LABEL } from "@/lib/agency/stage";
+import { AgenciesTable } from "@/components/admin-agencies";
 import { requireAdminPage } from "@/lib/demos/admin-page";
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
@@ -29,11 +29,16 @@ export default async function AgenciesPage({ searchParams }: Props) {
           <h1>
             Inmobiliarias<span className="accent">.</span>
           </h1>
-          <p>En qué etapa está cada inmobiliaria, sus invitaciones y lo que necesita revisión. Solo el equipo ve este panel.</p>
+          <p>Cada inmobiliaria con su etapa, sus propiedades y sus créditos. Solo el equipo ve este panel.</p>
         </div>
-        <Link href="/admin/demos" className="button button-outline">
-          Ver demos
-        </Link>
+        <div className="dm-heading-actions">
+          <Link href="/admin/demos" className="button button-outline">
+            Todas las demos
+          </Link>
+          <Link href="/admin/demos/nueva" className="button button-primary">
+            Nueva inmobiliaria o demo
+          </Link>
+        </div>
       </div>
       <form className="dm-filters" action="/admin/inmobiliarias" role="search">
         <label className="dm-search">
@@ -61,47 +66,7 @@ export default async function AgenciesPage({ searchParams }: Props) {
             {data.total} {data.total === 1 ? "inmobiliaria" : "inmobiliarias"}
             {q ? ` con “${q}”` : ""}
           </p>
-          {!data.items.length ? (
-            <p>No hay inmobiliarias que coincidan.</p>
-          ) : (
-            <div className="ap-table-wrap">
-              <table className="ap-table">
-                <thead>
-                  <tr>
-                    <th scope="col">Inmobiliaria</th>
-                    <th scope="col">Etapa</th>
-                    <th scope="col">Propiedades</th>
-                    <th scope="col">Para revisar</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.items.map((a) => {
-                    const stage = agencyStage(a);
-                    const issues = [
-                      a.partialImports ? `${a.partialImports} importación${a.partialImports === 1 ? "" : "es"} parcial${a.partialImports === 1 ? "" : "es"}` : "",
-                      a.failedImports ? `${a.failedImports} fallida${a.failedImports === 1 ? "" : "s"}` : "",
-                      a.review ? `${a.review} ambientación${a.review === 1 ? "" : "es"} en revisión` : "",
-                    ].filter(Boolean);
-                    return (
-                      <tr key={a.id}>
-                        <th scope="row">
-                          <Link href={`/admin/inmobiliarias/${a.id}`}>{a.name}</Link>
-                          <small>{a.slug ? `/inmobiliaria/${a.slug}` : "Sin dirección de catálogo"}</small>
-                        </th>
-                        <td>
-                          <span className={`dm-status ${stage === "live" ? "is-live" : ""}`}>{STAGE_LABEL[stage]}</span>
-                        </td>
-                        <td>
-                          {a.properties} · {a.published} publicada{a.published === 1 ? "" : "s"}
-                        </td>
-                        <td>{issues.length ? issues.join(" · ") : "—"}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+          {!data.items.length ? <p>No hay inmobiliarias que coincidan.</p> : <AgenciesTable items={data.items} />}
           {pages > 1 && (
             <nav className="ap-pages" aria-label="Páginas">
               {page > 1 ? <Link href={href(page - 1)}>Anterior</Link> : <span />}

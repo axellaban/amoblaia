@@ -260,6 +260,77 @@ describe("Free credits for an agency", () => {
   });
 });
 
+describe("Spaces of a property", () => {
+  const space = async (property: string, name: string, room = "bedroom", position = 0) =>
+    (await one<{ id: string }>("insert into property_spaces(property_id,name,room_type,position) values($1,$2,$3,$4) returning id", [property, name, room, position]))!.id;
+
+  it("keeps two bedrooms apart, leaves old photos unassigned and keeps everything when a space goes", async () => {
+    const admin = await account();
+    const { property, photo, project, job } = await prospect(admin);
+    const before = await one<{ position: number; room: string; visible: boolean; project_id: string; space_id: string | null }>(
+      "select position,room,visible,project_id,space_id from demo_photos where id=$1",
+      [photo],
+    );
+    // Existing photos start in "Sin organizar".
+    expect(before!.space_id).toBeNull();
+    const main = await space(property, "Dormitorio principal");
+    const second = await space(property, "Dormitorio 2", "bedroom", 1);
+    expect(main).not.toBe(second);
+    await db.query("update demo_photos set space_id=$1 where id=$2", [second, photo]);
+    // Deleting the space keeps the photo, its project and its generation; it goes back to unassigned.
+    await db.query("delete from property_spaces where id=$1", [second]);
+    const after = await one<typeof before>("select position,room,visible,project_id,space_id from demo_photos where id=$1", [photo]);
+    expect(after).toEqual({ ...before });
+    expect((await one<{ n: number }>("select count(*)::int as n from projects where id=$1", [project]))!.n).toBe(1);
+    expect((await one<{ n: number }>("select count(*)::int as n from generations where id=$1", [job]))!.n).toBe(1);
+  });
+
+  it("refuses a space of another property", async () => {
+    const admin = await account();
+    const a = await prospect(admin);
+    const b = await prospect(admin);
+    const other = await space(b.property, "Living", "living");
+    await expect(db.query("update demo_photos set space_id=$1 where id=$2", [other, a.photo])).rejects.toThrow(/foreign key/);
+  });
+});
+
+describe("Idempotent free credits and balances for the team", () => {
+  const give = (key: string, actor: string, agency: string, photos: number) =>
+    one<{ r: { applied: string; replay: boolean } }>("select habita_agency_credit_once($1,$2,$3,$4,'Regalo de bienvenida') as r", [key, actor, agency, photos]);
+
+  it("credits once per request key, and refuses the key for another grant", async () => {
+    const admin = await account();
+    const owner = await account();
+    const agency = await createAgency(owner, "Una Vez", `una-vez-${id().slice(-6)}`);
+    const start = await credits(owner);
+    const key = id();
+    expect((await give(key, admin, agency, 3))!.r).toMatchObject({ applied: "owner", replay: false });
+    expect((await give(key, admin, agency, 3))!.r).toMatchObject({ applied: "owner", replay: true });
+    expect(await credits(owner)).toBe(start + 3);
+    await expect(give(key, admin, agency, 4)).rejects.toThrow(/KEY_REUSED/);
+    // A new intentional grant is a new key.
+    await give(id(), admin, agency, 3);
+    expect(await credits(owner)).toBe(start + 6);
+  });
+
+  it("reads available and reserved credits apart, and unknown without an owner", async () => {
+    const admin = await account();
+    const { agency: prospectAgency } = await prospect(admin);
+    await give(id(), admin, prospectAgency, 2);
+    const owner = await account();
+    const owned = await createAgency(owner, "Con Saldo", `con-saldo-${id().slice(-6)}`);
+    await paid(owner, 7);
+    const rows = (await db.query<{ agency_id: string; available: number | null; reserved: number }>(
+      "select * from habita_admin_agency_balances($1)",
+      [[prospectAgency, owned]],
+    )).rows;
+    const by = Object.fromEntries(rows.map((r) => [r.agency_id, r]));
+    expect(by[prospectAgency]).toMatchObject({ available: null, reserved: 2 });
+    expect(by[owned].available).toBe(await credits(owner));
+    expect(by[owned].reserved).toBe(0);
+  });
+});
+
 describe("Isolation between agencies (RLS)", () => {
   const as = async <T>(user: string, sql: string) => {
     await db.exec("set role authenticated");
@@ -290,6 +361,10 @@ describe("Isolation between agencies (RLS)", () => {
     const stranger = await account();
     expect(await as(stranger, "select id from agencies")).toEqual([]);
     expect(await as(stranger, "select id from demo_properties")).toEqual([]);
+    await db.query("insert into property_spaces(property_id,name) values($1,'Living')", [mine.property]);
+    expect(await as<{ name: string }>(owner, "select name from property_spaces")).toEqual([{ name: "Living" }]);
+    expect(await as(stranger, "select id from property_spaces")).toEqual([]);
+    await expect(as(owner, `insert into property_spaces(property_id,name) values('${mine.property}','X')`)).rejects.toThrow(/permission denied/);
     void theirs;
   });
 
@@ -302,6 +377,8 @@ describe("Isolation between agencies (RLS)", () => {
       "public.habita_admin_agencies(text,integer,integer)",
       "public.habita_agency_credit(uuid,uuid,integer,text)",
       "public.habita_apply_agency_credits(uuid)",
+      "public.habita_agency_credit_once(uuid,uuid,uuid,integer,text)",
+      "public.habita_admin_agency_balances(uuid[])",
     ])
       for (const role of ["anon", "authenticated"])
         expect((await one<{ ok: boolean }>("select has_function_privilege($1,$2,'execute') as ok", [role, fn]))!.ok).toBe(false);
@@ -311,6 +388,7 @@ describe("Isolation between agencies (RLS)", () => {
     await expect(db.exec(readFileSync(MIGRATION, "utf8"))).resolves.toBeTruthy();
     await expect(db.exec(readFileSync(RELIABILITY, "utf8"))).resolves.toBeTruthy();
     await expect(db.exec(readFileSync("supabase/migrations/202610300001_agency_free_credits.sql", "utf8"))).resolves.toBeTruthy();
+    await expect(db.exec(readFileSync("supabase/migrations/202610310001_property_spaces.sql", "utf8"))).resolves.toBeTruthy();
     const admin = await account();
     const { agency } = await prospect(admin);
     const hash = await claimCode(agency, admin);

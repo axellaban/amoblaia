@@ -1,6 +1,6 @@
 import { after } from "next/server";
 import { failure, HttpError, rpc } from "@/lib/commerce/http";
-import { requireDemoAccess } from "@/lib/agency/server";
+import { requireDemoAccess, stagingRule } from "@/lib/agency/server";
 import { onFreeTier } from "@/lib/commerce/jobs";
 import { runJob } from "@/lib/commerce/jobs";
 import { buildDemoPrompt } from "@/lib/demos/styles";
@@ -68,6 +68,31 @@ async function stageWithCredits(
     p_prompts: [buildDemoPrompt(room, style, mode, notes)],
     p_daily_limit: Number(process.env.MAX_GENERATIONS_PER_DAY || 100),
   });
+}
+
+/**
+ * A result whose technical outcome is uncertain (needs_review) is settled
+ * before another one starts for the same photo and style: discarding it is
+ * that decision. The same request key is still accepted (a retry of the
+ * same attempt returns what it reserved).
+ */
+async function assertNoUncertainResult(photo: { project_id: string; discarded: string[] | null }, style: string) {
+  const { data, error } = await adminClient()
+    .from("generations")
+    .select("id,status")
+    .eq("project_id", photo.project_id)
+    .eq("style", style)
+    .eq("is_free", false)
+    .order("created_at", { ascending: false })
+    .limit(20);
+  if (error) throw new Error("DEMO_GENERATIONS_LOOKUP_FAILED");
+  const discarded = new Set(photo.discarded || []);
+  const last = ((data ?? []) as { id: string; status: string }[]).find((g) => !discarded.has(g.id));
+  if (last?.status === "needs_review")
+    throw new HttpError(
+      409,
+      "Este estilo tiene un resultado en revisión técnica. Descartalo (o esperá a que el equipo lo resuelva) antes de crear otro.",
+    );
 }
 
 async function editorPhoto(demoId: string, photoId: string) {
@@ -185,7 +210,10 @@ export async function POST(request: Request, { params }: Params) {
   const started = Date.now();
   try {
     const { id, photoId } = await params;
-    const { actor, demo, admin, billingUser } = await requireDemoAccess(request, id);
+    const access = await requireDemoAccess(request, id);
+    const { actor, demo, billingUser } = access;
+    const rule = stagingRule(access);
+    if (rule.blocked) throw new HttpError(409, rule.blocked);
     if (!process.env.OPENAI_API_KEY)
       throw new HttpError(503, "La generación todavía no está habilitada.");
     const photo = await photoOf(demo, photoId);
@@ -196,10 +224,9 @@ export async function POST(request: Request, { params }: Params) {
     const mode = validMode(body.mode) ? body.mode : photo.mode;
     const notes = cleanText(body.notes, 300) ?? "";
     if (!isUuid(body.key)) throw new HttpError(400, "Identificador de solicitud inválido.");
+    await assertNoUncertainResult(photo, style);
     if (billingUser) {
       // The agency's own account: its owner's credits pay, like any photo.
-      if (admin && billingUser !== actor.id)
-        throw new HttpError(409, "Esta inmobiliaria ya tiene su cuenta: las ambientaciones se crean desde su panel.");
       const ids = await stageWithCredits(billingUser, photo.project_id, body.key, room, style, mode, notes);
       await adminClient().from("demo_photos").update({ room, mode }).eq("id", photo.id);
       const deadline = started + maxDuration * 1000 - 5000;

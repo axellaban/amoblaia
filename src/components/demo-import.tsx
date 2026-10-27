@@ -243,7 +243,7 @@ type Preview = ImportedDemo & { listingUrl: string; existingAgency: string | nul
  * state → only the real exceptions ask for a decision → the demo is created
  * with all of it, then the property's own photos are imported in order.
  */
-export function ImportFromListing() {
+export function ImportFromListing({ agencyId }: { agencyId?: string | null } = {}) {
   const router = useRouter();
   const [url, setUrl] = useState("");
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -263,7 +263,7 @@ export function ImportFromListing() {
     try {
       const data = await api<Preview>("/api/admin/demos/importar", {
         method: "POST",
-        body: JSON.stringify({ url, preview: true }),
+        body: JSON.stringify({ url, preview: true, agencyId: agencyId ?? undefined }),
       });
       setPreview(data);
       setPrice(data.priceOptions[0] ?? "");
@@ -287,6 +287,7 @@ export function ImportFromListing() {
           price: preview.priceConflict ? price || null : undefined,
           contact: missingContact && contact.trim() ? contact.trim() : undefined,
           map: mapChoice ? mapOverride(preview, mapChoice) : undefined,
+          agencyId: agencyId ?? undefined,
         }),
       });
       await syncPhotos(`/api/admin/demos/${made.id}`, made.images, (t) => setStatus(`${made.title}. ${t}`));

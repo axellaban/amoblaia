@@ -357,3 +357,79 @@ Sin esta migración, la sección de créditos avisa que falta y no deja regalar.
 «Ambientación predeterminada» se puede elegir cuando al menos una foto visible tiene
 un estilo listo (antes solo se miraba la primera foto). Las fotos con ese estilo
 abren comparadas; las demás, con la original.
+
+## 11. Editor foto a foto, espacios y administración por inmobiliarias (2026-10-27)
+
+### 11.1 Qué cambió
+
+- **Editor de la propiedad** (el mismo para `/admin/demos/[id]` y `/panel/propiedades/[id]`).
+  - «Fotos y espacios» está abierta por defecto. «Datos», «Ubicación y mapa», «Características y condiciones», «Marca y contacto» y «Publicación y compartir» están plegadas y su encabezado muestra un resumen real.
+  - Plegar no guarda, no borra y no detiene nada. Un enlace con `?seccion=…` o `#…` abre esa sección y le pone el foco. `?volver=` acepta solo rutas locales de `/panel` o `/admin`.
+- **Tarjeta por foto.** La imagen grande va a la izquierda, con botones Original / Versión / Comparar, y el panel a la derecha (abajo en el celular).
+  - Cada estilo muestra su estado real: Sin crear, Pendiente en esta pestaña, En cola en el servidor, Generando, Creada, Falló o En revisión técnica.
+  - Las acciones de cada estilo son Crear, Ver, Descargar, Reintentar o Descartar y crear otra.
+  - «Incluir en lote», «Se muestra / Oculta» y «Usar de portada» son controles separados. Sacar una foto del lote nunca oculta sus versiones.
+  - El historial (ver, descargar, mostrar esta, descartar, recuperar) está en «Más».
+- **Lote.** Es una barra compacta con los estilos, las fotos incluidas y las versiones faltantes. «Crear versiones faltantes» no rehace lo creado ni reenvía lo que está en revisión técnica.
+  - El lote y la creación individual usan un solo controlador: cotización del servidor, una confirmación y una versión por vez.
+  - El doble clic se ignora desde antes de cotizar. Si un pedido se queda sin respuesta, reintentarlo usa la misma clave (no se reserva dos veces). «Crear otra versión» es un intento nuevo.
+  - La cola de lo que todavía no se envió vive en la pestaña: si se cierra, solo sigue la versión que ya estaba en el servidor, y al volver se la sigue sin generarla de nuevo.
+- **Quién paga.** La cotización, la reserva y el editor aplican la misma regla (`stagingRule`). El equipo crea gratis las demos de inmobiliarias sin cuenta. Una inmobiliaria con cuenta paga con el saldo del dueño. El equipo nunca gasta ese saldo desde administración, salvo que sea el dueño, y la interfaz dice por qué.
+- **Descarga directa.** Es el JPEG guardado (hasta 2048 px), con nombre «propiedad - espacio - estilo». No usa créditos ni exige saldo, publicar o regenerar. Mantiene la autorización (equipo o miembros de esa inmobiliaria) y nunca expone Storage.
+- **Espacios.** Se pueden crear, renombrar, cambiar de tipo, ordenar y eliminar (las fotos pasan a otro espacio o a «Sin organizar»). Las fotos se suben directo a un espacio y se mueven de a una o varias juntas («Organizar varias fotos»).
+  - Las fotos anteriores quedan en «Sin organizar». Mover una foto no copia proyectos ni consume créditos.
+  - Si el tipo del espacio y el ambiente con que se crea la foto no coinciden, se avisa y se ofrece corregirlo, pero no se cambia solo.
+- **Mis propiedades.** Cada tarjeta o fila muestra la portada, la referencia, los espacios, las versiones listas, en curso y con problemas (de datos reales) y la próxima acción útil, que lleva directo a la sección correspondiente.
+  - Al volver se conservan los filtros, la página y la vista.
+  - Las respuestas atrasadas se descartan (petición versionada y cancelada). Mientras hay versiones en curso, la lista se refresca sola.
+- **Administración.** `/admin` lleva a `/admin/inmobiliarias`, y Demos sigue disponible como vista secundaria.
+  - Cada inmobiliaria muestra su etapa: Sin cuenta, Invitación creada sin aceptar, Cuenta reclamada, Cuenta creada por la inmobiliaria o Primera propiedad publicada.
+  - También muestra sus propiedades (publicadas y en borrador), el saldo disponible y los créditos reservados por separado. Un saldo desconocido se muestra como «No disponible», nunca como 0.
+  - «Ver propiedades» abre una lista paginada (10 por página, sin descargar fotos ni versiones). La fila abierta y la página quedan en la URL.
+  - «Agregar propiedad» abre `/admin/demos/nueva?inmobiliaria=<id>`, y el servidor valida esa inmobiliaria.
+  - «Agregar créditos» abre un único diálogo reutilizable.
+
+### 11.2 Migración `202610310001_property_spaces.sql`
+
+Es aditiva e idempotente y va después de `202610300001`. No redefine funciones anteriores. Agrega:
+
+- `property_spaces`, con lectura solo para miembros, y `demo_photos.space_id`, opcional, con una clave foránea compuesta: una foto solo puede estar en un espacio de su propia propiedad. Borrar un espacio deja sus fotos sin espacio.
+- `agency_credit_requests` y `habita_agency_credit_once`: una clave por pedido, así que el doble clic, el reintento y otra pestaña acreditan una sola vez. Reusar la clave con otra cantidad se rechaza.
+- `habita_admin_agency_balances`: el saldo disponible y el reservado de una página de inmobiliarias.
+
+Pasos en local o staging (no en producción sin revisar):
+
+1. En el SQL Editor del proyecto de prueba, pegar el archivo completo y ejecutar **Run**.
+2. Verificar que existan la tabla y la columna nuevas:
+   ```sql
+   select count(*) from information_schema.columns
+   where table_name = 'demo_photos' and column_name = 'space_id';
+   ```
+   y que la función de saldos responda:
+   ```sql
+   select * from habita_admin_agency_balances(array(select id from agencies limit 3));
+   ```
+3. Sin esta migración, el editor funciona igual: todas las fotos quedan en «Sin organizar» y se avisa que falta la migración. Lo que no funciona es crear espacios y regalar créditos (se avisa y no se acredita nada).
+
+### 11.3 Guía breve por rol
+
+**Inmobiliaria (dueño o colaborador)**
+1. En «Mis propiedades», usá el botón de la tarjeta (próxima acción) o tocá la foto para entrar a «Fotos y espacios».
+2. Creá los espacios reales (Living, Dormitorio principal, Dormitorio 2…) y movés las fotos con el selector «Espacio» de cada una, o varias juntas con «Organizar varias fotos».
+3. En cada foto, tocá «Crear» en el estilo que quieras. Se muestra el costo antes de empezar. Lo creado se ve, se compara y se descarga desde la misma tarjeta, también mientras se crea otra.
+4. Para varias fotos: marcá «Incluir en lote», elegí los estilos y tocá «Crear N versiones faltantes».
+5. Completá las secciones plegadas y publicá desde el encabezado. La marca y el canal de consultas los edita el dueño en «Mi sitio web».
+
+**Equipo de habita**
+1. `/admin` abre Inmobiliarias. Buscá, abrí «Ver propiedades» y entrá a «Editar fotos» o «Abrir ficha». Al volver, la fila sigue abierta.
+2. «Agregar propiedad» crea dentro de esa inmobiliaria.
+3. «Agregar créditos»: cantidad y motivo, con confirmación. Si la inmobiliaria tiene cuenta, los créditos van al saldo del dueño; si no, quedan reservados hasta que acepte la invitación. Es un regalo o ajuste auditado, no una venta.
+4. En el detalle, «Aplicar ahora» dice cuántos créditos se movieron, si no había nada pendiente o que falló. Un fallo nunca se muestra como 0.
+5. En una inmobiliaria con cuenta, el editor permite ver y descargar, pero no crear: las versiones se crean desde su panel, con sus créditos.
+
+### 11.4 Límites y pendientes
+
+- Agrupar fotos en un espacio no hace que los muebles coincidan entre ángulos: cada foto se crea por separado y no hay generación multivista.
+- «Revisada» no se inventa: no hay una aprobación persistida por versión. Existen «Se muestra» (la versión elegida para ese estilo), «Oculta» (la foto) y «Publicada» (la ficha). Cerrar la vista ampliada no guarda nada.
+- La cola pendiente no sobrevive a cerrar la pestaña. Solo se persiste el trabajo que ya está en el servidor.
+- No se validó contra Supabase ni OpenAI reales: se usaron tests con PGlite (SQL, RLS, idempotencia), tests de rutas con base simulada y Playwright con las APIs interceptadas. No se generaron imágenes ni se otorgaron créditos reales.
