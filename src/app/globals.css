@@ -12295,6 +12295,9 @@ a.dm-agency:hover {
   }
   .pw-switch button {
     flex: 1;
+  }
+}
+
 /* ── Adquisición (/admin/prospeccion): visual language of the approved prototype ── */
 .sr-only {
   position: absolute;
