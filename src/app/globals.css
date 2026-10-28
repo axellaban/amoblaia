@@ -13380,3 +13380,360 @@ a.dm-agency:hover {
     text-align: center;
   }
 }
+
+/* Bandeja de fotos importadas (/panel/imagenes/lote). */
+.ap-lote {
+  --ap-sage: #7d9a7d;
+  --ap-sage-soft: #dfe9dc;
+  --ap-amber: #7a4f00;
+  --ap-amber-soft: #fbf1dc;
+  display: grid;
+  gap: 16px;
+}
+.ap-lote-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.ap-lote-head h1 {
+  margin: 0;
+}
+.ap-lote-head .dm-help {
+  margin: 4px 0 0;
+}
+.ap-lote h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 17px;
+}
+.ap-lote-grid {
+  display: grid;
+  gap: 16px;
+}
+@media (min-width: 980px) {
+  .ap-lote-grid {
+    grid-template-columns: 200px minmax(0, 1fr) 300px;
+    align-items: start;
+  }
+  .ap-lote-apply {
+    position: sticky;
+    top: 16px;
+  }
+}
+.ap-lote-groups,
+.ap-lote-photos,
+.ap-lote-apply,
+.ap-lote-confirm,
+.ap-lote-run {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #fff;
+}
+.ap-lote-groups ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ap-lote-groups button {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ap-lote-groups button span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ap-lote-groups button small {
+  flex: none;
+  color: var(--muted);
+}
+.ap-lote-groups button.is-on {
+  background: var(--ap-sage-soft);
+  color: var(--forest);
+  font-weight: 650;
+}
+.ap-lote-select {
+  display: none;
+}
+.ap-lote select {
+  width: 100%;
+  min-height: 42px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  font: inherit;
+}
+.ap-lote label > span {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 14px;
+  font-weight: 650;
+}
+.ap-lote-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ap-lote-cards > li {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  min-width: 0;
+}
+.ap-lote-pick {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  border-radius: 12px;
+  outline: 3px solid transparent;
+  cursor: pointer;
+}
+.ap-lote-cards > li.is-on .ap-lote-pick {
+  outline-color: var(--ap-sage);
+}
+.ap-lote-pick img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  background: var(--cream);
+}
+.ap-lote-pick input {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 20px;
+  height: 20px;
+  accent-color: var(--forest);
+}
+.ap-img-sr-text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.ap-lote-room > span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.ap-lote-room select[aria-invalid="true"] {
+  border-color: #d9b97a;
+  background: var(--ap-amber-soft);
+}
+.ap-lote-ask {
+  color: var(--ap-amber);
+}
+.ap-lote-meta {
+  color: var(--muted);
+}
+.ap-lote-adjust {
+  justify-self: start;
+  font-size: 14px;
+}
+.ap-lote-chosen {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--ap-sage-soft);
+  color: var(--forest);
+}
+.ap-lote-chosen ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ap-lote-chosen li {
+  position: relative;
+}
+.ap-lote-chosen img {
+  display: block;
+  width: 56px;
+  height: 42px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+.ap-lote-chosen button {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+}
+.ap-lote-more {
+  align-self: center;
+  font-size: 14px;
+}
+.ap-lote-apply .button {
+  width: 100%;
+  justify-content: center;
+}
+.ap-lote-apply .dm-help,
+.ap-lote-apply .ap-img-warn {
+  margin: 0;
+}
+.ap-lote-confirm {
+  max-width: 640px;
+}
+.ap-lote-confirm > .text-link {
+  justify-self: start;
+}
+.ap-lote-thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.ap-lote-thumbs img {
+  width: 96px;
+  height: 72px;
+  border-radius: 10px;
+  object-fit: cover;
+}
+.ap-lote-thumbs p {
+  display: grid;
+  gap: 2px;
+  margin: 0 0 0 8px;
+}
+.ap-lote-thumbs small {
+  color: var(--muted);
+}
+.ap-lote-facts {
+  display: grid;
+  gap: 0;
+  margin: 0;
+}
+.ap-lote-facts div {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.ap-lote-facts dt {
+  color: var(--muted);
+}
+.ap-lote-facts dd {
+  margin: 0;
+}
+.ap-lote-cost {
+  display: grid;
+  gap: 2px;
+  padding: 14px;
+  border-radius: 12px;
+  background: var(--ap-sage-soft);
+  color: var(--forest);
+}
+.ap-lote-notes {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 14px;
+}
+.ap-lote .inline-error p {
+  margin: 0 0 4px;
+}
+.ap-lote-run .ap-img-list li.is-done {
+  border-color: var(--ap-sage);
+}
+@media (max-width: 979px) {
+  .ap-lote-groups h2,
+  .ap-lote-groups ul {
+    display: none;
+  }
+  .ap-lote-select {
+    display: block;
+  }
+  .ap-lote-mobilebar {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: #fff;
+    box-shadow: 0 -6px 18px rgba(36, 40, 36, 0.08);
+  }
+  .ap-lote-mobilebar p {
+    margin: 0;
+    font-size: 14px;
+  }
+}
+@media (min-width: 980px) {
+  .ap-lote-mobilebar {
+    display: none;
+  }
+}
+@media (max-width: 600px) {
+  .ap-lote-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .ap-lote-facts div {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+  .ap-lote .ap-img-row .button {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+}
+.ap-lote-add {
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+}
+.ap-lote-add input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.ap-lote-add:focus-within {
+  outline: 2px solid var(--forest);
+  outline-offset: 2px;
+}

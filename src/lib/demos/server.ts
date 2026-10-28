@@ -398,6 +398,7 @@ export async function demoDetail(id: string): Promise<DemoDetail> {
       agencyName: (check(agency, "DEMO_AGENCY_LOOKUP_FAILED") as AgencyRow).name,
       agencyClaimed: null,
       propertyTitle: prop.title,
+      kind: demo.kind === "fotos" ? "fotos" : "ficha",
       photos: photos.length,
       staged: withVersions.filter((p) => p.versions.length).length,
       coverPhotoId: demo.cover_photo_id,

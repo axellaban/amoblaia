@@ -169,6 +169,9 @@ function PanelHome({ data, reload }: { data: PanelSummary; reload: () => Promise
           <Link href="/panel/imagenes?metodo=url" className="button button-outline">
             Buscar fotos
           </Link>
+          <Link href="/panel/imagenes/lote" className="text-link">
+            Ver fotos importadas
+          </Link>
           <p className="dm-help">Importar no genera imágenes ni usa créditos. Publicar la ficha es una acción aparte.</p>
         </section>
       </div>

@@ -481,15 +481,40 @@ estado se conserva al cambiar), lectura por enlace con su estado real
 demás. Los archivos se validan con `src/lib/photo-limits.ts` (JPG, PNG o WebP,
 hasta 3 MB, el mismo límite que el servidor).
 
-**Pendiente de esta entrega** (no implementado):
+**Bandeja de fotos importadas** (`/panel/imagenes/lote?grupo=<id>`, componente
+`agency-batch.tsx`, reglas en `src/lib/agency/batch-plan.ts`):
 
-- La bandeja de trabajo por lote (asignar ambiente, «Aplicar a las elegidas»,
-  «Revisar y generar» con su confirmación de costo). Hoy cada grupo se abre en el
-  editor existente, que ya tiene la generación por lote y sus permisos.
-- «Volver al lote» y la etiqueta «Versión seleccionada» en el editor para grupos.
-  Un grupo abierto en el editor muestra la publicación, pero el botón «Publicar»
-  responde con el aviso de que hay que crear la ficha antes.
-- Sumar fotos a un grupo existente.
+- Grupos a la izquierda (selector compacto en móvil), fotos al centro con
+  «Elegir para ambientar» y su ambiente, y «Aplicar a las elegidas» a la derecha
+  (acción y estilo del catálogo). «Sumar fotos» agrega archivos a un grupo.
+- El ambiente nunca se adivina: `demo_photos.room` vale `living` por defecto, así
+  que la bandeja solo da por conocido el ambiente de la última versión creada. Si
+  no hay, muestra «Sin asignar» y no deja continuar hasta elegirlo o quitar la foto.
+- Un estilo que no corresponde al tipo de inmueble de un grupo, o un grupo que
+  esta cuenta no puede ambientar (`staging.blocked`, la regla del editor), queda
+  afuera y se dice por qué. Las versiones que existen, están en curso o en
+  revisión técnica no se vuelven a crear.
+- «Revisar y generar» pide `/costo` a cada grupo y suma los créditos contra el
+  único saldo que los paga: dos grupos que entran por separado pueden no entrar
+  juntos. Un saldo desconocido bloquea; nunca se lee como cero ni como suficiente.
+- La generación usa la misma ruta por foto, de a una versión, con su clave de
+  idempotencia. Sin respuesta: «Sin respuesta», no se reenvía sola y su reintento
+  usa la misma clave. Respuestas 401/402/403/409/429/503 detienen el resto
+  («Sin enviar»). Nunca dice que está todo listo si algo falló.
+- La selección, los ambientes y la posición se guardan en `sessionStorage`:
+  sobreviven a ir al editor y volver («Volver al lote» usa `?volver=`), pero no a
+  cerrar la pestaña. La página lo dice y avisa antes de salir con versiones sin enviar.
+
+**Editor con un grupo:** muestra «Fotos sin ficha», usa «Versión seleccionada» en
+lugar de «Se muestra en la ficha», oculta «Usar de portada», «Vista previa» y
+«Publicar», y ofrece «Crear ficha con estas fotos».
+
+**Límites conocidos:**
+
+- No se guarda una tanda para seguir después («Guardar y seguir después» quedó
+  fuera, como permite el pedido): eso requiere persistencia nueva.
 - Reintento de archivos subidos: si la respuesta se pierde después de guardar,
-  el reintento puede duplicar esa foto (la subida no tiene deduplicación por contenido).
+  el reintento puede duplicar esa foto (la subida no deduplica por contenido).
 - En `/admin` (vista del equipo) los grupos aparecen como borradores; no se filtraron.
+- Validado con un arnés de Vite y Playwright con respuestas simuladas, no contra
+  Supabase ni generaciones reales.

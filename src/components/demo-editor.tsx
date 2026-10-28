@@ -550,8 +550,22 @@ export function DemoEditor({
       <header className="ed-header">
         {!banner && (
           <Link href={backTo} className="text-link">
-            ← {backTo.startsWith("/panel") ? "Mis propiedades" : backTo.startsWith("/admin/demos") ? "Demos" : "Inmobiliarias"}
+            ←{" "}
+            {backTo.startsWith("/panel/imagenes/lote")
+              ? "Volver al lote"
+              : backTo.startsWith("/panel/imagenes")
+                ? "Fotos importadas"
+                : backTo.startsWith("/panel")
+                  ? "Mis propiedades"
+                  : backTo.startsWith("/admin/demos")
+                    ? "Demos"
+                    : "Inmobiliarias"}
           </Link>
+        )}
+        {demo.kind === "fotos" && (
+          <p className="inline-notice" role="note">
+            Son fotos importadas, todavía sin ficha. Podés ambientarlas y descargarlas sin crearla; ver o elegir una versión no publica nada.
+          </p>
         )}
         <div className="ed-header-row">
           <div>
@@ -561,7 +575,7 @@ export function DemoEditor({
               <span className="accent">.</span>
             </h1>
             <p className="ed-header-meta">
-              <StatusChip status={demo.status} />{" "}
+              {demo.kind === "fotos" ? <span className="dm-status">Fotos sin ficha</span> : <StatusChip status={demo.status} />}{" "}
               <span role="status">
                 {staging.busy || livePhotos.length
                   ? "Creando versiones…"
@@ -573,6 +587,29 @@ export function DemoEditor({
               </span>
             </p>
           </div>
+          {demo.kind === "fotos" ? (
+            <div className="dm-heading-actions">
+              {agencyMode && (
+                <button
+                  type="button"
+                  className="button button-primary"
+                  disabled={busy}
+                  onClick={() =>
+                    void run(
+                      async () => {
+                        await api(`/api/panel/imagenes/${id}/ficha`, { method: "POST" });
+                        await load();
+                      },
+                      "La ficha se creó en borrador con estas fotos y sus versiones. Completá sus datos y publicala cuando quieras.",
+                      "publicacion",
+                    )
+                  }
+                >
+                  Crear ficha con estas fotos
+                </button>
+              )}
+            </div>
+          ) : (
           <div className="dm-heading-actions">
             <Link href={agencyMode ? `/panel/propiedades/${id}/vista-previa` : `/admin/demos/${id}/vista-previa`} className="button button-outline">
               <Eye size={17} /> Vista previa
@@ -603,6 +640,7 @@ export function DemoEditor({
               {live ? "Despublicar" : agencyMode ? "Publicar ficha" : "Publicar demo"}
             </button>
           </div>
+          )}
         </div>
       </header>
       {message && (
@@ -1034,6 +1072,7 @@ export function DemoEditor({
 
       {reviewPhoto && reviewGen && (
         <Review
+          photosOnly={demo.kind === "fotos"}
           photo={reviewPhoto}
           g={reviewGen}
           shown={reviewPhoto.shown[reviewGen.style] === reviewGen.id}
@@ -1195,6 +1234,7 @@ function AgencyBrand({
 
 /** One created version, large: compare, download, choose it for the listing, discard or create another. Closing saves nothing. */
 function Review({
+  photosOnly = false,
   photo,
   g,
   shown,
@@ -1206,6 +1246,8 @@ function Review({
   onDiscard,
   onRegenerate,
 }: {
+  /** Imported photos without a ficha: the chosen version is "seleccionada", not shown on a ficha. */
+  photosOnly?: boolean;
   photo: EditorPhoto;
   g: GenerationRow;
   shown: boolean;
@@ -1244,7 +1286,7 @@ function Review({
         <div className="dm-modal-head">
           <h2 id="dm-review-title">
             {photoLabel(photo)} · {styleName(g.style)}
-            <small className="ed-review-state">{discarded ? "Descartada" : shown ? "Se muestra en la ficha" : "Guardada, no se muestra"}</small>
+            <small className="ed-review-state">{discarded ? "Descartada" : shown ? (photosOnly ? "Versión seleccionada" : "Se muestra en la ficha") : "Guardada, no se muestra"}</small>
           </h2>
           <button ref={close} type="button" className="icon-button" aria-label="Cerrar" onClick={onClose}>
             <X size={20} />

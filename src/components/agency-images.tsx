@@ -495,10 +495,13 @@ export function ImportImages({ initialMethod = "url" }: { initialMethod?: Method
                       </small>
                     </span>
                     <span className="ap-img-actions">
-                      <Link href={`/panel/propiedades/${g.id}`} className="button button-small button-outline">
+                      <Link href={`/panel/imagenes/lote?grupo=${g.id}`} className="button button-small button-primary">
+                        Ambientar
+                      </Link>
+                      <Link href={`/panel/propiedades/${g.id}?volver=${encodeURIComponent("/panel/imagenes")}`} className="button button-small button-outline">
                         Abrir en el editor
                       </Link>
-                      <button type="button" className="button button-small" onClick={() => void makeGroupFicha(g.id)}>
+                      <button type="button" className="button button-small button-outline" onClick={() => void makeGroupFicha(g.id)}>
                         Crear ficha con estas fotos
                       </button>
                     </span>
@@ -644,12 +647,12 @@ export function ImportImages({ initialMethod = "url" }: { initialMethod?: Method
                 </span>
                 <span className="ap-img-actions">
                   {item.demoId && (
-                    <Link href={`/panel/propiedades/${item.demoId}`} className="button button-small button-outline">
+                    <Link href={`/panel/propiedades/${item.demoId}?volver=${encodeURIComponent("/panel/imagenes")}`} className="button button-small button-outline">
                       Abrir en el editor
                     </Link>
                   )}
                   {item.demoId && !item.ficha && (
-                    <button type="button" className="button button-small" disabled={Boolean(busy)} onClick={() => void makeFicha(item)}>
+                    <button type="button" className="button button-small button-outline" disabled={Boolean(busy)} onClick={() => void makeFicha(item)}>
                       Crear ficha con estas fotos
                     </button>
                   )}
@@ -664,9 +667,16 @@ export function ImportImages({ initialMethod = "url" }: { initialMethod?: Method
           </ul>
           <div className="ap-img-footer">
             <p className="dm-help">Las listas con error no bloquearon a las demás: podés reintentarlas.</p>
-            <button type="button" className="button button-outline" onClick={startOver}>
-              Importar más
-            </button>
+            <span className="ap-img-row">
+              <button type="button" className="button button-outline" onClick={startOver}>
+                Importar más
+              </button>
+              {imported.some((i) => i.demoId && i.done > 0) && (
+                <Link href={`/panel/imagenes/lote?grupo=${imported.find((i) => i.demoId && i.done > 0)?.demoId}`} className="button button-primary">
+                  Ambientar estas fotos →
+                </Link>
+              )}
+            </span>
           </div>
         </>
       )}
