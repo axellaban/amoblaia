@@ -559,3 +559,19 @@ de Meta y la etiqueta de Google Ads con la URL completa, código incluido. Ahora
 el píxel no carga si la URL o la página anterior tienen `codigo=`, Google recibe
 `page_location` y `page_referrer` redactados, y PostHog redacta el código en
 `before_send`.
+
+**La demo dentro del panel** (`src/components/demo-panel.tsx`). Con una
+invitación vigente, el enlace de presentación ya no muestra la ficha de
+compradores: abre el panel de la inmobiliaria en «modo demostración».
+
+- **Barra verde:** el logo y el nombre de la inmobiliaria, Inicio, Mi inmobiliaria
+  → Mis propiedades → la propiedad que está viendo, «Crear propiedad», Imágenes,
+  Créditos y Mi sitio web.
+- **Sin cuenta:** se puede mirar, comparar y descargar cada versión, porque las
+  imágenes son las públicas de la demo.
+- **Lo que pide acceso:** guardar, crear, publicar y el resto de las secciones
+  llevan a la invitación («Guardar mi panel»).
+- **Ficha de compradores:** «Ver como comprador» (`&vista=ficha`) la muestra con
+  el acceso de siempre.
+- **Datos:** solo usa los datos públicos de la demo. No hay rutas ni permisos
+  nuevos, y una demo pública sin código sigue sin mostrar nada de esto.
