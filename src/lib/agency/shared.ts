@@ -115,6 +115,27 @@ export function nextAction(p: Pick<PanelProperty, "photos" | "versions" | "stage
   return { label: "Compartir", section: "publicacion" };
 }
 
+/**
+ * The property card's next step, in full: what is missing, why, and the one
+ * primary action (the others stay secondary). From the same real state as
+ * nextAction; nothing is "ready" or "published" that is not.
+ */
+export function nextStep(p: Pick<PanelProperty, "photos" | "versions" | "staged" | "status">): {
+  title: string;
+  help: string;
+  cta: string;
+  section: "fotos" | "publicacion" | "datos";
+  primary: boolean;
+} {
+  const base = nextAction(p);
+  if (!p.photos) return { title: "Próximo paso: agregar fotos", help: "Todavía no tiene fotos. Podés subirlas o traerlas de la publicación.", cta: "Agregar fotos", section: "fotos", primary: true };
+  if (p.versions.active) return { title: "Se están creando versiones", help: "Seguí el progreso desde el editor de fotos.", cta: "Ver progreso", section: "fotos", primary: true };
+  if (p.versions.issues) return { title: "Hay versiones para revisar", help: "Alguna falló o quedó en revisión técnica: revisalas antes de crear otras.", cta: "Revisar versiones", section: "fotos", primary: true };
+  if (!p.staged) return { title: "Próximo paso: elegir y crear versiones", help: "La ficha ya tiene fotos. Podés seguir con las imágenes.", cta: "Continuar con las fotos", section: "fotos", primary: true };
+  if (p.status === "draft") return { title: "Lista para revisar", help: "Tiene versiones creadas y sigue en borrador: revisala y publicala cuando esté lista.", cta: "Revisar y publicar", section: base.section, primary: true };
+  return { title: "Publicada", help: "Podés actualizar sus datos o revisar sus versiones.", cta: "Editar propiedad", section: "datos", primary: false };
+}
+
 /** A path inside the panel or the admin to come back to; anything else (other sites, protocol-relative) is refused. */
 export function safeReturn(raw: string | null | undefined, fallback: string) {
   if (!raw || raw.length > 600) return fallback;

@@ -1,28 +1,28 @@
 "use client";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronDown, Eye, ImagePlus, Loader2, RefreshCw, Sparkles, Star, Trash2, X } from "lucide-react";
+import { Check, ChevronDown, Eye, Loader2, RefreshCw, Star, Trash2, X } from "lucide-react";
 import { Comparison } from "./comparison";
 import { AgencyFields, LinkPreview, PropertyFields, ShareButtons, StatusChip, api, publicLink } from "./admin-demos";
-import { NewSpace, PhotoCard, SpaceHeader, type CardActions } from "./editor-photos";
+import { PhotoWorkspace, type WorkspaceActions } from "./editor-photos";
 import { useStagingQueue, type QueueReport } from "./use-staging-queue";
 import { optimizePhoto } from "@/lib/images";
-import { DEMO_STYLES, PROPERTY_TYPE_NAMES, styleFits, type PropertyType } from "@/lib/demos/styles";
+import { PROPERTY_TYPE_NAMES, styleFits, type PropertyType } from "@/lib/demos/styles";
 import { ListingForm, type ListingPart } from "./demo-listing-form";
 import { ImportPreview, ImportReport, exceptions, foreignPhotos, syncPhotos } from "./demo-import";
 import type { ImportChange, ImportField, ImportedDemo } from "@/lib/demos/import";
 import { track } from "@/lib/analytics";
 import { safeReturn } from "@/lib/agency/shared";
+import { payerNote } from "@/lib/agency/edit-scope";
 import { shareLink, whatsappOpened } from "@/lib/agency/share";
 import {
   MAP_SUMMARY,
-  groupBySpace,
   isLive,
   isSection,
   missingData,
-  missingTasks,
   photoSummary,
   versionFileName,
+  versionNumber,
   type Section,
 } from "@/lib/demos/editor-logic";
 import {
@@ -32,6 +32,7 @@ import {
   downloadName,
   generationDownloadUrl,
   orderStyles,
+  photoDownloadUrl,
   photoLabel,
   styleName,
   type DemoDetail,
@@ -130,27 +131,36 @@ function Fold({
  * agencies ("agency": its own properties, staged with its credits). Photos
  * and spaces first; everything else in folds that keep their drafts.
  */
-export function DemoEditor({ id, mode = "admin" }: { id: string; mode?: "admin" | "agency" }) {
+export function DemoEditor({
+  id,
+  mode = "admin",
+  banner,
+  agencyContext,
+}: {
+  id: string;
+  mode?: "admin" | "agency";
+  /** The edit banner, when the team edits this agency (Editar inmobiliaria). */
+  banner?: React.ReactNode;
+  /** The agency the team is editing: the way back goes to its workspace. */
+  agencyContext?: string;
+}) {
   const agencyMode = mode === "agency";
   const [detail, setDetail] = useState<DemoDetail | null>(null);
   const [message, setMessage] = useState<Message | null>(null);
   const [loadError, setLoadError] = useState("");
   const [busy, setBusy] = useState(false);
   const [uploads, setUploads] = useState<Upload[]>([]);
-  const [dragging, setDragging] = useState(false);
   const [included, setIncluded] = useState<Set<string>>(new Set());
   const [picked, setPicked] = useState<string[]>([]);
   const [review, setReview] = useState<{ photoId: string; generationId: string } | null>(null);
   const [open, setOpen] = useState<Set<Section>>(new Set(["fotos"]));
-  const [organizing, setOrganizing] = useState(false);
-  const [toMove, setToMove] = useState<Set<string>>(new Set());
-  const [moveTarget, setMoveTarget] = useState("");
   const [downloading, setDownloading] = useState<string | null>(null);
   // Drafts of the forms: set once, and again only when that same form is saved.
   const [forms, setForms] = useState<ReturnType<typeof formsOf> | null>(null);
   const [dirtyParts, setDirtyParts] = useState<Set<ListingPart>>(new Set());
   const [reread, setReread] = useState<Reread | null>(null);
-  const [backTo, setBackTo] = useState(agencyMode ? "/panel/propiedades" : "/admin/inmobiliarias");
+  const home = agencyMode ? "/panel/propiedades" : agencyContext ? `/admin/inmobiliarias/${agencyContext}/editar` : "/admin/inmobiliarias";
+  const [backTo, setBackTo] = useState(home);
   const base = `/api/admin/demos/${id}`;
   const firstLoad = useRef(true);
 
@@ -185,10 +195,10 @@ export function DemoEditor({ id, mode = "admin" }: { id: string; mode?: "admin" 
   // Deep links: ?seccion=… or #section opens that fold and takes the focus there; ?volver= is the way back.
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
-    setBackTo(safeReturn(q.get("volver"), agencyMode ? "/panel/propiedades" : "/admin/inmobiliarias"));
+    setBackTo(safeReturn(q.get("volver"), home));
     const target = q.get("seccion") ?? window.location.hash.slice(1);
     if (isSection(target)) setOpen((o) => new Set(o).add(target));
-  }, [agencyMode]);
+  }, [home]);
   const focusDone = useRef(false);
   useEffect(() => {
     if (!detail || focusDone.current) return;
@@ -213,14 +223,14 @@ export function DemoEditor({ id, mode = "admin" }: { id: string; mode?: "admin" 
   // From an import that could not save the property's data: open the completion right away.
   const completeOpened = useRef(false);
   useEffect(() => {
-    if (!agencyMode || completeOpened.current || !detail?.property.listing_url) return;
+    if ((!agencyMode && !agencyContext) || completeOpened.current || !detail?.property.listing_url) return;
     if (new URLSearchParams(window.location.search).get("completar") !== "1") return;
     completeOpened.current = true;
     setOpen((o) => new Set(o).add("publicacion"));
     api<Reread>(`${base}/publicacion`)
       .then(setReread)
       .catch((e) => say({ tone: "error", text: e instanceof Error ? e.message : "No pudimos leer la publicación.", section: "publicacion" }));
-  }, [agencyMode, base, detail?.property.listing_url, say]);
+  }, [agencyMode, agencyContext, base, detail?.property.listing_url, say]);
 
   /** One photo's new state: only the photos change, never the forms. */
   const updatePhoto = useCallback((photo: EditorPhoto | null, photoId: string) => {
@@ -348,24 +358,32 @@ export function DemoEditor({ id, mode = "admin" }: { id: string; mode?: "admin" 
     }
   }
 
-  /** The file as stored (JPEG up to 2048 px); a failed download is said, never shown as done. */
-  async function download(generationId: string, name: string) {
-    setDownloading(generationId);
+  /**
+   * Exactly the version (or original) asked for, by its id: a JPEG up to
+   * 2048 px. It costs nothing, needs no balance and does not wait for other
+   * versions being created; a failed download is said, never shown as done.
+   */
+  async function download(url: string, key: string, name: string) {
+    setDownloading(key);
     try {
-      const r = await fetch(generationDownloadUrl(generationId, name), { cache: "no-store" });
+      const r = await fetch(url, { cache: "no-store" });
       if (!r.ok) throw new Error();
       const blob = await r.blob();
       // Only a real image is saved: an error page is never offered as the file.
       if (!blob.type.startsWith("image/") || !blob.size) throw new Error();
-      const url = URL.createObjectURL(blob);
+      const href = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url;
-      a.download = downloadName(name).full;
+      a.href = href;
+      // property-space-style-version.jpg in plain letters: some browsers drop a name with accents and save "download".
+      a.download = downloadName(name).ascii;
       document.body.appendChild(a);
       a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
-      setMessage({ tone: "notice", text: `Descarga lista: ${downloadName(name).full}.` });
+      // Removed after the click is handled: some browsers drop the file name if the link goes at once.
+      setTimeout(() => {
+        a.remove();
+        URL.revokeObjectURL(href);
+      }, 10000);
+      setMessage({ tone: "notice", text: `Descarga lista: ${downloadName(name).ascii}.` });
     } catch {
       say({ tone: "error", text: "No pudimos descargar la imagen. Probá de nuevo.", section: "fotos" });
     } finally {
@@ -428,6 +446,7 @@ export function DemoEditor({ id, mode = "admin" }: { id: string; mode?: "admin" 
   if (!detail || !forms)
     return (
       <div className="account-page container dm-page">
+        {banner}
         {loadError ? (
           <div className="account-panel" role="alert">
             <p className="inline-error">{loadError}</p>
@@ -444,16 +463,13 @@ export function DemoEditor({ id, mode = "admin" }: { id: string; mode?: "admin" 
   const { demo, photos } = detail;
   const live = demo.status === "published";
   const type: PropertyType = detail.settings.propertyType;
-  const typeStyles = DEMO_STYLES[type];
   // The property's styles: the ones with a version, plus the ones checked for the batch.
   const demoStyles = orderStyles([...detail.styles, ...picked], detail.mainStyle).filter((st) => styleFits(st, type));
   const main = demoStyles.includes(detail.mainStyle) ? detail.mainStyle : demoStyles[0];
   const canAddStyle = demoStyles.length < MAX_DEMO_STYLES;
-  const batchStyles = demoStyles;
-  const missing = missingTasks(photos, included, batchStyles, staging.waiting);
   const summary = photoSummary(photos, detail.spaces);
-  const groups = groupBySpace(photos, detail.spaces);
   const blocked = detail.staging?.blocked ?? null;
+  const payer = payerNote(detail.staging);
   const visiblePhotos = photos.filter((p) => p.visible);
   const openStyles = demoStyles.filter((st) => visiblePhotos.some((p) => p.shown[st]));
   const reviewPhoto = review && photos.find((p) => p.id === review.photoId);
@@ -483,51 +499,39 @@ export function DemoEditor({ id, mode = "admin" }: { id: string; mode?: "admin" 
   }
   const spaceName = (p: EditorPhoto) => detail.spaces.find((s) => s.id === p.spaceId)?.name ?? photoLabel(p);
 
-  const actionsFor = (p: EditorPhoto): CardActions => ({
-    include: (on) =>
-      setIncluded((s) => {
-        const n = new Set(s);
-        if (on) n.add(p.id);
-        else n.delete(p.id);
-        return n;
-      }),
-    patch: (changes) => void patchPhoto(p.id, { changes }),
-    move: (step) => void move(p.id, step),
-    assign: (spaceId) => void spaces("", { method: "PATCH", body: JSON.stringify({ photoIds: [p.id], spaceId }) }),
-    cover: () => void demoAction({ action: "cover", photoId: demo.coverPhotoId === p.id ? null : p.id }, undefined, "fotos"),
-    remove: () => {
+  const workspaceActions: WorkspaceActions = {
+    patchPhoto,
+    move: (photoId, step) => void move(photoId, step),
+    spaces,
+    cover: (photoId) => void demoAction({ action: "cover", photoId }, undefined, "fotos"),
+    remove: (photoId) => {
       if (!window.confirm("¿Quitar esta foto de la propiedad? También se borran sus versiones.")) return;
       void run(async () => {
-        await api(`${base}/photos/${p.id}`, { method: "DELETE" });
-        updatePhoto(null, p.id);
+        await api(`${base}/photos/${photoId}`, { method: "DELETE" });
+        updatePhoto(null, photoId);
       }, "Foto eliminada.", "fotos");
     },
-    create: (style, fresh) => {
-      if (addStyle(style)) void staging.request([{ photoId: p.id, style }], { fresh });
-    },
-    createMany: (list) => {
+    upload: (files, spaceId) => void upload(files, spaceId),
+    download: (photoId, key, name) => void download(photoId ? photoDownloadUrl(photoId, name) : generationDownloadUrl(key, name), key, name),
+    review: (photoId, generationId) => setReview({ photoId, generationId }),
+    addStyles: (list) => {
       const fresh = list.filter((st) => !demoStyles.includes(st));
       if (demoStyles.length + fresh.length > MAX_DEMO_STYLES) {
         say({ tone: "error", text: `Una propiedad admite hasta ${MAX_DEMO_STYLES} estilos.`, section: "fotos" });
-        return;
+        return false;
       }
       if (fresh.length) {
         const next = [...picked.filter((s) => !fresh.includes(s)), ...fresh];
         setPicked(next);
         savePicked(demo.id, next);
       }
-      void staging.request(list.map((style) => ({ photoId: p.id, style })));
+      return true;
     },
-    review: (generationId) => setReview({ photoId: p.id, generationId }),
-    download: (generationId, style) => void download(generationId, versionFileName(demo.title, spaceName(p), styleName(style))),
-    discard: (generationId) => void patchPhoto(p.id, { discard: generationId }),
-    restore: (generationId) => void patchPhoto(p.id, { restore: generationId }),
-    approve: (generationId) => void patchPhoto(p.id, { approve: generationId }),
-    retryUncertain: async (generationId, style) => {
-      if (!window.confirm("Se descarta el resultado en revisión y se crea una versión nueva de este estilo. ¿Continuar?")) return;
-      if (await patchPhoto(p.id, { discard: generationId })) void staging.request([{ photoId: p.id, style }], { fresh: true });
-    },
-  });
+    toggleBatchStyle,
+    request: (tasks, opts) => staging.request(tasks, opts),
+    cancelPending: staging.cancelPending,
+    notice: (text) => setMessage({ tone: "notice", text }),
+  };
 
   const photosSummary = (
     <>
@@ -542,10 +546,13 @@ export function DemoEditor({ id, mode = "admin" }: { id: string; mode?: "admin" 
 
   return (
     <div className="account-page container dm-page ed-page">
+      {banner}
       <header className="ed-header">
-        <Link href={backTo} className="text-link">
-          ← {backTo.startsWith("/panel") ? "Mis propiedades" : backTo.startsWith("/admin/demos") ? "Demos" : "Inmobiliarias"}
-        </Link>
+        {!banner && (
+          <Link href={backTo} className="text-link">
+            ← {backTo.startsWith("/panel") ? "Mis propiedades" : backTo.startsWith("/admin/demos") ? "Demos" : "Inmobiliarias"}
+          </Link>
+        )}
         <div className="ed-header-row">
           <div>
             <span className="eyebrow">{demo.agencyName}</span>
@@ -575,6 +582,11 @@ export function DemoEditor({ id, mode = "admin" }: { id: string; mode?: "admin" 
               className={`button ${live ? "button-outline" : "button-primary"}`}
               disabled={busy}
               onClick={() =>
+                window.confirm(
+                  live
+                    ? `¿Despublicar «${demo.title}»? El enlace deja de funcionar enseguida para quien lo tenga${agencyMode ? " y sale de tu catálogo" : ""}. La ficha, sus fotos y versiones se conservan.`
+                    : `¿Publicar «${demo.title}»? Cualquiera con el enlace va a poder verla${agencyMode ? ", y aparece en tu catálogo si está publicado" : ""}. Publicar no usa créditos.`,
+                ) &&
                 void run(
                   async () => {
                     apply(await api<DemoDetail>(base, { method: "PATCH", body: JSON.stringify({ action: live ? "unpublish" : "publish" }) }));
@@ -603,48 +615,12 @@ export function DemoEditor({ id, mode = "admin" }: { id: string; mode?: "admin" 
       )}
 
       <Fold id="fotos" title="Fotos y espacios" summary={photosSummary} open={open.has("fotos")} onToggle={() => toggle("fotos")}>
-        {blocked && (
-          <p className="inline-error" role="note">
-            {blocked} Desde acá podés ver y descargar lo creado.
+        {payer && (
+          <p className="pw-note" role="note">
+            {payer}
+            {blocked ? " Podés ver, comparar, descargar y organizar todo lo creado." : ""}
           </p>
         )}
-        <div className="ed-photo-tools">
-          <label
-            className={`dm-drop ed-drop ${dragging ? "is-dragging" : ""}`}
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDragging(true);
-            }}
-            onDragLeave={() => setDragging(false)}
-            onDrop={(e) => {
-              e.preventDefault();
-              setDragging(false);
-              void upload(e.dataTransfer.files);
-            }}
-          >
-            <ImagePlus size={20} aria-hidden="true" />
-            <span>
-              <strong>Agregar fotos</strong> (arrastrá o tocá) · JPG, PNG o WebP de hasta 10 MB
-            </span>
-            <input
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              multiple
-              onChange={(e) => {
-                if (e.target.files) void upload(e.target.files);
-                e.target.value = "";
-              }}
-            />
-          </label>
-          {detail.spacesReady ? (
-            <NewSpace
-              disabled={busy}
-              onCreate={(name, roomType) => spaces("", { method: "POST", body: JSON.stringify({ name, roomType }) }, `Espacio «${name.trim()}» creado.`)}
-            />
-          ) : (
-            <p className="dm-help">Para organizar por espacios falta aplicar la migración 202610310001_property_spaces.sql.</p>
-          )}
-        </div>
         {uploads.length > 0 && (
           <ul className="dm-uploads" aria-live="polite">
             {uploads.map((u, i) => (
@@ -658,172 +634,23 @@ export function DemoEditor({ id, mode = "admin" }: { id: string; mode?: "admin" 
             ))}
           </ul>
         )}
-
-        {photos.length > 0 && (
-          <div className="ed-batch" role="region" aria-label="Crear en lote">
-            <div className="ed-batch-styles">
-              <span className="ed-batch-label">Lote · estilos</span>
-              {typeStyles.map((st) => {
-                const on = batchStyles.includes(st.id);
-                const hasVersions = detail.styles.includes(st.id);
-                return (
-                  <label key={st.id} className={`ed-chip ${on ? "is-on" : ""}`}>
-                    <input
-                      type="checkbox"
-                      checked={on}
-                      disabled={(!on && !canAddStyle) || (on && hasVersions)}
-                      title={on && hasVersions ? "Ya tiene versiones: queda en la propiedad (se quita desde Publicación)" : undefined}
-                      onChange={(e) => toggleBatchStyle(st.id, e.target.checked)}
-                    />
-                    <span className="dm-style-swatch" style={{ background: st.color }} aria-hidden="true" />
-                    {st.name}
-                  </label>
-                );
-              })}
-            </div>
-            <div className="ed-batch-foot">
-              <span>
-                {included.size} {included.size === 1 ? "foto incluida" : "fotos incluidas"} · {missing.length}{" "}
-                {missing.length === 1 ? "versión faltante" : "versiones faltantes"} · máx. {MAX_DEMO_STYLES} estilos
-                {staging.queue.length || staging.current
-                  ? ` · ${staging.queue.length + (staging.current ? 1 : 0)} en esta pestaña (si la cerrás, solo sigue la que se está creando)`
-                  : ""}
-              </span>
-              <span className="ed-batch-buttons">
-                <button type="button" className="text-link" onClick={() => setIncluded(new Set(photos.map((p) => p.id)))}>
-                  Incluir todas
-                </button>
-                <button type="button" className="text-link" onClick={() => setIncluded(new Set())}>
-                  Ninguna
-                </button>
-                {staging.queue.length > 0 && (
-                  <button
-                    type="button"
-                    className="text-link"
-                    onClick={() => {
-                      const n = staging.cancelPending();
-                      setMessage({ tone: "notice", text: `${n} ${n === 1 ? "versión pendiente quitada" : "versiones pendientes quitadas"}; la que se está creando sigue.` });
-                    }}
-                  >
-                    Quitar pendientes
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className="button button-primary"
-                  disabled={!missing.length || staging.starting || Boolean(blocked)}
-                  onClick={() => void staging.request(missing)}
-                >
-                  {staging.starting ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />}
-                  {missing.length ? `Crear ${missing.length} ${missing.length === 1 ? "versión faltante" : "versiones faltantes"}` : "Nada faltante en el lote"}
-                </button>
-              </span>
-            </div>
-          </div>
-        )}
-
-        {detail.spaces.length > 0 && (
-          <div className="ed-organize">
-            <button type="button" className="text-link" aria-pressed={organizing} onClick={() => (setOrganizing((v) => !v), setToMove(new Set()))}>
-              {organizing ? "Terminar de organizar" : "Organizar varias fotos"}
-            </button>
-            {organizing && (
-              <span className="ed-organize-bar">
-                {toMove.size} elegidas · mover a
-                <select value={moveTarget} onChange={(e) => setMoveTarget(e.target.value)} aria-label="Espacio de destino">
-                  <option value="">Sin organizar</option>
-                  {detail.spaces.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  className="button button-small"
-                  disabled={!toMove.size}
-                  onClick={async () => {
-                    if (await spaces("", { method: "PATCH", body: JSON.stringify({ photoIds: [...toMove], spaceId: moveTarget || null }) }, "Fotos movidas."))
-                      setToMove(new Set());
-                  }}
-                >
-                  Mover
-                </button>
-              </span>
-            )}
-          </div>
-        )}
-
-        {!photos.length && <p className="dm-empty-photos">Todavía no hay fotos. Agregalas arriba o dentro de un espacio.</p>}
-        {groups.map((g, gi) => (
-          <div key={g.space?.id ?? "loose"} className="ed-space">
-            {(detail.spaces.length > 0 || g.space) && (
-              <SpaceHeader
-                space={g.space}
-                count={g.photos.length}
-                first={gi === 0}
-                last={!g.space || gi === detail.spaces.length - 1}
-                spaces={detail.spaces}
-                onRename={(name) => g.space && void spaces(`/${g.space.id}`, { method: "PATCH", body: JSON.stringify({ name }) })}
-                onType={(roomType) => g.space && void spaces(`/${g.space.id}`, { method: "PATCH", body: JSON.stringify({ roomType }) })}
-                onMove={(step) => {
-                  const ids = detail.spaces.map((s) => s.id);
-                  const from = ids.indexOf(g.space!.id);
-                  const to = from + step;
-                  if (to < 0 || to >= ids.length) return;
-                  [ids[from], ids[to]] = [ids[to], ids[from]];
-                  void spaces("", { method: "PATCH", body: JSON.stringify({ order: ids }) });
-                }}
-                onDelete={(moveTo) =>
-                  g.space &&
-                  void spaces(
-                    `/${g.space.id}${moveTo ? `?destino=${moveTo}` : ""}`,
-                    { method: "DELETE" },
-                    `Espacio eliminado; sus fotos quedaron en ${moveTo ? detail.spaces.find((s) => s.id === moveTo)?.name : "Sin organizar"}.`,
-                  )
-                }
-                onUpload={(files) => void upload(files, g.space?.id ?? null)}
-                onIncludeAll={() => setIncluded((s) => new Set([...s, ...g.photos.map((p) => p.id)]))}
-              />
-            )}
-            <ol className="pc-list">
-              {g.photos.map((p) => (
-                <PhotoCard
-                  key={p.id}
-                  photo={p}
-                  index={photos.indexOf(p)}
-                  total={photos.length}
-                  spaces={detail.spaces}
-                  propertyType={type}
-                  demoStyles={demoStyles}
-                  compatibleStyles={typeStyles}
-                  roomForStyles={MAX_DEMO_STYLES - demoStyles.length}
-                  isCover={demo.cover?.id === p.id}
-                  included={included.has(p.id)}
-                  waiting={staging.waiting}
-                  blocked={blocked}
-                  downloading={downloading}
-                  organizing={organizing}
-                  organizeSelected={toMove.has(p.id)}
-                  onOrganizeSelect={(on) =>
-                    setToMove((s) => {
-                      const n = new Set(s);
-                      if (on) n.add(p.id);
-                      else n.delete(p.id);
-                      return n;
-                    })
-                  }
-                  actions={actionsFor(p)}
-                  mainStyle={main}
-                />
-              ))}
-            </ol>
-          </div>
-        ))}
-        <p className="dm-help">
-          Agrupar fotos en un espacio ordena la ficha; cada foto se crea por separado, así que los muebles pueden variar entre ángulos
-          del mismo espacio. Las descargas son JPEG de hasta 2048 px y no consumen créditos.
-        </p>
+        <PhotoWorkspace
+          detail={detail}
+          base={base}
+          propertyType={type}
+          demoStyles={demoStyles}
+          mainStyle={main}
+          blocked={blocked}
+          payerNote={payer}
+          staging={staging}
+          included={included}
+          setIncluded={setIncluded}
+          downloading={downloading}
+          busy={busy}
+          fileName={(p, g) => versionFileName(demo.title, spaceName(p), styleName(g.style), versionNumber(p, g.id))}
+          originalName={(p) => versionFileName(demo.title, spaceName(p), "original")}
+          actions={workspaceActions}
+        />
       </Fold>
 
       <Fold
@@ -1213,7 +1040,13 @@ export function DemoEditor({ id, mode = "admin" }: { id: string; mode?: "admin" 
           blocked={blocked}
           downloading={downloading === reviewGen.id}
           onClose={() => setReview(null)}
-          onDownload={() => void download(reviewGen.id, versionFileName(demo.title, spaceName(reviewPhoto), styleName(reviewGen.style)))}
+          onDownload={() =>
+            void download(
+              generationDownloadUrl(reviewGen.id, versionFileName(demo.title, spaceName(reviewPhoto), styleName(reviewGen.style), versionNumber(reviewPhoto, reviewGen.id))),
+              reviewGen.id,
+              versionFileName(demo.title, spaceName(reviewPhoto), styleName(reviewGen.style), versionNumber(reviewPhoto, reviewGen.id)),
+            )
+          }
           onShow={async () => {
             await patchPhoto(reviewPhoto.id, { approve: reviewGen.id });
           }}

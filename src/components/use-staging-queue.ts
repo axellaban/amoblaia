@@ -63,7 +63,7 @@ export function useStagingQueue(opts: {
       try {
         await api(`${base}/photos/${task.photoId}`, {
           method: "POST",
-          body: JSON.stringify({ key, room: photo.room, mode: photo.mode, style: task.style }),
+          body: JSON.stringify({ key, room: task.room ?? photo.room, mode: task.mode ?? photo.mode, style: task.style }),
         });
         let latest = await poll(task.photoId);
         while (latest && isLive(latest, task.style)) {
@@ -101,10 +101,13 @@ export function useStagingQueue(opts: {
   /**
    * Adds versions to the queue. fresh: a deliberate new version even if one
    * exists (regenerate). Otherwise existing, running, waiting and uncertain
-   * results are skipped.
+   * results are skipped. quoted: the cost was already shown and confirmed
+   * (the "Crear otra versión" dialog), so it is not asked again. Resolves
+   * true only when the versions were accepted into the queue: the caller
+   * keeps its selection until then.
    */
   const request = useCallback(
-    async (tasks: Task[], { fresh = false }: { fresh?: boolean } = {}) => {
+    async (tasks: Task[], { fresh = false, quoted = false }: { fresh?: boolean; quoted?: boolean } = {}) => {
       const d = detailRef.current;
       if (!d || startingRef.current) return false;
       startingRef.current = true;
@@ -137,7 +140,7 @@ export function useStagingQueue(opts: {
           return false;
         }
         const photoIds = [...new Set(todo.map((t) => t.photoId))];
-        if (d.staging?.payer === "agency") {
+        if (d.staging?.payer === "agency" && !quoted) {
           // What it costs, from the server, before anything starts.
           let quote: Quote;
           try {

@@ -1,5 +1,6 @@
 import { failure, HttpError } from "@/lib/commerce/http";
 import { requireDemoAccess } from "@/lib/agency/server";
+import { auditAgencyEdit } from "@/lib/agency/edit-context";
 import { markSettingsSaved } from "@/lib/agency/imports";
 import { completeAgency, demoRow, saveJson, settingsOf } from "@/lib/demos/server";
 import { readJson } from "@/lib/demos/input";
@@ -61,7 +62,7 @@ export async function GET(_request: Request, { params }: Params) {
 export async function POST(request: Request, { params }: Params) {
   try {
     const { id } = await params;
-    await requireDemoAccess(request, id);
+    const access = await requireDemoAccess(request, id);
     const body = await readJson(request);
     const replace = (Array.isArray(body.replace) ? body.replace : []).filter((f: unknown): f is ImportField =>
       IMPORT_FIELDS.includes(f as ImportField),
@@ -89,6 +90,7 @@ export async function POST(request: Request, { params }: Params) {
     // An import that could not save these data is no longer missing them.
     await markSettingsSaved(demo.id).catch(() => null);
     const completed = await completeAgency(demo.agency_id, listing.imported).catch(() => ({ logo: false, contact: false }));
+    await auditAgencyEdit(access, "listing_sync", { fields });
     return Response.json(
       {
         fields,
