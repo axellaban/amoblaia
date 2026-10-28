@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
+import { Comparison } from "./comparison";
 import { Studio } from "./studio";
 import { StagePicker } from "./stage-picker";
 import {
@@ -171,8 +172,16 @@ export function Landing({
   const [sceneStyle, setSceneStyle] = useState("original");
   const [uploading, setUploading] = useState(false);
   const [faq, setFaq] = useState<number | null>(null);
-  const heroStyle = has(room, style) ? style : optionsFor(room)[1];
+  // The hero compares the empty photo with a staged one, so "original" is never the "after".
+  const heroOptions = optionsFor(room).filter((s) => s !== "original");
+  const heroStyle = heroOptions.includes(style) ? style : heroOptions[0];
   const stepRoom = has("living", "modern") ? "living" : sceneRooms[0];
+  // The panel illustration: one empty photo and two staged ones from the site's own examples.
+  const mockCards = [
+    { room: stepRoom, style: "original" },
+    { room: stepRoom, style: "modern" },
+    ...sceneRooms.filter((r) => r !== stepRoom && has(r, "scandinavian")).slice(0, 1).map((r) => ({ room: r, style: "scandinavian" })),
+  ].filter((c) => has(c.room, c.style));
 
   const upload = (
     <>
@@ -226,12 +235,17 @@ export function Landing({
                 </button>
                 <span>{note}</span>
               </div>
+              <a href="#inmobiliarias" className="hx-agency-link">
+                <Building2 size={17} aria-hidden="true" /> ¿Tenés una inmobiliaria? <b>Conocé el panel</b>
+              </a>
             </div>
             <div className="hx-hero-stage">
-              <img
-                key={`${room}-${heroStyle}`}
-                src={examplePath(room, heroStyle)}
-                alt={`${roomName(room)}, ${styleName(heroStyle)}`}
+              <Comparison
+                before={examplePath(room, "original")}
+                after={examplePath(room, heroStyle)}
+                alt={`${roomName(room)} amoblado con IA, estilo ${styleName(heroStyle)}`}
+                beforeAlt={`${roomName(room)} vacío, la foto original`}
+                initial={50}
               />
               <StagePicker
                 className="stage-room"
@@ -248,7 +262,7 @@ export function Landing({
                 label="Estilo"
                 value={heroStyle}
                 onChange={setStyle}
-                options={optionsFor(room).map((s) => ({
+                options={heroOptions.map((s) => ({
                   value: s,
                   label: styleName(s),
                 }))}
@@ -492,8 +506,9 @@ export function Landing({
               Todas tus propiedades. <b>Todo su potencial.</b>
             </h2>
             <p>
-              Importá tus publicaciones, transformá espacios con IA y compartí
-              fichas que inspiran. Todo desde un solo lugar.
+              Importá tus publicaciones o tus fotos, ambientá varias propiedades
+              a la vez con IA y compartí fichas que inspiran. Todo desde un solo
+              panel.
             </p>
             <div className="hx-agencies-actions">
               <Link href="/panel/empezar" className="button button-primary button-large">
@@ -505,32 +520,72 @@ export function Landing({
             </div>
             <ol className="hx-agencies-steps" id="inmobiliarias-pasos">
               <li>
-                <b>Pegá el enlace</b> de una publicación y traemos fotos y datos.
+                <b>Pegá el enlace o subí tus fotos.</b> Traemos las fotos de cada
+                publicación, de una o de hasta 10 a la vez.
               </li>
               <li>
-                <b>Elegí una foto</b> y transformala con el estilo que quieras.
+                <b>Ambientá varias propiedades en una tanda.</b> Elegí fotos y
+                estilo; antes de generar ves cuántos créditos usa.
               </li>
               <li>
-                <b>Compartí la ficha</b> o publicala en tu catálogo de habita.
+                <b>Descargalas o creá la ficha</b> y compartila en tu catálogo de
+                habita. Importar y publicar no usan créditos.
               </li>
             </ol>
           </div>
           {/* An illustration of the panel with the site's own example photos: no real data. */}
-          <div className="hx-panel-mock" role="img" aria-label="Vista ilustrativa del panel de una inmobiliaria en habita">
+          <div
+            className="hx-panel-mock"
+            role="img"
+            aria-label="Vista ilustrativa del panel de una inmobiliaria en habita: crear fichas, importar imágenes y ambientar varias propiedades a la vez"
+          >
             <div className="hx-panel-bar">
               <span />
               <span />
               <span />
-              <i>Mis propiedades</i>
+              <i>Panel de tu inmobiliaria</i>
             </div>
-            <div className="hx-panel-import">Pegá el enlace de una propiedad</div>
-            <div className="hx-panel-cards">
-              {(["original", "modern"] as const).map((v, i) => (
-                <div key={v} className="hx-panel-card">
-                  <img src={examplePath(stepRoom, v)} alt="" loading="lazy" />
-                  <span className={i ? "is-ai" : ""}>{i ? "Con IA" : "Original"}</span>
-                </div>
-              ))}
+            <div className="hx-panel-tabs" aria-hidden="true">
+              <b>Inicio</b>
+              <span>Mis propiedades</span>
+              <span>Créditos IA</span>
+              <span>Mi sitio web</span>
+            </div>
+            <div className="hx-panel-entries">
+              <div className="hx-panel-entry is-dark">
+                <strong>Crear demostraciones</strong>
+                <small>o fichas de propiedades</small>
+                <span className="hx-panel-field">https://inmobiliaria.com/propiedad/…</span>
+              </div>
+              <div className="hx-panel-entry">
+                <strong>Importar imágenes</strong>
+                <small>Para ambientar y descargar</small>
+                <span className="hx-panel-chips">
+                  <em>Desde URL</em>
+                  <em>Varias URLs</em>
+                  <em>Subir fotos</em>
+                </span>
+              </div>
+            </div>
+            <div className="hx-panel-batch">
+              <p>
+                <b>Fotos importadas</b> · 2 propiedades
+              </p>
+              <div className="hx-panel-cards">
+                {mockCards.map((c) => (
+                  <div key={`${c.room}-${c.style}`} className="hx-panel-card">
+                    <img src={examplePath(c.room, c.style)} alt="" loading="lazy" />
+                    <span className={c.style === "original" ? "" : "is-ai"}>
+                      {c.style === "original" ? "Original" : "Con IA"}
+                    </span>
+                    <i>{roomName(c.room)}</i>
+                  </div>
+                ))}
+              </div>
+              <div className="hx-panel-apply">
+                <span>2 fotos elegidas · Moderno</span>
+                <b>Revisar y generar →</b>
+              </div>
             </div>
             <small>Vista ilustrativa</small>
           </div>
