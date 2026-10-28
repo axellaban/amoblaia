@@ -727,10 +727,10 @@ type Created = {
 };
 
 /** Downloads the photos of a created import and reports them: what it says is what happened. */
-async function finishPhotos(made: Created, onStatus: (t: string) => void) {
+async function finishPhotos(made: Created, onStatus: (t: string) => void, endpoint = "/api/panel/importar") {
   if (!made.id) return made;
   const sync = await syncPhotos(`/api/admin/demos/${made.id}`, made.images, onStatus);
-  return api<Created>("/api/panel/importar", {
+  return api<Created>(endpoint, {
     method: "PATCH",
     body: JSON.stringify({ importId: made.importId, done: sync.done, failed: sync.failedUrls }),
   });
@@ -751,7 +751,26 @@ const hostOf = (url: string) => {
  * and its photos imported; the result says if anything is missing. No
  * staging starts and no credit is used.
  */
-export function ImportProperty({ initialUrl = "", onDone }: { initialUrl?: string; onDone?: () => Promise<unknown> }) {
+export function ImportProperty({
+  initialUrl = "",
+  onDone,
+  endpoint = "/api/panel/importar",
+  openPath = (id: string) => `/panel/propiedades/${id}`,
+  allowMany = true,
+  where = "tu panel",
+  onStep,
+}: {
+  initialUrl?: string;
+  onDone?: () => Promise<unknown>;
+  /** Where the import goes: the agency's own panel, or the agency the team is editing. */
+  endpoint?: string;
+  openPath?: (id: string) => string;
+  allowMany?: boolean;
+  /** "tu panel" or "esta inmobiliaria", for the duplicate notice. */
+  where?: string;
+  /** 1: bring the listing, 2: review its data and photos, 3: saving the draft. */
+  onStep?: (step: 1 | 2 | 3) => void;
+}) {
   const router = useRouter();
   const [many, setMany] = useState(false);
   const [url, setUrl] = useState(initialUrl);
@@ -766,6 +785,8 @@ export function ImportProperty({ initialUrl = "", onDone }: { initialUrl?: strin
   // One key per confirmed preview: sending it twice creates one property.
   const key = useRef("");
   const busy = Boolean(status);
+  const step: 1 | 2 | 3 = preview && busy ? 3 : preview ? 2 : 1;
+  useEffect(() => onStep?.(step), [onStep, step]);
 
   const show = (data: Preview) => {
     setPreview(data);
@@ -790,7 +811,7 @@ export function ImportProperty({ initialUrl = "", onDone }: { initialUrl?: strin
     setStatus("Leyendo la publicación…");
     track("property_import_started", { source: hostOf(url), mode: "single" });
     try {
-      show(await api<Preview>("/api/panel/importar", { method: "POST", body: JSON.stringify({ url, preview: true }) }));
+      show(await api<Preview>(endpoint, { method: "POST", body: JSON.stringify({ url, preview: true }) }));
     } catch (err) {
       setError(message(err, "No pudimos leer la publicación."));
       track("property_import_failed", { source: hostOf(url), status: "preview" });
@@ -806,7 +827,7 @@ export function ImportProperty({ initialUrl = "", onDone }: { initialUrl?: strin
     setStatus("Creando la propiedad…");
     let made: Created;
     try {
-      made = await api<Created>("/api/panel/importar", {
+      made = await api<Created>(endpoint, {
         method: "POST",
         body: JSON.stringify({
           url: preview.listingUrl,
@@ -829,11 +850,11 @@ export function ImportProperty({ initialUrl = "", onDone }: { initialUrl?: strin
       return;
     }
     try {
-      const done = await finishPhotos(made, (t) => setStatus(`${made.title ?? "Propiedad"}. ${t}`));
+      const done = await finishPhotos(made, (t) => setStatus(`${made.title ?? "Propiedad"}. ${t}`), endpoint);
       track("property_import_completed", { source: hostOf(preview.listingUrl), photos: done.photosDone, mode: "single", status: done.status });
       await onDone?.();
       if (done.status === "completed") {
-        router.push(`/panel/propiedades/${made.id}`);
+        router.push(openPath(made.id!));
         return;
       }
       setPartial(done);
@@ -850,8 +871,8 @@ export function ImportProperty({ initialUrl = "", onDone }: { initialUrl?: strin
     if (!partial) return;
     setStatus("Reintentando fotos…");
     try {
-      const done = await finishPhotos(partial, setStatus);
-      if (done.status === "completed") router.push(`/panel/propiedades/${partial.id}`);
+      const done = await finishPhotos(partial, setStatus, endpoint);
+      if (done.status === "completed") router.push(openPath(partial.id!));
       else setPartial(done);
     } catch (err) {
       setError(message(err, "No pudimos reintentar."));
@@ -888,9 +909,11 @@ export function ImportProperty({ initialUrl = "", onDone }: { initialUrl?: strin
           </button>
         </div>
         <p className="ap-import-help">Importar y publicar no usan créditos. Ambientar con IA es opcional.</p>
-        <button type="button" className="text-link ap-many-link" onClick={() => setMany(true)}>
-          <Link2 size={14} aria-hidden="true" /> Tengo varias URLs
-        </button>
+        {allowMany && (
+          <button type="button" className="text-link ap-many-link" onClick={() => setMany(true)}>
+            <Link2 size={14} aria-hidden="true" /> Tengo varias URLs
+          </button>
+        )}
       </form>
       {error && (
         <p className="inline-error" role="alert">
@@ -909,7 +932,7 @@ export function ImportProperty({ initialUrl = "", onDone }: { initialUrl?: strin
             {partial.settingsSaved ? "" : ", y faltan los datos de la ficha"}. La propiedad quedó como borrador.
           </p>
           <div className="ap-card-actions">
-            <Link href={`/panel/propiedades/${partial.id}${partial.settingsSaved ? "" : "?completar=1"}`} className="button button-small button-primary">
+            <Link href={`${openPath(partial.id!)}${partial.settingsSaved ? "" : `${openPath(partial.id!).includes("?") ? "&" : "?"}completar=1`}`} className="button button-small button-primary">
               Abrir la propiedad
             </Link>
             {partial.images.length > 0 && (
@@ -929,7 +952,7 @@ export function ImportProperty({ initialUrl = "", onDone }: { initialUrl?: strin
           )}
           {preview.duplicateOf ? (
             <p className="inline-notice">
-              Esta propiedad ya está en tu panel. <Link href={`/panel/propiedades/${preview.duplicateOf}`}>Abrirla</Link>
+              Esta propiedad ya está en {where}. <Link href={openPath(preview.duplicateOf)}>Abrirla</Link>
             </p>
           ) : null}
           <ImportPreview data={{ ...preview, images: preview.images.filter((src) => keep.has(src)) }} />

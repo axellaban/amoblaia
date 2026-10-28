@@ -1,6 +1,7 @@
 import { after } from "next/server";
 import { failure, HttpError, rpc } from "@/lib/commerce/http";
 import { requireDemoAccess, stagingRule } from "@/lib/agency/server";
+import { auditAgencyEdit } from "@/lib/agency/edit-context";
 import { onFreeTier } from "@/lib/commerce/jobs";
 import { runJob } from "@/lib/commerce/jobs";
 import { buildDemoPrompt } from "@/lib/demos/styles";
@@ -141,7 +142,8 @@ export async function GET(_request: Request, { params }: Params) {
 export async function PATCH(request: Request, { params }: Params) {
   try {
     const { id, photoId } = await params;
-    const { demo } = await requireDemoAccess(request, id);
+    const access = await requireDemoAccess(request, id);
+    const { demo } = access;
     const photo = await photoOf(demo, photoId);
     const body = await readJson(request);
     const changes = photoChanges(body.changes);
@@ -179,6 +181,11 @@ export async function PATCH(request: Request, { params }: Params) {
     if (!Object.keys(changes).length) throw new HttpError(400, "No hay cambios para guardar.");
     const updated = await db.from("demo_photos").update(changes).eq("id", photo.id);
     if (updated.error) throw new Error("DEMO_PHOTO_UPDATE_FAILED");
+    await auditAgencyEdit(access, "photo_update", {
+      photo: photo.id,
+      fields: Object.keys(changes),
+      ...("approve" in body ? { shown: body.approve } : {}),
+    });
     return Response.json({ photo: await editorPhoto(demo.id, photo.id) }, { headers: PRIVATE });
   } catch (e) {
     return failure(e);
@@ -189,12 +196,14 @@ export async function PATCH(request: Request, { params }: Params) {
 export async function DELETE(request: Request, { params }: Params) {
   try {
     const { id, photoId } = await params;
-    const { demo } = await requireDemoAccess(request, id);
+    const access = await requireDemoAccess(request, id);
+    const { demo } = access;
     const photo = await photoOf(demo, photoId);
     await assertNoLiveJobs([photo.project_id]);
     const removed = await adminClient().from("demo_photos").delete().eq("id", photo.id);
     if (removed.error) throw new Error("DEMO_PHOTO_DELETE_FAILED");
     await releaseProjects([photo.project_id]);
+    await auditAgencyEdit(access, "photo_delete", { photo: photo.id });
     return Response.json({ deleted: true }, { headers: PRIVATE });
   } catch (e) {
     return failure(e);
@@ -251,6 +260,7 @@ export async function POST(request: Request, { params }: Params) {
     });
     // Remembers the room and operation for the next version of this photo.
     await adminClient().from("demo_photos").update({ room, mode }).eq("id", photo.id);
+    await auditAgencyEdit(access, "version_create", { photo: photo.id, style, payer: "team", jobs: ids });
     const deadline = started + maxDuration * 1000 - 5000;
     after(async () => {
       await Promise.allSettled(ids.map((job) => runJob(job, deadline)));

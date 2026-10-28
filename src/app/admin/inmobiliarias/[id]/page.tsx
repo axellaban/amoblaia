@@ -16,7 +16,7 @@ export const metadata: Metadata = {
 
 const date = (iso: string) => new Date(iso).toLocaleDateString("es-AR");
 
-/** One agency for the team: read only, except its invitations. */
+/** One agency for the team: its account, invitations, imports and notes. Editing happens in "Editar inmobiliaria". */
 export default async function AgencyPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   await requireAdminPage(`/admin/inmobiliarias/${id}`);
@@ -68,6 +68,9 @@ export default async function AgencyPage({ params }: { params: Promise<{ id: str
           </p>
         </div>
         <div className="dm-heading-actions">
+          <Link href={`/admin/inmobiliarias/${agency.id}/editar`} className="button button-primary">
+            Editar inmobiliaria →
+          </Link>
           <SupportViewButton agencyId={agency.id} small={false} />
           <AddToProspecting agencyId={agency.id} />
           {agency.slug && agency.sitePublished && (
@@ -118,7 +121,7 @@ export default async function AgencyPage({ params }: { params: Promise<{ id: str
                   </small>
                 </span>
                 {i.demoId && (
-                  <Link href={`/admin/demos/${i.demoId}`} className="button button-small button-outline">
+                  <Link href={`/admin/inmobiliarias/${agency.id}/propiedades/${i.demoId}?seccion=publicacion&volver=${encodeURIComponent(`/admin/inmobiliarias/${agency.id}`)}`} className="button button-small button-outline">
                     Abrir
                   </Link>
                 )}
@@ -133,7 +136,7 @@ export default async function AgencyPage({ params }: { params: Promise<{ id: str
       <section className="account-panel aa-section" aria-labelledby="aa-props">
         <div className="aa-section-head">
           <h2 id="aa-props">Propiedades ({data.propertiesTotal})</h2>
-          <Link href={`/admin/demos/nueva?inmobiliaria=${agency.id}`} className="button button-small">
+          <Link href={`/admin/inmobiliarias/${agency.id}/propiedades/nueva?volver=${encodeURIComponent(`/admin/inmobiliarias/${agency.id}`)}`} className="button button-small">
             Agregar propiedad
           </Link>
         </div>

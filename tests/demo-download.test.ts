@@ -24,7 +24,7 @@ vi.mock("@/lib/demos/server", () => ({
 }));
 
 import { GET } from "../src/app/api/admin/demos/imagen/route";
-import { generationDownloadUrl } from "../src/lib/demos/shared";
+import { generationDownloadUrl, photoDownloadUrl } from "../src/lib/demos/shared";
 
 const GEN = "00000000-0000-4000-8000-0000000000e1";
 const url = (path: string) => new Request(`https://habita.test${path}`);
@@ -52,6 +52,13 @@ describe("Downloading a created version", () => {
     expect((await GET(url(generationDownloadUrl(GEN, "x")))).status).toBe(404);
     state.user = null;
     expect((await GET(url(generationDownloadUrl(GEN, "x")))).status).toBe(401);
+  });
+
+  it("downloads the original of a photo the same way, also without touching credits", async () => {
+    const r = await GET(url(photoDownloadUrl("00000000-0000-4000-8000-0000000000f1", "Casa - Living - original")));
+    expect(r.status).toBe(200);
+    expect(r.headers.get("content-disposition")).toContain('filename="Casa-Living-original.jpg"');
+    expect(state.rpcs).toBe(0);
   });
 
   it("keeps the regular image inline", async () => {

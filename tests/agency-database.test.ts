@@ -396,3 +396,45 @@ describe("Isolation between agencies (RLS)", () => {
     await expect(claim(await account(), hash)).rejects.toThrow(/CLAIM_INVALID/);
   });
 });
+
+describe("Administrative editing (202611030001)", () => {
+  const as = async <T>(user: string, sql: string) => {
+    await db.query("select set_config('request.jwt.claim.sub',$1,false)", [user]);
+    await db.exec("set role authenticated");
+    try {
+      return (await db.query<T>(sql)).rows;
+    } finally {
+      await db.exec("reset role");
+      await db.query("select set_config('request.jwt.claim.sub','',false)");
+    }
+  };
+
+  it("keeps the agency's contact e-mail private to the team, like its notes", async () => {
+    const admin = await account();
+    const { agency } = await prospect(admin);
+    await db.query("update agencies set contact_email='ana@russillo.test' where id=$1", [agency]);
+    const owner = await account();
+    await claim(owner, await claimCode(agency, admin), `russillo-${n}`);
+    expect(await as<{ id: string }>(owner, "select id from agencies")).toEqual([{ id: agency }]);
+    await expect(as(owner, "select contact_email from agencies")).rejects.toThrow(/permission denied/);
+  });
+
+  it("creates one agency per request key and one manual property per agency and key", async () => {
+    const key = id();
+    await db.query("insert into agencies(name,request_key) values('Martín Propiedades',$1)", [key]);
+    await expect(db.query("insert into agencies(name,request_key) values('Martín Propiedades',$1)", [key])).rejects.toThrow(/duplicate key/);
+    const agency = (await one<{ id: string }>("select id from agencies where request_key=$1", [key]))!.id;
+    const other = (await one<{ id: string }>("insert into agencies(name) values('Otra') returning id"))!.id;
+    const pkey = id();
+    await db.query("insert into demo_properties(agency_id,title,request_key) values($1,'PH',$2)", [agency, pkey]);
+    await expect(db.query("insert into demo_properties(agency_id,title,request_key) values($1,'PH',$2)", [agency, pkey])).rejects.toThrow(/duplicate key/);
+    // The same key in another agency is another request.
+    await expect(db.query("insert into demo_properties(agency_id,title,request_key) values($1,'PH',$2)", [other, pkey])).resolves.toBeTruthy();
+    // Rows without a key (every earlier one) are unaffected.
+    await db.query("insert into agencies(name) values('Sin clave'),('Sin clave')");
+  });
+
+  it("can be applied again without errors", async () => {
+    await expect(db.exec(readFileSync("supabase/migrations/202611030001_admin_editing.sql", "utf8"))).resolves.toBeTruthy();
+  });
+});

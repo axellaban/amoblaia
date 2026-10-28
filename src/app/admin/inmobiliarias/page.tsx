@@ -25,27 +25,21 @@ export default async function AgenciesPage({ searchParams }: Props) {
     <div className="account-page container dm-page">
       <div className="dm-heading">
         <div>
-          <span className="eyebrow">Operación comercial</span>
+          <span className="eyebrow">Administración / Inmobiliarias</span>
           <h1>
-            Inmobiliarias<span className="accent">.</span>
+            Gestioná cada inmobiliaria desde acá<span className="accent">.</span>
           </h1>
-          <p>Cada inmobiliaria con su etapa, sus propiedades y sus créditos. Solo el equipo ve este panel.</p>
+          <p>Entrá a editar, revisá sus propiedades o administrá sus créditos. Solo el equipo ve este panel.</p>
         </div>
         <div className="dm-heading-actions">
-          <Link href="/admin/prospeccion" className="button button-outline">
-            Adquisición
-          </Link>
-          <Link href="/admin/demos" className="button button-outline">
-            Todas las demos
-          </Link>
-          <Link href="/admin/demos/nueva" className="button button-primary">
-            Nueva inmobiliaria o demo
+          <Link href="/admin/inmobiliarias/nueva" className="button button-primary">
+            + Nueva inmobiliaria
           </Link>
         </div>
       </div>
       <form className="dm-filters" action="/admin/inmobiliarias" role="search">
         <label className="dm-search">
-          <input type="search" name="q" defaultValue={q} placeholder="Buscar por nombre o dirección" aria-label="Buscar inmobiliaria" />
+          <input type="search" name="q" defaultValue={q} placeholder="Buscar por nombre o dirección del sitio" aria-label="Buscar inmobiliaria" />
         </label>
         <button type="submit" className="button button-small">
           Buscar
@@ -69,7 +63,27 @@ export default async function AgenciesPage({ searchParams }: Props) {
             {data.total} {data.total === 1 ? "inmobiliaria" : "inmobiliarias"}
             {q ? ` con “${q}”` : ""}
           </p>
-          {!data.items.length ? <p>No hay inmobiliarias que coincidan.</p> : <AgenciesTable items={data.items} />}
+          {!data.items.length ? (
+            q ? (
+              <p>No hay inmobiliarias que coincidan.</p>
+            ) : (
+              <div className="account-panel ae-empty">
+                <h2>Todavía no hay inmobiliarias</h2>
+                <p>Creá la primera: alcanza con su nombre comercial.</p>
+                <Link href="/admin/inmobiliarias/nueva" className="button button-primary">
+                  + Nueva inmobiliaria
+                </Link>
+              </div>
+            )
+          ) : (
+            <>
+              <AgenciesTable items={data.items} />
+              <p className="ae-legend">
+                Dos accesos distintos: <strong>Editar inmobiliaria</strong> abre el espacio de trabajo del equipo (los cambios quedan registrados con tu
+                usuario). <strong>Ver como cliente</strong> abre su panel en solo lectura, como soporte.
+              </p>
+            </>
+          )}
           {pages > 1 && (
             <nav className="ap-pages" aria-label="Páginas">
               {page > 1 ? <Link href={href(page - 1)}>Anterior</Link> : <span />}

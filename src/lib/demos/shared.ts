@@ -370,6 +370,12 @@ export function generationDownloadUrl(generationId: string, name: string) {
   return `/api/admin/demos/imagen?${q}`;
 }
 
+/** The download link of a photo as uploaded (the original), the same JPEG size and naming as a version. */
+export function photoDownloadUrl(photoId: string, name: string) {
+  const q = new URLSearchParams({ foto: photoId, w: "2048", descargar: "1", nombre: name });
+  return `/api/admin/demos/imagen?${q}`;
+}
+
 /** Messages for the generation states the editor shows. */
 export function generationNote(g: Pick<GenerationRow, "status">) {
   switch (g.status) {

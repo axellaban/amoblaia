@@ -6,6 +6,7 @@ import { demoRow } from "@/lib/demos/server";
 import { isUuid } from "@/lib/demos/shared";
 import { adminClient } from "@/lib/supabase/server";
 import type { AgencyRole } from "./shared";
+import { assertEditTarget, editContextOf } from "./edit-context";
 import { assertReadable, supportAgency } from "./support";
 
 export type AgencyAccount = {
@@ -74,8 +75,12 @@ export async function requireDemoAccess(request: Request | undefined, demoId: st
   // Accounts outside any agency are turned away before any property is read.
   const membership = admin ? null : await membershipOf(actor.id);
   if (!admin && !membership) throw new HttpError(404, "No encontramos la demo.");
+  // A tab editing one agency (Editar inmobiliaria) only reads and writes that agency's properties.
+  // The context is the team's: anyone else sending one is refused, never silently ignored.
+  const editContext = editContextOf(request, actor);
   const demo = await demoRow(demoId);
   if (membership && membership.agency.id !== demo.agency_id) throw new HttpError(404, "No encontramos la demo.");
+  assertEditTarget(editContext, demo.agency_id);
   const { data, error } = await adminClient()
     .from("agencies")
     .select("owner_id")
@@ -85,7 +90,7 @@ export async function requireDemoAccess(request: Request | undefined, demoId: st
   // demos keep working as they did.
   if (error && !admin) throw new Error("AGENCY_LOOKUP_FAILED");
   const billingUser = error ? null : ((data as { owner_id: string | null }).owner_id ?? null);
-  return { actor, demo, admin, role: (membership?.role ?? null) as AgencyRole | null, billingUser };
+  return { actor, demo, admin, role: (membership?.role ?? null) as AgencyRole | null, billingUser, editContext };
 }
 export type DemoAccess = Awaited<ReturnType<typeof requireDemoAccess>>;
 
