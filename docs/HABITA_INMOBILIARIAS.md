@@ -518,3 +518,44 @@ lugar de «Se muestra en la ficha», oculta «Usar de portada», «Vista previa�
 - En `/admin` (vista del equipo) los grupos aparecen como borradores; no se filtraron.
 - Validado con un arnés de Vite y Playwright con respuestas simuladas, no contra
   Supabase ni generaciones reales.
+
+## 14. De la demo a probar el panel (2026-10-28)
+
+La demo pasa a ser la entrada a un panel que ya tiene esa misma propiedad
+preparada, con la invitación privada que ya existía.
+
+**Recorrido:** demo → «Probar esta propiedad en mi panel» → crear acceso o
+ingresar → editor de esa propiedad.
+
+- **El enlace.** «Crear enlace para que la inmobiliaria se quede con sus demos»
+  (editor de la demo, equipo) devuelve además `presentationUrl`:
+  `/demo/<token>?presentacion=1&codigo=<código>`, junto con un mensaje sugerido
+  para enviar. Es el mismo código de un solo uso, que vence a los 30 días.
+- **La demo.** Solo en modo presentación y para una inmobiliaria sin cuenta, el
+  servidor valida el código (`invitationOf`). Si es vigente y de esa misma
+  inmobiliaria, aparece «Probá con esta misma propiedad» debajo del selector de
+  estilos y al final, con el mismo texto y destino (`src/lib/agency/demo-invite.ts`).
+  Si venció o es de otra inmobiliaria, se dice que no está disponible. Sin código
+  queda el llamado anterior. El enlace para compradores no muestra nada de esto y
+  no da acceso.
+- **El acceso** (`/panel/empezar?codigo=…&demo=…`): «Tu propiedad está preparada»,
+  con la propiedad y su antes/después, y el formulario corto de siempre (email y
+  contraseña, o ingresar con la cuenta). No pide datos comerciales. Quien ya
+  trabaja en esa inmobiliaria entra directo al editor.
+- **La llegada:** el editor de esa propiedad con `?bienvenida=1`: «Empezá con una
+  foto» y «¿Querés probar con otra propiedad?» con el importador de siempre.
+- **Créditos de bienvenida:** no se asignan solos. El equipo los carga con
+  «Agregar créditos» y se mencionan solo cuando están asignados.
+
+**Embudo** (PostHog): vista de la demo (`demo_vista`, versión `presentacion`) →
+`demo_agency_cta_clicked` (`origen`: `demo_invitacion_lateral` o
+`demo_invitacion_final`) → `agency_claimed` (`origin`: `demo_invitation`) →
+`invited_property_opened` → `property_version_downloaded` →
+`property_ai_generation_completed` → `invited_next_property_clicked` y
+`property_import_completed`.
+
+**El código no sale a terceros.** Antes, el enlace de invitación cargaba el píxel
+de Meta y la etiqueta de Google Ads con la URL completa, código incluido. Ahora
+el píxel no carga si la URL o la página anterior tienen `codigo=`, Google recibe
+`page_location` y `page_referrer` redactados, y PostHog redacta el código en
+`before_send`.

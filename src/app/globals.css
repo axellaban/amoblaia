@@ -9746,6 +9746,76 @@ h2 .accent {
   color: #6b6b6b;
 }
 
+/* The agency's way from its demo into its panel (private invitation). */
+.dv2-invite {
+  display: grid;
+  gap: 10px;
+  padding: 22px;
+  border: 1px solid #e9dfd0;
+  border-radius: 16px;
+  background: var(--cream, #f8f5ef);
+  color: #24382e;
+  font-family: var(--font-sans);
+}
+.dv2-invite.is-final {
+  margin: 8px 0 0;
+  padding: 26px 28px;
+}
+.dv2-invite-eyebrow {
+  margin: 0;
+  color: #8a7348;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.dv2-invite h2 {
+  margin: 0;
+  color: #24382e;
+  font-size: 24px;
+  line-height: 1.15;
+}
+.dv2-invite p {
+  margin: 0;
+  color: #4a524c;
+}
+.dv2-invite-cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 52px;
+  padding: 10px 20px;
+  border-radius: 12px;
+  background: #24382e;
+  color: #fff;
+  font-weight: 700;
+  text-align: center;
+  text-decoration: none;
+}
+.dv2-invite-cta:hover {
+  background: #1b2b22;
+}
+.dv2-invite-cta:focus-visible {
+  outline: 3px solid #24382e;
+  outline-offset: 3px;
+}
+.dv2-invite small {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #4a524c;
+}
+.dv2-invite.is-final .dv2-invite-cta {
+  justify-self: start;
+  min-width: 300px;
+}
+@media (max-width: 600px) {
+  .dv2-invite.is-final .dv2-invite-cta {
+    justify-self: stretch;
+    min-width: 0;
+  }
+}
+
 /* Home: the agencies section. */
 .hx-agencies {
   display: grid;
@@ -13889,4 +13959,143 @@ a.dm-agency:hover {
   .hx-panel-card i {
     display: none;
   }
+}
+
+/* Editor: the first task after arriving from the invitation, and the next property. */
+.ed-welcome,
+.ed-next-property {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  margin: 0 0 16px;
+  padding: 16px 18px;
+  border-radius: 14px;
+}
+.ed-welcome {
+  border: 1px solid #c9dbc6;
+  background: #e8f0e5;
+}
+.ed-next-property {
+  margin-top: 16px;
+  border: 1px solid #e9dfd0;
+  background: var(--cream);
+}
+.ed-welcome > div,
+.ed-next-property > div {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+.ed-welcome h2,
+.ed-next-property h2 {
+  margin: 0 0 2px;
+  font-size: 17px;
+}
+.ed-welcome p,
+.ed-next-property p {
+  margin: 0;
+  color: var(--muted);
+}
+.ed-welcome-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: #fff;
+  color: var(--forest);
+}
+
+/* Invitation from a demo: the property and a short access form. */
+.ap-invited {
+  display: grid;
+  gap: 8px;
+  padding-top: 28px;
+  padding-bottom: 48px;
+}
+.ap-invited-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  justify-self: start;
+  margin-bottom: 8px;
+}
+.ap-invited h1 {
+  margin: 4px 0 0;
+}
+.ap-invited-lead {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 18px;
+}
+.ap-invited-grid {
+  display: grid;
+  gap: 20px;
+  align-items: start;
+}
+@media (min-width: 900px) {
+  .ap-invited-grid {
+    grid-template-columns: minmax(0, 1.6fr) minmax(320px, 1fr);
+  }
+}
+.ap-invited-property {
+  display: grid;
+  gap: 14px;
+}
+.ap-invited-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.ap-invited-head h2 {
+  margin: 0;
+  font-size: 24px;
+}
+.ap-invited-head .dm-help {
+  margin: 2px 0 0;
+}
+.ap-invited-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: #e8f0e5;
+  color: var(--forest);
+  font-size: 14px;
+  font-weight: 650;
+}
+.ap-invited-photo {
+  width: 100%;
+  border-radius: 12px;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+}
+.ap-invited-checks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ap-invited-checks li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ap-invited-checks svg {
+  flex: none;
+  padding: 4px;
+  border-radius: 50%;
+  background: #e8f0e5;
+  color: var(--forest);
+  box-sizing: content-box;
+}
+.ap-invited .ap-start-form h2 {
+  margin: 0 0 4px;
+  font-size: 24px;
 }

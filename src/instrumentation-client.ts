@@ -1,4 +1,5 @@
 import posthog from "posthog-js";
+import { redactInvite } from "@/lib/agency/demo-invite";
 // habita. project token (US Cloud). Public by design; override per environment if needed.
 const key =
   process.env.NEXT_PUBLIC_POSTHOG_KEY ??
@@ -10,5 +11,12 @@ if (key && (process.env.NEXT_PUBLIC_VERCEL_ENV === "production" || process.env.N
     api_host: "/ingest",
     ui_host: process.env.NEXT_PUBLIC_POSTHOG_UI_HOST || "https://us.posthog.com",
     defaults: "2026-08-30",
+    // The private invitation code travels in some URLs: it never reaches the analytics.
+    before_send: (event) => {
+      if (!event) return event;
+      for (const bag of [event.properties, event.$set, event.$set_once] as (Record<string, unknown> | undefined)[])
+        if (bag) for (const k of Object.keys(bag)) if (typeof bag[k] === "string") bag[k] = redactInvite(bag[k] as string);
+      return event;
+    },
   });
 }
