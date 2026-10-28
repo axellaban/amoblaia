@@ -441,3 +441,55 @@ En `/admin/inmobiliarias`, cada inmobiliaria tiene **Ver su panel**. Abre `/pane
 - No se inicia sesión con la cuenta de la inmobiliaria. Una cookie firmada (`habita_soporte`) nombra al miembro del equipo y a la inmobiliaria y vence en una hora. Solo vale para esa persona del equipo: otra cuenta con la misma cookie ve su propio panel.
 - Es **solo lectura**: el servidor rechaza todo cambio hecho desde el panel mientras dure la vista, incluido crear versiones con IA, que además nunca usan el saldo de la inmobiliaria.
 - Entrar y salir quedan registrados en `admin_audit` (`agency_support_view`, `agency_support_end`). Si no se puede registrar, la vista no se abre.
+
+## 13. Importar imágenes (grupos de fotos sin ficha, 2026-10-28)
+
+Entrada nueva en el inicio, al lado de «Crear demostraciones». Trae fotos desde
+un enlace, varios enlaces o archivos del dispositivo, las elige por origen e
+importa sin crear ni publicar una ficha. Importar no genera imágenes ni usa
+créditos.
+
+**Modelo.** Migración aditiva `202611040001_photo_groups.sql`: `demos.kind`
+(`ficha` | `fotos`, por defecto `ficha`). Un grupo de fotos es una fila de
+`demos` con `kind = 'fotos'` y su propiedad. Así las fotos, las versiones, las
+descargas y el editor (`/panel/propiedades/[id]`) siguen funcionando igual.
+Además:
+
+- No aparece en «Mis propiedades» ni cuenta en los totales del inicio
+  (`agencyProperties` filtra `kind`; `habita_agency_counts` se reemplazó para contar solo fichas).
+- No se puede publicar: `publicacion` responde 409 hasta que se crea la ficha.
+- «Crear ficha con estas fotos» solo cambia `kind` a `ficha` (queda en borrador).
+  Las fotos, las versiones y el enlace se conservan; no se publica nada.
+
+**Rutas nuevas** (todas con `requireAgency`):
+
+| Ruta | Qué hace |
+| --- | --- |
+| `GET /api/panel/imagenes` | Grupos de fotos sin ficha, con conteos reales |
+| `POST /api/panel/imagenes` | Importa las fotos elegidas de un enlace (`url`, `key`, `images`). Idempotente por `key`; un enlace ya cargado responde 409 con `duplicateOf` |
+| `POST /api/panel/imagenes/grupo` | Crea un grupo vacío para archivos subidos (`name`) |
+| `POST /api/panel/imagenes/[id]/ficha` | Convierte el grupo en ficha (borrador) |
+
+Lectura de enlaces, descarga de fotos y reporte (`PATCH /api/panel/importar`) son
+los mismos que usa la importación de propiedades: el navegador descarga, el
+servidor registra qué faltó en `property_imports`.
+
+**Pantalla.** `/panel/imagenes?metodo=url|many|files` con tres pestañas (el
+estado se conserva al cambiar), lectura por enlace con su estado real
+(en espera, leyendo, lista, duplicada, con error), selección por origen y
+«Importar N fotos». Un enlace con error se puede reintentar sin bloquear a los
+demás. Los archivos se validan con `src/lib/photo-limits.ts` (JPG, PNG o WebP,
+hasta 3 MB, el mismo límite que el servidor).
+
+**Pendiente de esta entrega** (no implementado):
+
+- La bandeja de trabajo por lote (asignar ambiente, «Aplicar a las elegidas»,
+  «Revisar y generar» con su confirmación de costo). Hoy cada grupo se abre en el
+  editor existente, que ya tiene la generación por lote y sus permisos.
+- «Volver al lote» y la etiqueta «Versión seleccionada» en el editor para grupos.
+  Un grupo abierto en el editor muestra la publicación, pero el botón «Publicar»
+  responde con el aviso de que hay que crear la ficha antes.
+- Sumar fotos a un grupo existente.
+- Reintento de archivos subidos: si la respuesta se pierde después de guardar,
+  el reintento puede duplicar esa foto (la subida no tiene deduplicación por contenido).
+- En `/admin` (vista del equipo) los grupos aparecen como borradores; no se filtraron.

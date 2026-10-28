@@ -3,7 +3,8 @@ import sharp from "sharp";
 import { buildPrompt } from "@/lib/catalog";
 import { HttpError } from "./http";
 import { WATERMARK_PNG } from "./watermark";
-export const MAX_BYTES = 3 * 1024 * 1024;
+import { MAX_UPLOAD_BYTES as MAX_BYTES } from "@/lib/photo-limits";
+export { MAX_BYTES };
 /** The stored original: upright, at most 2048 px, JPEG. The bytes are decoded for real, not trusted by type. */
 export async function normalizePhoto(bytes: Buffer) {
   try {

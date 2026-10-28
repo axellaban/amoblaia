@@ -438,3 +438,35 @@ describe("Administrative editing (202611030001)", () => {
     await expect(db.exec(readFileSync("supabase/migrations/202611030001_admin_editing.sql", "utf8"))).resolves.toBeTruthy();
   });
 });
+
+describe("Photo groups without a ficha (202611040001)", () => {
+  it("counts only fichas: a group is neither a property nor published", async () => {
+    // Earlier tests re-apply older migrations, which redefine the counts: apply this one again first.
+    await db.exec(readFileSync("supabase/migrations/202611040001_photo_groups.sql", "utf8"));
+    const admin = await account();
+    const agency = await createAgency(admin, "Grupos Sur", "grupos-sur");
+    const ficha = (await one<{ id: string }>("insert into demo_properties(agency_id,title) values($1,'Casa') returning id", [agency]))!.id;
+    const group = (await one<{ id: string }>("insert into demo_properties(agency_id,title) values($1,'Fotos') returning id", [agency]))!.id;
+    await db.query("insert into demos(agency_id,property_id,token,status,kind) values($1,$2,$3,'draft','ficha')", [agency, ficha, `tok_${id().replace(/-/g, "")}`]);
+    await db.query("insert into demos(agency_id,property_id,token,status,kind) values($1,$2,$3,'draft','fotos')", [agency, group, `tok_${id().replace(/-/g, "")}`]);
+    const counts = (await one<{ c: { total: number; published: number } }>("select habita_agency_counts($1) as c", [agency]))!.c;
+    expect(counts).toMatchObject({ total: 1, published: 0 });
+  });
+
+  it("defaults existing and new demos to fichas, and refuses any other kind", async () => {
+    const admin = await account();
+    const agency = await createAgency(admin, "Tipos Sur", "tipos-sur");
+    const property = (await one<{ id: string }>("insert into demo_properties(agency_id,title) values($1,'Casa') returning id", [agency]))!.id;
+    await db.query("insert into demos(agency_id,property_id,token,status) values($1,$2,$3,'draft')", [agency, property, `tok_${id().replace(/-/g, "")}`]);
+    const kinds = await db.query<{ kind: string }>("select kind from demos where agency_id=$1", [agency]);
+    expect(kinds.rows.map((r) => r.kind)).toEqual(["ficha"]);
+    const other = (await one<{ id: string }>("insert into demo_properties(agency_id,title) values($1,'Otra') returning id", [agency]))!.id;
+    await expect(
+      db.query("insert into demos(agency_id,property_id,token,status,kind) values($1,$2,$3,'draft','otro')", [agency, other, `tok_${id().replace(/-/g, "")}`]),
+    ).rejects.toThrow();
+  });
+
+  it("can be applied again without errors", async () => {
+    await expect(db.exec(readFileSync("supabase/migrations/202611040001_photo_groups.sql", "utf8"))).resolves.toBeTruthy();
+  });
+});

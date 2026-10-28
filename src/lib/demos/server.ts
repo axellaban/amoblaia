@@ -49,6 +49,8 @@ type DemoRow = {
   title: string | null;
   token: string;
   status: "draft" | "published";
+  /** "fotos": a photo group that is not a ficha yet, so it cannot be published. */
+  kind: "ficha" | "fotos";
   cover_photo_id: string | null;
   published_at: string | null;
   created_at: string;
@@ -67,7 +69,7 @@ type PhotoRow = {
   discarded: string[] | null;
 };
 const DEMO_FIELDS =
-  "id,agency_id,property_id,title,token,status,cover_photo_id,published_at,created_at";
+  "id,agency_id,property_id,title,token,status,kind,cover_photo_id,published_at,created_at";
 const PHOTO_FIELDS =
   "id,property_id,project_id,position,visible,room,label,style,mode,approved_generation_id,discarded";
 
@@ -819,6 +821,8 @@ export async function createDemo(input: {
   agency: AgencyInput | null;
   /** origin: who added it ("agency" from its own panel; the team's by default). */
   property: PropertyInput & { origin?: "admin" | "agency" };
+  /** "fotos": a photo group, not a ficha yet (see 202611040001_photo_groups.sql). */
+  kind?: "ficha" | "fotos";
 }) {
   const db = adminClient();
   let agencyId = input.agencyId;
@@ -862,6 +866,7 @@ export async function createDemo(input: {
         property_id: property.data.id,
         token: newToken(),
         created_by: input.actorId,
+        kind: input.kind ?? "ficha",
       })
       .select("id")
       .single();

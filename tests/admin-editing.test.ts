@@ -224,8 +224,8 @@ beforeEach(() => {
       { id: "pr-b", agency_id: AG_B, title: "Casa B", location: null, listing_url: null, description: null },
     ],
     demos: [
-      { id: DEMO_A, agency_id: AG_A, property_id: "pr-a", token: "tok_aaaaaaaaaaaaaaaaaaaaaaaa", status: "draft", settings: {}, title: "Casa A" },
-      { id: DEMO_B, agency_id: AG_B, property_id: "pr-b", token: "tok_bbbbbbbbbbbbbbbbbbbbbbbb", status: "draft", settings: {}, title: "Casa B" },
+      { id: DEMO_A, agency_id: AG_A, kind: "ficha", property_id: "pr-a", token: "tok_aaaaaaaaaaaaaaaaaaaaaaaa", status: "draft", settings: {}, title: "Casa A" },
+      { id: DEMO_B, agency_id: AG_B, kind: "ficha", property_id: "pr-b", token: "tok_bbbbbbbbbbbbbbbbbbbbbbbb", status: "draft", settings: {}, title: "Casa B" },
     ],
     demo_photos: [
       { id: PHOTO, property_id: "pr-a", project_id: "pj1", position: 0, visible: true, room: "living", label: null, mode: "furnish", discarded: [], approved_generation_id: null },

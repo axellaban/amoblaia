@@ -144,12 +144,34 @@ function PanelHome({ data, reload }: { data: PanelSummary; reload: () => Promise
           </Link>
         </section>
       )}
-      <section className="ap-import-hero" aria-labelledby="ap-import-title">
-        <h2 id="ap-import-title">
-          <ImagePlus size={22} aria-hidden="true" /> Agregar propiedad
-        </h2>
-        <ImportProperty onDone={reload} />
-      </section>
+      <div className="ap-entries">
+        <section className="ap-import-hero" aria-labelledby="ap-import-title">
+          <h2 id="ap-import-title">Crear demostraciones</h2>
+          <p className="ap-entry-sub">o fichas de propiedades</p>
+          <ImportProperty onDone={reload} />
+        </section>
+        <section className="ap-entry" aria-labelledby="ap-images-title">
+          <h2 id="ap-images-title">
+            <ImagePlus size={22} aria-hidden="true" /> Importar imágenes
+          </h2>
+          <p className="ap-entry-sub">Para ambientar y descargar tus fotos.</p>
+          <ul className="ap-entry-methods" aria-label="Formas de traer las fotos">
+            <li>
+              <Link href="/panel/imagenes?metodo=url">Desde URL</Link>
+            </li>
+            <li>
+              <Link href="/panel/imagenes?metodo=many">Varias URLs</Link>
+            </li>
+            <li>
+              <Link href="/panel/imagenes?metodo=files">Subir fotos</Link>
+            </li>
+          </ul>
+          <Link href="/panel/imagenes?metodo=url" className="button button-outline">
+            Buscar fotos
+          </Link>
+          <p className="dm-help">Importar no genera imágenes ni usa créditos. Publicar la ficha es una acción aparte.</p>
+        </section>
+      </div>
       {firstSteps && (
         <ol className="ap-steps" aria-label="Primeros pasos">
           <li className={data.counts.total ? "is-done" : ""}>Agregá una propiedad pegando su enlace</li>
