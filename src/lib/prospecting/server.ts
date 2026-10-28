@@ -72,6 +72,9 @@ export async function prospectRpc<T>(name: string, args: Record<string, unknown>
     if (m && ERRORS[m[1]]) throw new ProspectError(ERRORS[m[1]][0], ERRORS[m[1]][1], m[1], m[2] ?? null);
     if (error.code === "PGRST202" || error.code === "42883" || error.code === "42P01")
       throw new ProspectError(503, "Faltan las migraciones de prospección en Supabase: aplicá 202611010001_prospecting.sql y 202611020001_prospect_import_options.sql.", "MIGRATION_MISSING");
+    // A value the database refuses (too long, out of range): say which, instead of a generic failure.
+    if (error.code === "23514" || error.code === "22001" || error.code === "22003")
+      throw new ProspectError(400, `La base rechazó un valor (${/constraint "([^"]+)"/.exec(error.message ?? "")?.[1] ?? error.code}). No se guardó nada.`, "INVALID_VALUE");
     throw new Error(`DATABASE_${error.code}`);
   }
   return data as T;

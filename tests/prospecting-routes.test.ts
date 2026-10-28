@@ -135,6 +135,10 @@ describe("Attempts", () => {
     const r = await intentos.POST(req("/x", "POST", { key: ID, accountId: ID, contactId: ID, step: 1, body: "x", reviewed: true }));
     expect(r.status).toBe(409);
     expect(await r.json()).toMatchObject({ code: "ATTEMPT_OPEN", detail: "abc" });
+    state.error = { message: 'new row for relation "prospect_contacts" violates check constraint "prospect_contacts_confidence_check"', code: "23514" };
+    const tooLong = await intentos.POST(req("/x", "POST", { key: ID, accountId: ID, contactId: ID, step: 1, body: "x", reviewed: true }));
+    expect(tooLong.status).toBe(400);
+    expect(await tooLong.json()).toMatchObject({ code: "INVALID_VALUE", error: expect.stringMatching(/prospect_contacts_confidence_check/) });
     state.error = { message: "SUPPRESSED:account" };
     expect((await (await intentos.POST(req("/x", "POST", { key: ID, accountId: ID, contactId: ID, step: 1, body: "x", reviewed: true }))).json()).code).toBe("SUPPRESSED");
   });
