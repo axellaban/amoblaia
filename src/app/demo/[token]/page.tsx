@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { cache } from "react";
 import { DemoView } from "@/components/demo-view";
+import { INVITE_PARAM, inviteFor, type DemoInvite } from "@/lib/agency/demo-invite";
+import { invitationOf } from "@/lib/agency/invitation";
 import { publishedDemo } from "@/lib/demos/server";
 import { coverVersion, demoPath, ogImageUrl, PRESENTATION_PARAM } from "@/lib/demos/shared";
 import { cloudConfigured } from "@/lib/supabase/config";
@@ -77,11 +79,17 @@ export default async function PublicDemoPage({ params, searchParams }: Props) {
   const { token } = await params;
   const demo = await load(token);
   if (!demo) notFound();
-  return (
-    <DemoView
-      demo={demo}
-      source={{ kind: "public", token }}
-      presentation={await isPresentation(searchParams)}
-    />
-  );
+  const presentation = await isPresentation(searchParams);
+  // The team's private presentation link may carry the invitation code: only then, and only for this
+  // same agency, the demo opens the way into its panel. A failed lookup offers nothing, never a broken promise.
+  const raw = (await searchParams)[INVITE_PARAM];
+  const code = presentation && demo.prospect && typeof raw === "string" ? raw : null;
+  let invite: DemoInvite = null;
+  if (code)
+    try {
+      invite = inviteFor({ token, agencyId: demo.agencyId }, code, await invitationOf(code));
+    } catch {
+      console.error("demo_invitation_lookup_failed");
+    }
+  return <DemoView demo={demo} source={{ kind: "public", token }} presentation={presentation} invite={invite} />;
 }

@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronDown, Eye, Loader2, RefreshCw, Star, Trash2, X } from "lucide-react";
+import { Check, ChevronDown, Eye, Home, Image as ImageIcon, Loader2, Plus, RefreshCw, Star, Trash2, X } from "lucide-react";
 import { Comparison } from "./comparison";
 import { AgencyFields, LinkPreview, PropertyFields, ShareButtons, StatusChip, api, publicLink } from "./admin-demos";
 import { PhotoWorkspace, type WorkspaceActions } from "./editor-photos";
@@ -155,6 +155,8 @@ export function DemoEditor({
   const [review, setReview] = useState<{ photoId: string; generationId: string } | null>(null);
   const [open, setOpen] = useState<Set<Section>>(new Set(["fotos"]));
   const [downloading, setDownloading] = useState<string | null>(null);
+  // Arrived from its invitation (?bienvenida=1): one concrete first task, not a setup checklist.
+  const [welcome, setWelcome] = useState(false);
   // Drafts of the forms: set once, and again only when that same form is saved.
   const [forms, setForms] = useState<ReturnType<typeof formsOf> | null>(null);
   const [dirtyParts, setDirtyParts] = useState<Set<ListingPart>>(new Set());
@@ -196,9 +198,16 @@ export function DemoEditor({
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
     setBackTo(safeReturn(q.get("volver"), home));
+    if (agencyMode && q.get("bienvenida") === "1") setWelcome(true);
     const target = q.get("seccion") ?? window.location.hash.slice(1);
     if (isSection(target)) setOpen((o) => new Set(o).add(target));
   }, [home]);
+  const welcomeTracked = useRef(false);
+  useEffect(() => {
+    if (!welcome || !detail || welcomeTracked.current) return;
+    welcomeTracked.current = true;
+    track("invited_property_opened", { property_id: detail.demo.id, photos: detail.demo.photos, staged: detail.demo.staged });
+  }, [welcome, detail]);
   const focusDone = useRef(false);
   useEffect(() => {
     if (!detail || focusDone.current) return;
@@ -384,6 +393,7 @@ export function DemoEditor({
         URL.revokeObjectURL(href);
       }, 10000);
       setMessage({ tone: "notice", text: `Descarga lista: ${downloadName(name).ascii}.` });
+      if (agencyMode) track("property_version_downloaded", { property_id: id });
     } catch {
       say({ tone: "error", text: "No pudimos descargar la imagen. Probá de nuevo.", section: "fotos" });
     } finally {
@@ -652,6 +662,21 @@ export function DemoEditor({
         </p>
       )}
 
+      {welcome && (
+        <section className="ed-welcome" aria-labelledby="ed-welcome-title">
+          <span className="ed-welcome-icon" aria-hidden="true">
+            <ImageIcon size={20} />
+          </span>
+          <div>
+            <h2 id="ed-welcome-title">Empezá con una foto</h2>
+            <p>Elegí una versión, comparala con el original y descargala. Descargar no usa créditos.</p>
+          </div>
+          <button type="button" className="icon-button" aria-label="Cerrar la guía" onClick={() => setWelcome(false)}>
+            <X size={16} />
+          </button>
+        </section>
+      )}
+
       <Fold id="fotos" title="Fotos y espacios" summary={photosSummary} open={open.has("fotos")} onToggle={() => toggle("fotos")}>
         {payer && (
           <p className="pw-note" role="note">
@@ -690,6 +715,21 @@ export function DemoEditor({
           actions={workspaceActions}
         />
       </Fold>
+
+      {agencyMode && welcome && (
+        <section className="ed-next-property" aria-labelledby="ed-next-title">
+          <span className="ed-welcome-icon" aria-hidden="true">
+            <Home size={20} />
+          </span>
+          <div>
+            <h2 id="ed-next-title">¿Querés probar con otra propiedad?</h2>
+            <p>Pegá una publicación y traé sus datos y fotos.</p>
+          </div>
+          <Link href="/panel" className="button button-outline" onClick={() => track("invited_next_property_clicked", { property_id: demo.id })}>
+            <Plus size={16} aria-hidden="true" /> Agregar otra propiedad
+          </Link>
+        </section>
+      )}
 
       <Fold
         id="datos"
@@ -1542,22 +1582,45 @@ function ListingSync({
  * a demo is never enough to take it.
  */
 function ClaimLink({ base, busy }: { base: string; busy: boolean }) {
-  const [link, setLink] = useState<{ url: string; expiresAt: string } | null>(null);
+  const [link, setLink] = useState<{ url: string; presentationUrl: string | null; expiresAt: string } | null>(null);
   const [error, setError] = useState("");
+  const until = link ? new Date(link.expiresAt).toLocaleDateString("es-AR") : "";
+  // What the team sends: the demo itself as the way in, with one concrete first task.
+  const message = link?.presentationUrl
+    ? `Te dejé preparada esta propiedad para que puedas trabajar sus fotos desde tu panel. Entrá desde este enlace, probá comparar y descargar una versión y después sumá otra publicación: ${link.presentationUrl}`
+    : "";
   return (
     <div className="dm-claim">
       {link ? (
-        <label className="dm-link-label">
-          Para que la inmobiliaria se quede con sus demos (vence el {new Date(link.expiresAt).toLocaleDateString("es-AR")}, sirve una vez)
-          <input className="dm-link" readOnly value={link.url} onFocus={(e) => e.target.select()} />
-        </label>
+        <>
+          {link.presentationUrl && (
+            <label className="dm-link-label">
+              Demo con acceso a su panel (recomendado): la inmobiliaria ve la demo y entra con «Probar esta propiedad en mi panel»
+              <input className="dm-link" readOnly value={link.presentationUrl} onFocus={(e) => e.target.select()} />
+            </label>
+          )}
+          {message && (
+            <label className="dm-link-label">
+              Mensaje sugerido
+              <textarea className="dm-link" readOnly rows={4} value={message} onFocus={(e) => e.target.select()} />
+            </label>
+          )}
+          <label className="dm-link-label">
+            Acceso directo, sin pasar por la demo
+            <input className="dm-link" readOnly value={link.url} onFocus={(e) => e.target.select()} />
+          </label>
+          <p className="dm-help">
+            Es una invitación privada: vence el {until} y sirve una vez. Mandala solo a la inmobiliaria; el enlace de la ficha para compradores no da
+            acceso.
+          </p>
+        </>
       ) : (
         <button
           type="button"
           className="text-link"
           disabled={busy}
           onClick={() =>
-            api<{ url: string; expiresAt: string }>(`${base}/reclamo`, { method: "POST" })
+            api<{ url: string; presentationUrl: string | null; expiresAt: string }>(`${base}/reclamo`, { method: "POST" })
               .then(setLink)
               .catch((e) => setError(e instanceof Error ? e.message : "No pudimos crear el enlace."))
           }

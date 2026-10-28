@@ -6,6 +6,7 @@ import { adminClient } from "@/lib/supabase/server";
 import { agencyCredits } from "./panel";
 import { claimHash } from "./server";
 import { claimState, type AdminAgencyDetail, type AdminAgencyRow } from "./stage";
+import { presentationPath } from "./demo-invite";
 
 const CLAIM_DAYS = 30;
 
@@ -193,7 +194,12 @@ export async function createClaim(agencyId: string, actorId: string, origin: str
   await rpc("amobla_account", { p_user: actorId, p_trial: false });
   await db.from("admin_audit").insert({ actor_id: actorId, action: "agency_claim_link", subject_id: agencyId, details: { demo: demoToken ?? null } });
   const demo = demoToken ? `&demo=${encodeURIComponent(demoToken)}` : "";
-  return { url: `${origin}/panel/empezar?codigo=${code}${demo}`, expiresAt };
+  return {
+    url: `${origin}/panel/empezar?codigo=${code}${demo}`,
+    // The demo itself as the way in: it offers "Probar esta propiedad en mi panel" with this same code.
+    presentationUrl: demoToken ? `${origin}${presentationPath(demoToken, code)}` : null,
+    expiresAt,
+  };
 }
 
 /** Revokes an invitation not used yet; the link stops working at once. */

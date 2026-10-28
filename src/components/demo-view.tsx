@@ -18,6 +18,7 @@ import {
   ExternalLink,
   FileText,
   Info,
+  Lock,
   Mail,
   MapPin,
   Maximize2,
@@ -29,6 +30,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { Comparison } from "./comparison";
+import type { DemoInvite } from "@/lib/agency/demo-invite";
 import { registerSuperProperties, track } from "@/lib/analytics";
 import { textOn, whatsappNumber, type FactIcon } from "@/lib/demos/branding";
 import {
@@ -118,11 +120,14 @@ export function DemoView({
   demo,
   source,
   presentation = false,
+  invite = null,
 }: {
   demo: PublicDemo;
   source: Source;
   /** The link for the agency: may show the "Demo preparada para…" strip. */
   presentation?: boolean;
+  /** The private invitation carried by the presentation link (validated on the server), if any. */
+  invite?: DemoInvite;
 }) {
   const { agency } = demo;
   const [pageUrl, setPageUrl] = useState("");
@@ -234,6 +239,7 @@ export function DemoView({
           source={source}
           log={log}
           sideAction={primary && primary.kind !== "listing" ? contactLink(primary, "dv2-contact-main") : null}
+          sideInvite={presentation && demo.prospect && invite ? <PanelInvite invite={invite} place="lateral" log={log} /> : null}
         />
         {demo.photos.some((p) => p.versions.length) && <p className="dv2-illustrative">{TEXT.illustrative}</p>}
 
@@ -346,7 +352,8 @@ export function DemoView({
         )}
 
         {/* Only on the team's presentation link of an agency without an account: buyers never see it. */}
-        {presentation && demo.prospect && (
+        {presentation && demo.prospect && invite && <PanelInvite invite={invite} place="final" log={log} />}
+        {presentation && demo.prospect && !invite && (
           <section className="dv2-habita" aria-labelledby="dv2-habita">
             <div>
               <h2 id="dv2-habita">¿Te imaginás todas tus propiedades así?</h2>
@@ -567,11 +574,14 @@ function Gallery({
   source,
   log,
   sideAction,
+  sideInvite = null,
 }: {
   demo: PublicDemo;
   source: Source;
   log: (event: string, extra?: Record<string, unknown>) => unknown;
   sideAction: React.ReactNode;
+  /** The agency's way into its panel, right where it sees the result. */
+  sideInvite?: React.ReactNode;
 }) {
   const photos = demo.photos;
   const styleNames = useMemo(
@@ -878,6 +888,7 @@ function Gallery({
       {panel && (
         <aside className="dv2-aside">
           {panel}
+          {sideInvite}
           {sideAction && <div className="dv2-side-action">{sideAction}</div>}
           <span className="dv2-tech dv2-side-tech">
             <Sparkles size={12} aria-hidden="true" /> Tecnología de <b>habita.</b>
@@ -885,5 +896,48 @@ function Gallery({
         </aside>
       )}
     </div>
+  );
+}
+
+/**
+ * The agency's way from its demo into its own panel, with this same
+ * property, photos and versions: the team's private invitation. The same
+ * text and destination next to the result and at the end of the page.
+ */
+function PanelInvite({
+  invite,
+  place,
+  log,
+}: {
+  invite: Exclude<DemoInvite, null>;
+  place: "lateral" | "final";
+  log: (event: string, extra?: Record<string, unknown>) => unknown;
+}) {
+  const id = `dv2-invite-${place}`;
+  if ("unavailable" in invite)
+    return (
+      <section className={`dv2-invite is-${place}`} aria-labelledby={id}>
+        <p className="dv2-invite-eyebrow">Para tu inmobiliaria</p>
+        <h2 id={id}>Esta invitación ya no está disponible</h2>
+        <p>El enlace venció o ya se usó. Pedile uno nuevo al equipo de habita para trabajar esta propiedad en tu panel.</p>
+      </section>
+    );
+  return (
+    <section className={`dv2-invite is-${place}`} aria-labelledby={id}>
+      <p className="dv2-invite-eyebrow">Para tu inmobiliaria</p>
+      <h2 id={id}>Probá con esta misma propiedad</h2>
+      <p>Preparamos esta demostración para tu inmobiliaria. Entrá a tu panel para trabajar sus fotos y sumar otras propiedades.</p>
+      <a className="dv2-invite-cta" href={invite.href} onClick={() => log("demo_agency_cta_clicked", { origen: `demo_invitacion_${place}` })}>
+        Probar esta propiedad en mi panel
+      </a>
+      <small>
+        <Lock size={14} aria-hidden="true" /> Conservás las fotos y ambientaciones que estás viendo.
+      </small>
+      {invite.freeCredits > 0 && (
+        <small>
+          Incluye {invite.freeCredits} {invite.freeCredits === 1 ? "crédito" : "créditos"} para ambientar fotos nuevas.
+        </small>
+      )}
+    </section>
   );
 }

@@ -351,11 +351,16 @@ describe("Taking over a demo", () => {
     state.tables.agencies[0].owner_id = null;
     const r = await reclamo.POST(req(`/api/admin/demos/${DEMO}/reclamo`, "POST"), params);
     expect(r.status).toBe(201);
-    const { url } = await r.json();
+    const { url, presentationUrl } = await r.json();
     const code = new URL(url).searchParams.get("codigo")!;
     const stored = state.inserts.find((i) => i.table === "agency_claims")!.row;
     expect(stored.code_hash).toBe(createHash("sha256").update(code).digest("hex"));
     expect(JSON.stringify(stored)).not.toContain(code);
+    // The demo as the way in: its presentation link carries the same one-time code.
+    const demoLink = new URL(presentationUrl);
+    expect(demoLink.pathname).toBe("/demo/tok_abcdefghijklmnopqrstuvwx");
+    expect(demoLink.searchParams.get("presentacion")).toBe("1");
+    expect(demoLink.searchParams.get("codigo")).toBe(code);
   });
 });
 

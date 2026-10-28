@@ -1555,7 +1555,7 @@ export function AgencyOnboarding({
   signedIn: boolean;
   hasAgency: boolean;
   code: string | null;
-  demo: { token: string; id: string; agencyName: string; title: string; listingUrl: string | null } | null;
+  demo: { token: string; id: string; agencyId: string; agencyName: string; title: string; listingUrl: string | null } | null;
 }) {
   const router = useRouter();
   const [name, setName] = useState(demo?.agencyName ?? "");
@@ -1610,6 +1610,11 @@ export function AgencyOnboarding({
           : await api<PanelSummary>("/api/panel", { method: "POST", body: JSON.stringify({ name }) });
       track(kind === "claimed" ? "agency_claimed" : "agency_created", { origin, ...(demo ? { demo_id: demo.id } : {}) });
       if (demo) track("demo_to_agency_signup_completed", { demo_id: demo.id, claimed: kind === "claimed" });
+      // Claimed from its own demo: straight into that property, ready for a first try.
+      if (kind === "claimed" && demo && summary.agency.id === demo.agencyId) {
+        window.location.assign(`/panel/propiedades/${demo.id}?bienvenida=1`);
+        return;
+      }
       setDone({ kind, summary });
       router.refresh();
     } catch (e) {

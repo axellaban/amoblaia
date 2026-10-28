@@ -55,7 +55,9 @@ export default function RootLayout({
               {`window.dataLayer = window.dataLayer || [];
 function gtag(){dataLayer.push(arguments);}
 gtag('js', new Date());
-gtag('config', '${GOOGLE_ADS_ID}');`}
+// A private invitation code in the address never reaches Google: the page and referrer go redacted.
+var hide=function(u){return u.replace(/([?&#]codigo=)[^&#]*/gi,'$1[oculto]');};
+gtag('config', '${GOOGLE_ADS_ID}', {page_location: hide(location.href), page_referrer: hide(document.referrer)});`}
             </Script>
           </>
         )}
