@@ -208,6 +208,17 @@ export function parseStatus(s: string): LegacyStatus {
   return "unknown";
 }
 
+/**
+ * Fits a value to its column's limit in the database. The full original
+ * text is always kept in the row's raw data, so nothing is lost; without
+ * this, one long cell would reject the whole import.
+ */
+export const clip = (v: string | null | undefined, max: number) => {
+  const t = (v ?? "").trim();
+  if (!t) return null;
+  return t.length <= max ? t : `${t.slice(0, max - 1)}…`;
+};
+
 export type ImportContact = {
   channel: "whatsapp" | "email" | "phone" | "instagram" | "web" | "other";
   address: string | null;
@@ -305,9 +316,9 @@ export function buildRows(parsed: { headers: string[]; rows: string[][] }, mappi
         channel: "whatsapp",
         address: wa.address,
         address_original: wa.original,
-        confidence: get("phone_confidence") || null,
-        source: get("phone_source") || "planilla",
-        source_url: /^https?:\/\//i.test(get("phone_source")) ? get("phone_source") : null,
+        confidence: clip(get("phone_confidence"), 60),
+        source: clip(get("phone_source"), 200) ?? "planilla",
+        source_url: /^https?:\/\/\S+$/i.test(get("phone_source")) ? clip(get("phone_source"), 500) : null,
         needs_review: !!wa.review,
         review_reason: wa.review,
         verified,
@@ -344,7 +355,7 @@ export function buildRows(parsed: { headers: string[]; rows: string[][] }, mappi
     if (get("instagram")) contacts.push({ channel: "instagram", address: get("instagram").slice(0, 300), address_original: get("instagram"), source: "planilla" });
     if (get("argenprop")) contacts.push({ channel: "other", address: get("argenprop").slice(0, 300), address_original: get("argenprop"), source: "Argenprop" });
 
-    return {
+    return fit({
       row_number,
       source_key,
       name,
@@ -364,8 +375,26 @@ export function buildRows(parsed: { headers: string[]; rows: string[][] }, mappi
       raw,
       messages,
       error,
-    };
+    });
   });
+}
+
+// Column limits of prospect_accounts and prospect_contacts (see the prospecting migration).
+const ROW_LIMITS = { name: 120, website: 300, sdr: 80, campaign: 80, priority: 40, zone: 120, address: 300, decision_maker: 160, notes: 8000 } as const;
+const CONTACT_LIMITS = { address: 300, address_original: 300, person_name: 160, confidence: 60, source: 200, source_url: 500, review_reason: 300, invalid_reason: 300 } as const;
+
+function fit(row: ImportRow): ImportRow {
+  const out = { ...row };
+  for (const [k, max] of Object.entries(ROW_LIMITS) as [keyof typeof ROW_LIMITS, number][]) {
+    const v = out[k];
+    if (typeof v === "string") (out[k] as string | null) = clip(v, max) ?? (k === "name" ? "" : null);
+  }
+  out.contacts = row.contacts.map((c) => {
+    const x = { ...c } as Record<string, unknown>;
+    for (const [k, max] of Object.entries(CONTACT_LIMITS)) if (typeof x[k] === "string") x[k] = k === "address_original" ? (clip(x[k] as string, max) ?? "") : clip(x[k] as string, max);
+    return x as ImportContact;
+  });
+  return out;
 }
 
 export type ExistingAgency = { id: string; name: string; website: string | null; account_id: string | null; source: string | null; source_key: string | null };

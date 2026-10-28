@@ -1,6 +1,7 @@
 import { PGlite } from "@electric-sql/pglite";
 import { readFileSync, readdirSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { buildRows, guessMapping, parseCsv } from "@/lib/prospecting/import";
 
 // Invariants of the prospecting migration, on the real SQL (PGlite).
 // Every name and number here is synthetic test data.
@@ -333,6 +334,19 @@ describe("Import", () => {
     await expect(
       json("select habita_prospect_prepare($1,$2,$3,(select id from prospect_contacts where account_id=$3),2,'test',null,true,null,'Texto','SDR',true) as r", [admin, id(), acc]),
     ).resolves.toMatchObject({ status: "prepared" });
+  });
+
+  it("cells longer than their column (seen in the real sheet) never reject the whole import", async () => {
+    const long = "Celular publicado en directorio oficial; WhatsApp no verificado"; // 63 characters
+    const t = parseCsv(
+      `Inmobiliaria,Número (sin 0 ni 15),Confianza del número,Fuente del número,Quién decide\nFICTICIA Larga,2230000088,${long},Consulta ${"x".repeat(250)},${"Y".repeat(200)}\n`,
+    );
+    const rs = buildRows(t, guessMapping(t.headers)).map((r) => ({ ...r, agency_id: null }));
+    const report = await json<{ created: number }>("select habita_prospect_import($1,$2,'planilla-larga',null,null,'{}',$3,false,'unknown') as r", [admin, id(), JSON.stringify(rs)]);
+    expect(report.created).toBe(1);
+    const acc = (await one<{ id: string; source_data: Record<string, string> }>("select id,source_data from prospect_accounts where source='planilla-larga'"))!;
+    expect(acc.source_data["Confianza del número"]).toBe(long); // the full text stays in the original data
+    expect((await one<{ confidence: string }>("select confidence from prospect_contacts where account_id=$1", [acc.id]))!.confidence).toHaveLength(60);
   });
 
   it("the same import id applied twice returns its report", async () => {
