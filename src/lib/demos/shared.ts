@@ -118,6 +118,8 @@ export type DemoSummary = {
   /** Whether the agency already has its habita account (null: unknown). */
   agencyClaimed: boolean | null;
   propertyTitle: string;
+  /** "fotos": imported photos that are not a ficha yet (cannot be published). Absent: a ficha. */
+  kind?: "ficha" | "fotos";
   photos: number;
   staged: number;
   coverPhotoId: string | null;

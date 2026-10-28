@@ -81,6 +81,7 @@ export async function PATCH(request: Request, { params }: Params) {
         );
         break;
       case "publish": {
+        if (demo.kind === "fotos") throw new HttpError(409, "Creá la ficha antes de publicar estas fotos.");
         const { count, error } = await db
           .from("demo_photos")
           .select("id", { count: "exact", head: true })

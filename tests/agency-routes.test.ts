@@ -174,6 +174,10 @@ import * as espacios from "../src/app/api/admin/demos/[id]/espacios/route";
 import * as espacio from "../src/app/api/admin/demos/[id]/espacios/[spaceId]/route";
 import * as fotoDemo from "../src/app/api/admin/demos/[id]/photos/[photoId]/route";
 import * as creditosAgencia from "../src/app/api/admin/inmobiliarias/[id]/creditos/route";
+import * as fotosGrupo from "../src/app/api/panel/imagenes/route";
+import * as grupoSubida from "../src/app/api/panel/imagenes/grupo/route";
+import * as fichaGrupo from "../src/app/api/panel/imagenes/[id]/ficha/route";
+import * as demoAgencia from "../src/app/api/admin/demos/[id]/route";
 import { agencyStage, claimState } from "../src/lib/agency/stage";
 import { publicSite } from "../src/lib/agency/site";
 
@@ -238,8 +242,8 @@ beforeEach(() => {
     agencies: [{ ...AGENCY, notes: "Le interesa el plan Agente", contact_name: "Ana", branding: {} }],
     demo_properties: [],
     demos: [
-      { id: DEMO, agency_id: "ag1", property_id: "pr1", token: "tok_abcdefghijklmnopqrstuvwx", status: "published", settings: { price: "USD 1", priceConflict: "x" }, demo_properties: { title: "Casa", location: "Centro" } },
-      { id: "d2", agency_id: "ag1", property_id: "pr2", token: "tok_draftdraftdraftdraftdr", status: "draft", settings: {}, demo_properties: { title: "Borrador", location: null } },
+      { id: DEMO, agency_id: "ag1", kind: "ficha", property_id: "pr1", token: "tok_abcdefghijklmnopqrstuvwx", status: "published", settings: { price: "USD 1", priceConflict: "x" }, demo_properties: { title: "Casa", location: "Centro" } },
+      { id: "d2", agency_id: "ag1", kind: "ficha", property_id: "pr2", token: "tok_draftdraftdraftdraftdr", status: "draft", settings: {}, demo_properties: { title: "Borrador", location: null } },
     ],
     demo_photos: [],
     generations: [],
@@ -556,6 +560,7 @@ describe("Properties list", () => {
     state.tables.demos = Array.from({ length: 321 }, (_, i) => ({
       id: `d${i}`,
       agency_id: "ag1",
+      kind: "ficha",
       property_id: `p${i}`,
       token: `tok_${String(i).padStart(24, "0")}`,
       status: i % 3 ? "draft" : "published",
@@ -949,5 +954,68 @@ describe("Support view: the team sees an agency's panel, read only", () => {
     expect(r.status).toBe(200);
     expect(state.cookies.has("habita_soporte")).toBe(false);
     expect(state.inserts.find((i) => i.table === "admin_audit")!.row).toMatchObject({ action: "agency_support_end", subject_id: AG });
+  });
+});
+
+describe("Photos imported without a ficha", () => {
+  const GROUP = "00000000-0000-4000-8000-000000000f01";
+  const importGroup = (extra: Record<string, unknown> = {}) =>
+    fotosGrupo.POST(req("/api/panel/imagenes", "POST", { url: "https://sur.test/p/123", key: crypto.randomUUID(), ...extra }));
+  const publish = (id: string) =>
+    demoAgencia.PATCH(req(`/api/admin/demos/${id}`, "PATCH", { action: "publish" }), { params: Promise.resolve({ id }) });
+
+  it("keeps only the photos chosen as a photo group, with no ficha, no credit and no staging", async () => {
+    const r = await importGroup({ images: ["https://cdn.test/123_a.jpg", "https://cdn.test/123_b.jpg"] });
+    expect(r.status).toBe(201);
+    const made = await r.json();
+    expect(made).toMatchObject({ status: "partial", photosTotal: 2, photosDone: 0, images: ["https://cdn.test/123_a.jpg", "https://cdn.test/123_b.jpg"] });
+    const demo = state.inserts.find((i) => i.table === "demos")?.row;
+    expect(demo).toMatchObject({ agency_id: "ag1", kind: "fotos" });
+    expect(state.rpcs.filter((c) => /reserve|generation/.test(c.name))).toEqual([]);
+    expect(state.inserts.filter((i) => i.table === "generations")).toEqual([]);
+  });
+
+  it("never offers a photo the listing did not show", async () => {
+    const r = await importGroup({ images: ["https://evil.test/other.jpg"] });
+    expect(await r.json()).toMatchObject({ photosTotal: 0, images: [] });
+  });
+
+  it("refuses a listing the agency already has, and records it as a duplicate", async () => {
+    state.tables.demo_properties = [{ id: "pr1", agency_id: "ag1", listing_url: "https://sur.test/p/123", demos: { id: DEMO } }];
+    const r = await importGroup();
+    expect(r.status).toBe(409);
+    expect(await r.json()).toMatchObject({ duplicateOf: DEMO });
+    expect(state.tables.property_imports[0]).toMatchObject({ status: "duplicate", demo_id: DEMO });
+  });
+
+  it("lists photo groups apart from the agency's properties", async () => {
+    state.tables.demos.push({ id: GROUP, agency_id: "ag1", kind: "fotos", property_id: "pr9", token: "tok_grupogrupogrupogrupo", status: "draft", settings: {}, demo_properties: { title: "Fotos", location: null, listing_url: null } });
+    const groups = await (await fotosGrupo.GET(req("/api/panel/imagenes"))).json();
+    expect(groups.items.map((g: { id: string }) => g.id)).toEqual([GROUP]);
+    const properties = await (await propiedades.GET(req("/api/panel/propiedades"))).json();
+    expect(properties.items.map((p: { id: string }) => p.id)).not.toContain(GROUP);
+  });
+
+  it("cannot be published as a ficha: it must become one first", async () => {
+    state.tables.demos.push({ id: GROUP, agency_id: "ag1", kind: "fotos", property_id: "pr9", token: "tok_grupogrupogrupogrupo", status: "draft", settings: {}, demo_properties: { title: "Fotos", location: null, listing_url: null } });
+    const r = await publish(GROUP);
+    expect(r.status).toBe(409);
+    expect(state.tables.demos.find((d) => d.id === GROUP)?.status).toBe("draft");
+  });
+
+  it("creates the ficha from the group, keeping its photos and leaving it as a draft", async () => {
+    state.tables.demos.push({ id: GROUP, agency_id: "ag1", kind: "fotos", property_id: "pr9", token: "tok_grupogrupogrupogrupo", status: "draft", settings: {}, demo_properties: { title: "Fotos", location: null, listing_url: null } });
+    const r = await fichaGrupo.POST(req(`/api/panel/imagenes/${GROUP}/ficha`, "POST"), { params: Promise.resolve({ id: GROUP }) });
+    expect(r.status).toBe(200);
+    expect(state.tables.demos.find((d) => d.id === GROUP)).toMatchObject({ kind: "ficha", status: "draft" });
+    const again = await fichaGrupo.POST(req(`/api/panel/imagenes/${GROUP}/ficha`, "POST"), { params: Promise.resolve({ id: GROUP }) });
+    expect(again.status).toBe(409);
+  });
+
+  it("creates an empty group for uploaded files, named as the person chose", async () => {
+    const r = await grupoSubida.POST(req("/api/panel/imagenes/grupo", "POST", { name: "Casa en Zona Güemes" }));
+    expect(r.status).toBe(201);
+    expect(state.inserts.find((i) => i.table === "demo_properties")?.row).toMatchObject({ title: "Casa en Zona Güemes", listing_url: null });
+    expect(state.inserts.find((i) => i.table === "demos")?.row).toMatchObject({ kind: "fotos" });
   });
 });

@@ -132,6 +132,9 @@ export function PhotoWorkspace({
   actions: WorkspaceActions;
 }) {
   const { photos, spaces } = detail;
+  // Imported photos without a ficha: what is chosen is a version, not what a ficha shows.
+  const photosOnly = detail.demo.kind === "fotos";
+  const shownLabel = photosOnly ? "Versión seleccionada" : "Se muestra en la ficha";
   const groups = groupBySpace(photos, spaces);
   const [activeId, setActiveId] = useState<string | null>(null);
   // The version being looked at, per photo; null: the original. A view only.
@@ -274,6 +277,7 @@ export function PhotoWorkspace({
               </button>
             </div>
             <span className="pw-stage-actions">
+              {!photosOnly && (
               <button
                 type="button"
                 className={`button button-small button-outline ${isCover ? "is-on" : ""}`}
@@ -283,13 +287,21 @@ export function PhotoWorkspace({
               >
                 <Star size={14} /> {isCover ? "Portada" : "Usar de portada"}
               </button>
+              )}
               <button
                 type="button"
                 className={`button button-small button-outline ${photo.visible ? "" : "is-off"}`}
                 aria-pressed={!photo.visible}
                 onClick={() => void actions.patchPhoto(photo.id, { changes: { visible: !photo.visible } })}
               >
-                {photo.visible ? <Eye size={14} /> : <EyeOff size={14} />} {photo.visible ? "Se muestra en la ficha" : "Oculta en la ficha"}
+                {photo.visible ? <Eye size={14} /> : <EyeOff size={14} />}{" "}
+                {photosOnly
+                  ? photo.visible
+                    ? "Se incluye si creás la ficha"
+                    : "No se incluye en la ficha"
+                  : photo.visible
+                    ? "Se muestra en la ficha"
+                    : "Oculta en la ficha"}
               </button>
             </span>
           </div>
@@ -316,7 +328,7 @@ export function PhotoWorkspace({
           <h3 className="pw-title">{viewGen ? `${styleName(viewGen.style)}${sameStyle > 1 && number ? ` v${number}` : ""}` : "Original"}</h3>
           <p className="pw-state">
             {viewGen
-              ? `${shownIds.has(viewGen.id) ? "Se muestra en la ficha" : "Creada y guardada · no se muestra en la ficha"} · lista para descargar`
+              ? `${shownIds.has(viewGen.id) ? shownLabel : photosOnly ? "Creada y guardada" : "Creada y guardada · no se muestra en la ficha"} · lista para descargar`
               : "La foto como se subió"}
           </p>
           {viewGen ? (
@@ -363,6 +375,7 @@ export function PhotoWorkspace({
             {versionsList.map((s) => (
               <StyleItem
                 key={s.style}
+                shownLabel={shownLabel}
                 s={s}
                 photo={photo}
                 viewing={viewGen?.id ?? null}
@@ -453,6 +466,7 @@ export function PhotoWorkspace({
 
 /** One style in the versions panel: its state, its versions (pick to view), and the next action when it has none. */
 function StyleItem({
+  shownLabel,
   s,
   photo,
   viewing,
@@ -461,6 +475,8 @@ function StyleItem({
   onChoose,
   actions,
 }: {
+  /** "Se muestra en la ficha", or "Versión seleccionada" while there is no ficha. */
+  shownLabel: string;
   s: ReturnType<typeof photoVersions>[number];
   photo: EditorPhoto;
   viewing: string | null;
@@ -484,11 +500,11 @@ function StyleItem({
                 {many && v.number ? ` v${v.number}` : ""}
               </strong>
               <small>
-                {v.shown ? "Se muestra en la ficha" : "Creada · guardada"}
+                {v.shown ? shownLabel : "Creada · guardada"}
                 {!fits ? " · de otro tipo de inmueble" : ""}
               </small>
             </span>
-            {v.shown && <Check size={16} className="pw-version-check" aria-label="Se muestra en la ficha" />}
+            {v.shown && <Check size={16} className="pw-version-check" aria-label={shownLabel} />}
           </button>
         </li>
       ))}

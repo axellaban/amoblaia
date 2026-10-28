@@ -441,3 +441,80 @@ En `/admin/inmobiliarias`, cada inmobiliaria tiene **Ver su panel**. Abre `/pane
 - No se inicia sesión con la cuenta de la inmobiliaria. Una cookie firmada (`habita_soporte`) nombra al miembro del equipo y a la inmobiliaria y vence en una hora. Solo vale para esa persona del equipo: otra cuenta con la misma cookie ve su propio panel.
 - Es **solo lectura**: el servidor rechaza todo cambio hecho desde el panel mientras dure la vista, incluido crear versiones con IA, que además nunca usan el saldo de la inmobiliaria.
 - Entrar y salir quedan registrados en `admin_audit` (`agency_support_view`, `agency_support_end`). Si no se puede registrar, la vista no se abre.
+
+## 13. Importar imágenes (grupos de fotos sin ficha, 2026-10-28)
+
+Entrada nueva en el inicio, al lado de «Crear demostraciones». Trae fotos desde
+un enlace, varios enlaces o archivos del dispositivo, las elige por origen e
+importa sin crear ni publicar una ficha. Importar no genera imágenes ni usa
+créditos.
+
+**Modelo.** Migración aditiva `202611040001_photo_groups.sql`: `demos.kind`
+(`ficha` | `fotos`, por defecto `ficha`). Un grupo de fotos es una fila de
+`demos` con `kind = 'fotos'` y su propiedad. Así las fotos, las versiones, las
+descargas y el editor (`/panel/propiedades/[id]`) siguen funcionando igual.
+Además:
+
+- No aparece en «Mis propiedades» ni cuenta en los totales del inicio
+  (`agencyProperties` filtra `kind`; `habita_agency_counts` se reemplazó para contar solo fichas).
+- No se puede publicar: `publicacion` responde 409 hasta que se crea la ficha.
+- «Crear ficha con estas fotos» solo cambia `kind` a `ficha` (queda en borrador).
+  Las fotos, las versiones y el enlace se conservan; no se publica nada.
+
+**Rutas nuevas** (todas con `requireAgency`):
+
+| Ruta | Qué hace |
+| --- | --- |
+| `GET /api/panel/imagenes` | Grupos de fotos sin ficha, con conteos reales |
+| `POST /api/panel/imagenes` | Importa las fotos elegidas de un enlace (`url`, `key`, `images`). Idempotente por `key`; un enlace ya cargado responde 409 con `duplicateOf` |
+| `POST /api/panel/imagenes/grupo` | Crea un grupo vacío para archivos subidos (`name`) |
+| `POST /api/panel/imagenes/[id]/ficha` | Convierte el grupo en ficha (borrador) |
+
+Lectura de enlaces, descarga de fotos y reporte (`PATCH /api/panel/importar`) son
+los mismos que usa la importación de propiedades: el navegador descarga, el
+servidor registra qué faltó en `property_imports`.
+
+**Pantalla.** `/panel/imagenes?metodo=url|many|files` con tres pestañas (el
+estado se conserva al cambiar), lectura por enlace con su estado real
+(en espera, leyendo, lista, duplicada, con error), selección por origen y
+«Importar N fotos». Un enlace con error se puede reintentar sin bloquear a los
+demás. Los archivos se validan con `src/lib/photo-limits.ts` (JPG, PNG o WebP,
+hasta 3 MB, el mismo límite que el servidor).
+
+**Bandeja de fotos importadas** (`/panel/imagenes/lote?grupo=<id>`, componente
+`agency-batch.tsx`, reglas en `src/lib/agency/batch-plan.ts`):
+
+- Grupos a la izquierda (selector compacto en móvil), fotos al centro con
+  «Elegir para ambientar» y su ambiente, y «Aplicar a las elegidas» a la derecha
+  (acción y estilo del catálogo). «Sumar fotos» agrega archivos a un grupo.
+- El ambiente nunca se adivina: `demo_photos.room` vale `living` por defecto, así
+  que la bandeja solo da por conocido el ambiente de la última versión creada. Si
+  no hay, muestra «Sin asignar» y no deja continuar hasta elegirlo o quitar la foto.
+- Un estilo que no corresponde al tipo de inmueble de un grupo, o un grupo que
+  esta cuenta no puede ambientar (`staging.blocked`, la regla del editor), queda
+  afuera y se dice por qué. Las versiones que existen, están en curso o en
+  revisión técnica no se vuelven a crear.
+- «Revisar y generar» pide `/costo` a cada grupo y suma los créditos contra el
+  único saldo que los paga: dos grupos que entran por separado pueden no entrar
+  juntos. Un saldo desconocido bloquea; nunca se lee como cero ni como suficiente.
+- La generación usa la misma ruta por foto, de a una versión, con su clave de
+  idempotencia. Sin respuesta: «Sin respuesta», no se reenvía sola y su reintento
+  usa la misma clave. Respuestas 401/402/403/409/429/503 detienen el resto
+  («Sin enviar»). Nunca dice que está todo listo si algo falló.
+- La selección, los ambientes y la posición se guardan en `sessionStorage`:
+  sobreviven a ir al editor y volver («Volver al lote» usa `?volver=`), pero no a
+  cerrar la pestaña. La página lo dice y avisa antes de salir con versiones sin enviar.
+
+**Editor con un grupo:** muestra «Fotos sin ficha», usa «Versión seleccionada» en
+lugar de «Se muestra en la ficha», oculta «Usar de portada», «Vista previa» y
+«Publicar», y ofrece «Crear ficha con estas fotos».
+
+**Límites conocidos:**
+
+- No se guarda una tanda para seguir después («Guardar y seguir después» quedó
+  fuera, como permite el pedido): eso requiere persistencia nueva.
+- Reintento de archivos subidos: si la respuesta se pierde después de guardar,
+  el reintento puede duplicar esa foto (la subida no deduplica por contenido).
+- En `/admin` (vista del equipo) los grupos aparecen como borradores; no se filtraron.
+- Validado con un arnés de Vite y Playwright con respuestas simuladas, no contra
+  Supabase ni generaciones reales.

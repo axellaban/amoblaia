@@ -36,7 +36,15 @@ export async function createAgency(userId: string, name: string) {
   return agencyRpc<string>("habita_create_agency", { p_user: userId, p_name: name, p_slug: slugify(name) });
 }
 
-export type PropertyQuery = { page?: number; perPage?: number; q?: string | null; status?: string | null; operation?: string | null };
+export type PropertyQuery = {
+  page?: number;
+  perPage?: number;
+  q?: string | null;
+  status?: string | null;
+  operation?: string | null;
+  /** "fotos" lists the photo groups that are not fichas yet. */
+  kind?: "ficha" | "fotos";
+};
 type DemoListRow = {
   id: string;
   property_id: string;
@@ -59,7 +67,8 @@ export async function agencyProperties(agencyId: string, query: PropertyQuery = 
   let list = db
     .from("demos")
     .select("id,property_id,token,status,cover_photo_id,created_at,settings,demo_properties!inner(title,location,listing_url,origin)", { count: "exact" })
-    .eq("agency_id", agencyId);
+    .eq("agency_id", agencyId)
+    .eq("kind", query.kind ?? "ficha");
   if (query.status === "draft" || query.status === "published") list = list.eq("status", query.status);
   const op = query.operation?.trim().slice(0, 40);
   if (op) list = list.eq("settings->>operation", op);
