@@ -13737,3 +13737,156 @@ a.dm-agency:hover {
   outline: 2px solid var(--forest);
   outline-offset: 2px;
 }
+
+/* Home: antes y después en el hero, y la vista ilustrativa del panel de inmobiliarias. */
+.hx-hero-stage .comparison {
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+  border-radius: inherit;
+}
+.hx-hero-stage .stage-select {
+  z-index: 5;
+}
+.hx-agency-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 22px;
+  color: #e9e3d6;
+  font-size: 15px;
+  text-decoration: none;
+}
+.hx-agency-link:hover b,
+.hx-agency-link:focus-visible b {
+  color: #fff;
+}
+.hx-agency-link b {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.hx-panel-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 13px;
+}
+.hx-panel-tabs b {
+  color: var(--forest);
+}
+.hx-panel-entries {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.hx-panel-entry {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+}
+.hx-panel-entry strong {
+  font-size: 15px;
+}
+.hx-panel-entry small {
+  justify-self: start;
+  color: var(--muted);
+  font-size: 12px;
+}
+.hx-panel-entry.is-dark {
+  border-color: var(--forest);
+  background: var(--forest);
+  color: #fff;
+}
+.hx-panel-entry.is-dark small {
+  color: #e9e3d6;
+}
+.hx-panel-field {
+  margin-top: 6px;
+  padding: 8px 10px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.hx-panel-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+.hx-panel-chips em {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--cream);
+  font-size: 11px;
+  font-style: normal;
+}
+.hx-panel-chips em:first-child {
+  background: #dfe9dc;
+  color: var(--forest);
+  font-weight: 700;
+}
+.hx-panel-batch {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--cream);
+}
+.hx-panel-batch p {
+  margin: 0;
+  font-size: 13px;
+}
+.hx-panel-batch .hx-panel-cards {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.hx-panel-card i {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  font-size: 11px;
+  font-style: normal;
+}
+.hx-panel-apply {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fff;
+  font-size: 13px;
+}
+.hx-panel-apply b {
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: var(--forest);
+  color: #fff;
+  font-size: 12px;
+}
+@media (max-width: 600px) {
+  .hx-panel-entries {
+    grid-template-columns: 1fr;
+  }
+  .hx-panel-card span {
+    font-size: 10px;
+  }
+  .hx-panel-card i {
+    display: none;
+  }
+}
