@@ -1050,6 +1050,7 @@ export function DemoEditor({
             ) : (
               <p className="dm-help">Es un borrador: nadie puede verla. Publicala para obtener el enlace.</p>
             )}
+            {!agencyMode && <AccessLog access={detail.access} />}
             {!agencyMode && <ClaimLink base={base} busy={busy} />}
             <LinkPreview demo={demo} location={detail.property.location} />
             <p className="dm-help">Así se verá el enlace en WhatsApp: la portada, mitad original y mitad en el estilo principal.</p>
@@ -1541,6 +1542,41 @@ function ListingSync({
  * stagings) in its own account. The team creates it and sends it: opening
  * a demo is never enough to take it.
  */
+const whenViewed = (iso: string) => new Date(iso).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" });
+
+/**
+ * Who opened the shared link and when they did so last. The team's own visits
+ * are listed as "Equipo" and not counted as people who received the demo.
+ */
+function AccessLog({ access }: { access: DemoDetail["access"] }) {
+  if (!access.ready)
+    return <p className="dm-help">Los accesos se registran cuando se aplique la migración 202611050001_demo_views.sql.</p>;
+  return (
+    <div className="dm-access" aria-label="Accesos al enlace">
+      <h3>Accesos</h3>
+      <p className="dm-help">
+        {access.people === 0 || !access.lastAt
+          ? "Todavía nadie accedió al enlace."
+          : `Accedieron ${access.people} ${access.people === 1 ? "persona" : "personas"}. Último acceso ${whenViewed(access.lastAt)}.`}
+      </p>
+      {access.viewers.length > 0 && (
+        <ul>
+          {access.viewers.map((v, i) => (
+            <li key={`${v.label}-${i}`} className={v.kind === "team" ? "is-team" : undefined}>
+              <span className="dm-access-who">
+                {v.label}
+                {v.kind === "team" && <em> · Equipo</em>}
+              </span>
+              <time dateTime={v.lastAt}>{whenViewed(v.lastAt)}</time>
+              <span className="dm-access-views">{v.views === 1 ? "1 vez" : `${v.views} veces`}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function ClaimLink({ base, busy }: { base: string; busy: boolean }) {
   const [link, setLink] = useState<{ url: string; expiresAt: string } | null>(null);
   const [error, setError] = useState("");

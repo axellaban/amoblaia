@@ -204,7 +204,62 @@ export type DemoDetail = {
    * with the same rule the quote and the reservation apply.
    */
   staging?: { payer: "team" | "agency"; blocked: string | null };
+  /** Who opened the shared link. Private: the agency never sees the viewers. */
+  access: DemoAccess;
 };
+
+/** A visitor of a shared demo: a signed-in account, or a browser without one. */
+export type DemoViewer = {
+  /** "team": an admin account, its visits are not the buyers'. */
+  kind: "team" | "account" | "visitor";
+  /** The account's e-mail, or "Visitante N" (by first visit) for a browser without an account. */
+  label: string;
+  views: number;
+  firstAt: string;
+  lastAt: string;
+};
+export type DemoAccess = {
+  /** False until migration 202611050001_demo_views.sql is applied. */
+  ready: boolean;
+  /** Visitors who are not the team. */
+  people: number;
+  /** The last visit by someone who is not the team, or null. */
+  lastAt: string | null;
+  /** Newest first. */
+  viewers: DemoViewer[];
+};
+export type DemoViewRow = {
+  visitor: string;
+  user_id: string | null;
+  viewer_email: string | null;
+  views: number;
+  first_viewed_at: string;
+  last_viewed_at: string;
+};
+
+/**
+ * The viewers of a demo, newest first. `isTeam` tells the team's accounts
+ * apart, so the team's own visits are shown but never counted as people.
+ */
+export function viewersOf(rows: DemoViewRow[], isTeam: (email: string) => boolean): Omit<DemoAccess, "ready"> {
+  const visitorNumber = new Map(
+    [...rows]
+      .filter((r) => !r.user_id)
+      .sort((a, b) => a.first_viewed_at.localeCompare(b.first_viewed_at))
+      .map((r, i) => [r.visitor, i + 1]),
+  );
+  const viewers = [...rows]
+    .sort((a, b) => b.last_viewed_at.localeCompare(a.last_viewed_at))
+    .map((r): DemoViewer => {
+      const team = Boolean(r.viewer_email && isTeam(r.viewer_email));
+      const kind = team ? "team" : r.user_id ? "account" : "visitor";
+      const label =
+        kind === "visitor" ? `Visitante ${visitorNumber.get(r.visitor)}` : (r.viewer_email ?? "Cuenta sin e-mail");
+      return { kind, label, views: r.views, firstAt: r.first_viewed_at, lastAt: r.last_viewed_at };
+    });
+  const people = viewers.filter((v) => v.kind !== "team");
+  return { people: people.length, lastAt: people[0]?.lastAt ?? null, viewers };
+}
 
 export function roomName(id: string) {
   return rooms.find((r) => r.id === id)?.name ?? "Ambiente";

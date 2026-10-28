@@ -25,9 +25,17 @@ import { adminClient } from "@/lib/supabase/server";
 const PRIVATE = { "Cache-Control": "private, no-store" };
 type Params = { params: Promise<{ id: string }> };
 
-/** The team's notes and contact person about an agency are never shown to the agency. */
+/**
+ * The team's notes and contact person about an agency are never shown to the agency,
+ * and neither are the accounts that opened the demo: the agency sees only the counts.
+ */
 function viewOf(detail: Awaited<ReturnType<typeof demoDetail>>, admin: boolean) {
-  return admin ? detail : { ...detail, agency: { ...detail.agency, notes: null, contact_name: null } };
+  if (admin) return detail;
+  return {
+    ...detail,
+    agency: { ...detail.agency, notes: null, contact_name: null },
+    access: { ...detail.access, viewers: [] },
+  };
 }
 
 export async function GET(_request: Request, { params }: Params) {

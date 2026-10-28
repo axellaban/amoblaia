@@ -3,7 +3,7 @@ import { createHash, randomBytes } from "node:crypto";
 import sharp from "sharp";
 import { adminClient } from "@/lib/supabase/server";
 import { BUCKET } from "@/lib/commerce/jobs";
-import { HttpError } from "@/lib/commerce/http";
+import { HttpError, isAdmin } from "@/lib/commerce/http";
 import { normalizePhoto } from "@/lib/commerce/images";
 import {
   DEFAULT_ACCENT,
@@ -27,7 +27,10 @@ import {
   shownVersions,
   styleName,
   type AgencyRow,
+  type DemoAccess,
   type DemoDetail,
+  type DemoViewRow,
+  viewersOf,
   type DemoMode,
   type DemoSummary,
   type EditorPhoto,
@@ -359,10 +362,11 @@ export async function demoDetail(id: string): Promise<DemoDetail> {
       ) as (GenerationRow & { project_id: string })[])
     : [];
   const prop = check(property, "DEMO_PROPERTY_LOOKUP_FAILED") as DemoDetail["property"];
-  const [shown, branding, saved] = await Promise.all([
+  const [shown, branding, saved, access] = await Promise.all([
     shownOf(photos),
     brandingOf(demo.agency_id),
     settingsOf(demo.id),
+    accessOf(demo.id),
   ]);
   const main = mainOf(photos);
   const order = orderStyles(photos.flatMap((p) => [...(shown.get(p.id)?.keys() ?? [])]), main);
@@ -422,7 +426,49 @@ export async function demoDetail(id: string): Promise<DemoDetail> {
     }),
     spaces: spaces.list,
     spacesReady: spaces.ready,
+    access,
   };
+}
+
+/** Who opened the shared link. Read with the team's rule for telling its own accounts apart. */
+async function accessOf(demoId: string): Promise<DemoAccess> {
+  const res = await adminClient()
+    .from("demo_views")
+    .select("visitor,user_id,viewer_email,views,first_viewed_at,last_viewed_at")
+    .eq("demo_id", demoId)
+    .order("last_viewed_at", { ascending: false })
+    .limit(500);
+  if (res.error) return { ready: false, people: 0, lastAt: null, viewers: [] };
+  return { ready: true, ...viewersOf((res.data ?? []) as DemoViewRow[], isAdmin) };
+}
+
+/** Name of the httpOnly cookie that tells a browser without an account apart from the others. */
+export const VISITOR_COOKIE = "amoblaia-visitante";
+export const VISITOR_SECONDS = 365 * 24 * 60 * 60;
+
+/**
+ * Counts one visit to a published demo. Signed-in accounts are counted as
+ * themselves; any other browser by its visitor cookie. False when the token
+ * is unknown or the demo is not published, so nothing is counted.
+ */
+export async function recordDemoView(token: string, viewer: { key: string; userId: string | null; email: string | null }) {
+  if (!TOKEN_PATTERN.test(token)) return false;
+  const db = adminClient();
+  const demo = check(
+    await db.from("demos").select("id").eq("token", token).eq("status", "published").maybeSingle(),
+    "DEMO_LOOKUP_FAILED",
+  ) as { id: string } | null;
+  if (!demo) return false;
+  check(
+    await db.rpc("amobla_record_demo_view", {
+      p_demo: demo.id,
+      p_visitor: viewer.key,
+      p_user: viewer.userId,
+      p_email: viewer.email,
+    }),
+    "DEMO_VIEW_FAILED",
+  );
+  return true;
 }
 
 /**

@@ -141,6 +141,8 @@ export function DemoView({
   useEffect(() => {
     setPageUrl(window.location.href.split(/[?#]/)[0]);
     if (source.kind !== "public") return;
+    // Counted once per page load for the team's list of accesses; the page never waits for it.
+    void fetch(`/api/demos/${source.token}/visita`, { method: "POST", keepalive: true }).catch(() => null);
     track("demo_vista", analytics);
     registerSuperProperties({ demo_id: demo.id, demo_inmobiliaria_id: demo.agencyId });
     try {
