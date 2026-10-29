@@ -80,6 +80,7 @@ export function PricingPlans({
   firstPackUsed = false,
   renderedAt,
   signupHref,
+  initialSku,
 }: {
   products: Product[];
   enabled: boolean;
@@ -94,6 +95,8 @@ export function PricingPlans({
   renderedAt: number;
   /** Someone without an account yet (an invited agency): buying starts by creating it here. */
   signupHref?: string;
+  /** The plan chosen before creating the account: its payment opens right away. */
+  initialSku?: string;
 }) {
   // Creating the account first, keeping the chosen plan for after it.
   const toSignup = (sku: string) => {
@@ -143,6 +146,18 @@ export function PricingPlans({
   const [expandedPlans, setExpandedPlans] = useState<Record<string, boolean>>(
     {},
   );
+  // Back from creating the account with a plan chosen: its payment opens once, right away.
+  const reopened = useRef(false);
+  useEffect(() => {
+    if (reopened.current || !initialSku || !email || !enabled) return;
+    if (!products.some((p) => p.sku === initialSku && p.active && p.price_cents)) return;
+    reopened.current = true;
+    if (initialSku.endsWith("-year")) setAnnual(true);
+    else if (initialSku.endsWith("-month")) setAnnual(false);
+    // Packs go straight to Checkout Pro; plans confirm the payer's email first.
+    if (initialSku.startsWith("pack-")) void buy(initialSku);
+    else setSelectedSku(initialSku);
+  }, [initialSku, email, enabled, products]);
   const selectedProduct = products.find((p) => p.sku === selectedSku);
   const selectedDeal = selectedProduct ? launch(selectedProduct.sku) : null;
   const modalRef = useRef<HTMLElement>(null);

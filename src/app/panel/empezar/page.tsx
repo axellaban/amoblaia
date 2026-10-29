@@ -38,9 +38,11 @@ export default async function StartPage({ searchParams }: Props) {
   // Someone who already works for that demo's agency goes straight to the property, not through a form.
   if (demo && membership && membership.agency.id === demo.agencyId) redirect(`/panel/propiedades/${demo.id}`);
   // The team checks an invitation the way the agency will meet it: its demo, with the way into the panel.
-  if (code && token && demo && isAdmin(user?.email)) redirect(presentationPath(token, code));
+  const team = isAdmin(user?.email);
+  // Coming from a plan, the team sees the sign-up step as the agency will (a preview, nothing is created).
+  if (code && token && demo && team && !chosenPlan) redirect(presentationPath(token, code));
   // The team's invitation: only an e-mail and a password to enter.
-  if (code && !signedIn) {
+  if (code && (!signedIn || (team && chosenPlan))) {
     const invitation = await invitationOf(code);
     const here = `/panel/empezar?${new URLSearchParams({ codigo: code, ...(token ? { demo: token } : {}), ...(chosenPlan ? { plan: chosenPlan } : {}) })}`;
     // The demo the agency came from, only when the invitation is for that same agency.
@@ -57,7 +59,7 @@ export default async function StartPage({ searchParams }: Props) {
             back: presentationPath(token!, code),
           }
         : null;
-    return <InvitationSignup code={code} here={here} invitation={invitation} property={property} plan={chosenPlan} />;
+    return <InvitationSignup code={code} here={here} invitation={invitation} property={property} plan={chosenPlan} preview={signedIn && team} />;
   }
   return (
     <AgencyOnboarding
