@@ -27,6 +27,9 @@ export default async function StartPage({ searchParams }: Props) {
   const q = await searchParams;
   const token = one(q.demo);
   const code = one(q.codigo);
+  // The plan chosen in the demo's prices, to finish that purchase after creating the account.
+  const plan = one(q.plan);
+  const chosenPlan = plan && /^[a-z0-9-]{1,40}$/.test(plan) ? plan : null;
   const user = await currentUser().catch(() => null);
   const signedIn = Boolean(user && !user.is_anonymous && user.email_confirmed_at);
   // Not knowing whether the account already has an agency is an error, not a "no".
@@ -39,7 +42,7 @@ export default async function StartPage({ searchParams }: Props) {
   // The team's invitation: only an e-mail and a password to enter.
   if (code && !signedIn) {
     const invitation = await invitationOf(code);
-    const here = `/panel/empezar?${new URLSearchParams({ codigo: code, ...(token ? { demo: token } : {}) })}`;
+    const here = `/panel/empezar?${new URLSearchParams({ codigo: code, ...(token ? { demo: token } : {}), ...(chosenPlan ? { plan: chosenPlan } : {}) })}`;
     // The demo the agency came from, only when the invitation is for that same agency.
     const cover = demo?.cover ?? null;
     const version = cover ? coverVersion(cover, demo!.styles[0]?.id ?? "") : null;
@@ -54,7 +57,7 @@ export default async function StartPage({ searchParams }: Props) {
             back: presentationPath(token!, code),
           }
         : null;
-    return <InvitationSignup code={code} here={here} invitation={invitation} property={property} />;
+    return <InvitationSignup code={code} here={here} invitation={invitation} property={property} plan={chosenPlan} />;
   }
   return (
     <AgencyOnboarding

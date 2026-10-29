@@ -1189,7 +1189,7 @@ function OwnerCredits({
 }
 
 /** The plans of /precios, opened from the agency's bar: on the right, inside its environment. */
-function PricesDrawer({ onClose, signupHref, children }: { onClose: () => void; signupHref: string; children: React.ReactNode }) {
+function PricesDrawer({ onClose, children }: { onClose: () => void; children: React.ReactNode }) {
   useEffect(() => {
     const close = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", close);
@@ -1202,15 +1202,7 @@ function PricesDrawer({ onClose, signupHref, children }: { onClose: () => void; 
           ← Volver a la demo
         </button>
       </div>
-      <div className="dv2-prices-body">
-        <div className="dv2-prices-cta">
-          <p>Para comprar, creá tu cuenta con tu invitación. Tus créditos de regalo quedan en ella.</p>
-          <a className="button button-primary" href={signupHref}>
-            Crear cuenta para comprar
-          </a>
-        </div>
-        {children}
-      </div>
+      <div className="dv2-prices-body">{children}</div>
     </div>
   );
 }
@@ -1287,7 +1279,7 @@ function OwnerHeader({
         </a>
       </p>
       {prices && (
-        <PricesDrawer onClose={closePrices} signupHref={owner.href}>
+        <PricesDrawer onClose={closePrices}>
           {plans}
         </PricesDrawer>
       )}

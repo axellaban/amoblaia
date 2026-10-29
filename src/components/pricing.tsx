@@ -79,6 +79,7 @@ export function PricingPlans({
   currentSku,
   firstPackUsed = false,
   renderedAt,
+  signupHref,
 }: {
   products: Product[];
   enabled: boolean;
@@ -91,7 +92,15 @@ export function PricingPlans({
   firstPackUsed?: boolean;
   /** Server time of this render, so the countdown hydrates identically. */
   renderedAt: number;
+  /** Someone without an account yet (an invited agency): buying starts by creating it here. */
+  signupHref?: string;
 }) {
+  // Creating the account first, keeping the chosen plan for after it.
+  const toSignup = (sku: string) => {
+    const url = new URL(signupHref!, window.location.origin);
+    url.searchParams.set("plan", sku);
+    window.location.assign(`${url.pathname}${url.search}`);
+  };
   const checkoutKeys = useRef<Record<string, string>>({});
   const [now, setNow] = useState(renderedAt);
   const launch = (sku: string) => {
@@ -225,7 +234,7 @@ export function PricingPlans({
       deal = annual ? null : launch(sku),
       monthly = annual ? cents / 12 : deal?.cents || cents,
       yearlyMonthly = price(skuFor(offer.id, true)) / 12,
-      ready = enabled && cents > 0,
+      ready = (enabled || Boolean(signupHref)) && cents > 0,
       featured = offer.id === "professional";
     return (
       <article
@@ -280,6 +289,7 @@ export function PricingPlans({
             onClick={() => {
               setError("");
               setPayerEmail("");
+              if (signupHref) return toSignup(sku);
               // The order belongs to the signed-in customer before leaving for MP.
               if (!email) {
                 redirectKeepingClick("/acceso?next=%2Fprecios");
@@ -437,8 +447,9 @@ export function PricingPlans({
               </small>
               <button
                 className="button button-primary"
-                disabled={!enabled || Boolean(busy)}
+                disabled={!(enabled || signupHref) || Boolean(busy)}
                 onClick={() => {
+                  if (signupHref) return toSignup(firstPack.sku);
                   setError("");
                   setPayerEmail("");
                   if (!email) {
@@ -454,7 +465,7 @@ export function PricingPlans({
                 ) : (
                   <ArrowUpRight size={18} />
                 )}{" "}
-                {enabled ? "Comprar" : "Disponible pronto"}
+                {enabled || signupHref ? "Comprar" : "Disponible pronto"}
               </button>
             </div>
           </section>

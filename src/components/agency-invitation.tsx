@@ -30,11 +30,14 @@ export function InvitationSignup({
   invitation,
   here,
   property = null,
+  plan = null,
 }: {
   code: string;
   invitation: InvitationInfo | null;
   here: string;
   property?: InvitedProperty | null;
+  /** The plan chosen in the demo's prices: the account is created to finish that purchase. */
+  plan?: string | null;
 }) {
   const [mode, setMode] = useState<"new" | "existing">("new");
   const [email, setEmail] = useState("");
@@ -88,7 +91,8 @@ export function InvitationSignup({
       }
       track("agency_claimed", { origin: property ? "demo_invitation" : "invitation", new_account: mode === "new" });
       // Into the property it came from, ready for a first try; otherwise the panel's home.
-      window.location.assign(property ? `/panel/propiedades/${property.id}?bienvenida=1` : "/panel?bienvenida=1");
+      // To finish the purchase it came for; otherwise into the property, ready for a first try.
+      window.location.assign(plan ? "/precios" : property ? `/panel/propiedades/${property.id}?bienvenida=1` : "/panel?bienvenida=1");
     } catch (err) {
       if (err instanceof ApiError && err.status === 409 && mode === "new" && /ya tiene una cuenta/.test(err.message)) setMode("existing");
       setError(err instanceof Error ? err.message : "No pudimos completar el ingreso.");
@@ -104,7 +108,14 @@ export function InvitationSignup({
       : "";
   const form = (
       <form className="account-panel ap-start-form" onSubmit={submit}>
-        {property && <h2>Entrá a tu panel</h2>}
+        {plan ? (
+          <>
+            <h2>Creá tu cuenta</h2>
+            <p className="inline-notice">Terminá de crear tu cuenta para comprar. Tus créditos de regalo quedan en ella.</p>
+          </>
+        ) : (
+          property && <h2>Entrá a tu panel</h2>
+        )}
         <label>
           Email
           <input type="email" required autoComplete="email" inputMode="email" value={email} onChange={(e) => setEmail(e.target.value)} autoFocus />
