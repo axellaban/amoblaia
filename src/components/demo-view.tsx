@@ -34,6 +34,7 @@ import {
   RotateCw,
   Ruler,
   Sparkles,
+  Loader2,
 } from "lucide-react";
 import { Comparison } from "./comparison";
 import type { DemoInvite } from "@/lib/agency/demo-invite";
@@ -665,16 +666,28 @@ function Gallery({
   const [allStyles, setAllStyles] = useState(false);
   const router = useRouter();
   // The style being generated for a photo: the page refreshes until its version shows.
-  const [staging, setStaging] = useState<{ photo: string; style: string } | null>(null);
+  const [staging, setStaging] = useState<{ photo: string; style: string; startedAt: number } | null>(null);
   const [stagingError, setStagingError] = useState("");
+  // Seconds since the click, shown while the image is generated: a wait that is seen feels shorter.
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (!staging) return;
+    const tick = () => setElapsed(Math.max(0, Math.round((Date.now() - staging.startedAt) / 1000)));
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    return () => window.clearInterval(timer);
+  }, [staging]);
   useEffect(() => {
     if (!staging) return;
     const done = photos.some((p) => p.id === staging.photo && p.versions.some((v) => v.style === staging.style));
     if (done) {
-      log("demo_generation_ready", { estilo: staging.style });
+      log("demo_generation_ready", { estilo: staging.style, segundos: Math.round((Date.now() - staging.startedAt) / 1000) });
+      // The result opens compared on its photo, ready to look at.
+      setStates((s) => ({ ...s, [staging.photo]: { style: staging.style, compare: true, position: 50 } }));
       return void setStaging(null);
     }
-    const refresh = window.setInterval(() => router.refresh(), 8000);
+    // Every 4 s (it was 8): the new version shows up to 4 s sooner.
+    const refresh = window.setInterval(() => router.refresh(), 4000);
     // Past four minutes the page stops waiting, and says so instead of going quiet.
     const stop = window.setTimeout(() => {
       setStaging(null);
@@ -689,7 +702,7 @@ function Gallery({
   async function generate(photoId: string, style: string) {
     if (source.kind !== "public") return;
     setStagingError("");
-    setStaging({ photo: photoId, style });
+    setStaging({ photo: photoId, style, startedAt: Date.now() });
     const r = await requestPublicStaging(source.token, photoId, style);
     if (!r.ok) {
       setStaging(null);
@@ -857,7 +870,9 @@ function Gallery({
                 }}
               >
                 {staging?.photo === photo.id && staging.style === r.style ? (
-                  "Generando…"
+                  <>
+                    <Loader2 className="dv2-spin" size={16} aria-hidden="true" /> Generando…
+                  </>
                 ) : (
                   <>
                     <Sparkles size={16} aria-hidden="true" /> Generar
@@ -1045,7 +1060,26 @@ function Gallery({
                 )}
               </>
             )}
+            {staging?.photo === photo.id && (
+              <div className="dv2-generating" role="status" aria-live="polite">
+                <Loader2 className="dv2-spin" size={30} aria-hidden="true" />
+                <strong>Generando {name(staging.style)}…</strong>
+                <span>
+                  {elapsed} s · suele tardar entre 30 y 60 segundos
+                </span>
+                <small>Podés seguir mirando las otras fotos: te la mostramos apenas esté.</small>
+              </div>
+            )}
           </div>
+          {staging && staging.photo !== photo.id && (
+            <button
+              type="button"
+              className="dv2-generating-chip"
+              onClick={() => setIndex(Math.max(0, photos.findIndex((p) => p.id === staging.photo)))}
+            >
+              <Loader2 className="dv2-spin" size={14} aria-hidden="true" /> Generando {name(staging.style)} · {elapsed} s
+            </button>
+          )}
           {photos.length > 1 && (
             <>
               <button type="button" className="dv2-nav dv2-prev ph-no-rageclick" aria-label="Foto anterior" onClick={() => go(-1)}>

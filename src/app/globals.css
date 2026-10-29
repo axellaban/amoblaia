@@ -14855,3 +14855,69 @@ a.dm-agency:hover {
 .dv2-page:has(.dv2-owner) [id] {
   scroll-margin-top: 130px;
 }
+
+/* Generating from the agency's demo (QA 29/10): the wait is visible on the photo itself. */
+@keyframes dv2-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.dv2-spin {
+  flex: none;
+  animation: dv2-spin 0.9s linear infinite;
+}
+.dv2-generating {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 6px;
+  padding: 16px;
+  text-align: center;
+  color: #fff;
+  background: rgba(16, 24, 21, 0.58);
+  backdrop-filter: blur(2px);
+  pointer-events: none;
+}
+.dv2-generating strong {
+  font-size: 17px;
+  font-weight: 650;
+}
+.dv2-generating span {
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.92;
+}
+.dv2-generating small {
+  max-width: 30ch;
+  font-size: 12.5px;
+  opacity: 0.8;
+}
+.dv2-generating-chip {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  z-index: 4;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 6px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(16, 24, 21, 0.82);
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
+}
+@media (prefers-reduced-motion: reduce) {
+  .dv2-spin {
+    animation-duration: 3s;
+  }
+}
