@@ -29,7 +29,7 @@ import { exampleRooms, exampleStyles, examplePath } from "@/lib/examples";
 
 // Layout and copy follow the reference landing section by section; figures
 // (minutes, ten styles, prices in pesos) are habita.'s own.
-const STARTING_PRICE = "$24.742"; // Inicial, annual / 12: keep in sync with the products table.
+const STARTING_PRICE = "$16.492"; // Inicial, annual / 12: keep in sync with the products table.
 const roomName = (id: string) => rooms.find((r) => r.id === id)?.name || id;
 const styleName = (id: string) =>
   id === "original" ? "Original" : styles.find((s) => s.id === id)?.name || id;

@@ -64,7 +64,7 @@ it("re-running the launch pricing keeps the window, prices and plans", async () 
   );
   expect(row).toEqual({ e: "2026-10-25", p: 4000000, a: false });
   await db.exec(
-    "update products set promo_ends_at=now()+interval '72 hours', price_cents=3890000, active=true where sku='basic-month'",
+    "update products set promo_ends_at=now()+interval '72 hours', price_cents=2590000, active=true where sku='basic-month'",
   );
 });
 
@@ -122,18 +122,18 @@ it("a refunded charge gives back the period it paid for", async () => {
   await db.exec(
     `update orders set provider_subscription_id='sub-audit' where id='${o.id}'`,
   );
-  await apply("ren-1", o.id, "approved", 5390000, "sub-audit", "'2026-09-01'");
-  await apply("ren-2", o.id, "approved", 5390000, "sub-audit", "'2026-10-01'");
+  await apply("ren-1", o.id, "approved", 4890000, "sub-audit", "'2026-09-01'");
+  await apply("ren-2", o.id, "approved", 4890000, "sub-audit", "'2026-10-01'");
   const until = async () =>
     (await one<{ d: string }>(
       "select paid_until::date::text as d from subscriptions where id='sub-audit'",
     ))!.d;
   expect(await until()).toBe("2026-11-01");
   // Refunding the older charge does not shorten the current period.
-  await apply("ren-1", o.id, "refunded", 5390000, "sub-audit");
+  await apply("ren-1", o.id, "refunded", 4890000, "sub-audit");
   expect(await until()).toBe("2026-11-01");
   // Refunding the latest one ends the period where it started.
-  await apply("ren-2", o.id, "refunded", 5390000, "sub-audit");
+  await apply("ren-2", o.id, "refunded", 4890000, "sub-audit");
   expect(await until()).toBe("2026-10-01");
   const reversed = await db.query<{ r: string }>(
     "select r from amobla_reversed_subscriptions(50) r",
@@ -151,11 +151,11 @@ it("keeps granting the months of a partially refunded annual plan", async () => 
     "year-1",
     o.id,
     "approved",
-    29690000,
+    19790000,
     "sub-year",
     "now()-interval '40 days'",
   );
-  await apply("year-1", o.id, "partially_refunded", 29690000, "sub-year");
+  await apply("year-1", o.id, "partially_refunded", 19790000, "sub-year");
   // As if this month had not been granted yet when the refund arrived.
   await db.exec(
     "delete from credit_ledger where grant_id in (select id from credit_grants where payment_id='year-1'); delete from credit_grants where payment_id='year-1'",
@@ -201,7 +201,7 @@ it("a refund of the first of two charges of one renewal keeps the month paid onc
     "twin-a",
     o.id,
     "approved",
-    5390000,
+    4890000,
     "sub-twin",
     "now()-interval '5 days'",
   );
@@ -209,7 +209,7 @@ it("a refund of the first of two charges of one renewal keeps the month paid onc
     "twin-b",
     o.id,
     "approved",
-    5390000,
+    4890000,
     "sub-twin",
     "now()-interval '5 days'+interval '1 hour'",
   );
@@ -222,7 +222,7 @@ it("a refund of the first of two charges of one renewal keeps the month paid onc
     "insert into projects(id,user_id,original_hash,original_path,name,original_bytes,grant_id) select $1,$2,'h','p','n',1,id from credit_grants where payment_id='twin-a'",
     [project, user],
   );
-  await apply("twin-a", o.id, "refunded", 5390000, "sub-twin");
+  await apply("twin-a", o.id, "refunded", 4890000, "sub-twin");
   const live = await one<{ n: number; r: number }>(
     "select count(*)::int as n, sum(remaining)::int as r from credit_grants where user_id=$1 and not revoked and starts_at<=now() and expires_at>now()",
     [user],
@@ -251,9 +251,9 @@ it("the daily sweep lists a plan whose latest charge was refunded", async () => 
   await db.exec(
     `update orders set provider_subscription_id='sub-late' where id='${o.id}'`,
   );
-  await apply("late-1", o.id, "approved", 5390000, "sub-late", "'2026-08-01'");
-  await apply("late-2", o.id, "approved", 5390000, "sub-late", "'2026-09-01'");
-  await apply("late-2", o.id, "refunded", 5390000, "sub-late");
+  await apply("late-1", o.id, "approved", 4890000, "sub-late", "'2026-08-01'");
+  await apply("late-2", o.id, "approved", 4890000, "sub-late", "'2026-09-01'");
+  await apply("late-2", o.id, "refunded", 4890000, "sub-late");
   const ids = (
     await db.query<{ r: string }>(
       "select r from amobla_reversed_subscriptions(50) r",
