@@ -1008,11 +1008,16 @@ export async function addPhoto(
   if (existing.length >= MAX_PHOTOS_PER_DEMO)
     throw new HttpError(409, `Una demo admite hasta ${MAX_PHOTOS_PER_DEMO} fotos.`);
   const lookup = async () => {
-    let query = db.from("projects").select("id").eq("original_hash", originalHash).is("deleted_at", null);
+    let query = db.from("projects").select("id,user_id").eq("original_hash", originalHash).is("deleted_at", null);
     if (opts.ownOnly) query = query.eq("user_id", actorId);
-    return check(await query.order("created_at").limit(1).maybeSingle(), "PROJECT_LOOKUP_FAILED") as {
-      id: string;
-    } | null;
+    const found = check(await query.order("created_at").limit(20), "PROJECT_LOOKUP_FAILED") as { id: string; user_id: string }[];
+    if (opts.ownOnly || !found.length) return found[0] ?? null;
+    // The team shares its copies, never an agency account's: those are its private photos and stagings.
+    const members = check(
+      await db.from("agency_members").select("user_id").in("user_id", [...new Set(found.map((p) => p.user_id))]),
+      "PROJECT_LOOKUP_FAILED",
+    ) as { user_id: string }[];
+    return found.find((p) => p.user_id === actorId || !members.some((m) => m.user_id === p.user_id)) ?? null;
   };
   let project = await lookup();
   if (!project) {
@@ -1035,7 +1040,7 @@ export async function addPhoto(
         original_bytes: image.length,
         name: name.slice(0, 100) || "Foto de la demo",
       })
-      .select("id")
+      .select("id,user_id")
       .single();
     if (made.error?.code === "23505") project = await lookup();
     else if (made.error || !made.data) throw new Error("PROJECT_CREATE_FAILED");

@@ -1202,7 +1202,8 @@ const REASONS: Record<string, string> = {
   technical_failure: "Devolución por falla técnica",
   payment: "Compra",
   annual_period: "Plan anual",
-  admin_adjustment: "Ajuste del equipo",
+  // Welcome credits and the team's grants share this reason.
+  admin_adjustment: "Créditos de habita",
   trial: "Prueba",
 };
 
