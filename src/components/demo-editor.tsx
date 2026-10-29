@@ -351,6 +351,9 @@ export function DemoEditor({
     try {
       const { photo } = await api<{ photo: EditorPhoto }>(`${base}/photos/${photoId}`, { method: "PATCH", body: JSON.stringify(body) });
       updatePhoto(photo, photoId);
+      // Hiding or showing a photo can change the cover and the warnings, which the server works out.
+      const changes = body.changes as { visible?: boolean } | undefined;
+      if (changes?.visible !== undefined) await load().catch(() => undefined);
       return true;
     } catch (e) {
       say({ tone: "error", text: e instanceof Error ? e.message : "No pudimos guardar la foto.", section: "fotos" });
