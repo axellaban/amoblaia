@@ -91,6 +91,12 @@ describe("Sharing", () => {
     const link = "https://amoblaia.vercel.app/demo/abc?presentacion=1";
     expect(whatsappShareUrl(link)).toBe(`https://wa.me/?text=${encodeURIComponent(link)}`);
   });
+  it("opens the agency's chat when its number is known, with only the link", () => {
+    const link = "https://amoblaia.vercel.app/demo/abc?presentacion=1";
+    expect(whatsappShareUrl(link, "5492230000101")).toBe(`https://wa.me/5492230000101?text=${encodeURIComponent(link)}`);
+    expect(whatsappShareUrl(link, "+54 9 223 000-0101")).toBe(`https://wa.me/5492230000101?text=${encodeURIComponent(link)}`);
+    expect(whatsappShareUrl(link, null)).toBe(`https://wa.me/?text=${encodeURIComponent(link)}`);
+  });
   it("keeps the demo and the agency in the call to action for attribution", () => {
     const href = new URL(ctaHref("demo-1", "agency-1"), "https://x.test");
     expect(href.pathname).toBe("/estudio");

@@ -27,7 +27,10 @@ type Params = { params: Promise<{ id: string }> };
 
 /** The team's notes and contact person about an agency are never shown to the agency. */
 function viewOf(detail: Awaited<ReturnType<typeof demoDetail>>, admin: boolean) {
-  return admin ? detail : { ...detail, agency: { ...detail.agency, notes: null, contact_name: null } };
+  // The agency's WhatsApp may come from the private prospecting base: team only.
+  return admin
+    ? detail
+    : { ...detail, demo: { ...detail.demo, agencyWhatsapp: null }, agency: { ...detail.agency, notes: null, contact_name: null } };
 }
 
 export async function GET(_request: Request, { params }: Params) {

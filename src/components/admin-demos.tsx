@@ -195,8 +195,8 @@ export function ViewLink({ demo, which }: { demo: Pick<DemoSummary, "id" | "toke
   );
 }
 
-/** WhatsApp with only the agency's link: no text of ours. */
-export function WhatsappText({ demo }: { demo: Pick<DemoSummary, "id" | "token" | "agencyClaimed"> }) {
+/** WhatsApp with only the agency's link: no text of ours. Opens the agency's chat when its number is known. */
+export function WhatsappText({ demo }: { demo: Pick<DemoSummary, "id" | "token" | "agencyClaimed" | "agencyWhatsapp"> }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   async function send() {
@@ -205,7 +205,7 @@ export function WhatsappText({ demo }: { demo: Pick<DemoSummary, "id" | "token" 
     // Opened now, while the click still counts, so the browser does not block it.
     const tab = window.open("about:blank", "_blank");
     try {
-      const url = whatsappShareUrl(await agencyLink(demo));
+      const url = whatsappShareUrl(await agencyLink(demo), demo.agencyWhatsapp);
       if (tab) {
         tab.opener = null;
         tab.location.href = url;
@@ -219,7 +219,13 @@ export function WhatsappText({ demo }: { demo: Pick<DemoSummary, "id" | "token" 
   }
   return (
     <>
-      <button type="button" className="dm-text dm-text-wa" disabled={busy} onClick={send}>
+      <button
+        type="button"
+        className="dm-text dm-text-wa"
+        disabled={busy}
+        onClick={send}
+        title={demo.agencyWhatsapp ? `Enviar a +${demo.agencyWhatsapp}` : "Sin WhatsApp de la inmobiliaria: elegís el chat al enviar"}
+      >
         WhatsApp
       </button>
       {error && (
@@ -238,12 +244,15 @@ function ShareCard({
   shown,
   live,
   resolve,
+  to,
 }: {
   title: string;
   hint: string;
   shown: string;
   live: boolean;
   resolve: () => Promise<string>;
+  /** The recipient's WhatsApp (wa.me digits); without one, WhatsApp asks who to send it to. */
+  to?: string | null;
 }) {
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -268,7 +277,7 @@ function ShareCard({
     // Opened now, while the click still counts, so the browser does not block it.
     const tab = window.open("about:blank", "_blank");
     try {
-      const url = whatsappShareUrl(await resolve());
+      const url = whatsappShareUrl(await resolve(), to);
       if (tab) {
         tab.opener = null;
         tab.location.href = url;
@@ -294,6 +303,9 @@ function ShareCard({
           <MessageCircle size={15} /> WhatsApp
         </button>
       </div>
+      {to !== undefined && (
+        <span className="dm-help">{to ? `WhatsApp abre el chat de +${to}.` : "Sin WhatsApp de la inmobiliaria: elegís el chat al enviar."}</span>
+      )}
       {error && (
         <span className="inline-error" role="alert">
           {error}
@@ -308,7 +320,7 @@ function ShareCard({
  * presentation, as from its panel) and to the buyers (the clean ficha).
  * No step to create a link first.
  */
-export function ShareCards({ demo }: { demo: Pick<DemoSummary, "id" | "token" | "status" | "agencyClaimed"> }) {
+export function ShareCards({ demo }: { demo: Pick<DemoSummary, "id" | "token" | "status" | "agencyClaimed" | "agencyWhatsapp"> }) {
   const live = demo.status === "published";
   return (
     <div className="dm-share-cards">
@@ -318,6 +330,7 @@ export function ShareCards({ demo }: { demo: Pick<DemoSummary, "id" | "token" | 
         shown={publicLink(demo.token, true)}
         live={live}
         resolve={() => agencyLink(demo)}
+        to={demo.agencyWhatsapp ?? null}
       />
       <ShareCard
         title="Enviar al comprador"
