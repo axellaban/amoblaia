@@ -2,7 +2,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { readFileSync, readdirSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-// The activity steps of a demo, on the real migrations (PGlite). See 202611050001_demo_activity.sql.
+// The activity steps of a demo, on the real migrations (PGlite). See 202611060001_demo_activity.sql.
 let db: PGlite;
 let n = 0;
 const id = () => `00000000-0000-4000-8000-${String(900000000000 + ++n).padStart(12, "0")}`;

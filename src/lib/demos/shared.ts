@@ -301,7 +301,7 @@ export function whatsappShareUrl(link: string) {
 
 /**
  * What each step of the demo's activity means, as the team reads it. The
- * highest step reached counts (see 202611050001_demo_activity.sql).
+ * highest step reached counts (see 202611060001_demo_activity.sql).
  */
 export const ACTIVITY_LABELS = ["Sin actividad", "Ingresó", "Interactuó", "Creó su panel"] as const;
 export type DemoActivity = { level: 0 | 1 | 2 | 3; at: string | null; visitors: number };
