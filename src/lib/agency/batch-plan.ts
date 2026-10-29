@@ -92,7 +92,7 @@ export function combineQuotes(quotes: { title: string; quote: Quote }[]) {
   if (!blocked && payer === "agency") {
     if (credits === null) blocked = "No pudimos consultar el saldo. Probá de nuevo.";
     else if (credits < newPhotos)
-      blocked = `Hacen falta ${newPhotos} ${newPhotos === 1 ? "crédito" : "créditos"} y la inmobiliaria tiene ${credits}.`;
+      blocked = `${newPhotos === 1 ? "Hace" : "Hacen"} falta ${newPhotos} ${newPhotos === 1 ? "crédito" : "créditos"} y la inmobiliaria tiene ${credits}.`;
   }
   return { payer, credits, newPhotos, after: credits === null ? null : credits - newPhotos, blocked };
 }

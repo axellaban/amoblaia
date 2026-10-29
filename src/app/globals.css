@@ -14670,7 +14670,8 @@ a.dm-agency:hover {
   border-style: dashed;
   background: #faf8f4;
 }
-.dv2-owner-row > button,
+/* The style's own button, not its Generar/Descargar action (also a direct child). */
+.dv2-owner-row > button:not(.dv2-owner-action),
 .dv2-owner-info {
   display: flex;
   align-items: center;
@@ -14684,7 +14685,7 @@ a.dm-agency:hover {
   font: inherit;
   text-align: left;
 }
-.dv2-owner-row > button {
+.dv2-owner-row > button:not(.dv2-owner-action) {
   cursor: pointer;
 }
 .dv2-owner-row img {

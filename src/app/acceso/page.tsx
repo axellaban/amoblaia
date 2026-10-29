@@ -19,19 +19,20 @@ export default async function Access({
   // A signed-in account goes straight to where it was heading instead of
   // seeing the sign-in page again (password updates still need the form).
   // Same condition as the rest of the account features: with cloud accounts
-  // off, /proyectos would send the user back here in a loop.
+  // off, /proyectos would send the user back here in a loop. /inicio picks
+  // the agency's panel or the photos.
   if (params.modo !== "actualizar" && cloudEnabled() && cloudConfigured()) {
     const user = await currentUser().catch(() => null);
     if (user && !user.is_anonymous && user.email_confirmed_at) {
       const next = safeNext(
         typeof params.next === "string" ? params.next : null,
-        "/proyectos",
+        "/inicio",
       );
       const search = new URLSearchParams();
       for (const [key, value] of Object.entries(params))
         if (typeof value === "string") search.set(key, value);
       redirect(
-        withClickIds(next.startsWith("/acceso") ? "/proyectos" : next, search),
+        withClickIds(next.startsWith("/acceso") ? "/inicio" : next, search),
       );
     }
   }

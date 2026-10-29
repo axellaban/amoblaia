@@ -74,7 +74,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           : expired
             ? "La cobertura de alguna foto ya ambientada venció: sumá un plan para crear más versiones."
             : credits < newPhotos
-              ? `Hacen falta ${newPhotos} ${newPhotos === 1 ? "crédito" : "créditos"} y la inmobiliaria tiene ${credits}.`
+              ? `${newPhotos === 1 ? "Hace" : "Hacen"} falta ${newPhotos} ${newPhotos === 1 ? "crédito" : "créditos"} y la inmobiliaria tiene ${credits}.`
               : null;
     return Response.json(
       { payer: "agency", credits, newPhotos, cost: newPhotos, blocked },

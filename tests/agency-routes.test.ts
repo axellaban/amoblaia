@@ -995,7 +995,7 @@ describe("Photos imported without a ficha", () => {
 
   it("lists photo groups apart from the agency's properties", async () => {
     state.tables.demos.push({ id: GROUP, agency_id: "ag1", kind: "fotos", property_id: "pr9", token: "tok_grupogrupogrupogrupo", status: "draft", settings: {}, demo_properties: { title: "Fotos", location: null, listing_url: null } });
-    const groups = await (await fotosGrupo.GET(req("/api/panel/imagenes"))).json();
+    const groups = await (await fotosGrupo.GET()).json();
     expect(groups.items.map((g: { id: string }) => g.id)).toEqual([GROUP]);
     const properties = await (await propiedades.GET(req("/api/panel/propiedades"))).json();
     expect(properties.items.map((p: { id: string }) => p.id)).not.toContain(GROUP);

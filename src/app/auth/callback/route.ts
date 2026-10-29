@@ -14,7 +14,7 @@ export async function GET(request: Request) {
       if (data.user) await adoptGuest(data.user);
       return NextResponse.redirect(
         new URL(
-          safeNext(url.searchParams.get("next"), "/proyectos"),
+          safeNext(url.searchParams.get("next"), "/inicio"),
           url.origin,
         ),
       );
@@ -28,6 +28,6 @@ export async function GET(request: Request) {
     url.searchParams.get("flow") === "google" ? "google" : "enlace",
   );
   const next = url.searchParams.get("next");
-  if (next) failed.searchParams.set("next", safeNext(next, "/proyectos"));
+  if (next) failed.searchParams.set("next", safeNext(next, "/inicio"));
   return NextResponse.redirect(failed);
 }

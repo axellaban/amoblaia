@@ -264,13 +264,15 @@ export function PricingPlans({
       setBusy("");
     }
   }
+  // Back to this price after signing in, with its payment opened (see initialSku).
+  const signInFor = (sku: string) => `/acceso?next=${encodeURIComponent(`/precios?plan=${sku}`)}`;
   // Packs go straight to Checkout Pro, which takes any account.
   function buyPack(sku: string) {
     if (signupHref) return toSignup(sku);
     setError("");
     setPayerEmail("");
     if (!email) {
-      redirectKeepingClick("/acceso?next=%2Fprecios");
+      redirectKeepingClick(signInFor(sku));
       return;
     }
     void buy(sku);
@@ -281,8 +283,12 @@ export function PricingPlans({
       unit = cents / pack.photos,
       cut = 1 - unit / ((creditPacks[0].price_cents || 0) / creditPacks[0].photos),
       ready = enabled || Boolean(signupHref),
+      // Compared with the monthly plans (launch price included), named as such: an annual plan is paid upfront.
       plans = offers
-        .map((o) => ({ ...o, cents: price(skuFor(o.id)) }))
+        .map((o) => {
+          const sku = skuFor(o.id);
+          return { ...o, cents: launch(sku)?.cents || price(sku) };
+        })
         .filter((o) => o.cents),
       bigger = plans.find((o) => o.photos > pack.photos),
       covered = plans.filter((o) => o.photos <= pack.photos).pop(),
@@ -355,15 +361,16 @@ export function PricingPlans({
             <p className="credits-compare">
               {bigger && cents >= bigger.cents * 0.9 ? (
                 <>
-                  Por <b>{formatARS(bigger.cents)} por mes</b>, el plan{" "}
-                  <b>{bigger.name}</b> te da <b>{bigger.photos} fotos</b> todos
+                  Por <b>{formatARS(bigger.cents)} por mes</b>, el plan
+                  mensual <b>{bigger.name}</b> te da <b>{bigger.photos} fotos</b> todos
                   los meses.
                 </>
               ) : covered &&
                 pack.photos >= 20 &&
                 covered.cents / covered.photos < unit ? (
                 <>
-                  ¿Lo usás todos los meses? Con <b>{covered.name}</b> la foto
+                  ¿Lo usás todos los meses? Con el plan mensual{" "}
+                  <b>{covered.name}</b> la foto
                   sale <b>{formatARS(covered.cents / covered.photos)}</b>.
                 </>
               ) : pack.photos >= 20 ? (
@@ -453,7 +460,7 @@ export function PricingPlans({
               if (signupHref) return toSignup(sku);
               // The order belongs to the signed-in customer before leaving for MP.
               if (!email) {
-                redirectKeepingClick("/acceso?next=%2Fprecios");
+                redirectKeepingClick(signInFor(sku));
                 return;
               }
               setSelectedSku(sku);

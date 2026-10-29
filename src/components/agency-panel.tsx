@@ -1202,7 +1202,8 @@ const REASONS: Record<string, string> = {
   technical_failure: "Devolución por falla técnica",
   payment: "Compra",
   annual_period: "Plan anual",
-  admin_adjustment: "Ajuste del equipo",
+  // Welcome credits and the team's grants share this reason.
+  admin_adjustment: "Créditos de habita",
   trial: "Prueba",
 };
 
@@ -1423,7 +1424,7 @@ function SiteSection({ data, setData, reload }: { data: PanelSummary; setData: (
               <input
                 required
                 maxLength={42}
-                pattern="[a-z0-9][a-z0-9-]{1,40}[a-z0-9]"
+                pattern="[a-z0-9][a-z0-9\-]{1,40}[a-z0-9]"
                 disabled={!owner}
                 value={form.slug}
                 onChange={(e) => setForm({ ...form, slug: e.target.value.toLowerCase() })}

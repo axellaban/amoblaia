@@ -40,7 +40,7 @@ async function redirectToGoogle(next: string | null) {
   const client = browserClient();
   if (!client) throw new Error("AUTH_UNAVAILABLE");
   const callback = new URL("/auth/callback", window.location.origin);
-  callback.searchParams.set("next", safeNext(next, "/proyectos"));
+  callback.searchParams.set("next", safeNext(next, "/inicio"));
   callback.searchParams.set("flow", "google");
   const { error } = await client.auth.signInWithOAuth({
     provider: "google",
@@ -115,7 +115,7 @@ export function GoogleSignIn({ next }: { next: string | null }) {
               await fetch("/api/guest/claim", { method: "POST" }).catch(
                 () => null,
               );
-              window.location.assign(safeNext(next, "/proyectos"));
+              window.location.assign(safeNext(next, "/inicio"));
             } catch {
               setError(
                 "No pudimos completar el acceso. Volvé a intentarlo con Google.",
