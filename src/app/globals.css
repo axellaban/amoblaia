@@ -7969,13 +7969,77 @@ h2 .accent {
 .dm-row {
   display: grid;
   grid-template-columns: 104px minmax(0, 1fr) auto;
-  grid-template-areas: "thumb main status" "thumb actions actions";
-  gap: 10px 18px;
+  grid-template-areas: "thumb main status" "thumb links links" "thumb bottom bottom";
+  gap: 12px 18px;
   align-items: center;
-  padding: 16px;
-  border: 1px solid var(--line);
+  padding: 18px 20px;
+  border: 0;
   border-radius: 16px;
   background: #fff;
+}
+/* Team only: the demo's links as text, with their actions. */
+.dm-links,
+.dm-bottom {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  font-size: 13px;
+}
+.dm-links {
+  grid-area: links;
+}
+.dm-bottom {
+  grid-area: bottom;
+  justify-content: space-between;
+  margin-top: 4px;
+}
+.dm-who {
+  color: var(--muted);
+  font-size: 12px;
+}
+.dm-sep {
+  color: #d5dbd3;
+}
+.dm-text {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink, #1c2a25);
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+  border-bottom: 1px solid transparent;
+}
+.dm-text:hover:not(:disabled) {
+  border-bottom-color: currentColor;
+}
+.dm-text:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.dm-text-wa {
+  color: #1f7a4d;
+  font-weight: 600;
+}
+.dm-text-primary {
+  background: #1f3d35;
+  color: #fff;
+  padding: 6px 12px;
+  border-radius: 10px;
+}
+.dm-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 26px;
+  align-items: flex-end;
+}
+.dm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
 }
 .dm-thumb {
   grid-area: thumb;
@@ -8019,13 +8083,6 @@ h2 .accent {
   grid-area: status;
   justify-self: end;
 }
-.dm-actions {
-  grid-area: actions;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
 /* Team only: the two fixed ways to share a demo (editor, Compartir). */
 .dm-share-cards {
   display: grid;
@@ -8056,71 +8113,47 @@ h2 .accent {
   gap: 8px;
 }
 
-/* Team only: the demo's activity at the end of its actions row. */
-/* Team only: the agency's credits and the demo's activity, at the end of the actions row. */
-.dm-side {
-  margin-left: auto;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: stretch;
-}
-.dm-credits {
-  display: grid;
-  gap: 4px;
-  min-width: 230px;
-  padding: 8px 12px;
-  border: 1px solid #efd9c2;
-  border-radius: 12px;
-  background: #fbf1e6;
-  font-size: 13px;
-}
-.dm-credits .dm-activity-label {
-  color: #7a5a3a;
-  font-weight: 650;
-}
-.dm-credits-nums {
-  display: flex;
-  gap: 16px;
-  color: #7a5a3a;
-  font-size: 12px;
-}
-.dm-credits-nums b {
-  display: block;
-  color: var(--ink, #1c2a25);
-  font-size: 16px;
-}
-.dm-credits .button {
-  justify-self: start;
-  margin-top: 2px;
-}
+/* Team only: credits and activity as plain data, each with its one action. */
+.dm-credits,
 .dm-activity {
   display: grid;
   gap: 2px;
-  min-width: 210px;
-  padding: 8px 12px;
-  border: 1px dashed var(--line);
-  border-radius: 12px;
-  font-size: 13px;
 }
+.dm-credits-label,
 .dm-activity-label,
 .dm-activity-foot {
   color: var(--muted);
   font-size: 12px;
 }
+.dm-credits-nums {
+  display: flex;
+  gap: 14px;
+  align-items: baseline;
+}
+.dm-credits-nums b {
+  font-size: 15px;
+  font-weight: 600;
+}
+.dm-credits-nums .dm-text {
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
 .dm-activity strong {
-  font-size: 14px;
+  font-size: 15px;
+  font-weight: 600;
 }
 .dm-activity-dots {
   display: flex;
-  gap: 6px;
-  margin: 2px 0;
+  gap: 4px;
+  width: 90px;
+  margin-top: 2px;
 }
 .dm-activity-dots i {
   flex: 1;
-  height: 6px;
+  height: 4px;
   border-radius: 99px;
-  background: var(--line);
+  background: #ebeee8;
 }
 .dm-activity-dots i.on {
   background: #2f7d57;

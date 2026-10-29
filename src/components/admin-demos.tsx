@@ -5,14 +5,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Check,
   Copy,
-  Eye,
-  Gift,
   ImageIcon,
   MessageCircle,
-  Pencil,
   Plus,
   Search,
-  Trash2,
 } from "lucide-react";
 import { ImportFromListing } from "./demo-import";
 import { CreditsDialog, type CreditTarget } from "./admin-agencies";
@@ -104,35 +100,46 @@ async function agencyLink(demo: Pick<DemoSummary, "id" | "token" | "agencyClaime
   return claim.presentationUrl ?? publicLink(demo.token, true);
 }
 
-/**
- * Copy the agency's link, copy the buyers' link, or send the agency's link
- * on WhatsApp. The message is only the link: no text of ours.
- */
-export function ShareButtons({
-  demo,
-}: {
-  demo: Pick<DemoSummary, "id" | "token" | "status" | "agencyClaimed">;
-}) {
-  const [copied, setCopied] = useState<"agency" | "buyer" | null>(null);
+/** A text action that copies one of the demo's links (the agency's or the buyers'). */
+export function LinkCopy({ demo, which }: { demo: Pick<DemoSummary, "id" | "token" | "status" | "agencyClaimed">; which: "agency" | "buyer" }) {
+  const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const live = demo.status === "published";
-  const flash = (which: "agency" | "buyer") => {
-    setCopied(which);
-    setTimeout(() => setCopied(null), 2000);
-  };
-  async function copyAgency() {
+  async function copy() {
     setBusy(true);
     setError("");
     try {
-      if (await copyText(await agencyLink(demo))) flash("agency");
+      const link = which === "agency" ? await agencyLink(demo) : publicLink(demo.token);
+      if (await copyText(link)) {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "No pudimos crear el enlace.");
     } finally {
       setBusy(false);
     }
   }
-  async function sendWhatsapp() {
+  return (
+    <>
+      <button type="button" className="dm-text" disabled={!live || busy} title={live ? undefined : "Publicá la demo para compartirla"} onClick={copy}>
+        {copied ? "Copiado" : "Copiar link"}
+      </button>
+      {error && (
+        <span className="inline-error" role="alert">
+          {error}
+        </span>
+      )}
+    </>
+  );
+}
+
+/** WhatsApp with only the agency's link: no text of ours. */
+export function WhatsappText({ demo }: { demo: Pick<DemoSummary, "id" | "token" | "agencyClaimed"> }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  async function send() {
     setBusy(true);
     setError("");
     // Opened now, while the click still counts, so the browser does not block it.
@@ -152,27 +159,11 @@ export function ShareButtons({
   }
   return (
     <>
-      <button type="button" className="button button-small button-outline" disabled={!live || busy} title={live ? undefined : "Publicá la demo para compartirla"} onClick={copyAgency}>
-        {copied === "agency" ? <Check size={15} /> : <Copy size={15} />}
-        {copied === "agency" ? "Enlace copiado" : "Copiar enlace"}
-      </button>
-      <button
-        type="button"
-        className="button button-small button-outline"
-        disabled={!live}
-        title={live ? undefined : "Publicá la demo para compartirla"}
-        onClick={async () => {
-          if (await copyText(publicLink(demo.token))) flash("buyer");
-        }}
-      >
-        {copied === "buyer" ? <Check size={15} /> : <Copy size={15} />}
-        {copied === "buyer" ? "Enlace copiado" : "Copiar enlace comprador"}
-      </button>
-      <button type="button" className="button button-small dm-whatsapp" disabled={!live || busy} title={live ? undefined : "Publicá la demo para compartirla"} onClick={sendWhatsapp}>
-        <MessageCircle size={15} /> WhatsApp
+      <button type="button" className="dm-text dm-text-wa" disabled={busy} onClick={send}>
+        WhatsApp
       </button>
       {error && (
-        <span className="inline-error dm-invite-note" role="alert">
+        <span className="inline-error" role="alert">
           {error}
         </span>
       )}
@@ -286,32 +277,29 @@ export function ShareCards({ demo }: { demo: Pick<DemoSummary, "id" | "token" | 
 export function DemoCredits({ demo, onDone }: { demo: DemoSummary; onDone: (text: string) => void }) {
   const [target, setTarget] = useState<CreditTarget | null>(null);
   const show = (n: number | null) => (n === null ? "—" : String(n));
+  // With an account: its balance. Without one: what waits for it.
+  const shown = demo.agencyClaimed ? show(demo.credits.available) : show(demo.credits.reserved);
   return (
     <div className="dm-credits">
-      <span className="dm-activity-label">Créditos de la inmobiliaria</span>
+      <span className="dm-credits-label">{demo.agencyClaimed ? "Créditos" : "Créditos reservados"}</span>
       <div className="dm-credits-nums">
-        <div>
-          Disponibles <b>{demo.agencyClaimed ? show(demo.credits.available) : "—"}</b>
-        </div>
-        <div>
-          Reservados <b>{show(demo.credits.reserved)}</b>
-        </div>
+        <b>{shown}</b>
+        <button
+          type="button"
+          className="dm-text"
+          onClick={() =>
+            setTarget({
+              id: demo.agencyId,
+              name: demo.agencyName,
+              hasOwner: demo.agencyClaimed === true,
+              available: demo.credits.available,
+              reserved: demo.credits.reserved,
+            })
+          }
+        >
+          Cargar
+        </button>
       </div>
-      <button
-        type="button"
-        className="button button-small button-outline"
-        onClick={() =>
-          setTarget({
-            id: demo.agencyId,
-            name: demo.agencyName,
-            hasOwner: demo.agencyClaimed === true,
-            available: demo.credits.available,
-            reserved: demo.credits.reserved,
-          })
-        }
-      >
-        <Gift size={15} /> Cargar créditos
-      </button>
       <CreditsDialog
         target={target}
         onClose={() => setTarget(null)}
@@ -522,45 +510,53 @@ export function DemoList() {
               </span>
             </div>
             <StatusChip status={d.status} />
-            <div className="dm-actions">
-              <Link href={`/admin/demos/${d.id}`} className="button button-small button-outline">
-                <Pencil size={15} /> Editar
+            <div className="dm-links">
+              <span className="dm-who">Inmobiliaria</span>
+              <Link href={`/admin/demos/${d.id}/vista-previa?${PRESENTATION_PARAM}=1`} className="dm-text" title="Lo que ve la inmobiliaria, con su acceso al panel">
+                Ver
               </Link>
-              <Link
-                href={`/admin/demos/${d.id}/vista-previa?${PRESENTATION_PARAM}=1`}
-                className="button button-small button-outline"
-                title="Lo que ve la inmobiliaria, con la franja y el acceso a su panel"
-              >
-                <Eye size={15} /> Vista inmobiliaria
+              <LinkCopy demo={d} which="agency" />
+              <span className="dm-sep">·</span>
+              <span className="dm-who">Comprador</span>
+              <Link href={`/admin/demos/${d.id}/vista-previa`} className="dm-text" title="Lo que ven los compradores">
+                Ver
               </Link>
-              <Link
-                href={`/admin/demos/${d.id}/vista-previa`}
-                className="button button-small button-outline"
-                title="Lo que ven los compradores"
-              >
-                <Eye size={15} /> Vista comprador
-              </Link>
-              <ShareButtons demo={d} />
-              <button
-                type="button"
-                className="button button-small"
-                disabled={busy === d.id}
-                onClick={() => act(d, d.status === "published" ? "unpublish" : "publish")}
-              >
-                {d.status === "published" ? "Despublicar" : "Publicar"}
-              </button>
-              <button
-                type="button"
-                className="icon-button dm-danger"
-                aria-label={`Eliminar ${d.title}`}
-                disabled={busy === d.id}
-                onClick={() => act(d, "delete")}
-              >
-                <Trash2 size={18} />
-              </button>
-              <div className="dm-side">
+              <LinkCopy demo={d} which="buyer" />
+              {d.status === "published" && (
+                <>
+                  <span className="dm-sep">·</span>
+                  <WhatsappText demo={d} />
+                </>
+              )}
+            </div>
+            <div className="dm-bottom">
+              <div className="dm-facts">
                 <DemoCredits demo={d} onDone={(text) => { setNotice(text); void load(); }} />
                 <ActivityStatus activity={d.activity} />
+              </div>
+              <div className="dm-actions">
+                <Link href={`/admin/demos/${d.id}`} className="dm-text">
+                  Editar
+                </Link>
+                <span className="dm-sep">·</span>
+                <button
+                  type="button"
+                  className={`dm-text ${d.status === "published" ? "" : "dm-text-primary"}`}
+                  disabled={busy === d.id}
+                  onClick={() => act(d, d.status === "published" ? "unpublish" : "publish")}
+                >
+                  {d.status === "published" ? "Despublicar" : "Publicar"}
+                </button>
+                <span className="dm-sep">·</span>
+                <button
+                  type="button"
+                  className="dm-text dm-danger"
+                  aria-label={`Eliminar ${d.title}`}
+                  disabled={busy === d.id}
+                  onClick={() => act(d, "delete")}
+                >
+                  Eliminar
+                </button>
               </div>
             </div>
           </li>
