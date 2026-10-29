@@ -14434,6 +14434,23 @@ a.dm-agency:hover {
   font-weight: 700;
   cursor: pointer;
 }
+.dv2-prices-cta {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 14px;
+  border: 1px solid #e2dccd;
+  border-radius: 14px;
+  background: #fff;
+}
+.dv2-prices-cta p {
+  margin: 0;
+  color: #6b7770;
+  font-size: 13px;
+}
+.dv2-prices-cta .button {
+  justify-self: start;
+}
 .dv2-prices-body {
   flex: 1;
   overflow-y: auto;
