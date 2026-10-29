@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { cache } from "react";
-import { DemoPanel } from "@/components/demo-panel";
 import { DemoView } from "@/components/demo-view";
 import { INVITE_PARAM, inviteFor, presentationPath, type DemoInvite } from "@/lib/agency/demo-invite";
 import { invitationOf } from "@/lib/agency/invitation";
@@ -92,9 +91,11 @@ export default async function PublicDemoPage({ params, searchParams }: Props) {
     } catch {
       console.error("demo_invitation_lookup_failed");
     }
-  // With a live invitation the agency sees its demo inside its own panel, in "modo demostración";
-  // ?vista=ficha shows the buyers' page, still with the way into the panel.
-  if (code && invite && "href" in invite && (await searchParams).vista !== "ficha")
-    return <DemoPanel demo={demo} token={token} invite={invite} buyerHref={`${presentationPath(token, code)}&vista=ficha`} />;
-  return <DemoView demo={demo} source={{ kind: "public", token }} presentation={presentation} invite={invite} />;
+  // With a live invitation the agency sees its demo like a buyer would, under its own panel
+  // ("modo demostración"); ?vista=ficha shows the buyers' page, still with the way into the panel.
+  const owner =
+    code && invite && "href" in invite && (await searchParams).vista !== "ficha"
+      ? { href: invite.href, freeCredits: invite.freeCredits, buyerHref: `${presentationPath(token, code)}&vista=ficha` }
+      : null;
+  return <DemoView demo={demo} source={{ kind: "public", token }} presentation={presentation} invite={invite} owner={owner} />;
 }

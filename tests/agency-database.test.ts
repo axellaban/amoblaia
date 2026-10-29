@@ -227,16 +227,17 @@ describe("Free credits for an agency", () => {
   it("waits for an agency without an account and moves to its owner when claimed", async () => {
     const admin = await account();
     const { agency } = await prospect(admin);
-    expect((await give(admin, agency, 5))!.r).toEqual({ applied: "pending", pending: 5 });
-    expect((await give(admin, agency, 3))!.r).toEqual({ applied: "pending", pending: 8 });
+    // A new agency already carries its 10 welcome credits.
+    expect((await give(admin, agency, 5))!.r).toEqual({ applied: "pending", pending: 15 });
+    expect((await give(admin, agency, 3))!.r).toEqual({ applied: "pending", pending: 18 });
     const owner = await account();
     const before = await credits(owner);
     await claim(owner, await claimCode(agency, admin), `free-${id().slice(-6)}`);
-    expect((await one<{ n: number }>("select habita_apply_agency_credits($1) as n", [agency]))!.n).toBe(8);
-    expect(await credits(owner)).toBe(before + 8);
+    expect((await one<{ n: number }>("select habita_apply_agency_credits($1) as n", [agency]))!.n).toBe(18);
+    expect(await credits(owner)).toBe(before + 18);
     // Applied once: calling again moves nothing.
     expect((await one<{ n: number }>("select habita_apply_agency_credits($1) as n", [agency]))!.n).toBe(0);
-    expect(await credits(owner)).toBe(before + 8);
+    expect(await credits(owner)).toBe(before + 18);
   });
 
   it("goes to the owner at once when the agency has an account, and is audited", async () => {
@@ -248,6 +249,17 @@ describe("Free credits for an agency", () => {
     expect(await credits(owner)).toBe(before + 4);
     const audit = await one<{ n: number }>("select count(*)::int as n from admin_audit where action='agency_credit' and subject_id=$1", [agency]);
     expect(audit!.n).toBe(1);
+  });
+
+  it("gives every new agency 10 welcome credits: reserved until claimed, or to its owner at once", async () => {
+    const admin = await account();
+    const { agency } = await prospect(admin);
+    expect((await one<{ n: number }>("select free_credits_pending as n from agencies where id=$1", [agency]))!.n).toBe(10);
+    const owner = await account();
+    const before = await credits(owner);
+    const own = await createAgency(owner, "Recién Creada", `recien-${id().slice(-6)}`);
+    expect(await credits(owner)).toBe(before + 10);
+    expect((await one<{ n: number }>("select free_credits_pending as n from agencies where id=$1", [own]))!.n).toBe(0);
   });
 
   it("refuses invalid amounts, missing reasons and unknown agencies", async () => {
@@ -325,7 +337,7 @@ describe("Idempotent free credits and balances for the team", () => {
       [[prospectAgency, owned]],
     )).rows;
     const by = Object.fromEntries(rows.map((r) => [r.agency_id, r]));
-    expect(by[prospectAgency]).toMatchObject({ available: null, reserved: 2 });
+    expect(by[prospectAgency]).toMatchObject({ available: null, reserved: 12 });
     expect(by[owned].available).toBe(await credits(owner));
     expect(by[owned].reserved).toBe(0);
   });
