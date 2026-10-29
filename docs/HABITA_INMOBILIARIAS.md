@@ -342,6 +342,12 @@ En `/admin/inmobiliarias/<id>`, **Créditos de regalo**: cantidad (1 a 1000) y m
 - Sin cuenta: quedan reservados y pasan a su saldo cuando acepta la invitación.
   La invitación lo dice («Incluye N créditos de regalo»).
 - Todo queda en `credit_ledger` y en `admin_audit` con el motivo.
+- **Bienvenida:** toda inmobiliaria nueva arranca con 10 créditos. Si la prepara
+  el equipo, quedan reservados hasta que acepta la invitación; si se crea desde el
+  panel, van directo a la cuenta del dueño. Las que ya existían no cambian.
+  Migración `202611050001_welcome_agency_credits.sql` (va después de
+  `202611040001`; idempotente). Verificación:
+  `select column_default from information_schema.columns where table_name='agencies' and column_name='free_credits_pending';` → `10`.
 
 ### 10.3 Migración `202610300001_agency_free_credits.sql`
 
