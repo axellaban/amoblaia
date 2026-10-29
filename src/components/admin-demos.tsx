@@ -80,6 +80,22 @@ export async function copyText(text: string) {
   }
 }
 
+/**
+ * Copies a link that is still being prepared (the agency's needs a server call). The
+ * clipboard write starts with the click, so browsers accept it; the same request is
+ * reused if the browser refuses, so no second one-time link is created.
+ */
+export async function copyLinkWhenReady(getLink: () => Promise<string>) {
+  const link = getLink();
+  try {
+    const text = link.then((t) => new Blob([t], { type: "text/plain" }));
+    await navigator.clipboard.write([new ClipboardItem({ "text/plain": text })]);
+    return true;
+  } catch {
+    return copyText(await link);
+  }
+}
+
 export function StatusChip({ status }: { status: DemoSummary["status"] }) {
   return (
     <span className={`dm-status ${status === "published" ? "is-live" : ""}`}>
@@ -110,8 +126,8 @@ export function LinkCopy({ demo, which }: { demo: Pick<DemoSummary, "id" | "toke
     setBusy(true);
     setError("");
     try {
-      const link = which === "agency" ? await agencyLink(demo) : publicLink(demo.token);
-      if (await copyText(link)) {
+      const ok = await copyLinkWhenReady(() => (which === "agency" ? agencyLink(demo) : Promise.resolve(publicLink(demo.token))));
+      if (ok) {
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
       }
@@ -236,7 +252,7 @@ function ShareCard({
     setBusy(true);
     setError("");
     try {
-      if (await copyText(await resolve())) {
+      if (await copyLinkWhenReady(resolve)) {
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
       }

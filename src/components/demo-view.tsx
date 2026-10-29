@@ -641,11 +641,16 @@ function Gallery({
     [demo.styles],
   );
   const name = (style: string) => styleNames[style] ?? demoStyleName(style);
-  const [index, setIndex] = useState(0);
+  // The agency's own view always opens compared: the chosen style, else the first style with a staging.
+  const openStyle = owner
+    ? (demo.openStyle ?? demo.styles.find((st) => photos.some((p) => p.versions.some((v) => v.style === st.id)))?.id ?? null)
+    : demo.openStyle;
+  // The agency opens on the first photo that already has a staging, compared; the buyers start at the first photo.
+  const [index, setIndex] = useState(() => (owner ? Math.max(0, photos.findIndex((p) => p.versions.length > 0)) : 0));
   // Remembered per photo during the visit.
   const [states, setStates] = useState<Record<string, PhotoState>>({});
   // The style last chosen: photos not seen yet open in it when they have it.
-  const lastStyle = useRef(demo.openStyle);
+  const lastStyle = useRef(owner ? openStyle : demo.openStyle);
   // Where the comparison line was last left, on any photo.
   const lastPosition = useRef(50);
   const [failed, setFailed] = useState<Record<string, boolean>>({});
@@ -688,8 +693,8 @@ function Gallery({
   // Opening mode B: every photo with stagings opens compared, the line in the middle
   // (in the style last chosen, else the configured one, else its first). Otherwise, the original.
   const opening = (p: PublicPhoto): PhotoState => {
-    if (!demo.openStyle || !p.versions.length) return ORIGINAL;
-    const style = [lastStyle.current, demo.openStyle].find((st) => st && p.versions.some((v) => v.style === st));
+    if (!openStyle || !p.versions.length) return ORIGINAL;
+    const style = [lastStyle.current, openStyle].find((st) => st && p.versions.some((v) => v.style === st));
     return { style: style ?? p.versions[0].style, compare: true, position: 50 };
   };
   const state = photo ? (states[photo.id] ?? opening(photo)) : ORIGINAL;
