@@ -117,6 +117,8 @@ export type DemoSummary = {
   agencyName: string;
   /** Whether the agency already has its habita account (null: unknown). */
   agencyClaimed: boolean | null;
+  /** The agency's WhatsApp to send it its demo, as wa.me digits (team only). Null or absent: none known. */
+  agencyWhatsapp?: string | null;
   propertyTitle: string;
   /** "fotos": imported photos that are not a ficha yet (cannot be published). Absent: a ficha. */
   kind?: "ficha" | "fotos";
@@ -297,8 +299,9 @@ export function demoUrl(origin: string, token: string, presentation = false) {
   return presentation ? `${url}?${PRESENTATION_PARAM}=1` : url;
 }
 /** wa.me opens WhatsApp Web or the app. The message is only the link: no greeting, no text of ours. */
-export function whatsappShareUrl(link: string) {
-  return `https://wa.me/?text=${encodeURIComponent(link)}`;
+export function whatsappShareUrl(link: string, to?: string | null) {
+  // With a number (wa.me digits) it opens that chat; without one, WhatsApp asks who to send it to.
+  return `https://wa.me/${to ? to.replace(/\D/g, "") : ""}?text=${encodeURIComponent(link)}`;
 }
 
 /**

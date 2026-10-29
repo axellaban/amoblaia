@@ -217,6 +217,64 @@ export async function completeAgency(agencyId: string, imp: ImportedDemo, contac
   return done;
 }
 
+type WaContact = { id: string; account_id: string; address: string | null; needs_review: boolean; verified_at: string | null; invalid_at: string | null; is_primary: boolean };
+type WaBlock = { account_id: string; scope: string; channel: string | null; contact_id: string | null };
+
+/**
+ * The agency's WhatsApp to send its demo to, as wa.me digits (team only).
+ * First its prospecting contact: verified first, then reviewed, then primary;
+ * never an invalid one or one under a suppression. Else the public WhatsApp
+ * of its branding. A lookup that fails (or a missing table before the
+ * migrations) leaves the agency without a number: WhatsApp then lets the
+ * team pick the chat, as before.
+ */
+export async function whatsappOf(agencyIds: string[]) {
+  const out = new Map<string, string>();
+  if (!agencyIds.length) return out;
+  const db = adminClient();
+  const accounts = await db.from("prospect_accounts").select("id,agency_id").in("agency_id", agencyIds);
+  if (!accounts.error && accounts.data?.length) {
+    const agencyOf = new Map((accounts.data as { id: string; agency_id: string }[]).map((a) => [a.id, a.agency_id]));
+    const ids = [...agencyOf.keys()];
+    const [contacts, blocks] = await Promise.all([
+      db
+        .from("prospect_contacts")
+        .select("id,account_id,address,needs_review,verified_at,invalid_at,is_primary")
+        .in("account_id", ids)
+        .eq("channel", "whatsapp"),
+      db.from("prospect_suppressions").select("account_id,scope,channel,contact_id").in("account_id", ids).is("lifted_at", null),
+    ]);
+    if (!contacts.error && !blocks.error) {
+      const active = (blocks.data ?? []) as WaBlock[];
+      const blocked = (c: WaContact) =>
+        active.some(
+          (s) =>
+            s.account_id === c.account_id &&
+            (s.scope === "account" || (s.scope === "channel" && s.channel === "whatsapp") || (s.scope === "contact" && s.contact_id === c.id)),
+        );
+      const rank = (c: WaContact) => (c.verified_at ? 4 : 0) + (c.needs_review ? 0 : 2) + (c.is_primary ? 1 : 0);
+      const usable = ((contacts.data ?? []) as WaContact[])
+        .filter((c) => c.address && !c.invalid_at && !blocked(c) && whatsappNumber(c.address))
+        .sort((a, b) => rank(b) - rank(a));
+      for (const c of usable) {
+        const agency = agencyOf.get(c.account_id);
+        if (agency && !out.has(agency)) out.set(agency, whatsappNumber(c.address!)!);
+      }
+    }
+  }
+  const missing = agencyIds.filter((id) => !out.has(id));
+  if (missing.length) {
+    const rows = await db.from("agencies").select("id,branding").in("id", missing);
+    if (!rows.error)
+      for (const r of (rows.data ?? []) as { id: string; branding: unknown }[]) {
+        const b = readBranding(r.branding);
+        const n = b.contactKind === "whatsapp" && b.contactValue ? whatsappNumber(b.contactValue) : null;
+        if (n) out.set(r.id, n);
+      }
+  }
+  return out;
+}
+
 /**
  * Available (the owner's balance) and reserved credits per agency, for the team's lists.
  * Unknown stays null, never 0: before the migration, or when the lookup fails.
@@ -292,6 +350,7 @@ export async function listDemos() {
   const shown = await shownOf(photoRows);
   const activity = await activityOf(demos.map((d) => d.id));
   const credits = await creditsOf(agencyIds);
+  const whatsapp = await whatsappOf(agencyIds);
   const summaries: DemoSummary[] = demos.map((d) => {
     const own = photoRows.filter((p) => p.property_id === d.property_id);
     const main = mainOf(own);
@@ -306,6 +365,7 @@ export async function listDemos() {
       agencyId: d.agency_id,
       agencyName: agencyName.get(d.agency_id) || "",
       agencyClaimed: claimed.get(d.agency_id) ?? null,
+      agencyWhatsapp: whatsapp.get(d.agency_id) ?? null,
       propertyTitle: propertyTitle.get(d.property_id) || "",
       photos: own.length,
       staged: withVersions.filter((p) => p.versions.length).length,
@@ -426,6 +486,7 @@ export async function demoDetail(id: string): Promise<DemoDetail> {
       agencyClaimed: Boolean((await adminClient().from("agencies").select("owner_id").eq("id", demo.agency_id).maybeSingle()).data?.owner_id),
       activity: (await activityOf([demo.id])).get(demo.id) ?? NO_ACTIVITY,
       credits: (await creditsOf([demo.agency_id])).get(demo.agency_id) ?? NO_CREDITS,
+      agencyWhatsapp: (await whatsappOf([demo.agency_id])).get(demo.agency_id) ?? null,
       propertyTitle: prop.title,
       kind: demo.kind === "fotos" ? "fotos" : "ficha",
       photos: photos.length,
