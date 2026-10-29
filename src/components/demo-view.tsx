@@ -150,6 +150,7 @@ export function DemoView({
   presentation = false,
   invite = null,
   owner = null,
+  plans = null,
 }: {
   demo: PublicDemo;
   source: Source;
@@ -159,6 +160,8 @@ export function DemoView({
   invite?: DemoInvite;
   /** The agency viewing its own demo through its invitation: its panel header and the download or generate actions. */
   owner?: OwnerMode | null;
+  /** The plans of /precios, shown in the agency's side panel. */
+  plans?: React.ReactNode;
 }) {
   const { agency } = demo;
   const [pageUrl, setPageUrl] = useState("");
@@ -231,7 +234,7 @@ export function DemoView({
 
   return (
     <div className={`dv2-page ${agency.titleFont === "serif" ? "is-serif" : ""}`} style={brandStyle}>
-      {owner && <OwnerHeader demo={demo} owner={owner} log={log} />}
+      {owner && <OwnerHeader demo={demo} owner={owner} log={log} plans={plans} />}
       {!owner && presentation && demo.banner && (
         <div className="dv2-banner" role="note">
           Demo preparada para {agency.name} ·{" "}
@@ -1137,7 +1140,15 @@ function PanelInvite({
  * The agency's gift credits, in the bar: how many it has, what they are for and
  * where to get more. A native details element, so it opens the same on a phone.
  */
-function OwnerCredits({ owner, log }: { owner: OwnerMode; log: (event: string, extra?: Record<string, unknown>) => unknown }) {
+function OwnerCredits({
+  owner,
+  log,
+  onPrices,
+}: {
+  owner: OwnerMode;
+  log: (event: string, extra?: Record<string, unknown>) => unknown;
+  onPrices: () => void;
+}) {
   const gift = owner.freeCredits;
   return (
     <details className="dv2-owner-credits" onToggle={(e) => e.currentTarget.open && log("demo_owner_creditos")}>
@@ -1154,12 +1165,37 @@ function OwnerCredits({ owner, log }: { owner: OwnerMode; log: (event: string, e
         </a>
         <div className="dv2-owner-menu-more">
           <span>¿Necesitás más?</span>
-          <a href="/precios" onClick={() => log("demo_owner_precios")}>
+          <button
+            type="button"
+            onClick={() => {
+              log("demo_owner_precios");
+              onPrices();
+            }}
+          >
             Ver precios
-          </a>
+          </button>
         </div>
       </div>
     </details>
+  );
+}
+
+/** The plans of /precios, opened from the agency's bar: on the right, inside its environment. */
+function PricesDrawer({ onClose, children }: { onClose: () => void; children: React.ReactNode }) {
+  useEffect(() => {
+    const close = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [onClose]);
+  return (
+    <div className="dv2-prices" role="dialog" aria-modal="true" aria-label="Planes y créditos">
+      <div className="dv2-prices-head">
+        <button type="button" className="dv2-prices-back" onClick={onClose}>
+          ← Volver a la demo
+        </button>
+      </div>
+      <div className="dv2-prices-body">{children}</div>
+    </div>
   );
 }
 
@@ -1167,11 +1203,15 @@ function OwnerHeader({
   demo,
   owner,
   log,
+  plans,
 }: {
   demo: PublicDemo;
   owner: OwnerMode;
   log: (event: string, extra?: Record<string, unknown>) => unknown;
+  plans: React.ReactNode;
 }) {
+  const [prices, setPrices] = useState(false);
+  const closePrices = useCallback(() => setPrices(false), []);
   const versions = demo.photos.reduce((n, p) => n + p.versions.length, 0);
   const go = (origin: string) => ({ href: owner.href, onClick: () => log("demo_agency_cta_clicked", { origen: `demo_encabezado_${origin}` }) });
   const initials = demo.agencyName
@@ -1206,7 +1246,7 @@ function OwnerHeader({
           <a {...go("imagenes")}>
             <ImageIcon size={17} aria-hidden="true" /> Imágenes
           </a>
-          <OwnerCredits owner={owner} log={log} />
+          <OwnerCredits owner={owner} log={log} onPrices={() => setPrices(true)} />
           <a className="dv2-owner-create-chip" {...go("crear_movil")}>
             <Plus size={17} aria-hidden="true" /> Crear propiedad
           </a>
@@ -1230,6 +1270,7 @@ function OwnerHeader({
           Ver como comprador
         </a>
       </p>
+      {prices && <PricesDrawer onClose={closePrices}>{plans}</PricesDrawer>}
     </header>
   );
 }

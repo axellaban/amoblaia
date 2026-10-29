@@ -39,6 +39,19 @@ export async function recordDemoActivity(demoId: string, visitor: string, kind: 
   }
 }
 
+/** The agency's account bought credits: step 4 ("suscribió") on each of its demos. Best effort. */
+export async function recordAgencyPurchase(userId: string) {
+  try {
+    const { data } = await adminClient().from("agency_members").select("agency_id").eq("user_id", userId).maybeSingle();
+    const agencyId = (data as { agency_id: string } | null)?.agency_id;
+    if (!agencyId) return;
+    const { error } = await adminClient().rpc("habita_record_agency_purchase", { p_agency: agencyId });
+    if (error) console.error("demo_activity_failed");
+  } catch {
+    console.error("demo_activity_failed");
+  }
+}
+
 /** The agency took its demos into its own account (step 3 on each). Best effort. */
 export async function recordAgencyPanel(agencyId: string) {
   try {
@@ -64,7 +77,7 @@ export async function activityOf(demoIds: string[]) {
   if (error) return out;
   for (const row of (data ?? []) as { id: string; activity_level: number; activity_at: string | null; activity_visitors: number }[])
     out.set(row.id, {
-      level: Math.min(3, Math.max(0, row.activity_level)) as DemoActivity["level"],
+      level: Math.min(4, Math.max(0, row.activity_level)) as DemoActivity["level"],
       at: row.activity_at,
       visitors: row.activity_visitors,
     });

@@ -11,6 +11,7 @@ Herramienta interna para preparar, con fotos reales de una inmobiliaria, una gal
 1b. **Aplicar `supabase/migrations/202610270001_demo_branding.sql`** (también se puede re-ejecutar): agrega `agencies.branding` (logo, colores, tipografía, canal de contacto, enlace de visitas) y `demos.settings` (modo de apertura, franja de presentación, operación, precio, características, referencia). Sin ella, la demo funciona igual pero abre con la foto original, sin marca propia ni botón de contacto, y el panel avisa que no puede guardar esos datos.
 1c. **Aplicar `supabase/migrations/202611060001_demo_activity.sql`** (también se puede re-ejecutar): agrega la actividad de cada demo (`demos.activity_*` y la tabla `demo_activity`). Sin ella, la lista muestra todas las demos «Sin actividad» y el resto funciona igual.
 1d. **Aplicar `supabase/migrations/202611070001_public_staging.sql`** (también se puede re-ejecutar): generar sin cuenta desde la demo gasta los créditos de regalo de la inmobiliaria (`habita_public_staging_claim`). Sin ella, el botón «Generar» de la vista de la inmobiliaria responde error.
+1e. **Aplicar `supabase/migrations/202611080001_activity_purchase.sql`** (también se puede re-ejecutar): agrega el escalón 4, «Suscribió».
 2. **Habilitar administradores**: agregar el email de cada cuenta del equipo a `ADMIN_EMAILS` en Vercel (separados por comas) y redeployar. La cuenta debe existir y tener el email verificado (Google o email confirmado). No hay ninguna forma de volverse administrador desde el navegador.
 3. Opcional: si el equipo va a ambientar muchas fotos en un día, agregar esas cuentas también a `UNLIMITED_EMAILS` (cupo diario de 1000 en lugar de un tercio de `MAX_GENERATIONS_PER_DAY`).
 
@@ -72,7 +73,7 @@ select has_function_privilege('authenticated',
 - El comparador muestra ambas imágenes en el marco de la original, sin deformarlas ni cambiar de tamaño al activarse. El panel marca «Encuadre distinto al original» cuando una ambientación tiene otra proporción (más de 3 %): revisarla o regenerarla antes de publicar.
 
 ### Actividad de cada demo (lista del equipo)
-- Tres escalones; cuenta el más alto alcanzado: **1 Ingresó** (visita a la página pública), **2 Interactuó** (primer clic en estilos, comparador o contacto, o descarga de una foto en la vista de demostración), **3 Creó su panel** (la inmobiliaria reclamó su cuenta; sirve para todas sus demos).
+- Cuatro escalones; cuenta el más alto alcanzado: **1 Ingresó** (visita a la página pública), **2 Interactuó** (primer clic en estilos, comparador o contacto, o descarga de una foto en la vista de demostración), **3 Creó su panel** (la inmobiliaria reclamó su cuenta; sirve para todas sus demos), **4 Suscribió** (la cuenta de la inmobiliaria compró créditos: un pago aprobado; sirve para todas sus demos).
 - Cada visitante se identifica con un id aleatorio guardado en su navegador (`habita_visitante`), sin datos personales. Cada paso se cuenta una sola vez por visitante y demo.
 - **Las visitas del equipo no cuentan**: el servidor descarta cualquier paso hecho con una sesión de administrador. En un navegador sin sesión, la visita sí cuenta; para no contarla, abrí el enlace ya logueado.
 - Ruta: `POST /api/demo/<token>/actividad` (`{ visitor, kind }`, con `kind` en `visita`, `interaccion` o `descarga`). Responde siempre 204 para no revelar nada de la demo.

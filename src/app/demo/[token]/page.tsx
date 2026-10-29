@@ -2,11 +2,14 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { cache } from "react";
 import { DemoView } from "@/components/demo-view";
+import { PricingPlans } from "@/components/pricing";
 import { INVITE_PARAM, inviteFor, presentationPath, type DemoInvite } from "@/lib/agency/demo-invite";
 import { invitationOf } from "@/lib/agency/invitation";
 import { publishedDemo } from "@/lib/demos/server";
 import { coverVersion, demoPath, ogImageUrl, PRESENTATION_PARAM } from "@/lib/demos/shared";
-import { cloudConfigured } from "@/lib/supabase/config";
+import type { Product } from "@/lib/commerce/catalog";
+import { cloudConfigured, cloudEnabled } from "@/lib/supabase/config";
+import { adminClient } from "@/lib/supabase/server";
 
 // Read on every request: unpublishing or rotating the link takes effect at once.
 export const dynamic = "force-dynamic";
@@ -75,6 +78,27 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
   };
 }
 
+/** The plans of /precios, as they are: the same catalog and the same component, without buying here. */
+async function plansOf() {
+  let products: Product[] = [];
+  if (cloudConfigured()) {
+    try {
+      const { data } = await adminClient().from("products").select("*");
+      products = (data || []) as Product[];
+    } catch {
+      /* Plans stay unavailable when the catalog cannot be loaded, as on /precios. */
+    }
+  }
+  return (
+    <PricingPlans
+      products={products}
+      enabled={false}
+      trial={cloudEnabled() && process.env.LIVE_TRIAL_ENABLED === "true"}
+      renderedAt={Date.now()}
+    />
+  );
+}
+
 export default async function PublicDemoPage({ params, searchParams }: Props) {
   const { token } = await params;
   const demo = await load(token);
@@ -97,5 +121,6 @@ export default async function PublicDemoPage({ params, searchParams }: Props) {
     code && invite && "href" in invite && (await searchParams).vista !== "ficha"
       ? { href: invite.href, freeCredits: invite.freeCredits, buyerHref: `${presentationPath(token, code)}&vista=ficha` }
       : null;
-  return <DemoView demo={demo} source={{ kind: "public", token }} presentation={presentation} invite={invite} owner={owner} />;
+  const plans = owner ? await plansOf() : null;
+  return <DemoView demo={demo} source={{ kind: "public", token }} presentation={presentation} invite={invite} owner={owner} plans={plans} />;
 }

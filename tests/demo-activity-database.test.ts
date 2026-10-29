@@ -79,9 +79,18 @@ describe("demo activity", () => {
 
   it("refuses an unknown step and a visitor id out of range", async () => {
     const { demo: d } = await demo();
-    await expect(record(d, "visitante-ffff-6", "compra")).rejects.toThrow();
+    await expect(record(d, "visitante-ffff-6", "pago")).rejects.toThrow();
     await expect(record(d, "", "visita")).rejects.toThrow();
     expect((await summary(d))!.activity_level).toBe(0);
+  });
+
+  it("a purchase of credits is step 4, the highest one", async () => {
+    const { agency, demo: d } = await demo();
+    await record(d, "visitante-hhhh-8", "panel");
+    await db.query("select habita_record_agency_purchase($1)", [agency]);
+    const s = (await summary(d))!;
+    expect(s.activity_level).toBe(4);
+    expect(s.activity_visitors).toBe(0);
   });
 
   it("is private: anon and authenticated cannot read the events", async () => {

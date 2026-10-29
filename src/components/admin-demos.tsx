@@ -378,7 +378,7 @@ export function ActivityStatus({ activity }: { activity: DemoActivity }) {
       <span className="dm-activity-label">Actividad</span>
       <strong>{activity.level ? `${activity.level} · ${label}` : label}</strong>
       <span className="dm-activity-dots" aria-hidden="true">
-        {[1, 2, 3].map((step) => (
+        {[1, 2, 3, 4].map((step) => (
           <i key={step} className={step <= activity.level ? "on" : undefined} />
         ))}
       </span>
