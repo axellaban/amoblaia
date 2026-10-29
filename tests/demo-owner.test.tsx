@@ -61,7 +61,8 @@ describe("the agency's own demo, under its panel header", () => {
     const panel = hrefs.filter((h) => h.startsWith("/panel"));
     expect(panel.length).toBeGreaterThan(5);
     expect(panel.every((h) => h === INVITE)).toBe(true);
-    expect(hrefs.filter((h) => !h.startsWith("/panel")).every((h) => h === owner.buyerHref || h.startsWith("#") || h.startsWith("/demo/tok/imagen/"))).toBe(true);
+    // The only other way out is the public price list («¿Necesitás más? Ver precios»), never the panel.
+    expect(hrefs.filter((h) => !h.startsWith("/panel")).every((h) => h === owner.buyerHref || h === "/precios" || h.startsWith("#") || h.startsWith("/demo/tok/imagen/"))).toBe(true);
   });
 
   it("lists the original first, then four styles and the rest behind «Más estilos»", () => {

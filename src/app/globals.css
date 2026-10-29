@@ -14256,6 +14256,80 @@ a.dm-agency:hover {
   background: var(--forest);
   color: #fff;
 }
+/* Gift credits in the agency's bar: a details menu with the credits and where to get more. */
+.dv2-owner-credits {
+  position: relative;
+}
+.dv2-owner-credits > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 999px;
+  color: #e9e3d6;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+.dv2-owner-credits > summary::-webkit-details-marker {
+  display: none;
+}
+.dv2-owner-credits > summary:hover,
+.dv2-owner-credits[open] > summary {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+.dv2-owner-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 20;
+  display: grid;
+  gap: 10px;
+  width: min(340px, 88vw);
+  padding: 16px;
+  border-radius: 16px;
+  background: #fff;
+  color: #1c2a25;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.18);
+}
+.dv2-owner-menu strong {
+  font-size: 15px;
+}
+.dv2-owner-menu p {
+  margin: 0;
+  color: #6b7770;
+  font-size: 13px;
+}
+.dv2-owner-menu > a {
+  display: grid;
+  gap: 2px;
+  padding: 12px;
+  border: 1px solid #dfe4de;
+  border-radius: 12px;
+  color: inherit;
+  font-weight: 650;
+  text-decoration: none;
+}
+.dv2-owner-menu > a small {
+  color: #6b7770;
+  font-size: 12px;
+  font-weight: 400;
+}
+.dv2-owner-menu-more {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 10px;
+  border-top: 1px solid #e2dccd;
+  font-size: 13px;
+}
+.dv2-owner-menu-more a {
+  color: var(--forest);
+  font-weight: 700;
+}
 .dv2-owner-create-chip {
   display: none !important;
 }
