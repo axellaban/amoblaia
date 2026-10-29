@@ -2897,6 +2897,136 @@ fieldset {
   padding: 7px 14px;
   box-shadow: 0 6px 16px #151a2d1f;
 }
+/* Credits: the first option, a full row above the plans, with a slider over the packs. */
+.commercial-plans .credits-card {
+  grid-column: 1 / -1;
+  border: 2px solid var(--forest);
+}
+.credits-card .price-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 20px 48px;
+  align-items: center;
+  background: #ffffff;
+}
+.credits-card .eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--forest);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+.credits-card .credits-pick > p {
+  color: var(--muted);
+  margin-top: 4px;
+}
+.credits-amount {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.commercial-plans .credits-card .photo-allowance {
+  margin: 12px 0 4px;
+}
+.credits-cut {
+  border-radius: 30px;
+  padding: 5px 12px;
+  background: #e3efe5;
+  color: #2f6b45;
+  font-size: 14px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.credits-cut.none {
+  background: var(--sand);
+  color: var(--muted);
+}
+.credits-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 8px;
+  margin: 14px 0 6px;
+  border-radius: 8px;
+  background: linear-gradient(
+    to right,
+    var(--forest) var(--fill, 0%),
+    var(--line) var(--fill, 0%)
+  );
+  cursor: pointer;
+}
+.credits-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 3px solid var(--forest);
+  box-shadow: 0 3px 10px #00000026;
+}
+.credits-range::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 3px solid var(--forest);
+  box-shadow: 0 3px 10px #00000026;
+}
+.credits-range:focus-visible {
+  outline: 3px solid var(--clay);
+  outline-offset: 4px;
+}
+.credits-stops {
+  display: flex;
+  justify-content: space-between;
+  margin: 0 3px;
+}
+.credits-stops button {
+  min-width: 34px;
+  padding: 4px 2px;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.credits-stops button.selected {
+  color: var(--ink);
+  font-weight: 800;
+}
+.credits-buy {
+  background: var(--cream);
+  border-radius: 14px;
+  padding: 22px;
+}
+.commercial-plans .credits-card .price {
+  font-size: 30px;
+}
+.credits-compare {
+  margin: 12px 0 0;
+  font-size: 14px;
+  color: var(--muted);
+}
+.credits-compare b {
+  color: var(--ink);
+}
+.commercial-plans .credits-card .button {
+  width: 100%;
+}
+@media (max-width: 760px) {
+  .credits-card .price-panel {
+    grid-template-columns: 1fr;
+  }
+  .credits-buy {
+    padding: 18px;
+  }
+}
 .pricing-page .mp-email-toggle {
   margin-top: 28px;
 }

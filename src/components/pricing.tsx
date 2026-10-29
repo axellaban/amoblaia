@@ -1,7 +1,7 @@
 "use client";
 import { redirectKeepingClick } from "@/lib/ads";
 import Link from "next/link";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, type CSSProperties } from "react";
 import {
   Check,
   ArrowUpRight,
@@ -13,6 +13,7 @@ import {
   X,
   Timer,
   House,
+  Coins,
 } from "lucide-react";
 import {
   offers,
@@ -32,6 +33,10 @@ const features = [
   "Proyectos privados en tu cuenta",
 ];
 const faqs = [
+  [
+    "¿Qué diferencia hay entre los créditos y un plan?",
+    "Los créditos se pagan una sola vez, sin suscripción, y duran 12 meses: cada crédito es una foto original, con sus regeneraciones. Cuantos más comprás, menos pagás cada uno. Los planes se renuevan cada mes y salen más baratos por foto si publicás todos los meses.",
+  ],
   [
     "¿Qué cuenta como una foto?",
     "Cada foto original que subís consume una foto de tu plan. Podés generar nuevas propuestas sobre ese original durante la vigencia paga sin consumir otra foto. Las descargas no consumen cupo. Si una generación falla por un problema técnico, la foto no se descuenta.",
@@ -132,6 +137,22 @@ export function PricingPlans({
   const firstPack = firstPackUsed
     ? undefined
     : products.find((p) => p.sku === "pack-first" && p.active && p.price_cents);
+  // Credit packs, smallest first, are the stops of the credits slider. The
+  // one-per-account pack has its own section.
+  const creditPacks = products
+    .filter(
+      (p) =>
+        p.kind === "pack" && p.active && p.price_cents && !p.per_account_limit,
+    )
+    .sort((a, b) => a.photos - b.photos);
+  const [packIndex, setPackIndex] = useState(() =>
+    Math.max(
+      0,
+      creditPacks.findIndex((p) =>
+        initialSku?.startsWith("pack-") ? p.sku === initialSku : p.photos >= 20,
+      ),
+    ),
+  );
   // During the launch, plans open on the monthly prices that carry it.
   const [annual, setAnnual] = useState(
       currentSku
@@ -243,6 +264,131 @@ export function PricingPlans({
       setBusy("");
     }
   }
+  // Packs go straight to Checkout Pro, which takes any account.
+  function buyPack(sku: string) {
+    if (signupHref) return toSignup(sku);
+    setError("");
+    setPayerEmail("");
+    if (!email) {
+      redirectKeepingClick("/acceso?next=%2Fprecios");
+      return;
+    }
+    void buy(sku);
+  }
+  function creditsCard() {
+    const pack = creditPacks[Math.min(packIndex, creditPacks.length - 1)],
+      cents = pack.price_cents || 0,
+      unit = cents / pack.photos,
+      cut = 1 - unit / ((creditPacks[0].price_cents || 0) / creditPacks[0].photos),
+      ready = enabled || Boolean(signupHref),
+      plans = offers
+        .map((o) => ({ ...o, cents: price(skuFor(o.id)) }))
+        .filter((o) => o.cents),
+      bigger = plans.find((o) => o.photos > pack.photos),
+      covered = plans.filter((o) => o.photos <= pack.photos).pop(),
+      days = pack.valid_days;
+    return (
+      <article className="price-card credits-card">
+        <span className="price-ribbon">Sin suscripción</span>
+        <div className="price-panel">
+          <div className="credits-pick">
+            <span className="eyebrow">
+              <Coins size={15} /> PAGO ÚNICO ·{" "}
+              {!days
+                ? "NO VENCEN"
+                : days % 365 === 0
+                  ? `VÁLIDOS ${(days / 365) * 12} MESES`
+                  : `VÁLIDOS ${days} DÍAS`}
+            </span>
+            <h2>Créditos</h2>
+            <p>
+              Comprá solo lo que necesitás. Un crédito es una foto, con
+              regeneraciones.
+            </p>
+            <div className="credits-amount">
+              <div className="photo-allowance">
+                <strong>{pack.photos}</strong> créditos
+              </div>
+              <span className={`credits-cut ${cut >= 0.01 ? "" : "none"}`}>
+                {cut >= 0.01
+                  ? `−${Math.round(cut * 100)}% por volumen`
+                  : "Precio de lista"}
+              </span>
+            </div>
+            <input
+              id="credits-amount"
+              type="range"
+              className="credits-range"
+              aria-label="Cantidad de créditos"
+              aria-valuetext={`${pack.photos} créditos`}
+              min={0}
+              max={creditPacks.length - 1}
+              step={1}
+              value={Math.min(packIndex, creditPacks.length - 1)}
+              style={
+                {
+                  "--fill": `${(Math.min(packIndex, creditPacks.length - 1) / Math.max(1, creditPacks.length - 1)) * 100}%`,
+                } as CSSProperties
+              }
+              onChange={(e) => setPackIndex(Number(e.target.value))}
+            />
+            <div className="credits-stops">
+              {creditPacks.map((p, i) => (
+                <button
+                  key={p.sku}
+                  type="button"
+                  className={p.sku === pack.sku ? "selected" : ""}
+                  aria-label={`${p.photos} créditos`}
+                  aria-pressed={p.sku === pack.sku}
+                  onClick={() => setPackIndex(i)}
+                >
+                  {p.photos}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="credits-buy">
+            <div className="price">
+              {formatARS(cents)} <span>por única vez</span>
+            </div>
+            <small className="per-photo">{formatARS(unit)} por crédito</small>
+            <p className="credits-compare">
+              {bigger && cents >= bigger.cents * 0.9 ? (
+                <>
+                  Por <b>{formatARS(bigger.cents)} por mes</b>, el plan{" "}
+                  <b>{bigger.name}</b> te da <b>{bigger.photos} fotos</b> todos
+                  los meses.
+                </>
+              ) : covered &&
+                pack.photos >= 20 &&
+                covered.cents / covered.photos < unit ? (
+                <>
+                  ¿Lo usás todos los meses? Con <b>{covered.name}</b> la foto
+                  sale <b>{formatARS(covered.cents / covered.photos)}</b>.
+                </>
+              ) : pack.photos >= 20 ? (
+                "Sin suscripción: usalos a tu ritmo, sin cupo que se pierda a fin de mes."
+              ) : (
+                "Ideal para una o dos propiedades, sin cupo que se pierda a fin de mes."
+              )}
+            </p>
+            <button
+              className="button button-primary"
+              disabled={!ready || Boolean(busy)}
+              onClick={() => buyPack(pack.sku)}
+            >
+              {busy === pack.sku ? (
+                <LoaderCircle size={18} className="spin" />
+              ) : (
+                <ArrowUpRight size={18} />
+              )}{" "}
+              {ready ? `Comprar ${pack.photos} créditos` : "Disponible pronto"}
+            </button>
+          </div>
+        </div>
+      </article>
+    );
+  }
   function card(offer: (typeof offers)[number]) {
     const sku = skuFor(offer.id, annual),
       cents = price(sku),
@@ -310,9 +456,7 @@ export function PricingPlans({
                 redirectKeepingClick("/acceso?next=%2Fprecios");
                 return;
               }
-              // Packs go straight to Checkout Pro, which takes any account.
-              if (sku.startsWith("pack-")) void buy(sku);
-              else setSelectedSku(sku);
+              setSelectedSku(sku);
             }}
           >
             {busy === sku ? (
@@ -372,7 +516,7 @@ export function PricingPlans({
             <h1>
               Nuestros planes<span>.</span>
             </h1>
-            <p>Elegí el plan de virtual staging para tu trabajo.</p>
+            <p>Comprá créditos o elegí un plan de virtual staging.</p>
           </div>
           <div
             className="billing-toggle"
@@ -432,7 +576,10 @@ export function PricingPlans({
         ) : (
           trial && trialBanner
         )}
-        <div className="pricing-grid commercial-plans">{offers.map(card)}</div>
+        <div className="pricing-grid commercial-plans">
+          {creditPacks.length > 0 && creditsCard()}
+          {offers.map(card)}
+        </div>
         {launchEnds > 0 && (
           <p className="launch-terms">
             Precio de lanzamiento válido para suscripciones mensuales
@@ -463,17 +610,7 @@ export function PricingPlans({
               <button
                 className="button button-primary"
                 disabled={!(enabled || signupHref) || Boolean(busy)}
-                onClick={() => {
-                  if (signupHref) return toSignup(firstPack.sku);
-                  setError("");
-                  setPayerEmail("");
-                  if (!email) {
-                    redirectKeepingClick("/acceso?next=%2Fprecios");
-                    return;
-                  }
-                  // Like any pack: straight to Checkout Pro.
-                  void buy(firstPack.sku);
-                }}
+                onClick={() => buyPack(firstPack.sku)}
               >
                 {busy === firstPack.sku ? (
                   <LoaderCircle size={18} className="spin" />
