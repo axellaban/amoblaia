@@ -1,7 +1,7 @@
 /** The browser's visitor id: random, kept locally, never personal data. Best effort: storage may be blocked. */
 const VISITOR_KEY = "habita_visitante";
 
-function visitorId() {
+export function visitorId() {
   try {
     const saved = localStorage.getItem(VISITOR_KEY);
     if (saved && /^[A-Za-z0-9-]{8,64}$/.test(saved)) return saved;

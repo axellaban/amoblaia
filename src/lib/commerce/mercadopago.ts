@@ -3,6 +3,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { adminClient } from "@/lib/supabase/server";
 import { HttpError, rpc } from "./http";
 import { acceptedChargeCents, type Product } from "./catalog";
+import { recordAgencyPurchase } from "@/lib/demos/activity";
 export type Order = {
   id: string;
   user_id: string;
@@ -438,6 +439,8 @@ export async function syncPayment(id: string, subscriptionId?: string) {
     p_paid_at: payment.date_approved || payment.date_created,
     p_subscription: subscriptionId || null,
   });
+  // An approved payment of an agency's account: the team's list shows it as "suscribió".
+  if (status === "approved" && recorded) await recordAgencyPurchase(order.user_id);
   // The payment is already credited: a failed switch is retried by the
   // daily cron instead of failing this notification over and over.
   if (

@@ -15,7 +15,6 @@ import { CreditsDialog, type CreditTarget } from "./admin-agencies";
 import { EDIT_HEADER } from "@/lib/agency/edit-scope";
 import {
   ACTIVITY_LABELS,
-  PRESENTATION_PARAM,
   adminPhotoUrl,
   demoUrl,
   whatsappShareUrl,
@@ -95,7 +94,8 @@ export function StatusChip({ status }: { status: DemoSummary["status"] }) {
  * claimed, the plain presentation link does.
  */
 async function agencyLink(demo: Pick<DemoSummary, "id" | "token" | "agencyClaimed">) {
-  if (demo.agencyClaimed === true) return publicLink(demo.token, true);
+  // With its account, the agency sees the demo inside its own panel.
+  if (demo.agencyClaimed === true) return `${window.location.origin}/panel/propiedades/${demo.id}`;
   const claim = await api<{ presentationUrl: string | null }>(`/api/admin/demos/${demo.id}/reclamo`, { method: "POST" });
   return claim.presentationUrl ?? publicLink(demo.token, true);
 }
@@ -125,6 +125,50 @@ export function LinkCopy({ demo, which }: { demo: Pick<DemoSummary, "id" | "toke
     <>
       <button type="button" className="dm-text" disabled={!live || busy} title={live ? undefined : "Publicá la demo para compartirla"} onClick={copy}>
         {copied ? "Copiado" : "Copiar link"}
+      </button>
+      {error && (
+        <span className="inline-error" role="alert">
+          {error}
+        </span>
+      )}
+    </>
+  );
+}
+
+/**
+ * "Ver": the agency's view (the same link as Copiar link) or the buyers' page.
+ * A draft has no public page yet, so the buyers' view opens the team's preview.
+ */
+export function ViewLink({ demo, which }: { demo: Pick<DemoSummary, "id" | "token" | "status" | "agencyClaimed">; which: "agency" | "buyer" }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  async function open() {
+    setBusy(true);
+    setError("");
+    // Opened now, while the click still counts, so the browser does not block it.
+    const tab = window.open("about:blank", "_blank");
+    try {
+      const url =
+        which === "agency"
+          ? await agencyLink(demo)
+          : demo.status === "published"
+            ? publicLink(demo.token)
+            : `${window.location.origin}/admin/demos/${demo.id}/vista-previa`;
+      if (tab) {
+        tab.opener = null;
+        tab.location.href = url;
+      } else window.open(url, "_blank", "noopener");
+    } catch (e) {
+      tab?.close();
+      setError(e instanceof Error ? e.message : "No pudimos abrir la vista.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <>
+      <button type="button" className="dm-text" disabled={busy} onClick={open}>
+        Ver
       </button>
       {error && (
         <span className="inline-error" role="alert">
@@ -334,7 +378,7 @@ export function ActivityStatus({ activity }: { activity: DemoActivity }) {
       <span className="dm-activity-label">Actividad</span>
       <strong>{activity.level ? `${activity.level} · ${label}` : label}</strong>
       <span className="dm-activity-dots" aria-hidden="true">
-        {[1, 2, 3].map((step) => (
+        {[1, 2, 3, 4].map((step) => (
           <i key={step} className={step <= activity.level ? "on" : undefined} />
         ))}
       </span>
@@ -512,15 +556,11 @@ export function DemoList() {
             <StatusChip status={d.status} />
             <div className="dm-links">
               <span className="dm-who">Inmobiliaria</span>
-              <Link href={`/admin/demos/${d.id}/vista-previa?${PRESENTATION_PARAM}=1`} className="dm-text" title="Lo que ve la inmobiliaria, con su acceso al panel">
-                Ver
-              </Link>
+              <ViewLink demo={d} which="agency" />
               <LinkCopy demo={d} which="agency" />
               <span className="dm-sep">·</span>
               <span className="dm-who">Comprador</span>
-              <Link href={`/admin/demos/${d.id}/vista-previa`} className="dm-text" title="Lo que ven los compradores">
-                Ver
-              </Link>
+              <ViewLink demo={d} which="buyer" />
               <LinkCopy demo={d} which="buyer" />
               {d.status === "published" && (
                 <>

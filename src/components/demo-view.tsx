@@ -39,6 +39,8 @@ import { Comparison } from "./comparison";
 import type { DemoInvite } from "@/lib/agency/demo-invite";
 import { registerSuperProperties, track } from "@/lib/analytics";
 import { reportDemoActivity } from "@/lib/demos/activity-client";
+import { requestPublicStaging } from "@/lib/demos/staging-client";
+import { useRouter } from "next/navigation";
 import { textOn, whatsappNumber, type FactIcon } from "@/lib/demos/branding";
 import { DEMO_STYLES, demoStyleName } from "@/lib/demos/styles";
 import {
@@ -148,6 +150,7 @@ export function DemoView({
   presentation = false,
   invite = null,
   owner = null,
+  plans = null,
 }: {
   demo: PublicDemo;
   source: Source;
@@ -157,6 +160,8 @@ export function DemoView({
   invite?: DemoInvite;
   /** The agency viewing its own demo through its invitation: its panel header and the download or generate actions. */
   owner?: OwnerMode | null;
+  /** The plans of /precios, shown in the agency's side panel. */
+  plans?: React.ReactNode;
 }) {
   const { agency } = demo;
   const [pageUrl, setPageUrl] = useState("");
@@ -229,7 +234,7 @@ export function DemoView({
 
   return (
     <div className={`dv2-page ${agency.titleFont === "serif" ? "is-serif" : ""}`} style={brandStyle}>
-      {owner && <OwnerHeader demo={demo} owner={owner} log={log} />}
+      {owner && <OwnerHeader demo={demo} owner={owner} log={log} plans={plans} />}
       {!owner && presentation && demo.banner && (
         <div className="dv2-banner" role="note">
           Demo preparada para {agency.name} ·{" "}
@@ -648,6 +653,31 @@ function Gallery({
   const [ratios, setRatios] = useState<Record<string, number>>({});
   const [full, setFull] = useState(false);
   const [allStyles, setAllStyles] = useState(false);
+  const router = useRouter();
+  // The style being generated for a photo: the page refreshes until its version shows.
+  const [staging, setStaging] = useState<{ photo: string; style: string } | null>(null);
+  const [stagingError, setStagingError] = useState("");
+  useEffect(() => {
+    if (!staging) return;
+    const done = photos.some((p) => p.id === staging.photo && p.versions.some((v) => v.style === staging.style));
+    if (done) return void setStaging(null);
+    const refresh = window.setInterval(() => router.refresh(), 8000);
+    const stop = window.setTimeout(() => setStaging(null), 240000);
+    return () => {
+      window.clearInterval(refresh);
+      window.clearTimeout(stop);
+    };
+  }, [staging, photos, router]);
+  async function generate(photoId: string, style: string) {
+    if (source.kind !== "public") return;
+    setStagingError("");
+    setStaging({ photo: photoId, style });
+    const r = await requestPublicStaging(source.token, photoId, style);
+    if (!r.ok) {
+      setStaging(null);
+      setStagingError(r.error);
+    }
+  }
   const thumbs = useRef<HTMLOListElement>(null);
   const swipe = useRef<{ x: number; y: number } | null>(null);
 
@@ -745,7 +775,7 @@ function Gallery({
       <p className="dv2-panel-hint">
         {photo.versions.length ? "Elegí una propuesta preparada o generá otra." : "Esta foto todavía no tiene versiones: generá la primera."}
       </p>
-      <ul className="dv2-owner-rows">
+      <ul className="dv2-owner-rows" id="dv2-estilos">
         <li className={`dv2-owner-row ${state.style ? "" : "is-on"}`}>
           <button type="button" aria-pressed={!state.style} onClick={backToOriginal}>
             <img src={urlFor(source, photo.id, null, 480)} alt="" loading="lazy" />
@@ -794,14 +824,24 @@ function Gallery({
                   <small>Sin generar</small>
                 </span>
               </span>
-              <a
+              <button
+                type="button"
                 className="dv2-owner-action is-generate"
-                href={owner.href}
+                disabled={!!staging || source.kind !== "public"}
                 aria-label={`Generar ${name(r.style)}`}
-                onClick={() => log("demo_agency_cta_clicked", { origen: "demo_generar", estilo: r.style })}
+                onClick={() => {
+                  log("demo_owner_generar", { estilo: r.style });
+                  void generate(photo.id, r.style);
+                }}
               >
-                <Sparkles size={16} aria-hidden="true" /> Generar
-              </a>
+                {staging?.photo === photo.id && staging.style === r.style ? (
+                  "Generando…"
+                ) : (
+                  <>
+                    <Sparkles size={16} aria-hidden="true" /> Generar
+                  </>
+                )}
+              </button>
             </li>
           );
         })}
@@ -811,6 +851,11 @@ function Gallery({
           {allStyles ? "Menos estilos" : `Más estilos (${ownerRows.length - ownerListed.length})`}
           {allStyles ? <ChevronUp size={15} aria-hidden="true" /> : <ChevronDown size={15} aria-hidden="true" />}
         </button>
+      )}
+      {stagingError && (
+        <p className="dv2-note is-error" role="alert">
+          {stagingError}
+        </p>
       )}
       {stagedFailed && (
         <p className="dv2-note is-error" role="alert">
@@ -823,7 +868,7 @@ function Gallery({
         </button>
       )}
       <p className="dv2-note">
-        <Info size={15} aria-hidden="true" /> Descargar no usa créditos. Generar te pide guardar tu panel y muestra el costo antes.
+        <Info size={15} aria-hidden="true" /> Descargar es gratis. Generar usa 1 de los créditos de regalo.
       </p>
     </section>
   );
@@ -1095,7 +1140,15 @@ function PanelInvite({
  * The agency's gift credits, in the bar: how many it has, what they are for and
  * where to get more. A native details element, so it opens the same on a phone.
  */
-function OwnerCredits({ owner, log }: { owner: OwnerMode; log: (event: string, extra?: Record<string, unknown>) => unknown }) {
+function OwnerCredits({
+  owner,
+  log,
+  onPrices,
+}: {
+  owner: OwnerMode;
+  log: (event: string, extra?: Record<string, unknown>) => unknown;
+  onPrices: () => void;
+}) {
   const gift = owner.freeCredits;
   return (
     <details className="dv2-owner-credits" onToggle={(e) => e.currentTarget.open && log("demo_owner_creditos")}>
@@ -1106,18 +1159,43 @@ function OwnerCredits({ owner, log }: { owner: OwnerMode; log: (event: string, e
       <div className="dv2-owner-menu">
         <strong>{gift > 0 ? `Tenés ${gift} ${gift === 1 ? "crédito" : "créditos"} de regalo` : "No tenés créditos de regalo"}</strong>
         <p>Cada estilo nuevo usa 1 crédito. Descargar es gratis.</p>
-        <a href={owner.href} onClick={() => log("demo_agency_cta_clicked", { origen: "demo_creditos_generar" })}>
-          <Sparkles size={16} aria-hidden="true" /> Generar con mis créditos
-          <small>Para generar, guardá tu panel: tus créditos quedan en tu cuenta.</small>
+        <a href="#dv2-estilos" onClick={() => log("demo_owner_generar_menu")}>
+          <Sparkles size={16} aria-hidden="true" /> Generar sin registrarte
+          <small>Usá tus créditos ahora. Al guardar tu panel, quedan en tu cuenta.</small>
         </a>
         <div className="dv2-owner-menu-more">
           <span>¿Necesitás más?</span>
-          <a href="/precios" onClick={() => log("demo_owner_precios")}>
+          <button
+            type="button"
+            onClick={() => {
+              log("demo_owner_precios");
+              onPrices();
+            }}
+          >
             Ver precios
-          </a>
+          </button>
         </div>
       </div>
     </details>
+  );
+}
+
+/** The plans of /precios, opened from the agency's bar: on the right, inside its environment. */
+function PricesDrawer({ onClose, children }: { onClose: () => void; children: React.ReactNode }) {
+  useEffect(() => {
+    const close = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [onClose]);
+  return (
+    <div className="dv2-prices" role="dialog" aria-modal="true" aria-label="Planes y créditos">
+      <div className="dv2-prices-head">
+        <button type="button" className="dv2-prices-back" onClick={onClose}>
+          ← Volver a la demo
+        </button>
+      </div>
+      <div className="dv2-prices-body">{children}</div>
+    </div>
   );
 }
 
@@ -1125,11 +1203,15 @@ function OwnerHeader({
   demo,
   owner,
   log,
+  plans,
 }: {
   demo: PublicDemo;
   owner: OwnerMode;
   log: (event: string, extra?: Record<string, unknown>) => unknown;
+  plans: React.ReactNode;
 }) {
+  const [prices, setPrices] = useState(false);
+  const closePrices = useCallback(() => setPrices(false), []);
   const versions = demo.photos.reduce((n, p) => n + p.versions.length, 0);
   const go = (origin: string) => ({ href: owner.href, onClick: () => log("demo_agency_cta_clicked", { origen: `demo_encabezado_${origin}` }) });
   const initials = demo.agencyName
@@ -1164,7 +1246,7 @@ function OwnerHeader({
           <a {...go("imagenes")}>
             <ImageIcon size={17} aria-hidden="true" /> Imágenes
           </a>
-          <OwnerCredits owner={owner} log={log} />
+          <OwnerCredits owner={owner} log={log} onPrices={() => setPrices(true)} />
           <a className="dv2-owner-create-chip" {...go("crear_movil")}>
             <Plus size={17} aria-hidden="true" /> Crear propiedad
           </a>
@@ -1188,6 +1270,7 @@ function OwnerHeader({
           Ver como comprador
         </a>
       </p>
+      {prices && <PricesDrawer onClose={closePrices}>{plans}</PricesDrawer>}
     </header>
   );
 }
