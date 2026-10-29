@@ -14,7 +14,7 @@ import {
   type AgencyBranding,
   type DemoSettings,
 } from "./branding";
-import { styleFits } from "./styles";
+import { demoStyleOrder, styleFits } from "./styles";
 import { activityOf } from "./activity";
 import { fetchPublic } from "./listing";
 import type { ImportedDemo } from "./import";
@@ -125,8 +125,19 @@ async function shownOf<P extends ShownSource>(photos: P[]) {
     ]),
   );
 }
-/** The demo's main style: kept on every photo (the editor sets them together). */
-const mainOf = (photos: Pick<PhotoRow, "style">[]) => photos[0]?.style ?? "modern";
+/**
+ * The demo's main style: kept on every photo (the editor sets them together).
+ * It defaults to "modern", so while no photo has a version in it, the style
+ * that most photos have takes its place: an agency that stages everything in
+ * another style gets a ficha that opens staged, not with the originals.
+ */
+export function mainOf(photos: Pick<PhotoRow, "id" | "style">[], shown: Map<string, Map<string, unknown>>) {
+  const saved = photos[0]?.style ?? "modern";
+  const counts = new Map<string, number>();
+  for (const p of photos) for (const style of shown.get(p.id)?.keys() ?? []) counts.set(style, (counts.get(style) ?? 0) + 1);
+  if (!counts.size || counts.has(saved)) return saved;
+  return [...counts].sort((a, b) => b[1] - a[1] || demoStyleOrder.indexOf(a[0]) - demoStyleOrder.indexOf(b[0]))[0][0];
+}
 const versionList = (shown: Map<string, StagedRow> | undefined, order: string[]): PhotoVersion[] =>
   order.flatMap((style) => {
     const g = shown?.get(style);
@@ -353,7 +364,7 @@ export async function listDemos() {
   const whatsapp = await whatsappOf(agencyIds);
   const summaries: DemoSummary[] = demos.map((d) => {
     const own = photoRows.filter((p) => p.property_id === d.property_id);
-    const main = mainOf(own);
+    const main = mainOf(own, shown);
     const order = orderStyles(own.flatMap((p) => [...(shown.get(p.id)?.keys() ?? [])]), main);
     const withVersions = own.map((p) => ({ ...p, versions: versionList(shown.get(p.id), order) }));
     const cover = pickCover(withVersions, d.cover_photo_id, main);
@@ -450,7 +461,7 @@ export async function demoDetail(id: string): Promise<DemoDetail> {
     brandingOf(demo.agency_id),
     settingsOf(demo.id),
   ]);
-  const main = mainOf(photos);
+  const main = mainOf(photos, shown);
   const order = orderStyles(photos.flatMap((p) => [...(shown.get(p.id)?.keys() ?? [])]), main);
   const photoList: EditorPhoto[] = photos.map((p) => ({
     id: p.id,
@@ -607,7 +618,7 @@ async function publicPayload(demo: DemoRow, logoUrl: (v: string) => string): Pro
   ]);
   const visible = photos.filter((p) => p.visible);
   const shown = await shownOf(visible);
-  const main = mainOf(photos);
+  const main = mainOf(visible.length ? visible : photos, shown);
   // Only styles that fit the property: an office never shows a living room.
   const order = orderStyles(
     visible.flatMap((p) => [...(shown.get(p.id)?.keys() ?? [])]),

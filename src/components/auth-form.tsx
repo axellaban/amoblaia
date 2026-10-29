@@ -126,7 +126,7 @@ export function AuthForm() {
           );
         // Signed in already; the server retries a failed trial hand-over.
         await fetch("/api/guest/claim", { method: "POST" }).catch(() => null);
-        window.location.assign(safeNext(params.get("next"), "/proyectos"));
+        window.location.assign(safeNext(params.get("next"), "/inicio"));
       } else if (mode === "signup") {
         if (!accepted)
           throw new Error("Aceptá las condiciones para crear tu cuenta.");
