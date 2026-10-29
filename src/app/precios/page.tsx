@@ -7,7 +7,10 @@ import { billingConfigured } from "@/lib/commerce/mercadopago";
 import type { Product } from "@/lib/commerce/catalog";
 export const metadata: Metadata = { title: "Planes y packs de fotos" };
 export const dynamic = "force-dynamic";
-export default async function Pricing() {
+export default async function Pricing({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  // The plan chosen before creating the account (from an agency's demo): its payment opens right away.
+  const plan = (await searchParams).plan;
+  const initialSku = typeof plan === "string" && /^[a-z0-9-]{1,40}$/.test(plan) ? plan : undefined;
   let products: Product[] = [];
   if (cloudConfigured()) {
     try {
@@ -54,6 +57,7 @@ export default async function Pricing() {
       currentSku={currentSku}
       firstPackUsed={firstPackUsed}
       renderedAt={Date.now()}
+      initialSku={initialSku}
     />
   );
 }

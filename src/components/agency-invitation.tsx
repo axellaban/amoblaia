@@ -31,6 +31,7 @@ export function InvitationSignup({
   here,
   property = null,
   plan = null,
+  preview = false,
 }: {
   code: string;
   invitation: InvitationInfo | null;
@@ -38,6 +39,8 @@ export function InvitationSignup({
   property?: InvitedProperty | null;
   /** The plan chosen in the demo's prices: the account is created to finish that purchase. */
   plan?: string | null;
+  /** The team looking at this step: the form shows, but creates nothing. */
+  preview?: boolean;
 }) {
   const [mode, setMode] = useState<"new" | "existing">("new");
   const [email, setEmail] = useState("");
@@ -78,7 +81,7 @@ export function InvitationSignup({
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (busy) return;
+    if (busy || preview) return;
     if (captcha && !token) {
       setError("Completá la verificación para continuar.");
       return;
@@ -96,7 +99,7 @@ export function InvitationSignup({
       track("agency_claimed", { origin: property ? "demo_invitation" : "invitation", new_account: mode === "new", ...(property ? { demo_id: property.id } : {}) });
       // Into the property it came from, ready for a first try; otherwise the panel's home.
       // To finish the purchase it came for; otherwise into the property, ready for a first try.
-      window.location.assign(plan ? "/precios" : property ? `/panel/propiedades/${property.id}?bienvenida=1` : "/panel?bienvenida=1");
+      window.location.assign(plan ? `/precios?${new URLSearchParams({ plan })}` : property ? `/panel/propiedades/${property.id}?bienvenida=1` : "/panel?bienvenida=1");
     } catch (err) {
       if (err instanceof ApiError && err.status === 409 && mode === "new" && /ya tiene una cuenta/.test(err.message)) setMode("existing");
       setError(err instanceof Error ? err.message : "No pudimos completar el ingreso.");
@@ -148,7 +151,8 @@ export function InvitationSignup({
             {error}
           </p>
         )}
-        <button className="button button-primary button-large" disabled={busy}>
+        {preview && <p className="inline-notice">Vista previa del equipo: así ve este paso la inmobiliaria. No se crea ninguna cuenta.</p>}
+        <button className="button button-primary button-large" disabled={busy || preview}>
           {busy ? "Un momento…" : mode === "new" ? "Entrar a mi panel" : "Entrar y sumar mis demos"}
         </button>
         <p className="dm-help">
