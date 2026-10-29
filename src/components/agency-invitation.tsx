@@ -4,7 +4,7 @@
 // prepared for it, or straight in the property it came from. An e-mail that
 // already has an account signs in instead.
 import Link from "next/link";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ArrowLeft, Check, Eye, EyeOff } from "lucide-react";
 import { api, ApiError } from "./admin-demos";
 import { Captcha } from "./auth-form";
@@ -49,6 +49,10 @@ export function InvitationSignup({
   const [captchaReset, setCaptchaReset] = useState(0);
   const onToken = useCallback((t: string) => setToken(t), []);
   const captcha = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
+  // The same signup step as the form without a code, so the demo funnel does not break here.
+  useEffect(() => {
+    if (invitation) track("agency_signup_started", { origin: property ? "demo_invitation" : "invitation", ...(property ? { demo_id: property.id } : {}) });
+  }, [invitation, property]);
 
   if (!invitation)
     return (
@@ -89,7 +93,7 @@ export function InvitationSignup({
         await signIn();
         await api("/api/panel/reclamar", { method: "POST", body: JSON.stringify({ code }) });
       }
-      track("agency_claimed", { origin: property ? "demo_invitation" : "invitation", new_account: mode === "new" });
+      track("agency_claimed", { origin: property ? "demo_invitation" : "invitation", new_account: mode === "new", ...(property ? { demo_id: property.id } : {}) });
       // Into the property it came from, ready for a first try; otherwise the panel's home.
       // To finish the purchase it came for; otherwise into the property, ready for a first try.
       window.location.assign(plan ? "/precios" : property ? `/panel/propiedades/${property.id}?bienvenida=1` : "/panel?bienvenida=1");

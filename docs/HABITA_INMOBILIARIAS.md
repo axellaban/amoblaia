@@ -113,6 +113,8 @@ el equipo crea desde el editor y le envía a la inmobiliaria.
 Eventos:
 
 - `agency_signup_started` y `agency_created` (con `agency_claimed` para el reclamo).
+  `agency_signup_started` sale tanto del formulario sin código como del de invitación
+  (`origin` = `demo_invitation` o `invitation`).
 - `property_import_started`, `property_import_completed` y `property_import_failed`
   (con `source` = dominio y `mode` = single o batch).
 - `property_ai_generation_started` y `property_ai_generation_completed` (con fotos,
@@ -122,7 +124,9 @@ Eventos:
 - `demo_agency_cta_clicked` y `demo_to_agency_signup_completed`.
 
 Los eventos no llevan emails, teléfonos ni URLs completas: solo IDs, dominios y
-conteos. El `demo_id` ya queda registrado como super propiedad al ver una demo.
+conteos. Los de la demo suman el título de la demo y el nombre de la inmobiliaria, que
+ya son públicos en esa página. El `demo_id`, `demo_titulo` y `demo_inmobiliaria`
+quedan registrados como super propiedades al ver una demo.
 
 Embudo: demo vista → `demo_agency_cta_clicked` → `agency_signup_started` →
 `agency_created` → `property_import_completed` → `property_ai_generation_completed`

@@ -83,7 +83,7 @@ select has_function_privilege('authenticated',
 ### Atribución y analítica
 - «Por Amobla IA» (solo en la franja del enlace de presentación) lleva a `/estudio?utm_source=demo_comercial&utm_medium=whatsapp&utm_campaign=demos_inmobiliarias&demo=<id>&inmobiliaria=<id>`.
 - La página guarda `amoblaia_demo_ref` en `localStorage` y registra en PostHog las propiedades `demo_id` y `demo_inmobiliaria_id`, que acompañan los eventos siguientes del visitante (`registro`, `foto_subida`, …).
-- Eventos: `demo_vista` (con `version`: comprador o presentación), `demo_estilo` (con `estilo`), `demo_original`, `demo_contacto` (con `canal`), `demo_publicacion_original`, `demo_visita` y `demo_cta_click` (el «Por Amobla IA» de la franja). Todos con `demo_id`, `inmobiliaria_id`, `fotos` y `ambientadas`. PostHog solo envía en producción. La vista previa del panel no envía eventos.
+- Eventos: `demo_vista` (con `version`: comprador o presentación), `demo_estilo` (con `estilo`), `demo_original`, `demo_contacto` (con `canal`), `demo_publicacion_original`, `demo_visita` y `demo_cta_click` (el «Por Amobla IA» de la franja). Todos con `demo_id`, `demo_titulo`, `inmobiliaria` (nombre), `inmobiliaria_id`, `fotos` y `ambientadas`. PostHog solo envía en producción. La vista previa del panel no envía eventos.
 
 ## Límites conocidos
 - Hasta 40 fotos y 6 estilos por demo; cada estilo es una imagen más por foto.

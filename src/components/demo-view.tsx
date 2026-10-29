@@ -170,25 +170,28 @@ export function DemoView({
   const analytics = useMemo(
     () => ({
       demo_id: demo.id,
+      // Readable names for the team's reports; both are already public on the demo page.
+      demo_titulo: demo.title,
+      inmobiliaria: agency.name,
       inmobiliaria_id: demo.agencyId,
       fotos: demo.photos.length,
       ambientadas: demo.photos.filter((p) => p.versions.length).length,
       version: presentation ? "presentacion" : "comprador",
     }),
-    [demo.id, demo.agencyId, demo.photos, presentation],
+    [demo.id, demo.title, agency.name, demo.agencyId, demo.photos, presentation],
   );
   useEffect(() => {
     setPageUrl(window.location.href.split(/[?#]/)[0]);
     if (source.kind !== "public") return;
     track("demo_vista", analytics);
     reportDemoActivity(source.token, "visita");
-    registerSuperProperties({ demo_id: demo.id, demo_inmobiliaria_id: demo.agencyId });
+    registerSuperProperties({ demo_id: demo.id, demo_titulo: demo.title, demo_inmobiliaria: agency.name, demo_inmobiliaria_id: demo.agencyId });
     try {
       localStorage.setItem(DEMO_REF_KEY, JSON.stringify({ demoId: demo.id, agencyId: demo.agencyId, at: Date.now() }));
     } catch {
       /* Private mode or blocked storage. */
     }
-  }, [source.kind, demo.id, demo.agencyId, analytics]);
+  }, [source.kind, demo.id, demo.title, agency.name, demo.agencyId, analytics]);
 
   const { primary, others, visitHref } = contactActions(demo, pageUrl);
   const interacted = useRef(false);
