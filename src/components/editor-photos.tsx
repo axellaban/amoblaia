@@ -1005,7 +1005,11 @@ function CreateVersionDialog({
             quote.payer === "team" ? (
               <span>Paga: equipo habita (demo). No usa créditos de la inmobiliaria.</span>
             ) : quote.blocked ? (
-              <span className="inline-error">{quote.blocked}</span>
+              <span className="inline-error">
+                {quote.blocked}{" "}
+                {/* In the agency's own panel, the way to top up; the team adds credits from its own pages. */}
+                {typeof window !== "undefined" && window.location.pathname.startsWith("/panel/") && <a href="/panel/creditos">Comprar créditos</a>}
+              </span>
             ) : (
               <span>
                 Paga: saldo de la inmobiliaria.{" "}

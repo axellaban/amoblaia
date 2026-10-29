@@ -213,6 +213,8 @@ export function ImportImages({ initialMethod = "url" }: { initialMethod?: Method
     }
     let saved = 0;
     const failed: File[] = [];
+    // Why each file failed, so a file that is not a valid photo is not only "retry".
+    const reasons: string[] = [];
     for (const [i, file] of list.entries()) {
       setBusy(`Subiendo foto ${i + 1} de ${list.length}…`);
       const form = new FormData();
@@ -220,8 +222,9 @@ export function ImportImages({ initialMethod = "url" }: { initialMethod?: Method
       try {
         await api(`/api/admin/demos/${id}/photos`, { method: "POST", body: form });
         saved++;
-      } catch {
+      } catch (e) {
         failed.push(file);
+        if (e instanceof ApiError && e.status >= 400 && e.status < 500) reasons.push(`«${file.name}»: ${e.message}`);
       }
     }
     return {
@@ -234,7 +237,9 @@ export function ImportImages({ initialMethod = "url" }: { initialMethod?: Method
       pending: [],
       files: failed,
       status: failed.length ? "partial" : "done",
-      error: failed.length ? `${plural(failed.length, "foto no se pudo subir", "fotos no se pudieron subir")}. Podés reintentarlas.` : undefined,
+      error: failed.length
+        ? `${plural(failed.length, "foto no se pudo subir", "fotos no se pudieron subir")}. ${reasons.length ? `${reasons.slice(0, 3).join(" ")} ` : ""}Podés reintentarlas.`
+        : undefined,
     };
   }
 

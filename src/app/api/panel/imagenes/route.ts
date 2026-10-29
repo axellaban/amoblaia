@@ -5,9 +5,10 @@ import { requireAgency } from "@/lib/agency/server";
 export const runtime = "nodejs";
 
 /** The agency's photo groups (not fichas yet), newest first, with their real photo counts. */
-export async function GET(request: Request) {
+// Without the request: browsers send no Origin on a same-origin GET, so its origin check would refuse every read.
+export async function GET() {
   try {
-    const { agency } = await requireAgency(request);
+    const { agency } = await requireAgency();
     const { items, total } = await agencyProperties(agency.id, { kind: "fotos", perPage: 48 });
     return Response.json({ items, total }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (e) {
