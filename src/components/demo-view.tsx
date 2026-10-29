@@ -1091,6 +1091,36 @@ function PanelInvite({
  * the actions that need the access. Every one of them goes through the
  * private invitation; only this property is open here.
  */
+/**
+ * The agency's gift credits, in the bar: how many it has, what they are for and
+ * where to get more. A native details element, so it opens the same on a phone.
+ */
+function OwnerCredits({ owner, log }: { owner: OwnerMode; log: (event: string, extra?: Record<string, unknown>) => unknown }) {
+  const gift = owner.freeCredits;
+  return (
+    <details className="dv2-owner-credits" onToggle={(e) => e.currentTarget.open && log("demo_owner_creditos")}>
+      <summary>
+        <CircleDollarSign size={17} aria-hidden="true" /> Créditos
+        <span className="dv2-owner-count">{gift > 0 ? `${gift} de regalo` : "Sin regalo"}</span>
+      </summary>
+      <div className="dv2-owner-menu">
+        <strong>{gift > 0 ? `Tenés ${gift} ${gift === 1 ? "crédito" : "créditos"} de regalo` : "No tenés créditos de regalo"}</strong>
+        <p>Cada estilo nuevo usa 1 crédito. Descargar es gratis.</p>
+        <a href={owner.href} onClick={() => log("demo_agency_cta_clicked", { origen: "demo_creditos_generar" })}>
+          <Sparkles size={16} aria-hidden="true" /> Generar con mis créditos
+          <small>Para generar, guardá tu panel: tus créditos quedan en tu cuenta.</small>
+        </a>
+        <div className="dv2-owner-menu-more">
+          <span>¿Necesitás más?</span>
+          <a href="/precios" onClick={() => log("demo_owner_precios")}>
+            Ver precios
+          </a>
+        </div>
+      </div>
+    </details>
+  );
+}
+
 function OwnerHeader({
   demo,
   owner,
@@ -1134,10 +1164,7 @@ function OwnerHeader({
           <a {...go("imagenes")}>
             <ImageIcon size={17} aria-hidden="true" /> Imágenes
           </a>
-          <a {...go("creditos")}>
-            <CircleDollarSign size={17} aria-hidden="true" /> Créditos
-            {owner.freeCredits > 0 && <span className="dv2-owner-count">{owner.freeCredits} de regalo</span>}
-          </a>
+          <OwnerCredits owner={owner} log={log} />
           <a className="dv2-owner-create-chip" {...go("crear_movil")}>
             <Plus size={17} aria-hidden="true" /> Crear propiedad
           </a>
