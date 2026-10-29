@@ -418,10 +418,10 @@ export async function demoDetail(id: string): Promise<DemoDetail> {
     styles: order,
     mainStyle: main,
     branding: { ...branding, logo: logoVersion(branding) ? `/api/admin/demos/${demo.id}/logo?v=${logoVersion(branding)}` : null },
-    settings: saved.settings,
+    settings: openingOf(saved.settings, main),
     settingsReady: saved.ready,
     warnings: reviewWarnings({
-      settings: saved.settings,
+      settings: openingOf(saved.settings, main),
       branding,
       listingUrl: prop.listing_url,
       photos: photoList,
@@ -455,6 +455,9 @@ export async function spacesOf(propertyId: string) {
     ),
   };
 }
+
+/** The settings with the style the ficha opens with: the one chosen, else the demo's main style. */
+const openingOf = (settings: DemoSettings, main: string): DemoSettings => ({ ...settings, openStyle: settings.openStyle ?? main });
 
 /** What the admin should check or complete before sharing. Never shown to buyers. */
 export function reviewWarnings(input: {
@@ -544,13 +547,9 @@ async function publicPayload(demo: DemoRow, logoUrl: (v: string) => string): Pro
     demo.cover_photo_id,
     main,
   );
-  // Opening mode B: the configured style, while some visible photo has it (each photo with stagings opens compared).
-  const openStyle =
-    settings.openMode === "styled" &&
-    settings.openStyle &&
-    list.some((p) => p.versions.some((v) => v.style === settings.openStyle))
-      ? settings.openStyle
-      : null;
+  // Opening mode B: the chosen style, else the main one, while some visible photo has it (each photo with stagings opens compared).
+  const opening = settings.openStyle ?? main;
+  const openStyle = settings.openMode === "styled" && list.some((p) => p.versions.some((v) => v.style === opening)) ? opening : null;
   const version = logoVersion(branding);
   return {
     id: demo.id,

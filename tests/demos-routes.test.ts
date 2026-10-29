@@ -372,6 +372,9 @@ describe("Public demo", () => {
   });
 
   it("opens in the configured style when some visible photo has it, else with the original", async () => {
+    // Without saved settings the ficha opens with the demo's main style (the default).
+    expect((await publishedDemo(TOKEN))?.openStyle).toBe("modern");
+    (state.tables.demos[0] as Row).settings = { openMode: "original" };
     expect((await publishedDemo(TOKEN))?.openStyle).toBeNull();
     (state.tables.demos[0] as Row).settings = { openMode: "styled", openStyle: "industrial" };
     expect((await publishedDemo(TOKEN))?.openStyle).toBe("industrial");
