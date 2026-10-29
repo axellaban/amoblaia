@@ -1,6 +1,7 @@
 import "server-only";
 import { HttpError, rpc } from "@/lib/commerce/http";
 import { adminClient } from "@/lib/supabase/server";
+import { recordAgencyPanel } from "@/lib/demos/activity";
 import { applyAgencyCredits } from "./admin";
 import { agencyRpc } from "./panel";
 import { claimHash } from "./server";
@@ -78,6 +79,7 @@ export async function acceptWithNewAccount(code: unknown, email: unknown, passwo
       p_slug: slugify(invitation.agencyName),
     });
     await applyAgencyCredits(agencyId);
+    await recordAgencyPanel(agencyId);
     return { agencyId, email: mail };
   } catch (e) {
     // The account was only for this invitation: nothing is left half done.

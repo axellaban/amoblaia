@@ -12,16 +12,17 @@ import {
   Plus,
   Search,
   Trash2,
-  UserPlus,
 } from "lucide-react";
 import { ImportFromListing } from "./demo-import";
 import { EDIT_HEADER } from "@/lib/agency/edit-scope";
 import {
+  ACTIVITY_LABELS,
+  PRESENTATION_PARAM,
   adminPhotoUrl,
   demoUrl,
-  invitationWhatsappUrl,
   whatsappShareUrl,
   type AgencyRow,
+  type DemoActivity,
   type DemoSummary,
 } from "@/lib/demos/shared";
 
@@ -90,116 +91,123 @@ export function StatusChip({ status }: { status: DemoSummary["status"] }) {
   );
 }
 
+/**
+ * The agency's link to its demo. While the agency has no account, the link
+ * carries a fresh one-time code, so the demo opens its panel for it; once
+ * claimed, the plain presentation link does.
+ */
+async function agencyLink(demo: Pick<DemoSummary, "id" | "token" | "agencyClaimed">) {
+  if (demo.agencyClaimed === true) return publicLink(demo.token, true);
+  const claim = await api<{ presentationUrl: string | null }>(`/api/admin/demos/${demo.id}/reclamo`, { method: "POST" });
+  return claim.presentationUrl ?? publicLink(demo.token, true);
+}
+
+/**
+ * Copy the agency's link, copy the buyers' link, or send the agency's link
+ * on WhatsApp. The message is only the link: no text of ours.
+ */
 export function ShareButtons({
   demo,
-  compact = false,
 }: {
-  demo: Pick<DemoSummary, "token" | "status" | "agencyName" | "title">;
-  compact?: boolean;
+  demo: Pick<DemoSummary, "id" | "token" | "status" | "agencyClaimed">;
 }) {
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<"agency" | "buyer" | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   const live = demo.status === "published";
+  const flash = (which: "agency" | "buyer") => {
+    setCopied(which);
+    setTimeout(() => setCopied(null), 2000);
+  };
+  async function copyAgency() {
+    setBusy(true);
+    setError("");
+    try {
+      if (await copyText(await agencyLink(demo))) flash("agency");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No pudimos crear el enlace.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function sendWhatsapp() {
+    setBusy(true);
+    setError("");
+    // Opened now, while the click still counts, so the browser does not block it.
+    const tab = window.open("about:blank", "_blank");
+    try {
+      const url = whatsappShareUrl(await agencyLink(demo));
+      if (tab) {
+        tab.opener = null;
+        tab.location.href = url;
+      } else window.location.href = url;
+    } catch (e) {
+      tab?.close();
+      setError(e instanceof Error ? e.message : "No pudimos crear el enlace.");
+    } finally {
+      setBusy(false);
+    }
+  }
   return (
     <>
+      <button type="button" className="button button-small button-outline" disabled={!live || busy} title={live ? undefined : "Publicá la demo para compartirla"} onClick={copyAgency}>
+        {copied === "agency" ? <Check size={15} /> : <Copy size={15} />}
+        {copied === "agency" ? "Enlace copiado" : "Copiar enlace"}
+      </button>
       <button
         type="button"
         className="button button-small button-outline"
         disabled={!live}
         title={live ? undefined : "Publicá la demo para compartirla"}
         onClick={async () => {
-          if (await copyText(publicLink(demo.token, true))) {
-            setCopied(true);
-            setTimeout(() => setCopied(false), 2000);
-          }
+          if (await copyText(publicLink(demo.token))) flash("buyer");
         }}
       >
-        {copied ? <Check size={15} /> : <Copy size={15} />}
-        {compact ? (copied ? "Copiado" : "Copiar") : copied ? "Enlace copiado" : "Copiar enlace de presentación"}
+        {copied === "buyer" ? <Check size={15} /> : <Copy size={15} />}
+        {copied === "buyer" ? "Enlace copiado" : "Copiar enlace comprador"}
       </button>
-      {live ? (
-        <a
-          className="button button-small dm-whatsapp"
-          href={whatsappShareUrl(publicLink(demo.token, true), publicLink(demo.token), demo.agencyName, demo.title)}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <MessageCircle size={15} /> {compact ? "WhatsApp" : "Compartir por WhatsApp"}
-        </a>
-      ) : (
-        <button type="button" className="button button-small" disabled>
-          <MessageCircle size={15} /> {compact ? "WhatsApp" : "Compartir por WhatsApp"}
-        </button>
-      )}
-    </>
-  );
-}
-
-/**
- * Invites the agency of a demo to its own panel: creates a one-time link
- * (only an e-mail and a password to enter) and opens WhatsApp with it.
- * The link is created on click, so each one is fresh and can be revoked
- * from the agency's page.
- */
-export function InviteAgency({ demo }: { demo: Pick<DemoSummary, "id" | "agencyName" | "title"> }) {
-  const [state, setState] = useState<{ url: string; whatsapp: string } | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [copied, setCopied] = useState(false);
-  async function create() {
-    setBusy(true);
-    setError("");
-    // Opened now, while the click still counts, so the browser does not block it.
-    const tab = window.open("about:blank", "_blank");
-    try {
-      const { url } = await api<{ url: string }>(`/api/admin/demos/${demo.id}/reclamo`, { method: "POST" });
-      const whatsapp = invitationWhatsappUrl(url, demo.agencyName, demo.title);
-      setState({ url, whatsapp });
-      if (tab) {
-        tab.opener = null;
-        tab.location.href = whatsapp;
-      }
-    } catch (e) {
-      tab?.close();
-      setError(e instanceof Error ? e.message : "No pudimos crear la invitación.");
-    } finally {
-      setBusy(false);
-    }
-  }
-  return (
-    <span className="dm-invite">
-      <button
-        type="button"
-        className="button button-small dm-whatsapp"
-        disabled={busy}
-        onClick={create}
-        title="Crea un enlace personal para que la inmobiliaria entre a su panel con email y contraseña"
-      >
-        <UserPlus size={15} /> {busy ? "Creando…" : "Invitar a su panel"}
+      <button type="button" className="button button-small dm-whatsapp" disabled={!live || busy} title={live ? undefined : "Publicá la demo para compartirla"} onClick={sendWhatsapp}>
+        <MessageCircle size={15} /> WhatsApp
       </button>
       {error && (
         <span className="inline-error dm-invite-note" role="alert">
           {error}
         </span>
       )}
-      {state && (
-        <span className="dm-invite-note" role="status">
-          Invitación creada (vence en 30 días).{" "}
-          <a href={state.whatsapp} target="_blank" rel="noopener noreferrer" className="text-link">
-            Abrir WhatsApp
-          </a>{" "}
-          ·{" "}
-          <button
-            type="button"
-            className="text-link"
-            onClick={async () => {
-              if (await copyText(state.url)) setCopied(true);
-            }}
-          >
-            {copied ? "Enlace copiado" : "Copiar enlace"}
-          </button>
-        </span>
-      )}
-    </span>
+    </>
+  );
+}
+
+/** How long ago something happened, for the team's list. */
+function agoText(iso: string) {
+  const minutes = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (minutes < 1) return "recién";
+  if (minutes < 60) return `hace ${minutes} min`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `hace ${hours} h`;
+  return `hace ${Math.round(hours / 24)} d`;
+}
+
+/**
+ * What the demo's visitors and its agency did, at a glance: the highest of
+ * the three steps reached, how many people came and when last. Team only.
+ */
+export function ActivityStatus({ activity }: { activity: DemoActivity }) {
+  const label = ACTIVITY_LABELS[activity.level];
+  const people = `${activity.visitors} ${activity.visitors === 1 ? "persona" : "personas"}`;
+  return (
+    <div className="dm-activity" aria-label={`Actividad: ${label}`}>
+      <span className="dm-activity-label">Actividad</span>
+      <strong>{activity.level ? `${activity.level} · ${label}` : label}</strong>
+      <span className="dm-activity-dots" aria-hidden="true">
+        {[1, 2, 3].map((step) => (
+          <i key={step} className={step <= activity.level ? "on" : undefined} />
+        ))}
+      </span>
+      <span className="dm-activity-foot">
+        {activity.at ? `${people} · última ${agoText(activity.at)}` : "Sin visitas todavía"}
+      </span>
+    </div>
   );
 }
 
@@ -373,13 +381,20 @@ export function DemoList() {
                 <Pencil size={15} /> Editar
               </Link>
               <Link
+                href={`/admin/demos/${d.id}/vista-previa?${PRESENTATION_PARAM}=1`}
+                className="button button-small button-outline"
+                title="Lo que ve la inmobiliaria, con la franja y el acceso a su panel"
+              >
+                <Eye size={15} /> Vista inmobiliaria
+              </Link>
+              <Link
                 href={`/admin/demos/${d.id}/vista-previa`}
                 className="button button-small button-outline"
+                title="Lo que ven los compradores"
               >
-                <Eye size={15} /> Vista previa
+                <Eye size={15} /> Vista comprador
               </Link>
-              <ShareButtons demo={d} compact />
-              {d.agencyClaimed !== true && <InviteAgency demo={d} />}
+              <ShareButtons demo={d} />
               <button
                 type="button"
                 className="button button-small"
@@ -397,6 +412,7 @@ export function DemoList() {
               >
                 <Trash2 size={18} />
               </button>
+              <ActivityStatus activity={d.activity} />
             </div>
           </li>
         ))}

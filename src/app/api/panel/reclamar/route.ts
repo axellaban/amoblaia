@@ -1,6 +1,7 @@
 import { failure, HttpError, requireUser, rpc } from "@/lib/commerce/http";
 import { applyAgencyCredits } from "@/lib/agency/admin";
 import { agencyRpc, panelSummary } from "@/lib/agency/panel";
+import { recordAgencyPanel } from "@/lib/demos/activity";
 import { claimHash, membershipOf } from "@/lib/agency/server";
 import { slugify } from "@/lib/agency/shared";
 import { readJson } from "@/lib/demos/input";
@@ -29,6 +30,7 @@ export async function POST(request: Request) {
     const agencyId = await agencyRpc<string>("habita_claim_agency", { p_user: user.id, p_code_hash: hash, p_slug: slugify(name) });
     // Credits the team left waiting for this agency move to its new owner.
     await applyAgencyCredits(agencyId);
+    await recordAgencyPanel(agencyId);
     const membership = await membershipOf(user.id);
     return Response.json(await panelSummary(membership!), { headers: { "Cache-Control": "private, no-store" } });
   } catch (e) {

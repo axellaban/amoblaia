@@ -127,6 +127,8 @@ export type DemoSummary = {
   cover: { id: string; version: PhotoVersion | null } | null;
   createdAt: string;
   publishedAt: string | null;
+  /** What visitors and the agency did with this demo (team only). */
+  activity: DemoActivity;
 };
 export type AgencyRow = {
   id: string;
@@ -292,16 +294,18 @@ export function demoUrl(origin: string, token: string, presentation = false) {
   const url = `${origin.replace(/\/$/, "")}${demoPath(token)}`;
   return presentation ? `${url}?${PRESENTATION_PARAM}=1` : url;
 }
-/** wa.me opens WhatsApp Web or the app; the recipient needs nothing installed to open the link itself. */
-export function whatsappShareUrl(presentationUrl: string, buyersUrl: string, agency: string, title: string) {
-  const text = `Hola ${agency}! Preparamos una muestra de cómo podría verse "${title}" con ambientación virtual: ${presentationUrl}\n\nPara compartir con compradores (sin la franja de la demo): ${buyersUrl}`;
-  return `https://wa.me/?text=${encodeURIComponent(text)}`;
+/** wa.me opens WhatsApp Web or the app. The message is only the link: no greeting, no text of ours. */
+export function whatsappShareUrl(link: string) {
+  return `https://wa.me/?text=${encodeURIComponent(link)}`;
 }
-/** The team's WhatsApp message inviting an agency to its panel, with its one-time link. */
-export function invitationWhatsappUrl(link: string, agency: string, title: string) {
-  const text = `Hola ${agency}! Les armamos su panel en habita con la demo de "${title}" ya cargada. Para entrar solo necesitan un email y una contraseña: ${link}\n\nEl enlace es personal, sirve una sola vez y vence en 30 días.`;
-  return `https://wa.me/?text=${encodeURIComponent(text)}`;
-}
+
+/**
+ * What each step of the demo's activity means, as the team reads it. The
+ * highest step reached counts (see 202611050001_demo_activity.sql).
+ */
+export const ACTIVITY_LABELS = ["Sin actividad", "Ingresó", "Interactuó", "Creó su panel"] as const;
+export type DemoActivity = { level: 0 | 1 | 2 | 3; at: string | null; visitors: number };
+export const NO_ACTIVITY: DemoActivity = { level: 0, at: null, visitors: 0 };
 /** Where "Probar habita." leads: the regular studio, carrying the demo and agency for attribution. */
 export function ctaHref(demoId: string, agencyId: string) {
   const q = new URLSearchParams({

@@ -4,10 +4,11 @@
 // look at, compare and download. Everything that saves, publishes or creates
 // (and every other section of the panel) goes through the private invitation
 // this link carries: «Guardar mi panel». Only the demo's public data is used.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Building2, ChevronDown, CircleDollarSign, Download, Globe, Home, Image as ImageIcon, Menu, Plus, Sparkles, X } from "lucide-react";
 import { Comparison } from "./comparison";
 import { registerSuperProperties, track } from "@/lib/analytics";
+import { reportDemoActivity } from "@/lib/demos/activity-client";
 import { DEMO_REF_KEY, publicImageUrl, type PhotoVersion, type PublicDemo } from "@/lib/demos/shared";
 
 type Invite = { href: string; freeCredits: number };
@@ -33,10 +34,20 @@ export function DemoPanel({ demo, token, invite, buyerHref }: { demo: PublicDemo
   const version: PhotoVersion | null = photo?.versions.find((v) => v.style === style) ?? null;
   const shown: View = version ? view : "original";
   const analytics = useMemo(() => ({ demo_id: demo.id, inmobiliaria_id: demo.agencyId, version: "panel_demo" }), [demo.id, demo.agencyId]);
-  const log = (event: string, extra: Record<string, string> = {}) => track(event, { ...analytics, ...extra });
+  const interacted = useRef(false);
+  const log = (event: string, extra: Record<string, string> = {}) => {
+    track(event, { ...analytics, ...extra });
+    // Downloads are their own step for the team's list; the first other interaction is step 2.
+    if (event === "demo_panel_download") reportDemoActivity(token, "descarga");
+    else if (!interacted.current) {
+      interacted.current = true;
+      reportDemoActivity(token, "interaccion");
+    }
+  };
 
   useEffect(() => {
     track("demo_vista", { ...analytics, fotos: demo.photos.length, ambientadas: demo.photos.filter((p) => p.versions.length).length });
+    reportDemoActivity(token, "visita");
     registerSuperProperties({ demo_id: demo.id, demo_inmobiliaria_id: demo.agencyId });
     try {
       localStorage.setItem(DEMO_REF_KEY, JSON.stringify({ demoId: demo.id, agencyId: demo.agencyId, at: Date.now() }));

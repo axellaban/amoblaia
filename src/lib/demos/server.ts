@@ -15,6 +15,7 @@ import {
   type DemoSettings,
 } from "./branding";
 import { styleFits } from "./styles";
+import { activityOf } from "./activity";
 import { fetchPublic } from "./listing";
 import type { ImportedDemo } from "./import";
 import { OG_LABEL_ORIGINAL, OG_LABEL_STAGED } from "./og-labels";
@@ -30,6 +31,7 @@ import {
   type DemoDetail,
   type DemoMode,
   type DemoSummary,
+  NO_ACTIVITY,
   type EditorPhoto,
   type GenerationRow,
   type PhotoVersion,
@@ -268,6 +270,7 @@ export async function listDemos() {
     style: string;
   })[];
   const shown = await shownOf(photoRows);
+  const activity = await activityOf(demos.map((d) => d.id));
   const summaries: DemoSummary[] = demos.map((d) => {
     const own = photoRows.filter((p) => p.property_id === d.property_id);
     const main = mainOf(own);
@@ -289,6 +292,7 @@ export async function listDemos() {
       cover: cover ? { id: cover.id, version: coverVersion(cover, main) } : null,
       createdAt: d.created_at,
       publishedAt: d.published_at,
+      activity: activity.get(d.id) ?? NO_ACTIVITY,
     };
   });
   return {
@@ -396,7 +400,9 @@ export async function demoDetail(id: string): Promise<DemoDetail> {
       title: demo.title || prop.title,
       agencyId: demo.agency_id,
       agencyName: (check(agency, "DEMO_AGENCY_LOOKUP_FAILED") as AgencyRow).name,
-      agencyClaimed: null,
+      // Whether the agency already has its account: the team's invitation is only for agencies without one.
+      agencyClaimed: Boolean((await adminClient().from("agencies").select("owner_id").eq("id", demo.agency_id).maybeSingle()).data?.owner_id),
+      activity: (await activityOf([demo.id])).get(demo.id) ?? NO_ACTIVITY,
       propertyTitle: prop.title,
       kind: demo.kind === "fotos" ? "fotos" : "ficha",
       photos: photos.length,
