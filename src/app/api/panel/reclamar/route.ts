@@ -34,6 +34,6 @@ export async function POST(request: Request) {
     const membership = await membershipOf(user.id);
     return Response.json(await panelSummary(membership!), { headers: { "Cache-Control": "private, no-store" } });
   } catch (e) {
-    return failure(e);
+    return failure(e, "api/panel/reclamar");
   }
 }

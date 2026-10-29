@@ -38,7 +38,7 @@ import {
 import { Comparison } from "./comparison";
 import type { DemoInvite } from "@/lib/agency/demo-invite";
 import { registerSuperProperties, track } from "@/lib/analytics";
-import { reportDemoActivity } from "@/lib/demos/activity-client";
+import { firstViewOf, reportDemoActivity } from "@/lib/demos/activity-client";
 import { requestPublicStaging } from "@/lib/demos/staging-client";
 import { useRouter } from "next/navigation";
 import { textOn, whatsappNumber, type FactIcon } from "@/lib/demos/branding";
@@ -183,6 +183,8 @@ export function DemoView({
   useEffect(() => {
     setPageUrl(window.location.href.split(/[?#]/)[0]);
     if (source.kind !== "public") return;
+    // Once per page load: the refreshes while an image is generated must not count a new visit.
+    if (!firstViewOf(`${source.token}:${presentation ? "p" : "c"}`)) return;
     track("demo_vista", analytics);
     reportDemoActivity(source.token, "visita");
     registerSuperProperties({ demo_id: demo.id, demo_titulo: demo.title, demo_inmobiliaria: agency.name, demo_inmobiliaria_id: demo.agencyId });
@@ -668,9 +670,17 @@ function Gallery({
   useEffect(() => {
     if (!staging) return;
     const done = photos.some((p) => p.id === staging.photo && p.versions.some((v) => v.style === staging.style));
-    if (done) return void setStaging(null);
+    if (done) {
+      log("demo_generation_ready", { estilo: staging.style });
+      return void setStaging(null);
+    }
     const refresh = window.setInterval(() => router.refresh(), 8000);
-    const stop = window.setTimeout(() => setStaging(null), 240000);
+    // Past four minutes the page stops waiting, and says so instead of going quiet.
+    const stop = window.setTimeout(() => {
+      setStaging(null);
+      setStagingError("Está tardando más de lo normal. Recargá la página en unos minutos para ver si ya está lista.");
+      log("demo_generation_timeout", { estilo: staging.style });
+    }, 240000);
     return () => {
       window.clearInterval(refresh);
       window.clearTimeout(stop);
@@ -684,6 +694,7 @@ function Gallery({
     if (!r.ok) {
       setStaging(null);
       setStagingError(r.error);
+      log("demo_generation_failed", { estilo: style, status: r.status });
       return;
     }
     // The visitor generated an image: step 3 for the team's list (the server ignores repeats).
@@ -1037,10 +1048,10 @@ function Gallery({
           </div>
           {photos.length > 1 && (
             <>
-              <button type="button" className="dv2-nav dv2-prev" aria-label="Foto anterior" onClick={() => go(-1)}>
+              <button type="button" className="dv2-nav dv2-prev ph-no-rageclick" aria-label="Foto anterior" onClick={() => go(-1)}>
                 <ChevronLeft size={24} />
               </button>
-              <button type="button" className="dv2-nav dv2-next" aria-label="Foto siguiente" onClick={() => go(1)}>
+              <button type="button" className="dv2-nav dv2-next ph-no-rageclick" aria-label="Foto siguiente" onClick={() => go(1)}>
                 <ChevronRight size={24} />
               </button>
             </>

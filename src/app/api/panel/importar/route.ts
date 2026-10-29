@@ -13,7 +13,7 @@ export async function POST(request: Request) {
     const { user, agency } = await requireAgency(request);
     return await importListing(request, { agencyId: agency.id, userId: user.id, origin: "agency" });
   } catch (e) {
-    return failure(e);
+    return failure(e, "api/panel/importar");
   }
 }
 
@@ -23,6 +23,6 @@ export async function PATCH(request: Request) {
     const { agency } = await requireAgency(request);
     return await reportImportPhotos(request, agency.id);
   } catch (e) {
-    return failure(e);
+    return failure(e, "api/panel/importar");
   }
 }

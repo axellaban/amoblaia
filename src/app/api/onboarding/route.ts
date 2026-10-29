@@ -14,7 +14,7 @@ export async function GET() {
       { headers: { "Cache-Control": "private, no-store" } },
     );
   } catch (e) {
-    return failure(e);
+    return failure(e, "api/onboarding");
   }
 }
 export async function POST(request: Request) {
@@ -29,6 +29,6 @@ export async function POST(request: Request) {
     if (error) throw new Error("ONBOARDING_SAVE_FAILED");
     return Response.json({ ok: true });
   } catch (e) {
-    return failure(e);
+    return failure(e, "api/onboarding");
   }
 }

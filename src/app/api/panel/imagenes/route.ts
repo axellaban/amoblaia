@@ -12,7 +12,7 @@ export async function GET() {
     const { items, total } = await agencyProperties(agency.id, { kind: "fotos", perPage: 48 });
     return Response.json({ items, total }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (e) {
-    return failure(e);
+    return failure(e, "api/panel/imagenes");
   }
 }
 
@@ -25,6 +25,6 @@ export async function POST(request: Request) {
     const { user, agency } = await requireAgency(request);
     return await importPhotoGroup(request, { agencyId: agency.id, userId: user.id, origin: "agency" });
   } catch (e) {
-    return failure(e);
+    return failure(e, "api/panel/imagenes");
   }
 }

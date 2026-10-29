@@ -19,7 +19,7 @@ export async function GET() {
     if (!membership) return Response.json({ agency: null }, { headers: PRIVATE });
     return Response.json({ ...(await panelSummary(membership)), support: Boolean(membership.support) }, { headers: PRIVATE });
   } catch (e) {
-    return failure(e);
+    return failure(e, "api/panel");
   }
 }
 
@@ -37,7 +37,7 @@ export async function POST(request: Request) {
     if (!membership) throw new Error("AGENCY_CREATE_FAILED");
     return Response.json(await panelSummary(membership), { status: 201, headers: PRIVATE });
   } catch (e) {
-    return failure(e);
+    return failure(e, "api/panel");
   }
 }
 
@@ -89,6 +89,6 @@ export async function PATCH(request: Request) {
     if (!membership) throw new Error("MEMBERSHIP_LOST");
     return Response.json(await panelSummary(membership), { headers: PRIVATE });
   } catch (e) {
-    return failure(e);
+    return failure(e, "api/panel");
   }
 }

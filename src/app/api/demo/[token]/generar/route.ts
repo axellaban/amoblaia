@@ -92,6 +92,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
       throw e;
     }
   } catch (e) {
-    return failure(e);
+    return failure(e, "api/demo/generar");
   }
 }

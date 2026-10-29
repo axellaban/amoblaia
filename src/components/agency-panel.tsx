@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import { ApiError, api } from "./admin-demos";
 import { ImportPreview, MapReview, exceptions, initialMapChoice, mapOverride, syncPhotos, type MapChoice } from "./demo-import";
-import { track } from "@/lib/analytics";
+import { track, trackFailure } from "@/lib/analytics";
 import { shareLink } from "@/lib/agency/share";
 import { agencySitePath, nextAction, propertyLink, type PanelImport, type PanelProperty, type PanelSummary } from "@/lib/agency/shared";
 import type { ImportedDemo } from "@/lib/demos/import";
@@ -1568,9 +1568,10 @@ export function AgencyOnboarding({
   const [done, setDone] = useState<{ kind: "created" | "claimed"; summary: PanelSummary } | null>(null);
   const here = `/panel/empezar${demo || code ? `?${new URLSearchParams({ ...(demo ? { demo: demo.token } : {}), ...(code ? { codigo: code } : {}) })}` : ""}`;
   const origin = demo ? "demo" : "direct";
+  // Also signed in (back from Google or an existing session): that start was not counted.
   useEffect(() => {
-    if (!signedIn) track("agency_signup_started", { origin, ...(demo ? { demo_id: demo.id } : {}) });
-  }, [signedIn, origin, demo]);
+    if (!signedIn || !hasAgency) track("agency_signup_started", { origin, signed_in: signedIn, invitation: Boolean(code), ...(demo ? { demo_id: demo.id } : {}) });
+  }, [signedIn, hasAgency, origin, demo, code]);
 
   if (!signedIn)
     return (
@@ -1622,6 +1623,7 @@ export function AgencyOnboarding({
       setDone({ kind, summary });
       router.refresh();
     } catch (e) {
+      trackFailure("agency_signup_failed", e, { origin, step: kind === "claimed" ? "reclamo" : "creacion", ...(demo ? { demo_id: demo.id } : {}) });
       setError(message(e, kind === "claimed" ? "No pudimos pasar las demos a tu cuenta." : "No pudimos crear tu inmobiliaria."));
     } finally {
       setBusy(false);
