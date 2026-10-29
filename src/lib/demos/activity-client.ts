@@ -17,7 +17,7 @@ export function visitorId() {
  * Reports one step of the visitor on a demo to the team's list. Fire and
  * forget: a failed report never shows anything to the visitor.
  */
-export function reportDemoActivity(token: string, kind: "visita" | "interaccion" | "descarga") {
+export function reportDemoActivity(token: string, kind: "visita" | "interaccion" | "descarga" | "generacion") {
   fetch(`/api/demo/${encodeURIComponent(token)}/actividad`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

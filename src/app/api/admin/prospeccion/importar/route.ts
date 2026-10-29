@@ -3,6 +3,7 @@ import { HttpError, requireAdmin } from "@/lib/commerce/http";
 import { isUuid } from "@/lib/demos/shared";
 import { buildRows, guessMapping, IMPORT_FIELDS, LEGACY_CHANNELS, MAX_IMPORT_BYTES, MAX_IMPORT_ROWS, parseCsv, preview, type Mapping } from "@/lib/prospecting/import";
 import { body, existingAgencies, NO_STORE, prospectFailure, prospectRpc, text } from "@/lib/prospecting/server";
+import { importRows } from "@/lib/prospecting/sync";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
@@ -56,33 +57,7 @@ export async function POST(request: Request) {
     if (!isUuid(b.importId)) throw new HttpError(400, "Falta la clave de la importación.");
     // Links to existing agencies are the team's decision from the preview, never automatic.
     const links = (b.links && typeof b.links === "object" ? b.links : {}) as Record<string, unknown>;
-    const apply = rows
-      .filter((r) => r.action !== "error")
-      .map((r) => {
-        const link = links[r.source_key];
-        const agency_id = r.action === "create" && isUuid(link) && link === r.suggestion?.agencyId ? link : null;
-        return {
-          row_number: r.row_number,
-          source_key: r.source_key,
-          name: r.name,
-          website: r.website,
-          sdr: r.sdr,
-          campaign: r.campaign,
-          priority: r.priority,
-          score: r.score,
-          score_components: r.score_components,
-          zone: r.zone,
-          address: r.address,
-          decision_maker: r.decision_maker,
-          notes: r.notes,
-          legacy_status: r.legacy_status,
-          sent_date: r.sent_date,
-          contacts: r.contacts,
-          raw: r.raw,
-          agency_id,
-          messages: [...r.messages, ...r.duplicates],
-        };
-      });
+    const apply = importRows(rows, links);
     const report = await prospectRpc<Record<string, unknown>>("habita_prospect_import", {
       p_actor: actor.id,
       p_import: b.importId,

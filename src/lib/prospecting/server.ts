@@ -3,7 +3,7 @@ import { HttpError } from "@/lib/commerce/http";
 import { demoUrl } from "@/lib/demos/shared";
 import { adminClient } from "@/lib/supabase/server";
 import type { ExistingAgency } from "./import";
-import type { Dataset } from "./types";
+import type { Dataset, DemoProgress } from "./types";
 
 /** A refused operation, with a stable code the panel (and an extension) can act on. */
 export class ProspectError extends HttpError {
@@ -83,7 +83,30 @@ export async function prospectRpc<T>(name: string, args: Record<string, unknown>
 /** The whole private dataset, after reconciling activation and purchases from the server's tables. */
 export async function prospectDataset(): Promise<Dataset> {
   await prospectRpc<number>("habita_prospect_sync_conversions");
-  return prospectRpc<Dataset>("habita_prospect_dataset");
+  const ds = await prospectRpc<Dataset>("habita_prospect_dataset");
+  const agencies = [...new Set(ds.accounts.map((a) => a.agency_id))];
+  const progress = await demoProgress(agencies);
+  for (const a of ds.accounts) a.demo = progress.get(a.agency_id) ?? { created: false, sent: false, level: 0 };
+  return ds;
+}
+
+/** Demo steps per agency, from the demos table (published link = sent, activity level = steps reached). */
+async function demoProgress(agencyIds: string[]) {
+  const out = new Map<string, DemoProgress>();
+  if (!agencyIds.length) return out;
+  const { data, error } = await adminClient()
+    .from("demos")
+    .select("agency_id,status,activity_level")
+    .in("agency_id", agencyIds);
+  if (error) throw new Error(`DATABASE_${error.code}`);
+  for (const row of (data ?? []) as { agency_id: string; status: string; activity_level: number }[]) {
+    const p = out.get(row.agency_id) ?? { created: false, sent: false, level: 0 as const };
+    p.created = true;
+    if (row.status === "published") p.sent = true;
+    p.level = Math.max(p.level, Math.min(5, Math.max(0, row.activity_level))) as DemoProgress["level"];
+    out.set(row.agency_id, p);
+  }
+  return out;
 }
 
 type DemoRow = { id: string; token: string; status: string; published_at: string | null; created_at: string; title: string };

@@ -19,6 +19,8 @@ vi.mock("@/lib/supabase/server", () => ({
       if (state.error) return { data: null, error: state.error };
       return { data: name in state.result ? state.result[name] : { id: "x" }, error: null };
     },
+    // The dataset also reads demo steps per agency; none exist in these tests.
+    from: () => ({ select: () => ({ in: async () => ({ data: [], error: null }) }) }),
   }),
 }));
 
@@ -85,6 +87,7 @@ describe("Permissions", () => {
     expect(state.rpcs).toEqual([]);
   });
   it("the dataset reconciles server conversions before reading, and is never cached", async () => {
+    state.result.habita_prospect_dataset = { accounts: [], attempts: [], events: [] };
     const r = await root.GET();
     expect(r.headers.get("cache-control")).toBe("private, no-store");
     expect(state.rpcs.map((x) => x.name)).toEqual(["habita_prospect_sync_conversions", "habita_prospect_dataset"]);

@@ -184,3 +184,25 @@ Flujo:
 5. Activación: hoy se basa en la «versión preferida». Si se quiere una aprobación explícita de la primera foto propia, hace falta un evento de aprobación en el editor de la inmobiliaria.
 6. Si se necesita lectura automática de respuestas, hace falta un conector verificable de WhatsApp o Gmail, que no forma parte de este cambio.
 7. Probar el flujo con la extensión de Claude Code en staging, con un número de prueba propio.
+
+## 10. Sincronización automática con la planilla
+
+Un script dentro de la planilla envía la pestaña «Prospectos» a `POST /api/admin/prospeccion/sincronizar` cada hora. Usa el mismo importador que la carga manual, así que las reglas no cambian: se actualiza por clave de fila, nunca se pisan el historial ni las próximas acciones, y un envío histórico se registra una sola vez.
+
+- **Qué crea y qué no.** Crea cuentas nuevas y actualiza las conocidas. Una fila nueva que se parece a una inmobiliaria existente (mismo nombre o dominio) no se aplica: queda retenida en la respuesta para que el equipo la revise. Nunca vincula ni fusiona sola.
+- **Mismo origen.** El script usa `Prospecting amobla IA · Prospectos`. Si la importación manual se hizo con otro texto de origen, cada inmobiliaria figuraría dos veces: usar el mismo.
+- **Canal de los envíos históricos.** El script envía `whatsapp`, según lo definido. Cambiarlo en `PROSPECT_LEGACY_CHANNEL` si corresponde.
+
+Configuración:
+
+1. En Vercel, variables de entorno de producción:
+   - `PROSPECT_SYNC_TOKEN`: cadena aleatoria de al menos 32 caracteres.
+   - `PROSPECT_SYNC_ACTOR_ID`: el UUID de un usuario del equipo (Supabase → Authentication → Users → copiar el UID). Queda como autor de los cambios automáticos.
+2. En la planilla: Extensiones → Apps Script, pegar `scripts/prospeccion-sync.gs`.
+3. Configuración del proyecto → Propiedades del script:
+   - `PROSPECT_SYNC_URL`: `https://<dominio>/api/admin/prospeccion/sincronizar`.
+   - `PROSPECT_SYNC_TOKEN`: el mismo valor que en Vercel.
+4. Ejecutar una vez `instalarDisparador()` y autorizar el script. Crea el disparador de cada hora.
+5. Probar a mano con `sincronizarProspectos()`: el registro muestra el reporte (creadas, actualizadas, retenidas, rechazadas).
+
+Sin el token o con uno incorrecto, la ruta responde 401. Para rotarlo, cambiar el valor en Vercel y en las propiedades del script.

@@ -16,6 +16,13 @@ export function SummaryView({ ds, filters, onFilters, goTo }: { ds: Dataset; fil
     ["Enviados", s.sent, "cuentas con envío confirmado"],
     ["Respondieron", s.replied.observed, "respuesta humana registrada"],
     ["Interesados", s.interested.observed, "interés explícito con evidencia"],
+    ["Demo creada", s.demo.created, "inmobiliaria con al menos una demo"],
+    ["Demo enviada", s.demo.sent, "demo publicada con enlace"],
+    ["Ingresó a la demo", s.demo.entered, "visita a la demo pública"],
+    ["Interactuó", s.demo.interacted, "clic, comparación o descarga"],
+    ["Generó imagen", s.demo.generated, "generó una ambientación en la demo"],
+    ["Creó su panel", s.demo.panel, "tomó la demo en su cuenta"],
+    ["Suscribió", s.demo.subscribed, "compró créditos con Mercado Pago"],
     ["Activados", s.linked ? s.activated.observed : null, "primera ambientación propia elegida"],
     ["Clientes", s.linked ? s.customers.observed : null, "primera compra aprobada"],
   ];
@@ -90,7 +97,7 @@ export function SummaryView({ ds, filters, onFilters, goTo }: { ds: Dataset; fil
           </ol>
           <p className="pr-foot">
             Cuentas con al menos un envío confirmado cuyo primer envío cae en el filtro. Una cuenta no se duplica por usar WhatsApp y email. Las aperturas de demo son
-            señales, no respuestas. Tasas solo con cuentas de ventana completa ({s.window} días; {s.matureSent} de {s.sent}). Activación y compra se miden solo en
+            señales, no respuestas. Los pasos de demo cuentan cuentas de la cohorte que alcanzaron ese paso en algún momento; la base no guarda cuándo, así que no tienen ventana. Tasas solo con cuentas de ventana completa ({s.window} días; {s.matureSent} de {s.sent}). Activación y compra se miden solo en
             inmobiliarias con cuenta vinculada y verificada ({s.linked} de {s.sent}); las demás figuran como «Sin vincular», no como cero.
           </p>
         </section>

@@ -4,7 +4,7 @@ import { adminClient, currentUser } from "@/lib/supabase/server";
 import type { DemoActivity } from "./shared";
 
 /** The steps a visitor of the public demo can report (the agency's step 3 comes from its claim). */
-export const VISITOR_KINDS = ["visita", "interaccion", "descarga"] as const;
+export const VISITOR_KINDS = ["visita", "interaccion", "descarga", "generacion"] as const;
 export type VisitorKind = (typeof VISITOR_KINDS)[number];
 
 /** The visitor's id is random and kept in the browser: never personal data. */
@@ -77,7 +77,7 @@ export async function activityOf(demoIds: string[]) {
   if (error) return out;
   for (const row of (data ?? []) as { id: string; activity_level: number; activity_at: string | null; activity_visitors: number }[])
     out.set(row.id, {
-      level: Math.min(4, Math.max(0, row.activity_level)) as DemoActivity["level"],
+      level: Math.min(5, Math.max(0, row.activity_level)) as DemoActivity["level"],
       at: row.activity_at,
       visitors: row.activity_visitors,
     });
