@@ -103,7 +103,7 @@ async function demoProgress(agencyIds: string[]) {
     const p = out.get(row.agency_id) ?? { created: false, sent: false, level: 0 as const };
     p.created = true;
     if (row.status === "published") p.sent = true;
-    p.level = Math.max(p.level, Math.min(3, Math.max(0, row.activity_level))) as DemoProgress["level"];
+    p.level = Math.max(p.level, Math.min(5, Math.max(0, row.activity_level))) as DemoProgress["level"];
     out.set(row.agency_id, p);
   }
   return out;

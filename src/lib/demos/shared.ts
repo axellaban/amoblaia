@@ -305,8 +305,8 @@ export function whatsappShareUrl(link: string) {
  * What each step of the demo's activity means, as the team reads it. The
  * highest step reached counts (see 202611060001_demo_activity.sql).
  */
-export const ACTIVITY_LABELS = ["Sin actividad", "Ingresó", "Interactuó", "Creó su panel", "Suscribió"] as const;
-export type DemoActivity = { level: 0 | 1 | 2 | 3 | 4; at: string | null; visitors: number };
+export const ACTIVITY_LABELS = ["Sin actividad", "Ingresó", "Interactuó", "Generó imagen", "Creó su panel", "Suscribió"] as const;
+export type DemoActivity = { level: 0 | 1 | 2 | 3 | 4 | 5; at: string | null; visitors: number };
 export const NO_ACTIVITY: DemoActivity = { level: 0, at: null, visitors: 0 };
 /** An agency's credits: available (its account's balance) and reserved (until it accepts the invitation). */
 export type DemoCredits = { available: number | null; reserved: number | null };

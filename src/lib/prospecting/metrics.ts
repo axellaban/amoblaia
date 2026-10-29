@@ -169,7 +169,9 @@ export function summarize(ds: Dataset, f: Filters, nowIso = ds.now) {
     sent: demoCount((d) => d.sent),
     entered: demoCount((d) => d.level >= 1),
     interacted: demoCount((d) => d.level >= 2),
-    panel: demoCount((d) => d.level >= 3),
+    generated: demoCount((d) => d.level >= 3),
+    panel: demoCount((d) => d.level >= 4),
+    subscribed: demoCount((d) => d.level >= 5),
   };
   const replied = stage(isHumanReply);
   const interested = stage((e) => e.type === "interest" && valid(e));

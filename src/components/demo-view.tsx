@@ -676,7 +676,10 @@ function Gallery({
     if (!r.ok) {
       setStaging(null);
       setStagingError(r.error);
+      return;
     }
+    // The visitor generated an image: step 3 for the team's list (the server ignores repeats).
+    reportDemoActivity(source.token, "generacion");
   }
   const thumbs = useRef<HTMLOListElement>(null);
   const swipe = useRef<{ x: number; y: number } | null>(null);

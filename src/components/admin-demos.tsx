@@ -368,7 +368,7 @@ function agoText(iso: string) {
 
 /**
  * What the demo's visitors and its agency did, at a glance: the highest of
- * the three steps reached, how many people came and when last. Team only.
+ * the five steps reached, how many people came and when last. Team only.
  */
 export function ActivityStatus({ activity }: { activity: DemoActivity }) {
   const label = ACTIVITY_LABELS[activity.level];
@@ -378,7 +378,7 @@ export function ActivityStatus({ activity }: { activity: DemoActivity }) {
       <span className="dm-activity-label">Actividad</span>
       <strong>{activity.level ? `${activity.level} · ${label}` : label}</strong>
       <span className="dm-activity-dots" aria-hidden="true">
-        {[1, 2, 3, 4].map((step) => (
+        {[1, 2, 3, 4, 5].map((step) => (
           <i key={step} className={step <= activity.level ? "on" : undefined} />
         ))}
       </span>

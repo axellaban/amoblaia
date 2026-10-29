@@ -20,7 +20,9 @@ export function SummaryView({ ds, filters, onFilters, goTo }: { ds: Dataset; fil
     ["Demo enviada", s.demo.sent, "demo publicada con enlace"],
     ["Ingresó a la demo", s.demo.entered, "visita a la demo pública"],
     ["Interactuó", s.demo.interacted, "clic, comparación o descarga"],
+    ["Generó imagen", s.demo.generated, "generó una ambientación en la demo"],
     ["Creó su panel", s.demo.panel, "tomó la demo en su cuenta"],
+    ["Suscribió", s.demo.subscribed, "compró créditos con Mercado Pago"],
     ["Activados", s.linked ? s.activated.observed : null, "primera ambientación propia elegida"],
     ["Clientes", s.linked ? s.customers.observed : null, "primera compra aprobada"],
   ];

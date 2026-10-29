@@ -58,22 +58,22 @@ describe("demo activity", () => {
     expect((await summary(d))!.activity_level).toBe(2);
   });
 
-  it("a download is step 2, and the agency taking its demos into its account is step 3", async () => {
+  it("a download is step 2, and the agency taking its demos into its account is step 4", async () => {
     const { agency, demo: d } = await demo();
     await record(d, "visitante-eeee-5", "descarga");
     expect((await summary(d))!.activity_level).toBe(2);
     await db.query("select habita_record_agency_activity($1)", [agency]);
     const s = (await summary(d))!;
-    expect(s.activity_level).toBe(3);
+    expect(s.activity_level).toBe(4);
     // The agency's step does not count as a visitor.
     expect(s.activity_visitors).toBe(0);
   });
 
-  it("only moves the demos of that agency to step 3", async () => {
+  it("only moves the demos of that agency to step 4", async () => {
     const a = await demo("Inmobiliaria Norte");
     const b = await demo("Inmobiliaria Oeste");
     await db.query("select habita_record_agency_activity($1)", [a.agency]);
-    expect((await summary(a.demo))!.activity_level).toBe(3);
+    expect((await summary(a.demo))!.activity_level).toBe(4);
     expect((await summary(b.demo))!.activity_level).toBe(0);
   });
 
@@ -84,12 +84,21 @@ describe("demo activity", () => {
     expect((await summary(d))!.activity_level).toBe(0);
   });
 
-  it("a purchase of credits is step 4, the highest one", async () => {
+  it("generating an image is step 3, between interacting and the agency's panel", async () => {
+    const { agency, demo: d } = await demo();
+    await record(d, "visitante-iiii-9", "interaccion");
+    await record(d, "visitante-jjjj-1", "generacion");
+    expect((await summary(d))!.activity_level).toBe(3);
+    await db.query("select habita_record_agency_activity($1)", [agency]);
+    expect((await summary(d))!.activity_level).toBe(4);
+  });
+
+  it("a purchase of credits is step 5, the highest one", async () => {
     const { agency, demo: d } = await demo();
     await record(d, "visitante-hhhh-8", "panel");
     await db.query("select habita_record_agency_purchase($1)", [agency]);
     const s = (await summary(d))!;
-    expect(s.activity_level).toBe(4);
+    expect(s.activity_level).toBe(5);
     expect(s.activity_visitors).toBe(0);
   });
 
