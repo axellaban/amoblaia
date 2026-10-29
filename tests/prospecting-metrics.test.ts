@@ -209,3 +209,26 @@ describe("Para hoy", () => {
     expect(t[2].reason).toMatch(/score 90/);
   });
 });
+
+describe("Demo steps in the funnel", () => {
+  it("counts each demo step over the cohort, by the highest step its agency reached", () => {
+    const a = account({ demo: { created: true, sent: true, level: 2 } });
+    const b = account({ demo: { created: true, sent: false, level: 0 } });
+    const c = account({ demo: { created: true, sent: true, level: 3 } });
+    const d = account();
+    const data = ds([a, b, c, d], [
+      send(a, "2026-10-02T10:00:00-03:00"),
+      send(b, "2026-10-02T10:00:00-03:00"),
+      send(c, "2026-10-02T10:00:00-03:00"),
+      send(d, "2026-10-02T10:00:00-03:00"),
+    ]);
+    const { demo } = summarize(data, {});
+    expect(demo).toEqual({ created: 3, sent: 2, entered: 2, interacted: 2, panel: 1 });
+  });
+
+  it("a demo outside the cohort does not count", () => {
+    const a = account({ demo: { created: true, sent: true, level: 3 } });
+    const data = ds([a], []);
+    expect(summarize(data, {}).demo.created).toBe(0);
+  });
+});

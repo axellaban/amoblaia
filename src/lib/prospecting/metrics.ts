@@ -3,7 +3,7 @@
 // message report always share data, filters and rules. Rules are documented
 // in docs/PROSPECCION.md (diccionario de métricas).
 import { artDate, dayEnd, dayStart, days, isDate } from "./time";
-import type { AttemptChannel, Dataset, OutreachAttempt, ProspectAccount, ProspectEvent } from "./types";
+import type { AttemptChannel, Dataset, DemoProgress, OutreachAttempt, ProspectAccount, ProspectEvent } from "./types";
 
 export type Filters = {
   /** Cohort: first confirmed send between these Buenos Aires dates (inclusive). */
@@ -162,6 +162,15 @@ export function summarize(ds: Dataset, f: Filters, nowIso = ds.now) {
     return { observed, late, mature: ratio(matureNum, matureDen) };
   };
 
+  // Demo steps are presence, not timed: the demo table keeps the highest step reached, not when it was reached.
+  const demoCount = (test: (d: DemoProgress) => boolean) => cohort.filter((r) => r.account.demo && test(r.account.demo)).length;
+  const demo = {
+    created: demoCount((d) => d.created),
+    sent: demoCount((d) => d.sent),
+    entered: demoCount((d) => d.level >= 1),
+    interacted: demoCount((d) => d.level >= 2),
+    panel: demoCount((d) => d.level >= 3),
+  };
   const replied = stage(isHumanReply);
   const interested = stage((e) => e.type === "interest" && valid(e));
   const linkedRows = cohort.filter((r) => r.account.linked);
@@ -202,6 +211,7 @@ export function summarize(ds: Dataset, f: Filters, nowIso = ds.now) {
     replied,
     interested,
     interestOfReplies,
+    demo,
     linked: linkedRows.length,
     activated,
     customers,

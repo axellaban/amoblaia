@@ -19,6 +19,8 @@ vi.mock("@/lib/supabase/server", () => ({
       if (state.error) return { data: null, error: state.error };
       return { data: name in state.result ? state.result[name] : { id: "x" }, error: null };
     },
+    // The dataset also reads demo steps per agency; none exist in these tests.
+    from: () => ({ select: () => ({ in: async () => ({ data: [], error: null }) }) }),
   }),
 }));
 
