@@ -14399,9 +14399,45 @@ a.dm-agency:hover {
   border-top: 1px solid #e2dccd;
   font-size: 13px;
 }
-.dv2-owner-menu-more a {
+.dv2-owner-menu-more a,
+.dv2-owner-menu-more button {
+  padding: 0;
+  border: 0;
+  background: none;
   color: var(--forest);
+  font: inherit;
   font-weight: 700;
+  cursor: pointer;
+}
+/* The agency's plans, on the right of its environment (the same plans as /precios). */
+.dv2-prices {
+  position: fixed;
+  inset: 0 0 0 auto;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  width: min(480px, 100vw);
+  background: #fbf8f2;
+  box-shadow: -14px 0 34px rgba(0, 0, 0, 0.18);
+}
+.dv2-prices-head {
+  padding: 14px 18px;
+  border-bottom: 1px solid #e2dccd;
+  background: #fff;
+}
+.dv2-prices-back {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--forest);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.dv2-prices-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
 }
 .dv2-owner-create-chip {
   display: none !important;

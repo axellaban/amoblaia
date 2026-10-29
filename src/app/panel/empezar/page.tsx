@@ -5,6 +5,7 @@ import { AgencyOnboarding } from "@/components/agency-panel";
 import { invitationOf } from "@/lib/agency/invitation";
 import { membershipOf } from "@/lib/agency/server";
 import { presentationPath } from "@/lib/agency/demo-invite";
+import { isAdmin } from "@/lib/commerce/http";
 import { publishedDemo } from "@/lib/demos/server";
 import { coverVersion, publicImageUrl } from "@/lib/demos/shared";
 import { currentUser } from "@/lib/supabase/server";
@@ -33,6 +34,8 @@ export default async function StartPage({ searchParams }: Props) {
   const demo = token ? await publishedDemo(token).catch(() => null) : null;
   // Someone who already works for that demo's agency goes straight to the property, not through a form.
   if (demo && membership && membership.agency.id === demo.agencyId) redirect(`/panel/propiedades/${demo.id}`);
+  // The team checks an invitation the way the agency will meet it: its demo, with the way into the panel.
+  if (code && token && demo && isAdmin(user?.email)) redirect(presentationPath(token, code));
   // The team's invitation: only an e-mail and a password to enter.
   if (code && !signedIn) {
     const invitation = await invitationOf(code);
