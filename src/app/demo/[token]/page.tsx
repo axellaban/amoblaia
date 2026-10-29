@@ -8,7 +8,7 @@ import { invitationOf } from "@/lib/agency/invitation";
 import { publishedDemo } from "@/lib/demos/server";
 import { coverVersion, demoPath, ogImageUrl, PRESENTATION_PARAM } from "@/lib/demos/shared";
 import type { Product } from "@/lib/commerce/catalog";
-import { cloudConfigured, cloudEnabled } from "@/lib/supabase/config";
+import { cloudConfigured } from "@/lib/supabase/config";
 import { adminClient } from "@/lib/supabase/server";
 
 // Read on every request: unpublishing or rotating the link takes effect at once.
@@ -79,7 +79,7 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
 }
 
 /** The plans of /precios, as they are: the same catalog and the same component, without buying here. */
-async function plansOf() {
+async function plansOf(signupHref: string) {
   let products: Product[] = [];
   if (cloudConfigured()) {
     try {
@@ -93,8 +93,9 @@ async function plansOf() {
     <PricingPlans
       products={products}
       enabled={false}
-      trial={cloudEnabled() && process.env.LIVE_TRIAL_ENABLED === "true"}
+      trial={false}
       renderedAt={Date.now()}
+      signupHref={signupHref}
     />
   );
 }
@@ -121,6 +122,6 @@ export default async function PublicDemoPage({ params, searchParams }: Props) {
     code && invite && "href" in invite && (await searchParams).vista !== "ficha"
       ? { href: invite.href, freeCredits: invite.freeCredits, buyerHref: `${presentationPath(token, code)}&vista=ficha` }
       : null;
-  const plans = owner ? await plansOf() : null;
+  const plans = owner ? await plansOf(owner.href) : null;
   return <DemoView demo={demo} source={{ kind: "public", token }} presentation={presentation} invite={invite} owner={owner} plans={plans} />;
 }
