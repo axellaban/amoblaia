@@ -14296,7 +14296,7 @@ a.dm-agency:hover {
   gap: 4px;
   min-width: 0;
 }
-.dv2-owner-nav a {
+.dv2-owner-nav > a {
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -14309,11 +14309,11 @@ a.dm-agency:hover {
   text-decoration: none;
   white-space: nowrap;
 }
-.dv2-owner-nav a:hover {
+.dv2-owner-nav > a:hover {
   background: rgba(255, 255, 255, 0.1);
   color: #fff;
 }
-.dv2-owner-nav a.is-on {
+.dv2-owner-nav > a.is-on {
   background: #dfe9dc;
   color: var(--forest);
   font-weight: 700;
@@ -14325,7 +14325,7 @@ a.dm-agency:hover {
   font-size: 12px;
   font-weight: 700;
 }
-.dv2-owner-nav a.is-on .dv2-owner-count {
+.dv2-owner-nav > a.is-on .dv2-owner-count {
   background: var(--forest);
   color: #fff;
 }
@@ -14578,7 +14578,7 @@ a.dm-agency:hover {
     scrollbar-width: none;
     width: calc(100% + 32px);
   }
-  .dv2-owner-nav a {
+  .dv2-owner-nav > a {
     min-height: 36px;
     font-size: 13px;
   }
