@@ -87,16 +87,9 @@ describe("Form input", () => {
 });
 
 describe("Sharing", () => {
-  it("builds a WhatsApp link that needs no app to open the demo", () => {
-    const url = whatsappShareUrl(
-      "https://amoblaia.vercel.app/demo/abc?presentacion=1",
-      "https://amoblaia.vercel.app/demo/abc",
-      "Sur",
-      "Depto",
-    );
-    expect(url.startsWith("https://wa.me/?text=")).toBe(true);
-    expect(decodeURIComponent(url)).toContain("https://amoblaia.vercel.app/demo/abc?presentacion=1");
-    expect(decodeURIComponent(url)).toContain("compradores (sin la franja de la demo): https://amoblaia.vercel.app/demo/abc");
+  it("sends only the link on WhatsApp: no greeting and no text of ours", () => {
+    const link = "https://amoblaia.vercel.app/demo/abc?presentacion=1";
+    expect(whatsappShareUrl(link)).toBe(`https://wa.me/?text=${encodeURIComponent(link)}`);
   });
   it("keeps the demo and the agency in the call to action for attribution", () => {
     const href = new URL(ctaHref("demo-1", "agency-1"), "https://x.test");

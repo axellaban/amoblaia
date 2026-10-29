@@ -35,6 +35,7 @@ import {
   photoDownloadUrl,
   photoLabel,
   styleName,
+  whatsappShareUrl,
   type DemoDetail,
   type EditorPhoto,
   type GenerationRow,
@@ -1063,7 +1064,7 @@ export function DemoEditor({
                   </button>
                   <a
                     className="button button-small button-outline"
-                    href={`https://wa.me/?text=${encodeURIComponent(`${demo.title}: ${publicLink(demo.token)}`)}`}
+                    href={whatsappShareUrl(publicLink(demo.token))}
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={() => whatsappOpened(demo.id)}

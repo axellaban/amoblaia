@@ -38,6 +38,7 @@ import {
 import { Comparison } from "./comparison";
 import type { DemoInvite } from "@/lib/agency/demo-invite";
 import { registerSuperProperties, track } from "@/lib/analytics";
+import { reportDemoActivity } from "@/lib/demos/activity-client";
 import { textOn, whatsappNumber, type FactIcon } from "@/lib/demos/branding";
 import { DEMO_STYLES, demoStyleName } from "@/lib/demos/styles";
 import {
@@ -175,6 +176,7 @@ export function DemoView({
     setPageUrl(window.location.href.split(/[?#]/)[0]);
     if (source.kind !== "public") return;
     track("demo_vista", analytics);
+    reportDemoActivity(source.token, "visita");
     registerSuperProperties({ demo_id: demo.id, demo_inmobiliaria_id: demo.agencyId });
     try {
       localStorage.setItem(DEMO_REF_KEY, JSON.stringify({ demoId: demo.id, agencyId: demo.agencyId, at: Date.now() }));
@@ -184,8 +186,18 @@ export function DemoView({
   }, [source.kind, demo.id, demo.agencyId, analytics]);
 
   const { primary, others, visitHref } = contactActions(demo, pageUrl);
-  const log = (event: string, extra: Record<string, unknown> = {}) =>
-    source.kind === "public" && track(event, { ...analytics, ...extra });
+  const interacted = useRef(false);
+  const log = (event: string, extra: Record<string, unknown> = {}) => {
+    if (source.kind !== "public") return;
+    track(event, { ...analytics, ...extra });
+    // A download is its own step for the team's list; the server ignores repeats.
+    if (event === "demo_owner_download") reportDemoActivity(source.token, "descarga");
+    // The first other interaction of this visit is step 2.
+    else if (!interacted.current) {
+      interacted.current = true;
+      reportDemoActivity(source.token, "interaccion");
+    }
+  };
   const contactLink = (a: Action, className: string, label = a.label) => (
     <a
       className={className}

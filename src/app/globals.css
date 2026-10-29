@@ -8026,6 +8026,39 @@ h2 .accent {
   gap: 8px;
   align-items: center;
 }
+/* Team only: the demo's activity at the end of its actions row. */
+.dm-activity {
+  margin-left: auto;
+  display: grid;
+  gap: 2px;
+  min-width: 210px;
+  padding: 8px 12px;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  font-size: 13px;
+}
+.dm-activity-label,
+.dm-activity-foot {
+  color: var(--muted);
+  font-size: 12px;
+}
+.dm-activity strong {
+  font-size: 14px;
+}
+.dm-activity-dots {
+  display: flex;
+  gap: 6px;
+  margin: 2px 0;
+}
+.dm-activity-dots i {
+  flex: 1;
+  height: 6px;
+  border-radius: 99px;
+  background: var(--line);
+}
+.dm-activity-dots i.on {
+  background: #2f7d57;
+}
 .dm-whatsapp {
   background: #157a43;
 }
