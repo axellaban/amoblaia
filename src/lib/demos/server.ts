@@ -3,7 +3,7 @@ import { createHash, randomBytes } from "node:crypto";
 import sharp from "sharp";
 import { adminClient } from "@/lib/supabase/server";
 import { BUCKET } from "@/lib/commerce/jobs";
-import { HttpError } from "@/lib/commerce/http";
+import { HttpError, rpc } from "@/lib/commerce/http";
 import { normalizePhoto } from "@/lib/commerce/images";
 import {
   DEFAULT_ACCENT,
@@ -32,6 +32,8 @@ import {
   type DemoMode,
   type DemoSummary,
   NO_ACTIVITY,
+  NO_CREDITS,
+  type DemoCredits,
   type EditorPhoto,
   type GenerationRow,
   type PhotoVersion,
@@ -215,6 +217,24 @@ export async function completeAgency(agencyId: string, imp: ImportedDemo, contac
   return done;
 }
 
+/**
+ * Available (the owner's balance) and reserved credits per agency, for the team's lists.
+ * Unknown stays null, never 0: before the migration, or when the lookup fails.
+ */
+async function creditsOf(agencyIds: string[]) {
+  const out = new Map<string, DemoCredits>();
+  if (!agencyIds.length) return out;
+  try {
+    const rows = await rpc<{ agency_id: string; available: number | null; reserved: number | null }[]>("habita_admin_agency_balances", {
+      p_agencies: agencyIds,
+    });
+    for (const r of rows ?? []) out.set(r.agency_id, { available: r.available, reserved: r.reserved });
+  } catch {
+    // Unknown: the list keeps working without the numbers.
+  }
+  return out;
+}
+
 export async function listDemos() {
   const db = adminClient();
   const demos = check(
@@ -271,6 +291,7 @@ export async function listDemos() {
   })[];
   const shown = await shownOf(photoRows);
   const activity = await activityOf(demos.map((d) => d.id));
+  const credits = await creditsOf(agencyIds);
   const summaries: DemoSummary[] = demos.map((d) => {
     const own = photoRows.filter((p) => p.property_id === d.property_id);
     const main = mainOf(own);
@@ -293,6 +314,7 @@ export async function listDemos() {
       createdAt: d.created_at,
       publishedAt: d.published_at,
       activity: activity.get(d.id) ?? NO_ACTIVITY,
+      credits: credits.get(d.agency_id) ?? NO_CREDITS,
     };
   });
   return {
@@ -403,6 +425,7 @@ export async function demoDetail(id: string): Promise<DemoDetail> {
       // Whether the agency already has its account: the team's invitation is only for agencies without one.
       agencyClaimed: Boolean((await adminClient().from("agencies").select("owner_id").eq("id", demo.agency_id).maybeSingle()).data?.owner_id),
       activity: (await activityOf([demo.id])).get(demo.id) ?? NO_ACTIVITY,
+      credits: (await creditsOf([demo.agency_id])).get(demo.agency_id) ?? NO_CREDITS,
       propertyTitle: prop.title,
       kind: demo.kind === "fotos" ? "fotos" : "ficha",
       photos: photos.length,

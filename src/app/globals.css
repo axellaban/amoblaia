@@ -8057,8 +8057,44 @@ h2 .accent {
 }
 
 /* Team only: the demo's activity at the end of its actions row. */
-.dm-activity {
+/* Team only: the agency's credits and the demo's activity, at the end of the actions row. */
+.dm-side {
   margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: stretch;
+}
+.dm-credits {
+  display: grid;
+  gap: 4px;
+  min-width: 230px;
+  padding: 8px 12px;
+  border: 1px solid #efd9c2;
+  border-radius: 12px;
+  background: #fbf1e6;
+  font-size: 13px;
+}
+.dm-credits .dm-activity-label {
+  color: #7a5a3a;
+  font-weight: 650;
+}
+.dm-credits-nums {
+  display: flex;
+  gap: 16px;
+  color: #7a5a3a;
+  font-size: 12px;
+}
+.dm-credits-nums b {
+  display: block;
+  color: var(--ink, #1c2a25);
+  font-size: 16px;
+}
+.dm-credits .button {
+  justify-self: start;
+  margin-top: 2px;
+}
+.dm-activity {
   display: grid;
   gap: 2px;
   min-width: 210px;
@@ -12458,6 +12494,10 @@ a.dm-agency:hover {
 }
 .adm-content {
   min-width: 0;
+}
+/* Without the team's side panel (the demo preview hides it), the content takes the full width. */
+.adm-shell > .adm-content:first-child {
+  grid-column: 1 / -1;
 }
 .pr-side {
   background: var(--pr-side);

@@ -6,6 +6,7 @@ import {
   Check,
   Copy,
   Eye,
+  Gift,
   ImageIcon,
   MessageCircle,
   Pencil,
@@ -14,6 +15,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { ImportFromListing } from "./demo-import";
+import { CreditsDialog, type CreditTarget } from "./admin-agencies";
 import { EDIT_HEADER } from "@/lib/agency/edit-scope";
 import {
   ACTIVITY_LABELS,
@@ -277,6 +279,51 @@ export function ShareCards({ demo }: { demo: Pick<DemoSummary, "id" | "token" | 
   );
 }
 
+/**
+ * The agency's credits in the demo's row: its available balance and the ones
+ * reserved until it accepts the invitation. The same dialog as Inmobiliarias.
+ */
+export function DemoCredits({ demo, onDone }: { demo: DemoSummary; onDone: (text: string) => void }) {
+  const [target, setTarget] = useState<CreditTarget | null>(null);
+  const show = (n: number | null) => (n === null ? "—" : String(n));
+  return (
+    <div className="dm-credits">
+      <span className="dm-activity-label">Créditos de la inmobiliaria</span>
+      <div className="dm-credits-nums">
+        <div>
+          Disponibles <b>{demo.agencyClaimed ? show(demo.credits.available) : "—"}</b>
+        </div>
+        <div>
+          Reservados <b>{show(demo.credits.reserved)}</b>
+        </div>
+      </div>
+      <button
+        type="button"
+        className="button button-small button-outline"
+        onClick={() =>
+          setTarget({
+            id: demo.agencyId,
+            name: demo.agencyName,
+            hasOwner: demo.agencyClaimed === true,
+            available: demo.credits.available,
+            reserved: demo.credits.reserved,
+          })
+        }
+      >
+        <Gift size={15} /> Cargar créditos
+      </button>
+      <CreditsDialog
+        target={target}
+        onClose={() => setTarget(null)}
+        onDone={(text) => {
+          setTarget(null);
+          onDone(text);
+        }}
+      />
+    </div>
+  );
+}
+
 /** How long ago something happened, for the team's list. */
 function agoText(iso: string) {
   const minutes = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
@@ -511,7 +558,10 @@ export function DemoList() {
               >
                 <Trash2 size={18} />
               </button>
-              <ActivityStatus activity={d.activity} />
+              <div className="dm-side">
+                <DemoCredits demo={d} onDone={(text) => { setNotice(text); void load(); }} />
+                <ActivityStatus activity={d.activity} />
+              </div>
             </div>
           </li>
         ))}

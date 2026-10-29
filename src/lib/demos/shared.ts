@@ -129,6 +129,8 @@ export type DemoSummary = {
   publishedAt: string | null;
   /** What visitors and the agency did with this demo (team only). */
   activity: DemoActivity;
+  /** The agency's credits (team only): available (its balance) and reserved; null when unknown. */
+  credits: DemoCredits;
 };
 export type AgencyRow = {
   id: string;
@@ -306,6 +308,9 @@ export function whatsappShareUrl(link: string) {
 export const ACTIVITY_LABELS = ["Sin actividad", "Ingresó", "Interactuó", "Creó su panel"] as const;
 export type DemoActivity = { level: 0 | 1 | 2 | 3; at: string | null; visitors: number };
 export const NO_ACTIVITY: DemoActivity = { level: 0, at: null, visitors: 0 };
+/** An agency's credits: available (its account's balance) and reserved (until it accepts the invitation). */
+export type DemoCredits = { available: number | null; reserved: number | null };
+export const NO_CREDITS: DemoCredits = { available: null, reserved: null };
 /** Where "Probar habita." leads: the regular studio, carrying the demo and agency for attribution. */
 export function ctaHref(demoId: string, agencyId: string) {
   const q = new URLSearchParams({
