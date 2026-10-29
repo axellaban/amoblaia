@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronDown, Eye, Home, Image as ImageIcon, Loader2, Plus, RefreshCw, Star, Trash2, X } from "lucide-react";
 import { Comparison } from "./comparison";
-import { AgencyFields, LinkPreview, PropertyFields, ShareButtons, StatusChip, api, publicLink } from "./admin-demos";
+import { AgencyFields, LinkPreview, PropertyFields, ShareCards, StatusChip, api, publicLink } from "./admin-demos";
 import { PhotoWorkspace, type WorkspaceActions } from "./editor-photos";
 import { useStagingQueue, type QueueReport } from "./use-staging-queue";
 import { optimizePhoto } from "@/lib/images";
@@ -971,16 +971,6 @@ export function DemoEditor({
                 <input
                   type="radio"
                   name="open-mode"
-                  checked={detail.settings.openMode === "original"}
-                  disabled={busy || !detail.settingsReady}
-                  onChange={() => demoAction({ action: "settings", settings: { openMode: "original" } }, "Guardado.", "publicacion")}
-                />
-                Foto original (recomendado)
-              </label>
-              <label>
-                <input
-                  type="radio"
-                  name="open-mode"
                   checked={detail.settings.openMode === "styled"}
                   disabled={busy || !detail.settingsReady || !openStyles.length}
                   onChange={() =>
@@ -991,7 +981,17 @@ export function DemoEditor({
                     )
                   }
                 />
-                Ambientación predeterminada
+                Ambientación predeterminada (recomendada)
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  name="open-mode"
+                  checked={detail.settings.openMode === "original"}
+                  disabled={busy || !detail.settingsReady}
+                  onChange={() => demoAction({ action: "settings", settings: { openMode: "original" } }, "Guardado.", "publicacion")}
+                />
+                Foto original
               </label>
             </div>
             {detail.settings.openMode === "styled" && (
@@ -1074,24 +1074,9 @@ export function DemoEditor({
                 </div>
                 <p className="dm-help">Este enlace funciona aunque tu catálogo no esté publicado.</p>
               </>
-            ) : live ? (
-              <>
-                <label className="dm-link-label">
-                  Para presentar a la inmobiliaria {detail.settings.banner ? "(con la franja de la demo)" : ""}
-                  <input className="dm-link" readOnly value={publicLink(demo.token, true)} onFocus={(e) => e.target.select()} />
-                </label>
-                <label className="dm-link-label">
-                  Para compradores (sin franja ni marcas de habita)
-                  <input className="dm-link" readOnly value={publicLink(demo.token)} onFocus={(e) => e.target.select()} />
-                </label>
-                <div className="dm-share">
-                  <ShareButtons demo={demo} />
-                </div>
-              </>
             ) : (
-              <p className="dm-help">Es un borrador: nadie puede verla. Publicala para obtener el enlace.</p>
+              <ShareCards demo={demo} />
             )}
-            {!agencyMode && <ClaimLink base={base} busy={busy} />}
             <LinkPreview demo={demo} location={detail.property.location} />
             <p className="dm-help">Así se verá el enlace en WhatsApp: la portada, mitad original y mitad en el estilo principal.</p>
             {live && (
@@ -1573,63 +1558,6 @@ function ListingSync({
       <button type="button" className="button button-primary" disabled={working} onClick={() => void complete()}>
         {status || "Completar la demo"}
       </button>
-    </div>
-  );
-}
-
-/**
- * A one-time link for the agency to take over its demos (with their
- * stagings) in its own account. The team creates it and sends it: opening
- * a demo is never enough to take it.
- */
-function ClaimLink({ base, busy }: { base: string; busy: boolean }) {
-  const [link, setLink] = useState<{ url: string; presentationUrl: string | null; expiresAt: string } | null>(null);
-  const [error, setError] = useState("");
-  const until = link ? new Date(link.expiresAt).toLocaleDateString("es-AR") : "";
-  // What the team sends: the demo itself as the way in, with one concrete first task.
-  const message = link?.presentationUrl
-    ? `Te dejé preparada esta propiedad para que puedas trabajar sus fotos desde tu panel. Entrá desde este enlace, probá comparar y descargar una versión y después sumá otra publicación: ${link.presentationUrl}`
-    : "";
-  return (
-    <div className="dm-claim">
-      {link ? (
-        <>
-          {link.presentationUrl && (
-            <label className="dm-link-label">
-              Demo con acceso a su panel (recomendado): la inmobiliaria ve la demo y entra con «Probar esta propiedad en mi panel»
-              <input className="dm-link" readOnly value={link.presentationUrl} onFocus={(e) => e.target.select()} />
-            </label>
-          )}
-          {message && (
-            <label className="dm-link-label">
-              Mensaje sugerido
-              <textarea className="dm-link" readOnly rows={4} value={message} onFocus={(e) => e.target.select()} />
-            </label>
-          )}
-          <label className="dm-link-label">
-            Acceso directo, sin pasar por la demo
-            <input className="dm-link" readOnly value={link.url} onFocus={(e) => e.target.select()} />
-          </label>
-          <p className="dm-help">
-            Es una invitación privada: vence el {until} y sirve una vez. Mandala solo a la inmobiliaria; el enlace de la ficha para compradores no da
-            acceso.
-          </p>
-        </>
-      ) : (
-        <button
-          type="button"
-          className="text-link"
-          disabled={busy}
-          onClick={() =>
-            api<{ url: string; presentationUrl: string | null; expiresAt: string }>(`${base}/reclamo`, { method: "POST" })
-              .then(setLink)
-              .catch((e) => setError(e instanceof Error ? e.message : "No pudimos crear el enlace."))
-          }
-        >
-          Crear enlace para que la inmobiliaria se quede con sus demos
-        </button>
-      )}
-      {error && <p className="inline-error">{error}</p>}
     </div>
   );
 }

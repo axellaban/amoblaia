@@ -53,7 +53,8 @@ describe("Branding and settings input", () => {
     expect(brandingInput({ contactKind: "whatsapp", contactValue: "" }, { contactKind: "phone", contactValue: "1" })).toEqual({});
   });
   it("opens with the original photo and shows the strip unless configured otherwise", () => {
-    expect(readSettings(undefined)).toMatchObject({ openMode: "original", openStyle: null, banner: true });
+    expect(readSettings(undefined)).toMatchObject({ openMode: "styled", openStyle: null, banner: true });
+    expect(readSettings({ openMode: "original" })).toMatchObject({ openMode: "original" });
     const next = settingsInput({ openMode: "styled", openStyle: "modern", price: "  USD 265.000 " }, readSettings({}));
     expect(next).toMatchObject({ openMode: "styled", openStyle: "modern", price: "USD 265.000" });
     expect(() => settingsInput({ openMode: "zoom" }, readSettings({}))).toThrow();

@@ -8026,6 +8026,36 @@ h2 .accent {
   gap: 8px;
   align-items: center;
 }
+/* Team only: the two fixed ways to share a demo (editor, Compartir). */
+.dm-share-cards {
+  display: grid;
+  gap: 12px;
+}
+.dm-share-card {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+}
+.dm-share-card strong {
+  font-size: 15px;
+}
+.dm-share-url {
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--sand);
+  border-radius: 8px;
+  padding: 6px 8px;
+  word-break: break-all;
+}
+.dm-share-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 /* Team only: the demo's activity at the end of its actions row. */
 .dm-activity {
   margin-left: auto;

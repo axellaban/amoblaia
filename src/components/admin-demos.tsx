@@ -178,6 +178,105 @@ export function ShareButtons({
   );
 }
 
+/** One way to share a demo: the same view every time, copied or sent on WhatsApp. */
+function ShareCard({
+  title,
+  hint,
+  shown,
+  live,
+  resolve,
+}: {
+  title: string;
+  hint: string;
+  shown: string;
+  live: boolean;
+  resolve: () => Promise<string>;
+}) {
+  const [copied, setCopied] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  async function copy() {
+    setBusy(true);
+    setError("");
+    try {
+      if (await copyText(await resolve())) {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No pudimos crear el enlace.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function whatsapp() {
+    setBusy(true);
+    setError("");
+    // Opened now, while the click still counts, so the browser does not block it.
+    const tab = window.open("about:blank", "_blank");
+    try {
+      const url = whatsappShareUrl(await resolve());
+      if (tab) {
+        tab.opener = null;
+        tab.location.href = url;
+      } else window.location.href = url;
+    } catch (e) {
+      tab?.close();
+      setError(e instanceof Error ? e.message : "No pudimos crear el enlace.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="dm-share-card">
+      <strong>{title}</strong>
+      <span className="dm-help">{hint}</span>
+      <code className="dm-share-url">{live ? shown : "Se activa al publicar la demo"}</code>
+      <div className="dm-share-buttons">
+        <button type="button" className="button button-small button-outline" disabled={!live || busy} onClick={copy}>
+          {copied ? <Check size={15} /> : <Copy size={15} />}
+          {copied ? "Enlace copiado" : "Copiar enlace"}
+        </button>
+        <button type="button" className="button button-small dm-whatsapp" disabled={!live || busy} onClick={whatsapp}>
+          <MessageCircle size={15} /> WhatsApp
+        </button>
+      </div>
+      {error && (
+        <span className="inline-error" role="alert">
+          {error}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The two ways to share a demo, always the same: to the agency (its
+ * presentation, as from its panel) and to the buyers (the clean ficha).
+ * No step to create a link first.
+ */
+export function ShareCards({ demo }: { demo: Pick<DemoSummary, "id" | "token" | "status" | "agencyClaimed"> }) {
+  const live = demo.status === "published";
+  return (
+    <div className="dm-share-cards">
+      <ShareCard
+        title="Enviar a la inmobiliaria"
+        hint="Siempre entra a la vista de presentación, como desde su panel."
+        shown={publicLink(demo.token, true)}
+        live={live}
+        resolve={() => agencyLink(demo)}
+      />
+      <ShareCard
+        title="Enviar al comprador"
+        hint="Siempre la ficha limpia, sin franja ni acceso al panel."
+        shown={publicLink(demo.token)}
+        live={live}
+        resolve={async () => publicLink(demo.token)}
+      />
+    </div>
+  );
+}
+
 /** How long ago something happened, for the team's list. */
 function agoText(iso: string) {
   const minutes = Math.round((Date.now() - new Date(iso).getTime()) / 60000);

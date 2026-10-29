@@ -89,7 +89,8 @@ export type DemoSettings = {
 };
 export const DEFAULT_SETTINGS: DemoSettings = {
   propertyType: "residential",
-  openMode: "original",
+  // Recommended: the ficha opens with the main style. A null openStyle means that style.
+  openMode: "styled",
   openStyle: null,
   banner: true,
   operation: null,
@@ -158,7 +159,7 @@ export function readSettings(raw: unknown): DemoSettings {
   const agentName = agent ? text(agent.name, 80) : null;
   return {
     propertyType: v.propertyType === "office" ? "office" : "residential",
-    openMode: v.openMode === "styled" ? "styled" : "original",
+    openMode: v.openMode === "original" ? "original" : "styled",
     openStyle: typeof v.openStyle === "string" ? v.openStyle : null,
     banner: v.banner !== false,
     operation: text(v.operation, 40),
