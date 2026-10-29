@@ -14,10 +14,15 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  CircleDollarSign,
   DoorOpen,
+  Download,
   ExternalLink,
   FileText,
+  Home,
+  Image as ImageIcon,
   Info,
+  LayoutGrid,
   Lock,
   Mail,
   MapPin,
@@ -25,6 +30,7 @@ import {
   MessageCircle,
   Minimize2,
   Phone,
+  Plus,
   RotateCw,
   Ruler,
   Sparkles,
@@ -33,6 +39,7 @@ import { Comparison } from "./comparison";
 import type { DemoInvite } from "@/lib/agency/demo-invite";
 import { registerSuperProperties, track } from "@/lib/analytics";
 import { textOn, whatsappNumber, type FactIcon } from "@/lib/demos/branding";
+import { DEMO_STYLES, demoStyleName } from "@/lib/demos/styles";
 import {
   adminPhotoUrl,
   ctaHref,
@@ -68,6 +75,24 @@ const FACT_ICON: Record<FactIcon, typeof Ruler> = {
 };
 const external = { target: "_blank", rel: "noopener noreferrer" } as const;
 const VISIBLE_STYLES = 3;
+/** The agency's own view lists the original and four styles first. */
+const OWNER_VISIBLE_STYLES = 4;
+
+/**
+ * The agency looking at its own demo with a live invitation: its panel on
+ * top, and next to each style the action that fits it. A prepared version is
+ * downloaded; any other style is generated from the panel, which asks for
+ * the access (and shows the cost) first.
+ */
+export type OwnerMode = { href: string; freeCredits: number; buyerHref: string };
+
+const fileSlug = (text: string) =>
+  text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^A-Za-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .toLowerCase();
 
 function urlFor(source: Source, photoId: string, version: PhotoVersion | null, width: number, retry = 0) {
   const url =
@@ -121,6 +146,7 @@ export function DemoView({
   source,
   presentation = false,
   invite = null,
+  owner = null,
 }: {
   demo: PublicDemo;
   source: Source;
@@ -128,6 +154,8 @@ export function DemoView({
   presentation?: boolean;
   /** The private invitation carried by the presentation link (validated on the server), if any. */
   invite?: DemoInvite;
+  /** The agency viewing its own demo through its invitation: its panel header and the download or generate actions. */
+  owner?: OwnerMode | null;
 }) {
   const { agency } = demo;
   const [pageUrl, setPageUrl] = useState("");
@@ -189,7 +217,8 @@ export function DemoView({
 
   return (
     <div className={`dv2-page ${agency.titleFont === "serif" ? "is-serif" : ""}`} style={brandStyle}>
-      {presentation && demo.banner && (
+      {owner && <OwnerHeader demo={demo} owner={owner} log={log} />}
+      {!owner && presentation && demo.banner && (
         <div className="dv2-banner" role="note">
           Demo preparada para {agency.name} ·{" "}
           <a href={ctaHref(demo.id, demo.agencyId)} {...external} onClick={() => log("demo_cta_click")}>
@@ -197,6 +226,7 @@ export function DemoView({
           </a>
         </div>
       )}
+      {!owner && (
       <header className="dv2-header">
         <div className="container">
           <Brand agency={agency} />
@@ -215,6 +245,7 @@ export function DemoView({
           </div>
         </div>
       </header>
+      )}
 
       <div className="container dv2-main">
         <section id="propiedad" className="dv2-heading" aria-labelledby="dv2-title">
@@ -238,8 +269,9 @@ export function DemoView({
           demo={demo}
           source={source}
           log={log}
-          sideAction={primary && primary.kind !== "listing" ? contactLink(primary, "dv2-contact-main") : null}
-          sideInvite={presentation && demo.prospect && invite ? <PanelInvite invite={invite} place="lateral" log={log} /> : null}
+          sideAction={!owner && primary && primary.kind !== "listing" ? contactLink(primary, "dv2-contact-main") : null}
+          sideInvite={!owner && presentation && demo.prospect && invite ? <PanelInvite invite={invite} place="lateral" log={log} /> : null}
+          owner={owner}
         />
         {demo.photos.some((p) => p.versions.length) && <p className="dv2-illustrative">{TEXT.illustrative}</p>}
 
@@ -352,8 +384,8 @@ export function DemoView({
         )}
 
         {/* Only on the team's presentation link of an agency without an account: buyers never see it. */}
-        {presentation && demo.prospect && invite && <PanelInvite invite={invite} place="final" log={log} />}
-        {presentation && demo.prospect && !invite && (
+        {!owner && presentation && demo.prospect && invite && <PanelInvite invite={invite} place="final" log={log} />}
+        {!owner && presentation && demo.prospect && !invite && (
           <section className="dv2-habita" aria-labelledby="dv2-habita">
             <div>
               <h2 id="dv2-habita">¿Te imaginás todas tus propiedades así?</h2>
@@ -406,7 +438,7 @@ export function DemoView({
           </span>
         </div>
       </footer>
-      {primary && <div className="dv2-sticky">{contactLink(primary, "dv2-contact-main")}</div>}
+      {primary && !owner && <div className="dv2-sticky">{contactLink(primary, "dv2-contact-main")}</div>}
     </div>
   );
 }
@@ -575,6 +607,7 @@ function Gallery({
   log,
   sideAction,
   sideInvite = null,
+  owner = null,
 }: {
   demo: PublicDemo;
   source: Source;
@@ -582,13 +615,15 @@ function Gallery({
   sideAction: React.ReactNode;
   /** The agency's way into its panel, right where it sees the result. */
   sideInvite?: React.ReactNode;
+  /** The agency's own view: every style with its download or generate action. */
+  owner?: OwnerMode | null;
 }) {
   const photos = demo.photos;
   const styleNames = useMemo(
     () => Object.fromEntries(demo.styles.map((s) => [s.id, s.name])) as Record<string, string>,
     [demo.styles],
   );
-  const name = (style: string) => styleNames[style] ?? style;
+  const name = (style: string) => styleNames[style] ?? demoStyleName(style);
   const [index, setIndex] = useState(0);
   // Remembered per photo during the visit.
   const [states, setStates] = useState<Record<string, PhotoState>>({});
@@ -683,7 +718,104 @@ function Gallery({
   const listed = allStyles
     ? photo.versions
     : photo.versions.filter((v, i) => i < VISIBLE_STYLES || v.style === state.style);
-  const panel = photo.versions.length > 0 && (
+  // The agency's own view: the original first, then the prepared versions and every other style of the catalog.
+  const ownerRows = owner
+    ? [
+        ...photo.versions.map((v) => ({ style: v.style, version: v as PhotoVersion | null })),
+        ...DEMO_STYLES[demo.propertyType].filter((c) => !photo.versions.some((v) => v.style === c.id)).map((c) => ({ style: c.id, version: null })),
+      ]
+    : [];
+  const ownerListed = allStyles ? ownerRows : ownerRows.filter((r, i) => i < OWNER_VISIBLE_STYLES || (r.version && r.style === state.style));
+  const ownerFile = (style: string | null) => `${fileSlug(`${demo.title}-${photo.label}-${style ? name(style) : "original"}`)}.jpg`;
+  const ownerPanel = owner && (
+    <section className="dv2-panel is-owner" aria-labelledby="dv2-panel-title">
+      <h2 id="dv2-panel-title">{panelTitle}</h2>
+      <p className="dv2-panel-hint">
+        {photo.versions.length ? "Elegí una propuesta preparada o generá otra." : "Esta foto todavía no tiene versiones: generá la primera."}
+      </p>
+      <ul className="dv2-owner-rows">
+        <li className={`dv2-owner-row ${state.style ? "" : "is-on"}`}>
+          <button type="button" aria-pressed={!state.style} onClick={backToOriginal}>
+            <img src={urlFor(source, photo.id, null, 480)} alt="" loading="lazy" />
+            <span>
+              <strong>Original</strong>
+              <small>{state.style ? "Ver original" : "Viendo el original"}</small>
+            </span>
+          </button>
+          <a
+            className="dv2-owner-action"
+            href={urlFor(source, photo.id, null, 2048)}
+            download={ownerFile(null)}
+            aria-label="Descargar el original"
+            onClick={() => log("demo_owner_download", { estilo: "original" })}
+          >
+            <Download size={16} aria-hidden="true" /> Descargar
+          </a>
+        </li>
+        {ownerListed.map((r) => {
+          const on = Boolean(r.version) && state.style === r.style;
+          return r.version ? (
+            <li key={r.style} className={`dv2-owner-row ${on ? "is-on" : ""}`}>
+              <button type="button" aria-pressed={on} onClick={() => choose(r.style)}>
+                <img src={urlFor(source, photo.id, r.version, 480)} alt="" loading="lazy" />
+                <span>
+                  <strong>{name(r.style)}</strong>
+                  <small>{on ? "Viendo ahora" : "Lista"}</small>
+                </span>
+              </button>
+              <a
+                className="dv2-owner-action"
+                href={urlFor(source, photo.id, r.version, 2048)}
+                download={ownerFile(r.style)}
+                aria-label={`Descargar ${name(r.style)}`}
+                onClick={() => log("demo_owner_download", { estilo: r.style })}
+              >
+                <Download size={16} aria-hidden="true" /> Descargar
+              </a>
+            </li>
+          ) : (
+            <li key={r.style} className="dv2-owner-row is-missing">
+              <span className="dv2-owner-info">
+                <img src={urlFor(source, photo.id, null, 480)} alt="" loading="lazy" />
+                <span>
+                  <strong>{name(r.style)}</strong>
+                  <small>Sin generar</small>
+                </span>
+              </span>
+              <a
+                className="dv2-owner-action is-generate"
+                href={owner.href}
+                aria-label={`Generar ${name(r.style)}`}
+                onClick={() => log("demo_agency_cta_clicked", { origen: "demo_generar", estilo: r.style })}
+              >
+                <Sparkles size={16} aria-hidden="true" /> Generar
+              </a>
+            </li>
+          );
+        })}
+      </ul>
+      {ownerRows.length > OWNER_VISIBLE_STYLES && (
+        <button type="button" className="dv2-more" aria-expanded={allStyles} onClick={() => setAllStyles((a) => !a)}>
+          {allStyles ? "Menos estilos" : `Más estilos (${ownerRows.length - ownerListed.length})`}
+          {allStyles ? <ChevronUp size={15} aria-hidden="true" /> : <ChevronDown size={15} aria-hidden="true" />}
+        </button>
+      )}
+      {stagedFailed && (
+        <p className="dv2-note is-error" role="alert">
+          No pudimos cargar esta ambientación. Seguís viendo la foto original.
+        </p>
+      )}
+      {state.style && !state.compare && !stagedFailed && (
+        <button type="button" className="dv2-secondary" onClick={() => setState({ ...state, compare: true })}>
+          {TEXT.compare}
+        </button>
+      )}
+      <p className="dv2-note">
+        <Info size={15} aria-hidden="true" /> Descargar no usa créditos. Generar te pide guardar tu panel y muestra el costo antes.
+      </p>
+    </section>
+  );
+  const panel = ownerPanel || (photo.versions.length > 0 && (
     <section className="dv2-panel" aria-labelledby="dv2-panel-title">
       <h2 id="dv2-panel-title">{panelTitle}</h2>
       <p className="dv2-panel-hint">Elegí una propuesta para esta foto.</p>
@@ -745,7 +877,7 @@ function Gallery({
         </p>
       )}
     </section>
-  );
+  ));
 
   return (
     <div className={`dv2-gallery ${panel ? "has-panel" : ""}`}>
@@ -939,5 +1071,84 @@ function PanelInvite({
         </small>
       )}
     </section>
+  );
+}
+
+/**
+ * The agency's own panel above its demo: who it is, its main sections and
+ * the actions that need the access. Every one of them goes through the
+ * private invitation; only this property is open here.
+ */
+function OwnerHeader({
+  demo,
+  owner,
+  log,
+}: {
+  demo: PublicDemo;
+  owner: OwnerMode;
+  log: (event: string, extra?: Record<string, unknown>) => unknown;
+}) {
+  const versions = demo.photos.reduce((n, p) => n + p.versions.length, 0);
+  const go = (origin: string) => ({ href: owner.href, onClick: () => log("demo_agency_cta_clicked", { origen: `demo_encabezado_${origin}` }) });
+  const initials = demo.agencyName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase())
+    .join("");
+  return (
+    <header className="dv2-owner">
+      <div className="dv2-owner-bar">
+        <div className="dv2-owner-brand">
+          {demo.agency.logo ? (
+            <img src={demo.agency.logo} alt="" className="dv2-owner-logo" />
+          ) : (
+            <span className="dv2-owner-logo" aria-hidden="true">
+              {initials}
+            </span>
+          )}
+          <span>
+            <strong>{demo.agencyName}</strong>
+            <small>Modo demostración</small>
+          </span>
+        </div>
+        <nav className="dv2-owner-nav" aria-label="Panel de la inmobiliaria">
+          <a {...go("inicio")}>
+            <Home size={17} aria-hidden="true" /> Inicio
+          </a>
+          <a href="#propiedad" aria-current="page" className="is-on">
+            <LayoutGrid size={17} aria-hidden="true" /> Mis propiedades <span className="dv2-owner-count">1</span>
+          </a>
+          <a {...go("imagenes")}>
+            <ImageIcon size={17} aria-hidden="true" /> Imágenes
+          </a>
+          <a {...go("creditos")}>
+            <CircleDollarSign size={17} aria-hidden="true" /> Créditos
+            {owner.freeCredits > 0 && <span className="dv2-owner-count">{owner.freeCredits} de regalo</span>}
+          </a>
+          <a className="dv2-owner-create-chip" {...go("crear_movil")}>
+            <Plus size={17} aria-hidden="true" /> Crear propiedad
+          </a>
+        </nav>
+        <div className="dv2-owner-ctas">
+          <a className="dv2-owner-create" {...go("crear")}>
+            <Plus size={17} aria-hidden="true" /> Crear propiedad
+          </a>
+          <a className="dv2-owner-save" {...go("guardar")}>
+            Guardar mi panel
+          </a>
+        </div>
+      </div>
+      <p className="dv2-owner-strip">
+        <span>
+          <strong>Modo demostración.</strong>{" "}
+          {versions ? `${versions} ${versions === 1 ? "versión lista" : "versiones listas"} para descargar gratis.` : "Generá versiones con IA desde tu panel."}{" "}
+          <span className="dv2-owner-strip-long">Para el resto de los estilos y fotos, tocá Generar.</span>
+        </span>
+        <a href={owner.buyerHref} onClick={() => log("demo_owner_buyer_view")}>
+          Ver como comprador
+        </a>
+      </p>
+    </header>
   );
 }

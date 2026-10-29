@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { DemoPanel } from "@/components/demo-panel";
+import { DemoView } from "@/components/demo-view";
+import { DEMO_STYLES } from "@/lib/demos/styles";
 import type { PublicDemo } from "@/lib/demos/shared";
 
 vi.mock("@/lib/analytics", () => ({ track: () => {}, registerSuperProperties: () => {} }));
@@ -43,24 +44,38 @@ const demo: PublicDemo = {
 };
 const INVITE = "/panel/empezar?codigo=codigoSecretoDeVeinteMasCaracteres&demo=tok";
 
-describe("the demo inside the agency's panel", () => {
-  const html = renderToStaticMarkup(<DemoPanel demo={demo} token="tok" invite={{ href: INVITE, freeCredits: 3 }} buyerHref="/demo/tok?vista=ficha" />);
+
+describe("the agency's own demo, under its panel header", () => {
+  const owner = { href: INVITE, freeCredits: 3, buyerHref: "/demo/tok?presentacion=1&vista=ficha" };
+  const html = renderToStaticMarkup(<DemoView demo={demo} source={{ kind: "public", token: "tok" }} presentation owner={owner} />);
   const hrefs = [...html.matchAll(/href="([^"]+)"/g)].map((m) => m[1].replace(/&amp;/g, "&"));
 
-  it("shows the agency, its property and the panel's sections", () => {
-    for (const text of ["Inmobiliaria de prueba", "Modo demostración", "Inicio", "Mi inmobiliaria", "Mis propiedades", "Departamento de prueba", "Crear propiedad", "Imágenes", "Créditos", "3 de regalo"])
+  it("shows the agency, the panel's sections and the whole listing", () => {
+    for (const text of ["Inmobiliaria de prueba", "Modo demostración", "Inicio", "Mis propiedades", "Imágenes", "Créditos", "3 de regalo", "Crear propiedad", "Guardar mi panel", "Ver como comprador", "Departamento de prueba"])
       expect(html).toContain(text);
+    expect(html).toContain('class="dv2-owner"');
+    expect(html).not.toContain("dv2-banner");
   });
 
   it("leads every saving action and every other section to the private invitation, never into the real panel", () => {
     const panel = hrefs.filter((h) => h.startsWith("/panel"));
     expect(panel.length).toBeGreaterThan(5);
     expect(panel.every((h) => h === INVITE)).toBe(true);
-    // The rest: the buyers' view, this page and the demo's own public images.
-    expect(hrefs.filter((h) => !h.startsWith("/panel")).every((h) => h === "/demo/tok?vista=ficha" || h === "#propiedad" || h.startsWith("/demo/tok/imagen/"))).toBe(true);
+    expect(hrefs.filter((h) => !h.startsWith("/panel")).every((h) => h === owner.buyerHref || h.startsWith("#") || h.startsWith("/demo/tok/imagen/"))).toBe(true);
   });
 
-  it("downloads the version on screen from the demo's public images, with no account", () => {
+  it("lists the original first, then four styles and the rest behind «Más estilos»", () => {
+    const rows = [...html.matchAll(/<li class="dv2-owner-row[^"]*">[\s\S]*?<strong>([^<]+)<\/strong>/g)].map((m) => m[1]);
+    expect(rows[0]).toBe("Original");
+    expect(rows.slice(1)).toHaveLength(4);
+    expect(rows[1]).toBe("Moderno");
+    expect(html).toContain(`Más estilos (${DEMO_STYLES.residential.length - 4})`);
+  });
+
+  it("downloads prepared versions from the public images and asks to generate the rest", () => {
     expect(html).toMatch(/href="\/demo\/tok\/imagen\/p1\?e=modern&amp;r=1&amp;w=2048" download="departamento-de-prueba-living-moderno\.jpg"/);
+    expect(html).toMatch(/href="\/demo\/tok\/imagen\/p1\?r=o&amp;w=2048" download="departamento-de-prueba-living-original\.jpg"/);
+    expect((html.match(/class="dv2-owner-row is-missing"/g) ?? []).length).toBe(3);
+    expect((html.match(/<\/svg> Generar<\/a>/g) ?? []).length).toBe(3);
   });
 });

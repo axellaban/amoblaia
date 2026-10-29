@@ -560,17 +560,24 @@ el píxel no carga si la URL o la página anterior tienen `codigo=`, Google reci
 `page_location` y `page_referrer` redactados, y PostHog redacta el código en
 `before_send`.
 
-**La demo dentro del panel** (`src/components/demo-panel.tsx`). Con una
-invitación vigente, el enlace de presentación ya no muestra la ficha de
-compradores: abre el panel de la inmobiliaria en «modo demostración».
+**La demo dentro del panel** (modo inmobiliaria de `src/components/demo-view.tsx`).
+Con una invitación vigente, el enlace de presentación muestra la misma ficha que
+ven los compradores, completa, con el panel de la inmobiliaria arriba en
+«modo demostración».
 
-- **Barra verde:** el logo y el nombre de la inmobiliaria, Inicio, Mi inmobiliaria
-  → Mis propiedades → la propiedad que está viendo, «Crear propiedad», Imágenes,
-  Créditos y Mi sitio web.
-- **Sin cuenta:** se puede mirar, comparar y descargar cada versión, porque las
-  imágenes son las públicas de la demo.
-- **Lo que pide acceso:** guardar, crear, publicar y el resto de las secciones
-  llevan a la invitación («Guardar mi panel»).
+- **Encabezado fijo verde:** el logo y el nombre de la inmobiliaria, Inicio,
+  Mis propiedades (1), Imágenes, Créditos (con los de regalo), «Crear propiedad»
+  y «Guardar mi panel». Debajo, el aviso de modo demostración y «Ver como
+  comprador». En el celular las secciones se deslizan en una fila.
+- **Estilos de cada foto:** arriba el original («Ver original»), después las
+  versiones preparadas y el resto del catálogo; se ven 4 y «Más estilos»
+  despliega los demás. Una versión preparada tiene «Descargar»; un estilo sin
+  preparar aparece grisado, nunca marcado, con «Generar».
+- **Sin cuenta:** se puede mirar, comparar y descargar el original y cada
+  versión preparada, porque las imágenes son las públicas de la demo.
+- **Lo que pide acceso:** «Generar», guardar, crear y el resto de las secciones
+  llevan a la invitación, que pide el acceso y muestra el costo antes de usar
+  créditos.
 - **Ficha de compradores:** «Ver como comprador» (`&vista=ficha`) la muestra con
   el acceso de siempre.
 - **Datos:** solo usa los datos públicos de la demo. No hay rutas ni permisos
