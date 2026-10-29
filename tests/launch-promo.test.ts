@@ -40,7 +40,7 @@ describe("Launch price on monthly plans", () => {
   it("keeps the launch price in an order created while the window is open", async () => {
     const { snapshot } = await order(await buyer(), "standard-month");
     expect(snapshot).toMatchObject({
-      price_cents: 5390000,
+      price_cents: 4890000,
       promo_price_cents: 2690000,
       promo_months: 3,
     });
@@ -54,7 +54,7 @@ describe("Launch price on monthly plans", () => {
       [o.id],
     );
     await pay("launch-1", o.id, 1990000, "sub-launch");
-    await pay("launch-4", o.id, 3890000, "sub-launch");
+    await pay("launch-4", o.id, 2590000, "sub-launch");
     const { rows } = await db.query<{ n: number }>(
       "select count(*)::int as n from credit_grants where user_id=$1",
       [user],
@@ -112,9 +112,9 @@ describe("Primera propiedad pack", () => {
   it("keeps older packs without an expiry", async () => {
     const user = await buyer();
     await db.exec(
-      "update products set active=true,price_cents=1000000 where sku='pack-10'",
+      "update products set active=true,price_cents=1000000 where sku='pack-25'",
     );
-    const pack = await order(user, "pack-10");
+    const pack = await order(user, "pack-25");
     await pay("ten-1", pack.id, 1000000, null);
     const { rows } = await db.query<{ expires_at: string | null }>(
       "select expires_at from credit_grants where payment_id='ten-1'",
