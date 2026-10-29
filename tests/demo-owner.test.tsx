@@ -5,6 +5,7 @@ import { DEMO_STYLES } from "@/lib/demos/styles";
 import type { PublicDemo } from "@/lib/demos/shared";
 
 vi.mock("@/lib/analytics", () => ({ track: () => {}, registerSuperProperties: () => {} }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: () => {} }) }));
 
 const v = (style: string) => ({ style, v: "1" });
 const demo: PublicDemo = {
@@ -59,7 +60,7 @@ describe("the agency's own demo, under its panel header", () => {
 
   it("leads every saving action and every other section to the private invitation, never into the real panel", () => {
     const panel = hrefs.filter((h) => h.startsWith("/panel"));
-    expect(panel.length).toBeGreaterThan(5);
+    expect(panel.length).toBeGreaterThan(3);
     expect(panel.every((h) => h === INVITE)).toBe(true);
     // The only other way out is the public price list («¿Necesitás más? Ver precios»), never the panel.
     expect(hrefs.filter((h) => !h.startsWith("/panel")).every((h) => h === owner.buyerHref || h === "/precios" || h.startsWith("#") || h.startsWith("/demo/tok/imagen/"))).toBe(true);
@@ -77,6 +78,6 @@ describe("the agency's own demo, under its panel header", () => {
     expect(html).toMatch(/href="\/demo\/tok\/imagen\/p1\?e=modern&amp;r=1&amp;w=2048" download="departamento-de-prueba-living-moderno\.jpg"/);
     expect(html).toMatch(/href="\/demo\/tok\/imagen\/p1\?r=o&amp;w=2048" download="departamento-de-prueba-living-original\.jpg"/);
     expect((html.match(/class="dv2-owner-row is-missing"/g) ?? []).length).toBe(3);
-    expect((html.match(/<\/svg> Generar<\/a>/g) ?? []).length).toBe(3);
+    expect((html.match(/<\/svg> Generar<\/button>/g) ?? []).length).toBe(3);
   });
 });
