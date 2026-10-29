@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { cache } from "react";
 import { DemoView } from "@/components/demo-view";
 import { publicSite } from "@/lib/agency/site";
@@ -36,7 +36,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function SitePropertyPage({ params }: Props) {
   const { slug, token } = await params;
   const found = await load(slug, token);
-  if (!found) notFound();
+  if (!found) {
+    // A link shared from the catalog keeps working after the catalog moves or is unpublished: the ficha is still public.
+    const demo = cloudConfigured() ? await publishedDemo(token).catch(() => null) : null;
+    if (demo) redirect(`/demo/${encodeURIComponent(token)}`);
+    notFound();
+  }
   return (
     <>
       <div className="as-back">
