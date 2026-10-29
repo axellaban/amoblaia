@@ -1175,14 +1175,17 @@ function ImportMany({ onDone, onSingle }: { onDone?: () => Promise<unknown>; onS
               </li>
             ))}
           </ul>
-          <button
-            type="button"
-            className="button button-primary"
-            disabled={running || !rows.some((r) => r.pick && r.state === "ready")}
-            onClick={() => void importPicked()}
-          >
-            Importar {rows.filter((r) => r.pick && r.state === "ready").length} como borradores
-          </button>
+          {/* Once everything readable was imported, nothing is left to import. */}
+          {(running || rows.some((r) => r.state === "ready")) && (
+            <button
+              type="button"
+              className="button button-primary"
+              disabled={running || !rows.some((r) => r.pick && r.state === "ready")}
+              onClick={() => void importPicked()}
+            >
+              Importar {rows.filter((r) => r.pick && r.state === "ready").length} como borradores
+            </button>
+          )}
         </>
       )}
     </div>

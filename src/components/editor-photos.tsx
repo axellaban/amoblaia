@@ -306,13 +306,13 @@ export function PhotoWorkspace({
             </span>
           </div>
           <div className="pw-strip" role="group" aria-label={`Fotos de ${activeGroup?.space?.name ?? "Sin organizar"}`}>
-            {(activeGroup?.photos ?? []).map((p) => (
+            {(activeGroup?.photos ?? []).map((p, i) => (
               <button
                 key={p.id}
                 type="button"
                 className="pw-thumb"
                 aria-pressed={p.id === photo.id}
-                aria-label={`${photoLabel(p)}${p.visible ? "" : " (oculta)"}`}
+                aria-label={`Foto ${i + 1}: ${photoLabel(p)}${p.visible ? "" : " (oculta)"}`}
                 onClick={() => setActiveId(p.id)}
               >
                 <img src={p.shown[mainStyle] ? adminGenerationUrl(p.shown[mainStyle], 480) : adminPhotoUrl(p.id, null, 480)} alt="" loading="lazy" />
