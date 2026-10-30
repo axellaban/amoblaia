@@ -55,7 +55,7 @@ describe("lead events", () => {
     await record([{ ...base, value: 20000 }]);
     await record([{ ...base, value: 50000 }]);
     await record([{ ...base, value: 10000 }]);
-    expect((await one<{ value: string }>("select value from lead_events where event_id='view-x:active'"))!.value).toBe("50000");
+    expect(Number((await one<{ value: string | number }>("select value from lead_events where event_id='view-x:active'"))!.value)).toBe(50000);
   });
 
   it("refuses unknown event names and keeps the browser out", async () => {
