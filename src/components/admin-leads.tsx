@@ -59,6 +59,7 @@ type Visitor = AgencyDetail["visitors"][number] & {
   score_breakdown?: { facts?: VisitorFacts };
   internal_reasons?: string[];
   aliases?: string[];
+  sessions?: string[];
 };
 
 export function LeadsApp() {
@@ -467,7 +468,7 @@ function AgencyView({ id, onClose, onChanged }: { id: string; onClose: () => voi
                   </td>
                   <td>
                     {formatWhen(v.last_event_at)}
-                    {(v.sessions as string[] | undefined)?.length ? <small>{(v.sessions as string[]).length} sesión(es)</small> : null}
+                    {v.sessions?.length ? <small>{v.sessions.length} sesión(es)</small> : null}
                   </td>
                   <td>
                     {(m || !v.is_internal) && (
