@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { DemoView } from "@/components/demo-view";
 import { requirePanelPage } from "@/lib/agency/page";
+import { inScope } from "@/lib/agency/server";
 import { demoRow, previewDemo } from "@/lib/demos/server";
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Vista previa de la ficha", robots: { index: false, follow: false } };
@@ -11,7 +12,7 @@ export default async function PreviewPropertyPage({ params }: { params: Promise<
   const { id } = await params;
   const { membership } = await requirePanelPage(`/panel/propiedades/${id}/vista-previa`);
   const row = await demoRow(id).catch(() => null);
-  if (!row || row.agency_id !== membership.agency.id) notFound();
+  if (!row || row.agency_id !== membership.agency.id || !inScope(membership, row.property_id)) notFound();
   const demo = await previewDemo(id).catch(() => null);
   if (!demo) notFound();
   return (

@@ -210,6 +210,8 @@ export type DemoDetail = {
    * with the same rule the quote and the reservation apply.
    */
   staging?: { payer: "team" | "agency"; blocked: string | null };
+  /** A user of the agency with a view-only access: nothing can be changed here. */
+  readOnly?: boolean;
 };
 
 export function roomName(id: string) {

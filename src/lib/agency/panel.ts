@@ -44,6 +44,8 @@ export type PropertyQuery = {
   operation?: string | null;
   /** "fotos" lists the photo groups that are not fichas yet. */
   kind?: "ficha" | "fotos";
+  /** Only these properties (demo_properties.id): a user limited to some of them. */
+  scope?: string[] | null;
 };
 type DemoListRow = {
   id: string;
@@ -64,11 +66,13 @@ export async function agencyProperties(agencyId: string, query: PropertyQuery = 
   const db = adminClient();
   const perPage = Math.min(48, Math.max(1, Math.trunc(query.perPage ?? 24)));
   const page = Math.max(1, Math.trunc(query.page ?? 1));
+  if (query.scope && !query.scope.length) return { items: [], total: 0 };
   let list = db
     .from("demos")
     .select("id,property_id,token,status,cover_photo_id,created_at,settings,demo_properties!inner(title,location,listing_url,origin)", { count: "exact" })
     .eq("agency_id", agencyId)
     .eq("kind", query.kind ?? "ficha");
+  if (query.scope) list = list.in("property_id", query.scope);
   if (query.status === "draft" || query.status === "published") list = list.eq("status", query.status);
   const op = query.operation?.trim().slice(0, 40);
   if (op) list = list.eq("settings->>operation", op);
@@ -183,21 +187,44 @@ export async function agencyCredits(ownerId: string | null): Promise<number | nu
   }
 }
 
-/** Everything the panel's home shows. */
+/**
+ * Totals of a user limited to some properties, from those properties only
+ * (a handful: bounded by what was assigned).
+ */
+async function scopedCounts(agencyId: string, scope: string[]) {
+  const all: PanelProperty[] = [];
+  for (let page = 1; page <= Math.ceil(scope.length / 48); page++) {
+    const { items } = await agencyProperties(agencyId, { scope, perPage: 48, page });
+    all.push(...items);
+    if (items.length < 48) break;
+  }
+  return {
+    total: all.length,
+    published: all.filter((p) => p.status === "published").length,
+    staged: all.filter((p) => p.staged > 0).length,
+    review: all.filter((p) => p.versions.issues > 0).length,
+    operations: [...new Set(all.map((p) => p.operation).filter((o): o is string => Boolean(o)))],
+  };
+}
+
+/** Everything the panel's home shows: for a limited user, only its properties. */
 export async function panelSummary(membership: Membership): Promise<PanelSummary> {
-  const { agency } = membership;
+  const { agency, scope } = membership;
   const db = adminClient();
   const [branding, latest, counts, imports, credits] = await Promise.all([
     brandingOf(agency.id),
-    agencyProperties(agency.id, { perPage: 6 }),
-    agencyCounts(agency.id),
-    db
-      .from("property_imports")
-      .select("id,url,status,error,created_at,demo_id,photos_total,photos_done,pending_images,settings_saved")
-      .eq("agency_id", agency.id)
-      .in("status", ["partial", "failed"])
-      .order("created_at", { ascending: false })
-      .limit(10),
+    agencyProperties(agency.id, { perPage: 6, scope }),
+    scope ? scopedCounts(agency.id, scope) : agencyCounts(agency.id),
+    // Imports to finish are the agency's, not of a user limited to some properties.
+    scope
+      ? Promise.resolve({ data: [], error: null })
+      : db
+          .from("property_imports")
+          .select("id,url,status,error,created_at,demo_id,photos_total,photos_done,pending_images,settings_saved")
+          .eq("agency_id", agency.id)
+          .in("status", ["partial", "failed"])
+          .order("created_at", { ascending: false })
+          .limit(10),
     agencyCredits(agency.owner_id),
   ]);
   if (imports.error) throw new Error("PANEL_IMPORTS_FAILED");
@@ -214,6 +241,7 @@ export async function panelSummary(membership: Membership): Promise<PanelSummary
       contactValue: branding.contactValue ?? null,
     },
     role: membership.role,
+    scope,
     credits,
     counts: { ...counts, drafts: counts.total - counts.published },
     properties: latest.items,

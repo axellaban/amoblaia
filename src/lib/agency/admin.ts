@@ -7,6 +7,7 @@ import { agencyCredits } from "./panel";
 import { claimHash } from "./server";
 import { claimState, type AdminAgencyDetail, type AdminAgencyRow } from "./stage";
 import { presentationPath } from "./demo-invite";
+import type { AgencyRole } from "./shared";
 
 const CLAIM_DAYS = 30;
 
@@ -136,8 +137,8 @@ export async function adminAgency(id: string): Promise<AdminAgencyDetail> {
       revokedAt: c.revoked_at,
       state: claimState(c, now),
     })),
-    members: ((members.data ?? []) as { user_id: string; role: "owner" | "collaborator"; created_at: string }[]).map((m) => ({
-      role: m.role,
+    members: ((members.data ?? []) as { user_id: string; role: AgencyRole | "collaborator"; created_at: string }[]).map((m) => ({
+      role: m.role === "collaborator" ? ("editor" as const) : m.role,
       since: m.created_at,
     })),
     imports: ((imports.data ?? []) as {

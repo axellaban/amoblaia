@@ -1,7 +1,32 @@
 // What the agency panel and the agency's public site share with the browser.
 // Pure: no database, no secrets.
 
-export type AgencyRole = "owner" | "collaborator";
+/**
+ * Who works for an agency and what they may do. owner: the account that
+ * pays (one per agency), everything. admin: everything but buying credits.
+ * editor: creates, edits, stages and publishes properties. viewer: only looks.
+ */
+export type AgencyRole = "owner" | "admin" | "editor" | "viewer";
+export type InvitedRole = Exclude<AgencyRole, "owner">;
+export const INVITED_ROLES: InvitedRole[] = ["admin", "editor", "viewer"];
+export const ROLE_LABEL: Record<AgencyRole, string> = {
+  owner: "Dueño",
+  admin: "Administrador",
+  editor: "Edición",
+  viewer: "Solo vista",
+};
+export const ROLE_HELP: Record<InvitedRole, string> = {
+  admin: "Todo, menos comprar créditos: propiedades, sitio web y usuarios.",
+  editor: "Carga, edita, ambienta con IA y publica propiedades.",
+  viewer: "Ve las propiedades y comparte sus enlaces. No cambia nada.",
+};
+/** Site, branding, deleting properties and users. */
+export const canManage = (role: AgencyRole) => role === "owner" || role === "admin";
+/** Properties: creating, editing, staging and publishing. */
+export const canEdit = (role: AgencyRole) => role !== "viewer";
+/** Only editors and viewers may be limited to some properties. */
+export const scopable = (role: AgencyRole) => role === "editor" || role === "viewer";
+export const READ_ONLY_ROLE = "Tu usuario es de solo vista: pedile a un administrador de la inmobiliaria que cambie tu acceso.";
 
 /** "Russillo Asesores Inmobiliarios" → "russillo-asesores-inmobiliarios" (3–42 characters). */
 export function slugify(name: string) {
@@ -73,6 +98,8 @@ export type PanelSummary = {
     contactValue: string | null;
   };
   role: AgencyRole;
+  /** The properties this user is limited to (null: all of them). */
+  scope: string[] | null;
   /** The agency's balance (its owner's credits); null when it could not be read. */
   credits: number | null;
   counts: { total: number; published: number; drafts: number; staged: number; review: number; operations: string[] };
@@ -83,6 +110,26 @@ export type PanelSummary = {
   /** A team member looking at this panel in a support view (read only). */
   support?: boolean;
 };
+
+/** One user of the agency in "Usuarios": an account that joined, or an access whose link is not used yet. */
+export type TeamMember = {
+  /** The account (members) or the access (pending). */
+  id: string;
+  kind: "member" | "pending";
+  name: string | null;
+  email: string | null;
+  role: AgencyRole;
+  /** The properties it is limited to, null: all. */
+  properties: string[] | null;
+  you: boolean;
+  createdAt: string;
+  /** Pending: when its link stops working. */
+  expiresAt?: string;
+};
+export type TeamProperty = { id: string; title: string; location: string | null; reference: string | null };
+
+/** The link an employee opens to enter with their access. */
+export const joinPath = (code: string) => `/panel/unirme?${new URLSearchParams({ codigo: code })}`;
 
 /** A slug as the database accepts it: lowercase letters, digits and dashes. */
 export const validSlug = (s: unknown): s is string =>

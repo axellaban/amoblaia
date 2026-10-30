@@ -19,6 +19,7 @@ import {
   Search,
   Share2,
   Sparkles,
+  Users,
 } from "lucide-react";
 import { ApiError, api } from "./admin-demos";
 import { ImportPreview, MapReview, exceptions, initialMapChoice, mapOverride, syncPhotos, type MapChoice } from "./demo-import";
@@ -26,25 +27,38 @@ import { track, trackMilestone } from "@/lib/analytics";
 import { cta } from "@/lib/interaction-tracking";
 import { registerAgency, useSignupTracking } from "@/lib/signup-tracking";
 import { shareLink } from "@/lib/agency/share";
-import { agencySitePath, nextAction, propertyLink, type PanelImport, type PanelProperty, type PanelSummary } from "@/lib/agency/shared";
+import {
+  agencySitePath,
+  canEdit,
+  canManage,
+  nextAction,
+  propertyLink,
+  ROLE_LABEL,
+  type AgencyRole,
+  type PanelImport,
+  type PanelProperty,
+  type PanelSummary,
+} from "@/lib/agency/shared";
 import type { ImportedDemo } from "@/lib/demos/import";
 import { adminPhotoUrl } from "@/lib/demos/shared";
 
-type Section = "inicio" | "propiedades" | "creditos" | "sitio";
-const SECTIONS: { id: Section; href: string; label: string; icon: typeof Home }[] = [
+type Section = "inicio" | "propiedades" | "creditos" | "sitio" | "usuarios";
+const SECTIONS: { id: Section; href: string; label: string; icon: typeof Home; managers?: boolean }[] = [
   { id: "inicio", href: "/panel", label: "Inicio", icon: Home },
   { id: "propiedades", href: "/panel/propiedades", label: "Mis propiedades", icon: LayoutGrid },
   { id: "creditos", href: "/panel/creditos", label: "Créditos IA", icon: CreditCard },
-  { id: "sitio", href: "/panel/sitio", label: "Mi sitio web", icon: Globe },
+  { id: "sitio", href: "/panel/sitio", label: "Mi sitio web", icon: Globe, managers: true },
+  { id: "usuarios", href: "/panel/usuarios", label: "Usuarios", icon: Users, managers: true },
 ];
 
-export function PanelNav({ section, agencyName }: { section: Section; agencyName?: string }) {
+/** The panel's sections; the site and users only for the owner and administrators. */
+export function PanelNav({ section, agencyName, role }: { section: Section; agencyName?: string; role?: AgencyRole }) {
   return (
     <div className="ap-nav-wrap">
       <nav className="container ap-nav" aria-label="Panel de la inmobiliaria">
         {agencyName && <strong className="ap-nav-name">{agencyName}</strong>}
         <div className="ap-nav-links">
-          {SECTIONS.map(({ id, href, label, icon: Icon }) => (
+          {SECTIONS.filter((s) => !s.managers || (role && canManage(role))).map(({ id, href, label, icon: Icon }) => (
             <Link
               key={id}
               href={href}
@@ -96,7 +110,7 @@ export function AgencyPanel({ section }: { section: Section }) {
   }, [load]);
   return (
     <>
-      <PanelNav section={section} agencyName={data?.agency.name} />
+      <PanelNav section={section} agencyName={data?.agency.name} role={data?.role} />
       <div className="account-page container ap-page">
         {error && <RetryRow error={error} busy={loading} onRetry={() => void load()} />}
         {!data ? (
@@ -114,6 +128,9 @@ export function AgencyPanel({ section }: { section: Section }) {
     </>
   );
 }
+
+/** New properties and imports: not viewers, nor users limited to some properties. */
+const canCreate = (d: PanelSummary) => canEdit(d.role) && !d.scope;
 
 /** The one thing to do next, from the agency's real state. */
 function nextStep(d: PanelSummary): { text: string; href: string; action: string } | null {
@@ -135,17 +152,28 @@ function nextStep(d: PanelSummary): { text: string; href: string; action: string
 }
 
 function PanelHome({ data, reload }: { data: PanelSummary; reload: () => Promise<unknown> }) {
-  const step = nextStep(data);
-  const firstSteps = data.counts.published === 0;
+  const editor = canEdit(data.role);
+  const creator = canCreate(data);
+  const step = editor ? nextStep(data) : null;
+  const firstSteps = creator && data.counts.published === 0;
   return (
     <>
       <div className="ap-head">
         <div>
-          <span className="eyebrow">Tu inmobiliaria</span>
+          <span className="eyebrow">
+            Tu inmobiliaria{data.role !== "owner" ? ` · ${ROLE_LABEL[data.role]}` : ""}
+          </span>
           <h1>{data.agency.name}</h1>
         </div>
         <SiteLink agency={data.agency} />
       </div>
+      {(!editor || data.scope) && (
+        <p className="inline-notice" role="note">
+          {!editor
+            ? "Tu usuario es de solo vista: podés ver las propiedades y compartir sus enlaces."
+            : "Tu usuario trabaja en las propiedades que te asignaron."}
+        </p>
+      )}
       {step && (
         <section className="ap-next" aria-label="Siguiente paso">
           <p>{step.text}</p>
@@ -154,6 +182,7 @@ function PanelHome({ data, reload }: { data: PanelSummary; reload: () => Promise
           </Link>
         </section>
       )}
+      {creator && (
       <div className="ap-entries">
         <section className="ap-import-hero" aria-labelledby="ap-import-title">
           <h2 id="ap-import-title">Crear demostraciones</h2>
@@ -191,6 +220,7 @@ function PanelHome({ data, reload }: { data: PanelSummary; reload: () => Promise
           <p className="dm-help">Importar no genera imágenes ni usa créditos. Publicar la ficha es una acción aparte.</p>
         </section>
       </div>
+      )}
       {firstSteps && (
         <ol className="ap-steps" aria-label="Primeros pasos">
           <li className={data.counts.total ? "is-done" : ""}>Agregá una propiedad pegando su enlace</li>
@@ -225,7 +255,7 @@ function PanelHome({ data, reload }: { data: PanelSummary; reload: () => Promise
           </dd>
         </div>
       </dl>
-      {data.imports.length > 0 && (
+      {creator && data.imports.length > 0 && (
         <section className="account-panel" aria-labelledby="ap-imports-title">
           <h2 id="ap-imports-title">Importaciones pendientes</h2>
           <ul className="ap-failed">
@@ -245,11 +275,13 @@ function PanelHome({ data, reload }: { data: PanelSummary; reload: () => Promise
         {data.properties.length ? (
           <div className="ap-grid">
             {data.properties.map((p) => (
-              <PropertyCard key={p.id} property={p} agency={data.agency} reload={reload} canDelete={data.role === "owner"} backTo="/panel" />
+              <PropertyCard key={p.id} property={p} agency={data.agency} reload={reload} canDelete={canManage(data.role)} canPublish={canEdit(data.role)} backTo="/panel" />
             ))}
           </div>
         ) : (
-          <p className="ap-empty">Todavía no cargaste propiedades. Pegá el enlace de una publicación para empezar.</p>
+          <p className="ap-empty">
+            {data.scope ? "Todavía no te asignaron propiedades." : creator ? "Todavía no cargaste propiedades. Pegá el enlace de una publicación para empezar." : "Todavía no hay propiedades cargadas."}
+          </p>
         )}
       </section>
     </>
@@ -431,9 +463,11 @@ function PropertiesSection({ data, reload }: { data: PanelSummary; reload: () =>
           <span className="eyebrow">{data.agency.name}</span>
           <h1>Mis propiedades</h1>
         </div>
-        <button type="button" className="button button-primary" aria-expanded={adding} onClick={() => setAdding((a) => !a)}>
-          + Agregar propiedad
-        </button>
+        {canCreate(data) && (
+          <button type="button" className="button button-primary" aria-expanded={adding} onClick={() => setAdding((a) => !a)}>
+            + Agregar propiedad
+          </button>
+        )}
       </div>
       {adding && (
         <section className="ap-import-hero">
@@ -479,11 +513,11 @@ function PropertiesSection({ data, reload }: { data: PanelSummary; reload: () =>
             {q || status || operation ? " con estos filtros" : ""}
           </p>
           {view === "tabla" ? (
-            <PropertyTable items={result.items} agency={data.agency} reload={refresh} canDelete={data.role === "owner"} backTo={backHere} />
+            <PropertyTable items={result.items} agency={data.agency} reload={refresh} canDelete={canManage(data.role)} canPublish={canEdit(data.role)} backTo={backHere} />
           ) : (
             <div className="ap-grid">
               {result.items.map((p) => (
-                <PropertyCard key={p.id} property={p} agency={data.agency} reload={refresh} canDelete={data.role === "owner"} backTo={backHere} />
+                <PropertyCard key={p.id} property={p} agency={data.agency} reload={refresh} canDelete={canManage(data.role)} canPublish={canEdit(data.role)} backTo={backHere} />
               ))}
             </div>
           )}
@@ -502,7 +536,9 @@ function PropertiesSection({ data, reload }: { data: PanelSummary; reload: () =>
           )}
         </>
       ) : (
-        <p className="ap-empty">{data.counts.total ? "Ninguna propiedad coincide con la búsqueda." : "Todavía no cargaste propiedades."}</p>
+        <p className="ap-empty">
+          {data.counts.total ? "Ninguna propiedad coincide con la búsqueda." : data.scope ? "Todavía no te asignaron propiedades." : "Todavía no cargaste propiedades."}
+        </p>
       )}
     </>
   );
@@ -580,7 +616,19 @@ function ActionNote({ note }: { note: Note }) {
 }
 
 /** The secondary actions of a property, in an accessible menu (details/summary). */
-function MoreMenu({ p, actions, canDelete, backTo }: { p: PanelProperty; actions: ReturnType<typeof usePropertyActions>; canDelete: boolean; backTo: string }) {
+function MoreMenu({
+  p,
+  actions,
+  canDelete,
+  canPublish,
+  backTo,
+}: {
+  p: PanelProperty;
+  actions: ReturnType<typeof usePropertyActions>;
+  canDelete: boolean;
+  canPublish: boolean;
+  backTo: string;
+}) {
   return (
     <details className="ap-menu">
       <summary aria-label={`Más acciones de ${p.title}`}>
@@ -590,7 +638,7 @@ function MoreMenu({ p, actions, canDelete, backTo }: { p: PanelProperty; actions
         <Link href={editorLink(p.id, "fotos", backTo)}>
           <Sparkles size={14} aria-hidden="true" /> Fotos y espacios
         </Link>
-        <Link href={editorLink(p.id, "datos", backTo)}>Editar datos</Link>
+        {canPublish && <Link href={editorLink(p.id, "datos", backTo)}>Editar datos</Link>}
         {actions.live ? (
           <a href={actions.link} target="_blank" rel="noopener noreferrer">
             <ExternalLink size={14} aria-hidden="true" /> Ver ficha
@@ -600,9 +648,11 @@ function MoreMenu({ p, actions, canDelete, backTo }: { p: PanelProperty; actions
             <ExternalLink size={14} aria-hidden="true" /> Vista previa
           </Link>
         )}
-        <button type="button" disabled={actions.busy} onClick={() => void actions.publish()}>
-          {actions.live ? "Despublicar ficha" : "Publicar ficha"}
-        </button>
+        {canPublish && (
+          <button type="button" disabled={actions.busy} onClick={() => void actions.publish()}>
+            {actions.live ? "Despublicar ficha" : "Publicar ficha"}
+          </button>
+        )}
         {canDelete && (
           <button type="button" className="ap-danger" disabled={actions.busy} onClick={() => void actions.remove()}>
             Eliminar
@@ -618,12 +668,14 @@ function PropertyCard({
   agency,
   reload,
   canDelete,
+  canPublish,
   backTo,
 }: {
   property: PanelProperty;
   agency: PanelSummary["agency"];
   reload: () => Promise<unknown>;
   canDelete: boolean;
+  canPublish: boolean;
   backTo: string;
 }) {
   const actions = usePropertyActions(p, agency, reload);
@@ -661,7 +713,7 @@ function PropertyCard({
               {next.label}
             </Link>
           )}
-          <MoreMenu p={p} actions={actions} canDelete={canDelete} backTo={backTo} />
+          <MoreMenu p={p} actions={actions} canDelete={canDelete} canPublish={canPublish} backTo={backTo} />
         </div>
         <ActionNote note={actions.note} />
       </div>
@@ -674,12 +726,14 @@ function PropertyTable({
   agency,
   reload,
   canDelete,
+  canPublish,
   backTo,
 }: {
   items: PanelProperty[];
   agency: PanelSummary["agency"];
   reload: () => Promise<unknown>;
   canDelete: boolean;
+  canPublish: boolean;
   backTo: string;
 }) {
   return (
@@ -700,7 +754,7 @@ function PropertyTable({
         </thead>
         <tbody>
           {items.map((p) => (
-            <PropertyRow key={p.id} p={p} agency={agency} reload={reload} canDelete={canDelete} backTo={backTo} />
+            <PropertyRow key={p.id} p={p} agency={agency} reload={reload} canDelete={canDelete} canPublish={canPublish} backTo={backTo} />
           ))}
         </tbody>
       </table>
@@ -713,12 +767,14 @@ function PropertyRow({
   agency,
   reload,
   canDelete,
+  canPublish,
   backTo,
 }: {
   p: PanelProperty;
   agency: PanelSummary["agency"];
   reload: () => Promise<unknown>;
   canDelete: boolean;
+  canPublish: boolean;
   backTo: string;
 }) {
   const actions = usePropertyActions(p, agency, reload);
@@ -751,7 +807,7 @@ function PropertyRow({
             {next.label}
           </Link>
         )}
-        <MoreMenu p={p} actions={actions} canDelete={canDelete} backTo={backTo} />
+        <MoreMenu p={p} actions={actions} canDelete={canDelete} canPublish={canPublish} backTo={backTo} />
       </td>
     </tr>
   );
@@ -1341,7 +1397,7 @@ function SiteSection({ data, setData, reload }: { data: PanelSummary; setData: (
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
-  const owner = data.role === "owner";
+  const owner = canManage(data.role);
   const changed = (Object.keys(initial) as (keyof typeof initial)[]).filter((k) => form[k] !== initial[k]);
   const dirty = changed.length > 0;
   // Unsaved changes are not lost by leaving the page by accident.
@@ -1407,7 +1463,7 @@ function SiteSection({ data, setData, reload }: { data: PanelSummary; setData: (
         </div>
         <SiteLink agency={a} />
       </div>
-      {!owner && <p className="inline-notice">Solo el dueño de la inmobiliaria puede cambiar el sitio.</p>}
+      {!owner && <p className="inline-notice">Solo el dueño o un administrador de la inmobiliaria pueden cambiar el sitio.</p>}
       {error && (
         <p className="inline-error" role="alert">
           {error}

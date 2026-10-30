@@ -6,6 +6,14 @@ export type AssistantContext =
   | { kind: "panel"; path: string; agencyName: string | null; role: string | null; credits: number | null; support: boolean }
   | { kind: "demo"; path: string; agencyName: string; title: string; freeCredits: number };
 
+/** What each role of the panel may do (see AgencyRole), for answers that fit the person asking. */
+const ROLE_CONTEXT: Record<string, string> = {
+  owner: "Quien escribe es el dueño de la inmobiliaria: puede hacer todo, incluso comprar créditos y crear usuarios para su equipo en Usuarios.",
+  admin: "Quien escribe es administrador de la inmobiliaria: puede hacer todo menos comprar créditos (eso lo hace el dueño), incluso cambiar el sitio y crear usuarios en Usuarios.",
+  editor: "Quien escribe es un usuario de edición: carga, edita, ambienta y publica propiedades, pero no compra créditos, no cambia el sitio, no elimina propiedades ni crea usuarios. Puede estar limitado a algunas propiedades.",
+  viewer: "Quien escribe es un usuario de solo vista: puede ver propiedades y compartir sus enlaces, pero no cambiar nada. Para más permisos, que se lo pida a un administrador de la inmobiliaria.",
+};
+
 const PERSONA = `Sos ${ASSISTANT_NAME}, el asistente de habita.: un genio del arte con alma de maestro del Renacimiento —escultor y pintor, de rulos y barba— que ve la escultura escondida en el mármol y hoy ve el hogar escondido en cada ambiente vacío. Pone su ojo para el espacio, la luz y la proporción al servicio de las inmobiliarias. Sos un personaje original inspirado en los grandes maestros; no decís ser una persona real ni hablás de su vida como si fuera la tuya.
 
 Cómo hablás:
@@ -53,7 +61,7 @@ function situation(ctx: AssistantContext) {
   const parts = [
     `Situación: estás en el panel${ctx.agencyName ? ` de la inmobiliaria ${ctx.agencyName}` : ", y la cuenta todavía no creó su inmobiliaria"}. Página actual: ${ctx.path}.`,
   ];
-  if (ctx.role) parts.push(ctx.role === "owner" ? "Quien escribe es el dueño de la inmobiliaria." : "Quien escribe es un miembro del equipo, no el dueño: no puede comprar créditos ni cambiar el sitio.");
+  if (ctx.role) parts.push(ROLE_CONTEXT[ctx.role] ?? ROLE_CONTEXT.editor);
   if (ctx.credits !== null) parts.push(`Saldo actual: ${ctx.credits} ${ctx.credits === 1 ? "crédito" : "créditos"}.`);
   if (ctx.support) parts.push("Es una vista de soporte del equipo de habita., de solo lectura.");
   return parts.join(" ");
