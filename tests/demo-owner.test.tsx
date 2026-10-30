@@ -5,7 +5,8 @@ import { DEMO_STYLES } from "@/lib/demos/styles";
 import type { PublicDemo } from "@/lib/demos/shared";
 
 vi.mock("@/lib/analytics", () => ({ track: () => {}, trackMilestone: () => {}, registerSuperProperties: () => {}, registerSuperPropertiesOnce: () => {} }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: () => {} }) }));
+let pathname = "/demo/tok/presentacion/codigo";
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: () => {} }), usePathname: () => pathname }));
 
 const v = (style: string) => ({ style, v: "1" });
 const demo: PublicDemo = {
@@ -47,12 +48,18 @@ const INVITE = "/panel/empezar?codigo=codigoSecretoDeVeinteMasCaracteres&demo=to
 
 
 describe("the agency's own demo, under its panel header", () => {
-  const owner = { href: INVITE, freeCredits: 3, buyerHref: "/demo/tok?presentacion=1&vista=ficha" };
+  const owner = {
+    href: INVITE,
+    freeCredits: 3,
+    buyerHref: "/demo/tok/presentacion/codigo/ficha",
+    demoHref: "/demo/tok/presentacion/codigo",
+    pricesHref: "/demo/tok/presentacion/codigo/precios",
+  };
   const html = renderToStaticMarkup(<DemoView demo={demo} source={{ kind: "public", token: "tok" }} presentation owner={owner} />);
   const hrefs = [...html.matchAll(/href="([^"]+)"/g)].map((m) => m[1].replace(/&amp;/g, "&"));
 
   it("shows the agency, the panel's sections and the whole listing", () => {
-    for (const text of ["Inmobiliaria de prueba", "Modo demostración", "Inicio", "Mis propiedades", "Imágenes", "Créditos", "3 de regalo", "Crear propiedad", "Guardar mi panel", "Ver como comprador", "Departamento de prueba"])
+    for (const text of ["Inmobiliaria de prueba", "Modo demostración", "Inicio", "Mis propiedades", "Imágenes", "Créditos", "Precios", "3 de regalo", "Crear propiedad", "Guardar mi panel", "Ver como comprador", "Departamento de prueba"])
       expect(html).toContain(text);
     expect(html).toContain('class="dv2-owner"');
     expect(html).not.toContain("dv2-banner");
@@ -62,8 +69,9 @@ describe("the agency's own demo, under its panel header", () => {
     const panel = hrefs.filter((h) => h.startsWith("/panel"));
     expect(panel.length).toBeGreaterThan(3);
     expect(panel.every((h) => h === INVITE)).toBe(true);
-    // The only other way out is the public price list («¿Necesitás más? Ver precios»), never the panel.
-    expect(hrefs.filter((h) => !h.startsWith("/panel")).every((h) => h === owner.buyerHref || h === "/precios" || h.startsWith("#") || h.startsWith("/demo/tok/imagen/"))).toBe(true);
+    // The only other ways out are the buyers' view and the plans, both inside the agency's environment.
+    expect(hrefs.filter((h) => !h.startsWith("/panel")).every((h) => h === owner.buyerHref || h === owner.pricesHref || h.startsWith("#") || h.startsWith("/demo/tok/imagen/"))).toBe(true);
+    expect(hrefs).not.toContain("/precios");
   });
 
   it("lists the original first, then four styles and the rest behind «Más estilos»", () => {
@@ -79,5 +87,37 @@ describe("the agency's own demo, under its panel header", () => {
     expect(html).toMatch(/href="\/demo\/tok\/imagen\/p1\?r=o&amp;w=2048" download="departamento-de-prueba-living-original\.jpg"/);
     expect((html.match(/class="dv2-owner-row is-missing"/g) ?? []).length).toBe(3);
     expect((html.match(/<\/svg> Generar<\/button>/g) ?? []).length).toBe(3);
+  });
+});
+
+describe("the agency's plans, from its link …/precios", () => {
+  const owner = {
+    href: INVITE,
+    freeCredits: 3,
+    buyerHref: "/demo/tok/presentacion/codigo/ficha",
+    demoHref: "/demo/tok/presentacion/codigo",
+    pricesHref: "/demo/tok/presentacion/codigo/precios",
+  };
+  const render = (path: string) => {
+    pathname = path;
+    return renderToStaticMarkup(
+      <DemoView demo={demo} source={{ kind: "public", token: "tok" }} presentation owner={owner} plans={<p>Planes de habita</p>} />,
+    );
+  };
+
+  it("keeps the agency's bar and shows the plans under it, with the property hidden until it goes back", () => {
+    const html = render(owner.pricesHref);
+    expect(html).toContain('class="dv2-owner"');
+    expect(html).toContain("Planes de habita");
+    expect(html).toContain("Volver a la propiedad");
+    expect(html).toMatch(/class="container dv2-main" hidden=""/);
+    expect(html).toMatch(/<a href="\/demo\/tok\/presentacion\/codigo\/precios" aria-current="page" class="is-on"/);
+    expect(html.indexOf('class="dv2-owner"')).toBeLessThan(html.indexOf("Planes de habita"));
+  });
+
+  it("shows the property, not the plans, on the presentation itself", () => {
+    const html = render(owner.demoHref);
+    expect(html).not.toContain("Planes de habita");
+    expect(html).not.toMatch(/dv2-main" hidden/);
   });
 });

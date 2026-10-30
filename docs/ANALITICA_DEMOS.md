@@ -95,15 +95,16 @@ CTAs instrumentados:
 | `owner_my_properties` | Mis propiedades | `section_property` |
 | `owner_credits` | Créditos (abre el menú) | `credits_menu` |
 | `owner_generate_menu` | Generar sin registrarte | `styles_panel` |
-| `owner_pricing` | Ver precios | `pricing_drawer` |
-| `prices_back` | ← Volver a la demo | `demo` |
+| `owner_pricing` | Ver precios (menú Créditos) | `pricing_section` |
+| `owner_nav_pricing` | Precios (barra de la inmobiliaria) | `pricing_section` |
+| `prices_back` | ← Volver a la propiedad | `demo` |
 | `owner_buyer_view` | Ver como comprador | `demo_buyer_view` |
 | `owner_download` | Descargar (original o estilo) | `file_download` |
 | `owner_generate` | Generar (estilo sin versión) | `ai_generation` |
 | `invite_panel_lateral`, `invite_panel_final` | Probar esta propiedad en mi panel | `signup_invitation` |
 | `create_agency` | Crear mi inmobiliaria gratis | `agency_signup` |
 | `banner_by_habita` | «Por habita.» de la franja | `habita_studio` |
-| `pricing_buy_pack`, `pricing_buy_plan`, `pricing_buy_first_pack` | Comprar en /precios y en el cajón de precios de la demo (`cta_location` con prefijo `demo_prices_`) | `checkout` o `signup_invitation` |
+| `pricing_buy_pack`, `pricing_buy_plan`, `pricing_buy_first_pack` | Comprar en /precios y en la sección Precios de la demo (`cta_location` con prefijo `demo_prices_`) | `checkout` o `signup_invitation` |
 | `contact_whatsapp`, `contact_url`, `contact_phone`, `contact_email`, `contact_listing`, `schedule_visit`, `agency_website`, `open_map` | Contacto del comprador con la inmobiliaria | canal |
 | `nav_property`, `nav_location`, `nav_contact` | Navegación de secciones | sección |
 | `signup_create_account`, `signup_have_account`, `go_to_panel`, `invitation_google`, `invitation_back_to_demo`, `google_signin` | Alta y acceso | `auth_signup`, `auth_login`, `panel_home`, `google_oauth`, `demo` |
@@ -150,8 +151,12 @@ la visita es la **suma**. `active_ms` (visible y con actividad en los últimos
 
 ### Precios y generación en la demo
 
-- `demo_prices_closed`: `method` (`button` / `escape`), `duration_ms` con el
-  cajón abierto.
+- Precios es una sección del entorno de la inmobiliaria, con su propio enlace
+  (`/demo/<token>/presentacion/<codigo>/precios`): la barra queda arriba y la
+  propiedad se oculta debajo. `demo_owner_precios` lleva `origen`
+  (`enlace` al entrar por ese link, `encabezado`, `menu_creditos`).
+- `demo_prices_closed`: `method` (`button` / `nav` / `history` con el «atrás»
+  del navegador), `duration_ms` mirando los planes.
 - `demo_generation_failed`, `demo_generation_completed` (`duration_ms`),
   `demo_generation_timeout`.
 - Se mantienen `demo_owner_creditos`, `demo_owner_precios`,
@@ -265,8 +270,11 @@ Para validar en Habita, con un dispositivo marcado con `?habita_interno=1`
    cambiar estilos, recorrer fotos y salir. Esperar `comparison_slider_used` (uno
    por gesto), `demo_estilo`, `demo_style_viewed`, `demo_photo_changed`,
    `demo_active_time`.
-3. Recorrido B: Créditos → Ver precios → Volver. Esperar `cta_clicked`
-   (`owner_credits`, `owner_pricing`, `prices_back`) y `demo_prices_closed`.
+3. Recorrido B: Créditos → Ver precios → Volver, y Precios de la barra →
+   «atrás» del navegador. Esperar `cta_clicked` (`owner_credits`,
+   `owner_pricing`, `owner_nav_pricing`, `prices_back`), `demo_owner_precios` y
+   `demo_prices_closed`. Abrir el link de precios del admin: `demo_owner_precios`
+   con `origen = enlace`.
 4. Recorrido C: Crear propiedad → alta por invitación con un email de prueba →
    panel. Esperar `cta_clicked` `owner_crear`, `signup_form_viewed/started/submitted`,
    `account_created`, `agency_claimed`, y `agency_id` en los eventos siguientes.

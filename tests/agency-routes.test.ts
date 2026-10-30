@@ -360,7 +360,7 @@ describe("Taking over a demo", () => {
     state.tables.agencies[0].owner_id = null;
     const r = await reclamo.POST(req(`/api/admin/demos/${DEMO}/reclamo`, "POST"), params);
     expect(r.status).toBe(201);
-    const { url, presentationUrl } = await r.json();
+    const { url, presentationUrl, pricesUrl } = await r.json();
     const code = new URL(url).searchParams.get("codigo")!;
     const stored = state.inserts.find((i) => i.table === "agency_claims")!.row;
     expect(stored.code_hash).toBe(createHash("sha256").update(code).digest("hex"));
@@ -370,6 +370,8 @@ describe("Taking over a demo", () => {
     // A path only: no query string, so it can be sent without any special handling.
     expect(demoLink.pathname).toBe(`/demo/tok_abcdefghijklmnopqrstuvwx/presentacion/${code}`);
     expect(demoLink.search).toBe("");
+    // The same demo opened on its plans, for an agency that asks about prices.
+    expect(new URL(pricesUrl).pathname).toBe(`/demo/tok_abcdefghijklmnopqrstuvwx/presentacion/${code}/precios`);
   });
 });
 

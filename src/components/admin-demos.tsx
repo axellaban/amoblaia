@@ -127,8 +127,18 @@ async function agencyLink(demo: Pick<DemoSummary, "id" | "token" | "agencyClaime
   return claim.presentationUrl ?? publicLink(demo.token, true);
 }
 
-/** A text action that copies one of the demo's links (the agency's or the buyers'). */
-export function LinkCopy({ demo, which }: { demo: Pick<DemoSummary, "id" | "token" | "status" | "agencyClaimed">; which: "agency" | "buyer" }) {
+/**
+ * For an agency that asks about prices: its same demo opened on the plans, under its
+ * own bar. Also a fresh one-time code; with an account, the plans as anyone sees them.
+ */
+async function agencyPricesLink(demo: Pick<DemoSummary, "id" | "token" | "agencyClaimed">) {
+  if (demo.agencyClaimed === true) return `${window.location.origin}/precios`;
+  const claim = await api<{ pricesUrl: string | null }>(`/api/admin/demos/${demo.id}/reclamo`, { method: "POST" });
+  return claim.pricesUrl ?? publicLink(demo.token, true);
+}
+
+/** A text action that copies one of the demo's links (the agency's, its prices or the buyers'). */
+export function LinkCopy({ demo, which }: { demo: Pick<DemoSummary, "id" | "token" | "status" | "agencyClaimed">; which: "agency" | "prices" | "buyer" }) {
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -137,7 +147,9 @@ export function LinkCopy({ demo, which }: { demo: Pick<DemoSummary, "id" | "toke
     setBusy(true);
     setError("");
     try {
-      const ok = await copyLinkWhenReady(() => (which === "agency" ? agencyLink(demo) : Promise.resolve(publicLink(demo.token))));
+      const ok = await copyLinkWhenReady(() =>
+        which === "agency" ? agencyLink(demo) : which === "prices" ? agencyPricesLink(demo) : Promise.resolve(publicLink(demo.token)),
+      );
       if (ok) {
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
@@ -341,6 +353,14 @@ export function ShareCards({ demo }: { demo: Pick<DemoSummary, "id" | "token" | 
         shown={publicLink(demo.token, true)}
         live={live}
         resolve={() => agencyLink(demo)}
+        to={demo.agencyWhatsapp ?? null}
+      />
+      <ShareCard
+        title="Precios para la inmobiliaria"
+        hint="Su misma demo, abierta en los planes y sin salir de su entorno."
+        shown={`${publicLink(demo.token, true)}/…/precios`}
+        live={live}
+        resolve={() => agencyPricesLink(demo)}
         to={demo.agencyWhatsapp ?? null}
       />
       <ShareCard
@@ -1034,6 +1054,9 @@ export function DemoList() {
               <span className="dm-who">Comprador</span>
               <ViewLink demo={d} which="buyer" />
               <LinkCopy demo={d} which="buyer" />
+              <span className="dm-sep">·</span>
+              <span className="dm-who">Precios</span>
+              <LinkCopy demo={d} which="prices" />
               {d.status === "published" && (
                 <>
                   <span className="dm-sep">·</span>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buyerViewPath, invitationPath, inviteFor, presentationPath, redactInvite } from "@/lib/agency/demo-invite";
+import { buyerViewPath, invitationPath, inviteFor, presentationPath, pricesViewPath, redactInvite } from "@/lib/agency/demo-invite";
 
 const demo = { token: "tok_demo_aaaaaaaaaaaaaaaa", agencyId: "ag1" };
 const CODE = "codigoSecretoDeVeinteMasCaracteres";
@@ -25,6 +25,7 @@ describe("links", () => {
     expect(presentationPath(demo.token, CODE)).toBe(`/demo/${demo.token}/presentacion/${CODE}`);
     expect(presentationPath(demo.token)).toBe(`/demo/${demo.token}/presentacion`);
     expect(buyerViewPath(demo.token, CODE)).toBe(`/demo/${demo.token}/presentacion/${CODE}/ficha`);
+    expect(pricesViewPath(demo.token, CODE)).toBe(`/demo/${demo.token}/presentacion/${CODE}/precios`);
     // Links never carry a query string: the buyers' and the agency's ones are paths.
     expect(`${presentationPath(demo.token, CODE)}`).not.toMatch(/[?&]/);
   });

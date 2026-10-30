@@ -25,6 +25,9 @@ export const presentationPath = (demoToken: string, code: string | null = null) 
 /** The buyers' page as the agency sees it from its presentation (?vista=ficha before). */
 export const buyerViewPath = (demoToken: string, code: string) => `${presentationPath(demoToken, code)}/ficha`;
 
+/** The plans inside the agency's demo, under its own bar: the link the team sends when it asks for prices. */
+export const pricesViewPath = (demoToken: string, code: string) => `${presentationPath(demoToken, code)}/precios`;
+
 export function inviteFor(
   demo: { token: string; agencyId: string },
   code: string | null,

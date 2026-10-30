@@ -6,7 +6,7 @@ import { adminClient } from "@/lib/supabase/server";
 import { agencyCredits } from "./panel";
 import { claimHash } from "./server";
 import { claimState, type AdminAgencyDetail, type AdminAgencyRow } from "./stage";
-import { presentationPath } from "./demo-invite";
+import { presentationPath, pricesViewPath } from "./demo-invite";
 import type { AgencyRole } from "./shared";
 
 const CLAIM_DAYS = 30;
@@ -199,6 +199,8 @@ export async function createClaim(agencyId: string, actorId: string, origin: str
     url: `${origin}/panel/empezar?codigo=${code}${demo}`,
     // The demo itself as the way in: it offers "Probar esta propiedad en mi panel" with this same code.
     presentationUrl: demoToken ? `${origin}${presentationPath(demoToken, code)}` : null,
+    // The same demo opened on its plans, for when the agency asks about prices.
+    pricesUrl: demoToken ? `${origin}${pricesViewPath(demoToken, code)}` : null,
     expiresAt,
   };
 }
