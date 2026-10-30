@@ -41,6 +41,7 @@ import {
 } from "@/lib/agency/shared";
 import type { ImportedDemo } from "@/lib/demos/import";
 import { adminPhotoUrl } from "@/lib/demos/shared";
+import { leadFromDemoRef } from "@/lib/leads/client";
 
 type Section = "inicio" | "propiedades" | "creditos" | "sitio" | "usuarios";
 const SECTIONS: { id: Section; href: string; label: string; icon: typeof Home; managers?: boolean }[] = [
@@ -909,6 +910,7 @@ export function ImportProperty({
     setPreview(null);
     setStatus("Leyendo la publicación…");
     track("property_import_started", { source: hostOf(url), mode: "single" });
+    leadFromDemoRef("demo_property_import_started");
     trackMilestone("first_import_started", { source: hostOf(url), mode: "single" });
     try {
       show(await api<Preview>(endpoint, { method: "POST", body: JSON.stringify({ url, preview: true }) }));
@@ -952,6 +954,7 @@ export function ImportProperty({
     try {
       const done = await finishPhotos(made, (t) => setStatus(`${made.title ?? "Propiedad"}. ${t}`), endpoint);
       track("property_import_completed", { source: hostOf(preview.listingUrl), photos: done.photosDone, mode: "single", status: done.status });
+      if (done.photosDone > 0) leadFromDemoRef("demo_property_import_completed");
       trackMilestone("first_import_completed", { source: hostOf(preview.listingUrl), photos: done.photosDone, mode: "single", status: done.status });
       await onDone?.();
       if (done.status === "completed") {
@@ -1162,6 +1165,7 @@ function ImportMany({ onDone, onSingle }: { onDone?: () => Promise<unknown>; onS
     for (const [i, row] of list.entries()) {
       update(i, { state: "reading" });
       track("property_import_started", { source: hostOf(row.url), mode: "batch" });
+      leadFromDemoRef("demo_property_import_started");
       trackMilestone("first_import_started", { source: hostOf(row.url), mode: "batch" });
       try {
         const data = await api<Preview>("/api/panel/importar", { method: "POST", body: JSON.stringify({ url: row.url, preview: true }) });
@@ -1188,6 +1192,7 @@ function ImportMany({ onDone, onSingle }: { onDone?: () => Promise<unknown>; onS
         const done = await finishPhotos(made, () => null);
         update(i, { state: done.status === "completed" ? "done" : "partial", result: done });
         track("property_import_completed", { source: hostOf(row.url), photos: done.photosDone, mode: "batch", status: done.status });
+        if (done.photosDone > 0) leadFromDemoRef("demo_property_import_completed");
         trackMilestone("first_import_completed", { source: hostOf(row.url), photos: done.photosDone, mode: "batch", status: done.status });
       } catch (e) {
         update(i, { state: "error", error: message(e, "No pudimos importarla.") });
@@ -1702,6 +1707,8 @@ export function AgencyOnboarding({
           : await api<PanelSummary>("/api/panel", { method: "POST", body: JSON.stringify({ name }) });
       registerAgency(summary.agency.id);
       track(kind === "claimed" ? "agency_claimed" : "agency_created", { origin, agency_id: summary.agency.id, ...(demo ? { demo_id: demo.id } : {}) }, true);
+      // Lead score: the server only takes it once the account belongs to the demo's agency.
+      if (kind === "claimed") leadFromDemoRef("demo_account_created");
       if (demo) track("demo_to_agency_signup_completed", { demo_id: demo.id, claimed: kind === "claimed" });
       // Claimed from its own demo: straight into that property, ready for a first try.
       if (kind === "claimed" && demo && summary.agency.id === demo.agencyId) {

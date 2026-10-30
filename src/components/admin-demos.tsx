@@ -11,8 +11,12 @@ import {
   Search,
 } from "lucide-react";
 import { ImportFromListing } from "./demo-import";
+import { LeadBadge } from "./lead-score";
 import { CreditsDialog, type CreditTarget } from "./admin-agencies";
 import { EDIT_HEADER } from "@/lib/agency/edit-scope";
+import type { LeadClassKey } from "@/lib/leads/config";
+
+type DemoLeadScore = { score: number | null; classification: LeadClassKey | null; external: number; internal: number; quality: string | null };
 import {
   adminPhotoUrl,
   demoUrl,
@@ -906,9 +910,16 @@ export function DemoList() {
     const data = await api<{ demos: DemoSummary[] }>("/api/admin/demos");
     setDemos(data.demos);
   }, []);
+  // The lead scores come apart and after the list, so they never slow it down.
+  const [scores, setScores] = useState<Record<string, DemoLeadScore>>({});
+  const loadScores = useCallback(() => {
+    api<Record<string, DemoLeadScore>>("/api/admin/leads/demos").then(setScores, () => undefined);
+  }, []);
   useEffect(() => {
-    void load().catch((e) => setError(e.message));
-  }, [load]);
+    void load()
+      .catch((e) => setError(e.message))
+      .finally(loadScores);
+  }, [load, loadScores]);
   async function act(demo: DemoSummary, action: "publish" | "unpublish" | "delete") {
     if (
       action === "delete" &&
@@ -1068,6 +1079,12 @@ export function DemoList() {
               <div className="dm-facts">
                 <DemoCredits demo={d} onDone={(text) => { setNotice(text); void load(); }} />
                 <ActivityStatus activity={d.activity} sentAt={d.sentAt} />
+                {scores[d.id] && (
+                  <Link href={`/admin/leads?inmobiliaria=${d.agencyId}`} className="dm-lead" title="Ver el detalle en Leads">
+                    <span className="dm-activity-label">Lead score</span>
+                    <LeadBadge score={scores[d.id].score} classification={scores[d.id].classification} partial={scores[d.id].quality === "partial"} />
+                  </Link>
+                )}
               </div>
               <div className="dm-actions">
                 {d.status === "published" && (
