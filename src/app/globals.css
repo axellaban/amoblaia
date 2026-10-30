@@ -8288,6 +8288,94 @@ h2 .accent {
 .dm-activity-dots i.on {
   background: #2f7d57;
 }
+/* Follow-up bar: gray until sent; "Enviada" in the brand green; reached steps green. */
+.dm-stage {
+  display: flex;
+  gap: 3px;
+  margin: 4px 0 2px;
+  padding: 0;
+  list-style: none;
+  width: 150px;
+}
+.dm-stage li {
+  flex: 1;
+  height: 5px;
+  border-radius: 99px;
+  background: #e1e4dc;
+}
+.dm-stage li.is-sent {
+  background: var(--forest);
+}
+.dm-stage li.on {
+  background: #2f7d57;
+}
+.dm-send,
+.dm-share-team {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0;
+}
+.dm-send > .dm-help {
+  flex-basis: 100%;
+}
+.dm-share-team .dm-text {
+  font-size: 14px;
+}
+.dm-preview {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #f4f6f1;
+}
+.dm-preview p {
+  margin: 0;
+  white-space: pre-line;
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+.dm-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgb(20 28 22 / 45%);
+}
+.dm-modal {
+  width: min(560px, 100%);
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 20px 60px rgb(0 0 0 / 25%);
+}
+.dm-modal > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid #eceee8;
+}
+.dm-modal-body {
+  display: grid;
+  gap: 12px;
+  padding: 16px 20px 20px;
+}
+.dm-modal-body textarea {
+  width: 100%;
+}
+.dm-modal-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
 .dm-whatsapp {
   background: #157a43;
 }

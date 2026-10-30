@@ -114,3 +114,32 @@ describe("demo activity", () => {
     await expect(db.query("select * from demo_activity")).resolves.toBeDefined();
   });
 });
+
+// The follow-up: "Sin enviar" → "Enviada" (sent by hand or on WhatsApp) → "Ingresó" (a visit).
+describe("demo sent stage", () => {
+  const sentAt = (demoId: string) => one<{ sent_at: string | null }>("select sent_at from demos where id=$1", [demoId]);
+
+  it("a new demo is not sent", async () => {
+    const { demo: d } = await demo();
+    expect((await sentAt(d))!.sent_at).toBeNull();
+  });
+
+  it("a visit marks it as sent when nobody did", async () => {
+    const { demo: d } = await demo();
+    await record(d, "visitante-eeee-5", "visita");
+    expect((await sentAt(d))!.sent_at).not.toBeNull();
+  });
+
+  it("a visit keeps the date of the earlier send", async () => {
+    const { demo: d } = await demo();
+    await db.query("update demos set sent_at = '2026-10-01T10:00:00Z' where id=$1", [d]);
+    await record(d, "visitante-ffff-6", "visita");
+    expect(new Date((await sentAt(d))!.sent_at!).toISOString()).toBe("2026-10-01T10:00:00.000Z");
+  });
+
+  it("an interaction without a visit does not mark it as sent", async () => {
+    const { demo: d } = await demo();
+    await record(d, "visitante-gggg-7", "interaccion");
+    expect((await sentAt(d))!.sent_at).toBeNull();
+  });
+});

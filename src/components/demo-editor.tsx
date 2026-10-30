@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronDown, Eye, Home, Image as ImageIcon, Loader2, Plus, RefreshCw, Star, Trash2, X } from "lucide-react";
 import { Comparison } from "./comparison";
-import { AgencyFields, LinkPreview, PropertyFields, ShareCards, StatusChip, api, publicLink } from "./admin-demos";
+import { ActivityStatus, AgencyFields, LinkPreview, PropertyFields, SendWhatsapp, SentToggle, ShareCards, StatusChip, api, publicLink } from "./admin-demos";
 import { PhotoWorkspace, type WorkspaceActions } from "./editor-photos";
 import { useStagingQueue, type QueueReport } from "./use-staging-queue";
 import { optimizePhoto } from "@/lib/images";
@@ -1083,7 +1083,22 @@ export function DemoEditor({
                 <p className="dm-help">Este enlace funciona aunque tu catálogo no esté publicado.</p>
               </>
             ) : (
-              <ShareCards demo={demo} />
+              <>
+                <ActivityStatus activity={demo.activity} sentAt={demo.sentAt} />
+                {!agencyMode && (
+                  <div className="dm-share-team">
+                    <SendWhatsapp demo={demo} />
+                    <SentToggle
+                      demo={demo}
+                      onDone={(text) => {
+                        void load();
+                        setMessage({ tone: "notice", text });
+                      }}
+                    />
+                  </div>
+                )}
+                <ShareCards demo={demo} />
+              </>
             )}
             <LinkPreview demo={demo} location={detail.property.location} />
             <p className="dm-help">Así se verá el enlace en WhatsApp: la portada, mitad original y mitad en el estilo principal.</p>
