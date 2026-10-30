@@ -39,24 +39,36 @@ describe("normalizeArNumber", () => {
 
 describe("renderMessage", () => {
   const link = "https://habitaia.vercel.app/demo/abc123";
+  const base = { nombre: null, inmobiliaria: "Acme", ubicacion: null, propiedad: "Depto 2 ambientes" };
 
   it("fills the default template with the contact's name", () => {
-    expect(renderMessage(DEFAULT_MESSAGE_TEMPLATE, { nombre: "Laura", inmobiliaria: "Acme", link, creditos: 20 })).toBe(
-      `Laura, buenas! Te preparé esta demo con una de sus propiedades: ${link}\n\nTe cargué 20 créditos para que puedas probar otros ambientes y estilos.`,
+    expect(
+      renderMessage(DEFAULT_MESSAGE_TEMPLATE, { ...base, ubicacion: "Playa Grande, Mar del Plata", link, creditos: 10 }),
+    ).toBe(
+      `Te preparé esta demo con la propiedad de Playa Grande: ${link}\n\nLes cargué 10 créditos para que puedan probar con otros estilos, ambientes o incluso cargar otra propiedad desde la plataforma (con un clic, importando la URL).`,
     );
   });
 
+  it("without a location, names the property", () => {
+    expect(renderMessage("de {ubicacion}", { ...base, ubicacion: null, link, creditos: 1 })).toBe("de Depto 2 ambientes");
+    expect(renderMessage("de {ubicacion}", { ...base, ubicacion: " ", link, creditos: 1 })).toBe("de Depto 2 ambientes");
+  });
+
+  it("never opens a question with ¿ (informal tone)", () => {
+    expect(DEFAULT_MESSAGE_TEMPLATE).not.toContain("¿");
+  });
+
   it("uses the agency's name when there is no contact", () => {
-    expect(renderMessage("{nombre}!", { nombre: null, inmobiliaria: "Acme", link, creditos: null })).toBe("Acme!");
-    expect(renderMessage("{nombre}!", { nombre: "  ", inmobiliaria: "Acme", link, creditos: null })).toBe("Acme!");
+    expect(renderMessage("{nombre}!", { ...base, link, creditos: null })).toBe("Acme!");
+    expect(renderMessage("{nombre}!", { ...base, nombre: "  ", link, creditos: null })).toBe("Acme!");
   });
 
   it("leaves unknown placeholders visible", () => {
-    expect(renderMessage("{inmobiliaria} {otra}", { nombre: null, inmobiliaria: "Acme", link, creditos: 1 })).toBe("Acme {otra}");
+    expect(renderMessage("{inmobiliaria} {otra}", { ...base, link, creditos: 1 })).toBe("Acme {otra}");
   });
 
   it("the link has no query string, so it can be sent as is", () => {
-    const text = renderMessage(DEFAULT_MESSAGE_TEMPLATE, { nombre: null, inmobiliaria: "Acme", link, creditos: 5 });
+    const text = renderMessage(DEFAULT_MESSAGE_TEMPLATE, { ...base, link, creditos: 5 });
     expect(text).toContain(link);
   });
 });

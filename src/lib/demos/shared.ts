@@ -120,6 +120,8 @@ export type DemoSummary = {
   /** The agency's WhatsApp to send it its demo, as wa.me digits (team only). Null or absent: none known. */
   agencyWhatsapp?: string | null;
   propertyTitle: string;
+  /** The property's location, for the WhatsApp message (team lists). */
+  propertyLocation?: string | null;
   /** "fotos": imported photos that are not a ficha yet (cannot be published). Absent: a ficha. */
   kind?: "ficha" | "fotos";
   photos: number;

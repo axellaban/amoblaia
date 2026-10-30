@@ -25,15 +25,19 @@ export function normalizeArNumber(raw: string | null | undefined): string | null
 }
 
 /** Placeholders the message template understands. */
-export const MESSAGE_VARIABLES = ["nombre", "inmobiliaria", "link", "creditos"] as const;
+export const MESSAGE_VARIABLES = ["nombre", "inmobiliaria", "ubicacion", "link", "creditos"] as const;
 
 export const DEFAULT_MESSAGE_TEMPLATE =
-  "{nombre}, buenas! Te preparé esta demo con una de sus propiedades: {link}\n\nTe cargué {creditos} créditos para que puedas probar otros ambientes y estilos.";
+  "Te preparé esta demo con la propiedad de {ubicacion}: {link}\n\nLes cargué {creditos} créditos para que puedan probar con otros estilos, ambientes o incluso cargar otra propiedad desde la plataforma (con un clic, importando la URL).";
 
 export type MessageValues = {
   /** The contact's name when known, else the agency's. */
   nombre: string | null;
   inmobiliaria: string;
+  /** The property's location ("Playa Grande, Mar del Plata"); null falls back to its title. */
+  ubicacion: string | null;
+  /** The property's title, when it has no location. */
+  propiedad: string;
   link: string;
   /** Credits reserved for the agency by this demo. */
   creditos: number | null;
@@ -44,6 +48,8 @@ export function renderMessage(template: string, v: MessageValues): string {
   const values: Record<(typeof MESSAGE_VARIABLES)[number], string> = {
     nombre: v.nombre?.trim() || v.inmobiliaria,
     inmobiliaria: v.inmobiliaria,
+    // Only the neighborhood reads well in a sentence: "Playa Grande", not "Playa Grande, Mar del Plata".
+    ubicacion: v.ubicacion?.split(",")[0].trim() || v.propiedad,
     link: v.link,
     creditos: v.creditos === null ? "" : String(v.creditos),
   };

@@ -8333,6 +8333,7 @@ h2 .accent {
 .dm-msg-preview p {
   margin: 0;
   white-space: pre-line;
+  overflow-wrap: anywhere;
   font-size: 14.5px;
   line-height: 1.5;
 }
@@ -8373,7 +8374,7 @@ h2 .accent {
   font-size: 12.5px;
   color: var(--muted);
 }
-.dm-modal-backdrop {
+.dm-dialog-backdrop {
   position: fixed;
   inset: 0;
   z-index: 60;
@@ -8382,7 +8383,7 @@ h2 .accent {
   padding: 16px;
   background: rgb(20 28 22 / 45%);
 }
-.dm-modal {
+.dm-dialog {
   width: min(560px, 100%);
   max-height: calc(100vh - 32px);
   overflow: auto;
@@ -8390,7 +8391,7 @@ h2 .accent {
   background: #fff;
   box-shadow: 0 20px 60px rgb(0 0 0 / 25%);
 }
-.dm-modal > header {
+.dm-dialog > header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -8398,15 +8399,18 @@ h2 .accent {
   padding: 16px 20px;
   border-bottom: 1px solid #eceee8;
 }
-.dm-modal-body {
+.dm-dialog-body {
   display: grid;
   gap: 12px;
   padding: 16px 20px 20px;
 }
-.dm-modal-body textarea {
+.dm-dialog-body > * {
+  min-width: 0;
+}
+.dm-dialog-body textarea {
   width: 100%;
 }
-.dm-modal-actions {
+.dm-dialog-actions {
   display: flex;
   justify-content: space-between;
   align-items: center;
