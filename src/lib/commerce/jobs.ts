@@ -2,7 +2,7 @@ import "server-only";
 import { createHash } from "node:crypto";
 import { adminClient } from "@/lib/supabase/server";
 import { HttpError, rpc } from "./http";
-import { ProviderError, readPhoto, renderPhoto } from "./images";
+import { ProviderError, maskPng, readPhoto, renderPhoto } from "./images";
 import { freeAllows, buildPrompt } from "@/lib/catalog";
 export const BUCKET = "property-images";
 export type Job = {
@@ -237,7 +237,7 @@ export async function runJob(id: string, deadline?: number) {
       job.prompt,
       free,
       providerBudget,
-      mask?.data ? Buffer.from(await mask.data.arrayBuffer()) : undefined,
+      mask?.data ? await maskPng(Buffer.from(await mask.data.arrayBuffer())) : undefined,
     );
     await db
       .from("generations")

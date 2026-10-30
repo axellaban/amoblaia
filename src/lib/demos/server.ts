@@ -932,13 +932,16 @@ export async function storeMask(projectId: string, key: string, painted: Buffer,
   if (!source) throw new HttpError(404, "No encontramos la foto.");
   const { width, height } = await sharp(source, { limitInputPixels: 40_000_000 }).metadata();
   if (!width || !height) throw new HttpError(400, "No pudimos leer la foto.");
+  // Stored as a grey JPEG (the bucket takes only JPEG): black where to remove, white elsewhere.
+  // The job turns it back into the PNG with transparency that the model needs.
   const mask = await sharp(painted, { limitInputPixels: 40_000_000 })
     .resize({ width, height, fit: "fill" })
     .ensureAlpha()
-    .png()
+    .extractChannel(3)
+    .jpeg({ quality: 92 })
     .toBuffer();
-  const path = `${projectId}/masks/${key}.png`;
-  const upload = await db.storage.from(BUCKET).upload(path, mask, { contentType: "image/png", upsert: true });
+  const path = `${projectId}/masks/${key}.jpg`;
+  const upload = await db.storage.from(BUCKET).upload(path, mask, { contentType: "image/jpeg", upsert: true });
   if (upload.error) throw new HttpError(503, "No pudimos guardar la máscara. Revisá el almacenamiento disponible.");
   return path;
 }
