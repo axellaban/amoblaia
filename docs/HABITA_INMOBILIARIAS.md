@@ -457,6 +457,15 @@ En `/admin/inmobiliarias`, cada inmobiliaria tiene **Ver su panel**. Abre `/pane
 - Es **solo lectura**: el servidor rechaza todo cambio hecho desde el panel mientras dure la vista, incluido crear versiones con IA, que además nunca usan el saldo de la inmobiliaria.
 - Entrar y salir quedan registrados en `admin_audit` (`agency_support_view`, `agency_support_end`). Si no se puede registrar, la vista no se abre.
 
+### 12.1 Entrar como la inmobiliaria (2026-10-30)
+
+Junto a **Ver como cliente** está **Entrar como la inmobiliaria** (en la lista y en la ficha de cada inmobiliaria). Pide confirmación y abre su panel con los **permisos de su dueño**, para probar todo como lo haría ella:
+
+- Los cambios son reales: sitio, marca, propiedades, publicar, importar, usuarios. Las ambientaciones se cobran con los créditos de la inmobiliaria, como desde su propio panel.
+- No compra créditos: el botón se oculta, porque una compra quedaría en la cuenta del miembro del equipo.
+- Misma cookie firmada, con el modo dentro de la firma (una vista de solo lectura no se puede convertir en este modo). Vence en una hora y vale solo para esa inmobiliaria: las propiedades de otras siguen con las reglas del equipo.
+- Banner naranja en todas las páginas del panel, con **Salir de la inmobiliaria**. Entrar y salir quedan en `admin_audit` (`agency_support_act`, `agency_support_act_end`); lo que se crea queda a nombre del miembro del equipo.
+
 ## 13. Importar imágenes (grupos de fotos sin ficha, 2026-10-28)
 
 Entrada nueva en el inicio, al lado de «Crear demostraciones». Trae fotos desde

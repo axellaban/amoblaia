@@ -18,10 +18,11 @@ export type AgencyAccount = {
   site_published: boolean;
 };
 /**
- * support: a team member looking at this agency's panel (read only).
+ * support: a team member looking at this agency's panel (read only), or
+ * acting as the agency with its owner's permissions (acting).
  * scope: the properties (demo_properties.id) this user is limited to; null, all.
  */
-export type Membership = { role: AgencyRole; agency: AgencyAccount; scope: string[] | null; support?: boolean };
+export type Membership = { role: AgencyRole; agency: AgencyAccount; scope: string[] | null; support?: boolean; acting?: boolean };
 const AGENCY_FIELDS = "id,name,website,slug,owner_id,site_published";
 
 /** The agency this account works for, if any (one per account for now). */
@@ -56,11 +57,15 @@ export function assertCan(membership: Pick<Membership, "role" | "scope">, action
 
 /**
  * The panel this account sees: a team member's active support view (the
- * agency as its owner sees it, read only), else the agency it works for.
+ * agency as its owner sees it: read only, or acting as it), else the agency
+ * it works for.
  */
 export async function membershipFor(user: Pick<User, "id" | "email">): Promise<Membership | null> {
   const viewing = await supportAgency(user);
-  if (viewing) return { role: "owner", agency: viewing, scope: null, support: true };
+  if (viewing) {
+    const { supportMode, ...agency } = viewing;
+    return { role: "owner", agency, scope: null, support: true, acting: supportMode === "act" };
+  }
   return membershipOf(user.id);
 }
 
@@ -72,7 +77,7 @@ export async function requireAgency(request?: Request, action?: "edit" | "create
   const user = await requireUser(request);
   const membership = await membershipFor(user);
   if (!membership) throw new HttpError(404, "Todavía no creaste tu inmobiliaria.");
-  if (membership.support) assertReadable(request);
+  if (membership.support && !membership.acting) assertReadable(request);
   if (action) assertCan(membership, action);
   else if (request && request.method !== "GET" && request.method !== "HEAD") assertCan(membership, "edit");
   return { user, ...membership };
@@ -87,24 +92,32 @@ export async function requireAgency(request?: Request, action?: "edit" | "create
  */
 export async function requireDemoAccess(request: Request | undefined, demoId: string) {
   const actor = await requireUser(request);
-  const admin = isAdmin(actor.email);
+  let admin = isAdmin(actor.email);
+  const support = admin ? await supportAgency(actor) : null;
   // From the panel in a support view the team only reads, like the agency's panel itself.
-  if (admin && request && request.method !== "GET") {
+  if (support?.supportMode === "view" && request && request.method !== "GET") {
     let fromPanel = false;
     try {
       fromPanel = new URL(request.headers.get("referer") ?? "").pathname.startsWith("/panel");
     } catch {
       // No referer: not the panel.
     }
-    if (fromPanel && (await supportAgency(actor))) assertReadable(request);
+    if (fromPanel) assertReadable(request);
   }
   // Accounts outside any agency are turned away before any property is read.
-  const membership = admin ? null : await membershipOf(actor.id);
+  let membership: Membership | null = admin ? null : await membershipOf(actor.id);
   if (!admin && !membership) throw new HttpError(404, "No encontramos la demo.");
   // A tab editing one agency (Editar inmobiliaria) only reads and writes that agency's properties.
   // The context is the team's: anyone else sending one is refused, never silently ignored.
   const editContext = editContextOf(request, actor);
   const demo = await demoRow(demoId);
+  // Acting as an agency (Entrar como la inmobiliaria), its properties are worked on exactly as its owner would:
+  // the agency's view, its permissions, and its credits for stagings.
+  if (support?.supportMode === "act" && support.id === demo.agency_id) {
+    const { supportMode: _mode, ...agency } = support;
+    admin = false;
+    membership = { role: "owner", agency, scope: null, support: true, acting: true };
+  }
   if (membership && (membership.agency.id !== demo.agency_id || !inScope(membership, demo.property_id)))
     throw new HttpError(404, "No encontramos la demo.");
   // A viewer only reads its agency's properties.
@@ -119,7 +132,7 @@ export async function requireDemoAccess(request: Request | undefined, demoId: st
   // demos keep working as they did.
   if (error && !admin) throw new Error("AGENCY_LOOKUP_FAILED");
   const billingUser = error ? null : ((data as { owner_id: string | null }).owner_id ?? null);
-  return { actor, demo, admin, role: (membership?.role ?? null) as AgencyRole | null, billingUser, editContext };
+  return { actor, demo, admin, role: (membership?.role ?? null) as AgencyRole | null, billingUser, editContext, acting: Boolean(membership?.acting) };
 }
 
 /** Owner and administrators of the agency; the team always. For branding and deletions of a property. */

@@ -12,10 +12,11 @@ export const runtime = "nodejs";
  */
 export async function GET() {
   try {
-    const { user, agency, role } = await requireAgency();
+    const { user, agency, role, support } = await requireAgency();
     const owner = agency.owner_id;
     const credits = await agencyCredits(owner);
-    const base = { role, payer: { agency: agency.name, isYou: owner === user.id }, credits, creditsError: credits === null };
+    // The team in the agency's panel sees its plans but never buys for it: a purchase would be the team member's own.
+    const base = { role, payer: { agency: agency.name, isYou: owner === user.id }, credits, creditsError: credits === null, ...(support ? { support: true } : {}) };
     if (role !== "owner" || !owner)
       return Response.json(base, { headers: { "Cache-Control": "private, no-store" } });
     const db = adminClient();

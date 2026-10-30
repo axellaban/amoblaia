@@ -1271,7 +1271,9 @@ function ImportMany({ onDone, onSingle }: { onDone?: () => Promise<unknown>; onS
 }
 
 type CreditsInfo = {
-  role: "owner" | "collaborator";
+  role: AgencyRole;
+  /** The team in the agency's panel: it never buys for the agency. */
+  support?: boolean;
   payer: { agency: string; isYou: boolean };
   credits: number | null;
   creditsError: boolean;
@@ -1313,7 +1315,7 @@ function CreditsSection() {
           <span className="eyebrow">Créditos IA de {info.payer.agency}</span>
           <h1>{info.credits === null ? "Saldo no disponible" : `${info.credits} ${info.credits === 1 ? "crédito disponible" : "créditos disponibles"}`}</h1>
         </div>
-        {owner && (
+        {owner && !info.support && (
           <Link href="/precios" className="button button-primary" {...cta("buy_credits", "panel_credits", "pricing")}>
             Comprar créditos
           </Link>

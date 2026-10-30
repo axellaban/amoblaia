@@ -11,7 +11,7 @@ export default async function PanelLayout({ children }: { children: React.ReactN
   const viewing = user ? await supportAgency(user).catch(() => null) : null;
   return (
     <>
-      {viewing && <SupportBanner agencyId={viewing.id} agencyName={viewing.name} />}
+      {viewing && <SupportBanner agencyId={viewing.id} agencyName={viewing.name} acting={viewing.supportMode === "act"} />}
       {children}
       {user && <Assistant place={PANEL} />}
     </>

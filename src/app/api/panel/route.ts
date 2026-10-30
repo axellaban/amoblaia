@@ -84,7 +84,8 @@ export async function PATCH(request: Request) {
       if (error) throw new Error("AGENCY_UPDATE_FAILED");
     }
     if (branding) await saveJson("agencies", "branding", agency.id, branding);
-    const membership = await membershipOf(user.id);
+    // The team acting as the agency gets the panel it is in, not an agency of its own.
+    const membership = await membershipFor(user);
     if (!membership) throw new Error("MEMBERSHIP_LOST");
     return Response.json(await panelSummary(membership), { headers: PRIVATE });
   } catch (e) {
