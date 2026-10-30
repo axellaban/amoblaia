@@ -47,6 +47,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { textOn, whatsappNumber, type FactIcon } from "@/lib/demos/branding";
 import { DEMO_STYLES, demoStyleName } from "@/lib/demos/styles";
 import {
+  RETOUCH_STYLE,
   adminPhotoUrl,
   ctaHref,
   DEMO_REF_KEY,
@@ -779,7 +780,8 @@ function Gallery({
     () => Object.fromEntries(demo.styles.map((s) => [s.id, s.name])) as Record<string, string>,
     [demo.styles],
   );
-  const name = (style: string) => styleNames[style] ?? demoStyleName(style);
+  // A retouch the listing shows is one more option: the photo as its owner saved it.
+  const name = (style: string) => styleNames[style] ?? (style === RETOUCH_STYLE ? "Retocada" : demoStyleName(style));
   // The agency's own view always opens compared: the chosen style, else the first style with a staging.
   const openStyle = owner
     ? (demo.openStyle ?? demo.styles.find((st) => photos.some((p) => p.versions.some((v) => v.style === st.id)))?.id ?? null)

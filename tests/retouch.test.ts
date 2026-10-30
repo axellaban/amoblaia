@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AUTO_ADJUST, NO_ADJUST, adjustFilter, parseAdjust, retouchOps, sameAdjust } from "../src/lib/demos/retouch";
+import { RETOUCH_STYLE, publicImageUrl } from "../src/lib/demos/shared";
 
 describe("Retouch adjustments", () => {
   it("accepts whole numbers within each slider's range and nothing else", () => {
@@ -45,5 +46,12 @@ describe("Retouch adjustments", () => {
     const ops = retouchOps({ ...NO_ADJUST, con: 50 });
     // A pixel at mid grey stays put: 128 * a + b = 128.
     expect(128 * ops.linear.a + ops.linear.b).toBeCloseTo(128);
+  });
+});
+
+describe("Retouch on the listing", () => {
+  it("serves a shown retouch by its own parameter, never as a style", () => {
+    expect(publicImageUrl("tok", "photo", { style: RETOUCH_STYLE, v: "abc" }, 800)).toBe("/demo/tok/imagen/photo?t=abc&w=800");
+    expect(publicImageUrl("tok", "photo", { style: "modern", v: "x1" })).toBe("/demo/tok/imagen/photo?e=modern&r=x1");
   });
 });

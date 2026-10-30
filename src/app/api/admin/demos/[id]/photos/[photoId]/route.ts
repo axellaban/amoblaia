@@ -178,6 +178,22 @@ export async function PATCH(request: Request, { params }: Params) {
       discarded.delete(body.restore);
       changes.discarded = [...discarded];
     }
+    // The retouch the listing shows: one of this photo's retouches, or none.
+    if ("approveRetouch" in body) {
+      if (body.approveRetouch === null) changes.shown_retouch_id = null;
+      else {
+        if (!isUuid(body.approveRetouch)) throw new HttpError(400, "Retoque inválido.");
+        const { data: r, error } = await db
+          .from("photo_retouches")
+          .select("id")
+          .eq("id", body.approveRetouch)
+          .eq("photo_id", photo.id)
+          .maybeSingle();
+        if (error) throw new Error("DEMO_RETOUCH_LOOKUP_FAILED");
+        if (!r) throw new HttpError(409, "Solo se puede mostrar un retoque de esta foto.");
+        changes.shown_retouch_id = body.approveRetouch;
+      }
+    }
     if (!Object.keys(changes).length) throw new HttpError(400, "No hay cambios para guardar.");
     const updated = await db.from("demo_photos").update(changes).eq("id", photo.id);
     if (updated.error) throw new Error("DEMO_PHOTO_UPDATE_FAILED");

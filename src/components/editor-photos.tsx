@@ -240,6 +240,7 @@ export function PhotoWorkspace({
   const at = ordered.findIndex((p) => p.id === photo.id);
   const step = (n: number) => setActiveId(ordered[(at + n + ordered.length) % ordered.length].id);
   const shownHere = Boolean(viewGen && shownIds.has(viewGen.id));
+  const retouchShown = Boolean(viewRetouch && photo.shownRetouch === viewRetouch.id);
   const adjust = photo ? (adjusts[photo.id] ?? NO_ADJUST) : NO_ADJUST;
   const retouch = tab === "edit" ? adjustFilter(adjust) : "";
   const setAdjust = (next: Adjust) => photo && setAdjusts((all) => ({ ...all, [photo.id]: next }));
@@ -284,7 +285,7 @@ export function PhotoWorkspace({
               <span className="pw-badges">
                 {hasView && (
                   <span className={`pw-badge ${shownHere ? "is-on" : ""}`}>
-                    {viewRetouch ? "Retoque guardado" : shownHere ? shownLabel : photosOnly ? "Creada y guardada" : "No se muestra en la ficha"}
+                    {viewRetouch ? (retouchShown ? shownLabel : "Retoque guardado") : shownHere ? shownLabel : photosOnly ? "Creada y guardada" : "No se muestra en la ficha"}
                   </span>
                 )}
                 {!photo.visible && <span className="pw-badge">Oculta en la ficha</span>}
@@ -347,6 +348,15 @@ export function PhotoWorkspace({
             <div className="pw-actions">
               {viewGen && !shownHere && (
                 <button type="button" className="button button-small button-primary" onClick={() => void actions.patchPhoto(photo.id, { approve: viewGen.id })}>
+                  <Check size={14} /> Mostrar esta en la ficha
+                </button>
+              )}
+              {viewRetouch && !retouchShown && !photosOnly && (
+                <button
+                  type="button"
+                  className="button button-small button-primary"
+                  onClick={() => void actions.patchPhoto(photo.id, { approveRetouch: viewRetouch.id })}
+                >
                   <Check size={14} /> Mostrar esta en la ficha
                 </button>
               )}
@@ -460,8 +470,9 @@ export function PhotoWorkspace({
                     <img src={adminRetouchUrl(r.id, 480)} alt="" loading="lazy" />
                     <span>
                       <strong>{r.label}</strong>
-                      <small>Retoque guardado</small>
+                      <small>{photo.shownRetouch === r.id ? shownLabel : "Retoque guardado"}</small>
                     </span>
+                    {photo.shownRetouch === r.id && <Check size={16} className="pw-version-check" aria-label={shownLabel} />}
                   </button>
                 </li>
               ))}

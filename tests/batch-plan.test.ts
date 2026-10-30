@@ -25,7 +25,7 @@ const photo = (id: string, extra: Partial<EditorPhoto> = {}): EditorPhoto => ({
   charged: false,
   shown: {},
   generations: [],
-  retouches: [],
+  retouches: [], shownRetouch: null,
   ...extra,
 });
 const group = (id: string, photos: EditorPhoto[], extra: Partial<BatchGroup> = {}): BatchGroup => ({

@@ -44,6 +44,7 @@ import {
   type PropertySpace,
   type RetouchRow,
   type RetouchSource,
+  RETOUCH_STYLE,
 } from "./shared";
 
 /** 18 random bytes: 24 URL-safe characters, unguessable and stable across publish/unpublish. */
@@ -76,12 +77,13 @@ type PhotoRow = {
   style: string;
   mode: DemoMode;
   approved_generation_id: string | null;
+  shown_retouch_id: string | null;
   discarded: string[] | null;
 };
 const DEMO_FIELDS =
   "id,agency_id,property_id,title,token,status,kind,cover_photo_id,published_at,created_at,sent_at,message_template";
 const PHOTO_FIELDS =
-  "id,property_id,project_id,position,visible,room,label,style,mode,approved_generation_id,discarded";
+  "id,property_id,project_id,position,visible,room,label,style,mode,approved_generation_id,shown_retouch_id,discarded";
 
 function check<T>(result: { data: T | null; error: unknown }, code: string) {
   if (result.error) throw new Error(code);
@@ -538,6 +540,7 @@ export async function demoDetail(id: string): Promise<DemoDetail> {
         !/^(trial|demo):/.test(projectInfo.get(p.project_id)?.credit_grants?.source_key ?? ""),
     ),
     shown: Object.fromEntries([...(shown.get(p.id) ?? new Map<string, StagedRow>())].map(([k, g]) => [k, g.id])),
+    shownRetouch: p.shown_retouch_id ?? null,
     generations: generations
       .filter((g) => g.project_id === p.project_id)
       .map(({ project_id: _ignored, ...g }) => g),
@@ -693,7 +696,11 @@ async function publicPayload(demo: DemoRow, logoUrl: (v: string) => string): Pro
     id: p.id,
     // Only a label the admin wrote: room names ("Living") can be wrong for the property.
     label: p.label?.trim() || "",
-    versions: versionList(shown.get(p.id), order),
+    // The retouch the listing shows goes last, as one more option (never editable on the listing).
+    versions: [
+      ...versionList(shown.get(p.id), order),
+      ...(p.shown_retouch_id ? [{ style: RETOUCH_STYLE, v: p.shown_retouch_id }] : []),
+    ],
   }));
   const prop = check(property, "DEMO_PROPERTY_LOOKUP_FAILED") as {
     title: string;
@@ -850,6 +857,34 @@ async function photoPath(photo: PhotoRow, style: string | null) {
 }
 
 /** A public image, only of a visible photo of a published demo. */
+/** A retouch the listing shows: only that one, of a visible photo of a published demo. */
+export async function publicRetouchPaths(token: string, photoId: string, retouchId: string) {
+  if (!TOKEN_PATTERN.test(token) || !isUuid(photoId) || !isUuid(retouchId)) return null;
+  const db = adminClient();
+  const demo = check(
+    await db.from("demos").select("property_id").eq("token", token).eq("status", "published").maybeSingle(),
+    "DEMO_LOOKUP_FAILED",
+  ) as { property_id: string } | null;
+  if (!demo) return null;
+  const photo = check(
+    await db
+      .from("demo_photos")
+      .select("id")
+      .eq("id", photoId)
+      .eq("property_id", demo.property_id)
+      .eq("visible", true)
+      .eq("shown_retouch_id", retouchId)
+      .maybeSingle(),
+    "DEMO_PHOTO_LOOKUP_FAILED",
+  );
+  if (!photo) return null;
+  const r = check(
+    await db.from("photo_retouches").select("result_path").eq("id", retouchId).maybeSingle(),
+    "DEMO_RETOUCH_LOOKUP_FAILED",
+  ) as { result_path: string } | null;
+  return r ? { original: r.result_path, staged: null } : null;
+}
+
 export async function publicImagePaths(token: string, photoId: string, style: string | null) {
   if (!TOKEN_PATTERN.test(token) || !isUuid(photoId)) return null;
   const db = adminClient();

@@ -34,7 +34,7 @@ const photo = (over: Partial<EditorPhoto> = {}): EditorPhoto => ({
   charged: false,
   shown: {},
   generations: [],
-  retouches: [],
+  retouches: [], shownRetouch: null,
   ...over,
 });
 

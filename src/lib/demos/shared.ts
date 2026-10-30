@@ -38,6 +38,8 @@ export const MAX_DEMO_STYLES = 6;
 
 /** One staged version of a photo, in one style. `v` changes when the version does, so caches refresh. */
 export type PhotoVersion = { style: string; v: string };
+/** The style key of a retouch in a public photo's versions: not a demo style; "v" is the retouch's id. */
+export const RETOUCH_STYLE = "retoque";
 export type PublicPhoto = {
   id: string;
   label: string;
@@ -196,6 +198,8 @@ export type EditorPhoto = {
   generations: GenerationRow[];
   /** Retouches saved as versions (free); "label" names them in the versions list. */
   retouches: RetouchRow[];
+  /** The retouch the listing shows, if any. */
+  shownRetouch: string | null;
 };
 export type RetouchRow = {
   id: string;
@@ -355,7 +359,9 @@ export const DEMO_REF_KEY = "amoblaia_demo_ref";
 
 /** An image of a published demo: the original, or its version in one style. */
 export function publicImageUrl(token: string, photoId: string, version: PhotoVersion | null, width?: number) {
-  const q = new URLSearchParams(version ? { e: version.style, r: version.v } : { r: "o" });
+  const q = new URLSearchParams(
+    version?.style === RETOUCH_STYLE ? { t: version.v } : version ? { e: version.style, r: version.v } : { r: "o" },
+  );
   if (width) q.set("w", String(width));
   return `/demo/${token}/imagen/${photoId}?${q}`;
 }
