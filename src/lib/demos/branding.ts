@@ -212,9 +212,24 @@ export function readSettings(raw: unknown): DemoSettings {
   };
 }
 
-/** WhatsApp numbers as wa.me wants them: digits with country code. */
+/**
+ * WhatsApp numbers as wa.me wants them: digits with country code. An
+ * Argentine number written locally (area + number, with or without the
+ * trunk 0) gets 549: wa.me reads bare digits as a country code, so
+ * "2235273341" would open a chat with a number in Mali.
+ */
 export function whatsappNumber(value: string) {
-  const digits = value.replace(/\D/g, "");
+  let digits = value.replace(/\D/g, "").replace(/^00/, "");
+  if (!value.trim().startsWith("+") || digits.startsWith("54")) {
+    // 54 without the mobile 9, then the national forms: 0 + area + (15 +) number.
+    if (digits.length === 12 && digits.startsWith("54") && !digits.startsWith("549")) digits = `549${digits.slice(2)}`;
+    else if (!digits.startsWith("54")) {
+      const local = digits.replace(/^0/, "");
+      const mobile = local.length === 12 ? local.match(/^(\d{2,4})15(\d{6,8})$/) : null;
+      if (mobile) digits = `549${mobile[1]}${mobile[2]}`;
+      else if (local.length === 10) digits = `549${local}`;
+    }
+  }
   return digits.length >= 8 && digits.length <= 15 ? digits : null;
 }
 

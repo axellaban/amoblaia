@@ -65,6 +65,17 @@ describe("Branding and settings input", () => {
     expect(textOn("#f4e9c8")).toBe("#161b26");
     expect(whatsappNumber("+54 9 223 555-1234")).toBe("5492235551234");
   });
+  it("reads a local Argentine WhatsApp as wa.me needs it", () => {
+    expect(whatsappNumber("2235273341")).toBe("5492235273341");
+    expect(whatsappNumber("0223 527-3341")).toBe("5492235273341");
+    expect(whatsappNumber("0054 9 223 527 3341")).toBe("5492235273341");
+    expect(whatsappNumber("5492235273341")).toBe("5492235273341");
+    expect(whatsappNumber("0223 15 527-3341")).toBe("5492235273341");
+    expect(whatsappNumber("54 223 527 3341")).toBe("5492235273341");
+    expect(whatsappNumber("+1 415 555 0100")).toBe("14155550100");
+    expect(whatsappNumber("+44 7911 123456")).toBe("447911123456");
+    expect(whatsappNumber("123")).toBeNull();
+  });
 });
 
 import { buildDemoPrompt, styleFits } from "../src/lib/demos/styles";
