@@ -55,6 +55,32 @@ describe("POST /api/asistente", () => {
     expect(logged).toEqual([{ owner: "user:u1", question: expect.stringMatching(/^pregunta/), answer: "¡Hola! Soy Miguel Ángel.", error: null, model: "gpt-4.1-mini" }]);
   });
 
+  it("keeps reading when OpenAI's first pieces carry no text, as its real stream does", async () => {
+    const pieces = [
+      `event: response.created\ndata: ${JSON.stringify({ type: "response.created" })}\n\n`,
+      `event: response.in_progress\ndata: ${JSON.stringify({ type: "response.in_progress" })}\n\n`,
+      `data: ${JSON.stringify({ type: "response.output_text.delta", delta: "Hola" })}\n\n`,
+      `data: ${JSON.stringify({ type: "response.output_text.delta", delta: ", ¿qué tal?" })}\n\n`,
+      `data: ${JSON.stringify({ type: "response.completed" })}\n\n`,
+    ];
+    vi.stubGlobal("fetch", async () => {
+      const encoder = new TextEncoder();
+      let i = 0;
+      return new Response(
+        new ReadableStream({
+          pull(c) {
+            if (i < pieces.length) c.enqueue(encoder.encode(pieces[i++]));
+            else c.close();
+          },
+        }),
+        { status: 200 },
+      );
+    });
+    const res = await POST(question(n++));
+    const text = await Promise.race([res.text(), new Promise((r) => setTimeout(() => r("TRABADO"), 2000))]);
+    expect(text).toBe("Hola, ¿qué tal?");
+  });
+
   it("tries a widely available model when the account cannot use the first", async () => {
     vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body));

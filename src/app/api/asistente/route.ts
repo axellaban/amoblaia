@@ -88,41 +88,46 @@ function textStream(body: ReadableStream<Uint8Array>, done: (answer: string, err
   return new ReadableStream<Uint8Array>({
     async pull(controller) {
       try {
-        const { done: finished, value } = await reader.read();
-        if (finished) {
-          if (!wrote) {
-            error ??= "respuesta vacía";
-            controller.enqueue(encoder.encode("Se me secó el pincel. Probá de nuevo en un momento."));
+        // A pull that enqueues nothing is not called again, and the chat would wait
+        // forever: OpenAI's first events (created, in progress) carry no text. So
+        // it keeps reading until some text goes out or the answer ends.
+        for (let sent = false; !sent; ) {
+          const { done: finished, value } = await reader.read();
+          if (finished) {
+            if (!wrote) {
+              error ??= "respuesta vacía";
+              controller.enqueue(encoder.encode("Se me secó el pincel. Probá de nuevo en un momento."));
+            }
+            await done(answer, error);
+            controller.close();
+            return;
           }
-          await done(answer, error);
-          controller.close();
-          return;
+          buffer += decoder.decode(value, { stream: true });
+          const events = buffer.split("\n\n");
+          buffer = events.pop() ?? "";
+          for (const event of events)
+            for (const line of event.split("\n")) {
+              if (!line.startsWith("data:")) continue;
+              const data = line.slice(5).trim();
+              if (!data || data === "[DONE]") continue;
+              let parsed: { type?: string; delta?: unknown };
+              try {
+                parsed = JSON.parse(data);
+              } catch {
+                continue;
+              }
+              if (parsed.type === "response.output_text.delta" && typeof parsed.delta === "string") {
+                wrote = sent = true;
+                answer += parsed.delta;
+                controller.enqueue(encoder.encode(parsed.delta));
+              } else if (parsed.type === "error" || parsed.type === "response.failed") {
+                console.error("assistant_stream_failed");
+                error = "OpenAI cortó la respuesta";
+                controller.enqueue(encoder.encode(wrote ? "\n\n(Se cortó la respuesta. Probá de nuevo.)" : "No pude responder ahora. Probá de nuevo en un momento."));
+                wrote = sent = true;
+              }
+            }
         }
-        buffer += decoder.decode(value, { stream: true });
-        const events = buffer.split("\n\n");
-        buffer = events.pop() ?? "";
-        for (const event of events)
-          for (const line of event.split("\n")) {
-            if (!line.startsWith("data:")) continue;
-            const data = line.slice(5).trim();
-            if (!data || data === "[DONE]") continue;
-            let parsed: { type?: string; delta?: unknown };
-            try {
-              parsed = JSON.parse(data);
-            } catch {
-              continue;
-            }
-            if (parsed.type === "response.output_text.delta" && typeof parsed.delta === "string") {
-              wrote = true;
-              answer += parsed.delta;
-              controller.enqueue(encoder.encode(parsed.delta));
-            } else if (parsed.type === "error" || parsed.type === "response.failed") {
-              console.error("assistant_stream_failed");
-              error = "OpenAI cortó la respuesta";
-              controller.enqueue(encoder.encode(wrote ? "\n\n(Se cortó la respuesta. Probá de nuevo.)" : "No pude responder ahora. Probá de nuevo en un momento."));
-              wrote = true;
-            }
-          }
       } catch {
         console.error("assistant_stream_interrupted");
         controller.enqueue(encoder.encode("\n\n(Se cortó la respuesta. Probá de nuevo.)"));
