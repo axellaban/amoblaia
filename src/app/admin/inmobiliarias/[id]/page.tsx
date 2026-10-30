@@ -72,6 +72,7 @@ export default async function AgencyPage({ params }: { params: Promise<{ id: str
           <Link href={`/admin/inmobiliarias/${agency.id}/editar`} className="button button-primary">
             Editar inmobiliaria →
           </Link>
+          <SupportViewButton agencyId={agency.id} small={false} act />
           <SupportViewButton agencyId={agency.id} small={false} />
           <AddToProspecting agencyId={agency.id} />
           {agency.slug && agency.sitePublished && (

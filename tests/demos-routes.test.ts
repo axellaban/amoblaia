@@ -45,6 +45,8 @@ function fakeDb() {
 
 vi.mock("server-only", () => ({}));
 vi.mock("next/server", () => ({ after: (fn: () => unknown) => state.after.push(fn) }));
+// No support cookie: the team works with its own rules.
+vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => undefined }) }));
 vi.mock("next/navigation", () => ({
   redirect: (to: string) => {
     throw new Error(`REDIRECT:${to}`);

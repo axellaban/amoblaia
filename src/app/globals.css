@@ -11605,6 +11605,13 @@ a.dm-agency:hover {
 .support-banner-error {
   color: #ffd5c2;
 }
+/* Acting as the agency: changes are real, so the banner says so in a warmer color. */
+.support-banner.is-acting {
+  background: #8a3b12;
+}
+.support-banner.is-acting .button {
+  color: #8a3b12;
+}
 
 /* Photo card, compact: photo, its settings and its controls on the left; styles as tiles on the right. */
 .pc-left {

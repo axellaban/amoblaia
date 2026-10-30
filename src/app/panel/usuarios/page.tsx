@@ -15,7 +15,7 @@ export default async function UsersPage() {
     <>
       <PanelNav section="usuarios" agencyName={membership.agency.name} role={membership.role} />
       <div className="account-page container ap-page">
-        <AgencyTeam readOnly={Boolean(membership.support)} />
+        <AgencyTeam readOnly={Boolean(membership.support && !membership.acting)} />
       </div>
     </>
   );

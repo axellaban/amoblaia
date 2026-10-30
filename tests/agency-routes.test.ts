@@ -174,7 +174,8 @@ import * as invitaciones from "../src/app/api/admin/inmobiliarias/[id]/invitacio
 import * as invitacion from "../src/app/api/admin/inmobiliarias/[id]/invitaciones/[claimId]/route";
 import * as invitacionPanel from "../src/app/api/panel/invitacion/route";
 import * as soporte from "../src/app/api/admin/inmobiliarias/[id]/soporte/route";
-import { readSupportToken, supportToken } from "../src/lib/agency/support";
+import { readSupport, readSupportToken, supportToken } from "../src/lib/agency/support";
+import { requireDemoAccess, stagingRule } from "../src/lib/agency/server";
 import * as espacios from "../src/app/api/admin/demos/[id]/espacios/route";
 import * as espacio from "../src/app/api/admin/demos/[id]/espacios/[spaceId]/route";
 import * as fotoDemo from "../src/app/api/admin/demos/[id]/photos/[photoId]/route";
@@ -968,6 +969,69 @@ describe("Support view: the team sees an agency's panel, read only", () => {
     expect(r.status).toBe(200);
     expect(state.cookies.has("habita_soporte")).toBe(false);
     expect(state.inserts.find((i) => i.table === "admin_audit")!.row).toMatchObject({ action: "agency_support_end", subject_id: AG });
+  });
+});
+
+describe("Acting as an agency: the team works in its panel with the owner's permissions", () => {
+  const TEAM = { id: "00000000-0000-4000-8000-0000000000aa", email: "equipo@amobla.test", email_confirmed_at: "2026-01-01" };
+  const AG = "00000000-0000-4000-8000-00000000a001";
+  const DEMO_AG = "00000000-0000-4000-8000-000000000d77";
+  const params = { params: Promise.resolve({ id: AG }) };
+  const panelReq = (path: string, method: string, body?: unknown) => {
+    const r = req(path, method, body);
+    r.headers.set("referer", `${origin}/panel/propiedades/${DEMO_AG}`);
+    return r;
+  };
+  beforeEach(() => {
+    vi.stubEnv("ADMIN_EMAILS", "equipo@amobla.test");
+    state.tables.agencies.push({ id: AG, name: "Russillo", website: null, slug: "russillo", owner_id: OWNER, site_published: false, branding: {} });
+    state.tables.demos.push({ id: DEMO_AG, agency_id: AG, kind: "ficha", property_id: "prx", token: "tok_russillorussillorussil", status: "draft", settings: {} });
+    state.tables.admin_audit = [];
+    state.tables.agency_members = [];
+    state.user = TEAM;
+  });
+
+  it("signs the mode with the token: a read-only view can never be turned into acting", () => {
+    const now = Date.parse("2026-10-27T12:00:00Z");
+    const view = supportToken(AG, TEAM.id, now);
+    const act = supportToken(AG, TEAM.id, now, "act");
+    expect(readSupport(act, TEAM.id, now)).toEqual({ agencyId: AG, mode: "act" });
+    expect(readSupport(view, TEAM.id, now)).toEqual({ agencyId: AG, mode: "view" });
+    const [a, u, exp, mac] = view.split(".");
+    expect(readSupport([a, u, exp, "act", mac].join("."), TEAM.id, now)).toBeNull();
+    expect(readSupport(act, OWNER, now)).toBeNull();
+  });
+
+  it("starts only for the team, audited as acting", async () => {
+    const r = await soporte.POST(req(`/api/admin/inmobiliarias/${AG}/soporte`, "POST", { mode: "act" }), params);
+    expect(r.status).toBe(201);
+    expect(state.inserts.find((i) => i.table === "admin_audit")!.row).toMatchObject({ actor_id: TEAM.id, action: "agency_support_act", subject_id: AG });
+    expect(readSupport(state.cookies.get("habita_soporte"), TEAM.id)).toMatchObject({ agencyId: AG, mode: "act" });
+    state.user = { id: OWNER, email: "duenia@sur.test", email_confirmed_at: "2026-01-01" };
+    expect((await soporte.POST(req(`/api/admin/inmobiliarias/${AG}/soporte`, "POST", { mode: "act" }), params)).status).toBe(403);
+  });
+
+  it("changes the agency's site and publishes its properties as its owner would", async () => {
+    state.cookies.set("habita_soporte", supportToken(AG, TEAM.id, Date.now(), "act"));
+    const site = await panel.PATCH(req("/api/panel", "PATCH", { name: "Russillo Propiedades" }));
+    expect(site.status).toBe(200);
+    expect(state.tables.agencies.find((a) => a.id === AG)!.name).toBe("Russillo Propiedades");
+    const access = await requireDemoAccess(panelReq(`/api/admin/demos/${DEMO_AG}`, "PATCH"), DEMO_AG);
+    expect(access).toMatchObject({ admin: false, role: "owner", acting: true, billingUser: OWNER });
+    // Its stagings are the agency's, paid with its credits, as from its own panel.
+    expect(stagingRule(access)).toEqual({ payer: "agency", blocked: null });
+  });
+
+  it("acts only on that agency: another agency's property stays the team's, as always", async () => {
+    state.cookies.set("habita_soporte", supportToken(AG, TEAM.id, Date.now(), "act"));
+    const other = await requireDemoAccess(panelReq(`/api/admin/demos/${DEMO}`, "PATCH"), DEMO);
+    expect(other).toMatchObject({ admin: true, acting: false });
+  });
+
+  it("keeps the read-only view refusing writes", async () => {
+    state.cookies.set("habita_soporte", supportToken(AG, TEAM.id));
+    expect((await panel.PATCH(req("/api/panel", "PATCH", { name: "Otro" }))).status).toBe(403);
+    await expect(requireDemoAccess(panelReq(`/api/admin/demos/${DEMO_AG}`, "PATCH"), DEMO_AG)).rejects.toThrow(/solo lectura/);
   });
 });
 
