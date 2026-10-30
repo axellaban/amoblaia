@@ -18,8 +18,12 @@ export type DemoInvite =
 export const invitationPath = (code: string, demoToken: string) =>
   `/panel/empezar?${new URLSearchParams({ [INVITE_PARAM]: code, demo: demoToken })}`;
 
-export const presentationPath = (demoToken: string, code: string) =>
-  `/demo/${demoToken}?${new URLSearchParams({ presentacion: "1", [INVITE_PARAM]: code })}`;
+/** The agency's presentation: a path only, with the invitation inside it when there is one. */
+export const presentationPath = (demoToken: string, code: string | null = null) =>
+  `/demo/${demoToken}/presentacion${code ? `/${code}` : ""}`;
+
+/** The buyers' page as the agency sees it from its presentation (?vista=ficha before). */
+export const buyerViewPath = (demoToken: string, code: string) => `${presentationPath(demoToken, code)}/ficha`;
 
 export function inviteFor(
   demo: { token: string; agencyId: string },
@@ -35,4 +39,7 @@ export function inviteFor(
  * The invitation code is a secret: analytics and ad pixels must never carry
  * it. Replaces its value in any URL-like text, keeping the rest readable.
  */
-export const redactInvite = (text: string) => text.replace(/([?&#]codigo=)[^&#\s"]*/gi, "$1[oculto]");
+export const redactInvite = (text: string) =>
+  text
+    .replace(/([?&#]codigo=)[^&#\s"]*/gi, "$1[oculto]")
+    .replace(/(\/demo\/[^/\s"?#]+\/presentacion\/)[^/\s"?#]+/gi, "$1[oculto]");

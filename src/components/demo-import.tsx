@@ -5,7 +5,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { FieldStatus, ImportedDemo, ReportRow } from "@/lib/demos/import";
 import type { EditorPhoto } from "@/lib/demos/shared";
-import { api } from "./admin-demos";
+import { AgencyWhatsappField, api } from "./admin-demos";
 
 const STATUS: Record<FieldStatus, string> = {
   found: "Encontrado",
@@ -236,7 +236,7 @@ export function foreignPhotos(photos: EditorPhoto[], propertyId: string | null) 
   });
 }
 
-type Preview = ImportedDemo & { listingUrl: string; existingAgency: string | null };
+type Preview = ImportedDemo & { listingUrl: string; existingAgency: string | null; agencyWhatsapp?: string | null };
 
 /**
  * Paste the URL → the page is read → a full preview with every field and its
@@ -250,6 +250,7 @@ export function ImportFromListing({ agencyId }: { agencyId?: string | null } = {
   const [price, setPrice] = useState("");
   const [mapChoice, setMapChoice] = useState<MapChoice | null>(null);
   const [contact, setContact] = useState("");
+  const [whatsapp, setWhatsapp] = useState("");
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const busy = Boolean(status);
@@ -288,6 +289,7 @@ export function ImportFromListing({ agencyId }: { agencyId?: string | null } = {
           contact: missingContact && contact.trim() ? contact.trim() : undefined,
           map: mapChoice ? mapOverride(preview, mapChoice) : undefined,
           agencyId: agencyId ?? undefined,
+          whatsapp: !preview.agencyWhatsapp && whatsapp.trim() ? whatsapp.trim() : undefined,
         }),
       });
       await syncPhotos(`/api/admin/demos/${made.id}`, made.images, (t) => setStatus(`${made.title}. ${t}`));
@@ -344,6 +346,15 @@ export function ImportFromListing({ agencyId }: { agencyId?: string | null } = {
               Se agrega a <strong>{preview.existingAgency}</strong> (ya cargada): solo completamos su logo y
               contacto si faltan.
             </p>
+          )}
+          {preview.agencyWhatsapp ? (
+            <p className="dm-help">WhatsApp para enviarle la demo: +{preview.agencyWhatsapp}. Se puede corregir en la demo.</p>
+          ) : (
+            <AgencyWhatsappField
+              value={whatsapp}
+              onChange={setWhatsapp}
+              note="No lo encontramos en la publicación. Sin él, «Enviar por WhatsApp» queda deshabilitado; se puede cargar después en la demo."
+            />
           )}
           {pending.length > 0 ? (
             <div className="dm-exceptions" role="group" aria-label="Para revisar antes de crear">

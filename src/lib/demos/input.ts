@@ -4,6 +4,7 @@ import { rooms } from "@/lib/catalog";
 import { isDemoStyle } from "./styles";
 import { cleanText, cleanUrl, DEMO_MODES, type DemoMode } from "./shared";
 import { parseMapLink, validPair } from "./geo";
+import { normalizeArNumber } from "./send";
 import {
   CONTACT_KINDS,
   DEFAULT_SETTINGS,
@@ -31,6 +32,17 @@ export async function readJson(request: Request, max = 16384) {
   } catch {
     throw new HttpError(400, "Solicitud inválida.");
   }
+}
+
+/**
+ * The agency's WhatsApp to send it its demos: optional, normalized to
+ * 549 + area code + number. Empty is null; a number we cannot read is an error.
+ */
+export function whatsappInput(raw: unknown) {
+  if (raw === null || raw === undefined || (typeof raw === "string" && !raw.trim())) return null;
+  const number = typeof raw === "string" && raw.length <= 40 ? normalizeArNumber(raw) : null;
+  if (!number) throw new HttpError(400, "Revisá el WhatsApp de la inmobiliaria: con código de área, por ejemplo 223 633-7191.");
+  return number;
 }
 
 export function agencyInput(raw: unknown) {

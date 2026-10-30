@@ -114,3 +114,52 @@ describe("demo activity", () => {
     await expect(db.query("select * from demo_activity")).resolves.toBeDefined();
   });
 });
+
+// The follow-up: "Sin enviar" → "Enviada" (sent by hand or on WhatsApp) → "Ingresó" (a visit).
+describe("demo sent stage", () => {
+  const sentAt = (demoId: string) => one<{ sent_at: string | null }>("select sent_at from demos where id=$1", [demoId]);
+
+  it("a new demo is not sent", async () => {
+    const { demo: d } = await demo();
+    expect((await sentAt(d))!.sent_at).toBeNull();
+  });
+
+  it("a visit marks it as sent when nobody did", async () => {
+    const { demo: d } = await demo();
+    await record(d, "visitante-eeee-5", "visita");
+    expect((await sentAt(d))!.sent_at).not.toBeNull();
+  });
+
+  it("a visit keeps the date of the earlier send", async () => {
+    const { demo: d } = await demo();
+    await db.query("update demos set sent_at = '2026-10-01T10:00:00Z' where id=$1", [d]);
+    await record(d, "visitante-ffff-6", "visita");
+    expect(new Date((await sentAt(d))!.sent_at!).toISOString()).toBe("2026-10-01T10:00:00.000Z");
+  });
+
+  it("an interaction without a visit does not mark it as sent", async () => {
+    const { demo: d } = await demo();
+    await record(d, "visitante-gggg-7", "interaccion");
+    expect((await sentAt(d))!.sent_at).toBeNull();
+  });
+
+  it("the migration backfills visited demos as sent on their first visit, and leaves the rest unsent", async () => {
+    const visited = await demo();
+    const untouched = await demo();
+    await record(visited.demo, "visitante-hhhh-8", "visita");
+    await db.query("update demos set sent_at = null where id = any($1)", [[visited.demo, untouched.demo]]);
+    await db.exec(readFileSync("supabase/migrations/202611130001_demo_sent_stage.sql", "utf8"));
+    const first = (await one<{ created_at: string }>("select min(created_at) as created_at from demo_activity where demo_id=$1", [visited.demo]))!;
+    expect(new Date((await sentAt(visited.demo))!.sent_at!).toISOString()).toBe(new Date(first.created_at).toISOString());
+    expect((await sentAt(untouched.demo))!.sent_at).toBeNull();
+  });
+
+  it("the agency's WhatsApp is digits only and hidden from members", async () => {
+    const { agency } = await demo();
+    await db.query("update agencies set contact_whatsapp='5492236337191' where id=$1", [agency]);
+    await expect(db.query("update agencies set contact_whatsapp='+54 9 223' where id=$1", [agency])).rejects.toThrow();
+    await db.exec("set role authenticated");
+    await expect(db.query("select contact_whatsapp from agencies")).rejects.toThrow();
+    await db.exec("reset role");
+  });
+});
