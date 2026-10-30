@@ -109,6 +109,25 @@ function saved(key: string): ChatMessage[] {
   }
 }
 
+/** A fresh id for a conversation, kept in the tab with its messages. */
+function newId(key: string) {
+  const id = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : null;
+  try {
+    if (id) sessionStorage.setItem(`${key}:id`, id);
+  } catch {
+    /* Without storage, the conversation lasts as long as the page. */
+  }
+  return id;
+}
+
+function savedId(key: string) {
+  try {
+    return sessionStorage.getItem(`${key}:id`) || newId(key);
+  } catch {
+    return newId(key);
+  }
+}
+
 /**
  * Miguel Ángel, the chat at hand: a round button at the bottom right that opens a
  * conversation about habita., the panel and the design of each property.
@@ -125,10 +144,13 @@ export function Assistant({ place }: { place: AssistantPlace }) {
   const area = place.kind;
   const key = storageKey(place);
   const [restored, setRestored] = useState(false);
+  // This chat's id, so the team's history groups its questions; a new conversation gets a new one.
+  const conversation = useRef<string | null>(null);
 
   useEffect(() => {
     // Restored after mount, so the server render and the first client render match.
     setMessages(saved(key));
+    conversation.current = savedId(key);
     setRestored(true);
   }, [key]);
 
@@ -184,7 +206,12 @@ export function Assistant({ place }: { place: AssistantPlace }) {
         const response = await fetch("/api/asistente", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages: history.slice(-MAX_MESSAGES), place, path: window.location.pathname }),
+          body: JSON.stringify({
+            messages: history.slice(-MAX_MESSAGES),
+            place,
+            path: window.location.pathname,
+            conversation: conversation.current,
+          }),
           signal: controller.signal,
         });
         if (!response.ok || !response.body) {
@@ -220,6 +247,7 @@ export function Assistant({ place }: { place: AssistantPlace }) {
   const restart = () => {
     abort.current?.abort();
     setMessages([]);
+    conversation.current = newId(key);
     setError(null);
     setBusy(false);
     track("asistente_reiniciar", { area });

@@ -16,12 +16,14 @@ export type ChatMessage = { role: "user" | "assistant"; content: string };
 /** Where the chat is open: the panel (a signed-in account) or an agency's demo (its private link). */
 export type AssistantPlace = { kind: "panel" } | { kind: "demo"; token: string; code: string };
 
-export type AssistantInput = { messages: ChatMessage[]; place: AssistantPlace; path: string };
+/** conversation: the browser's id for this chat, so the team sees it as one conversation. */
+export type AssistantInput = { messages: ChatMessage[]; place: AssistantPlace; path: string; conversation: string | null };
 
 export class AssistantInputError extends Error {}
 
 const TOKEN = /^[A-Za-z0-9_-]{8,64}$/;
 const CODE = /^[A-Za-z0-9_-]{20,64}$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** The page the question comes from, without query or invitation code: only for context. */
 export function cleanPath(path: unknown) {
@@ -55,7 +57,8 @@ export function assistantInput(body: unknown): AssistantInput {
   else if (p.kind === "demo" && typeof p.token === "string" && TOKEN.test(p.token) && typeof p.code === "string" && CODE.test(p.code))
     place = { kind: "demo", token: p.token, code: p.code };
   else throw new AssistantInputError("No pudimos abrir el asistente aquí.");
-  return { messages, place, path: cleanPath(b.path) };
+  const conversation = typeof b.conversation === "string" && UUID.test(b.conversation) ? b.conversation.toLowerCase() : null;
+  return { messages, place, path: cleanPath(b.path), conversation };
 }
 
 /** Quick questions under the greeting, by place. */
