@@ -174,7 +174,7 @@ export function Assistant({ place }: { place: AssistantPlace }) {
         });
         if (!response.ok || !response.body) {
           const data = await response.json().catch(() => ({}));
-          throw new Error(typeof data.error === "string" ? data.error : "No pude responder ahora. Probá de nuevo.");
+          throw new Error(typeof data.error === "string" ? data.error : `No pude responder ahora (error ${response.status}). Probá de nuevo.`);
         }
         const reader = response.body.getReader();
         const decoder = new TextDecoder();

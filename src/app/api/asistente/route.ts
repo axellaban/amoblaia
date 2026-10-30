@@ -12,7 +12,8 @@ import { validOrigin } from "@/lib/session";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-const MODEL = () => process.env.OPENAI_CHAT_MODEL || "gpt-5-mini";
+/** The configured model first; if the account cannot use it, a widely available one. */
+const MODELS = () => [...new Set([process.env.OPENAI_CHAT_MODEL?.trim() || "gpt-5-mini", "gpt-4.1-mini"])];
 const NO_STORE = { "Cache-Control": "no-store" };
 
 /**
@@ -98,21 +99,21 @@ function textStream(body: ReadableStream<Uint8Array>) {
   });
 }
 
-/** One question to Miguel Ángel: { messages, place, path } → the answer, streamed as plain text. */
-export async function POST(request: Request) {
-  try {
-    if (!validOrigin(request)) throw new HttpError(403, "Origen inválido.");
-    if (Number(request.headers.get("content-length") || 0) > 32768) throw new HttpError(413, "La conversación es demasiado larga.");
-    let input: AssistantInput;
-    try {
-      input = assistantInput(await request.json());
-    } catch (e) {
-      throw new HttpError(400, e instanceof AssistantInputError ? e.message : "La consulta no es válida.");
-    }
-    const { key, context } = await contextOf(request, input);
-    if (!process.env.OPENAI_API_KEY) throw new HttpError(503, "El asistente todavía no está disponible.");
-    if (!allowQuestion(key)) throw new HttpError(429, "Hiciste muchas preguntas seguidas. Esperá unos minutos y volvé a intentar.");
-    const model = MODEL();
+/** OpenAI's reason for a refusal, short and without secrets, for the logs. */
+async function providerReason(response: Response) {
+  const data = (await response.json().catch(() => null)) as { error?: { code?: string; type?: string; message?: string } } | null;
+  const e = data?.error;
+  return [e?.code, e?.type, e?.message?.slice(0, 160)].filter(Boolean).join(" · ") || "sin detalle";
+}
+
+/**
+ * The streamed answer from OpenAI. A refusal of the model itself (not
+ * enabled for the account, unknown or a parameter it does not take) tries
+ * the next one; anything else is reported with its status, so it can be fixed.
+ */
+async function ask(context: AssistantContext, input: AssistantInput) {
+  let status = 0;
+  for (const model of MODELS()) {
     const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
@@ -128,16 +129,43 @@ export async function POST(request: Request) {
       }),
       signal: AbortSignal.timeout(55_000),
     });
-    if (!response.ok || !response.body) {
-      console.error("assistant_provider_error", response.status);
-      throw new HttpError(502, "No pude responder ahora. Probá de nuevo en un momento.");
+    if (response.ok && response.body) return response;
+    status = response.status;
+    console.error("assistant_provider_error", model, status, await providerReason(response));
+    if (![400, 403, 404].includes(status)) break;
+  }
+  // 503, not 502: a gateway may replace a 502's body, and the chat would lose the reason.
+  throw new HttpError(
+    503,
+    status === 401
+      ? "El asistente no está configurado (clave de OpenAI inválida)."
+      : status === 429
+        ? "El asistente está muy ocupado o sin saldo en OpenAI. Probá en un rato."
+        : `No pude responder ahora (OpenAI ${status || "sin respuesta"}). Probá de nuevo en un momento.`,
+  );
+}
+
+/** One question to Miguel Ángel: { messages, place, path } → the answer, streamed as plain text. */
+export async function POST(request: Request) {
+  try {
+    if (!validOrigin(request)) throw new HttpError(403, "Origen inválido.");
+    if (Number(request.headers.get("content-length") || 0) > 32768) throw new HttpError(413, "La conversación es demasiado larga.");
+    let input: AssistantInput;
+    try {
+      input = assistantInput(await request.json());
+    } catch (e) {
+      throw new HttpError(400, e instanceof AssistantInputError ? e.message : "La consulta no es válida.");
     }
-    return new Response(textStream(response.body), {
+    const { key, context } = await contextOf(request, input);
+    if (!process.env.OPENAI_API_KEY) throw new HttpError(503, "El asistente todavía no está disponible.");
+    if (!allowQuestion(key)) throw new HttpError(429, "Hiciste muchas preguntas seguidas. Esperá unos minutos y volvé a intentar.");
+    const response = await ask(context, input);
+    return new Response(textStream(response.body!), {
       headers: { "Content-Type": "text/plain; charset=utf-8", ...NO_STORE },
     });
   } catch (e) {
     if (e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError"))
-      return Response.json({ error: "La respuesta tardó demasiado. Probá de nuevo." }, { status: 504 });
+      return Response.json({ error: "La respuesta tardó demasiado. Probá de nuevo." }, { status: 503 });
     return failure(e);
   }
 }
