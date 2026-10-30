@@ -1,9 +1,9 @@
-// Pablo, the assistant of habita.: a chat at hand in the agency's panel and in
+// Miguel Ángel, the assistant of habita.: a chat at hand in the agency's panel and in
 // its demo ("modo demostración"). Client-safe and pure: the persona, the
 // limits of a conversation and the validation of what the browser sends.
 
-/** Its name and title: a nod to the great painters, not any of them. */
-export const ASSISTANT_NAME = "Pablo";
+/** Its name and title: a nod to the Renaissance masters. */
+export const ASSISTANT_NAME = "Miguel Ángel";
 export const ASSISTANT_TITLE = "Tu genio del diseño";
 
 /** How much of the conversation travels on each question. */

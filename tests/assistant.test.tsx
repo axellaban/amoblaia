@@ -9,7 +9,7 @@ vi.mock("@/lib/analytics", () => ({ track: () => {} }));
 
 const CODE = "codigoSecretoDeVeinteMasCaracteres";
 
-describe("what the browser sends to Pablo", () => {
+describe("what the browser sends to Miguel Ángel", () => {
   it("keeps a short conversation that ends with the user's question", () => {
     const input = assistantInput({
       messages: [
@@ -49,10 +49,10 @@ describe("what the browser sends to Pablo", () => {
   });
 });
 
-describe("Pablo's instructions", () => {
+describe("Miguel Ángel's instructions", () => {
   it("know the panel, the credits and where the question comes from", () => {
     const text = assistantInstructions({ kind: "panel", path: "/panel/sitio", agencyName: "Inmobiliaria Sur", role: "member", credits: 7, support: false });
-    for (const part of ["Pablo", "/panel/creditos", "1 crédito la primera vez", "Inmobiliaria Sur", "/panel/sitio", "7 créditos", "no el dueño"])
+    for (const part of ["Miguel Ángel", "/panel/creditos", "1 crédito la primera vez", "Inmobiliaria Sur", "/panel/sitio", "7 créditos", "no el dueño"])
       expect(text).toContain(part);
   });
 
@@ -83,10 +83,10 @@ describe("the chat", () => {
     expect(html).toContain("&lt;b&gt;x&lt;/b&gt;");
   });
 
-  it("starts closed, as Pablo's portrait at the corner", () => {
+  it("starts closed, as Miguel Ángel's portrait at the corner", () => {
     const html = renderToStaticMarkup(<Assistant place={{ kind: "panel" }} />);
     expect(html).toContain("pb-launcher");
-    expect(html).toContain("Abrir el chat con Pablo");
+    expect(html).toContain("Abrir el chat con Miguel Ángel");
     expect(html).not.toContain("pb-panel");
   });
 });

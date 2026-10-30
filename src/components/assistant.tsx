@@ -14,31 +14,31 @@ import {
   type ChatMessage,
 } from "@/lib/assistant/shared";
 
-/** Pablo's portrait: a cubist painter with beret, mustache and two different eyes. Original drawing. */
-export function PabloAvatar({ size = 44 }: { size?: number }) {
+/** Miguel Ángel's portrait: a Renaissance master with curls, beard and a chisel. Original drawing. */
+export function MiguelAvatar({ size = 44 }: { size?: number }) {
   return (
     <svg className="pb-avatar" width={size} height={size} viewBox="0 0 64 64" aria-hidden="true" focusable="false">
       <circle cx="32" cy="32" r="32" fill="#e9dfd0" />
-      <path d="M14 30 L32 16 L50 26 L48 50 L30 58 L16 48 Z" fill="#f2c9a0" />
-      <path d="M32 16 L50 26 L48 50 L32 54 Z" fill="#dfa77a" />
-      <path d="M10 24 C14 10 46 6 54 20 C46 18 22 18 10 24 Z" fill="#24382e" />
-      <rect x="30" y="4" width="4" height="7" rx="2" fill="#24382e" />
-      <circle cx="24" cy="32" r="4.2" fill="#fff" />
-      <circle cx="24.6" cy="32.4" r="2.2" fill="#242824" />
-      <path d="M37 29 L46 33 L37 36 Z" fill="#fff" />
-      <circle cx="40" cy="32.6" r="1.8" fill="#242824" />
-      <path d="M31 33 L27 44 L32 44" fill="none" stroke="#9a5b34" strokeWidth="2" strokeLinejoin="round" />
-      <path d="M22 47 C26 44 30 46 32 46 C34 46 38 44 43 47 C38 49 34 48 32 48 C30 48 26 49 22 47 Z" fill="#242824" />
-      <path d="M19 26 L29 25" stroke="#242824" strokeWidth="2" strokeLinecap="round" />
-      <path d="M36 24 L45 27" stroke="#242824" strokeWidth="2" strokeLinecap="round" />
-      <circle cx="52" cy="46" r="5" fill="#c4572e" />
-      <circle cx="49" cy="53" r="3.4" fill="#e3b23c" />
-      <circle cx="56" cy="53" r="3" fill="#3f6fa0" />
+      <path d="M17 30 C17 18 47 18 47 30 L46 42 C44 50 20 50 18 42 Z" fill="#f0c7a0" />
+      <path d="M14 32 C10 18 20 8 32 8 C44 8 54 18 50 32 C48 26 46 22 42 21 C36 24 28 24 22 21 C18 22 16 26 14 32 Z" fill="#3b2a1e" />
+      <circle cx="18" cy="16" r="5" fill="#3b2a1e" />
+      <circle cx="27" cy="10" r="5" fill="#3b2a1e" />
+      <circle cx="38" cy="10" r="5" fill="#3b2a1e" />
+      <circle cx="47" cy="16" r="5" fill="#3b2a1e" />
+      <path d="M18 40 C20 50 26 57 32 57 C38 57 44 50 46 40 C42 46 38 47 32 47 C26 47 22 46 18 40 Z" fill="#3b2a1e" />
+      <path d="M27 42 C30 45 34 45 37 42" fill="none" stroke="#f0c7a0" strokeWidth="2" strokeLinecap="round" />
+      <path d="M21 29 L28 28" stroke="#2a1d14" strokeWidth="2" strokeLinecap="round" />
+      <path d="M36 28 L43 29" stroke="#2a1d14" strokeWidth="2" strokeLinecap="round" />
+      <circle cx="25" cy="33" r="2" fill="#242824" />
+      <circle cx="39" cy="33" r="2" fill="#242824" />
+      <path d="M32 33 L30 39 L33 39" fill="none" stroke="#b27a52" strokeWidth="1.8" strokeLinejoin="round" />
+      <path d="M48 44 L58 54" stroke="#8a6a44" strokeWidth="4" strokeLinecap="round" />
+      <path d="M45 41 L50 46" stroke="#9aa3a8" strokeWidth="5" strokeLinecap="round" />
     </svg>
   );
 }
 
-/** **bold** and [text](/internal) links: the little markdown Pablo uses. Anything else stays text. */
+/** **bold** and [text](/internal) links: the little markdown Miguel Ángel uses. Anything else stays text. */
 function inline(text: string) {
   const parts: React.ReactNode[] = [];
   const pattern = /\*\*([^*]+)\*\*|\[([^\]]+)\]\((\/[^)\s]*)\)/g;
@@ -93,7 +93,7 @@ export function AnswerText({ text }: { text: string }) {
   return <Fragment>{blocks}</Fragment>;
 }
 
-const storageKey = (place: AssistantPlace) => `habita-pablo:${place.kind === "demo" ? place.token : "panel"}`;
+const storageKey = (place: AssistantPlace) => `habita-miguel:${place.kind === "demo" ? place.token : "panel"}`;
 
 function saved(key: string): ChatMessage[] {
   try {
@@ -106,7 +106,7 @@ function saved(key: string): ChatMessage[] {
 }
 
 /**
- * Pablo, the chat at hand: a round button at the bottom right that opens a
+ * Miguel Ángel, the chat at hand: a round button at the bottom right that opens a
  * conversation about habita., the panel and the design of each property.
  */
 export function Assistant({ place }: { place: AssistantPlace }) {
@@ -212,7 +212,7 @@ export function Assistant({ place }: { place: AssistantPlace }) {
       {open && (
         <section className="pb-panel" role="dialog" aria-modal="false" aria-labelledby="pb-title">
           <header className="pb-head">
-            <PabloAvatar size={42} />
+            <MiguelAvatar size={42} />
             <div className="pb-who">
               <strong id="pb-title">{ASSISTANT_NAME}</strong>
               <small>{ASSISTANT_TITLE}</small>
@@ -306,7 +306,7 @@ export function Assistant({ place }: { place: AssistantPlace }) {
           if (!open) track("asistente_abierto", { area });
         }}
       >
-        <PabloAvatar size={56} />
+        <MiguelAvatar size={56} />
         {!open && <span className="pb-launcher-label">¿Te ayudo?</span>}
       </button>
     </div>

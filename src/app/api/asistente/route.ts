@@ -98,7 +98,7 @@ function textStream(body: ReadableStream<Uint8Array>) {
   });
 }
 
-/** One question to Pablo: { messages, place, path } → the answer, streamed as plain text. */
+/** One question to Miguel Ángel: { messages, place, path } → the answer, streamed as plain text. */
 export async function POST(request: Request) {
   try {
     if (!validOrigin(request)) throw new HttpError(403, "Origen inválido.");

@@ -127,7 +127,7 @@ export default async function PublicDemoPage({ params, searchParams }: Props) {
   return (
     <>
       <DemoView demo={demo} source={{ kind: "public", token }} presentation={presentation} invite={invite} owner={owner} plans={plans} />
-      {/* Pablo helps the agency in its own demo; buyers never see him. */}
+      {/* Miguel Ángel helps the agency in its own demo; buyers never see him. */}
       {owner && code && <Assistant place={{ kind: "demo", token, code }} />}
     </>
   );
