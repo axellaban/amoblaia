@@ -51,9 +51,15 @@ describe("what the browser sends to Miguel Ángel", () => {
 
 describe("Miguel Ángel's instructions", () => {
   it("know the panel, the credits and where the question comes from", () => {
-    const text = assistantInstructions({ kind: "panel", path: "/panel/sitio", agencyName: "Inmobiliaria Sur", role: "member", credits: 7, support: false });
-    for (const part of ["Miguel Ángel", "/panel/creditos", "1 crédito la primera vez", "Inmobiliaria Sur", "/panel/sitio", "7 créditos", "no el dueño"])
+    const text = assistantInstructions({ kind: "panel", path: "/panel/sitio", agencyName: "Inmobiliaria Sur", role: "viewer", credits: 7, support: false });
+    for (const part of ["Miguel Ángel", "/panel/creditos", "1 crédito la primera vez", "Inmobiliaria Sur", "/panel/sitio", "7 créditos", "solo vista"])
       expect(text).toContain(part);
+  });
+
+  it("tell an administrator apart from the owner: everything but buying credits", () => {
+    const admin = assistantInstructions({ kind: "panel", path: "/panel", agencyName: "Sur", role: "admin", credits: 1, support: false });
+    expect(admin).toContain("todo menos comprar créditos");
+    expect(assistantInstructions({ kind: "panel", path: "/panel", agencyName: "Sur", role: "owner", credits: 1, support: false })).toContain("dueño");
   });
 
   it("know the demo they are in", () => {
