@@ -93,13 +93,17 @@ export function AnswerText({ text }: { text: string }) {
   return <Fragment>{blocks}</Fragment>;
 }
 
+/** How long the chat waits for the next words before giving up. */
+const WAIT_MS = 45_000;
+
 const storageKey = (place: AssistantPlace) => `habita-miguel:${place.kind === "demo" ? place.token : "panel"}`;
 
 function saved(key: string): ChatMessage[] {
   try {
     const raw = sessionStorage.getItem(key);
     const list = raw ? (JSON.parse(raw) as ChatMessage[]) : [];
-    return Array.isArray(list) ? list.filter((m) => (m.role === "user" || m.role === "assistant") && typeof m.content === "string") : [];
+    // An answer cut by a reload is not restored as a bubble that never fills.
+    return Array.isArray(list) ? list.filter((m) => (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content.trim()) : [];
   } catch {
     return [];
   }
@@ -131,7 +135,7 @@ export function Assistant({ place }: { place: AssistantPlace }) {
   useEffect(() => {
     if (!restored) return;
     try {
-      sessionStorage.setItem(key, JSON.stringify(messages.slice(-MAX_MESSAGES * 2)));
+      sessionStorage.setItem(key, JSON.stringify(messages.filter((m) => m.content.trim()).slice(-MAX_MESSAGES * 2)));
     } catch {
       /* The conversation just won't survive a reload. */
     }
@@ -165,6 +169,17 @@ export function Assistant({ place }: { place: AssistantPlace }) {
       const controller = new AbortController();
       abort.current = controller;
       let answer = "";
+      let stalled = false;
+      // No word for a while: stop waiting and say so, never dots forever.
+      let watchdog = 0;
+      const watch = () => {
+        window.clearTimeout(watchdog);
+        watchdog = window.setTimeout(() => {
+          stalled = true;
+          controller.abort();
+        }, WAIT_MS);
+      };
+      watch();
       try {
         const response = await fetch("/api/asistente", {
           method: "POST",
@@ -181,17 +196,20 @@ export function Assistant({ place }: { place: AssistantPlace }) {
         for (;;) {
           const { done, value } = await reader.read();
           if (done) break;
+          watch();
           answer += decoder.decode(value, { stream: true });
           const shown = answer;
           setMessages([...history, { role: "assistant", content: shown }]);
         }
+        if (!answer.trim()) throw new Error("No pude responder ahora. Probá de nuevo.");
       } catch (e) {
-        if (controller.signal.aborted) return;
-        setError(e instanceof Error ? e.message : "No pude responder ahora. Probá de nuevo.");
+        if (controller.signal.aborted && !stalled) return;
+        setError(stalled ? "La respuesta está tardando demasiado. Probá de nuevo." : e instanceof Error ? e.message : "No pude responder ahora. Probá de nuevo.");
         // The question goes back to the field, so it can be sent again.
         setMessages(messages);
         setText(q);
       } finally {
+        window.clearTimeout(watchdog);
         if (abort.current === controller) abort.current = null;
         setBusy(false);
       }
@@ -293,7 +311,6 @@ export function Assistant({ place }: { place: AssistantPlace }) {
               <Send size={18} aria-hidden="true" />
             </button>
           </form>
-          <p className="pb-note">Respuestas generadas con IA: pueden tener errores.</p>
         </section>
       )}
       <button
