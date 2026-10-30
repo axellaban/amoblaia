@@ -33,6 +33,7 @@ import {
   generationDownloadUrl,
   orderStyles,
   photoDownloadUrl,
+  retouchDownloadUrl,
   photoLabel,
   styleName,
   whatsappShareUrl,
@@ -526,7 +527,25 @@ export function DemoEditor({
       }, "Foto eliminada.", "fotos");
     },
     upload: (files, spaceId) => void upload(files, spaceId),
-    download: (photoId, key, name) => void download(photoId ? photoDownloadUrl(photoId, name) : generationDownloadUrl(key, name), key, name),
+    download: (photoId, key, name, retouchId) =>
+      void download(
+        retouchId ? retouchDownloadUrl(retouchId, name) : photoId ? photoDownloadUrl(photoId, name) : generationDownloadUrl(key, name),
+        key,
+        name,
+      ),
+    retouch: async (photoId, source, adjust) => {
+      try {
+        const { photo, retouch } = await api<{ photo: EditorPhoto | null; retouch: string }>(`${base}/photos/${photoId}/retoque`, {
+          method: "POST",
+          body: JSON.stringify({ source, adjust }),
+        });
+        if (photo) updatePhoto(photo, photoId);
+        return retouch;
+      } catch (e) {
+        say({ tone: "error", text: e instanceof Error ? e.message : "No pudimos guardar la versión.", section: "fotos" });
+        return null;
+      }
+    },
     review: (photoId, generationId) => setReview({ photoId, generationId }),
     addStyles: (list) => {
       const fresh = list.filter((st) => !demoStyles.includes(st));

@@ -16019,6 +16019,9 @@ a.dm-agency:hover {
 .pw-edit-head .pw-title {
   margin: 0;
 }
+.pw-edit-head .pw-badge {
+  white-space: nowrap;
+}
 .pw-edit-group {
   display: grid;
   gap: 10px;

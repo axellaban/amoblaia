@@ -14,7 +14,8 @@ import {
   type AgencyBranding,
   type DemoSettings,
 } from "./branding";
-import { demoStyleOrder, styleFits } from "./styles";
+import { demoStyleName, demoStyleOrder, styleFits } from "./styles";
+import { retouchOps, type Adjust } from "./retouch";
 import { activityOf } from "./activity";
 import { fetchPublic } from "./listing";
 import type { ImportedDemo } from "./import";
@@ -41,6 +42,8 @@ import {
   type PublicDemo,
   type PublicPhoto,
   type PropertySpace,
+  type RetouchRow,
+  type RetouchSource,
 } from "./shared";
 
 /** 18 random bytes: 24 URL-safe characters, unguessable and stable across publish/unpublish. */
@@ -510,6 +513,8 @@ export async function demoDetail(id: string): Promise<DemoDetail> {
       ) as (GenerationRow & { project_id: string })[])
     : [];
   const prop = check(property, "DEMO_PROPERTY_LOOKUP_FAILED") as DemoDetail["property"];
+  const generationStyle = new Map(generations.map((g) => [g.id, demoStyleName(g.style)]));
+  const retouches = await retouchesOf(photos.map((p) => p.id), generationStyle);
   const [shown, branding, saved] = await Promise.all([
     shownOf(photos),
     brandingOf(demo.agency_id),
@@ -536,6 +541,7 @@ export async function demoDetail(id: string): Promise<DemoDetail> {
     generations: generations
       .filter((g) => g.project_id === p.project_id)
       .map(({ project_id: _ignored, ...g }) => g),
+    retouches: retouches.get(p.id) ?? [],
   }));
   const withVersions = photos.map((p) => ({ ...p, versions: versionList(shown.get(p.id), order) }));
   const cover = pickCover(withVersions, demo.cover_photo_id, main);
@@ -883,8 +889,17 @@ export async function adminImagePaths(params: {
   photoId?: string | null;
   style?: string | null;
   generationId?: string | null;
+  retouchId?: string | null;
 }) {
   const db = adminClient();
+  if (params.retouchId) {
+    if (!isUuid(params.retouchId)) return null;
+    const r = check(
+      await db.from("photo_retouches").select("result_path").eq("id", params.retouchId).maybeSingle(),
+      "DEMO_RETOUCH_LOOKUP_FAILED",
+    ) as { result_path: string } | null;
+    return r ? { original: r.result_path, staged: null } : null;
+  }
   if (params.generationId) {
     if (!isUuid(params.generationId)) return null;
     const g = check(
@@ -960,6 +975,109 @@ export async function renderImage(path: string, width: number) {
     .resize({ width, height: width, fit: "inside", withoutEnlargement: true })
     .jpeg({ quality: 82, progressive: true })
     .toBuffer();
+}
+
+export type { RetouchSource } from "./shared";
+
+/**
+ * Saves a retouch as a new version of the photo: the source at most 2048 px,
+ * the adjustments applied, a JPEG in storage. Free: no credits, no AI, and it
+ * does not count toward the photo's versions.
+ */
+export async function saveRetouch(params: { photoId: string; projectId: string; source: RetouchSource; adjust: Adjust; actorId: string }) {
+  const db = adminClient();
+  let sourcePath: string | null;
+  let generationId: string | null = null;
+  let retouchId: string | null = null;
+  if (params.source.kind === "original") {
+    sourcePath = (await adminImagePaths({ photoId: params.photoId, style: null }))?.original ?? null;
+  } else if (params.source.kind === "generation") {
+    // An AI version of this photo, not of another one.
+    const g = check(
+      await db.from("generations").select("id").eq("id", params.source.id).eq("project_id", params.projectId).eq("status", "succeeded").maybeSingle(),
+      "DEMO_GENERATION_LOOKUP_FAILED",
+    );
+    if (!g) throw new HttpError(404, "No encontramos esa versión.");
+    generationId = params.source.id;
+    sourcePath = (await adminImagePaths({ generationId: params.source.id }))?.original ?? null;
+  } else {
+    const r = check(
+      await db.from("photo_retouches").select("id").eq("id", params.source.id).eq("photo_id", params.photoId).maybeSingle(),
+      "DEMO_RETOUCH_LOOKUP_FAILED",
+    );
+    if (!r) throw new HttpError(404, "No encontramos esa versión.");
+    retouchId = params.source.id;
+    sourcePath = (await adminImagePaths({ retouchId: params.source.id }))?.original ?? null;
+  }
+  const bytes = sourcePath ? await download(sourcePath) : null;
+  if (!bytes) throw new HttpError(404, "No encontramos la foto para retocar.");
+  const ops = retouchOps(params.adjust);
+  const image = await sharp(bytes, { limitInputPixels: 40_000_000 })
+    .rotate()
+    .resize({ width: 2048, height: 2048, fit: "inside", withoutEnlargement: true })
+    .modulate({ brightness: ops.brightness })
+    .linear(ops.linear.a, ops.linear.b)
+    .recomb(ops.tint)
+    .jpeg({ quality: 90, progressive: true })
+    .toBuffer();
+  const path = `retouches/${params.photoId}/${randomBytes(12).toString("hex")}.jpg`;
+  const upload = await db.storage.from(BUCKET).upload(path, image, { contentType: "image/jpeg", upsert: false });
+  if (upload.error) throw new HttpError(503, "No pudimos guardar la versión. Revisá el almacenamiento disponible.");
+  const row = check(
+    await db
+      .from("photo_retouches")
+      .insert({
+        photo_id: params.photoId,
+        source_generation_id: generationId,
+        source_retouch_id: retouchId,
+        adjust: params.adjust,
+        result_path: path,
+        result_bytes: image.length,
+        created_by: params.actorId,
+      })
+      .select("id")
+      .single(),
+    "DEMO_RETOUCH_INSERT_FAILED",
+  ) as { id: string };
+  return row.id;
+}
+
+/**
+ * The retouches of each photo, named "<style> · Retoque n" after what they
+ * start from ("Original" for the photo itself); oldest first.
+ */
+export async function retouchesOf(photoIds: string[], generationStyle: Map<string, string>) {
+  const out = new Map<string, RetouchRow[]>();
+  if (!photoIds.length) return out;
+  const rows = check(
+    await adminClient()
+      .from("photo_retouches")
+      .select("id,photo_id,source_generation_id,source_retouch_id,adjust,created_at")
+      .in("photo_id", photoIds)
+      .order("created_at"),
+    "DEMO_RETOUCHES_LOOKUP_FAILED",
+  ) as {
+    id: string;
+    photo_id: string;
+    source_generation_id: string | null;
+    source_retouch_id: string | null;
+    adjust: Adjust;
+    created_at: string;
+  }[];
+  const base = new Map<string, string>();
+  const counts = new Map<string, number>();
+  for (const r of rows) {
+    const from = r.source_retouch_id ? base.get(r.source_retouch_id) : null;
+    const name = from ?? (r.source_generation_id ? (generationStyle.get(r.source_generation_id) ?? "Versión") : "Original");
+    base.set(r.id, name);
+    const key = `${r.photo_id}:${name}`;
+    const n = (counts.get(key) ?? 0) + 1;
+    counts.set(key, n);
+    const list = out.get(r.photo_id) ?? [];
+    list.push({ id: r.id, label: `${name} · Retoque${n > 1 ? ` ${n}` : ""}`, adjust: r.adjust, created_at: r.created_at });
+    out.set(r.photo_id, list);
+  }
+  return out;
 }
 
 export type AgencyInput = {

@@ -50,6 +50,8 @@ import {
   MAX_DEMO_STYLES,
   adminGenerationUrl,
   adminPhotoUrl,
+  adminRetouchUrl,
+  type RetouchSource,
   photoLabel,
   roomName,
   SPACE_TYPES,
@@ -61,6 +63,7 @@ import {
   type PropertySpace,
 } from "@/lib/demos/shared";
 import { DEMO_STYLES as STYLE_LIST, styleFits, type PropertyType } from "@/lib/demos/styles";
+import { AUTO_ADJUST, NO_ADJUST, adjustFilter, sameAdjust, type Adjust } from "@/lib/demos/retouch";
 
 /** A state of one style of one photo, in words: created, in the queue, failed, uncertain… */
 export function stateLabel(s: CellState) {
@@ -89,7 +92,10 @@ export type WorkspaceActions = {
   cover: (photoId: string | null) => void;
   remove: (photoId: string) => void;
   upload: (files: FileList | File[], spaceId: string | null) => void;
-  download: (url: string, key: string, name: string) => void;
+  /** A photo's original (photoId), an AI version (key), or a retouch (retouchId). */
+  download: (photoId: string, key: string, name: string, retouchId?: string) => void;
+  /** Saves the retouch of what is viewed as a new version; the new version's id, or null when it failed. */
+  retouch: (photoId: string, source: RetouchSource, adjust: Adjust) => Promise<string | null>;
   review: (photoId: string, generationId: string) => void;
   /** Adds styles to the property's list (6 at most); false when there is no room. */
   addStyles: (styles: string[]) => boolean;
@@ -102,23 +108,10 @@ export type WorkspaceActions = {
 type Quote = { payer: "team" | "agency"; credits: number | null; newPhotos: number; blocked: string | null };
 type Draft = { style: string; mode: "furnish" | "redesign"; room: string };
 
-type Adjust = { exp: number; con: number; temp: number; sha: number };
-const NO_ADJUST: Adjust = { exp: 0, con: 0, temp: 0, sha: 0 };
-const sameAdjust = (a: Adjust, b: Adjust) => a.exp === b.exp && a.con === b.con && a.temp === b.temp && a.sha === b.sha;
 const signed = (n: number, decimals = 0) => {
   const s = decimals ? n.toFixed(decimals) : String(n);
   return n > 0 ? `+${s}` : s;
 };
-/** The live preview of a retouch: the same adjustments the saved version will carry. */
-export function adjustFilter(a: Adjust) {
-  const parts: string[] = [];
-  const brightness = 1 + a.exp / 20 + a.sha / 300;
-  if (brightness !== 1) parts.push(`brightness(${brightness.toFixed(3)})`);
-  if (a.con) parts.push(`contrast(${(1 + a.con / 100).toFixed(3)})`);
-  if (a.temp > 0) parts.push(`sepia(${(a.temp / 140).toFixed(3)})`);
-  if (a.temp < 0) parts.push(`hue-rotate(${(a.temp * 0.35).toFixed(1)}deg) saturate(${(1 + a.temp / 250).toFixed(3)})`);
-  return parts.join(" ");
-}
 
 export function PhotoWorkspace({
   detail,
@@ -166,6 +159,7 @@ export function PhotoWorkspace({
   const [tab, setTab] = useState<"create" | "edit">("create");
   // The retouch of each photo, previewed live with CSS filters until it is saved as a version.
   const [adjusts, setAdjusts] = useState<Record<string, Adjust>>({});
+  const [saving, setSaving] = useState(false);
   const uid = useId();
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [batch, setBatch] = useState(false);
@@ -194,14 +188,26 @@ export function PhotoWorkspace({
   const chosen = photo ? (photo.id in viewOf ? viewOf[photo.id] : initialView(photo, mainStyle)) : null;
   const viewGen =
     photo && chosen ? (photo.generations.find((g) => g.id === chosen && g.status === "succeeded" && !discarded.has(g.id)) ?? null) : null;
-  const effectiveMode: ViewMode = viewGen ? mode : "original";
+  // A retouch is a version too: shown, compared and downloaded like an AI version, but it has no ficha or AI actions.
+  const viewRetouch = photo && chosen ? (photo.retouches.find((r) => r.id === chosen) ?? null) : null;
+  const hasView = Boolean(viewGen || viewRetouch);
+  const afterUrl = viewRetouch ? adminRetouchUrl(viewRetouch.id, 1600) : viewGen ? adminGenerationUrl(viewGen.id, 1600) : "";
+  const viewName = viewRetouch ? viewRetouch.label : viewGen ? styleName(viewGen.style) : "Original";
+  const viewSource: RetouchSource = viewRetouch
+    ? { kind: "retouch", id: viewRetouch.id }
+    : viewGen
+      ? { kind: "generation", id: viewGen.id }
+      : { kind: "original" };
+  const effectiveMode: ViewMode = hasView ? mode : "original";
   const number = photo && viewGen ? versionNumber(photo, viewGen.id) : null;
   const sameStyle = photo && viewGen ? photo.generations.filter((g) => g.style === viewGen.style && g.status === "succeeded").length : 0;
-  const label = viewLabel(effectiveMode, viewGen ? styleName(viewGen.style) : null, number, sameStyle);
+  const label = viewLabel(effectiveMode, hasView ? viewName : null, number, sameStyle);
   const versionsList = photo ? photoVersions(photo, demoStyles, staging.waiting) : [];
 
   const choose = (photoId: string, generationId: string | null, m: ViewMode = generationId ? "version" : "original") => {
     setViewOf((v) => ({ ...v, [photoId]: generationId }));
+    // A different picture starts without adjustments: a saved retouch already carries its own.
+    setAdjusts((all) => ({ ...all, [photoId]: NO_ADJUST }));
     setMode(m);
   };
   // A version asked from "Crear otra versión" opens by itself when it is ready, unless another view was chosen meanwhile.
@@ -276,9 +282,9 @@ export function PhotoWorkspace({
                 <ChevronRight size={18} />
               </button>
               <span className="pw-badges">
-                {viewGen && (
+                {hasView && (
                   <span className={`pw-badge ${shownHere ? "is-on" : ""}`}>
-                    {shownHere ? shownLabel : photosOnly ? "Creada y guardada" : "No se muestra en la ficha"}
+                    {viewRetouch ? "Retoque guardado" : shownHere ? shownLabel : photosOnly ? "Creada y guardada" : "No se muestra en la ficha"}
                   </span>
                 )}
                 {!photo.visible && <span className="pw-badge">Oculta en la ficha</span>}
@@ -286,22 +292,22 @@ export function PhotoWorkspace({
               </span>
             </header>
             <figure className="pw-figure">
-              {viewGen && effectiveMode === "compare" ? (
+              {hasView && effectiveMode === "compare" ? (
                 <Comparison
                   before={adminPhotoUrl(photo.id, null, 1600)}
-                  after={adminGenerationUrl(viewGen.id, 1600)}
+                  after={afterUrl}
                   afterFilter={retouch}
                   beforeLabel="Original"
                   beforeAlt={`${name}, foto original`}
-                  afterLabel={styleName(viewGen.style)}
-                  alt={`${name}, ${styleName(viewGen.style)}`}
+                  afterLabel={viewName}
+                  alt={`${name}, ${viewName}`}
                   initial={50}
                 />
               ) : (
                 <img
-                  key={viewGen && effectiveMode === "version" ? viewGen.id : `o-${photo.id}`}
-                  src={viewGen && effectiveMode === "version" ? adminGenerationUrl(viewGen.id, 1600) : adminPhotoUrl(photo.id, null, 1600)}
-                  alt={viewGen && effectiveMode === "version" ? `${name}, ${styleName(viewGen.style)}` : `${name}, foto original`}
+                  key={hasView && effectiveMode === "version" ? afterUrl : `o-${photo.id}`}
+                  src={hasView && effectiveMode === "version" ? afterUrl : adminPhotoUrl(photo.id, null, 1600)}
+                  alt={hasView && effectiveMode === "version" ? `${name}, ${viewName}` : `${name}, foto original`}
                   style={retouch ? { filter: retouch } : undefined}
                 />
               )}
@@ -323,16 +329,16 @@ export function PhotoWorkspace({
                 <button
                   type="button"
                   aria-pressed={effectiveMode === "version"}
-                  disabled={!viewGen && !Object.keys(photo.shown).length}
-                  onClick={() => (viewGen ? setMode("version") : choose(photo.id, initialView(photo, mainStyle)))}
+                  disabled={!hasView && !Object.keys(photo.shown).length}
+                  onClick={() => (hasView ? setMode("version") : choose(photo.id, initialView(photo, mainStyle)))}
                 >
                   Versión
                 </button>
                 <button
                   type="button"
                   aria-pressed={effectiveMode === "compare"}
-                  disabled={!viewGen && !Object.keys(photo.shown).length}
-                  onClick={() => (viewGen ? setMode("compare") : choose(photo.id, initialView(photo, mainStyle), "compare"))}
+                  disabled={!hasView && !Object.keys(photo.shown).length}
+                  onClick={() => (hasView ? setMode("compare") : choose(photo.id, initialView(photo, mainStyle), "compare"))}
                 >
                   <Columns2 size={15} aria-hidden="true" /> Comparar
                 </button>
@@ -370,15 +376,19 @@ export function PhotoWorkspace({
                     ? "Se muestra en la ficha"
                     : "Oculta en la ficha"}
               </button>
-              {viewGen ? (
+              {hasView ? (
                 <button
                   type="button"
                   className="button button-small button-outline"
                   data-testid="download-active"
-                  disabled={downloading === viewGen.id}
-                  onClick={() => actions.download("", viewGen.id, fileName(photo, viewGen))}
+                  disabled={downloading === (viewRetouch?.id ?? viewGen?.id)}
+                  onClick={() =>
+                    viewRetouch
+                      ? actions.download("", `r-${viewRetouch.id}`, `${originalName(photo).replace(/\.jpg$/, "")}-retoque-${viewRetouch.id.slice(0, 6)}.jpg`, viewRetouch.id)
+                      : viewGen && actions.download("", viewGen.id, fileName(photo, viewGen))
+                  }
                 >
-                  {downloading === viewGen.id ? <Loader2 size={14} className="spin" /> : <Download size={14} />} Descargar
+                  {downloading === (viewRetouch?.id ?? viewGen?.id) ? <Loader2 size={14} className="spin" /> : <Download size={14} />} Descargar
                 </button>
               ) : (
                 <button
@@ -443,6 +453,17 @@ export function PhotoWorkspace({
                   onChoose={(id) => choose(photo.id, id, mode === "compare" ? "compare" : "version")}
                   actions={actions}
                 />
+              ))}
+              {photo.retouches.map((r) => (
+                <li key={r.id}>
+                  <button type="button" className="pw-version" aria-pressed={chosen === r.id} onClick={() => choose(photo.id, r.id)}>
+                    <img src={adminRetouchUrl(r.id, 480)} alt="" loading="lazy" />
+                    <span>
+                      <strong>{r.label}</strong>
+                      <small>Retoque guardado</small>
+                    </span>
+                  </button>
+                </li>
               ))}
               <li>
                 <button type="button" className="pw-version pw-version-new" onClick={openCreate}>
@@ -517,6 +538,19 @@ export function PhotoWorkspace({
                 viewing={label}
                 adjust={adjust}
                 onAdjust={setAdjust}
+                saving={saving}
+                onSave={async () => {
+                  setSaving(true);
+                  try {
+                    const id = await actions.retouch(photo.id, viewSource, adjust);
+                    if (id) {
+                      setAdjust(NO_ADJUST);
+                      choose(photo.id, id);
+                    }
+                  } finally {
+                    setSaving(false);
+                  }
+                }}
                 spaces={spaces}
                 propertyType={propertyType}
                 index={photos.indexOf(photo)}
@@ -855,6 +889,8 @@ function EditPanel({
   viewing,
   adjust,
   onAdjust,
+  saving,
+  onSave,
   spaces,
   propertyType,
   index,
@@ -866,6 +902,8 @@ function EditPanel({
   viewing: string;
   adjust: Adjust;
   onAdjust: (next: Adjust) => void;
+  saving: boolean;
+  onSave: () => void;
   spaces: PropertySpace[];
   propertyType: PropertyType;
   index: number;
@@ -903,7 +941,7 @@ function EditPanel({
             aria-pressed={auto}
             onClick={() => {
               setAuto(true);
-              onAdjust({ exp: 3, con: 10, temp: 6, sha: 15 });
+              onAdjust(AUTO_ADJUST);
             }}
           >
             {auto ? "Aplicada" : "Mejora automática"}
@@ -932,11 +970,11 @@ function EditPanel({
         <button type="button" className="button button-outline button-small" disabled={!dirty} onClick={() => onAdjust(NO_ADJUST)}>
           Descartar
         </button>
-        <button type="button" className="button button-primary button-small" disabled title="Guardar como versión llega con el procesado en el servidor.">
-          Guardar como versión
+        <button type="button" className="button button-primary button-small" disabled={!dirty || saving} onClick={onSave}>
+          {saving ? <Loader2 size={14} className="spin" /> : null} {saving ? "Guardando…" : "Guardar como versión"}
         </button>
       </div>
-      <p className="pw-hint">El original no se toca. Guardar crea una versión nueva; la vista previa es solo una aproximación.</p>
+      <p className="pw-hint">Guardar crea una versión nueva, sin créditos. El original no se toca.</p>
 
       <PhotoSettings photo={photo} spaces={spaces} propertyType={propertyType} index={index} total={total} actions={actions} />
     </div>

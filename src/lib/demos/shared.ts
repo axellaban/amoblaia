@@ -1,5 +1,6 @@
 // Commercial demos: types, texts and helpers shared by the admin panel, the
 // server routes and the public page. Nothing here reads secrets.
+import type { Adjust } from "./retouch";
 import { modes, rooms } from "@/lib/catalog";
 import { demoStyleName, demoStyleOrder } from "./styles";
 
@@ -193,6 +194,14 @@ export type EditorPhoto = {
   /** The version each style shows, by style id: a generation id. */
   shown: Record<string, string>;
   generations: GenerationRow[];
+  /** Retouches saved as versions (free); "label" names them in the versions list. */
+  retouches: RetouchRow[];
+};
+export type RetouchRow = {
+  id: string;
+  label: string;
+  adjust: Adjust;
+  created_at: string;
 };
 export type DemoDetail = {
   demo: DemoSummary;
@@ -366,6 +375,20 @@ export function adminPhotoUrl(photoId: string, version: PhotoVersion | null, wid
   if (og) q.set("og", "1");
   return `/api/admin/demos/imagen?${q}`;
 }
+/** Where a retouch starts from: the original photo, one of its AI versions, or another retouch. */
+export type RetouchSource = { kind: "original" } | { kind: "generation"; id: string } | { kind: "retouch"; id: string };
+
+export function retouchDownloadUrl(retouchId: string, name: string) {
+  const q = new URLSearchParams({ retoque: retouchId, w: "2048", descargar: "1", nombre: name });
+  return `/api/admin/demos/imagen?${q}`;
+}
+
+export function adminRetouchUrl(retouchId: string, width?: number) {
+  const q = new URLSearchParams({ retoque: retouchId });
+  if (width) q.set("w", String(width));
+  return `/api/admin/demos/imagen?${q}`;
+}
+
 export function adminGenerationUrl(generationId: string, width?: number) {
   const q = new URLSearchParams({ generacion: generationId });
   if (width) q.set("w", String(width));
