@@ -8386,10 +8386,20 @@ h2 .accent {
 .dm-dialog {
   width: min(560px, 100%);
   max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
   overflow: auto;
   border-radius: 16px;
   background: #fff;
   box-shadow: 0 20px 60px rgb(0 0 0 / 25%);
+}
+/* The dialog's final buttons stay in view while its content scrolls (phones). */
+.dm-dialog-body > .dm-dialog-actions:last-child {
+  position: sticky;
+  bottom: -20px;
+  margin: 0 -20px -20px;
+  padding: 12px 20px 16px;
+  border-top: 1px solid #eceee8;
+  background: #fff;
 }
 .dm-dialog > header {
   display: flex;
@@ -9164,8 +9174,16 @@ h2 .accent {
 @media (max-width: 700px) {
   .dm-row {
     grid-template-columns: 76px minmax(0, 1fr);
-    grid-template-areas: "thumb main" "status status" "actions actions";
+    grid-template-areas: "thumb main" "status status" "links links" "bottom bottom";
+    gap: 12px 14px;
     padding: 14px;
+  }
+  .dm-bottom {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .dm-facts {
+    gap: 14px 22px;
   }
   .dm-thumb {
     width: 76px;
