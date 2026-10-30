@@ -304,7 +304,7 @@ export const PRESENTATION_PARAM = "presentacion";
 /** The buyers' link (plain), or the presentation link for the agency. */
 export function demoUrl(origin: string, token: string, presentation = false) {
   const url = `${origin.replace(/\/$/, "")}${demoPath(token)}`;
-  return presentation ? `${url}?${PRESENTATION_PARAM}=1` : url;
+  return presentation ? `${url}/presentacion` : url;
 }
 /** wa.me opens WhatsApp Web or the app. The message is only the link: no greeting, no text of ours. */
 export function whatsappShareUrl(link: string, to?: string | null) {
