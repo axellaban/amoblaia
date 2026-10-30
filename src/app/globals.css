@@ -16003,3 +16003,86 @@ a.dm-agency:hover {
     flex: 1;
   }
 }
+
+/* Editar: luz y color con vista previa, como el editor del estudio. */
+.pw-edit {
+  display: grid;
+  gap: 14px;
+  font-size: 14px;
+}
+.pw-edit-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.pw-edit-head .pw-title {
+  margin: 0;
+}
+.pw-edit-group {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+.pw-edit-group > span {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #4d524d;
+}
+.pw-edit-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.pw-edit-row > span {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #4d524d;
+}
+.pw-slider {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr) 52px;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.pw-slider input {
+  width: 100%;
+  margin: 0;
+  height: 24px;
+  accent-color: var(--forest);
+}
+.pw-slider output {
+  text-align: right;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: #4d524d;
+}
+.pw-tool {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--muted);
+}
+.pw-soon {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #f1ece3;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.pw-edit-actions {
+  display: flex;
+  gap: 8px;
+}
+.pw-edit-actions .button {
+  flex: 1;
+}

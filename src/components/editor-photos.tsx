@@ -6,7 +6,7 @@
 // at (the view), which version the listing shows, the cover, the photo's
 // visibility and the batch selection are five separate things: choosing a
 // version only changes the view, and every other change is its own button.
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState, type ChangeEvent } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -102,6 +102,24 @@ export type WorkspaceActions = {
 type Quote = { payer: "team" | "agency"; credits: number | null; newPhotos: number; blocked: string | null };
 type Draft = { style: string; mode: "furnish" | "redesign"; room: string };
 
+type Adjust = { exp: number; con: number; temp: number; sha: number };
+const NO_ADJUST: Adjust = { exp: 0, con: 0, temp: 0, sha: 0 };
+const sameAdjust = (a: Adjust, b: Adjust) => a.exp === b.exp && a.con === b.con && a.temp === b.temp && a.sha === b.sha;
+const signed = (n: number, decimals = 0) => {
+  const s = decimals ? n.toFixed(decimals) : String(n);
+  return n > 0 ? `+${s}` : s;
+};
+/** The live preview of a retouch: the same adjustments the saved version will carry. */
+export function adjustFilter(a: Adjust) {
+  const parts: string[] = [];
+  const brightness = 1 + a.exp / 20 + a.sha / 300;
+  if (brightness !== 1) parts.push(`brightness(${brightness.toFixed(3)})`);
+  if (a.con) parts.push(`contrast(${(1 + a.con / 100).toFixed(3)})`);
+  if (a.temp > 0) parts.push(`sepia(${(a.temp / 140).toFixed(3)})`);
+  if (a.temp < 0) parts.push(`hue-rotate(${(a.temp * 0.35).toFixed(1)}deg) saturate(${(1 + a.temp / 250).toFixed(3)})`);
+  return parts.join(" ");
+}
+
 export function PhotoWorkspace({
   detail,
   base,
@@ -146,6 +164,8 @@ export function PhotoWorkspace({
   const [viewOf, setViewOf] = useState<Record<string, string | null>>({});
   const [mode, setMode] = useState<ViewMode>("version");
   const [tab, setTab] = useState<"create" | "edit">("create");
+  // The retouch of each photo, previewed live with CSS filters until it is saved as a version.
+  const [adjusts, setAdjusts] = useState<Record<string, Adjust>>({});
   const uid = useId();
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [batch, setBatch] = useState(false);
@@ -214,6 +234,9 @@ export function PhotoWorkspace({
   const at = ordered.findIndex((p) => p.id === photo.id);
   const step = (n: number) => setActiveId(ordered[(at + n + ordered.length) % ordered.length].id);
   const shownHere = Boolean(viewGen && shownIds.has(viewGen.id));
+  const adjust = photo ? (adjusts[photo.id] ?? NO_ADJUST) : NO_ADJUST;
+  const retouch = tab === "edit" ? adjustFilter(adjust) : "";
+  const setAdjust = (next: Adjust) => photo && setAdjusts((all) => ({ ...all, [photo.id]: next }));
   const openCreate = () => {
     setTab("create");
     document.getElementById(`${uid}-side`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -267,6 +290,7 @@ export function PhotoWorkspace({
                 <Comparison
                   before={adminPhotoUrl(photo.id, null, 1600)}
                   after={adminGenerationUrl(viewGen.id, 1600)}
+                  afterFilter={retouch}
                   beforeLabel="Original"
                   beforeAlt={`${name}, foto original`}
                   afterLabel={styleName(viewGen.style)}
@@ -278,6 +302,7 @@ export function PhotoWorkspace({
                   key={viewGen && effectiveMode === "version" ? viewGen.id : `o-${photo.id}`}
                   src={viewGen && effectiveMode === "version" ? adminGenerationUrl(viewGen.id, 1600) : adminPhotoUrl(photo.id, null, 1600)}
                   alt={viewGen && effectiveMode === "version" ? `${name}, ${styleName(viewGen.style)}` : `${name}, foto original`}
+                  style={retouch ? { filter: retouch } : undefined}
                 />
               )}
               {effectiveMode !== "compare" && (
@@ -490,6 +515,8 @@ export function PhotoWorkspace({
               <EditPanel
                 photo={photo}
                 viewing={label}
+                adjust={adjust}
+                onAdjust={setAdjust}
                 spaces={spaces}
                 propertyType={propertyType}
                 index={photos.indexOf(photo)}
@@ -822,10 +849,12 @@ function SpaceMenu({ space, spaces, count, actions }: { space: PropertySpace; sp
   );
 }
 
-/** "Editar": the photo's own settings: name, space, defaults for new versions, order, discarded versions and delete. */
+/** "Editar": the retouch of the photo the large view shows, like the studio's editor: light and colour, AI tools, then the photo's settings. */
 function EditPanel({
   photo,
   viewing,
+  adjust,
+  onAdjust,
   spaces,
   propertyType,
   index,
@@ -835,6 +864,95 @@ function EditPanel({
   photo: EditorPhoto;
   /** What the large photo shows, in words. */
   viewing: string;
+  adjust: Adjust;
+  onAdjust: (next: Adjust) => void;
+  spaces: PropertySpace[];
+  propertyType: PropertyType;
+  index: number;
+  total: number;
+  actions: WorkspaceActions;
+}) {
+  const [auto, setAuto] = useState(false);
+  const dirty = !sameAdjust(adjust, NO_ADJUST);
+  const set = (key: keyof Adjust) => (e: ChangeEvent<HTMLInputElement>) => {
+    setAuto(false);
+    onAdjust({ ...adjust, [key]: Number(e.target.value) });
+  };
+  const sliders: { key: keyof Adjust; label: string; min: number; max: number; shown: string }[] = [
+    { key: "exp", label: "Exposición", min: -10, max: 10, shown: signed(adjust.exp / 10, 1) },
+    { key: "con", label: "Contraste", min: -50, max: 50, shown: signed(adjust.con) },
+    { key: "temp", label: "Temperatura", min: -50, max: 50, shown: adjust.temp === 0 ? "Neutra" : adjust.temp > 0 ? "Cálida" : "Fría" },
+    { key: "sha", label: "Sombras", min: -50, max: 50, shown: signed(adjust.sha) },
+  ];
+  return (
+    <div className="pw-edit">
+      <div className="pw-edit-head">
+        <div>
+          <p className="pw-kicker">Editando</p>
+          <h3 className="pw-title">{viewing}</h3>
+        </div>
+        {dirty && <span className="pw-badge is-on">Sin guardar</span>}
+      </div>
+
+      <section className="pw-edit-group" aria-labelledby={`${photo.id}-light`}>
+        <div className="pw-edit-row">
+          <span id={`${photo.id}-light`}>Luz y color</span>
+          <button
+            type="button"
+            className="button button-small button-outline"
+            aria-pressed={auto}
+            onClick={() => {
+              setAuto(true);
+              onAdjust({ exp: 3, con: 10, temp: 6, sha: 15 });
+            }}
+          >
+            {auto ? "Aplicada" : "Mejora automática"}
+          </button>
+        </div>
+        {sliders.map((s) => (
+          <label key={s.key} className="pw-slider">
+            <span>{s.label}</span>
+            <input type="range" min={s.min} max={s.max} value={adjust[s.key]} onChange={set(s.key)} aria-label={s.label} />
+            <output>{s.shown}</output>
+          </label>
+        ))}
+      </section>
+
+      <section className="pw-edit-group" aria-labelledby={`${photo.id}-ai`}>
+        <span id={`${photo.id}-ai`}>Herramientas IA · 1 crédito</span>
+        {["Quitar objetos", "Cambiar cielo", "Día a atardecer"].map((label) => (
+          <div key={label} className="pw-tool" aria-disabled="true">
+            <span>{label}</span>
+            <span className="pw-soon">Próximamente</span>
+          </div>
+        ))}
+      </section>
+
+      <div className="pw-edit-actions">
+        <button type="button" className="button button-outline button-small" disabled={!dirty} onClick={() => onAdjust(NO_ADJUST)}>
+          Descartar
+        </button>
+        <button type="button" className="button button-primary button-small" disabled title="Guardar como versión llega con el procesado en el servidor.">
+          Guardar como versión
+        </button>
+      </div>
+      <p className="pw-hint">El original no se toca. Guardar crea una versión nueva; la vista previa es solo una aproximación.</p>
+
+      <PhotoSettings photo={photo} spaces={spaces} propertyType={propertyType} index={index} total={total} actions={actions} />
+    </div>
+  );
+}
+
+/** "Ajustes de la foto": name, space, defaults for new versions, order, discarded versions and delete. */
+function PhotoSettings({
+  photo,
+  spaces,
+  propertyType,
+  index,
+  total,
+  actions,
+}: {
+  photo: EditorPhoto;
   spaces: PropertySpace[];
   propertyType: PropertyType;
   index: number;
@@ -845,10 +963,8 @@ function EditPanel({
   const live = photo.generations.some((g) => g.status === "queued" || g.status === "running");
   const discardedDone = photo.generations.filter((g) => g.status === "succeeded" && photo.discarded.includes(g.id));
   return (
-    <div className="pw-settings">
-      <p className="pw-kicker">Editando</p>
-      <h3 className="pw-title">{viewing}</h3>
-      <h4 className="pw-settings-title">Ajustes de la foto</h4>
+    <details className="pw-settings">
+      <summary>Ajustes de la foto</summary>
       <div className="pw-settings-body">
         <label htmlFor={`${uid}-name`}>Nombre</label>
         <input
@@ -918,7 +1034,7 @@ function EditPanel({
           <Trash2 size={14} /> Eliminar foto
         </button>
       </div>
-    </div>
+    </details>
   );
 }
 
