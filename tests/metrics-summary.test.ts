@@ -130,6 +130,11 @@ describe("GET /api/metricas", () => {
     expect(state.rpcs).toEqual([]);
   });
 
+  it("accepts the secret pasted with spaces or a line break", async () => {
+    vi.stubEnv("METRICS_SECRET", ` ${SECRET}\n`);
+    expect((await GET(req(`Bearer ${SECRET}`))).status).toBe(200);
+  });
+
   it("validates the dates", async () => {
     expect((await GET(req(`Bearer ${SECRET}`, "?desde=ayer"))).status).toBe(400);
   });

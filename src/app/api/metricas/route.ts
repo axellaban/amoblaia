@@ -26,7 +26,8 @@ async function all<T>(table: string, columns: string): Promise<T[]> {
  * (YYYY-MM-DD, Buenos Aires).
  */
 export async function GET(request: Request) {
-  const secret = process.env.METRICS_SECRET;
+  // Pegada en Vercel puede traer un espacio o un salto de línea de más.
+  const secret = process.env.METRICS_SECRET?.trim();
   if (!secret || secret.length < 32 || !sameSecret(request.headers.get("authorization") || "", `Bearer ${secret}`))
     return new Response("Unauthorized", { status: 401 });
   if (!cloudEnabled() || !cloudConfigured()) return Response.json({ error: "Supabase no está configurado." }, { status: 503 });
