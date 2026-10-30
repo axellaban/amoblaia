@@ -201,7 +201,7 @@ Para importar entre 100 y 300 propiedades por inmobiliaria haría falta:
   rutas con base simulada) y con Playwright usando las APIs interceptadas.
 - Créditos de prueba para inmobiliarias nuevas. Hoy generar requiere saldo pago.
   Regalar créditos al crear la cuenta es una decisión comercial.
-- Invitar colaboradores. El rol existe en el modelo, pero falta la pantalla de invitación (no se agregó una a medias).
+- ~~Invitar colaboradores~~: hecho en la sección 15 (Usuarios del panel).
 - Que los sitios se indexen en buscadores. Hoy son `noindex`, para no competir con el
   sitio propio de la inmobiliaria. También quedan pendientes los dominios propios, el
   constructor visual y el CRM: la estructura de `agencies`/`slug`/`site_published`
@@ -597,3 +597,45 @@ ven los compradores, completa, con el panel de la inmobiliaria arriba en
   el acceso de siempre.
 - **Datos:** solo usa los datos públicos de la demo. No hay rutas ni permisos
   nuevos, y una demo pública sin código sigue sin mostrar nada de esto.
+
+## 15. Usuarios del panel (2026-10-30)
+
+El dueño y los administradores de una inmobiliaria crean accesos para su
+equipo en **Panel → Usuarios** (`/panel/usuarios`).
+
+**Roles** (`agency_members.role`):
+
+| Rol | Puede |
+| --- | --- |
+| Dueño (`owner`) | Todo. Es la cuenta que paga y la única que compra créditos. Uno por inmobiliaria; no se cambia ni se quita desde el panel. |
+| Administrador (`admin`) | Todo menos comprar créditos: propiedades, sitio web, marca, eliminar propiedades y usuarios. |
+| Edición (`editor`) | Cargar, importar, editar, ambientar con IA (con los créditos de la inmobiliaria) y publicar. No elimina ni toca el sitio. |
+| Solo vista (`viewer`) | Ver propiedades y compartir sus enlaces. Toda escritura responde 403. |
+
+El antiguo `collaborator` pasa a `editor`.
+
+**Limitar a algunas propiedades:** a un usuario de edición o solo vista se le
+puede asignar una lista de propiedades (`agency_members.property_ids`, ids de
+`demo_properties`). Solo ve esas en el inicio, en "Mis propiedades", en el
+editor, en las imágenes y en las fotos importadas; cualquier otra responde 404.
+Un usuario limitado no crea propiedades nuevas ni importa: las carga un
+administrador y después se le asignan.
+
+**Flujo:** Crear usuario (nombre, email, rol, propiedades) → el panel muestra
+un enlace `/panel/unirme?codigo=…` con botones de copiar y de WhatsApp. El
+enlace sirve una vez, para ese email, y vence a los 14 días; solo se guarda su
+hash (`agency_invites.code_hash`), así que no se vuelve a mostrar: desde la
+lista se genera uno nuevo y el anterior deja de funcionar. Quien lo abre elige
+una contraseña y entra directo al panel; si ese email ya tiene cuenta, entra
+con ella (o con Google) y se suma con un clic. Una cuenta trabaja con una sola
+inmobiliaria. Quitar un acceso lo corta en el siguiente pedido (la membresía se
+lee en cada request). Todo queda en `admin_audit`.
+
+**Migración** `202611110001_agency_team.sql`: roles nuevos, `property_ids`,
+`display_name`, `invited_by`, tabla `agency_invites` y RPC
+`habita_join_agency` (solo `service_role`). Aditiva e idempotente. Hasta
+aplicarla, el panel sigue funcionando y "Usuarios" avisa que falta.
+
+**Rutas:** `GET/POST /api/panel/usuarios`, `PATCH/DELETE
+/api/panel/usuarios/[id]`, `POST /api/panel/unirme`.
+

@@ -175,7 +175,7 @@ export function DemoEditor({
 
   /** New server data. Form drafts are never replaced here (see `saved`). */
   const apply = useCallback((d: DemoDetail) => {
-    setDetail((prev) => ({ ...d, staging: d.staging ?? prev?.staging }));
+    setDetail((prev) => ({ ...d, staging: d.staging ?? prev?.staging, readOnly: d.readOnly ?? prev?.readOnly }));
     if (firstLoad.current) {
       firstLoad.current = false;
       setForms(formsOf(d));
@@ -575,6 +575,11 @@ export function DemoEditor({
                     ? "Demos"
                     : "Inmobiliarias"}
           </Link>
+        )}
+        {detail.readOnly && (
+          <p className="inline-notice" role="note">
+            Tu usuario es de solo vista: podés ver esta propiedad y compartir su enlace, pero no cambiarla.
+          </p>
         )}
         {demo.kind === "fotos" && (
           <p className="inline-notice" role="note">

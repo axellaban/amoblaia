@@ -10,7 +10,7 @@ export const runtime = "nodejs";
  */
 export async function POST(request: Request) {
   try {
-    const { user, agency } = await requireAgency(request);
+    const { user, agency } = await requireAgency(request, "create");
     return await importListing(request, { agencyId: agency.id, userId: user.id, origin: "agency" });
   } catch (e) {
     return failure(e);
@@ -20,7 +20,7 @@ export async function POST(request: Request) {
 /** The photos the panel downloaded for an import: { importId, done: [...], failed: [...] }. */
 export async function PATCH(request: Request) {
   try {
-    const { agency } = await requireAgency(request);
+    const { agency } = await requireAgency(request, "create");
     return await reportImportPhotos(request, agency.id);
   } catch (e) {
     return failure(e);

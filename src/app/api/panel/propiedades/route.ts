@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 /** A page of the agency's properties: ?pagina=&q=&estado=draft|published&operacion= (real total included). */
 export async function GET(request: Request) {
   try {
-    const { agency } = await requireAgency();
+    const { agency, scope } = await requireAgency();
     const q = new URL(request.url).searchParams;
     const page = Number(q.get("pagina")) || 1;
     const result = await agencyProperties(agency.id, {
@@ -15,6 +15,7 @@ export async function GET(request: Request) {
       q: q.get("q"),
       status: q.get("estado"),
       operation: q.get("operacion"),
+      scope,
     });
     return Response.json({ ...result, page }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (e) {

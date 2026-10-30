@@ -47,8 +47,7 @@ export async function POST(request: Request) {
  */
 export async function PATCH(request: Request) {
   try {
-    const { user, agency, role } = await requireAgency(request);
-    if (role !== "owner") throw new HttpError(403, "Solo el dueño de la inmobiliaria puede cambiar su sitio.");
+    const { user, agency } = await requireAgency(request, "manage");
     const body = await readJson(request, 4096);
     const db = adminClient();
     // Everything is validated first: a wrong field never leaves a half-saved change.

@@ -5,6 +5,7 @@ import { AgencyCredits, AgencyInvitations, AgencyProperties, SupportViewButton }
 import { AddToProspecting } from "@/components/prospecting/add-agency";
 import { HttpError } from "@/lib/commerce/http";
 import { adminAgency } from "@/lib/agency/admin";
+import { ROLE_LABEL } from "@/lib/agency/shared";
 import { agencyStage, STAGE_LABEL } from "@/lib/agency/stage";
 import { requireAdminPage } from "@/lib/demos/admin-page";
 import { isUuid } from "@/lib/demos/shared";
@@ -149,7 +150,7 @@ export default async function AgencyPage({ params }: { params: Promise<{ id: str
         <ul className="aa-list">
           {data.members.map((m, i) => (
             <li key={i}>
-              <span className="dm-status">{m.role === "owner" ? "Dueño" : "Colaborador"}</span>
+              <span className="dm-status">{ROLE_LABEL[m.role]}</span>
               <span>Desde el {date(m.since)}</span>
             </li>
           ))}
