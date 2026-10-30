@@ -1019,12 +1019,25 @@ export type { RetouchSource } from "./shared";
  * the adjustments applied, a JPEG in storage. Free: no credits, no AI, and it
  * does not count toward the photo's versions.
  */
-export async function saveRetouch(params: { photoId: string; projectId: string; source: RetouchSource; adjust: Adjust; actorId: string }) {
+export async function saveRetouch(params: {
+  photoId: string;
+  projectId: string;
+  source: RetouchSource;
+  adjust: Adjust;
+  /** Null when the agency saves from its invitation, which has no account. */
+  actorId: string | null;
+  /** Also show it in the listing (the demo's owner saves and shows at once). */
+  show?: boolean;
+}) {
   const db = adminClient();
   let sourcePath: string | null;
   let generationId: string | null = null;
   let retouchId: string | null = null;
-  if (params.source.kind === "original") {
+  if (params.source.kind === "style") {
+    // What the listing shows for that style: the photo's staged version of it.
+    const photo = { id: params.photoId, project_id: params.projectId } as PhotoRow;
+    sourcePath = await photoPath(photo, params.source.style);
+  } else if (params.source.kind === "original") {
     sourcePath = (await adminImagePaths({ photoId: params.photoId, style: null }))?.original ?? null;
   } else if (params.source.kind === "generation") {
     // An AI version of this photo, not of another one.
@@ -1074,6 +1087,10 @@ export async function saveRetouch(params: { photoId: string; projectId: string; 
       .single(),
     "DEMO_RETOUCH_INSERT_FAILED",
   ) as { id: string };
+  if (params.show) {
+    const shown = await db.from("demo_photos").update({ shown_retouch_id: row.id }).eq("id", params.photoId);
+    if (shown.error) throw new Error("DEMO_PHOTO_UPDATE_FAILED");
+  }
   return row.id;
 }
 

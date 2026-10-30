@@ -23,12 +23,14 @@ import {
   Image as ImageIcon,
   Info,
   LayoutGrid,
+  Loader2,
   Lock,
   Mail,
   MapPin,
   Maximize2,
   MessageCircle,
   Minimize2,
+  Pencil,
   Phone,
   Plus,
   RotateCw,
@@ -37,6 +39,8 @@ import {
   Tag,
 } from "lucide-react";
 import { Comparison } from "./comparison";
+import { RetouchControls } from "./retouch-controls";
+import { NO_ADJUST, adjustFilter, sameAdjust, type Adjust } from "@/lib/demos/retouch";
 import type { DemoInvite } from "@/lib/agency/demo-invite";
 import { registerSuperProperties, registerSuperPropertiesOnce, track, trackMilestone, type EventProperties } from "@/lib/analytics";
 import { cta, startDemoEngagement, ViewTimer } from "@/lib/interaction-tracking";
@@ -92,6 +96,8 @@ const OWNER_VISIBLE_STYLES = 4;
  * the access (and shows the cost) first.
  */
 export type OwnerMode = {
+  /** The invitation code: the agency's way into its demo's editing (the server checks it). */
+  code: string;
   href: string;
   freeCredits: number;
   buyerHref: string;
@@ -798,6 +804,11 @@ function Gallery({
   const [retries, setRetries] = useState<Record<string, number>>({});
   const [ratios, setRatios] = useState<Record<string, number>>({});
   const [full, setFull] = useState(false);
+  // The agency edits a photo's retouch from its panel: the version whose pencil was pressed (null: the original).
+  const [editing, setEditing] = useState<{ photo: string; style: string | null } | null>(null);
+  const [adjust, setAdjust] = useState<Adjust>(NO_ADJUST);
+  const [saving, setSaving] = useState(false);
+  const [editError, setEditError] = useState("");
   const [allStyles, setAllStyles] = useState(false);
   const router = useRouter();
   // The style being generated for a photo: the page refreshes until its version shows.
@@ -875,6 +886,45 @@ function Gallery({
   );
   // The styles chosen during the visit, in order: which comes first and how many are tried.
   const picks = useRef<string[]>([]);
+  // The pencil: the photo's version (or the original) in the big photo, and the editor in the panel.
+  const startEdit = (photoId: string, style: string | null) => {
+    setEditing({ photo: photoId, style });
+    setAdjust(NO_ADJUST);
+    setEditError("");
+    if (style) choose(style);
+    else backToOriginal();
+  };
+  const closeEdit = () => {
+    setEditing(null);
+    setAdjust(NO_ADJUST);
+    setEditError("");
+  };
+  // Saving goes to the server with the invitation. The retouch is now shown in the listing, so the page reloads to show it.
+  const saveRetouch = async () => {
+    if (!owner || !editing || source.kind !== "public") return;
+    setSaving(true);
+    setEditError("");
+    try {
+      const r = await fetch(`/api/demo/${encodeURIComponent(source.token)}/retoque`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          code: owner.code,
+          photo: editing.photo,
+          source: editing.style ? { kind: "style", style: editing.style } : { kind: "original" },
+          adjust,
+        }),
+      });
+      if (!r.ok) {
+        const payload = (await r.json().catch(() => ({}))) as { error?: string };
+        throw new Error(payload.error || "No pudimos guardar la versión.");
+      }
+      window.location.reload();
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : "No pudimos guardar la versión.");
+      setSaving(false);
+    }
+  };
   const choose = (style: string) => {
     // The line stays where the buyer left it: moved all the way to one side,
     // the next style is seen the same way, not from the middle again.
@@ -1038,6 +1088,9 @@ function Gallery({
           >
             <Download size={16} aria-hidden="true" /> Descargar
           </a>
+          <button type="button" className="dv2-owner-pencil" aria-label="Editar el original" onClick={() => startEdit(photo.id, null)}>
+            <Pencil size={16} aria-hidden="true" />
+          </button>
         </li>
         {ownerListed.map((r) => {
           const on = Boolean(r.version) && state.style === r.style;
@@ -1060,6 +1113,9 @@ function Gallery({
               >
                 <Download size={16} aria-hidden="true" /> Descargar
               </a>
+              <button type="button" className="dv2-owner-pencil" aria-label={`Editar ${name(r.style)}`} onClick={() => startEdit(photo.id, r.style)}>
+                <Pencil size={16} aria-hidden="true" />
+              </button>
             </li>
           ) : (
             <li key={r.style} className="dv2-owner-row is-missing">
@@ -1082,12 +1138,17 @@ function Gallery({
                 }}
               >
                 {staging?.photo === photo.id && staging.style === r.style ? (
-                  "Generando…"
+                  <>
+                    <Loader2 size={16} className="spin" aria-hidden="true" /> Generando…
+                  </>
                 ) : (
                   <>
                     <Sparkles size={16} aria-hidden="true" /> Generar
                   </>
                 )}
+              </button>
+              <button type="button" className="dv2-owner-pencil" aria-label={`Editar ${name(r.style)}`} onClick={() => startEdit(photo.id, null)}>
+                <Pencil size={16} aria-hidden="true" />
               </button>
             </li>
           );
@@ -1119,7 +1180,37 @@ function Gallery({
       </p>
     </section>
   );
-  const panel = ownerPanel || (photo.versions.length > 0 && (
+  const editingHere = Boolean(owner && editing && editing.photo === photo.id);
+  // The panel while editing: the same controls as the studio's "Editar", with a live preview on the photo.
+  const retouchPanel = editingHere && (
+    <section className="dv2-panel is-owner" aria-labelledby="dv2-retouch-title">
+      <button type="button" className="dv2-link dv2-retouch-back" onClick={closeEdit}>
+        <ChevronLeft size={15} aria-hidden="true" /> Volver a los estilos
+      </button>
+      <p className="dv2-retouch-kicker">Editando</p>
+      <h2 id="dv2-retouch-title" className="dv2-retouch-title">
+        {editing?.style ? name(editing.style) : "Original"}
+      </h2>
+      <RetouchControls id={photo.id} adjust={adjust} onAdjust={setAdjust} />
+      <div className="dv2-retouch-actions">
+        <button type="button" className="dv2-secondary" disabled={sameAdjust(adjust, NO_ADJUST) || saving} onClick={() => setAdjust(NO_ADJUST)}>
+          Descartar
+        </button>
+        <button type="button" className="dv2-retouch-save" disabled={sameAdjust(adjust, NO_ADJUST) || saving} onClick={() => void saveRetouch()}>
+          {saving ? "Guardando…" : "Guardar y mostrar"}
+        </button>
+      </div>
+      {editError && (
+        <p className="dv2-note is-error" role="alert">
+          {editError}
+        </p>
+      )}
+      <p className="dv2-note">
+        <Info size={15} aria-hidden="true" /> Guardar crea una versión nueva, sin créditos. Los compradores la ven como «Retocada» y no pueden editarla.
+      </p>
+    </section>
+  );
+  const panel = retouchPanel || ownerPanel || (photo.versions.length > 0 && (
     <section className="dv2-panel" aria-labelledby="dv2-panel-title">
       <h2 id="dv2-panel-title">{panelTitle}</h2>
       <p className="dv2-panel-hint">Elegí una propuesta para esta foto.</p>
@@ -1236,7 +1327,7 @@ function Gallery({
                   <RotateCw size={14} aria-hidden="true" /> Reintentar
                 </button>
               </div>
-            ) : comparing && showing ? (
+            ) : comparing && showing && !editingHere ? (
               <Comparison
                 key={stagedKey}
                 before={urlFor(source, photo.id, null, 2048, retries[originalKey])}
@@ -1258,6 +1349,7 @@ function Gallery({
                 <img
                   key={`${photo.id}-${showing?.style ?? "o"}`}
                   className="dv2-photo"
+                  style={editingHere && adjustFilter(adjust) ? { filter: adjustFilter(adjust) } : undefined}
                   src={urlFor(source, photo.id, showing, 2048, showing ? retries[stagedKey] : retries[originalKey])}
                   alt={showing ? `${alt(index, photo)}, ambientación ${name(showing.style)} con IA, ilustrativa` : alt(index, photo)}
                   draggable={false}
@@ -1270,6 +1362,13 @@ function Gallery({
                   </span>
                 )}
               </>
+            )}
+            {/* The clock that turns while the picture is being made: the agency sees it is working. */}
+            {staging?.photo === photo.id && (
+              <div className="dv2-generating" role="status" aria-live="polite">
+                <Loader2 size={24} className="spin" aria-hidden="true" />
+                <span>Generando {name(staging.style)}…</span>
+              </div>
             )}
           </div>
           {photos.length > 1 && (

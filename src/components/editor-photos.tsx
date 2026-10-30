@@ -6,7 +6,7 @@
 // at (the view), which version the listing shows, the cover, the photo's
 // visibility and the batch selection are five separate things: choosing a
 // version only changes the view, and every other change is its own button.
-import { useEffect, useId, useMemo, useState, type ChangeEvent } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -63,7 +63,8 @@ import {
   type PropertySpace,
 } from "@/lib/demos/shared";
 import { DEMO_STYLES as STYLE_LIST, styleFits, type PropertyType } from "@/lib/demos/styles";
-import { AUTO_ADJUST, NO_ADJUST, adjustFilter, sameAdjust, type Adjust } from "@/lib/demos/retouch";
+import { NO_ADJUST, adjustFilter, sameAdjust, type Adjust } from "@/lib/demos/retouch";
+import { RetouchControls } from "./retouch-controls";
 
 /** A state of one style of one photo, in words: created, in the queue, failed, uncertain… */
 export function stateLabel(s: CellState) {
@@ -107,11 +108,6 @@ export type WorkspaceActions = {
 
 type Quote = { payer: "team" | "agency"; credits: number | null; newPhotos: number; blocked: string | null };
 type Draft = { style: string; mode: "furnish" | "redesign"; room: string };
-
-const signed = (n: number, decimals = 0) => {
-  const s = decimals ? n.toFixed(decimals) : String(n);
-  return n > 0 ? `+${s}` : s;
-};
 
 export function PhotoWorkspace({
   detail,
@@ -241,6 +237,8 @@ export function PhotoWorkspace({
   const step = (n: number) => setActiveId(ordered[(at + n + ordered.length) % ordered.length].id);
   const shownHere = Boolean(viewGen && shownIds.has(viewGen.id));
   const retouchShown = Boolean(viewRetouch && photo.shownRetouch === viewRetouch.id);
+  // A version still being made: the clock turns over the photo until it is ready.
+  const liveGen = photo?.generations.find((g) => g.status === "queued" || g.status === "running") ?? null;
   const adjust = photo ? (adjusts[photo.id] ?? NO_ADJUST) : NO_ADJUST;
   const retouch = tab === "edit" ? adjustFilter(adjust) : "";
   const setAdjust = (next: Adjust) => photo && setAdjusts((all) => ({ ...all, [photo.id]: next }));
@@ -322,6 +320,12 @@ export function PhotoWorkspace({
                 <button type="button" className="pw-expand icon-button" aria-label="Ver versión completa" onClick={() => actions.review(photo.id, viewGen.id)}>
                   <Expand size={18} />
                 </button>
+              )}
+              {liveGen && (
+                <div className="pw-generating" role="status" aria-live="polite">
+                  <Loader2 size={24} className="spin" aria-hidden="true" />
+                  <span>Creando {styleName(liveGen.style)}…</span>
+                </div>
               )}
               <div className="pw-tools" role="group" aria-label="Qué ver en la foto grande">
                 <button type="button" aria-pressed={effectiveMode === "original"} onClick={() => setMode("original")}>
@@ -921,18 +925,7 @@ function EditPanel({
   total: number;
   actions: WorkspaceActions;
 }) {
-  const [auto, setAuto] = useState(false);
   const dirty = !sameAdjust(adjust, NO_ADJUST);
-  const set = (key: keyof Adjust) => (e: ChangeEvent<HTMLInputElement>) => {
-    setAuto(false);
-    onAdjust({ ...adjust, [key]: Number(e.target.value) });
-  };
-  const sliders: { key: keyof Adjust; label: string; min: number; max: number; shown: string }[] = [
-    { key: "exp", label: "Exposición", min: -10, max: 10, shown: signed(adjust.exp / 10, 1) },
-    { key: "con", label: "Contraste", min: -50, max: 50, shown: signed(adjust.con) },
-    { key: "temp", label: "Temperatura", min: -50, max: 50, shown: adjust.temp === 0 ? "Neutra" : adjust.temp > 0 ? "Cálida" : "Fría" },
-    { key: "sha", label: "Sombras", min: -50, max: 50, shown: signed(adjust.sha) },
-  ];
   return (
     <div className="pw-edit">
       <div className="pw-edit-head">
@@ -943,39 +936,7 @@ function EditPanel({
         {dirty && <span className="pw-badge is-on">Sin guardar</span>}
       </div>
 
-      <section className="pw-edit-group" aria-labelledby={`${photo.id}-light`}>
-        <div className="pw-edit-row">
-          <span id={`${photo.id}-light`}>Luz y color</span>
-          <button
-            type="button"
-            className="button button-small button-outline"
-            aria-pressed={auto}
-            onClick={() => {
-              setAuto(true);
-              onAdjust(AUTO_ADJUST);
-            }}
-          >
-            {auto ? "Aplicada" : "Mejora automática"}
-          </button>
-        </div>
-        {sliders.map((s) => (
-          <label key={s.key} className="pw-slider">
-            <span>{s.label}</span>
-            <input type="range" min={s.min} max={s.max} value={adjust[s.key]} onChange={set(s.key)} aria-label={s.label} />
-            <output>{s.shown}</output>
-          </label>
-        ))}
-      </section>
-
-      <section className="pw-edit-group" aria-labelledby={`${photo.id}-ai`}>
-        <span id={`${photo.id}-ai`}>Herramientas IA · 1 crédito</span>
-        {["Quitar objetos", "Cambiar cielo", "Día a atardecer"].map((label) => (
-          <div key={label} className="pw-tool" aria-disabled="true">
-            <span>{label}</span>
-            <span className="pw-soon">Próximamente</span>
-          </div>
-        ))}
-      </section>
+      <RetouchControls id={photo.id} adjust={adjust} onAdjust={onAdjust} />
 
       <div className="pw-edit-actions">
         <button type="button" className="button button-outline button-small" disabled={!dirty} onClick={() => onAdjust(NO_ADJUST)}>

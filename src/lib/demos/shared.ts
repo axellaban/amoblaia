@@ -382,7 +382,12 @@ export function adminPhotoUrl(photoId: string, version: PhotoVersion | null, wid
   return `/api/admin/demos/imagen?${q}`;
 }
 /** Where a retouch starts from: the original photo, one of its AI versions, or another retouch. */
-export type RetouchSource = { kind: "original" } | { kind: "generation"; id: string } | { kind: "retouch"; id: string };
+export type RetouchSource =
+  | { kind: "original" }
+  | { kind: "generation"; id: string }
+  | { kind: "retouch"; id: string }
+  /** The version the listing shows for that style (the public demo knows styles, not generation ids). */
+  | { kind: "style"; style: string };
 
 export function retouchDownloadUrl(retouchId: string, name: string) {
   const q = new URLSearchParams({ retoque: retouchId, w: "2048", descargar: "1", nombre: name });

@@ -134,6 +134,7 @@ const ids = (html: string) => [...html.matchAll(/data-cta="([^"]+)"/g)].map((m) 
 describe("the demo's tracked actions", () => {
   it("gives every button of the agency's bar its own id, all leading to the invitation", () => {
     const owner = {
+      code: "TEST-CODIGO-0000000000000000000000000000",
       href: "/panel/empezar?codigo=secreto&demo=tok",
       freeCredits: 3,
       buyerHref: "/demo/tok/presentacion/secreto/ficha",

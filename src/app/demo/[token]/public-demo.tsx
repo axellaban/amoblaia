@@ -122,6 +122,7 @@ export async function PublicDemo({
   const owner =
     invitation && invite && "href" in invite && !ficha
       ? {
+          code: invitation,
           href: invite.href,
           freeCredits: invite.freeCredits,
           buyerHref: buyerViewPath(token, invitation),
