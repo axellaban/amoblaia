@@ -371,7 +371,7 @@ export async function listDemos() {
       ? db.from("agencies").select("id,owner_id").in("id", agencyIds)
       : Promise.resolve({ data: [], error: null }),
     propertyIds.length
-      ? db.from("demo_properties").select("id,title").in("id", propertyIds)
+      ? db.from("demo_properties").select("id,title,location").in("id", propertyIds)
       : Promise.resolve({ data: [], error: null }),
     propertyIds.length
       ? db
@@ -397,11 +397,9 @@ export async function listDemos() {
   const claimed = new Map(
     owners.error ? [] : ((owners.data ?? []) as { id: string; owner_id: string | null }[]).map((a) => [a.id, Boolean(a.owner_id)]),
   );
-  const propertyTitle = new Map(
-    (check(properties, "DEMO_LIST_FAILED") as { id: string; title: string }[]).map(
-      (p) => [p.id, p.title],
-    ),
-  );
+  const propertyRows = check(properties, "DEMO_LIST_FAILED") as { id: string; title: string; location: string | null }[];
+  const propertyTitle = new Map(propertyRows.map((p) => [p.id, p.title]));
+  const propertyLocation = new Map(propertyRows.map((p) => [p.id, p.location]));
   const photoRows = check(photos, "DEMO_LIST_FAILED") as (ShownSource & {
     property_id: string;
     visible: boolean;
@@ -427,6 +425,7 @@ export async function listDemos() {
       agencyClaimed: claimed.get(d.agency_id) ?? null,
       agencyWhatsapp: whatsapp.get(d.agency_id) ?? null,
       propertyTitle: propertyTitle.get(d.property_id) || "",
+      propertyLocation: propertyLocation.get(d.property_id) ?? null,
       photos: own.length,
       staged: withVersions.filter((p) => p.versions.length).length,
       coverPhotoId: d.cover_photo_id,
@@ -554,6 +553,7 @@ export async function demoDetail(id: string): Promise<DemoDetail> {
       credits: (await creditsOf([demo.agency_id])).get(demo.agency_id) ?? NO_CREDITS,
       agencyWhatsapp: (await whatsappOf([demo.agency_id])).get(demo.agency_id) ?? null,
       propertyTitle: prop.title,
+      propertyLocation: prop.location,
       kind: demo.kind === "fotos" ? "fotos" : "ficha",
       photos: photos.length,
       staged: withVersions.filter((p) => p.versions.length).length,
