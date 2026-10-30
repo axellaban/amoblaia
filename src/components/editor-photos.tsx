@@ -6,7 +6,7 @@
 // at (the view), which version the listing shows, the cover, the photo's
 // visibility and the batch selection are five separate things: choosing a
 // version only changes the view, and every other change is its own button.
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -64,7 +64,9 @@ import {
 } from "@/lib/demos/shared";
 import { DEMO_STYLES as STYLE_LIST, styleFits, type PropertyType } from "@/lib/demos/styles";
 import { NO_ADJUST, adjustFilter, sameAdjust, type Adjust } from "@/lib/demos/retouch";
-import { RetouchControls } from "./retouch-controls";
+import type { Tool } from "@/lib/demos/tools";
+import { MaskBrush, type BrushHandle } from "./mask-brush";
+import { RetouchControls, type ToolsState } from "./retouch-controls";
 
 /** A state of one style of one photo, in words: created, in the queue, failed, uncertain… */
 export function stateLabel(s: CellState) {
@@ -97,6 +99,10 @@ export type WorkspaceActions = {
   download: (photoId: string, key: string, name: string, retouchId?: string) => void;
   /** Saves the retouch of what is viewed as a new version; the new version's id, or null when it failed. */
   retouch: (photoId: string, source: RetouchSource, adjust: Adjust) => Promise<string | null>;
+  /** An AI tool on what is viewed: it starts, and its result appears as a version. False when it did not start. */
+  tool: (photoId: string, tool: Tool, source: RetouchSource, mask?: string) => Promise<boolean>;
+  /** What a tool costs and who pays, as the server quotes it. */
+  quote: (photoId: string) => Promise<string>;
   review: (photoId: string, generationId: string) => void;
   /** Adds styles to the property's list (6 at most); false when there is no room. */
   addStyles: (styles: string[]) => boolean;
@@ -156,6 +162,14 @@ export function PhotoWorkspace({
   // The retouch of each photo, previewed live with CSS filters until it is saved as a version.
   const [adjusts, setAdjusts] = useState<Record<string, Adjust>>({});
   const [saving, setSaving] = useState(false);
+  // The AI tool being set up on the photo: its brush (for removing objects) lives over the picture.
+  const [tool, setTool] = useState<Tool | null>(null);
+  const [toolSize, setToolSize] = useState(60);
+  const [painted, setPainted] = useState(false);
+  const [toolNote, setToolNote] = useState("");
+  const [toolBusy, setToolBusy] = useState(false);
+  const [photoEl, setPhotoEl] = useState<HTMLImageElement | null>(null);
+  const brush = useRef<BrushHandle>(null);
   const uid = useId();
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [batch, setBatch] = useState(false);
@@ -242,6 +256,44 @@ export function PhotoWorkspace({
   const adjust = photo ? (adjusts[photo.id] ?? NO_ADJUST) : NO_ADJUST;
   const retouch = tab === "edit" ? adjustFilter(adjust) : "";
   const setAdjust = (next: Adjust) => photo && setAdjusts((all) => ({ ...all, [photo.id]: next }));
+  const brushing = Boolean(photo && tab === "edit" && tool === "remove");
+  const pickTool = (next: Tool | null) => {
+    setTool(next);
+    setPainted(false);
+    setToolNote("");
+    if (photo && next) void actions.quote(photo.id).then(setToolNote);
+  };
+  const applyTool = async () => {
+    if (!photo || !tool) return;
+    const mask = tool === "remove" ? (brush.current?.exportPng() ?? null) : null;
+    if (tool === "remove" && !mask) {
+      setToolNote("Pintá lo que querés quitar.");
+      return;
+    }
+    setToolBusy(true);
+    const ok = await actions.tool(photo.id, tool, viewSource, mask ?? undefined);
+    setToolBusy(false);
+    if (ok) {
+      setTool(null);
+      setPainted(false);
+      setToolNote("");
+      brush.current?.clear();
+    }
+  };
+  const toolsState: ToolsState | undefined = photo
+    ? {
+        tool,
+        onPick: pickTool,
+        size: toolSize,
+        onSize: setToolSize,
+        painted,
+        onUndo: () => brush.current?.undo(),
+        onClear: () => brush.current?.clear(),
+        note: toolNote,
+        busy: toolBusy,
+        onApply: () => void applyTool(),
+      }
+    : undefined;
   const openCreate = () => {
     setTab("create");
     document.getElementById(`${uid}-side`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -291,7 +343,7 @@ export function PhotoWorkspace({
               </span>
             </header>
             <figure className="pw-figure">
-              {hasView && effectiveMode === "compare" ? (
+              {hasView && effectiveMode === "compare" && !brushing ? (
                 <Comparison
                   before={adminPhotoUrl(photo.id, null, 1600)}
                   after={afterUrl}
@@ -304,12 +356,14 @@ export function PhotoWorkspace({
                 />
               ) : (
                 <img
-                  key={hasView && effectiveMode === "version" ? afterUrl : `o-${photo.id}`}
-                  src={hasView && effectiveMode === "version" ? afterUrl : adminPhotoUrl(photo.id, null, 1600)}
+                  ref={setPhotoEl}
+                  key={hasView && (effectiveMode === "version" || brushing) ? afterUrl : `o-${photo.id}`}
+                  src={hasView && (effectiveMode === "version" || brushing) ? afterUrl : adminPhotoUrl(photo.id, null, 1600)}
                   alt={hasView && effectiveMode === "version" ? `${name}, ${viewName}` : `${name}, foto original`}
                   style={retouch ? { filter: retouch } : undefined}
                 />
               )}
+              {brushing && photoEl && <MaskBrush ref={brush} image={photoEl} size={toolSize} onChange={setPainted} />}
               {effectiveMode !== "compare" && (
                 <figcaption className="pw-caption" aria-live="polite" data-testid="view-label">
                   {label}
@@ -554,6 +608,7 @@ export function PhotoWorkspace({
                 adjust={adjust}
                 onAdjust={setAdjust}
                 saving={saving}
+                tools={toolsState}
                 onSave={async () => {
                   setSaving(true);
                   try {
@@ -906,6 +961,7 @@ function EditPanel({
   onAdjust,
   saving,
   onSave,
+  tools,
   spaces,
   propertyType,
   index,
@@ -919,6 +975,7 @@ function EditPanel({
   onAdjust: (next: Adjust) => void;
   saving: boolean;
   onSave: () => void;
+  tools?: ToolsState;
   spaces: PropertySpace[];
   propertyType: PropertyType;
   index: number;
@@ -936,7 +993,7 @@ function EditPanel({
         {dirty && <span className="pw-badge is-on">Sin guardar</span>}
       </div>
 
-      <RetouchControls id={photo.id} adjust={adjust} onAdjust={onAdjust} />
+      <RetouchControls id={photo.id} adjust={adjust} onAdjust={onAdjust} tools={tools} />
 
       <div className="pw-edit-actions">
         <button type="button" className="button button-outline button-small" disabled={!dirty} onClick={() => onAdjust(NO_ADJUST)}>

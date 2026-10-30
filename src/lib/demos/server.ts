@@ -16,6 +16,7 @@ import {
 } from "./branding";
 import { demoStyleName, demoStyleOrder, styleFits } from "./styles";
 import { retouchOps, type Adjust } from "./retouch";
+import { TOOL_NAMES, validTool } from "./tools";
 import { activityOf } from "./activity";
 import { fetchPublic } from "./listing";
 import type { ImportedDemo } from "./import";
@@ -111,6 +112,8 @@ async function stagedOf(projectIds: string[]) {
           .in("project_id", ids.slice(i, i + 100))
           .eq("status", "succeeded")
           .eq("is_free", false)
+          // A tool's result is a version of its own (retouches), never a style.
+          .is("tool", null)
           .order("created_at", { ascending: false })
           .limit(5000),
         "DEMO_GENERATIONS_LOOKUP_FAILED",
@@ -885,6 +888,61 @@ export async function publicRetouchPaths(token: string, photoId: string, retouch
   return r ? { original: r.result_path, staged: null } : null;
 }
 
+/** Where a tool starts from: the photo's original, or a version of it that exists (an AI version or a retouch). */
+export async function toolSource(photo: PhotoRow, source: unknown): Promise<{ path: string; ref: string }> {
+  const from = source as { kind?: unknown; id?: unknown } | null;
+  if (from?.kind === "original") {
+    const path = await photoPath(photo, null);
+    if (!path) throw new HttpError(404, "No encontramos la foto.");
+    return { path, ref: "original" };
+  }
+  if (from?.kind === "generation" && isUuid(from.id)) {
+    const g = check(
+      await adminClient()
+        .from("generations")
+        .select("result_path")
+        .eq("id", from.id)
+        .eq("project_id", photo.project_id)
+        .eq("status", "succeeded")
+        .maybeSingle(),
+      "DEMO_GENERATION_LOOKUP_FAILED",
+    ) as { result_path: string | null } | null;
+    if (!g?.result_path) throw new HttpError(404, "No encontramos esa versión.");
+    return { path: g.result_path, ref: `generation:${from.id}` };
+  }
+  if (from?.kind === "retouch" && isUuid(from.id)) {
+    const r = check(
+      await adminClient().from("photo_retouches").select("result_path").eq("id", from.id).eq("photo_id", photo.id).maybeSingle(),
+      "DEMO_RETOUCH_LOOKUP_FAILED",
+    ) as { result_path: string } | null;
+    if (!r) throw new HttpError(404, "No encontramos esa versión.");
+    return { path: r.result_path, ref: `retouch:${from.id}` };
+  }
+  throw new HttpError(400, "Elegí qué versión editar.");
+}
+
+/**
+ * The mask painted on the editor, at the size of the source photo: transparent
+ * where the photo may change (what the model edits), opaque elsewhere. Stored
+ * in the bucket for the job.
+ */
+export async function storeMask(projectId: string, key: string, painted: Buffer, sourcePath: string) {
+  const db = adminClient();
+  const source = await download(sourcePath);
+  if (!source) throw new HttpError(404, "No encontramos la foto.");
+  const { width, height } = await sharp(source, { limitInputPixels: 40_000_000 }).metadata();
+  if (!width || !height) throw new HttpError(400, "No pudimos leer la foto.");
+  const mask = await sharp(painted, { limitInputPixels: 40_000_000 })
+    .resize({ width, height, fit: "fill" })
+    .ensureAlpha()
+    .png()
+    .toBuffer();
+  const path = `${projectId}/masks/${key}.png`;
+  const upload = await db.storage.from(BUCKET).upload(path, mask, { contentType: "image/png", upsert: true });
+  if (upload.error) throw new HttpError(503, "No pudimos guardar la máscara. Revisá el almacenamiento disponible.");
+  return path;
+}
+
 export async function publicImagePaths(token: string, photoId: string, style: string | null) {
   if (!TOKEN_PATTERN.test(token) || !isUuid(photoId)) return null;
   const db = adminClient();
@@ -1104,7 +1162,7 @@ export async function retouchesOf(photoIds: string[], generationStyle: Map<strin
   const rows = check(
     await adminClient()
       .from("photo_retouches")
-      .select("id,photo_id,source_generation_id,source_retouch_id,adjust,created_at")
+      .select("id,photo_id,source_generation_id,source_retouch_id,adjust,tool,created_at")
       .in("photo_id", photoIds)
       .order("created_at"),
     "DEMO_RETOUCHES_LOOKUP_FAILED",
@@ -1114,6 +1172,7 @@ export async function retouchesOf(photoIds: string[], generationStyle: Map<strin
     source_generation_id: string | null;
     source_retouch_id: string | null;
     adjust: Adjust;
+    tool: string | null;
     created_at: string;
   }[];
   const base = new Map<string, string>();
@@ -1126,7 +1185,13 @@ export async function retouchesOf(photoIds: string[], generationStyle: Map<strin
     const n = (counts.get(key) ?? 0) + 1;
     counts.set(key, n);
     const list = out.get(r.photo_id) ?? [];
-    list.push({ id: r.id, label: `${name} · Retoque${n > 1 ? ` ${n}` : ""}`, adjust: r.adjust, created_at: r.created_at });
+    const tool = validTool(r.tool) ? TOOL_NAMES[r.tool] : null;
+    list.push({
+      id: r.id,
+      label: tool ? `${name} · ${tool}` : `${name} · Retoque${n > 1 ? ` ${n}` : ""}`,
+      adjust: r.adjust,
+      created_at: r.created_at,
+    });
     out.set(r.photo_id, list);
   }
   return out;

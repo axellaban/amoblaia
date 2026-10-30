@@ -89,6 +89,8 @@ export async function renderPhoto(
   prompt: string,
   free = false,
   timeoutMs = 240000,
+  /** PNG with transparent pixels where the image may change (OpenAI's mask). */
+  mask?: Buffer,
 ) {
   const model = process.env.OPENAI_IMAGE_MODEL || "gpt-image-2.5-sunburst";
   const body = new FormData();
@@ -99,6 +101,7 @@ export async function renderPhoto(
     "room.jpg",
   );
   body.set("prompt", prompt);
+  if (mask) body.set("mask", new Blob([new Uint8Array(mask)], { type: "image/png" }), "mask.png");
   body.set("n", "1");
   // Paid proposals cost about 3x more in "high". PAID_IMAGE_QUALITY=medium
   // lowers that once a visual test with real listings approves it.

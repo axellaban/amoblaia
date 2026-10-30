@@ -16187,3 +16187,32 @@ a.dm-agency:hover {
   padding: 0;
   justify-content: center;
 }
+
+/* AI tools in the studio: the brush over the photo, and the tool's panel. */
+.pw-brush {
+  position: absolute;
+  z-index: 2;
+  opacity: 0.55;
+  cursor: crosshair;
+  touch-action: none;
+}
+.pw-tool-button {
+  width: 100%;
+  cursor: pointer;
+  text-align: left;
+  color: var(--ink);
+}
+.pw-tool-button.is-on {
+  border-color: var(--forest);
+  background: #f3f6ee;
+}
+.pw-tool-panel {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.pw-tool-panel .pw-hint {
+  margin: 0;
+}
