@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { cache } from "react";
+import { Assistant } from "@/components/assistant";
 import { DemoView } from "@/components/demo-view";
 import { PricingPlans } from "@/components/pricing";
 import { INVITE_PARAM, inviteFor, presentationPath, type DemoInvite } from "@/lib/agency/demo-invite";
@@ -123,5 +124,11 @@ export default async function PublicDemoPage({ params, searchParams }: Props) {
       ? { href: invite.href, freeCredits: invite.freeCredits, buyerHref: `${presentationPath(token, code)}&vista=ficha` }
       : null;
   const plans = owner ? await plansOf(owner.href) : null;
-  return <DemoView demo={demo} source={{ kind: "public", token }} presentation={presentation} invite={invite} owner={owner} plans={plans} />;
+  return (
+    <>
+      <DemoView demo={demo} source={{ kind: "public", token }} presentation={presentation} invite={invite} owner={owner} plans={plans} />
+      {/* Pablo helps the agency in its own demo; buyers never see him. */}
+      {owner && code && <Assistant place={{ kind: "demo", token, code }} />}
+    </>
+  );
 }
