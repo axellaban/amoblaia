@@ -13,6 +13,19 @@ export function visitorId() {
   }
 }
 
+const viewed = new Set<string>();
+
+/**
+ * True only the first time a demo is shown in this page load. The page
+ * refreshes its data while an image is generated (router.refresh every few
+ * seconds), which re-ran the view effect and counted the visit again.
+ */
+export function firstViewOf(key: string) {
+  if (viewed.has(key)) return false;
+  viewed.add(key);
+  return true;
+}
+
 /**
  * Reports one step of the visitor on a demo to the team's list. Fire and
  * forget: a failed report never shows anything to the visitor.

@@ -1,4 +1,5 @@
 import posthog from "posthog-js";
+import { INTERNAL_PROPERTY } from "./analytics-privacy";
 
 export type EventProperties = Record<string, string | number | boolean>;
 
@@ -22,6 +23,22 @@ export function track(
   } catch {
     /* Tracking is best effort. */
   }
+}
+
+/** Marks this browser as the team's: every later event carries
+ * habita_internal, so the commercial funnel can leave it out. */
+export function markInternal() {
+  registerSuperProperties({ [INTERNAL_PROPERTY]: true });
+}
+
+/** A failed step as an event: where and with which HTTP status, never the
+ * message (it may echo what the visitor typed). */
+export function trackFailure(event: string, error: unknown, properties: EventProperties = {}) {
+  const status =
+    error && typeof error === "object" && "status" in error && typeof (error as { status: unknown }).status === "number"
+      ? (error as { status: number }).status
+      : 0;
+  track(event, { ...properties, status });
 }
 
 /** Keeps the commercial demo a visitor came from on every later event

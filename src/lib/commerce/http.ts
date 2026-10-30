@@ -47,14 +47,28 @@ export async function requireAdmin(request?: Request) {
     throw new HttpError(403, "Acceso reservado al equipo.");
   return user;
 }
-export function failure(error: unknown) {
-  if (error instanceof HttpError)
-    return Response.json({ error: error.message }, { status: error.status });
-  // Internal messages are short codes (e.g. MERCADOPAGO_400), never secrets.
+/** One line per failed API call, for Vercel's logs: the route and the release
+ * it ran on, so an error is found by path and deployment. Never the request. */
+export function logApiError(context: string, status: number, error: unknown) {
+  const release = (process.env.VERCEL_GIT_COMMIT_SHA || "").slice(0, 7) || "local";
   console.error(
     "commerce_error",
-    error instanceof Error ? error.message.slice(0, 120) : "unknown",
+    JSON.stringify({
+      route: context || "unknown",
+      status,
+      release,
+      // Internal messages are short codes (e.g. MERCADOPAGO_400), never secrets.
+      code: error instanceof Error ? error.message.slice(0, 120) : "unknown",
+    }),
   );
+}
+export function failure(error: unknown, context = "") {
+  if (error instanceof HttpError) {
+    // A refusal the visitor can act on is not an incident; a 5xx is.
+    if (error.status >= 500) logApiError(context, error.status, error);
+    return Response.json({ error: error.message }, { status: error.status });
+  }
+  logApiError(context, 500, error);
   return Response.json(
     { error: "No pudimos completar la operación. Intentá nuevamente." },
     { status: 500 },

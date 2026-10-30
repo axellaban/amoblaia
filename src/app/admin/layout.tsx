@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { AdminNav } from "@/components/admin-nav";
+import { InternalMarker } from "@/components/internal-marker";
 import { isAdmin } from "@/lib/commerce/http";
 import { cloudConfigured, cloudEnabled } from "@/lib/supabase/config";
 import { currentUser } from "@/lib/supabase/server";
@@ -14,6 +15,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
   if (!team) return children;
   return (
     <div className="adm-shell">
+      <InternalMarker />
       <AdminNav />
       <div className="adm-content">{children}</div>
     </div>

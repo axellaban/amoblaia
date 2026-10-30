@@ -18,6 +18,6 @@ export async function POST(request: Request) {
     const result = await acceptWithNewAccount(body.code, body.email, body.password);
     return Response.json({ email: result.email }, { status: 201, headers: { "Cache-Control": "private, no-store" } });
   } catch (e) {
-    return failure(e);
+    return failure(e, "api/panel/invitacion");
   }
 }

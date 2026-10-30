@@ -34,11 +34,12 @@ import {
   RotateCw,
   Ruler,
   Sparkles,
+  Loader2,
 } from "lucide-react";
 import { Comparison } from "./comparison";
 import type { DemoInvite } from "@/lib/agency/demo-invite";
 import { registerSuperProperties, track } from "@/lib/analytics";
-import { reportDemoActivity } from "@/lib/demos/activity-client";
+import { firstViewOf, reportDemoActivity } from "@/lib/demos/activity-client";
 import { requestPublicStaging } from "@/lib/demos/staging-client";
 import { useRouter } from "next/navigation";
 import { textOn, whatsappNumber, type FactIcon } from "@/lib/demos/branding";
@@ -183,6 +184,8 @@ export function DemoView({
   useEffect(() => {
     setPageUrl(window.location.href.split(/[?#]/)[0]);
     if (source.kind !== "public") return;
+    // Once per page load: the refreshes while an image is generated must not count a new visit.
+    if (!firstViewOf(`${source.token}:${presentation ? "p" : "c"}`)) return;
     track("demo_vista", analytics);
     reportDemoActivity(source.token, "visita");
     registerSuperProperties({ demo_id: demo.id, demo_titulo: demo.title, demo_inmobiliaria: agency.name, demo_inmobiliaria_id: demo.agencyId });
@@ -663,14 +666,34 @@ function Gallery({
   const [allStyles, setAllStyles] = useState(false);
   const router = useRouter();
   // The style being generated for a photo: the page refreshes until its version shows.
-  const [staging, setStaging] = useState<{ photo: string; style: string } | null>(null);
+  const [staging, setStaging] = useState<{ photo: string; style: string; startedAt: number } | null>(null);
   const [stagingError, setStagingError] = useState("");
+  // Seconds since the click, shown while the image is generated: a wait that is seen feels shorter.
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (!staging) return;
+    const tick = () => setElapsed(Math.max(0, Math.round((Date.now() - staging.startedAt) / 1000)));
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    return () => window.clearInterval(timer);
+  }, [staging]);
   useEffect(() => {
     if (!staging) return;
     const done = photos.some((p) => p.id === staging.photo && p.versions.some((v) => v.style === staging.style));
-    if (done) return void setStaging(null);
-    const refresh = window.setInterval(() => router.refresh(), 8000);
-    const stop = window.setTimeout(() => setStaging(null), 240000);
+    if (done) {
+      log("demo_generation_ready", { estilo: staging.style, segundos: Math.round((Date.now() - staging.startedAt) / 1000) });
+      // The result opens compared on its photo, ready to look at.
+      setStates((s) => ({ ...s, [staging.photo]: { style: staging.style, compare: true, position: 50 } }));
+      return void setStaging(null);
+    }
+    // Every 4 s (it was 8): the new version shows up to 4 s sooner.
+    const refresh = window.setInterval(() => router.refresh(), 4000);
+    // Past four minutes the page stops waiting, and says so instead of going quiet.
+    const stop = window.setTimeout(() => {
+      setStaging(null);
+      setStagingError("Está tardando más de lo normal. Recargá la página en unos minutos para ver si ya está lista.");
+      log("demo_generation_timeout", { estilo: staging.style });
+    }, 240000);
     return () => {
       window.clearInterval(refresh);
       window.clearTimeout(stop);
@@ -679,11 +702,12 @@ function Gallery({
   async function generate(photoId: string, style: string) {
     if (source.kind !== "public") return;
     setStagingError("");
-    setStaging({ photo: photoId, style });
+    setStaging({ photo: photoId, style, startedAt: Date.now() });
     const r = await requestPublicStaging(source.token, photoId, style);
     if (!r.ok) {
       setStaging(null);
       setStagingError(r.error);
+      log("demo_generation_failed", { estilo: style, status: r.status });
       return;
     }
     // The visitor generated an image: step 3 for the team's list (the server ignores repeats).
@@ -846,7 +870,9 @@ function Gallery({
                 }}
               >
                 {staging?.photo === photo.id && staging.style === r.style ? (
-                  "Generando…"
+                  <>
+                    <Loader2 className="dv2-spin" size={16} aria-hidden="true" /> Generando…
+                  </>
                 ) : (
                   <>
                     <Sparkles size={16} aria-hidden="true" /> Generar
@@ -1034,13 +1060,32 @@ function Gallery({
                 )}
               </>
             )}
+            {staging?.photo === photo.id && (
+              <div className="dv2-generating" role="status" aria-live="polite">
+                <Loader2 className="dv2-spin" size={30} aria-hidden="true" />
+                <strong>Generando {name(staging.style)}…</strong>
+                <span>
+                  {elapsed} s · suele tardar entre 30 y 60 segundos
+                </span>
+                <small>Podés seguir mirando las otras fotos: te la mostramos apenas esté.</small>
+              </div>
+            )}
           </div>
+          {staging && staging.photo !== photo.id && (
+            <button
+              type="button"
+              className="dv2-generating-chip"
+              onClick={() => setIndex(Math.max(0, photos.findIndex((p) => p.id === staging.photo)))}
+            >
+              <Loader2 className="dv2-spin" size={14} aria-hidden="true" /> Generando {name(staging.style)} · {elapsed} s
+            </button>
+          )}
           {photos.length > 1 && (
             <>
-              <button type="button" className="dv2-nav dv2-prev" aria-label="Foto anterior" onClick={() => go(-1)}>
+              <button type="button" className="dv2-nav dv2-prev ph-no-rageclick" aria-label="Foto anterior" onClick={() => go(-1)}>
                 <ChevronLeft size={24} />
               </button>
-              <button type="button" className="dv2-nav dv2-next" aria-label="Foto siguiente" onClick={() => go(1)}>
+              <button type="button" className="dv2-nav dv2-next ph-no-rageclick" aria-label="Foto siguiente" onClick={() => go(1)}>
                 <ChevronRight size={24} />
               </button>
             </>

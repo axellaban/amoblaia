@@ -9,8 +9,11 @@ import { ArrowLeft, Check, Eye, EyeOff } from "lucide-react";
 import { api, ApiError } from "./admin-demos";
 import { Captcha } from "./auth-form";
 import { Comparison } from "./comparison";
-import { track } from "@/lib/analytics";
+import { track, trackFailure } from "@/lib/analytics";
 import { browserClient } from "@/lib/supabase/client";
+
+/** Signing in failed, as opposed to the invitation or the claim. */
+class SignInError extends Error {}
 
 export type InvitationInfo = { agencyName: string; properties: number; freeCredits: number; expiresAt: string };
 
@@ -50,6 +53,8 @@ export function InvitationSignup({
   const [error, setError] = useState("");
   const [token, setToken] = useState("");
   const [captchaReset, setCaptchaReset] = useState(0);
+  // The account was created and the agency taken, but signing in failed: only sign in again.
+  const [created, setCreated] = useState(false);
   const onToken = useCallback((t: string) => setToken(t), []);
   const captcha = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
   // The same signup step as the form without a code, so the demo funnel does not break here.
@@ -76,7 +81,7 @@ export function InvitationSignup({
     const client = browserClient();
     if (!client) throw new Error("Las cuentas todavía no están habilitadas.");
     const { error } = await client.auth.signInWithPassword({ email: email.trim(), password, options: { captchaToken: token || undefined } });
-    if (error) throw new Error(mode === "new" ? "Tu cuenta quedó creada, pero no pudimos iniciar sesión. Entrá con tu email y contraseña." : "Revisá el email y la contraseña.");
+    if (error) throw new SignInError(mode === "new" ? "Tu cuenta quedó creada, pero no pudimos iniciar sesión. Entrá con tu email y contraseña." : "Revisá el email y la contraseña.");
   }
 
   async function submit(e: React.FormEvent) {
@@ -88,19 +93,33 @@ export function InvitationSignup({
     }
     setBusy(true);
     setError("");
+    const origin = property ? "demo_invitation" : "invitation";
+    let accountCreated = created;
     try {
-      if (mode === "new") {
+      if (mode === "new" && !created) {
         await api("/api/panel/invitacion", { method: "POST", body: JSON.stringify({ code, email, password }) });
+        accountCreated = true;
         await signIn();
       } else {
         await signIn();
-        await api("/api/panel/reclamar", { method: "POST", body: JSON.stringify({ code }) });
+        // Its own invitation was already used when the account was created: nothing left to claim.
+        if (!accountCreated) await api("/api/panel/reclamar", { method: "POST", body: JSON.stringify({ code }) });
       }
-      track("agency_claimed", { origin: property ? "demo_invitation" : "invitation", new_account: mode === "new", ...(property ? { demo_id: property.id } : {}) });
+      track("agency_claimed", { origin, new_account: accountCreated, ...(property ? { demo_id: property.id } : {}) });
       // Into the property it came from, ready for a first try; otherwise the panel's home.
       // To finish the purchase it came for; otherwise into the property, ready for a first try.
       window.location.assign(plan ? `/precios?${new URLSearchParams({ plan })}` : property ? `/panel/propiedades/${property.id}?bienvenida=1` : "/panel?bienvenida=1");
     } catch (err) {
+      trackFailure("agency_signup_failed", err, {
+        origin,
+        step: err instanceof SignInError ? "inicio_sesion" : accountCreated || mode === "existing" ? "reclamo" : "invitacion",
+        ...(property ? { demo_id: property.id } : {}),
+      });
+      if (accountCreated && !created) {
+        // Signing in again must not create the account twice (the code is used now).
+        setCreated(true);
+        setMode("existing");
+      }
       if (err instanceof ApiError && err.status === 409 && mode === "new" && /ya tiene una cuenta/.test(err.message)) setMode("existing");
       setError(err instanceof Error ? err.message : "No pudimos completar el ingreso.");
       setCaptchaReset((n) => n + 1);

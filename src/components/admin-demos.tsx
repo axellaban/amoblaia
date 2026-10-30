@@ -584,17 +584,23 @@ export function DemoList() {
             </div>
             <StatusChip status={d.status} />
             <div className="dm-links">
-              <span className="dm-who">Inmobiliaria</span>
-              <ViewLink demo={d} which="agency" />
-              <LinkCopy demo={d} which="agency" />
-              <span className="dm-sep">·</span>
-              <span className="dm-who">Comprador</span>
-              <ViewLink demo={d} which="buyer" />
-              <LinkCopy demo={d} which="buyer" />
+              <span className="dm-link-group">
+                <span className="dm-who">Inmobiliaria</span>
+                <ViewLink demo={d} which="agency" />
+                <LinkCopy demo={d} which="agency" />
+              </span>
+              <span className="dm-sep" aria-hidden="true">·</span>
+              <span className="dm-link-group">
+                <span className="dm-who">Comprador</span>
+                <ViewLink demo={d} which="buyer" />
+                <LinkCopy demo={d} which="buyer" />
+              </span>
               {d.status === "published" && (
                 <>
-                  <span className="dm-sep">·</span>
-                  <WhatsappText demo={d} />
+                  <span className="dm-sep" aria-hidden="true">·</span>
+                  <span className="dm-link-group">
+                    <WhatsappText demo={d} />
+                  </span>
                 </>
               )}
             </div>
