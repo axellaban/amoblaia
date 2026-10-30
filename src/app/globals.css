@@ -15000,8 +15000,8 @@ a.dm-agency:hover {
   border-style: dashed;
   background: #faf8f4;
 }
-/* The style's own button, not its Generar/Descargar action (also a direct child). */
-.dv2-owner-row > button:not(.dv2-owner-action),
+/* The style's own button, not its Generar/Descargar action or its pencil (also direct children). */
+.dv2-owner-row > button:not(.dv2-owner-action):not(.dv2-owner-pencil),
 .dv2-owner-info {
   display: flex;
   align-items: center;
@@ -15015,7 +15015,7 @@ a.dm-agency:hover {
   font: inherit;
   text-align: left;
 }
-.dv2-owner-row > button:not(.dv2-owner-action) {
+.dv2-owner-row > button:not(.dv2-owner-action):not(.dv2-owner-pencil) {
   cursor: pointer;
 }
 .dv2-owner-row img {
@@ -16118,4 +16118,72 @@ a.dm-agency:hover {
   color: #fff;
   font-size: 15px;
   font-weight: 650;
+}
+
+/* Editing a photo from the agency's own demo: the same panel as the studio's "Editar". */
+.dv2-retouch-kicker {
+  margin: 14px 0 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.dv2-retouch-title {
+  margin: 2px 0 12px;
+  font-size: 22px;
+}
+.dv2-retouch-actions {
+  display: grid;
+  grid-template-columns: 1fr 1.6fr;
+  gap: 8px;
+  margin-top: 14px;
+}
+.dv2-retouch-actions button {
+  min-height: 44px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 700;
+}
+.dv2-retouch-save {
+  border: 0;
+  background: var(--forest);
+  color: #fff;
+}
+.dv2-retouch-save:disabled,
+.dv2-retouch-actions button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.dv2-retouch-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--forest);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.dv2-owner-pencil {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  min-height: 40px;
+  flex: none;
+  border: 1px solid #c9dbc6;
+  border-radius: 10px;
+  background: #fff;
+  color: var(--forest);
+}
+.dv2-owner-pencil:hover {
+  background: #f3f6ee;
+}
+/* The owner's row: the picture, then the icons (download, magic wand to generate, pencil to edit). */
+.dv2-owner-action.is-icon {
+  width: 40px;
+  padding: 0;
+  justify-content: center;
 }

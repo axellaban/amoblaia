@@ -1079,14 +1079,14 @@ function Gallery({
             </span>
           </button>
           <a
-            className="dv2-owner-action"
+            className="dv2-owner-action is-icon"
             href={urlFor(source, photo.id, null, 2048)}
             download={ownerFile(null)}
             aria-label="Descargar el original"
             {...cta("owner_download", "styles_panel", "file_download", "habita_b2b", { photo: photo.id, style: "original" })}
             onClick={() => log("demo_owner_download", { estilo: "original", photo_id: photo.id, style_id: "original" })}
           >
-            <Download size={16} aria-hidden="true" /> Descargar
+            <Download size={16} aria-hidden="true" />
           </a>
           <button type="button" className="dv2-owner-pencil" aria-label="Editar el original" onClick={() => startEdit(photo.id, null)}>
             <Pencil size={16} aria-hidden="true" />
@@ -1104,14 +1104,14 @@ function Gallery({
                 </span>
               </button>
               <a
-                className="dv2-owner-action"
+                className="dv2-owner-action is-icon"
                 href={urlFor(source, photo.id, r.version, 2048)}
                 download={ownerFile(r.style)}
                 aria-label={`Descargar ${name(r.style)}`}
                 {...cta("owner_download", "styles_panel", "file_download", "habita_b2b", { photo: photo.id, style: r.style })}
                 onClick={() => log("demo_owner_download", { estilo: r.style, photo_id: photo.id, style_id: r.style })}
               >
-                <Download size={16} aria-hidden="true" /> Descargar
+                <Download size={16} aria-hidden="true" />
               </a>
               <button type="button" className="dv2-owner-pencil" aria-label={`Editar ${name(r.style)}`} onClick={() => startEdit(photo.id, r.style)}>
                 <Pencil size={16} aria-hidden="true" />
@@ -1146,9 +1146,6 @@ function Gallery({
                     <Sparkles size={16} aria-hidden="true" /> Generar
                   </>
                 )}
-              </button>
-              <button type="button" className="dv2-owner-pencil" aria-label={`Editar ${name(r.style)}`} onClick={() => startEdit(photo.id, null)}>
-                <Pencil size={16} aria-hidden="true" />
               </button>
             </li>
           );
