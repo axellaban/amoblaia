@@ -19,10 +19,6 @@ if (key && (process.env.NEXT_PUBLIC_VERCEL_ENV === "production" || process.env.N
       return event;
     },
   });
-}
-
-if (typeof window !== "undefined") {
-  void import("@/lib/demo-interaction-tracking").then(({ installDemoInteractionTracking }) => {
-    installDemoInteractionTracking();
-  });
+  // Clicks on tracked calls to action and the internal-traffic mark, loaded off the critical path.
+  void import("@/lib/interaction-tracking").then(({ installInteractionTracking }) => installInteractionTracking());
 }

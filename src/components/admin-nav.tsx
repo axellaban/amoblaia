@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect } from "react";
+import { markInternal } from "@/lib/interaction-tracking";
 
 const LINKS: [string, string][] = [
   ["/admin/prospeccion", "Adquisición"],
@@ -16,6 +18,8 @@ const LINKS: [string, string][] = [
  */
 export function AdminNav() {
   const pathname = usePathname();
+  // Only the team gets this panel: its device stays out of the commercial metrics.
+  useEffect(() => markInternal("admin"), []);
   if (pathname.endsWith("/vista-previa")) return null;
   return (
     <aside className="pr-side" aria-label="Operación comercial">

@@ -2,6 +2,8 @@
 import { useEffect, useRef, useState } from "react";
 import { browserClient } from "@/lib/supabase/client";
 import { safeNext } from "@/lib/commerce/redirect";
+import { track } from "@/lib/analytics";
+import { cta } from "@/lib/interaction-tracking";
 
 // Public OAuth client identifier. The secret stays in Supabase.
 const clientId =
@@ -104,12 +106,17 @@ export function GoogleSignIn({ next }: { next: string | null }) {
             try {
               const client = browserClient();
               if (!client) throw new Error("AUTH_UNAVAILABLE");
-              const { error } = await client.auth.signInWithIdToken({
+              const { data, error } = await client.auth.signInWithIdToken({
                 provider: "google",
                 token: credential,
                 nonce,
               });
               if (error) throw error;
+              // A Google account seen for the first time is created right now.
+              const created = Date.parse(data.user?.created_at ?? "");
+              const fresh = Number.isFinite(created) && Date.now() - created < 120000;
+              track("auth_google_completed", { new_account: fresh, method: "google_one_tap" }, true);
+              if (fresh) track("account_created", { flow: "auth_google", method: "google" }, true, { account_created_at: new Date().toISOString() });
               // The session already exists: a failed trial hand-over must
               // not look like a failed sign-in. The server retries it.
               await fetch("/api/guest/claim", { method: "POST" }).catch(
@@ -117,6 +124,7 @@ export function GoogleSignIn({ next }: { next: string | null }) {
               );
               window.location.assign(safeNext(next, "/inicio"));
             } catch {
+              track("signup_form_error", { flow: "auth_google", error_kind: "google_signin" });
               setError(
                 "No pudimos completar el acceso. Volvé a intentarlo con Google.",
               );
@@ -185,6 +193,8 @@ export function GoogleSignIn({ next }: { next: string | null }) {
             ? "button button-primary google-main"
             : "google-fallback"
         }
+        {...cta("google_signin", "auth", "google_oauth")}
+        data-cta-navigates="1"
         onClick={redirect}
         disabled={redirecting || busy}
       >

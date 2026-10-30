@@ -10,6 +10,8 @@ import { api, ApiError } from "./admin-demos";
 import { Captcha } from "./auth-form";
 import { Comparison } from "./comparison";
 import { track } from "@/lib/analytics";
+import { cta, markInternal } from "@/lib/interaction-tracking";
+import { useSignupTracking } from "@/lib/signup-tracking";
 import { browserClient } from "@/lib/supabase/client";
 
 export type InvitationInfo = { agencyName: string; properties: number; freeCredits: number; expiresAt: string };
@@ -53,9 +55,20 @@ export function InvitationSignup({
   const onToken = useCallback((t: string) => setToken(t), []);
   const captcha = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
   // The same signup step as the form without a code, so the demo funnel does not break here.
+  // Legacy name kept for the current funnels: it fires when this screen is seen, not when the form is begun.
   useEffect(() => {
-    if (invitation) track("agency_signup_started", { origin: property ? "demo_invitation" : "invitation", ...(property ? { demo_id: property.id } : {}) });
-  }, [invitation, property]);
+    if (invitation && !preview) track("agency_signup_started", { origin: property ? "demo_invitation" : "invitation", ...(property ? { demo_id: property.id } : {}) });
+  }, [invitation, property, preview]);
+  // The team previewing the step is not an agency signing up.
+  useEffect(() => {
+    if (preview) markInternal("team_preview");
+  }, [preview]);
+  const origin = property ? "demo_invitation" : "invitation";
+  const steps = useSignupTracking(
+    "invitation",
+    { origin, has_invite: true, mode, from_plan: Boolean(plan), ...(property ? { demo_id: property.id } : {}) },
+    Boolean(invitation) && !preview,
+  );
 
   if (!invitation)
     return (
@@ -82,25 +95,33 @@ export function InvitationSignup({
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (busy || preview) return;
+    steps.submitted();
     if (captcha && !token) {
+      steps.failed("captcha");
       setError("Completá la verificación para continuar.");
       return;
     }
     setBusy(true);
     setError("");
+    let step = "account";
     try {
       if (mode === "new") {
         await api("/api/panel/invitacion", { method: "POST", body: JSON.stringify({ code, email, password }) });
+        steps.accountCreated("invitation_password");
+        step = "signin";
         await signIn();
       } else {
+        step = "signin";
         await signIn();
+        step = "claim";
         await api("/api/panel/reclamar", { method: "POST", body: JSON.stringify({ code }) });
       }
-      track("agency_claimed", { origin: property ? "demo_invitation" : "invitation", new_account: mode === "new", ...(property ? { demo_id: property.id } : {}) });
+      track("agency_claimed", { origin: property ? "demo_invitation" : "invitation", new_account: mode === "new", ...(property ? { demo_id: property.id } : {}) }, true);
       // Into the property it came from, ready for a first try; otherwise the panel's home.
       // To finish the purchase it came for; otherwise into the property, ready for a first try.
       window.location.assign(plan ? `/precios?${new URLSearchParams({ plan })}` : property ? `/panel/propiedades/${property.id}?bienvenida=1` : "/panel?bienvenida=1");
     } catch (err) {
+      steps.failed(err instanceof ApiError ? (err.status === 409 ? "account_exists" : `api_${err.status}`) : step === "signin" ? "signin" : "network", { step });
       if (err instanceof ApiError && err.status === 409 && mode === "new" && /ya tiene una cuenta/.test(err.message)) setMode("existing");
       setError(err instanceof Error ? err.message : "No pudimos completar el ingreso.");
       setCaptchaReset((n) => n + 1);
@@ -114,7 +135,7 @@ export function InvitationSignup({
       ? `Incluye ${invitation.freeCredits} ${invitation.freeCredits === 1 ? "crédito" : "créditos"} de regalo para ambientar fotos con IA.`
       : "";
   const form = (
-      <form className="account-panel ap-start-form" onSubmit={submit}>
+      <form className="account-panel ap-start-form" onSubmit={submit} onInputCapture={steps.onInput}>
         {plan ? (
           <>
             <h2>Creá tu cuenta</h2>
@@ -163,7 +184,7 @@ export function InvitationSignup({
                 Entrá con ella
               </button>{" "}
               o{" "}
-              <Link href={`/acceso?next=${encodeURIComponent(here)}`} className="text-link">
+              <Link href={`/acceso?next=${encodeURIComponent(here)}`} className="text-link" {...cta("invitation_google", "invitation_form", "auth_login")}>
                 con Google
               </Link>
               .
@@ -187,7 +208,7 @@ export function InvitationSignup({
   if (property)
     return (
       <div className="account-page container ap-invited">
-        <Link href={property.back} className="text-link ap-invited-back">
+        <Link href={property.back} className="text-link ap-invited-back" {...cta("invitation_back_to_demo", "invitation_page", "demo", "navigation")}>
           <ArrowLeft size={16} aria-hidden="true" /> Volver a la demo
         </Link>
         <span className="eyebrow">Invitación para {invitation.agencyName}</span>
@@ -207,7 +228,11 @@ export function InvitationSignup({
               </span>
             </div>
             {property.before && property.after ? (
-              <Comparison before={property.before} after={property.after} beforeLabel="Original" afterLabel="Ambientado con IA" alt={`${property.title}, ambientado con IA`} beforeAlt={`${property.title}, foto original`} />
+              <Comparison
+                analytics={{ demo_id: property.id, photo_id: "cover", style_id: "main" }}
+                before={property.before}
+                after={property.after}
+                beforeLabel="Original" afterLabel="Ambientado con IA" alt={`${property.title}, ambientado con IA`} beforeAlt={`${property.title}, foto original`} />
             ) : property.before ? (
               <img className="ap-invited-photo" src={property.before} alt={`${property.title}, foto original`} />
             ) : null}

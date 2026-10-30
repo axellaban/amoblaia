@@ -8,7 +8,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { ApiError, api } from "./admin-demos";
-import { track } from "@/lib/analytics";
+import { track, trackMilestone } from "@/lib/analytics";
 import { modes, rooms } from "@/lib/catalog";
 import { isLive } from "@/lib/demos/editor-logic";
 import { adminGenerationUrl, adminPhotoUrl, type DemoDetail, type EditorPhoto } from "@/lib/demos/shared";
@@ -266,6 +266,7 @@ export function PhotoBatch({ initialGroup }: { initialGroup?: string }) {
     busy.current = false;
     setRunning(false);
     track("property_ai_generation_completed", { versions: done + failed, failed, status: failed ? "partial" : "ok", mode: "batch" });
+    if (done) trackMilestone("first_generation_completed", { versions: done, source: "panel_batch" });
   }
 
   function generate() {
@@ -275,6 +276,7 @@ export function PhotoBatch({ initialGroup }: { initialGroup?: string }) {
     setStep("generar");
     window.scrollTo({ top: 0 });
     track("property_ai_generation_started", { photos: plan.tasks.length, versions: plan.tasks.length, credits: total.newPhotos, mode: "batch" });
+    trackMilestone("first_generation_started", { versions: plan.tasks.length, source: "panel_batch" });
     void send(runRef.current.map((_, i) => i));
   }
 
