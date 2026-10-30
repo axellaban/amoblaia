@@ -2,6 +2,8 @@
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("server-only", () => ({}));
 import { INTERNAL_PROPERTY, internalFlagFromUrl, redactDeep, releaseProperties } from "@/lib/analytics-privacy";
 import { failure, HttpError } from "@/lib/commerce/http";
 import { firstViewOf } from "@/lib/demos/activity-client";
