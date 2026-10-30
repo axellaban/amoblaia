@@ -223,6 +223,25 @@ export async function revokeClaim(agencyId: string, claimId: string, actorId: st
 }
 
 /**
+ * «Liberar cuenta»: undoes a claim made by a test account, so the real agency
+ * can still take over its demos. Refused when the account paid. Audited.
+ */
+export async function releaseAgency(agencyId: string, actorId: string) {
+  await rpc("amobla_account", { p_user: actorId, p_trial: false });
+  try {
+    return await rpc<{ photos: number; properties: number; credits: number }>("habita_release_agency", { p_agency: agencyId, p_actor: actorId });
+  } catch (e) {
+    const code = e instanceof Error ? e.message : "";
+    if (code.includes("AGENCY_NOT_FOUND")) throw new HttpError(404, "No encontramos la inmobiliaria.");
+    if (code.includes("NO_OWNER")) throw new HttpError(409, "Esta inmobiliaria no tiene cuenta: no hay nada para liberar.");
+    if (code.includes("AGENCY_PAID")) throw new HttpError(409, "Esta cuenta compró créditos: es un cliente real y no se puede liberar.");
+    if (code.includes("BUSY")) throw new HttpError(409, "Hay una ambientación en curso. Probá de nuevo en unos minutos.");
+    if (/habita_release_agency|function/i.test(code)) throw new HttpError(409, "Para esto falta aplicar la migración 202611150001_agency_release.sql en Supabase.");
+    throw e;
+  }
+}
+
+/**
  * Free credits for an agency (1 credit = 1 photo): to its owner's balance at
  * once, or waiting until the agency claims its account. Audited with reason.
  */
