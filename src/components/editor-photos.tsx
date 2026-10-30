@@ -1,15 +1,19 @@
 "use client";
-// "Fotos" of the property editor: one photo at a time. Spaces on the left,
-// the active photo or version large in the middle, its versions and actions
-// on the right; on a phone they stack in that order. What is being looked
+// "Fotos" of the property editor: one photo at a time. The photos by space
+// on the left, the active photo or version large in the middle with its
+// versions in a strip below, and on the right two tabs: "Ambientación con
+// IA" (open by default) and "Editar". On a phone they stack in that order. What is being looked
 // at (the view), which version the listing shows, the cover, the photo's
 // visibility and the batch selection are five separate things: choosing a
 // version only changes the view, and every other change is its own button.
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
   Check,
+  ChevronLeft,
+  ChevronRight,
+  Columns2,
   Download,
   Expand,
   Eye,
@@ -24,6 +28,7 @@ import {
   Star,
   Trash2,
   Undo2,
+  WandSparkles,
   X,
 } from "lucide-react";
 import { Comparison } from "./comparison";
@@ -140,7 +145,8 @@ export function PhotoWorkspace({
   // The version being looked at, per photo; null: the original. A view only.
   const [viewOf, setViewOf] = useState<Record<string, string | null>>({});
   const [mode, setMode] = useState<ViewMode>("version");
-  const [dialog, setDialog] = useState(false);
+  const [tab, setTab] = useState<"create" | "edit">("create");
+  const uid = useId();
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [batch, setBatch] = useState(false);
   const [awaiting, setAwaiting] = useState<{ photoId: string; style: string; since: string } | null>(null);
@@ -203,90 +209,126 @@ export function PhotoWorkspace({
   // The photo's own name, else its place in the space ("Vista 2"): never the space's name twice.
   const name = photo.label?.trim() || `Vista ${(activeGroup?.photos.findIndex((p) => p.id === photo.id) ?? 0) + 1}`;
 
+  // Every photo in the order of its space: what the arrows step through.
+  const ordered = groups.flatMap((g) => g.photos);
+  const at = ordered.findIndex((p) => p.id === photo.id);
+  const step = (n: number) => setActiveId(ordered[(at + n + ordered.length) % ordered.length].id);
+  const shownHere = Boolean(viewGen && shownIds.has(viewGen.id));
+  const openCreate = () => {
+    setTab("create");
+    document.getElementById(`${uid}-side`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  };
+
   return (
     <>
       <div className="pw" data-testid="photo-workspace">
-        <SpaceNav
+        <PhotoNav
           groups={groups}
           spaces={spaces}
+          activeId={photo.id}
           activeSpace={activeGroup?.space?.id ?? null}
+          coverId={detail.demo.cover?.id ?? null}
+          mainStyle={mainStyle}
           spacesReady={detail.spacesReady}
           busy={busy}
-          onPick={(g) => g.photos[0] && setActiveId(g.photos[0].id)}
+          onPick={setActiveId}
           actions={actions}
         />
 
-        <section className="pw-stage" aria-label="Foto activa">
-          <header className="pw-stage-head">
-            <h3>
-              {space ? space.name : "Sin organizar"} · {name}
-            </h3>
-            <span className="pw-badges">
-              <span className={`pw-badge ${photo.visible ? "is-on" : ""}`}>{photo.visible ? "Visible en la ficha" : "Oculta en la ficha"}</span>
-              {isCover && <span className="pw-badge is-on">Portada</span>}
-            </span>
-          </header>
-          <figure className="pw-figure">
-            {viewGen && effectiveMode === "compare" ? (
-              <Comparison
-                before={adminPhotoUrl(photo.id, null, 1600)}
-                after={adminGenerationUrl(viewGen.id, 1600)}
-                beforeLabel="Original"
-                beforeAlt={`${name}, foto original`}
-                afterLabel={styleName(viewGen.style)}
-                alt={`${name}, ${styleName(viewGen.style)}`}
-                initial={50}
-              />
-            ) : (
-              <img
-                key={viewGen && effectiveMode === "version" ? viewGen.id : `o-${photo.id}`}
-                src={viewGen && effectiveMode === "version" ? adminGenerationUrl(viewGen.id, 1600) : adminPhotoUrl(photo.id, null, 1600)}
-                alt={viewGen && effectiveMode === "version" ? `${name}, ${styleName(viewGen.style)}` : `${name}, foto original`}
-              />
-            )}
-            <figcaption className="pw-caption" aria-live="polite" data-testid="view-label">
-              {label}
-              {viewGen && effectiveMode !== "original" && <span> · Ambientación ilustrativa con IA</span>}
-            </figcaption>
-            {viewGen && (
-              <button type="button" className="pw-expand icon-button" aria-label="Ver versión completa" onClick={() => actions.review(photo.id, viewGen.id)}>
-                <Expand size={18} />
+        <div className="pw-main">
+          <section className="pw-stage" aria-label="Foto activa">
+            <header className="pw-stage-head">
+              <button type="button" className="icon-button" aria-label="Foto anterior" disabled={ordered.length < 2} onClick={() => step(-1)}>
+                <ChevronLeft size={18} />
               </button>
-            )}
-          </figure>
-          <div className="pw-stage-tools">
-            <div className="pc-media-switch pw-switch" role="group" aria-label="Qué ver en la foto grande">
-              <button type="button" aria-pressed={effectiveMode === "original"} onClick={() => setMode("original")}>
-                Original
+              <div className="pw-stage-title">
+                <h3>
+                  {space ? space.name : "Sin organizar"} · {name}
+                </h3>
+                <small>
+                  Foto {at + 1} de {ordered.length}
+                </small>
+              </div>
+              <button type="button" className="icon-button" aria-label="Foto siguiente" disabled={ordered.length < 2} onClick={() => step(1)}>
+                <ChevronRight size={18} />
               </button>
-              <button
-                type="button"
-                aria-pressed={effectiveMode === "version"}
-                disabled={!viewGen && !Object.keys(photo.shown).length}
-                onClick={() => (viewGen ? setMode("version") : choose(photo.id, initialView(photo, mainStyle)))}
-              >
-                Versión
-              </button>
-              <button
-                type="button"
-                aria-pressed={effectiveMode === "compare"}
-                disabled={!viewGen && !Object.keys(photo.shown).length}
-                onClick={() => (viewGen ? setMode("compare") : choose(photo.id, initialView(photo, mainStyle), "compare"))}
-              >
-                Comparar
-              </button>
-            </div>
-            <span className="pw-stage-actions">
+              <span className="pw-badges">
+                {viewGen && (
+                  <span className={`pw-badge ${shownHere ? "is-on" : ""}`}>
+                    {shownHere ? shownLabel : photosOnly ? "Creada y guardada" : "No se muestra en la ficha"}
+                  </span>
+                )}
+                {!photo.visible && <span className="pw-badge">Oculta en la ficha</span>}
+                {isCover && <span className="pw-badge is-on">Portada</span>}
+              </span>
+            </header>
+            <figure className="pw-figure">
+              {viewGen && effectiveMode === "compare" ? (
+                <Comparison
+                  before={adminPhotoUrl(photo.id, null, 1600)}
+                  after={adminGenerationUrl(viewGen.id, 1600)}
+                  beforeLabel="Original"
+                  beforeAlt={`${name}, foto original`}
+                  afterLabel={styleName(viewGen.style)}
+                  alt={`${name}, ${styleName(viewGen.style)}`}
+                  initial={50}
+                />
+              ) : (
+                <img
+                  key={viewGen && effectiveMode === "version" ? viewGen.id : `o-${photo.id}`}
+                  src={viewGen && effectiveMode === "version" ? adminGenerationUrl(viewGen.id, 1600) : adminPhotoUrl(photo.id, null, 1600)}
+                  alt={viewGen && effectiveMode === "version" ? `${name}, ${styleName(viewGen.style)}` : `${name}, foto original`}
+                />
+              )}
+              {effectiveMode !== "compare" && (
+                <figcaption className="pw-caption" aria-live="polite" data-testid="view-label">
+                  {label}
+                  {viewGen && effectiveMode !== "original" && <span> · Ambientación ilustrativa con IA</span>}
+                </figcaption>
+              )}
+              {viewGen && (
+                <button type="button" className="pw-expand icon-button" aria-label="Ver versión completa" onClick={() => actions.review(photo.id, viewGen.id)}>
+                  <Expand size={18} />
+                </button>
+              )}
+              <div className="pw-tools" role="group" aria-label="Qué ver en la foto grande">
+                <button type="button" aria-pressed={effectiveMode === "original"} onClick={() => setMode("original")}>
+                  Original
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={effectiveMode === "version"}
+                  disabled={!viewGen && !Object.keys(photo.shown).length}
+                  onClick={() => (viewGen ? setMode("version") : choose(photo.id, initialView(photo, mainStyle)))}
+                >
+                  Versión
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={effectiveMode === "compare"}
+                  disabled={!viewGen && !Object.keys(photo.shown).length}
+                  onClick={() => (viewGen ? setMode("compare") : choose(photo.id, initialView(photo, mainStyle), "compare"))}
+                >
+                  <Columns2 size={15} aria-hidden="true" /> Comparar
+                </button>
+              </div>
+            </figure>
+            <div className="pw-actions">
+              {viewGen && !shownHere && (
+                <button type="button" className="button button-small button-primary" onClick={() => void actions.patchPhoto(photo.id, { approve: viewGen.id })}>
+                  <Check size={14} /> Mostrar esta en la ficha
+                </button>
+              )}
               {!photosOnly && (
-              <button
-                type="button"
-                className={`button button-small button-outline ${isCover ? "is-on" : ""}`}
-                aria-pressed={isCover}
-                title={isCover ? "Es la portada: abre la ficha y la vista previa del enlace" : "Usar como portada"}
-                onClick={() => actions.cover(isCover ? null : photo.id)}
-              >
-                <Star size={14} /> {isCover ? "Portada" : "Usar de portada"}
-              </button>
+                <button
+                  type="button"
+                  className={`button button-small button-outline ${isCover ? "is-on" : ""}`}
+                  aria-pressed={isCover}
+                  title={isCover ? "Es la portada: abre la ficha y la vista previa del enlace" : "Usar como portada"}
+                  onClick={() => actions.cover(isCover ? null : photo.id)}
+                >
+                  <Star size={14} /> {isCover ? "Portada" : "Usar de portada"}
+                </button>
               )}
               <button
                 type="button"
@@ -303,108 +345,159 @@ export function PhotoWorkspace({
                     ? "Se muestra en la ficha"
                     : "Oculta en la ficha"}
               </button>
-            </span>
-          </div>
-          <div className="pw-strip" role="group" aria-label={`Fotos de ${activeGroup?.space?.name ?? "Sin organizar"}`}>
-            {(activeGroup?.photos ?? []).map((p, i) => (
-              <button
-                key={p.id}
-                type="button"
-                className="pw-thumb"
-                aria-pressed={p.id === photo.id}
-                aria-label={`Foto ${i + 1}: ${photoLabel(p)}${p.visible ? "" : " (oculta)"}`}
-                onClick={() => setActiveId(p.id)}
-              >
-                <img src={p.shown[mainStyle] ? adminGenerationUrl(p.shown[mainStyle], 480) : adminPhotoUrl(p.id, null, 480)} alt="" loading="lazy" />
-                {!p.visible && <EyeOff size={13} className="pw-thumb-off" aria-hidden="true" />}
-              </button>
-            ))}
-            <UploadButton label="Fotos" onFiles={(f) => actions.upload(f, activeGroup?.space?.id ?? null)} />
-          </div>
-        </section>
+              {viewGen ? (
+                <button
+                  type="button"
+                  className="button button-small button-outline"
+                  data-testid="download-active"
+                  disabled={downloading === viewGen.id}
+                  onClick={() => actions.download("", viewGen.id, fileName(photo, viewGen))}
+                >
+                  {downloading === viewGen.id ? <Loader2 size={14} className="spin" /> : <Download size={14} />} Descargar
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="button button-small button-outline"
+                  disabled={downloading === `o-${photo.id}`}
+                  onClick={() => actions.download(photo.id, `o-${photo.id}`, originalName(photo))}
+                >
+                  {downloading === `o-${photo.id}` ? <Loader2 size={14} className="spin" /> : <Download size={14} />} Descargar original
+                </button>
+              )}
+              {viewGen && (
+                <details className="pw-more">
+                  <summary>
+                    <MoreHorizontal size={16} aria-hidden="true" /> Más
+                  </summary>
+                  <div>
+                    <button type="button" className="text-link" onClick={() => actions.review(photo.id, viewGen.id)}>
+                      Ver en grande
+                    </button>
+                    <button
+                      type="button"
+                      className="text-link"
+                      onClick={() => {
+                        if (window.confirm("La versión deja de mostrarse y queda en el historial de la foto, donde podés recuperarla. ¿Continuar?"))
+                          void actions.patchPhoto(photo.id, { discard: viewGen.id });
+                      }}
+                    >
+                      Descartar
+                    </button>
+                  </div>
+                </details>
+              )}
+            </div>
+            <p className="pw-hint">Descargar no usa créditos ni publica nada: JPEG de hasta 2048 px.</p>
+          </section>
 
-        <aside className="pw-side" aria-label="Versiones y acciones">
-          <p className="pw-kicker">La versión que estás viendo</p>
-          <h3 className="pw-title">{viewGen ? `${styleName(viewGen.style)}${sameStyle > 1 && number ? ` v${number}` : ""}` : "Original"}</h3>
-          <p className="pw-state">
-            {viewGen
-              ? `${shownIds.has(viewGen.id) ? shownLabel : photosOnly ? "Creada y guardada" : "Creada y guardada · no se muestra en la ficha"} · lista para descargar`
-              : "La foto como se subió"}
-          </p>
-          {viewGen ? (
+          <section className="pw-versions-panel" aria-labelledby={`${uid}-versions`}>
+            <div className="pw-versions-head">
+              <h4 id={`${uid}-versions`}>Versiones de esta foto</h4>
+              <small>Elegir una versión solo cambia lo que ves.</small>
+            </div>
+            <ul className="pw-versions">
+              <li>
+                <button type="button" className="pw-version" aria-pressed={!viewGen} onClick={() => choose(photo.id, null)}>
+                  <img src={adminPhotoUrl(photo.id, null, 480)} alt="" loading="lazy" />
+                  <span>
+                    <strong>Original</strong>
+                    <small>La foto subida</small>
+                  </span>
+                </button>
+              </li>
+              {versionsList.map((s) => (
+                <StyleItem
+                  key={s.style}
+                  shownLabel={shownLabel}
+                  s={s}
+                  photo={photo}
+                  viewing={viewGen?.id ?? null}
+                  fits={styleFits(s.style, propertyType)}
+                  blocked={blocked}
+                  onChoose={(id) => choose(photo.id, id, mode === "compare" ? "compare" : "version")}
+                  actions={actions}
+                />
+              ))}
+              <li>
+                <button type="button" className="pw-version pw-version-new" onClick={openCreate}>
+                  <span className="pw-version-new-art" aria-hidden="true">
+                    <Plus size={20} />
+                  </span>
+                  <span>
+                    <strong>Nueva versión</strong>
+                    <small>Con ambientación IA</small>
+                  </span>
+                </button>
+              </li>
+            </ul>
+          </section>
+        </div>
+
+        <aside id={`${uid}-side`} className="pw-side" aria-label="Ambientar y editar">
+          <div className="pw-tabs" role="tablist" aria-label="Qué querés hacer con esta foto">
             <button
               type="button"
-              className="button button-primary pw-download"
-              data-testid="download-active"
-              disabled={downloading === viewGen.id}
-              onClick={() => actions.download("", viewGen.id, fileName(photo, viewGen))}
+              role="tab"
+              id={`${uid}-tab-create`}
+              aria-selected={tab === "create"}
+              aria-controls={`${uid}-panel`}
+              onClick={() => setTab("create")}
             >
-              {downloading === viewGen.id ? <Loader2 size={16} className="spin" /> : <Download size={16} />} Descargar esta versión
+              <WandSparkles size={15} aria-hidden="true" /> Ambientación con IA
             </button>
-          ) : (
             <button
               type="button"
-              className="button button-outline pw-download"
-              disabled={downloading === `o-${photo.id}`}
-              onClick={() => actions.download(photo.id, `o-${photo.id}`, originalName(photo))}
+              role="tab"
+              id={`${uid}-tab-edit`}
+              aria-selected={tab === "edit"}
+              aria-controls={`${uid}-panel`}
+              onClick={() => setTab("edit")}
             >
-              {downloading === `o-${photo.id}` ? <Loader2 size={16} className="spin" /> : <Download size={16} />} Descargar original
+              <Pencil size={15} aria-hidden="true" /> Editar
             </button>
-          )}
-          <p className="pw-hint">JPEG de hasta 2048 px. Descargar no usa créditos ni publica nada.</p>
-          {viewGen && !shownIds.has(viewGen.id) && (
-            <button type="button" className="button button-small button-outline pw-show" onClick={() => void actions.patchPhoto(photo.id, { approve: viewGen.id })}>
-              <Check size={14} /> Mostrar esta en la ficha
-            </button>
-          )}
-          <button type="button" className="pw-create" onClick={() => setDialog(true)} aria-haspopup="dialog">
-            <Plus size={15} /> Crear otra versión
-          </button>
-
-          <h4 className="pw-versions-title">Versiones de esta foto</h4>
-          <ul className="pw-versions">
-            <li>
-              <button type="button" className="pw-version" aria-pressed={!viewGen} onClick={() => choose(photo.id, null)}>
-                <img src={adminPhotoUrl(photo.id, null, 480)} alt="" loading="lazy" />
-                <span>
-                  <strong>Original</strong>
-                  <small>La foto subida</small>
-                </span>
-              </button>
-            </li>
-            {versionsList.map((s) => (
-              <StyleItem
-                key={s.style}
-                shownLabel={shownLabel}
-                s={s}
+          </div>
+          <div role="tabpanel" id={`${uid}-panel`} aria-labelledby={`${uid}-tab-${tab}`}>
+            {tab === "create" ? (
+              <CreatePanel
+                key={photo.id}
                 photo={photo}
-                viewing={viewGen?.id ?? null}
-                fits={styleFits(s.style, propertyType)}
-                blocked={blocked}
-                onChoose={(id) => choose(photo.id, id, mode === "compare" ? "compare" : "version")}
+                photoName={name}
+                space={space}
+                base={base}
+                propertyType={propertyType}
+                demoStyles={demoStyles}
+                staging={detail.staging}
+                payerNote={payerNote}
+                waiting={staging.waiting}
+                draft={drafts[photo.id]}
+                onDraft={(d) => setDrafts((all) => ({ ...all, [photo.id]: d }))}
+                onConfirm={async (task, fresh) => {
+                  const since = new Date(Date.now() - 5000).toISOString();
+                  if (!actions.addStyles([task.style])) return false;
+                  const ok = await actions.request([task], { fresh, quoted: true });
+                  if (ok) {
+                    setAwaiting({ photoId: task.photoId, style: task.style, since });
+                    setDrafts((all) => {
+                      const { [photo.id]: _done, ...rest } = all;
+                      return rest;
+                    });
+                  }
+                  return ok;
+                }}
+              />
+            ) : (
+              <EditPanel
+                photo={photo}
+                viewing={label}
+                spaces={spaces}
+                propertyType={propertyType}
+                index={photos.indexOf(photo)}
+                total={photos.length}
                 actions={actions}
               />
-            ))}
-          </ul>
-          <p className="pw-hint">Elegir una versión cambia lo que ves. Mostrarla en la ficha, publicar o regenerar son acciones separadas.</p>
-          {viewGen && (
-            <div className="pw-version-actions">
-              <button type="button" className="text-link" onClick={() => actions.review(photo.id, viewGen.id)}>
-                Ver en grande
-              </button>
-              <button
-                type="button"
-                className="text-link"
-                onClick={() => {
-                  if (window.confirm("La versión deja de mostrarse y queda en el historial de la foto, donde podés recuperarla. ¿Continuar?"))
-                    void actions.patchPhoto(photo.id, { discard: viewGen.id });
-                }}
-              >
-                Descartar
-              </button>
-            </div>
-          )}
-          <PhotoSettings photo={photo} spaces={spaces} propertyType={propertyType} index={photos.indexOf(photo)} total={photos.length} actions={actions} />
+            )}
+          </div>
         </aside>
       </div>
 
@@ -428,36 +521,6 @@ export function PhotoWorkspace({
           staging={staging}
           blocked={blocked}
           actions={actions}
-        />
-      )}
-
-      {dialog && (
-        <CreateVersionDialog
-          photo={photo}
-          photoName={name}
-          space={space}
-          base={base}
-          propertyType={propertyType}
-          demoStyles={demoStyles}
-          staging={detail.staging}
-          payerNote={payerNote}
-          waiting={staging.waiting}
-          draft={drafts[photo.id]}
-          onDraft={(d) => setDrafts((all) => ({ ...all, [photo.id]: d }))}
-          onClose={() => setDialog(false)}
-          onConfirm={async (task, fresh) => {
-            const since = new Date(Date.now() - 5000).toISOString();
-            if (!actions.addStyles([task.style])) return false;
-            const ok = await actions.request([task], { fresh, quoted: true });
-            if (ok) {
-              setAwaiting({ photoId: task.photoId, style: task.style, since });
-              setDrafts((all) => {
-                const { [photo.id]: _done, ...rest } = all;
-                return rest;
-              });
-            }
-            return ok;
-          }}
         />
       )}
     </>
@@ -555,7 +618,7 @@ function StyleItem({
 
 function UploadButton({ label, onFiles, primary = false }: { label: string; onFiles: (files: FileList) => void; primary?: boolean }) {
   return (
-    <label className={primary ? "button button-primary" : "pw-thumb pw-add"}>
+    <label className={primary ? "button button-primary" : "button button-small button-outline pw-add"}>
       <ImagePlus size={primary ? 16 : 15} aria-hidden="true" /> {label}
       <input
         type="file"
@@ -571,11 +634,14 @@ function UploadButton({ label, onFiles, primary = false }: { label: string; onFi
   );
 }
 
-/** The spaces of the property, with their photo counts; a new space and the active space's settings. */
-function SpaceNav({
+/** Every photo, by space: pick one to work on it; upload, a new space and the active space's settings. */
+function PhotoNav({
   groups,
   spaces,
+  activeId,
   activeSpace,
+  coverId,
+  mainStyle,
   spacesReady,
   busy,
   onPick,
@@ -583,30 +649,50 @@ function SpaceNav({
 }: {
   groups: ReturnType<typeof groupBySpace>;
   spaces: PropertySpace[];
+  activeId: string;
   activeSpace: string | null;
+  coverId: string | null;
+  mainStyle: string;
   spacesReady: boolean;
   busy: boolean;
-  onPick: (g: ReturnType<typeof groupBySpace>[number]) => void;
+  onPick: (photoId: string) => void;
   actions: WorkspaceActions;
 }) {
   const [adding, setAdding] = useState(false);
   const total = groups.reduce((n, g) => n + g.photos.length, 0);
   const current = spaces.find((s) => s.id === activeSpace) ?? null;
   return (
-    <nav className="pw-spaces" aria-label="Espacios">
+    <nav className="pw-spaces" aria-label="Fotos por espacio">
       <p className="pw-kicker">
-        Espacios · {total} {total === 1 ? "foto" : "fotos"}
+        Fotos · {total}
       </p>
-      <ul>
-        {groups.map((g) => (
-          <li key={g.space?.id ?? "loose"}>
-            <button type="button" aria-current={(g.space?.id ?? null) === activeSpace ? "true" : undefined} disabled={!g.photos.length} onClick={() => onPick(g)}>
-              <span>{g.space ? g.space.name : "Sin organizar"}</span>
-              <small>{g.photos.length}</small>
-            </button>
-          </li>
-        ))}
-      </ul>
+      {groups.map((g) => (
+        <section key={g.space?.id ?? "loose"} className="pw-space" aria-label={g.space ? g.space.name : "Sin organizar"}>
+          <h4 aria-current={(g.space?.id ?? null) === activeSpace ? "true" : undefined}>
+            <span>{g.space ? g.space.name : "Sin organizar"}</span>
+            <small>{g.photos.length || "Sin fotos"}</small>
+          </h4>
+          {g.photos.length > 0 && (
+            <div className="pw-space-photos">
+              {g.photos.map((p, i) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  className="pw-thumb"
+                  aria-pressed={p.id === activeId}
+                  aria-label={`${g.space ? g.space.name : "Sin organizar"}, foto ${i + 1}: ${photoLabel(p)}${p.visible ? "" : " (oculta)"}${p.id === coverId ? " (portada)" : ""}`}
+                  onClick={() => onPick(p.id)}
+                >
+                  <img src={p.shown[mainStyle] ? adminGenerationUrl(p.shown[mainStyle], 480) : adminPhotoUrl(p.id, null, 480)} alt="" loading="lazy" />
+                  {!p.visible && <EyeOff size={13} className="pw-thumb-off" aria-hidden="true" />}
+                  {p.id === coverId && <Star size={12} className="pw-thumb-cover" aria-hidden="true" />}
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
+      ))}
+      <UploadButton label="Subir fotos" onFiles={(f) => actions.upload(f, activeSpace)} />
       {spacesReady ? (
         adding ? (
           <NewSpace
@@ -620,7 +706,7 @@ function SpaceNav({
           />
         ) : (
           <button type="button" className="pw-add-space" onClick={() => setAdding(true)}>
-            <Plus size={14} /> Espacio
+            <Plus size={14} /> Nuevo espacio
           </button>
         )
       ) : (
@@ -736,9 +822,10 @@ function SpaceMenu({ space, spaces, count, actions }: { space: PropertySpace; sp
   );
 }
 
-/** The photo's own settings: name, space, defaults for new versions, order, discarded versions and delete. */
-function PhotoSettings({
+/** "Editar": the photo's own settings: name, space, defaults for new versions, order, discarded versions and delete. */
+function EditPanel({
   photo,
+  viewing,
   spaces,
   propertyType,
   index,
@@ -746,6 +833,8 @@ function PhotoSettings({
   actions,
 }: {
   photo: EditorPhoto;
+  /** What the large photo shows, in words. */
+  viewing: string;
   spaces: PropertySpace[];
   propertyType: PropertyType;
   index: number;
@@ -756,8 +845,10 @@ function PhotoSettings({
   const live = photo.generations.some((g) => g.status === "queued" || g.status === "running");
   const discardedDone = photo.generations.filter((g) => g.status === "succeeded" && photo.discarded.includes(g.id));
   return (
-    <details className="pw-settings">
-      <summary>Ajustes de la foto</summary>
+    <div className="pw-settings">
+      <p className="pw-kicker">Editando</p>
+      <h3 className="pw-title">{viewing}</h3>
+      <h4 className="pw-settings-title">Ajustes de la foto</h4>
       <div className="pw-settings-body">
         <label htmlFor={`${uid}-name`}>Nombre</label>
         <input
@@ -827,16 +918,16 @@ function PhotoSettings({
           <Trash2 size={14} /> Eliminar foto
         </button>
       </div>
-    </details>
+    </div>
   );
 }
 
 /**
- * "Crear otra versión": one action and one style for this photo, the cost
+ * "Ambientación con IA": one action and one style for this photo, the cost
  * and who pays from the server before anything starts, and a confirmation.
- * Cancelling or a refused request keeps what was chosen (per photo).
+ * A refused request keeps what was chosen (per photo).
  */
-function CreateVersionDialog({
+function CreatePanel({
   photo,
   photoName,
   space,
@@ -848,7 +939,6 @@ function CreateVersionDialog({
   waiting,
   draft,
   onDraft,
-  onClose,
   onConfirm,
 }: {
   photo: EditorPhoto;
@@ -862,11 +952,9 @@ function CreateVersionDialog({
   waiting: Set<string>;
   draft: Draft | undefined;
   onDraft: (d: Draft) => void;
-  onClose: () => void;
   onConfirm: (task: Task, fresh: boolean) => Promise<boolean>;
 }) {
   const uid = useId();
-  const ref = useRef<HTMLDialogElement>(null);
   const roomStart = initialRoom(photo, space);
   const options = useMemo(() => photoVersions(photo, STYLE_LIST[propertyType].map((s) => s.id), waiting), [photo, propertyType, waiting]);
   const stateOf = (style: string) => options.find((o) => o.style === style)?.state ?? ({ kind: "none" } as CellState);
@@ -876,17 +964,15 @@ function CreateVersionDialog({
   const [quote, setQuote] = useState<Quote | null>(null);
   const [step, setStep] = useState<"choose" | "confirm">("choose");
   const [error, setError] = useState("");
+  const [done, setDone] = useState("");
   const [working, setWorking] = useState(false);
-  useEffect(() => {
-    const d = ref.current;
-    if (d && !d.open) d.showModal();
-  }, []);
   const set = (patch: Partial<Draft>) => {
     const next = { ...value, ...patch };
     setValue(next);
     onDraft(next);
     setStep("choose");
     setQuote(null);
+    setDone("");
   };
   const state = stateOf(value.style);
   const exists = state.kind === "ready";
@@ -925,150 +1011,200 @@ function CreateVersionDialog({
         { photoId: photo.id, style: value.style, mode: value.mode, ...(propertyType === "residential" ? { room: value.room } : {}) },
         exists,
       );
-      if (ok) ref.current?.close();
-      else setError("No se inició: revisá el mensaje del editor. Lo que elegiste se conserva.");
+      if (ok) {
+        setStep("choose");
+        setQuote(null);
+        setDone(`Creando ${styleName(value.style)}: aparece en «Versiones de esta foto» y se abre sola cuando esté lista.`);
+      } else setError("No se inició: revisá el mensaje del editor. Lo que elegiste se conserva.");
     } finally {
       setWorking(false);
     }
   }
   return (
-    <dialog ref={ref} className="aa-dialog pw-dialog" aria-labelledby={`${uid}-title`} onClose={onClose} onCancel={onClose}>
-      <form
-        method="dialog"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (step === "choose") void review();
-          else void confirm();
-        }}
-      >
-        <h2 id={`${uid}-title`}>Crear otra versión</h2>
-        <p className="dm-help">
-          {space ? space.name : "Sin organizar"} · {photoName}. Una acción y un estilo; el costo se revisa antes de generar.
-        </p>
-        <div className="pw-dialog-fields">
-          <label>
-            Qué querés hacer
-            <select value={value.mode} onChange={(e) => set({ mode: e.target.value as Draft["mode"] })}>
-              <option value="furnish">Amoblar (el espacio está vacío)</option>
-              <option value="redesign">Rediseñar con otros muebles</option>
-            </select>
-          </label>
-          <label>
-            Estilo
-            <select value={value.style} onChange={(e) => set({ style: e.target.value })}>
-              {!value.style && <option value="">Elegí un estilo…</option>}
-              <StyleOptions demoStyles={demoStyles} propertyType={propertyType} stateOf={stateOf} />
-            </select>
-          </label>
-        </div>
-        {propertyType === "residential" &&
-          (roomStart.conflict ? (
-            <fieldset className="pw-conflict">
-              <legend>El ambiente no coincide</legend>
-              <p className="dm-help">
-                El espacio es {spaceTypeName(space!.roomType)} y esta foto tenía «{roomName(roomStart.conflict)}» como ajuste propio.
-              </p>
-              <label>
-                <input type="radio" name={`${uid}-room`} checked={value.room === roomStart.room} onChange={() => set({ room: roomStart.room })} />
-                Crear como {roomName(roomStart.room)} (el espacio)
-              </label>
-              <label>
-                <input type="radio" name={`${uid}-room`} checked={value.room === roomStart.conflict} onChange={() => set({ room: roomStart.conflict! })} />
-                Mantener {roomName(roomStart.conflict)} (la foto)
-              </label>
-            </fieldset>
-          ) : (
-            <details className="pw-advanced">
-              <summary>Ambiente: {roomName(value.room)}</summary>
-              <label>
-                Ambiente para crear
-                <select value={value.room} onChange={(e) => set({ room: e.target.value })}>
-                  {rooms.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </details>
-          ))}
-        {exists && !why && (
-          <p className="pw-note">
-            Ya hay una versión {styleName(value.style)}: se crea otra y la anterior se conserva. Cuando esté lista, la nueva pasa a mostrarse en la ficha en ese
-            estilo; podés volver a elegir la anterior.
-          </p>
-        )}
-        <div className="pw-quote" role="status" aria-live="polite">
-          {why ? (
-            <span className="inline-error">{why}</span>
-          ) : step === "confirm" && quote ? (
-            quote.payer === "team" ? (
-              <span>Paga: equipo habita (demo). No usa créditos de la inmobiliaria.</span>
-            ) : quote.blocked ? (
-              <span className="inline-error">
-                {quote.blocked}{" "}
-                {/* In the agency's own panel, the way to top up; the team adds credits from its own pages. */}
-                {typeof window !== "undefined" && window.location.pathname.startsWith("/panel/") && <a href="/panel/creditos">Comprar créditos</a>}
-              </span>
-            ) : (
-              <span>
-                Paga: saldo de la inmobiliaria.{" "}
-                {quote.newPhotos
-                  ? `Usa ${quote.newPhotos} ${quote.newPhotos === 1 ? "crédito" : "créditos"}; quedarían ${(quote.credits ?? 0) - quote.newPhotos}.`
-                  : "No usa créditos: la foto ya está paga y su cobertura sigue vigente."}
-              </span>
-            )
-          ) : (
-            <span>{payerNote}</span>
-          )}
-        </div>
-        {error && (
-          <p className="inline-error" role="alert">
-            {error}
-          </p>
-        )}
-        <div className="aa-dialog-actions">
-          <button type="button" className="button button-outline" onClick={() => ref.current?.close()} disabled={working}>
-            Cancelar
+    <form
+      className="pw-create"
+      aria-label="Crear una versión con IA"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (step === "choose") void review();
+        else void confirm();
+      }}
+    >
+      <p className="dm-help">
+        {space ? space.name : "Sin organizar"} · {photoName}. El costo se revisa antes de generar.
+      </p>
+      <div className="pw-field">
+        <span id={`${uid}-mode`}>Qué querés hacer</span>
+        <div className="pw-seg" role="group" aria-labelledby={`${uid}-mode`}>
+          <button type="button" aria-pressed={value.mode === "furnish"} onClick={() => set({ mode: "furnish" })}>
+            Amoblar
           </button>
-          {step === "choose" ? (
-            <button className="button button-primary" disabled={Boolean(why) || working}>
-              {working ? <Loader2 size={16} className="spin" /> : null} Revisar costo y continuar
-            </button>
-          ) : (
-            <button className="button button-primary" disabled={Boolean(why) || Boolean(quote?.blocked) || working} data-testid="confirm-version">
-              {working ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />} {exists ? "Crear otra versión" : "Crear versión"}
-            </button>
-          )}
+          <button type="button" aria-pressed={value.mode === "redesign"} onClick={() => set({ mode: "redesign" })}>
+            Rediseñar
+          </button>
         </div>
-      </form>
-    </dialog>
+        <small>{value.mode === "furnish" ? "El espacio está vacío: lo amoblamos." : "Ya tiene muebles: los cambiamos por otros."}</small>
+      </div>
+      {propertyType === "residential" &&
+        (roomStart.conflict ? (
+          <fieldset className="pw-conflict">
+            <legend>El ambiente no coincide</legend>
+            <p className="dm-help">
+              El espacio es {spaceTypeName(space!.roomType)} y esta foto tenía «{roomName(roomStart.conflict)}» como ajuste propio.
+            </p>
+            <label>
+              <input type="radio" name={`${uid}-room`} checked={value.room === roomStart.room} onChange={() => set({ room: roomStart.room })} />
+              Crear como {roomName(roomStart.room)} (el espacio)
+            </label>
+            <label>
+              <input type="radio" name={`${uid}-room`} checked={value.room === roomStart.conflict} onChange={() => set({ room: roomStart.conflict! })} />
+              Mantener {roomName(roomStart.conflict)} (la foto)
+            </label>
+          </fieldset>
+        ) : (
+          <label className="pw-field">
+            Ambiente
+            <select value={value.room} onChange={(e) => set({ room: e.target.value })}>
+              {rooms.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ))}
+      <StyleGrid
+        value={value.style}
+        room={propertyType === "residential" ? value.room : null}
+        demoStyles={demoStyles}
+        propertyType={propertyType}
+        stateOf={stateOf}
+        onPick={(style) => set({ style })}
+      />
+      {exists && !why && (
+        <p className="pw-note">
+          Ya hay una versión {styleName(value.style)}: se crea otra y la anterior se conserva. Cuando esté lista, la nueva pasa a mostrarse en la ficha en ese
+          estilo; podés volver a elegir la anterior.
+        </p>
+      )}
+      <div className="pw-quote" role="status" aria-live="polite">
+        {why ? (
+          <span className="inline-error">{why}</span>
+        ) : done ? (
+          <span>{done}</span>
+        ) : step === "confirm" && quote ? (
+          quote.payer === "team" ? (
+            <span>Paga: equipo habita (demo). No usa créditos de la inmobiliaria.</span>
+          ) : quote.blocked ? (
+            <span className="inline-error">
+              {quote.blocked}{" "}
+              {/* In the agency's own panel, the way to top up; the team adds credits from its own pages. */}
+              {typeof window !== "undefined" && window.location.pathname.startsWith("/panel/") && <a href="/panel/creditos">Comprar créditos</a>}
+            </span>
+          ) : (
+            <span>
+              Paga: saldo de la inmobiliaria.{" "}
+              {quote.newPhotos
+                ? `Usa ${quote.newPhotos} ${quote.newPhotos === 1 ? "crédito" : "créditos"}; quedarían ${(quote.credits ?? 0) - quote.newPhotos}.`
+                : "No usa créditos: la foto ya está paga y su cobertura sigue vigente."}
+            </span>
+          )
+        ) : (
+          <span>{payerNote}</span>
+        )}
+      </div>
+      {error && (
+        <p className="inline-error" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="pw-create-actions">
+        {step === "choose" ? (
+          <button className="button button-primary" disabled={Boolean(why) || working}>
+            {working ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />} Generar
+          </button>
+        ) : (
+          <>
+            <button type="button" className="button button-outline" disabled={working} onClick={() => setStep("choose")}>
+              Cambiar
+            </button>
+            <button className="button button-primary" disabled={Boolean(why) || Boolean(quote?.blocked) || working} data-testid="confirm-version">
+              {working ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />} Confirmar y generar
+            </button>
+          </>
+        )}
+      </div>
+    </form>
   );
 }
 
-/** The styles of this kind of property, with what each one already has on this photo. */
-function StyleOptions({ demoStyles, propertyType, stateOf }: { demoStyles: string[]; propertyType: PropertyType; stateOf: (s: string) => CellState }) {
-  const list = STYLE_LIST[propertyType];
+/**
+ * The styles of this kind of property as cards, the property's own first,
+ * with what each one already has on this photo. A home shows each style's
+ * example scene for the chosen room; an office, its color.
+ */
+function StyleGrid({
+  value,
+  room,
+  demoStyles,
+  propertyType,
+  stateOf,
+  onPick,
+}: {
+  value: string;
+  room: string | null;
+  demoStyles: string[];
+  propertyType: PropertyType;
+  stateOf: (s: string) => CellState;
+  onPick: (style: string) => void;
+}) {
+  const uid = useId();
+  const [all, setAll] = useState(false);
   const full = demoStyles.length >= MAX_DEMO_STYLES;
+  const list = [...STYLE_LIST[propertyType]].sort((a, b) => Number(!demoStyles.includes(a.id)) - Number(!demoStyles.includes(b.id)));
+  const own = list.filter((st) => demoStyles.includes(st.id)).length;
+  // The property's styles (at least four), plus the chosen one; the rest on request.
+  const listed = all ? list : list.filter((st, i) => i < Math.max(own, 4) || st.id === value);
   return (
-    <>
-      {list.map((st) => {
-        const s = stateOf(st.id);
-        const isNew = !demoStyles.includes(st.id);
-        const note =
-          s.kind === "ready" ? " · ya creada (se crea otra)" : s.kind === "uncertain" ? " · en revisión técnica" : s.kind === "none" || s.kind === "failed" ? "" : " · en curso";
-        return (
-          <option key={st.id} value={st.id} disabled={isNew && full}>
-            {st.name}
-            {note}
-            {isNew && full ? " · la propiedad ya tiene 6 estilos" : ""}
-          </option>
-        );
-      })}
-    </>
+    <div className="pw-field">
+      <span id={`${uid}-styles`}>Estilo</span>
+      <div className="pw-styles" role="radiogroup" aria-labelledby={`${uid}-styles`}>
+        {listed.map((st) => {
+          const s = stateOf(st.id);
+          const isNew = !demoStyles.includes(st.id);
+          const note =
+            s.kind === "ready" ? "Ya creada" : s.kind === "uncertain" ? "En revisión" : s.kind === "none" || s.kind === "failed" ? "" : "En curso";
+          return (
+            <button
+              key={st.id}
+              type="button"
+              role="radio"
+              aria-checked={value === st.id}
+              className="pw-style"
+              disabled={isNew && full}
+              title={isNew && full ? "La propiedad ya tiene 6 estilos" : undefined}
+              onClick={() => onPick(st.id)}
+            >
+              <span className="pw-style-art" style={room ? undefined : { background: st.color }}>
+                {room && <img src={`/ejemplos/${room}-${st.id}.webp`} alt="" loading="lazy" />}
+                {value === st.id && <Check size={13} strokeWidth={3} className="pw-style-check" aria-hidden="true" />}
+              </span>
+              <span className="pw-style-name">
+                {st.name}
+                {note && <small>{note}</small>}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      {list.length > listed.length || all ? (
+        <button type="button" className="text-link pw-more-styles" aria-expanded={all} onClick={() => setAll((v) => !v)}>
+          {all ? "Menos estilos" : `Ver todos los estilos (${list.length})`}
+        </button>
+      ) : null}
+    </div>
   );
 }
-
 
 /**
  * "Trabajar varias fotos": choose photos (by space) and styles, see what is
