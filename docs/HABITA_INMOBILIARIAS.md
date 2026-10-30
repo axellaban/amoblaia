@@ -110,6 +110,11 @@ el equipo crea desde el editor y le envía a la inmobiliaria.
 
 ## 5. Analítica (PostHog)
 
+El catálogo completo (CTAs, slider, estilos, galería, registro, activación,
+atribución, tráfico interno y dashboards) está en
+[ANALITICA_DEMOS.md](ANALITICA_DEMOS.md). Ojo: `agency_signup_started` marca la
+pantalla de registro **vista**; el inicio real es `signup_form_started`.
+
 Eventos:
 
 - `agency_signup_started` y `agency_created` (con `agency_claimed` para el reclamo).

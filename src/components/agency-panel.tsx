@@ -22,7 +22,9 @@ import {
 } from "lucide-react";
 import { ApiError, api } from "./admin-demos";
 import { ImportPreview, MapReview, exceptions, initialMapChoice, mapOverride, syncPhotos, type MapChoice } from "./demo-import";
-import { track } from "@/lib/analytics";
+import { track, trackMilestone } from "@/lib/analytics";
+import { cta } from "@/lib/interaction-tracking";
+import { registerAgency, useSignupTracking } from "@/lib/signup-tracking";
 import { shareLink } from "@/lib/agency/share";
 import { agencySitePath, nextAction, propertyLink, type PanelImport, type PanelProperty, type PanelSummary } from "@/lib/agency/shared";
 import type { ImportedDemo } from "@/lib/demos/import";
@@ -43,7 +45,13 @@ export function PanelNav({ section, agencyName }: { section: Section; agencyName
         {agencyName && <strong className="ap-nav-name">{agencyName}</strong>}
         <div className="ap-nav-links">
           {SECTIONS.map(({ id, href, label, icon: Icon }) => (
-            <Link key={id} href={href} className={id === section ? "is-on" : ""} aria-current={id === section ? "page" : undefined}>
+            <Link
+              key={id}
+              href={href}
+              className={id === section ? "is-on" : ""}
+              aria-current={id === section ? "page" : undefined}
+              {...cta(`panel_nav_${id}`, "panel_nav", `panel_${id}`, "navigation")}
+            >
               <Icon size={16} aria-hidden="true" /> {label}
             </Link>
           ))}
@@ -73,7 +81,9 @@ export function AgencyPanel({ section }: { section: Section }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setData(await api<PanelSummary>("/api/panel"));
+      const summary = await api<PanelSummary>("/api/panel");
+      setData(summary);
+      registerAgency(summary.agency.id);
       setError("");
     } catch (e) {
       setError(message(e, "No pudimos cargar el panel."));
@@ -139,7 +149,7 @@ function PanelHome({ data, reload }: { data: PanelSummary; reload: () => Promise
       {step && (
         <section className="ap-next" aria-label="Siguiente paso">
           <p>{step.text}</p>
-          <Link href={step.href} className="button button-primary">
+          <Link href={step.href} className="button button-primary" {...cta("panel_next_step", "panel_home", "property_editor")}>
             {step.action}
           </Link>
         </section>
@@ -157,19 +167,25 @@ function PanelHome({ data, reload }: { data: PanelSummary; reload: () => Promise
           <p className="ap-entry-sub">Para ambientar y descargar tus fotos.</p>
           <ul className="ap-entry-methods" aria-label="Formas de traer las fotos">
             <li>
-              <Link href="/panel/imagenes?metodo=url">Desde URL</Link>
+              <Link href="/panel/imagenes?metodo=url" {...cta("import_images_url", "panel_home", "image_import_url")}>
+                Desde URL
+              </Link>
             </li>
             <li>
-              <Link href="/panel/imagenes?metodo=many">Varias URLs</Link>
+              <Link href="/panel/imagenes?metodo=many" {...cta("import_images_many", "panel_home", "image_import_many")}>
+                Varias URLs
+              </Link>
             </li>
             <li>
-              <Link href="/panel/imagenes?metodo=files">Subir fotos</Link>
+              <Link href="/panel/imagenes?metodo=files" {...cta("import_images_files", "panel_home", "image_upload")}>
+                Subir fotos
+              </Link>
             </li>
           </ul>
-          <Link href="/panel/imagenes?metodo=url" className="button button-outline">
+          <Link href="/panel/imagenes?metodo=url" className="button button-outline" {...cta("import_images_search", "panel_home", "image_import_url")}>
             Buscar fotos
           </Link>
-          <Link href="/panel/imagenes/lote" className="text-link">
+          <Link href="/panel/imagenes/lote" className="text-link" {...cta("imported_images", "panel_home", "image_batch", "navigation")}>
             Ver fotos importadas
           </Link>
           <p className="dm-help">Importar no genera imágenes ni usa créditos. Publicar la ficha es una acción aparte.</p>
@@ -203,7 +219,9 @@ function PanelHome({ data, reload }: { data: PanelSummary; reload: () => Promise
         <div>
           <dt>Créditos IA</dt>
           <dd>
-            {data.credits === null ? <span className="ap-unknown">No disponible</span> : data.credits} <Link href="/panel/creditos">Ver</Link>
+            {data.credits === null ? <span className="ap-unknown">No disponible</span> : data.credits} <Link href="/panel/creditos" {...cta("panel_credits", "panel_summary", "panel_credits")}>
+              Ver
+            </Link>
           </dd>
         </div>
       </dl>
@@ -835,6 +853,7 @@ export function ImportProperty({
     setPreview(null);
     setStatus("Leyendo la publicación…");
     track("property_import_started", { source: hostOf(url), mode: "single" });
+    trackMilestone("first_import_started", { source: hostOf(url), mode: "single" });
     try {
       show(await api<Preview>(endpoint, { method: "POST", body: JSON.stringify({ url, preview: true }) }));
     } catch (err) {
@@ -877,6 +896,7 @@ export function ImportProperty({
     try {
       const done = await finishPhotos(made, (t) => setStatus(`${made.title ?? "Propiedad"}. ${t}`), endpoint);
       track("property_import_completed", { source: hostOf(preview.listingUrl), photos: done.photosDone, mode: "single", status: done.status });
+      trackMilestone("first_import_completed", { source: hostOf(preview.listingUrl), photos: done.photosDone, mode: "single", status: done.status });
       await onDone?.();
       if (done.status === "completed") {
         router.push(openPath(made.id!));
@@ -935,7 +955,7 @@ export function ImportProperty({
         </div>
         <p className="ap-import-help">Importar y publicar no usan créditos. Ambientar con IA es opcional.</p>
         {allowMany && (
-          <button type="button" className="text-link ap-many-link" onClick={() => setMany(true)}>
+          <button type="button" className="text-link ap-many-link" {...cta("import_many_urls", "import_form", "property_import_many")} onClick={() => setMany(true)}>
             <Link2 size={14} aria-hidden="true" /> Tengo varias URLs
           </button>
         )}
@@ -1086,6 +1106,7 @@ function ImportMany({ onDone, onSingle }: { onDone?: () => Promise<unknown>; onS
     for (const [i, row] of list.entries()) {
       update(i, { state: "reading" });
       track("property_import_started", { source: hostOf(row.url), mode: "batch" });
+      trackMilestone("first_import_started", { source: hostOf(row.url), mode: "batch" });
       try {
         const data = await api<Preview>("/api/panel/importar", { method: "POST", body: JSON.stringify({ url: row.url, preview: true }) });
         update(i, { state: data.duplicateOf ? "duplicate" : "ready", data, pick: !data.duplicateOf });
@@ -1111,6 +1132,7 @@ function ImportMany({ onDone, onSingle }: { onDone?: () => Promise<unknown>; onS
         const done = await finishPhotos(made, () => null);
         update(i, { state: done.status === "completed" ? "done" : "partial", result: done });
         track("property_import_completed", { source: hostOf(row.url), photos: done.photosDone, mode: "batch", status: done.status });
+        trackMilestone("first_import_completed", { source: hostOf(row.url), photos: done.photosDone, mode: "batch", status: done.status });
       } catch (e) {
         update(i, { state: "error", error: message(e, "No pudimos importarla.") });
         track("property_import_failed", { source: hostOf(row.url), status: "create", mode: "batch" });
@@ -1236,7 +1258,7 @@ function CreditsSection() {
           <h1>{info.credits === null ? "Saldo no disponible" : `${info.credits} ${info.credits === 1 ? "crédito disponible" : "créditos disponibles"}`}</h1>
         </div>
         {owner && (
-          <Link href="/precios" className="button button-primary">
+          <Link href="/precios" className="button button-primary" {...cta("buy_credits", "panel_credits", "pricing")}>
             Comprar créditos
           </Link>
         )}
@@ -1568,9 +1590,12 @@ export function AgencyOnboarding({
   const [done, setDone] = useState<{ kind: "created" | "claimed"; summary: PanelSummary } | null>(null);
   const here = `/panel/empezar${demo || code ? `?${new URLSearchParams({ ...(demo ? { demo: demo.token } : {}), ...(code ? { codigo: code } : {}) })}` : ""}`;
   const origin = demo ? "demo" : "direct";
+  // Legacy name kept for the current funnels: it fires when this screen is seen, not when a form is begun.
   useEffect(() => {
     if (!signedIn) track("agency_signup_started", { origin, ...(demo ? { demo_id: demo.id } : {}) });
   }, [signedIn, origin, demo]);
+  const flow = !signedIn ? "agency_start" : code ? "agency_claim" : "agency_create";
+  const form = useSignupTracking(flow, { origin, has_invite: Boolean(code), ...(demo ? { demo_id: demo.id, agency_id: demo.agencyId } : {}) }, !hasAgency || Boolean(done));
 
   if (!signedIn)
     return (
@@ -1583,10 +1608,14 @@ export function AgencyOnboarding({
             : "Importá tus propiedades desde sus publicaciones, transformalas con IA y compartí fichas interactivas. Sin tarjeta de crédito."}
         </p>
         <div className="ap-start-actions">
-          <Link href={`/acceso?modo=registro&next=${encodeURIComponent(here)}`} className="button button-primary button-large">
+          <Link
+            href={`/acceso?modo=registro&next=${encodeURIComponent(here)}`}
+            className="button button-primary button-large"
+            {...cta("signup_create_account", "agency_start", "auth_signup")}
+          >
             Crear mi cuenta
           </Link>
-          <Link href={`/acceso?next=${encodeURIComponent(here)}`} className="button button-outline button-large">
+          <Link href={`/acceso?next=${encodeURIComponent(here)}`} className="button button-outline button-large" {...cta("signup_have_account", "agency_start", "auth_login")}>
             Ya tengo cuenta
           </Link>
         </div>
@@ -1598,7 +1627,7 @@ export function AgencyOnboarding({
       <div className="account-page container ap-start">
         <h1>Ya tenés tu inmobiliaria</h1>
         {code && <p>Tu cuenta ya tiene una inmobiliaria, así que ese enlace no se puede usar con ella. Pedile al equipo de habita que lo revise.</p>}
-        <Link href="/panel" className="button button-primary">
+        <Link href="/panel" className="button button-primary" {...cta("go_to_panel", "agency_exists", "panel_home")}>
           Ir a mi panel
         </Link>
       </div>
@@ -1607,12 +1636,14 @@ export function AgencyOnboarding({
   async function run(kind: "created" | "claimed") {
     setBusy(true);
     setError("");
+    form.submitted();
     try {
       const summary =
         kind === "claimed"
           ? await api<PanelSummary>("/api/panel/reclamar", { method: "POST", body: JSON.stringify({ code }) })
           : await api<PanelSummary>("/api/panel", { method: "POST", body: JSON.stringify({ name }) });
-      track(kind === "claimed" ? "agency_claimed" : "agency_created", { origin, ...(demo ? { demo_id: demo.id } : {}) });
+      registerAgency(summary.agency.id);
+      track(kind === "claimed" ? "agency_claimed" : "agency_created", { origin, agency_id: summary.agency.id, ...(demo ? { demo_id: demo.id } : {}) }, true);
       if (demo) track("demo_to_agency_signup_completed", { demo_id: demo.id, claimed: kind === "claimed" });
       // Claimed from its own demo: straight into that property, ready for a first try.
       if (kind === "claimed" && demo && summary.agency.id === demo.agencyId) {
@@ -1622,6 +1653,7 @@ export function AgencyOnboarding({
       setDone({ kind, summary });
       router.refresh();
     } catch (e) {
+      form.failed(e instanceof ApiError ? `api_${e.status}` : "network");
       setError(message(e, kind === "claimed" ? "No pudimos pasar las demos a tu cuenta." : "No pudimos crear tu inmobiliaria."));
     } finally {
       setBusy(false);
@@ -1647,7 +1679,7 @@ export function AgencyOnboarding({
             </li>
           ))}
         </ul>
-        <Link href="/panel" className="button button-primary">
+        <Link href="/panel" className="button button-primary" {...cta("go_to_panel", "agency_claimed", "panel_home")}>
           Ir a mi panel
         </Link>
       </div>
@@ -1671,7 +1703,7 @@ export function AgencyOnboarding({
             <ImportProperty />
           </section>
         )}
-        <Link href="/panel" className="text-link">
+        <Link href="/panel" className="text-link" {...cta("go_to_panel", "agency_created", "panel_home")}>
           Ir a mi panel
         </Link>
       </div>
@@ -1710,6 +1742,7 @@ export function AgencyOnboarding({
       ) : (
         <form
           className="account-panel ap-start-form"
+          onInputCapture={form.onInput}
           onSubmit={(e) => {
             e.preventDefault();
             void run("created");
