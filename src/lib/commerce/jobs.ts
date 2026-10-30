@@ -19,6 +19,11 @@ export type Job = {
   result_path: string | null;
   created_at: string;
   error_code: string | null;
+  /** A tool job (demos): its source is a version of the photo, not always the original. */
+  tool?: string | null;
+  source_ref?: string | null;
+  source_path?: string | null;
+  mask_path?: string | null;
 };
 /** Paid photos take priority; the lifetime free allowance is counted per result. */
 export async function onFreeTier(userId: string) {
@@ -221,14 +226,18 @@ export async function runJob(id: string, deadline?: number) {
       .single();
     if (error || !project) throw new Error("PROJECT_NOT_FOUND");
     const free = job.is_free;
-    const file = await db.storage.from(BUCKET).download(project.original_path);
+    const file = await db.storage.from(BUCKET).download(job.source_path ?? project.original_path);
     if (file.error || !file.data) throw new Error("ORIGINAL_NOT_FOUND");
+    // A tool that removes objects paints the area to change: transparent in the mask.
+    const mask = job.mask_path ? await db.storage.from(BUCKET).download(job.mask_path) : null;
+    if (job.mask_path && (!mask || mask.error || !mask.data)) throw new Error("MASK_NOT_FOUND");
     sent = true;
     const rendered = await renderPhoto(
       Buffer.from(await file.data.arrayBuffer()),
       job.prompt,
       free,
       providerBudget,
+      mask?.data ? Buffer.from(await mask.data.arrayBuffer()) : undefined,
     );
     await db
       .from("generations")
@@ -247,6 +256,7 @@ export async function runJob(id: string, deadline?: number) {
         upsert: true,
       });
     if (stored.error) throw new ProviderError("RESULT_STORAGE_FAILED", true);
+    if (job.tool) await saveToolResult(job, resultPath, rendered.result.length);
     await rpc("amobla_finish_generation", {
       p_job: id,
       p_status: "succeeded",
@@ -278,6 +288,28 @@ export async function runJob(id: string, deadline?: number) {
     }
   }
 }
+/**
+ * A finished tool job becomes a version of its photo (like a retouch): the
+ * photo's id comes from its project. Best effort: the result is kept in storage
+ * even if this row is not written, and the job still finishes as succeeded.
+ */
+async function saveToolResult(job: Job, resultPath: string, bytes: number) {
+  const db = adminClient();
+  const { data: photo } = await db.from("demo_photos").select("id").eq("project_id", job.project_id).maybeSingle();
+  if (!photo) return;
+  const ref = job.source_ref ?? "original";
+  const [kind, id] = ref.split(":");
+  await db.from("photo_retouches").insert({
+    photo_id: (photo as { id: string }).id,
+    source_generation_id: kind === "generation" ? id : null,
+    source_retouch_id: kind === "retouch" ? id : null,
+    adjust: {},
+    result_path: resultPath,
+    result_bytes: bytes,
+    tool: job.tool,
+  });
+}
+
 export async function signPath(path: string) {
   const { data, error } = await adminClient()
     .storage.from(BUCKET)

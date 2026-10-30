@@ -164,11 +164,16 @@ export function stagingRule(access: Pick<DemoAccess, "actor" | "admin" | "billin
  * panel's image route: members only see their own agency's pictures (and,
  * when limited, only those of their properties).
  */
-export async function imageOwners(params: { photoId?: string | null; generationId?: string | null }) {
+export async function imageOwners(params: { photoId?: string | null; generationId?: string | null; retouchId?: string | null }) {
   const db = adminClient();
   let projectId: string | null = null;
   let photoId = params.photoId ?? null;
-  if (params.generationId) {
+  if (params.retouchId) {
+    if (!isUuid(params.retouchId)) return null;
+    const { data } = await db.from("photo_retouches").select("photo_id").eq("id", params.retouchId).maybeSingle();
+    photoId = (data as { photo_id: string } | null)?.photo_id ?? null;
+    if (!photoId) return null;
+  } else if (params.generationId) {
     if (!isUuid(params.generationId)) return null;
     const { data } = await db.from("generations").select("project_id").eq("id", params.generationId).maybeSingle();
     projectId = (data as { project_id: string } | null)?.project_id ?? null;
@@ -186,7 +191,7 @@ export async function imageOwners(params: { photoId?: string | null; generationI
 }
 
 /** For the team and for members: may this account see that picture? */
-export async function canSeeImage(user: User, params: { photoId?: string | null; generationId?: string | null }) {
+export async function canSeeImage(user: User, params: { photoId?: string | null; generationId?: string | null; retouchId?: string | null }) {
   if (isAdmin(user.email)) return true;
   const membership = await membershipOf(user.id);
   if (!membership) return false;

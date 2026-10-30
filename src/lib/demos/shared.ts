@@ -1,5 +1,6 @@
 // Commercial demos: types, texts and helpers shared by the admin panel, the
 // server routes and the public page. Nothing here reads secrets.
+import type { Adjust } from "./retouch";
 import { modes, rooms } from "@/lib/catalog";
 import { demoStyleName, demoStyleOrder } from "./styles";
 
@@ -37,6 +38,8 @@ export const MAX_DEMO_STYLES = 6;
 
 /** One staged version of a photo, in one style. `v` changes when the version does, so caches refresh. */
 export type PhotoVersion = { style: string; v: string };
+/** The style key of a retouch in a public photo's versions: not a demo style; "v" is the retouch's id. */
+export const RETOUCH_STYLE = "retoque";
 export type PublicPhoto = {
   id: string;
   label: string;
@@ -193,6 +196,16 @@ export type EditorPhoto = {
   /** The version each style shows, by style id: a generation id. */
   shown: Record<string, string>;
   generations: GenerationRow[];
+  /** Retouches saved as versions (free); "label" names them in the versions list. */
+  retouches: RetouchRow[];
+  /** The retouch the listing shows, if any. */
+  shownRetouch: string | null;
+};
+export type RetouchRow = {
+  id: string;
+  label: string;
+  adjust: Adjust;
+  created_at: string;
 };
 export type DemoDetail = {
   demo: DemoSummary;
@@ -346,7 +359,9 @@ export const DEMO_REF_KEY = "amoblaia_demo_ref";
 
 /** An image of a published demo: the original, or its version in one style. */
 export function publicImageUrl(token: string, photoId: string, version: PhotoVersion | null, width?: number) {
-  const q = new URLSearchParams(version ? { e: version.style, r: version.v } : { r: "o" });
+  const q = new URLSearchParams(
+    version?.style === RETOUCH_STYLE ? { t: version.v } : version ? { e: version.style, r: version.v } : { r: "o" },
+  );
   if (width) q.set("w", String(width));
   return `/demo/${token}/imagen/${photoId}?${q}`;
 }
@@ -366,6 +381,25 @@ export function adminPhotoUrl(photoId: string, version: PhotoVersion | null, wid
   if (og) q.set("og", "1");
   return `/api/admin/demos/imagen?${q}`;
 }
+/** Where a retouch starts from: the original photo, one of its AI versions, or another retouch. */
+export type RetouchSource =
+  | { kind: "original" }
+  | { kind: "generation"; id: string }
+  | { kind: "retouch"; id: string }
+  /** The version the listing shows for that style (the public demo knows styles, not generation ids). */
+  | { kind: "style"; style: string };
+
+export function retouchDownloadUrl(retouchId: string, name: string) {
+  const q = new URLSearchParams({ retoque: retouchId, w: "2048", descargar: "1", nombre: name });
+  return `/api/admin/demos/imagen?${q}`;
+}
+
+export function adminRetouchUrl(retouchId: string, width?: number) {
+  const q = new URLSearchParams({ retoque: retouchId });
+  if (width) q.set("w", String(width));
+  return `/api/admin/demos/imagen?${q}`;
+}
+
 export function adminGenerationUrl(generationId: string, width?: number) {
   const q = new URLSearchParams({ generacion: generationId });
   if (width) q.set("w", String(width));

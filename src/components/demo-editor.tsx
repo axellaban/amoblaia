@@ -33,6 +33,7 @@ import {
   generationDownloadUrl,
   orderStyles,
   photoDownloadUrl,
+  retouchDownloadUrl,
   photoLabel,
   styleName,
   whatsappShareUrl,
@@ -513,6 +514,32 @@ export function DemoEditor({
   }
   const spaceName = (p: EditorPhoto) => detail.spaces.find((s) => s.id === p.spaceId)?.name ?? photoLabel(p);
 
+  /** Follows an AI tool until its jobs end, so the result shows up as a version without a reload. */
+  async function watchTool(ids: string[]) {
+    for (let i = 0; i < 90; i++) {
+      await new Promise((r) => setTimeout(r, 4000));
+      try {
+        const d = await api<DemoDetail>(base);
+        apply(d);
+        const jobs = d.photos.flatMap((p) => p.generations).filter((g) => ids.includes(g.id));
+        const settled = jobs.length > 0 && jobs.every((g) => g.status !== "queued" && g.status !== "running");
+        if (settled) {
+          const done = jobs.every((g) => g.status === "succeeded");
+          say({
+            tone: done ? "notice" : "error",
+            text: done
+              ? "Herramienta lista: el resultado está en Versiones de esta foto."
+              : "La herramienta no pudo terminar. Si se cobró, el crédito se devuelve o el equipo lo revisa.",
+            section: "fotos",
+          });
+          return;
+        }
+      } catch {
+        // Keep following: a failed read is retried on the next turn.
+      }
+    }
+  }
+
   const workspaceActions: WorkspaceActions = {
     patchPhoto,
     move: (photoId, step) => void move(photoId, step),
@@ -526,7 +553,54 @@ export function DemoEditor({
       }, "Foto eliminada.", "fotos");
     },
     upload: (files, spaceId) => void upload(files, spaceId),
-    download: (photoId, key, name) => void download(photoId ? photoDownloadUrl(photoId, name) : generationDownloadUrl(key, name), key, name),
+    download: (photoId, key, name, retouchId) =>
+      void download(
+        retouchId ? retouchDownloadUrl(retouchId, name) : photoId ? photoDownloadUrl(photoId, name) : generationDownloadUrl(key, name),
+        key,
+        name,
+      ),
+    tool: async (photoId, tool, source, mask) => {
+      try {
+        const { ids } = await api<{ ids: string[] }>(`${base}/photos/${photoId}`, {
+          method: "POST",
+          body: JSON.stringify({ tool, source, mask, key: crypto.randomUUID() }),
+        });
+        say({ tone: "notice", text: "Herramienta en marcha: el resultado aparece en Versiones de esta foto cuando esté listo.", section: "fotos" });
+        void watchTool(ids);
+        return true;
+      } catch (e) {
+        say({ tone: "error", text: e instanceof Error ? e.message : "No pudimos empezar la herramienta.", section: "fotos" });
+        return false;
+      }
+    },
+    quote: async (photoId) => {
+      try {
+        const q = await api<{ payer: "team" | "agency"; credits: number | null; newPhotos: number; blocked: string | null }>(`${base}/costo`, {
+          method: "POST",
+          body: JSON.stringify({ photoIds: [photoId] }),
+        });
+        if (q.payer === "team") return "Paga: equipo habita (demo). No usa créditos de la inmobiliaria.";
+        if (q.blocked) return q.blocked;
+        return q.newPhotos
+          ? `Usa ${q.newPhotos} ${q.newPhotos === 1 ? "crédito" : "créditos"}; quedarían ${(q.credits ?? 0) - q.newPhotos}.`
+          : "No usa créditos: la foto ya está paga y su cobertura sigue vigente.";
+      } catch {
+        return "";
+      }
+    },
+    retouch: async (photoId, source, adjust) => {
+      try {
+        const { photo, retouch } = await api<{ photo: EditorPhoto | null; retouch: string }>(`${base}/photos/${photoId}/retoque`, {
+          method: "POST",
+          body: JSON.stringify({ source, adjust }),
+        });
+        if (photo) updatePhoto(photo, photoId);
+        return retouch;
+      } catch (e) {
+        say({ tone: "error", text: e instanceof Error ? e.message : "No pudimos guardar la versión.", section: "fotos" });
+        return null;
+      }
+    },
     review: (photoId, generationId) => setReview({ photoId, generationId }),
     addStyles: (list) => {
       const fresh = list.filter((st) => !demoStyles.includes(st));

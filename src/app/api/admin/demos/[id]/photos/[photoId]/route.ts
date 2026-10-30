@@ -10,7 +10,10 @@ import {
   demoDetail,
   photoOf,
   releaseProjects,
+  storeMask,
+  toolSource,
 } from "@/lib/demos/server";
+import { parseMaskUrl, toolPrompt, validTool } from "@/lib/demos/tools";
 import {
   photoChanges,
   readJson,
@@ -20,6 +23,8 @@ import {
 } from "@/lib/demos/input";
 import { cleanText, isUuid } from "@/lib/demos/shared";
 import { adminClient } from "@/lib/supabase/server";
+
+type EditorPhotoRow = Awaited<ReturnType<typeof photoOf>>;
 export const runtime = "nodejs";
 export const maxDuration = 300;
 /** High enough to never stop a demo; the reservation still counts the day's generations. */
@@ -43,6 +48,8 @@ async function stageWithCredits(
   style: string,
   mode: string,
   notes: string,
+  /** A tool's own instruction; a staging's prompt comes from its room, style and operation. */
+  prompt?: string,
 ) {
   const db = adminClient();
   const { data, error } = await db
@@ -66,7 +73,7 @@ async function stageWithCredits(
     p_style: style,
     p_mode: mode,
     p_notes: notes,
-    p_prompts: [buildDemoPrompt(room, style, mode, notes)],
+    p_prompts: [prompt ?? buildDemoPrompt(room, style, mode, notes)],
     p_daily_limit: Number(process.env.MAX_GENERATIONS_PER_DAY || 100),
   });
 }
@@ -178,6 +185,22 @@ export async function PATCH(request: Request, { params }: Params) {
       discarded.delete(body.restore);
       changes.discarded = [...discarded];
     }
+    // The retouch the listing shows: one of this photo's retouches, or none.
+    if ("approveRetouch" in body) {
+      if (body.approveRetouch === null) changes.shown_retouch_id = null;
+      else {
+        if (!isUuid(body.approveRetouch)) throw new HttpError(400, "Retoque inválido.");
+        const { data: r, error } = await db
+          .from("photo_retouches")
+          .select("id")
+          .eq("id", body.approveRetouch)
+          .eq("photo_id", photo.id)
+          .maybeSingle();
+        if (error) throw new Error("DEMO_RETOUCH_LOOKUP_FAILED");
+        if (!r) throw new HttpError(409, "Solo se puede mostrar un retoque de esta foto.");
+        changes.shown_retouch_id = body.approveRetouch;
+      }
+    }
     if (!Object.keys(changes).length) throw new HttpError(400, "No hay cambios para guardar.");
     const updated = await db.from("demo_photos").update(changes).eq("id", photo.id);
     if (updated.error) throw new Error("DEMO_PHOTO_UPDATE_FAILED");
@@ -226,7 +249,8 @@ export async function POST(request: Request, { params }: Params) {
     if (!process.env.OPENAI_API_KEY)
       throw new HttpError(503, "La generación todavía no está habilitada.");
     const photo = await photoOf(demo, photoId);
-    const body = await readJson(request, 4096);
+    const body = await readJson(request, 8_000_000);
+    if ("tool" in body) return await requestTool(access, photo, body, started);
     const room = validRoom(body.room) ? body.room : photo.room;
     if (!validStyle(body.style)) throw new HttpError(400, "Elegí un estilo válido.");
     const style = body.style;
@@ -269,4 +293,56 @@ export async function POST(request: Request, { params }: Params) {
   } catch (e) {
     return failure(e);
   }
+}
+
+/**
+ * An AI tool on a photo's version (sky, dusk, objects out): one generation
+ * through the regular engine and its billing, saved as a version of the photo.
+ * Nothing starts until its source and its mask are stored.
+ */
+async function requestTool(access: Awaited<ReturnType<typeof requireDemoAccess>>, photo: EditorPhotoRow, body: Record<string, unknown>, started: number) {
+  if (!validTool(body.tool)) throw new HttpError(400, "Elegí una herramienta válida.");
+  if (!isUuid(body.key)) throw new HttpError(400, "Identificador de solicitud inválido.");
+  const tool = body.tool;
+  const source = await toolSource(photo, body.source);
+  const painted = tool === "remove" ? parseMaskUrl(body.mask) : null;
+  if (tool === "remove" && !painted) throw new HttpError(400, "Pintá lo que querés quitar.");
+  const maskPath = painted ? await storeMask(photo.project_id, body.key, painted, source.path) : null;
+  const prompt = toolPrompt(tool);
+  const { actor, billingUser } = access;
+  const ids = billingUser
+    ? await stageWithCredits(billingUser, photo.project_id, body.key, photo.room, "tool", "tool", "", prompt)
+    : await reserveTool(actor.id, photo, body.key, prompt);
+  // The job knows its source and mask before it can run; if that cannot be written, it fails and refunds.
+  const linked = await adminClient()
+    .from("generations")
+    .update({ tool, source_ref: source.ref, source_path: source.path, mask_path: maskPath })
+    .in("id", ids);
+  if (linked.error) {
+    await Promise.allSettled(ids.map((job) => rpc("amobla_finish_generation", { p_job: job, p_status: "failed", p_error: "TOOL_SETUP_FAILED" })));
+    throw new HttpError(503, "No pudimos empezar la herramienta. Probá de nuevo.");
+  }
+  await auditAgencyEdit(access, "photo_tool", { photo: photo.id, tool, jobs: ids });
+  const deadline = started + maxDuration * 1000 - 5000;
+  after(async () => {
+    await Promise.allSettled(ids.map((job) => runJob(job, deadline)));
+  });
+  return Response.json({ ids }, { status: 202, headers: PRIVATE });
+}
+
+/** The team's own demo: the zero-balance demo grant covers the tool, like a staging. */
+async function reserveTool(actorId: string, photo: EditorPhotoRow, key: string, prompt: string) {
+  await rpc("amobla_account", { p_user: actorId, p_trial: false });
+  const ids = await rpc<string[]>("amobla_reserve_demo_generation", {
+    p_actor: actorId,
+    p_photo: photo.id,
+    p_key: key,
+    p_room: photo.room,
+    p_style: "tool",
+    p_mode: "tool",
+    p_notes: "",
+    p_prompt: prompt,
+    p_daily_limit: DEMO_DAILY_LIMIT,
+  });
+  return ids;
 }

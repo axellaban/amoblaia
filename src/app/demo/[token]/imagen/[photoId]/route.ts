@@ -1,4 +1,4 @@
-import { publicImagePaths, renderImage, renderPreview } from "@/lib/demos/server";
+import { publicImagePaths, publicRetouchPaths, renderImage, renderPreview } from "@/lib/demos/server";
 import { imageWidth } from "@/lib/demos/shared";
 import { validStyle } from "@/lib/demos/input";
 import { cloudConfigured } from "@/lib/supabase/config";
@@ -26,7 +26,11 @@ export async function GET(
     const { token, photoId } = await params;
     const q = new URL(request.url).searchParams;
     const style = q.get("e");
-    const paths = await publicImagePaths(token, photoId, validStyle(style) ? style : null);
+    // "t": a retouch the listing shows; "e": a style's version.
+    const retouch = q.get("t");
+    const paths = retouch
+      ? await publicRetouchPaths(token, photoId, retouch)
+      : await publicImagePaths(token, photoId, validStyle(style) ? style : null);
     if (!paths) return notFound();
     const image =
       q.get("og") === "1"

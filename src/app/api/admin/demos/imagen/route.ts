@@ -10,13 +10,14 @@ export async function GET(request: Request) {
   try {
     const user = await requireUser();
     const q = new URL(request.url).searchParams;
-    if (!(await canSeeImage(user, { photoId: q.get("foto"), generationId: q.get("generacion") })))
+    if (!(await canSeeImage(user, { photoId: q.get("foto"), generationId: q.get("generacion"), retouchId: q.get("retoque") })))
       throw new HttpError(404, "No encontramos la imagen.");
     const style = q.get("estilo");
     const paths = await adminImagePaths({
       photoId: q.get("foto"),
       style: validStyle(style) ? style : null,
       generationId: q.get("generacion"),
+      retouchId: q.get("retoque"),
     });
     const image = !paths
       ? null

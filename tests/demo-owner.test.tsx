@@ -50,7 +50,7 @@ const INVITE = "/panel/empezar?codigo=codigoSecretoDeVeinteMasCaracteres&demo=to
 describe("the agency's own demo, under its panel header", () => {
   const owner = {
     href: INVITE,
-    freeCredits: 3,
+    code: "TEST-CODIGO-0000000000000000000000000000", freeCredits: 3,
     buyerHref: "/demo/tok/presentacion/codigo/ficha",
     demoHref: "/demo/tok/presentacion/codigo",
     pricesHref: "/demo/tok/presentacion/codigo/precios",
@@ -93,7 +93,7 @@ describe("the agency's own demo, under its panel header", () => {
 describe("the agency's plans, from its link …/precios", () => {
   const owner = {
     href: INVITE,
-    freeCredits: 3,
+    code: "TEST-CODIGO-0000000000000000000000000000", freeCredits: 3,
     buyerHref: "/demo/tok/presentacion/codigo/ficha",
     demoHref: "/demo/tok/presentacion/codigo",
     pricesHref: "/demo/tok/presentacion/codigo/precios",

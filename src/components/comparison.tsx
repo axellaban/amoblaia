@@ -12,6 +12,7 @@ export function Comparison({
   beforeAlt = "Ambiente original antes del diseño",
   beforeLabel = "Antes",
   afterLabel,
+  afterFilter,
   onPositionChange,
   onAfterError,
   analytics,
@@ -25,6 +26,8 @@ export function Comparison({
   beforeLabel?: string;
   /** Replaces "Después con IA". */
   afterLabel?: string;
+  /** A CSS filter on the "after" photo only: the preview of an edit. */
+  afterFilter?: string;
   /** Lets a gallery remember where the line was for each photo. */
   onPositionChange?: (position: number) => void;
   /** The "after" image did not load. */
@@ -149,7 +152,7 @@ export function Comparison({
         finish();
       }}
     >
-      <img src={after} alt={alt} draggable={false} onError={onAfterError} />
+      <img src={after} alt={alt} draggable={false} onError={onAfterError} style={afterFilter ? { filter: afterFilter } : undefined} />
       <div
         className="comparison-before"
         style={{ clipPath: `inset(0 ${100 - position}% 0 0)` }}
