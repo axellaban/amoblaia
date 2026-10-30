@@ -129,6 +129,12 @@ export type DemoSummary = {
   cover: { id: string; version: PhotoVersion | null } | null;
   createdAt: string;
   publishedAt: string | null;
+  /** When the team sent it on WhatsApp (or marked it sent by hand). Null: "Sin enviar" (team only). */
+  sentAt?: string | null;
+  /** This demo's own WhatsApp message; null uses the global template (team only). */
+  messageTemplate?: string | null;
+  /** The agency's contact person, to greet in the message (team only). */
+  agencyContact?: string | null;
   /** What visitors and the agency did with this demo (team only). */
   activity: DemoActivity;
   /** The agency's credits (team only): available (its balance) and reserved; null when unknown. */

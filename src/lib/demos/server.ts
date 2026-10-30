@@ -47,6 +47,8 @@ export const newToken = () => randomBytes(18).toString("base64url");
 export const MAX_PHOTOS_PER_DEMO = 40;
 
 type DemoRow = {
+  sent_at: string | null;
+  message_template: string | null;
   id: string;
   agency_id: string;
   property_id: string;
@@ -73,7 +75,7 @@ type PhotoRow = {
   discarded: string[] | null;
 };
 const DEMO_FIELDS =
-  "id,agency_id,property_id,title,token,status,kind,cover_photo_id,published_at,created_at";
+  "id,agency_id,property_id,title,token,status,kind,cover_photo_id,published_at,created_at,sent_at,message_template";
 const PHOTO_FIELDS =
   "id,property_id,project_id,position,visible,room,label,style,mode,approved_generation_id,discarded";
 
@@ -340,6 +342,9 @@ export async function listDemos() {
       .order("name")
       .limit(500),
   ]);
+  const contactOf = new Map(
+    ((allAgencies.data ?? []) as { id: string; contact_name: string | null }[]).map((a) => [a.id, a.contact_name]),
+  );
   const agencyName = new Map(
     (check(agencies, "DEMO_LIST_FAILED") as { id: string; name: string }[]).map(
       (a) => [a.id, a.name],
@@ -384,6 +389,9 @@ export async function listDemos() {
       cover: cover ? { id: cover.id, version: coverVersion(cover, main) } : null,
       createdAt: d.created_at,
       publishedAt: d.published_at,
+      sentAt: d.sent_at,
+      messageTemplate: d.message_template,
+      agencyContact: contactOf.get(d.agency_id) ?? null,
       activity: activity.get(d.id) ?? NO_ACTIVITY,
       credits: credits.get(d.agency_id) ?? NO_CREDITS,
     };
@@ -506,6 +514,9 @@ export async function demoDetail(id: string): Promise<DemoDetail> {
       cover: cover ? { id: cover.id, version: coverVersion(cover, main) } : null,
       createdAt: demo.created_at,
       publishedAt: demo.published_at,
+      sentAt: demo.sent_at,
+      messageTemplate: demo.message_template,
+      agencyContact: (check(agency, "DEMO_AGENCY_LOOKUP_FAILED") as AgencyRow).contact_name,
     },
     agency: check(agency, "DEMO_AGENCY_LOOKUP_FAILED") as AgencyRow,
     property: prop,
