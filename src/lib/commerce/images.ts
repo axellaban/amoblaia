@@ -84,6 +84,25 @@ async function watermark(image: Buffer) {
     .jpeg({ quality: 88 })
     .toBuffer();
 }
+/**
+ * The stored mask (grey: black where to remove) as the PNG the model reads:
+ * transparent where the photo may change, opaque elsewhere.
+ */
+export async function maskPng(stored: Buffer) {
+  const { data, info } = await sharp(stored, { limitInputPixels: 40000000 })
+    .greyscale()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const rgba = Buffer.alloc(info.width * info.height * 4);
+  for (let i = 0; i < info.width * info.height; i++) {
+    rgba[i * 4] = 0;
+    rgba[i * 4 + 1] = 0;
+    rgba[i * 4 + 2] = 0;
+    rgba[i * 4 + 3] = data[i] < 128 ? 0 : 255;
+  }
+  return sharp(rgba, { raw: { width: info.width, height: info.height, channels: 4 } }).png().toBuffer();
+}
+
 export async function renderPhoto(
   image: Buffer,
   prompt: string,

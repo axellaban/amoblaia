@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { TOOL_NAMES, parseMaskUrl, toolPrompt, validTool } from "../src/lib/demos/tools";
+import { cardStyles } from "../src/lib/demos/editor-logic";
 
 describe("AI tools on a demo photo", () => {
   it("accepts only the three tools", () => {
@@ -26,5 +27,12 @@ describe("AI tools on a demo photo", () => {
     expect(parseMaskUrl(`data:image/jpeg;base64,${png}`)).toBeNull();
     expect(parseMaskUrl("no es una máscara")).toBeNull();
     expect(parseMaskUrl(undefined)).toBeNull();
+  });
+
+  it("keeps a tool's result out of the styles' cards", () => {
+    const photo = {
+      generations: [{ id: "t1", style: "tool", mode: "tool", status: "succeeded" }],
+    } as unknown as Parameters<typeof cardStyles>[0];
+    expect(cardStyles(photo, ["modern"])).toEqual(["modern"]);
   });
 });
