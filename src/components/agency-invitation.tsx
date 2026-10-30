@@ -13,6 +13,7 @@ import { track } from "@/lib/analytics";
 import { cta, markInternal } from "@/lib/interaction-tracking";
 import { useSignupTracking } from "@/lib/signup-tracking";
 import { browserClient } from "@/lib/supabase/client";
+import { leadFromDemoRef } from "@/lib/leads/client";
 
 export type InvitationInfo = { agencyName: string; properties: number; freeCredits: number; expiresAt: string };
 
@@ -117,6 +118,8 @@ export function InvitationSignup({
         await api("/api/panel/reclamar", { method: "POST", body: JSON.stringify({ code }) });
       }
       track("agency_claimed", { origin: property ? "demo_invitation" : "invitation", new_account: mode === "new", ...(property ? { demo_id: property.id } : {}) }, true);
+      // Lead score: the server only takes it once the account belongs to the demo's agency.
+      leadFromDemoRef("demo_account_created");
       // Into the property it came from, ready for a first try; otherwise the panel's home.
       // To finish the purchase it came for; otherwise into the property, ready for a first try.
       window.location.assign(plan ? `/precios?${new URLSearchParams({ plan })}` : property ? `/panel/propiedades/${property.id}?bienvenida=1` : "/panel?bienvenida=1");

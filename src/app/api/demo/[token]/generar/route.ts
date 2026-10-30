@@ -1,11 +1,13 @@
 import { after } from "next/server";
 import { HttpError, failure } from "@/lib/commerce/http";
 import { runJob } from "@/lib/commerce/jobs";
-import { validVisitor } from "@/lib/demos/activity";
+import { teamRequest, validVisitor } from "@/lib/demos/activity";
 import { readJson, validStyle } from "@/lib/demos/input";
 import { assertNoLiveJobs, demoRow, photoOf, publishedDemo, settingsOf } from "@/lib/demos/server";
 import { isUuid } from "@/lib/demos/shared";
 import { buildDemoPrompt, styleFits } from "@/lib/demos/styles";
+import { serverGenerationEvent } from "@/lib/leads/ingest";
+import { recomputeQuietly, recordLeadEvents } from "@/lib/leads/server";
 import { cloudConfigured } from "@/lib/supabase/config";
 import { adminClient } from "@/lib/supabase/server";
 export const runtime = "nodejs";
@@ -20,6 +22,29 @@ async function projectOwner(projectId: string) {
   const { data, error } = await adminClient().from("projects").select("user_id").eq("id", projectId).maybeSingle();
   if (error || !data) throw new Error("DEMO_PROJECT_LOOKUP_FAILED");
   return (data as { user_id: string }).user_id;
+}
+
+/**
+ * The lead events of the generations that ended with a usable image, as the
+ * database says (status succeeded and a stored result). A failed, timed out
+ * or pending job records nothing. Best effort: never affects the visitor.
+ */
+async function recordConfirmedGenerations(
+  ids: string[],
+  lead: { demoId: string; agencyId: string; visitor: string; photoId: string; styleId: string; team: boolean },
+) {
+  try {
+    const { data } = await adminClient().from("generations").select("id,status,result_path,finished_at").in("id", ids);
+    const done = ((data ?? []) as { id: string; status: string; result_path: string | null; finished_at: string | null }[]).filter(
+      (g) => g.status === "succeeded" && g.result_path,
+    );
+    await recordLeadEvents(
+      done.map((g) => serverGenerationEvent("demo_generation_completed", { ...lead, generationId: g.id, at: g.finished_at ?? new Date().toISOString() })),
+    );
+  } catch {
+    console.error("lead_generation_record_failed");
+  }
+  await recomputeQuietly(lead.demoId);
 }
 
 /** Maps the claim's refusals to what the visitor sees. Anything else stays generic. */
@@ -82,8 +107,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
       });
       if (reserveError || !Array.isArray(ids)) throw new Error("PUBLIC_STAGING_RESERVE_FAILED");
       const deadline = started + maxDuration * 1000 - 5000;
+      const lead = { demoId: demo.id, agencyId: demo.agencyId, visitor: body.visitor as string, photoId: photo.id, styleId: style, team: await teamRequest() };
       after(async () => {
+        // Lead score: the request was accepted (started) and, once the job ends, only a stored image counts as done.
+        await recordLeadEvents([serverGenerationEvent("demo_generation_started", { ...lead, generationId: key, at: new Date(started).toISOString() })]).catch(() => undefined);
         await Promise.allSettled((ids as string[]).map((job) => runJob(job, deadline)));
+        await recordConfirmedGenerations(ids as string[], lead);
       });
       return Response.json({ ids, remaining: claim.remaining }, { status: 202, headers: NO_STORE });
     } catch (e) {

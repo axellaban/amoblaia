@@ -7,6 +7,7 @@ import { markInternal } from "@/lib/interaction-tracking";
 
 const LINKS: [string, string][] = [
   ["/admin/prospeccion", "Adquisición"],
+  ["/admin/leads", "Leads"],
   ["/admin/demos", "Demos existentes"],
   ["/admin/inmobiliarias", "Inmobiliarias"],
   ["/admin/asistente", "Miguel Ángel"],

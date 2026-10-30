@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef } from "react";
 import { registerSuperProperties, setPersonProperties, track, type EventProperties } from "@/lib/analytics";
+import { leadFromDemoRef } from "@/lib/leads/client";
 
 /** The kind of field, never its value: "email", "new-password", "organization"… */
 const fieldKind = (target: EventTarget) =>
@@ -30,6 +31,8 @@ export function useSignupTracking(flow: string, context: EventProperties = {}, a
       if (started.current || !active) return;
       started.current = true;
       track("signup_form_started", { ...props.current, first_field: fieldKind(e.target) });
+      // Lead score: credited to the demo this browser last opened, if any.
+      leadFromDemoRef("demo_signup_started");
     },
     submitted: (extra: EventProperties = {}) => track("signup_form_submitted", { ...props.current, ...extra }),
     failed: (errorKind: string, extra: EventProperties = {}) =>

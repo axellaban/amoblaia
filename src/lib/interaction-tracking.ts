@@ -1,5 +1,6 @@
 import posthog from "posthog-js";
 import { registerSuperProperties, track, type EventProperties } from "@/lib/analytics";
+import { leadEvent } from "@/lib/leads/client";
 
 /**
  * Behavior telemetry on top of the product events of analytics.ts, for the
@@ -198,6 +199,11 @@ export class SliderGesture {
 let sliderUses = 0;
 export function reportSlider(summary: EventProperties, context: EventProperties) {
   sliderUses += 1;
+  // Lead score: a real gesture on the slider (only inside a public demo; elsewhere it does nothing).
+  leadEvent("demo_comparison_used", {
+    ...(typeof context.photo_id === "string" ? { photo: context.photo_id } : {}),
+    ...(typeof context.style_id === "string" ? { style: context.style_id } : {}),
+  });
   track("comparison_slider_used", { ...context, ...summary, interaction_index: sliderUses, surface: surfaceOf(window.location.pathname) });
 }
 
@@ -259,7 +265,7 @@ const TICK_MS = 5000;
  * is the sum of its demo_active_time events, and the deepest scroll reached.
  * Returns the function that stops it.
  */
-export function startDemoEngagement(context: EventProperties) {
+export function startDemoEngagement(context: EventProperties, onActive?: (activeMs: number) => void) {
   let lastInput = Date.now();
   let lastTick = Date.now();
   let activeMs = 0;
@@ -292,6 +298,8 @@ export function startDemoEngagement(context: EventProperties) {
   };
   const flush = (reason: string) => {
     tick();
+    // The lead score adds up the same active time, piece by piece.
+    if (activeMs > 0) onActive?.(Math.min(activeMs, 3600000));
     if (visibleMs >= 1000)
       track(
         "demo_active_time",

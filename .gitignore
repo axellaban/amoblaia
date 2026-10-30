@@ -6,3 +6,6 @@ node_modules/
 coverage/
 *.tsbuildinfo
 .DS_Store
+
+# Lead score backfill checkpoint (may hold PostHog rows)
+.lead-backfill*.json

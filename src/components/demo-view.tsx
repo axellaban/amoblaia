@@ -41,6 +41,7 @@ import type { DemoInvite } from "@/lib/agency/demo-invite";
 import { registerSuperProperties, registerSuperPropertiesOnce, track, trackMilestone, type EventProperties } from "@/lib/analytics";
 import { cta, startDemoEngagement, ViewTimer } from "@/lib/interaction-tracking";
 import { reportDemoActivity } from "@/lib/demos/activity-client";
+import { flushLeads, leadActiveTime, leadEvent, startLeadTracking } from "@/lib/leads/client";
 import { requestPublicStaging } from "@/lib/demos/staging-client";
 import { usePathname, useRouter } from "next/navigation";
 import { textOn, whatsappNumber, type FactIcon } from "@/lib/demos/branding";
@@ -205,6 +206,12 @@ export function DemoView({
   );
   // The same ficha inside the agency's own site is one more way in.
   const linkType = useRef<string>(linkKind);
+  // Lead score: the deliberate actions of this page view (src/lib/leads). Started before the visit is reported.
+  useEffect(() => {
+    if (source.kind !== "public") return;
+    return startLeadTracking(source.token, window.location.pathname.startsWith("/inmobiliaria/") ? "agency_site" : linkType.current);
+    // A new page view per demo; the link kind is read once.
+  }, [source.kind, demo.id]);
   // One visit per demo: the page refreshing (while a style is generated) is not a new one.
   const viewed = useRef("");
   useEffect(() => {
@@ -231,15 +238,20 @@ export function DemoView({
       prospect ? { first_demo_id: demo.id, first_demo_agency_id: demo.agencyId, first_demo_link_type: linkType.current } : undefined,
     );
     reportDemoActivity(source.token, "visita");
+    leadEvent("demo_opened");
     try {
-      localStorage.setItem(DEMO_REF_KEY, JSON.stringify({ demoId: demo.id, agencyId: demo.agencyId, at: Date.now() }));
+      // The token lets the sign-up and the panel credit their steps to this demo (lead score).
+      localStorage.setItem(
+        DEMO_REF_KEY,
+        JSON.stringify({ demoId: demo.id, agencyId: demo.agencyId, token: source.token, link: linkType.current, at: Date.now() }),
+      );
     } catch {
       /* Private mode or blocked storage. */
     }
   }, [source.kind, demo.id, demo.title, agency.name, demo.agencyId, analytics]);
   useEffect(() => {
     if (source.kind !== "public") return;
-    return startDemoEngagement({ demo_id: demo.id, agency_id: demo.agencyId, demo_link_type: linkType.current, owner_mode: ownerMode });
+    return startDemoEngagement({ demo_id: demo.id, agency_id: demo.agencyId, demo_link_type: linkType.current, owner_mode: ownerMode }, leadActiveTime);
   }, [source.kind, demo.id, demo.agencyId, ownerMode]);
 
   const { primary, others, visitHref } = contactActions(demo, pageUrl);
@@ -248,6 +260,11 @@ export function DemoView({
   const log = (event: string, extra: EventProperties = {}, beacon = false) => {
     if (source.kind !== "public") return;
     track(event, { ...analytics, demo_link_type: linkType.current, ...extra }, beacon);
+    if (event === "demo_agency_cta_clicked") {
+      // It usually leaves the page: sent right away.
+      leadEvent("demo_agency_cta_clicked");
+      flushLeads(true);
+    }
     // A download is its own step for the team's list; the server ignores repeats.
     if (event === "demo_owner_download") reportDemoActivity(source.token, "descarga");
     // The first other interaction of this visit is step 2.
@@ -272,6 +289,8 @@ export function DemoView({
   useEffect(() => {
     if (pricesOn) {
       pricesSince.current = Date.now();
+      // The plans are on screen (by the link, the bar or the credits menu).
+      leadEvent("demo_pricing_viewed");
       return;
     }
     if (!pricesSince.current) return;
@@ -860,6 +879,7 @@ function Gallery({
     setState({ style, compare: true, position: state.style && state.compare ? state.position : lastPosition.current });
     lastStyle.current = style;
     picks.current.push(style);
+    leadEvent("demo_style_selected", { style });
     log("demo_estilo", {
       estilo: style,
       photo_id: photo.id,
@@ -879,6 +899,8 @@ function Gallery({
   useEffect(() => {
     seen.current.add(index);
     if (shownIndex.current === index) return;
+    // The first photo is shown by itself; only a change made by the visitor gets here.
+    if (photos[index]) leadEvent("demo_photo_selected", { photo: photos[index].id });
     note("demo_photo_changed", {
       photo_id: photos[index]?.id ?? "",
       photo_index: index,

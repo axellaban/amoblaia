@@ -1,5 +1,8 @@
 # Analítica de demos y adquisición B2B (PostHog)
 
+> El Lead Engagement Score (qué inmobiliaria está más interesada) usa estos mismos puntos
+> del código y se documenta en [LEAD_SCORE.md](LEAD_SCORE.md).
+
 Qué se mide, dónde se dispara cada evento y cómo leerlo. Todo pasa por el
 PostHog existente (`src/instrumentation-client.ts`, proxy `/ingest`), que solo
 envía eventos en producción o con `NEXT_PUBLIC_POSTHOG_KEY` definido.
