@@ -34,6 +34,7 @@ import {
   RotateCw,
   Ruler,
   Sparkles,
+  Tag,
 } from "lucide-react";
 import { Comparison } from "./comparison";
 import type { DemoInvite } from "@/lib/agency/demo-invite";
@@ -41,7 +42,7 @@ import { registerSuperProperties, registerSuperPropertiesOnce, track, trackMiles
 import { cta, startDemoEngagement, ViewTimer } from "@/lib/interaction-tracking";
 import { reportDemoActivity } from "@/lib/demos/activity-client";
 import { requestPublicStaging } from "@/lib/demos/staging-client";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { textOn, whatsappNumber, type FactIcon } from "@/lib/demos/branding";
 import { DEMO_STYLES, demoStyleName } from "@/lib/demos/styles";
 import {
@@ -88,7 +89,14 @@ const OWNER_VISIBLE_STYLES = 4;
  * downloaded; any other style is generated from the panel, which asks for
  * the access (and shows the cost) first.
  */
-export type OwnerMode = { href: string; freeCredits: number; buyerHref: string };
+export type OwnerMode = {
+  href: string;
+  freeCredits: number;
+  buyerHref: string;
+  /** The presentation itself and its plans: the two sections under the agency's bar, each with its own link. */
+  demoHref: string;
+  pricesHref: string;
+};
 
 const fileSlug = (text: string) =>
   text
@@ -161,7 +169,7 @@ export function DemoView({
   invite?: DemoInvite;
   /** The agency viewing its own demo through its invitation: its panel header and the download or generate actions. */
   owner?: OwnerMode | null;
-  /** The plans of /precios, shown in the agency's side panel. */
+  /** The plans of /precios, shown under the agency's bar. */
   plans?: React.ReactNode;
 }) {
   const { agency } = demo;
@@ -253,6 +261,42 @@ export function DemoView({
     if (source.kind !== "public") return;
     track(event, { ...analytics, demo_link_type: linkType.current, ...extra });
   };
+  // The plans are a section of the agency's environment with its own link (…/precios): the bar stays, the
+  // property is only hidden (a style being generated keeps going) and the browser's back button returns to it.
+  const pathname = usePathname();
+  const pricesOn = Boolean(owner) && (pathname?.endsWith("/precios") ?? false);
+  const pricesSince = useRef(0);
+  const pricesExit = useRef("history");
+  const noteRef = useRef(note);
+  noteRef.current = note;
+  useEffect(() => {
+    if (pricesOn) {
+      pricesSince.current = Date.now();
+      return;
+    }
+    if (!pricesSince.current) return;
+    noteRef.current("demo_prices_closed", { method: pricesExit.current, duration_ms: Date.now() - pricesSince.current });
+    pricesSince.current = 0;
+    pricesExit.current = "history";
+  }, [pricesOn]);
+  // Opened straight from the link the team sends.
+  const pricesLanding = useRef(pricesOn);
+  useEffect(() => {
+    // Once, on arrival.
+    if (pricesLanding.current) log("demo_owner_precios", { origen: "enlace" });
+  }, []);
+  const showPrices = (origin: string) => {
+    if (!owner) return;
+    log("demo_owner_precios", { origen: origin });
+    if (!pricesOn) window.history.pushState(null, "", owner.pricesHref);
+    window.scrollTo({ top: 0 });
+  };
+  const showDemo = (method: string) => {
+    if (!owner || !pricesOn) return;
+    pricesExit.current = method;
+    window.history.pushState(null, "", owner.demoHref);
+    window.scrollTo({ top: 0 });
+  };
   const contactLink = (a: Action, className: string, place: string, label = a.label) => (
     <a
       className={className}
@@ -285,7 +329,17 @@ export function DemoView({
 
   return (
     <div className={`dv2-page ${agency.titleFont === "serif" ? "is-serif" : ""}`} style={brandStyle}>
-      {owner && <OwnerHeader demo={demo} owner={owner} log={log} note={note} plans={plans} />}
+      {owner && <OwnerHeader demo={demo} owner={owner} log={log} pricesOn={pricesOn} onPrices={showPrices} onDemo={showDemo} />}
+      {owner && pricesOn && (
+        <section className="dv2-prices" aria-label="Planes y créditos">
+          <div className="container dv2-prices-head">
+            <button type="button" className="dv2-prices-back" {...cta("prices_back", "pricing_section", "demo", "navigation")} onClick={() => showDemo("button")}>
+              ← Volver a la propiedad
+            </button>
+          </div>
+          <div className="dv2-prices-body">{plans}</div>
+        </section>
+      )}
       {!owner && presentation && demo.banner && (
         <div className="dv2-banner" role="note">
           Demo preparada para {agency.name} ·{" "}
@@ -323,7 +377,7 @@ export function DemoView({
       </header>
       )}
 
-      <div className="container dv2-main">
+      <div className="container dv2-main" hidden={pricesOn}>
         <section id="propiedad" className="dv2-heading" aria-labelledby="dv2-title">
           <div>
             {demo.reference && <p className="dv2-ref">Ref. {demo.reference}</p>}
@@ -501,7 +555,7 @@ export function DemoView({
         </section>
       </div>
 
-      <footer className="dv2-footer">
+      <footer className="dv2-footer" hidden={pricesOn}>
         <div className="container">
           <Brand agency={agency} small place="footer" />
           <nav aria-label="Enlaces">
@@ -1348,9 +1402,9 @@ function OwnerCredits({
           <span>¿Necesitás más?</span>
           <button
             type="button"
-            {...cta("owner_pricing", "credits_menu", "pricing_drawer")}
-            onClick={() => {
-              log("demo_owner_precios");
+            {...cta("owner_pricing", "credits_menu", "pricing_section")}
+            onClick={(e) => {
+              e.currentTarget.closest("details")?.removeAttribute("open");
               onPrices();
             }}
           >
@@ -1362,62 +1416,22 @@ function OwnerCredits({
   );
 }
 
-/** The plans of /precios, opened from the agency's bar: on the right, inside its environment. */
-function PricesDrawer({
-  onClose,
-  note,
-  children,
-}: {
-  onClose: () => void;
-  note: (event: string, extra?: EventProperties) => unknown;
-  children: React.ReactNode;
-}) {
-  // How long the plans were looked at, and how the visitor went back to the demo.
-  const opened = useRef(0);
-  const leave = useRef(note);
-  leave.current = note;
-  useEffect(() => {
-    opened.current = Date.now();
-  }, []);
-  const back = useCallback(
-    (method: string) => {
-      leave.current("demo_prices_closed", { method, duration_ms: Date.now() - opened.current });
-      onClose();
-    },
-    [onClose],
-  );
-  useEffect(() => {
-    const close = (e: KeyboardEvent) => e.key === "Escape" && back("escape");
-    window.addEventListener("keydown", close);
-    return () => window.removeEventListener("keydown", close);
-  }, [back]);
-  return (
-    <div className="dv2-prices" role="dialog" aria-modal="true" aria-label="Planes y créditos">
-      <div className="dv2-prices-head">
-        <button type="button" className="dv2-prices-back" {...cta("prices_back", "pricing_drawer", "demo", "navigation")} onClick={() => back("button")}>
-          ← Volver a la demo
-        </button>
-      </div>
-      <div className="dv2-prices-body">{children}</div>
-    </div>
-  );
-}
-
 function OwnerHeader({
   demo,
   owner,
   log,
-  note,
-  plans,
+  pricesOn,
+  onPrices,
+  onDemo,
 }: {
   demo: PublicDemo;
   owner: OwnerMode;
   log: (event: string, extra?: EventProperties, beacon?: boolean) => unknown;
-  note: (event: string, extra?: EventProperties) => unknown;
-  plans: React.ReactNode;
+  /** The plans are the section on screen, instead of the property. */
+  pricesOn: boolean;
+  onPrices: (origin: string) => void;
+  onDemo: (method: string) => void;
 }) {
-  const [prices, setPrices] = useState(false);
-  const closePrices = useCallback(() => setPrices(false), []);
   const versions = demo.photos.reduce((n, p) => n + p.versions.length, 0);
   // Every button of the bar leads to the invitation's sign-up; each keeps its own id and what it was meant to open.
   const INTENT: Record<string, string> = {
@@ -1458,13 +1472,35 @@ function OwnerHeader({
           <a {...go("inicio")}>
             <Home size={17} aria-hidden="true" /> Inicio
           </a>
-          <a href="#propiedad" aria-current="page" className="is-on" {...cta("owner_my_properties", "owner_bar", "section_property", "navigation")}>
+          <a
+            href={pricesOn ? owner.demoHref : "#propiedad"}
+            aria-current={pricesOn ? undefined : "page"}
+            className={pricesOn ? undefined : "is-on"}
+            {...cta("owner_my_properties", "owner_bar", "section_property", "navigation")}
+            onClick={(e) => {
+              if (!pricesOn) return;
+              e.preventDefault();
+              onDemo("nav");
+            }}
+          >
             <LayoutGrid size={17} aria-hidden="true" /> Mis propiedades <span className="dv2-owner-count">1</span>
           </a>
           <a {...go("imagenes")}>
             <ImageIcon size={17} aria-hidden="true" /> Imágenes
           </a>
-          <OwnerCredits owner={owner} log={log} onPrices={() => setPrices(true)} />
+          <OwnerCredits owner={owner} log={log} onPrices={() => onPrices("menu_creditos")} />
+          <a
+            href={owner.pricesHref}
+            aria-current={pricesOn ? "page" : undefined}
+            className={pricesOn ? "is-on" : undefined}
+            {...cta("owner_nav_pricing", "owner_bar", "pricing_section", "navigation")}
+            onClick={(e) => {
+              e.preventDefault();
+              onPrices("encabezado");
+            }}
+          >
+            <Tag size={17} aria-hidden="true" /> Precios
+          </a>
           <a className="dv2-owner-create-chip" {...go("crear_movil")}>
             <Plus size={17} aria-hidden="true" /> Crear propiedad
           </a>
@@ -1488,11 +1524,6 @@ function OwnerHeader({
           Ver como comprador
         </a>
       </p>
-      {prices && (
-        <PricesDrawer onClose={closePrices} note={note}>
-          {plans}
-        </PricesDrawer>
-      )}
     </header>
   );
 }

@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { cache } from "react";
 import { Assistant } from "@/components/assistant";
 import { DemoView } from "@/components/demo-view";
 import { PricingPlans } from "@/components/pricing";
-import { buyerViewPath, inviteFor, type DemoInvite } from "@/lib/agency/demo-invite";
+import { buyerViewPath, inviteFor, presentationPath, pricesViewPath, type DemoInvite } from "@/lib/agency/demo-invite";
 import { invitationOf } from "@/lib/agency/invitation";
 import { publishedDemo } from "@/lib/demos/server";
 import { coverVersion, demoPath, ogImageUrl } from "@/lib/demos/shared";
@@ -93,18 +93,21 @@ async function plansOf(signupHref: string) {
 /**
  * The demo page. `presentation` is the agency's link (it may show the strip);
  * `code` is its invitation, only honored there and for an agency's own demo;
- * `ficha` shows the buyers' page to the agency, still with the way into its panel.
+ * `ficha` shows the buyers' page to the agency, still with the way into its panel;
+ * `prices` opens its plans under the agency's bar (only there: otherwise, the demo).
  */
 export async function PublicDemo({
   token,
   presentation,
   code,
   ficha,
+  prices = false,
 }: {
   token: string;
   presentation: boolean;
   code: string | null;
   ficha: boolean;
+  prices?: boolean;
 }) {
   const demo = await load(token);
   if (!demo) notFound();
@@ -118,8 +121,16 @@ export async function PublicDemo({
     }
   const owner =
     invitation && invite && "href" in invite && !ficha
-      ? { href: invite.href, freeCredits: invite.freeCredits, buyerHref: buyerViewPath(token, invitation) }
+      ? {
+          href: invite.href,
+          freeCredits: invite.freeCredits,
+          buyerHref: buyerViewPath(token, invitation),
+          demoHref: presentationPath(token, invitation),
+          pricesHref: pricesViewPath(token, invitation),
+        }
       : null;
+  // The plans live in the agency's environment: without it (a code no longer valid), the presentation itself.
+  if (prices && !owner) redirect(presentationPath(token, code));
   const plans = owner ? await plansOf(owner.href) : null;
   return (
     <>

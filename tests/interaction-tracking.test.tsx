@@ -11,7 +11,7 @@ vi.mock("posthog-js", () => ({
     setPersonProperties: () => {},
   },
 }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: () => {} }) }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: () => {} }), usePathname: () => "/demo/tok/presentacion/secreto" }));
 
 import { cta, ctaProperties, SliderGesture, surfaceOf } from "@/lib/interaction-tracking";
 import { trackMilestone } from "@/lib/analytics";
@@ -133,7 +133,13 @@ const ids = (html: string) => [...html.matchAll(/data-cta="([^"]+)"/g)].map((m) 
 
 describe("the demo's tracked actions", () => {
   it("gives every button of the agency's bar its own id, all leading to the invitation", () => {
-    const owner = { href: "/panel/empezar?codigo=secreto&demo=tok", freeCredits: 3, buyerHref: "/demo/tok?presentacion=1&vista=ficha" };
+    const owner = {
+      href: "/panel/empezar?codigo=secreto&demo=tok",
+      freeCredits: 3,
+      buyerHref: "/demo/tok/presentacion/secreto/ficha",
+      demoHref: "/demo/tok/presentacion/secreto",
+      pricesHref: "/demo/tok/presentacion/secreto/precios",
+    };
     const html = renderToStaticMarkup(<DemoView demo={demo} source={{ kind: "public", token: "tok" }} presentation owner={owner} />);
     expect(ids(html)).toEqual(
       expect.arrayContaining([
@@ -145,6 +151,7 @@ describe("the demo's tracked actions", () => {
         "owner_credits",
         "owner_generate_menu",
         "owner_pricing",
+        "owner_nav_pricing",
         "owner_buyer_view",
         "owner_download",
         "owner_generate",
