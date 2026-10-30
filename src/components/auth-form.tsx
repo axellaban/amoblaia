@@ -6,6 +6,7 @@ import { browserClient } from "@/lib/supabase/client";
 import { safeNext } from "@/lib/commerce/redirect";
 import { GoogleSignIn } from "./google-signin";
 import { track } from "@/lib/analytics";
+import { useSignupTracking } from "@/lib/signup-tracking";
 import { metaTrack } from "@/lib/meta";
 import { ArrowUpRight, Check, LoaderCircle, ShieldCheck } from "lucide-react";
 declare global {
@@ -97,17 +98,26 @@ export function AuthForm() {
   const available = Boolean(browserClient());
   const googleEnabled = process.env.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED === "true";
   const emailEnabled = process.env.NEXT_PUBLIC_EMAIL_AUTH_ENABLED === "true";
+  // Sign-up and sign-in screens (with Google only, signing in for the first time creates the account).
+  const form = useSignupTracking(
+    mode === "signup" ? "auth_signup" : "auth_login",
+    { google_enabled: googleEnabled, email_enabled: emailEnabled, from_agency_start: (params.get("next") ?? "").startsWith("/panel/empezar") },
+    available && (mode === "signup" || mode === "login"),
+  );
+  const tracked = mode === "signup" || mode === "login";
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
     setNotice("");
     const client = browserClient();
     if (!client) return;
+    if (tracked) form.submitted();
     if (
       process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY &&
       !token &&
       mode !== "update"
     ) {
+      if (tracked) form.failed("captcha");
       setError("Completá la verificación para continuar.");
       return;
     }
@@ -120,16 +130,20 @@ export function AuthForm() {
           password,
           options: { captchaToken: token || undefined },
         });
-        if (error)
+        if (error) {
+          form.failed("credentials");
           throw new Error(
             "Revisá el email, la contraseña y la confirmación de tu cuenta.",
           );
+        }
         // Signed in already; the server retries a failed trial hand-over.
         await fetch("/api/guest/claim", { method: "POST" }).catch(() => null);
         window.location.assign(safeNext(params.get("next"), "/inicio"));
       } else if (mode === "signup") {
-        if (!accepted)
+        if (!accepted) {
+          form.failed("terms");
           throw new Error("Aceptá las condiciones para crear tu cuenta.");
+        }
         const { error } = await client.auth.signUp({
           email,
           password,
@@ -138,12 +152,15 @@ export function AuthForm() {
             captchaToken: token || undefined,
           },
         });
-        if (error)
+        if (error) {
+          form.failed("signup_refused");
           throw new Error(
             "No pudimos crear la cuenta. Revisá tus datos o intentá de nuevo más tarde.",
           );
+        }
         metaTrack("CompleteRegistration", {}, true, { email });
         track("registro");
+        form.accountCreated("email_password", { confirmation_pending: true });
         setNotice(
           "Revisá tu email para confirmar la cuenta. Si ya tenés una, podés ingresar o recuperar la contraseña.",
         );
@@ -265,7 +282,7 @@ export function AuthForm() {
                 </p>
               )}
               {(emailEnabled || mode === "update") && (
-                <form onSubmit={submit}>
+                <form onSubmit={submit} onInputCapture={tracked ? form.onInput : undefined}>
                   {mode !== "update" && (
                     <label>
                       Email

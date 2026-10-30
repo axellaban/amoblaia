@@ -4,7 +4,7 @@ import { DemoView } from "@/components/demo-view";
 import { DEMO_STYLES } from "@/lib/demos/styles";
 import type { PublicDemo } from "@/lib/demos/shared";
 
-vi.mock("@/lib/analytics", () => ({ track: () => {}, registerSuperProperties: () => {} }));
+vi.mock("@/lib/analytics", () => ({ track: () => {}, trackMilestone: () => {}, registerSuperProperties: () => {}, registerSuperPropertiesOnce: () => {} }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: () => {} }) }));
 
 const v = (style: string) => ({ style, v: "1" });

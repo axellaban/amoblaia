@@ -6,7 +6,7 @@
 // the version already on the server, which the editor keeps following.
 import { useCallback, useRef, useState } from "react";
 import { ApiError, api } from "./admin-demos";
-import { track } from "@/lib/analytics";
+import { track, trackMilestone } from "@/lib/analytics";
 import { cellState, isLive, taskKey, type Task } from "@/lib/demos/editor-logic";
 import type { DemoDetail, EditorPhoto } from "@/lib/demos/shared";
 
@@ -95,6 +95,7 @@ export function useStagingQueue(opts: {
     setCurrent(null);
     running.current = false;
     if (trackAgency) track("property_ai_generation_completed", { versions: done + failures, failed: failures, status: failures ? "partial" : "ok" });
+    if (trackAgency && done) trackMilestone("first_generation_completed", { versions: done, source: "panel" });
     if (done && !failures) report({ tone: "notice", text: `${done} ${done === 1 ? "versión lista" : "versiones listas"}. Revisalas antes de publicar.` });
   }, [base, poll, report, trackAgency]);
 
@@ -165,6 +166,7 @@ export function useStagingQueue(opts: {
           );
           if (!ok) return false;
           if (trackAgency) track("property_ai_generation_started", { photos: photoIds.length, versions: todo.length, credits: n });
+          if (trackAgency) trackMilestone("first_generation_started", { versions: todo.length, source: "panel" });
         }
         if (fresh) for (const t of todo) keys.current.delete(taskKey(t));
         queueRef.current.push(...todo);

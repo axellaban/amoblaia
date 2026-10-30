@@ -23,6 +23,7 @@ import {
   type Product,
 } from "@/lib/commerce/catalog";
 import { track } from "@/lib/analytics";
+import { cta } from "@/lib/interaction-tracking";
 const features = [
   "Regeneraciones incluidas",
   "Todos los ambientes y estilos",
@@ -110,6 +111,11 @@ export function PricingPlans({
     window.location.assign(`${url.pathname}${url.search}`);
   };
   const checkoutKeys = useRef<Record<string, string>>({});
+  // Each buy button, with its plan; inside a demo it leads to the sign-up first.
+  const buyCta = (id: string, place: string, sku: string) => ({
+    ...cta(id, signupHref ? `demo_prices_${place}` : place, signupHref ? "signup_invitation" : "checkout", "habita_b2b", { plan: sku }),
+    ...(signupHref ? { "data-cta-navigates": "1" } : {}),
+  });
   const [now, setNow] = useState(renderedAt);
   const launch = (sku: string) => {
     const p = products.find((p) => p.sku === sku && p.active);
@@ -382,6 +388,7 @@ export function PricingPlans({
             <button
               className="button button-primary"
               disabled={!ready || Boolean(busy)}
+              {...buyCta("pricing_buy_pack", "credits_card", pack.sku)}
               onClick={() => buyPack(pack.sku)}
             >
               {busy === pack.sku ? (
@@ -454,6 +461,7 @@ export function PricingPlans({
           <button
             className="button button-primary"
             disabled={!ready || Boolean(busy) || sku === currentSku}
+            {...buyCta("pricing_buy_plan", "plan_card", sku)}
             onClick={() => {
               setError("");
               setPayerEmail("");
@@ -617,6 +625,7 @@ export function PricingPlans({
               <button
                 className="button button-primary"
                 disabled={!(enabled || signupHref) || Boolean(busy)}
+                {...buyCta("pricing_buy_first_pack", "first_pack", firstPack.sku)}
                 onClick={() => buyPack(firstPack.sku)}
               >
                 {busy === firstPack.sku ? (
