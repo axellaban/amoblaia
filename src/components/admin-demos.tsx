@@ -450,8 +450,8 @@ export function Dialog({ title, onClose, children }: { title: string; onClose: (
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
   return (
-    <div className="dm-modal-backdrop" onMouseDown={onClose}>
-      <div className="dm-modal" role="dialog" aria-modal="true" aria-label={title} onMouseDown={(e) => e.stopPropagation()}>
+    <div className="dm-dialog-backdrop" onMouseDown={onClose}>
+      <div className="dm-dialog" role="dialog" aria-modal="true" aria-label={title} onMouseDown={(e) => e.stopPropagation()}>
         <header>
           <strong>{title}</strong>
           <button type="button" className="dm-text" onClick={onClose} aria-label="Cerrar">
@@ -489,9 +489,9 @@ export function MessageTemplateDialog({ onClose, onSaved }: { onClose: () => voi
   }
   return (
     <Dialog title="Mensaje de WhatsApp" onClose={onClose}>
-      <div className="dm-modal-body">
+      <div className="dm-dialog-body">
         <p className="dm-help">
-          Variables: {MESSAGE_VARIABLES.map((v) => `{${v}}`).join(" ")}. {"{nombre}"} es el contacto de la inmobiliaria o, si no hay, su nombre.
+          Variables: {MESSAGE_VARIABLES.map((v) => `{${v}}`).join(" ")}. {"{nombre}"} es el contacto de la inmobiliaria o, si no hay, su nombre. {"{ubicacion}"} es el barrio de la propiedad.
         </p>
         <textarea
           rows={6}
@@ -506,7 +506,7 @@ export function MessageTemplateDialog({ onClose, onSaved }: { onClose: () => voi
             {error}
           </p>
         )}
-        <div className="dm-modal-actions">
+        <div className="dm-dialog-actions">
           <button type="button" className="text-link" disabled={busy || template === null} onClick={() => setTemplate(DEFAULT_MESSAGE_TEMPLATE)}>
             Volver al predeterminado
           </button>
@@ -529,6 +529,7 @@ export function SendWhatsapp({ demo, fixHere = false }: { demo: DemoSummary; fix
   const [template, setTemplate] = useState(DEFAULT_MESSAGE_TEMPLATE);
   const [globalTemplate, setGlobalTemplate] = useState(DEFAULT_MESSAGE_TEMPLATE);
   const [ownTemplate, setOwnTemplate] = useState(demo.messageTemplate != null);
+  const [savedForAll, setSavedForAll] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const phone = normalizeArNumber(demo.agencyWhatsapp);
@@ -541,12 +542,15 @@ export function SendWhatsapp({ demo, fixHere = false }: { demo: DemoSummary; fix
   const preview = renderMessage(template, {
     nombre: demo.agencyContact ?? null,
     inmobiliaria: demo.agencyName,
+    ubicacion: demo.propertyLocation ?? null,
+    propiedad: demo.propertyTitle,
     link: publicLink(demo.token, true),
     creditos: demo.credits.reserved,
   });
 
   async function openDialog() {
     setError("");
+    setSavedForAll(false);
     setOpen(true);
     try {
       const { template: general } = await api<{ template: string }>("/api/admin/demos/plantilla");
@@ -555,6 +559,25 @@ export function SendWhatsapp({ demo, fixHere = false }: { demo: DemoSummary; fix
       setTemplate(demo.messageTemplate ?? general);
     } catch (e) {
       setError(e instanceof Error ? e.message : "No pudimos leer el mensaje.");
+    }
+  }
+
+  // The text becomes the general message, and this demo goes back to using it.
+  async function saveForAll() {
+    setBusy(true);
+    setError("");
+    try {
+      const saved = await api<{ template: string }>("/api/admin/demos/plantilla", { method: "PUT", body: JSON.stringify({ template }) });
+      if (demo.messageTemplate != null)
+        await api(`/api/admin/demos/${demo.id}`, { method: "PATCH", body: JSON.stringify({ action: "message", message: null }) });
+      setGlobalTemplate(saved.template);
+      setTemplate(saved.template);
+      setOwnTemplate(false);
+      setSavedForAll(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No pudimos guardar el mensaje general.");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -568,6 +591,8 @@ export function SendWhatsapp({ demo, fixHere = false }: { demo: DemoSummary; fix
       const text = renderMessage(template, {
         nombre: demo.agencyContact ?? null,
         inmobiliaria: demo.agencyName,
+        ubicacion: demo.propertyLocation ?? null,
+        propiedad: demo.propertyTitle,
         link,
         creditos: demo.credits.reserved,
       });
@@ -598,7 +623,7 @@ export function SendWhatsapp({ demo, fixHere = false }: { demo: DemoSummary; fix
       {missing && <span className="dm-help">{missing}</span>}
       {open && (
         <Dialog title={`Enviar «${demo.title}» a ${demo.agencyName}`} onClose={() => !busy && setOpen(false)}>
-          <div className="dm-modal-body">
+          <div className="dm-dialog-body">
             <p className="dm-help">
               Se abre WhatsApp Web con el chat de +{phone} y el mensaje escrito. Lo enviás vos.
               {demo.sentAt ? ` Ya se envió ${agoText(demo.sentAt)}: queda registrado otro envío.` : ""}
@@ -623,8 +648,22 @@ export function SendWhatsapp({ demo, fixHere = false }: { demo: DemoSummary; fix
               disabled={!ownTemplate || busy}
               onChange={(e) => setTemplate(e.target.value)}
             />
-            {!ownTemplate && (
-              <p className="dm-help">Se usa el mensaje general. Para cambiarlo en todas las demos, usá «Mensaje de WhatsApp» en el listado.</p>
+            {!ownTemplate ? (
+              <p className="dm-help">Se usa el mensaje general, el mismo para todas las demos. Para cambiarlo, marcá «Mensaje propio» y editalo.</p>
+            ) : (
+              template !== globalTemplate && (
+                <div className="dm-dialog-actions">
+                  <span className="dm-help">Por ahora este texto queda solo para esta demo.</span>
+                  <button type="button" className="button button-small button-outline" disabled={busy || !template.trim()} onClick={saveForAll}>
+                    Guardar para todas las demos
+                  </button>
+                </div>
+              )
+            )}
+            {savedForAll && (
+              <p className="inline-notice" role="status">
+                Guardado como mensaje general: queda para todas las demos que no tengan uno propio.
+              </p>
             )}
             <div className="dm-msg-preview" aria-label="Vista previa del mensaje">
               <span className="dm-help">Vista previa</span>
@@ -641,7 +680,7 @@ export function SendWhatsapp({ demo, fixHere = false }: { demo: DemoSummary; fix
                 {error}
               </p>
             )}
-            <div className="dm-modal-actions">
+            <div className="dm-dialog-actions">
               <button type="button" className="text-link" disabled={busy} onClick={() => setOpen(false)}>
                 Cancelar
               </button>
