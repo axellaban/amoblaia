@@ -3,7 +3,7 @@
 Herramienta interna para preparar, con fotos reales de una inmobiliaria, una galería ambientada con IA y compartirla por WhatsApp con un enlace único.
 
 - Panel privado: `/admin/demos` (también enlazado desde `/administracion`).
-- Página pública: `/demo/<token>`, sin registro.
+- Página pública: `/demo/<token>`, sin registro. Los links compartidos son solo rutas (sin `?` ni `&`); los links viejos `?presentacion=1` redirigen a la ruta nueva.
 
 ## Puesta en marcha
 
@@ -41,7 +41,7 @@ select has_function_privilege('authenticated',
 11c. En **Estilos de la demo**, el **tipo de inmueble**: con «Oficina» se ofrecen «Oficina ejecutiva» y «Equipo de trabajo» (escritorios, sillas de trabajo, guardado; nunca sofás, camas ni TV) y las ambientaciones residenciales dejan de mostrarse (no se borran ni se renombran: hay que generar las de oficina).
 11d. En **Ficha de la propiedad**: operación, referencia, características, precio con moneda, conflicto de precio (privado), expensas, disponibilidad, requisitos, datos con íconos, descripción completa, características y servicios, mapa (precisión y coordenadas), agente asignado, texto del cierre y título/descripción para compartir.
 12. **Vista previa** muestra exactamente la página pública, también en borrador, como comprador o como presentación.
-13. **Publicar demo** → hay dos enlaces: **presentación** (`/demo/<token>?presentacion=1`, para la inmobiliaria, con la franja si está activada) y **compradores** (`/demo/<token>`, limpio). **Compartir por WhatsApp** le manda los dos a la inmobiliaria. **Despublicar** corta el acceso al instante; **Generar un enlace nuevo** invalida el anterior.
+13. **Publicar demo** → hay dos enlaces: **presentación** (`/demo/<token>/presentacion` (con invitación: `/demo/<token>/presentacion/<codigo>`; sin `?` ni `&`), para la inmobiliaria, con la franja si está activada) y **compradores** (`/demo/<token>`, limpio). **Compartir por WhatsApp** le manda los dos a la inmobiliaria. **Despublicar** corta el acceso al instante; **Generar un enlace nuevo** invalida el anterior.
 
 ## Cómo funciona
 

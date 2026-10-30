@@ -26,7 +26,11 @@ const CODE = /^[A-Za-z0-9_-]{20,64}$/;
 /** The page the question comes from, without query or invitation code: only for context. */
 export function cleanPath(path: unknown) {
   if (typeof path !== "string" || !path.startsWith("/") || path.startsWith("//")) return "/";
-  return path.split(/[?#]/)[0].slice(0, 160);
+  // The agency's invitation code may sit in the path (/demo/<token>/presentacion/<codigo>).
+  return path
+    .split(/[?#]/)[0]
+    .replace(/(\/presentacion\/)[^/]+/, "$1[oculto]")
+    .slice(0, 160);
 }
 
 /** What the browser sends, checked: a short conversation that ends with the user's question. */
