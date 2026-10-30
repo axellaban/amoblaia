@@ -537,3 +537,62 @@ describe("Users of an agency (202611110001)", () => {
     await expect(db.query("insert into agency_members(agency_id,user_id,role) values($1,$2,'collaborator')", [await createAgency(await account(), "X", "equipo-x"), await account()])).rejects.toThrow();
   });
 });
+
+describe("Releasing a test claim (202611150001)", () => {
+  const release = (agency: string, actor: string) =>
+    db.query<{ r: { photos: number; properties: number; credits: number } }>("select habita_release_agency($1,$2) as r", [agency, actor]);
+
+  it("leaves the agency as before the claim: demo photos back to the team, test properties gone, unused gift credits reserved again", async () => {
+    const admin = await account();
+    const { agency, property, project, job } = await prospect(admin);
+    await db.query("update demos set created_by=$1 where property_id=$2", [admin, property]);
+    await db.query("update agencies set free_credits_pending=10 where id=$1", [agency]);
+    const pending = await claimCode(agency, admin);
+    const tester = await account();
+    await claim(tester, await claimCode(agency, admin));
+    await db.query("select habita_apply_agency_credits($1)", [agency]);
+    await db.query("select habita_record_agency_activity($1)", [agency]);
+    expect(await credits(tester)).toBe(10);
+    // The tester's own property, with a photo.
+    const own = (await one<{ id: string }>("insert into demo_properties(agency_id,title,created_by) values($1,'Prueba',$2) returning id", [agency, tester]))!.id;
+    await db.query("insert into demos(agency_id,property_id,token,created_by) values($1,$2,$3,$4)", [agency, own, `tok_${id().replace(/-/g, "")}`, tester]);
+    const ownProject = id();
+    await db.query("insert into projects(id,user_id,original_hash,original_path,name,original_bytes) values($1,$2,$3,'a/x.jpg','Foto',100)", [ownProject, tester, `demo:${id()}`]);
+    await db.query("insert into demo_photos(property_id,project_id) values($1,$2)", [own, ownProject]);
+
+    const other = await account();
+    expect((await release(agency, other)).rows[0].r).toEqual({ photos: 1, properties: 1, credits: 10 });
+    expect(await one("select owner_id,claimed_at,free_credits_pending from agencies where id=$1", [agency])).toEqual({ owner_id: null, claimed_at: null, free_credits_pending: 10 });
+    expect((await one<{ n: number }>("select count(*)::int as n from agency_members where agency_id=$1", [agency]))!.n).toBe(0);
+    // Back to the demo's creator, not to whoever released it.
+    expect((await one<{ user_id: string }>("select user_id from projects where id=$1", [project]))!.user_id).toBe(admin);
+    expect((await one<{ user_id: string }>("select user_id from generations where id=$1", [job]))!.user_id).toBe(admin);
+    expect(await one("select count(*)::int as n from demo_properties where id=$1", [own])).toEqual({ n: 0 });
+    expect((await one<{ gone: boolean }>("select deleted_at is not null as gone from projects where id=$1", [ownProject]))!.gone).toBe(true);
+    expect(await credits(tester)).toBe(0);
+    expect(await one("select activity_level from demos where property_id=$1", [property])).toEqual({ activity_level: 0 });
+    // The invitation links not used yet work again; the team can stage the demo for free again.
+    const real = await account();
+    expect((await claim(real, pending)).rows[0].id).toBe(agency);
+    await db.query("select habita_apply_agency_credits($1)", [agency]);
+    expect(await credits(real)).toBe(10);
+  });
+
+  it("refuses an agency without an account or whose account paid", async () => {
+    const admin = await account();
+    const { agency } = await prospect(admin);
+    await expect(release(agency, admin)).rejects.toThrow(/NO_OWNER/);
+    const owner = await account();
+    await claim(owner, await claimCode(agency, admin));
+    const order = (await one<{ id: string }>("insert into orders(user_id,sku,snapshot) select $1,sku,'{}' from products limit 1 returning id", [owner]))!.id;
+    const pay = `pay-${id()}`;
+    await db.query("insert into payments(id,order_id,user_id,status,amount_cents,paid_at) values($1,$2,$3,'approved',100,now())", [pay, order, owner]);
+    await db.query("insert into credit_grants(user_id,source_key,payment_id,total,remaining) values($1,$2,$3,5,5)", [owner, `pay:${pay}`, pay]);
+    await expect(release(agency, admin)).rejects.toThrow(/AGENCY_PAID/);
+  });
+
+  it("is for the server only", async () => {
+    for (const role of ["anon", "authenticated"])
+      expect((await one<{ ok: boolean }>("select has_function_privilege($1,'public.habita_release_agency(uuid,uuid)','execute') as ok", [role]))!.ok).toBe(false);
+  });
+});

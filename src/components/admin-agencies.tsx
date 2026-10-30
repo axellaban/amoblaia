@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { ChevronDown, Copy, Eye, Gift, Link2, PencilLine, Plus, UserCog } from "lucide-react";
+import { ChevronDown, Copy, Eye, Gift, Link2, PencilLine, Plus, Undo2, UserCog } from "lucide-react";
 import { ApiError, api } from "@/components/admin-demos";
 import { nextStep, ORIGIN_LABEL, type PanelProperty } from "@/lib/agency/shared";
 import { CLAIM_LABEL, STAGE_LABEL, agencyStage, type AdminAgencyDetail, type AdminAgencyRow } from "@/lib/agency/stage";
@@ -11,7 +11,7 @@ import { adminPhotoUrl } from "@/lib/demos/shared";
 
 const date = (iso: string) => new Date(iso).toLocaleDateString("es-AR");
 
-/** Invitations of an agency without an account: create a new link, revoke a pending one. */
+/** Invitations of an agency without an account: create a new link, revoke a pending one. With an account, release it after a test claim. */
 export function AgencyInvitations({ agencyId, claims, hasOwner }: { agencyId: string; claims: AdminAgencyDetail["claims"]; hasOwner: boolean }) {
   const router = useRouter();
   const [busy, setBusy] = useState("");
@@ -45,6 +45,24 @@ export function AgencyInvitations({ agencyId, claims, hasOwner }: { agencyId: st
       setBusy("");
     }
   }
+  async function release() {
+    if (
+      !window.confirm(
+        "¿Liberar la cuenta? Usalo solo si la reclamó una cuenta de prueba. Sus usuarios salen de la inmobiliaria, se borran las propiedades que crearon, las fotos de las demos vuelven al equipo y los créditos de regalo sin usar quedan reservados otra vez. Las invitaciones sin usar vuelven a funcionar.",
+      )
+    )
+      return;
+    setBusy("release");
+    setError("");
+    try {
+      await api(`/api/admin/inmobiliarias/${agencyId}/liberacion`, { method: "POST" });
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No pudimos liberar la cuenta.");
+    } finally {
+      setBusy("");
+    }
+  }
   async function copy() {
     if (!created) return;
     try {
@@ -59,7 +77,11 @@ export function AgencyInvitations({ agencyId, claims, hasOwner }: { agencyId: st
     <section className="account-panel aa-section" aria-labelledby="aa-claims">
       <div className="aa-section-head">
         <h2 id="aa-claims">Invitaciones</h2>
-        {!hasOwner && (
+        {hasOwner ? (
+          <button type="button" className="button button-small button-outline" disabled={busy === "release"} onClick={release}>
+            <Undo2 size={15} /> {busy === "release" ? "Liberando…" : "Liberar cuenta"}
+          </button>
+        ) : (
           <button type="button" className="button button-small" disabled={busy === "new"} onClick={create}>
             <Plus size={15} /> Nueva invitación
           </button>
@@ -67,7 +89,7 @@ export function AgencyInvitations({ agencyId, claims, hasOwner }: { agencyId: st
       </div>
       <p className="aa-help">
         {hasOwner
-          ? "La inmobiliaria ya tiene su cuenta: no hacen falta invitaciones."
+          ? "La inmobiliaria ya tiene su cuenta: no hacen falta invitaciones. Si la reclamó una cuenta de prueba, «Liberar cuenta» la deja como antes para que la inmobiliaria pueda reclamarla."
           : "Cada enlace sirve una vez y vence a los 30 días. Solo se guarda su huella: si se pierde, creá otro."}
       </p>
       {error && (
