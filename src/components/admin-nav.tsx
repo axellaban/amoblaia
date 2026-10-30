@@ -9,6 +9,7 @@ const LINKS: [string, string][] = [
   ["/admin/prospeccion", "Adquisición"],
   ["/admin/demos", "Demos existentes"],
   ["/admin/inmobiliarias", "Inmobiliarias"],
+  ["/admin/asistente", "Miguel Ángel"],
 ];
 
 /**

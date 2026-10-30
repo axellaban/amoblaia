@@ -9,6 +9,13 @@ vi.mock("@/lib/agency/server", () => ({ membershipFor: async () => null }));
 vi.mock("@/lib/agency/panel", () => ({ agencyCredits: async () => null }));
 vi.mock("@/lib/agency/invitation", () => ({ invitationOf: async () => null }));
 vi.mock("@/lib/demos/server", () => ({ publishedDemo: async () => null }));
+const logged: { owner: string; question: string; answer: string | null; error: string | null; model: string | null }[] = [];
+vi.mock("@/lib/assistant/log", () => ({
+  logExchange: async (who: { owner: string }, e: { question: string; answer: string | null; error: string | null; model: string | null }) => {
+    logged.push({ owner: who.owner, question: e.question, answer: e.answer, error: e.error, model: e.model });
+    return "c1";
+  },
+}));
 
 const { POST } = await import("@/app/api/asistente/route");
 
@@ -29,6 +36,7 @@ let n = 0;
 beforeEach(() => {
   process.env.OPENAI_API_KEY = "sk-test";
   calls = [];
+  logged.length = 0;
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 afterEach(() => vi.unstubAllGlobals());
@@ -43,6 +51,8 @@ describe("POST /api/asistente", () => {
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("¡Hola! Soy Miguel Ángel.");
     expect(calls[0].model).toBe("gpt-4.1-mini");
+    // The exchange is saved for the team before the answer closes.
+    expect(logged).toEqual([{ owner: "user:u1", question: expect.stringMatching(/^pregunta/), answer: "¡Hola! Soy Miguel Ángel.", error: null, model: "gpt-4.1-mini" }]);
   });
 
   it("tries a widely available model when the account cannot use the first", async () => {
@@ -63,5 +73,6 @@ describe("POST /api/asistente", () => {
     const res = await POST(question(n++));
     expect(res.status).toBe(503);
     expect((await res.json()).error).toContain("clave de OpenAI");
+    expect(logged[0]).toMatchObject({ answer: null, error: expect.stringContaining("clave de OpenAI") });
   });
 });

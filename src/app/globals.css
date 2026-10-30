@@ -15215,3 +15215,215 @@ a.dm-agency:hover {
   border-radius: 10px;
   font: inherit;
 }
+
+/* /admin/asistente: the history of Miguel Ángel's conversations. */
+.ma-page {
+  display: grid;
+  gap: 20px;
+  max-width: 980px;
+  padding: 32px 24px 64px;
+}
+.ma-page > .text-link {
+  justify-self: start;
+}
+.ma-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.ma-head h1 {
+  margin: 2px 0 4px;
+  font-size: clamp(1.5rem, 3vw, 2rem);
+}
+.ma-head p {
+  margin: 0;
+  color: var(--muted);
+}
+.ma-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+.ma-stats div {
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+}
+.ma-stats dt {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+.ma-stats dd {
+  margin: 4px 0 0;
+  font-size: 1.6rem;
+  font-weight: 700;
+}
+.ma-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+.ma-filters label {
+  display: grid;
+  gap: 4px;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+.ma-filters input,
+.ma-filters select {
+  min-width: 220px;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  font: inherit;
+  font-size: 0.95rem;
+}
+.ma-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ma-row {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+  color: inherit;
+  text-decoration: none;
+}
+.ma-row:hover,
+.ma-row:focus-visible {
+  border-color: var(--forest);
+}
+.ma-row-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.ma-row-top time {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.ma-question {
+  overflow: hidden;
+  font-size: 0.95rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ma-row-meta,
+.ma-muted {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.ma-bad,
+.ma-stats dd.is-bad {
+  color: #8a2c14;
+}
+.ma-chip {
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--sand);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.ma-chip.is-demo {
+  background: #fbf1dc;
+  color: #7a4f00;
+}
+.ma-chip.is-panel {
+  background: #dfe9dc;
+  color: var(--forest);
+}
+.ma-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px 20px;
+  margin: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+}
+.ma-facts dt {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.ma-facts dd {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+}
+.ma-facts a {
+  color: var(--forest);
+  font-weight: 600;
+}
+.ma-transcript {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ma-msg {
+  display: grid;
+  gap: 6px;
+  max-width: 760px;
+}
+.ma-msg.is-user {
+  justify-self: end;
+  text-align: right;
+}
+.ma-msg-who {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.ma-msg-body {
+  padding: 10px 14px;
+  border-radius: 14px;
+  line-height: 1.5;
+  text-align: left;
+}
+.ma-msg-body > * {
+  margin: 0;
+}
+.ma-msg-body > * + * {
+  margin-top: 8px;
+}
+.ma-msg-body ul,
+.ma-msg-body ol {
+  padding-left: 20px;
+}
+.ma-msg.is-user .ma-msg-body {
+  background: var(--forest);
+  color: #fff;
+  white-space: pre-wrap;
+}
+.ma-msg.is-assistant .ma-msg-body {
+  border: 1px solid var(--line);
+  background: #fff;
+}
+@media (max-width: 640px) {
+  .ma-page {
+    padding: 20px 16px 48px;
+  }
+  .ma-stats {
+    grid-template-columns: 1fr;
+  }
+  .ma-filters input,
+  .ma-filters select {
+    min-width: 0;
+    width: 100%;
+  }
+  .ma-filters label {
+    flex: 1 1 100%;
+  }
+}

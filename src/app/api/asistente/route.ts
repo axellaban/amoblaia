@@ -5,6 +5,7 @@ import { membershipFor } from "@/lib/agency/server";
 import { invitationOf } from "@/lib/agency/invitation";
 import { assistantInstructions, type AssistantContext } from "@/lib/assistant/prompt";
 import { assistantInput, AssistantInputError, type AssistantInput } from "@/lib/assistant/shared";
+import { logExchange, type ConversationOwner } from "@/lib/assistant/log";
 import { allowQuestion } from "@/lib/assistant/rate";
 import { publishedDemo } from "@/lib/demos/server";
 import { cloudConfigured } from "@/lib/supabase/config";
@@ -24,13 +25,23 @@ const NO_STORE = { "Cache-Control": "no-store" };
  * its demo with a live invitation for that same agency. The demo token alone,
  * the buyers' link, never opens the chat.
  */
-async function contextOf(request: Request, input: AssistantInput): Promise<{ key: string; context: AssistantContext }> {
+async function contextOf(request: Request, input: AssistantInput): Promise<{ who: ConversationOwner; context: AssistantContext }> {
   if (input.place.kind === "panel") {
     const user = await requireUser(request);
     const membership = await membershipFor(user).catch(() => null);
     const credits = membership && !membership.support ? await agencyCredits(membership.agency.owner_id) : null;
     return {
-      key: `user:${user.id}`,
+      who: {
+        owner: `user:${user.id}`,
+        place: "panel",
+        userId: user.id,
+        email: user.email ?? null,
+        agencyId: membership?.agency.id ?? null,
+        agencyName: membership?.agency.name ?? null,
+        demoId: null,
+        demoTitle: null,
+        support: Boolean(membership?.support),
+      },
       context: {
         kind: "panel",
         path: input.path,
@@ -46,24 +57,44 @@ async function contextOf(request: Request, input: AssistantInput): Promise<{ key
   const [demo, invitation] = await Promise.all([publishedDemo(token).catch(() => null), invitationOf(code).catch(() => null)]);
   if (!demo || !invitation || invitation.agencyId !== demo.agencyId) throw new HttpError(403, "Este enlace ya no permite usar el asistente.");
   return {
-    key: `demo:${createHash("sha256").update(code).digest("hex")}`,
+    who: {
+      owner: `demo:${createHash("sha256").update(code).digest("hex")}`,
+      place: "demo",
+      userId: null,
+      email: null,
+      agencyId: demo.agencyId,
+      agencyName: demo.agencyName,
+      demoId: demo.id,
+      demoTitle: demo.title,
+      support: false,
+    },
     context: { kind: "demo", path: input.path, agencyName: demo.agencyName, title: demo.title, freeCredits: invitation.freeCredits },
   };
 }
 
-/** Only the text of OpenAI's event stream, as plain text for the chat. */
-function textStream(body: ReadableStream<Uint8Array>) {
+/**
+ * Only the text of OpenAI's event stream, as plain text for the chat. When it
+ * ends, `done` receives the whole answer (and why it failed, if it did) before
+ * the response closes, so the function lives until the history is saved.
+ */
+function textStream(body: ReadableStream<Uint8Array>, done: (answer: string, error: string | null) => Promise<unknown>) {
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
   let buffer = "";
   let wrote = false;
+  let answer = "";
+  let error: string | null = null;
   const reader = body.getReader();
   return new ReadableStream<Uint8Array>({
     async pull(controller) {
       try {
-        const { done, value } = await reader.read();
-        if (done) {
-          if (!wrote) controller.enqueue(encoder.encode("Se me secó el pincel. Probá de nuevo en un momento."));
+        const { done: finished, value } = await reader.read();
+        if (finished) {
+          if (!wrote) {
+            error ??= "respuesta vacía";
+            controller.enqueue(encoder.encode("Se me secó el pincel. Probá de nuevo en un momento."));
+          }
+          await done(answer, error);
           controller.close();
           return;
         }
@@ -83,9 +114,11 @@ function textStream(body: ReadableStream<Uint8Array>) {
             }
             if (parsed.type === "response.output_text.delta" && typeof parsed.delta === "string") {
               wrote = true;
+              answer += parsed.delta;
               controller.enqueue(encoder.encode(parsed.delta));
             } else if (parsed.type === "error" || parsed.type === "response.failed") {
               console.error("assistant_stream_failed");
+              error = "OpenAI cortó la respuesta";
               controller.enqueue(encoder.encode(wrote ? "\n\n(Se cortó la respuesta. Probá de nuevo.)" : "No pude responder ahora. Probá de nuevo en un momento."));
               wrote = true;
             }
@@ -93,6 +126,7 @@ function textStream(body: ReadableStream<Uint8Array>) {
       } catch {
         console.error("assistant_stream_interrupted");
         controller.enqueue(encoder.encode("\n\n(Se cortó la respuesta. Probá de nuevo.)"));
+        await done(answer, "respuesta interrumpida");
         controller.close();
       }
     },
@@ -132,7 +166,7 @@ async function ask(context: AssistantContext, input: AssistantInput) {
       }),
       signal: AbortSignal.timeout(55_000),
     });
-    if (response.ok && response.body) return response;
+    if (response.ok && response.body) return { response, model };
     status = response.status;
     console.error("assistant_provider_error", model, status, await providerReason(response));
     if (![400, 403, 404].includes(status)) break;
@@ -159,11 +193,23 @@ export async function POST(request: Request) {
     } catch (e) {
       throw new HttpError(400, e instanceof AssistantInputError ? e.message : "La consulta no es válida.");
     }
-    const { key, context } = await contextOf(request, input);
+    const { who, context } = await contextOf(request, input);
     if (!process.env.OPENAI_API_KEY) throw new HttpError(503, "El asistente todavía no está disponible.");
-    if (!allowQuestion(key)) throw new HttpError(429, "Hiciste muchas preguntas seguidas. Esperá unos minutos y volvé a intentar.");
-    const response = await ask(context, input);
-    return new Response(textStream(response.body!), {
+    if (!allowQuestion(who.owner)) throw new HttpError(429, "Hiciste muchas preguntas seguidas. Esperá unos minutos y volvé a intentar.");
+    const question = input.messages[input.messages.length - 1].content;
+    const exchange = { conversation: input.conversation, path: input.path, question };
+    let asked: Awaited<ReturnType<typeof ask>>;
+    try {
+      asked = await ask(context, input);
+    } catch (e) {
+      // A question that got no answer is kept too, with the reason, for the team.
+      const reason = e instanceof HttpError ? e.message : e instanceof Error && e.name === "TimeoutError" ? "OpenAI tardó demasiado" : "error inesperado";
+      await logExchange(who, { ...exchange, answer: null, model: null, error: reason });
+      throw e;
+    }
+    const { response, model } = asked;
+    const stream = textStream(response.body!, (answer, error) => logExchange(who, { ...exchange, answer, model, error }));
+    return new Response(stream, {
       // No proxy may hold the words back until the answer is complete.
       headers: { "Content-Type": "text/plain; charset=utf-8", "X-Accel-Buffering": "no", ...NO_STORE },
     });
