@@ -8,8 +8,8 @@ export const runtime = "nodejs";
 // Without the request: browsers send no Origin on a same-origin GET, so its origin check would refuse every read.
 export async function GET() {
   try {
-    const { agency } = await requireAgency();
-    const { items, total } = await agencyProperties(agency.id, { kind: "fotos", perPage: 48 });
+    const { agency, scope } = await requireAgency();
+    const { items, total } = await agencyProperties(agency.id, { kind: "fotos", perPage: 48, scope });
     return Response.json({ items, total }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (e) {
     return failure(e);
@@ -22,7 +22,7 @@ export async function GET() {
  */
 export async function POST(request: Request) {
   try {
-    const { user, agency } = await requireAgency(request);
+    const { user, agency } = await requireAgency(request, "create");
     return await importPhotoGroup(request, { agencyId: agency.id, userId: user.id, origin: "agency" });
   } catch (e) {
     return failure(e);

@@ -11,7 +11,7 @@ export default async function BatchPage({ searchParams }: { searchParams: Promis
   const { grupo } = await searchParams;
   return (
     <>
-      <PanelNav section="inicio" agencyName={membership.agency.name} />
+      <PanelNav section="inicio" agencyName={membership.agency.name} role={membership.role} />
       <div className="account-page container ap-page">
         <PhotoBatch initialGroup={typeof grupo === "string" ? grupo : undefined} />
       </div>

@@ -482,3 +482,58 @@ describe("Photo groups without a ficha (202611040001)", () => {
     await expect(db.exec(readFileSync("supabase/migrations/202611040001_photo_groups.sql", "utf8"))).resolves.toBeTruthy();
   });
 });
+
+describe("Users of an agency (202611110001)", () => {
+  const TEAM = "supabase/migrations/202611110001_agency_team.sql";
+  async function invite(agency: string, owner: string, email: string, role: string, props: string[] | null = null, expires = "now()+interval '14 days'") {
+    const hash = createHash("sha256").update(`join-${id()}`).digest("hex");
+    await db.query(
+      `insert into agency_invites(agency_id,email,role,property_ids,code_hash,created_by,expires_at) values($1,$2,$3,$4,$5,$6,${expires})`,
+      [agency, email, role, props, hash, owner],
+    );
+    return hash;
+  }
+  const join = (user: string, email: string, hash: string) => db.query("select habita_join_agency($1,$2,$3) as id", [user, email, hash]);
+
+  it("joins the invited e-mail once, with its role and only the agency's own properties", async () => {
+    const owner = await account();
+    const agency = await createAgency(owner, "Equipo Norte", "equipo-norte");
+    const other = await createAgency(await account(), "Otra", "otra-inmo");
+    const mine = (await one<{ id: string }>("insert into demo_properties(agency_id,title) values($1,'Casa') returning id", [agency]))!.id;
+    const theirs = (await one<{ id: string }>("insert into demo_properties(agency_id,title) values($1,'Ajena') returning id", [other]))!.id;
+    const hash = await invite(agency, owner, "laura@norte.test", "viewer", [mine, theirs]);
+    const employee = await account();
+    await expect(join(employee, "otra@norte.test", hash)).rejects.toThrow(/INVITE_EMAIL/);
+    await join(employee, "Laura@Norte.test", hash);
+    expect(await one("select role,property_ids from agency_members where user_id=$1", [employee])).toEqual({ role: "viewer", property_ids: [mine] });
+    await expect(join(await account(), "laura@norte.test", hash)).rejects.toThrow(/INVITE_INVALID/);
+  });
+
+  it("refuses expired links, accounts of another agency and limits for administrators", async () => {
+    const owner = await account();
+    const agency = await createAgency(owner, "Equipo Sur", "equipo-sur");
+    const expired = await invite(agency, owner, "a@sur.test", "editor", null, "now()-interval '1 minute'");
+    await expect(join(await account(), "a@sur.test", expired)).rejects.toThrow(/INVITE_INVALID/);
+    const busy = await invite(agency, owner, "b@sur.test", "editor");
+    await expect(join(owner, "b@sur.test", busy)).rejects.toThrow(/INVITE_EMAIL|AGENCY_EXISTS/);
+    const outsider = await account();
+    await createAgency(outsider, "Propia", "propia-inmo");
+    await expect(join(outsider, "b@sur.test", busy)).rejects.toThrow(/AGENCY_EXISTS/);
+    await expect(invite(agency, owner, "c@sur.test", "admin", [id()])).rejects.toThrow();
+    await expect(invite(agency, owner, "d@sur.test", "owner")).rejects.toThrow();
+  });
+
+  it("keeps one open access per e-mail and agency, and the RPC for the server only", async () => {
+    const owner = await account();
+    const agency = await createAgency(owner, "Equipo Oeste", "equipo-oeste");
+    await invite(agency, owner, "e@oeste.test", "editor");
+    await expect(invite(agency, owner, "e@oeste.test", "viewer")).rejects.toThrow();
+    const grants = await one<{ ok: boolean }>("select has_function_privilege('authenticated','public.habita_join_agency(uuid,text,text)','execute') as ok");
+    expect(grants!.ok).toBe(false);
+  });
+
+  it("turns old collaborators into editors and can be applied again", async () => {
+    await db.exec(readFileSync(TEAM, "utf8"));
+    await expect(db.query("insert into agency_members(agency_id,user_id,role) values($1,$2,'collaborator')", [await createAgency(await account(), "X", "equipo-x"), await account()])).rejects.toThrow();
+  });
+});

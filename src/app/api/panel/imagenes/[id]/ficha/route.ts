@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const { agency } = await requireAgency(request);
+    const { agency } = await requireAgency(request, "create");
     return await makeFicha(agency.id, id);
   } catch (e) {
     return failure(e);

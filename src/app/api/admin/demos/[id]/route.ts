@@ -1,5 +1,5 @@
 import { failure, HttpError, rpc } from "@/lib/commerce/http";
-import { requireDemoAccess, stagingRule } from "@/lib/agency/server";
+import { assertManager, requireDemoAccess, stagingRule } from "@/lib/agency/server";
 import { auditAgencyEdit } from "@/lib/agency/edit-context";
 import {
   assertNoLiveJobs,
@@ -38,7 +38,7 @@ export async function GET(_request: Request, { params }: Params) {
     const { id } = await params;
     const access = await requireDemoAccess(undefined, id);
     return Response.json(
-      { ...viewOf(await demoDetail(access.demo.id), access.admin), staging: stagingRule(access) },
+      { ...viewOf(await demoDetail(access.demo.id), access.admin), staging: stagingRule(access), readOnly: access.role === "viewer" },
       { headers: PRIVATE },
     );
   } catch (e) {
@@ -50,14 +50,13 @@ export async function PATCH(request: Request, { params }: Params) {
   try {
     const { id } = await params;
     const access = await requireDemoAccess(request, id);
-    const { actor, demo, admin, role } = access;
+    const { actor, demo, admin } = access;
     const body = await readJson(request);
     const db = adminClient();
     // The team's notes and contact person are its own; the agency's identity
     // is edited by the team or the agency's owner.
     if (body.action === "agency" && !admin) throw new HttpError(403, "Acceso reservado al equipo.");
-    if (body.action === "branding" && !admin && role !== "owner")
-      throw new HttpError(403, "Solo el dueño de la inmobiliaria puede cambiar su marca.");
+    if (body.action === "branding") assertManager(access, "Solo el dueño o un administrador de la inmobiliaria pueden cambiar su marca.");
     const saved = (r: { error: unknown }, code: string) => {
       if (r.error) throw new Error(code);
     };
@@ -241,8 +240,8 @@ export async function DELETE(request: Request, { params }: Params) {
   try {
     const { id } = await params;
     const access = await requireDemoAccess(request, id);
-    const { actor, demo, admin, role } = access;
-    if (!admin && role !== "owner") throw new HttpError(403, "Solo el dueño de la inmobiliaria puede eliminar propiedades.");
+    const { actor, demo } = access;
+    assertManager(access, "Solo el dueño o un administrador de la inmobiliaria pueden eliminar propiedades.");
     const db = adminClient();
     const { data, error } = await db
       .from("demo_photos")

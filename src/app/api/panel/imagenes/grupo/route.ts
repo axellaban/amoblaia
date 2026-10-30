@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 /** An empty photo group for uploaded files: { name } (optional). The files go one by one to its photos route. */
 export async function POST(request: Request) {
   try {
-    const { user, agency } = await requireAgency(request);
+    const { user, agency } = await requireAgency(request, "create");
     return await createUploadGroup(request, { agencyId: agency.id, userId: user.id, origin: "agency" });
   } catch (e) {
     return failure(e);
