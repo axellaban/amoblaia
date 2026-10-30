@@ -3,7 +3,7 @@
 Herramienta interna para preparar, con fotos reales de una inmobiliaria, una galería ambientada con IA y compartirla por WhatsApp con un enlace único.
 
 - Panel privado: `/admin/demos` (también enlazado desde `/administracion`).
-- Página pública: `/demo/<token>`, sin registro.
+- Página pública: `/demo/<token>`, sin registro. Los links compartidos son solo rutas (sin `?` ni `&`); los links viejos `?presentacion=1` redirigen a la ruta nueva.
 
 ## Puesta en marcha
 
@@ -12,6 +12,7 @@ Herramienta interna para preparar, con fotos reales de una inmobiliaria, una gal
 1c. **Aplicar `supabase/migrations/202611060001_demo_activity.sql`** (también se puede re-ejecutar): agrega la actividad de cada demo (`demos.activity_*` y la tabla `demo_activity`). Sin ella, la lista muestra todas las demos «Sin actividad» y el resto funciona igual.
 1d. **Aplicar `supabase/migrations/202611070001_public_staging.sql`** (también se puede re-ejecutar): generar sin cuenta desde la demo gasta los créditos de regalo de la inmobiliaria (`habita_public_staging_claim`). Sin ella, el botón «Generar» de la vista de la inmobiliaria responde error.
 1e. **Aplicar `supabase/migrations/202611080001_activity_purchase.sql`** (también se puede re-ejecutar): agrega el escalón 4, «Suscribió».
+1f. **Aplicar `supabase/migrations/202611130001_demo_sent_stage.sql`** (también se puede re-ejecutar): agrega «Enviada» al seguimiento (`demos.sent_at`; las demos que ya tienen visitas quedan como enviadas en la fecha de la primera), el WhatsApp de la inmobiliaria para enviarle la demo (`agencies.contact_whatsapp`, solo del equipo), el mensaje de WhatsApp (`demo_message_settings` y `demos.message_template`) y hace que la primera visita también marque la demo como enviada. Sin ella, el listado de demos no carga.
 2. **Habilitar administradores**: agregar el email de cada cuenta del equipo a `ADMIN_EMAILS` en Vercel (separados por comas) y redeployar. La cuenta debe existir y tener el email verificado (Google o email confirmado). No hay ninguna forma de volverse administrador desde el navegador.
 3. Opcional: si el equipo va a ambientar muchas fotos en un día, agregar esas cuentas también a `UNLIMITED_EMAILS` (cupo diario de 1000 en lugar de un tercio de `MAX_GENERATIONS_PER_DAY`).
 
@@ -40,7 +41,7 @@ select has_function_privilege('authenticated',
 11c. En **Estilos de la demo**, el **tipo de inmueble**: con «Oficina» se ofrecen «Oficina ejecutiva» y «Equipo de trabajo» (escritorios, sillas de trabajo, guardado; nunca sofás, camas ni TV) y las ambientaciones residenciales dejan de mostrarse (no se borran ni se renombran: hay que generar las de oficina).
 11d. En **Ficha de la propiedad**: operación, referencia, características, precio con moneda, conflicto de precio (privado), expensas, disponibilidad, requisitos, datos con íconos, descripción completa, características y servicios, mapa (precisión y coordenadas), agente asignado, texto del cierre y título/descripción para compartir.
 12. **Vista previa** muestra exactamente la página pública, también en borrador, como comprador o como presentación.
-13. **Publicar demo** → hay dos enlaces: **presentación** (`/demo/<token>?presentacion=1`, para la inmobiliaria, con la franja si está activada) y **compradores** (`/demo/<token>`, limpio). **Compartir por WhatsApp** le manda los dos a la inmobiliaria. **Despublicar** corta el acceso al instante; **Generar un enlace nuevo** invalida el anterior.
+13. **Publicar demo** → hay dos enlaces: **presentación** (`/demo/<token>/presentacion` (con invitación: `/demo/<token>/presentacion/<codigo>`; sin `?` ni `&`), para la inmobiliaria, con la franja si está activada) y **compradores** (`/demo/<token>`, limpio). **Compartir por WhatsApp** le manda los dos a la inmobiliaria. **Despublicar** corta el acceso al instante; **Generar un enlace nuevo** invalida el anterior.
 
 ## Cómo funciona
 
@@ -78,7 +79,11 @@ select has_function_privilege('authenticated',
 - **Las visitas del equipo no cuentan**: el servidor descarta cualquier paso hecho con una sesión de administrador. En un navegador sin sesión, la visita sí cuenta; para no contarla, abrí el enlace ya logueado.
 - Ruta: `POST /api/demo/<token>/actividad` (`{ visitor, kind }`, con `kind` en `visita`, `interaccion` o `descarga`). Responde siempre 204 para no revelar nada de la demo.
 - Lectura: `demos.activity_level`, `activity_at` y `activity_visitors`, actualizadas por `habita_record_demo_activity` (solo `service_role`).
-- Los botones de la lista: **Vista inmobiliaria** (con la franja) y **Vista comprador** (ficha limpia), ambos desde la vista previa del admin, que no registra nada. **Copiar enlace** copia el enlace de la inmobiliaria; si todavía no tiene cuenta, el enlace trae un código de invitación nuevo (uno por copia, de un solo uso). **Copiar enlace comprador** copia la ficha. **WhatsApp** envía solo el enlace de la inmobiliaria, sin texto armado, al chat de la inmobiliaria: primero su WhatsApp de la base de prospección (verificado antes que por revisar; nunca uno inválido o con baja), si no, el WhatsApp público de su marca. Sin ninguno, WhatsApp pide elegir el chat. «Enviar a la inmobiliaria» en la ficha de la demo usa el mismo número y lo muestra; «Enviar al comprador» no lleva número.
+- Seguimiento (barra en la tarjeta y en la edición): **Sin enviar** (gris, estado inicial de toda demo publicada) → **Enviada** (verde de marca) → **Ingresó** → Interactuó → Generó imagen → Creó su panel → Suscribió (desde Ingresó, los pasos alcanzados en verde). Una visita también la marca como enviada si no lo estaba.
+- **Enviar por WhatsApp** (la demo publicada y la inmobiliaria con WhatsApp): muestra la vista previa del mensaje y abre WhatsApp Web en la misma pestaña, con el chat y el texto ya escrito. Marca la demo como enviada. El mensaje general se edita con **Mensaje de WhatsApp** en el listado (variables `{nombre}`, `{inmobiliaria}`, `{link}`, `{creditos}`); cada demo puede tener el suyo. **Marcar como enviada** / **Deshacer envío** para cuando se mandó por otro lado. Cada envío y cada deshacer queda con fecha y hora en el historial de la pantalla de la demo (del registro del equipo, `demo_sent` / `demo_unsent`).
+- **WhatsApp de la inmobiliaria** (`agencies.contact_whatsapp`): se pide al crear la demo, a mano o desde la publicación cuando el importador no lo encuentra (opcional, pero destacado), y se corrige en «Publicación y compartir» de la demo. Se guarda normalizado (549 + código de área + número) y vale para todas las demos de la inmobiliaria. Tiene prioridad sobre el de la base de prospección y el de su marca.
+- Filtro **Sin enviar** en el listado: publicadas que todavía no se enviaron.
+- Los botones de la lista: **Vista inmobiliaria** (con la franja) y **Vista comprador** (ficha limpia), ambos desde la vista previa del admin, que no registra nada. **Copiar enlace** copia el enlace de la inmobiliaria; si todavía no tiene cuenta, el enlace trae un código de invitación nuevo (uno por copia, de un solo uso). **Copiar enlace comprador** copia la ficha. **WhatsApp** envía solo el enlace de la inmobiliaria, sin texto armado, al chat de la inmobiliaria: primero el WhatsApp que cargó el equipo, después el de la base de prospección (verificado antes que por revisar; nunca uno inválido o con baja), si no, el WhatsApp público de su marca. Sin ninguno, WhatsApp pide elegir el chat. «Enviar a la inmobiliaria» en la ficha de la demo usa el mismo número y lo muestra; «Enviar al comprador» no lleva número.
 
 ### Atribución y analítica
 - «Por Amobla IA» (solo en la franja del enlace de presentación) lleva a `/estudio?utm_source=demo_comercial&utm_medium=whatsapp&utm_campaign=demos_inmobiliarias&demo=<id>&inmobiliaria=<id>`.

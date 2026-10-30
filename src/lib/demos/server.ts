@@ -34,6 +34,7 @@ import {
   NO_ACTIVITY,
   NO_CREDITS,
   type DemoCredits,
+  type DemoSendEvent,
   type EditorPhoto,
   type GenerationRow,
   type PhotoVersion,
@@ -47,6 +48,8 @@ export const newToken = () => randomBytes(18).toString("base64url");
 export const MAX_PHOTOS_PER_DEMO = 40;
 
 type DemoRow = {
+  sent_at: string | null;
+  message_template: string | null;
   id: string;
   agency_id: string;
   property_id: string;
@@ -73,7 +76,7 @@ type PhotoRow = {
   discarded: string[] | null;
 };
 const DEMO_FIELDS =
-  "id,agency_id,property_id,title,token,status,kind,cover_photo_id,published_at,created_at";
+  "id,agency_id,property_id,title,token,status,kind,cover_photo_id,published_at,created_at,sent_at,message_template";
 const PHOTO_FIELDS =
   "id,property_id,project_id,position,visible,room,label,style,mode,approved_generation_id,discarded";
 
@@ -233,7 +236,7 @@ type WaBlock = { account_id: string; scope: string; channel: string | null; cont
 
 /**
  * The agency's WhatsApp to send its demo to, as wa.me digits (team only).
- * First its prospecting contact: verified first, then reviewed, then primary;
+ * First the one the team loaded (agencies.contact_whatsapp), then its prospecting contact: verified first, then reviewed, then primary;
  * never an invalid one or one under a suppression. Else the public WhatsApp
  * of its branding. A lookup that fails (or a missing table before the
  * migrations) leaves the agency without a number: WhatsApp then lets the
@@ -243,7 +246,17 @@ export async function whatsappOf(agencyIds: string[]) {
   const out = new Map<string, string>();
   if (!agencyIds.length) return out;
   const db = adminClient();
-  const accounts = await db.from("prospect_accounts").select("id,agency_id").in("agency_id", agencyIds);
+  // The number the team loaded or corrected wins (missing before 202611130001).
+  const own = await db.from("agencies").select("id,contact_whatsapp").in("id", agencyIds);
+  if (!own.error)
+    for (const a of (own.data ?? []) as { id: string; contact_whatsapp: string | null }[]) {
+      const n = a.contact_whatsapp ? whatsappNumber(a.contact_whatsapp) : null;
+      if (n) out.set(a.id, n);
+    }
+  const pending = agencyIds.filter((id) => !out.has(id));
+  const accounts = pending.length
+    ? await db.from("prospect_accounts").select("id,agency_id").in("agency_id", pending)
+    : { data: [], error: null };
   if (!accounts.error && accounts.data?.length) {
     const agencyOf = new Map((accounts.data as { id: string; agency_id: string }[]).map((a) => [a.id, a.agency_id]));
     const ids = [...agencyOf.keys()];
@@ -284,6 +297,39 @@ export async function whatsappOf(agencyIds: string[]) {
       }
   }
   return out;
+}
+
+/**
+ * Saves the agency's WhatsApp (already normalized; null clears it). With
+ * onlyIfEmpty it never replaces one the team loaded: an imported number only fills a gap.
+ */
+export async function saveAgencyWhatsapp(agencyId: string, number: string | null, onlyIfEmpty = false) {
+  let query = adminClient().from("agencies").update({ contact_whatsapp: number }).eq("id", agencyId);
+  if (onlyIfEmpty) query = query.is("contact_whatsapp", null);
+  const { error } = await query;
+  if (error) throw new HttpError(409, "Para guardar el WhatsApp de la inmobiliaria falta aplicar la migración 202611130001_demo_sent_stage.sql en Supabase.");
+}
+
+/** When the demo was sent or marked unsent, newest first (team only; from the audit log). */
+export async function sendLogOf(demoId: string): Promise<DemoSendEvent[]> {
+  // The history is a help: a failed read leaves it empty, never the demo.
+  let rows: unknown[] | null = null;
+  try {
+    const { data, error } = await adminClient()
+      .from("admin_audit")
+      .select("action,details,created_at")
+      .eq("subject_id", demoId)
+      .in("action", ["demo_sent", "demo_unsent"])
+      .order("created_at", { ascending: false })
+      .limit(20);
+    if (!error) rows = data;
+  } catch {
+    rows = null;
+  }
+  return ((rows ?? []) as { action: string; details: { by?: string } | null; created_at: string }[]).map((r) => ({
+    at: r.created_at,
+    kind: r.action === "demo_unsent" ? "unsent" : r.details?.by === "whatsapp" ? "whatsapp" : "manual",
+  }));
 }
 
 /**
@@ -340,6 +386,9 @@ export async function listDemos() {
       .order("name")
       .limit(500),
   ]);
+  const contactOf = new Map(
+    ((allAgencies.data ?? []) as { id: string; contact_name: string | null }[]).map((a) => [a.id, a.contact_name]),
+  );
   const agencyName = new Map(
     (check(agencies, "DEMO_LIST_FAILED") as { id: string; name: string }[]).map(
       (a) => [a.id, a.name],
@@ -384,13 +433,19 @@ export async function listDemos() {
       cover: cover ? { id: cover.id, version: coverVersion(cover, main) } : null,
       createdAt: d.created_at,
       publishedAt: d.published_at,
+      sentAt: d.sent_at,
+      messageTemplate: d.message_template,
+      agencyContact: contactOf.get(d.agency_id) ?? null,
       activity: activity.get(d.id) ?? NO_ACTIVITY,
       credits: credits.get(d.agency_id) ?? NO_CREDITS,
     };
   });
+  const agencyRows = check(allAgencies, "AGENCY_LIST_FAILED") as AgencyRow[];
+  // Whether each agency has a WhatsApp: the new-demo form asks for it only when missing.
+  const known = await whatsappOf(agencyRows.map((a) => a.id));
   return {
     demos: summaries,
-    agencies: check(allAgencies, "AGENCY_LIST_FAILED") as AgencyRow[],
+    agencies: agencyRows.map((a) => ({ ...a, whatsapp: known.get(a.id) ?? null })),
   };
 }
 
@@ -506,9 +561,13 @@ export async function demoDetail(id: string): Promise<DemoDetail> {
       cover: cover ? { id: cover.id, version: coverVersion(cover, main) } : null,
       createdAt: demo.created_at,
       publishedAt: demo.published_at,
+      sentAt: demo.sent_at,
+      messageTemplate: demo.message_template,
+      agencyContact: (check(agency, "DEMO_AGENCY_LOOKUP_FAILED") as AgencyRow).contact_name,
     },
     agency: check(agency, "DEMO_AGENCY_LOOKUP_FAILED") as AgencyRow,
     property: prop,
+    sendLog: await sendLogOf(demo.id),
     photos: photoList,
     styles: order,
     mainStyle: main,

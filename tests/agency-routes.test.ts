@@ -367,9 +367,9 @@ describe("Taking over a demo", () => {
     expect(JSON.stringify(stored)).not.toContain(code);
     // The demo as the way in: its presentation link carries the same one-time code.
     const demoLink = new URL(presentationUrl);
-    expect(demoLink.pathname).toBe("/demo/tok_abcdefghijklmnopqrstuvwx");
-    expect(demoLink.searchParams.get("presentacion")).toBe("1");
-    expect(demoLink.searchParams.get("codigo")).toBe(code);
+    // A path only: no query string, so it can be sent without any special handling.
+    expect(demoLink.pathname).toBe(`/demo/tok_abcdefghijklmnopqrstuvwx/presentacion/${code}`);
+    expect(demoLink.search).toBe("");
   });
 });
 

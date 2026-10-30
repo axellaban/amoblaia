@@ -14,14 +14,25 @@ import { ImportFromListing } from "./demo-import";
 import { CreditsDialog, type CreditTarget } from "./admin-agencies";
 import { EDIT_HEADER } from "@/lib/agency/edit-scope";
 import {
-  ACTIVITY_LABELS,
   adminPhotoUrl,
   demoUrl,
   whatsappShareUrl,
   type AgencyRow,
   type DemoActivity,
+  type DemoSendEvent,
   type DemoSummary,
 } from "@/lib/demos/shared";
+import {
+  DEFAULT_MESSAGE_TEMPLATE,
+  MESSAGE_VARIABLES,
+  STAGES,
+  normalizeArNumber,
+  notSent,
+  renderMessage,
+  stageLabel,
+  stageOf,
+  whatsappWebUrl,
+} from "@/lib/demos/send";
 
 /**
  * The edit context of this tab ("Editar inmobiliaria"), sent with every
@@ -396,25 +407,403 @@ function agoText(iso: string) {
 }
 
 /**
- * What the demo's visitors and its agency did, at a glance: the highest of
- * the five steps reached, how many people came and when last. Team only.
+ * The follow-up bar: Sin enviar → Enviada → Ingresó → … → Suscribió. Gray
+ * until sent; "Enviada" in the brand green; from "Ingresó" on, the steps
+ * reached are green and the rest gray.
  */
-export function ActivityStatus({ activity }: { activity: DemoActivity }) {
-  const label = ACTIVITY_LABELS[activity.level];
-  const people = `${activity.visitors} ${activity.visitors === 1 ? "persona" : "personas"}`;
+export function StageBar({ stage }: { stage: number }) {
   return (
-    <div className="dm-activity" aria-label={`Actividad: ${label}`}>
-      <span className="dm-activity-label">Actividad</span>
-      <strong>{activity.level ? `${activity.level} · ${label}` : label}</strong>
-      <span className="dm-activity-dots" aria-hidden="true">
-        {[1, 2, 3, 4, 5].map((step) => (
-          <i key={step} className={step <= activity.level ? "on" : undefined} />
-        ))}
-      </span>
-      <span className="dm-activity-foot">
-        {activity.at ? `${people} · última ${agoText(activity.at)}` : "Sin visitas todavía"}
+    <ol className="dm-stage" aria-label={`Seguimiento: ${stageLabel(stage)}`}>
+      {STAGES.slice(1).map((name, i) => {
+        const step = i + 1;
+        const cls = step > stage ? "" : step === 1 ? "is-sent" : "on";
+        return <li key={name} className={cls} title={name} />;
+      })}
+    </ol>
+  );
+}
+
+/**
+ * The demo's follow-up and what visitors did, at a glance: the stage bar,
+ * when it was sent, how many people came and when last. Team only.
+ */
+export function ActivityStatus({ activity, sentAt }: { activity: DemoActivity; sentAt?: string | null }) {
+  const stage = stageOf(sentAt ?? null, activity.level);
+  const people = `${activity.visitors} ${activity.visitors === 1 ? "persona" : "personas"}`;
+  const sentText = sentAt ? `Enviada ${agoText(sentAt)}` : "";
+  const visitText = activity.at ? `${people} · última visita ${agoText(activity.at)}` : "Sin visitas todavía";
+  return (
+    <div className="dm-activity" aria-label={`Seguimiento: ${stageLabel(stage)}`}>
+      <span className="dm-activity-label">Seguimiento</span>
+      <strong>{stageLabel(stage)}</strong>
+      <StageBar stage={stage} />
+      <span className="dm-activity-foot">{[sentText, visitText].filter(Boolean).join(" · ")}</span>
+    </div>
+  );
+}
+
+/** A small modal: a title, the content and a close button. Keyboard: Escape closes. */
+export function Dialog({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <div className="dm-modal-backdrop" onMouseDown={onClose}>
+      <div className="dm-modal" role="dialog" aria-modal="true" aria-label={title} onMouseDown={(e) => e.stopPropagation()}>
+        <header>
+          <strong>{title}</strong>
+          <button type="button" className="dm-text" onClick={onClose} aria-label="Cerrar">
+            Cerrar
+          </button>
+        </header>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/** The global message template, edited once for every demo. Each demo can override it. */
+export function MessageTemplateDialog({ onClose, onSaved }: { onClose: () => void; onSaved: (text: string) => void }) {
+  const [template, setTemplate] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    api<{ template: string }>("/api/admin/demos/plantilla")
+      .then((d) => setTemplate(d.template))
+      .catch((e) => setError(e.message));
+  }, []);
+  async function save() {
+    setBusy(true);
+    setError("");
+    try {
+      const saved = await api<{ template: string }>("/api/admin/demos/plantilla", { method: "PUT", body: JSON.stringify({ template }) });
+      onSaved("Mensaje de WhatsApp guardado.");
+      setTemplate(saved.template);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No pudimos guardar.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Dialog title="Mensaje de WhatsApp" onClose={onClose}>
+      <div className="dm-modal-body">
+        <p className="dm-help">
+          Variables: {MESSAGE_VARIABLES.map((v) => `{${v}}`).join(" ")}. {"{nombre}"} es el contacto de la inmobiliaria o, si no hay, su nombre.
+        </p>
+        <textarea
+          rows={6}
+          maxLength={1000}
+          aria-label="Plantilla del mensaje"
+          value={template ?? ""}
+          disabled={template === null || busy}
+          onChange={(e) => setTemplate(e.target.value)}
+        />
+        {error && (
+          <p className="inline-error" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="dm-modal-actions">
+          <button type="button" className="text-link" disabled={busy || template === null} onClick={() => setTemplate(DEFAULT_MESSAGE_TEMPLATE)}>
+            Volver al predeterminado
+          </button>
+          <button type="button" className="button button-small" disabled={busy || !template?.trim()} onClick={save}>
+            Guardar
+          </button>
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
+/**
+ * "Enviar por WhatsApp": opens WhatsApp Web in this same tab with the chat of
+ * the agency and the message (the link included) already written. Shows the
+ * final text first; sending marks the demo as "Enviada". Team only.
+ */
+export function SendWhatsapp({ demo, fixHere = false }: { demo: DemoSummary; fixHere?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [template, setTemplate] = useState(DEFAULT_MESSAGE_TEMPLATE);
+  const [globalTemplate, setGlobalTemplate] = useState(DEFAULT_MESSAGE_TEMPLATE);
+  const [ownTemplate, setOwnTemplate] = useState(demo.messageTemplate != null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const phone = normalizeArNumber(demo.agencyWhatsapp);
+  const published = demo.status === "published";
+  const missing = !published
+    ? "Publicá la demo para enviarla."
+    : !phone
+      ? `Falta el WhatsApp de la inmobiliaria: ${fixHere ? "cargalo acá abajo" : "cargalo en la demo"}.`
+      : null;
+  const preview = renderMessage(template, {
+    nombre: demo.agencyContact ?? null,
+    inmobiliaria: demo.agencyName,
+    link: publicLink(demo.token, true),
+    creditos: demo.credits.reserved,
+  });
+
+  async function openDialog() {
+    setError("");
+    setOpen(true);
+    try {
+      const { template: general } = await api<{ template: string }>("/api/admin/demos/plantilla");
+      setGlobalTemplate(general);
+      setOwnTemplate(demo.messageTemplate != null);
+      setTemplate(demo.messageTemplate ?? general);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No pudimos leer el mensaje.");
+    }
+  }
+
+  async function send() {
+    if (!phone) return;
+    setBusy(true);
+    setError("");
+    try {
+      // The real link: an agency without account gets its one-time code here, as the copy buttons do.
+      const link = await agencyLink(demo);
+      const text = renderMessage(template, {
+        nombre: demo.agencyContact ?? null,
+        inmobiliaria: demo.agencyName,
+        link,
+        creditos: demo.credits.reserved,
+      });
+      // This demo's own message is kept only when it differs from the general one.
+      const wanted = ownTemplate && template !== globalTemplate ? template : null;
+      if (wanted !== demo.messageTemplate)
+        await api(`/api/admin/demos/${demo.id}`, { method: "PATCH", body: JSON.stringify({ action: "message", message: wanted }) });
+      // Marked as sent before leaving (a second send keeps the first date and goes to the history).
+      await api(`/api/admin/demos/${demo.id}`, { method: "PATCH", body: JSON.stringify({ action: "sent", sent: true, via: "whatsapp" }) });
+      window.location.href = whatsappWebUrl(phone, text);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No pudimos preparar el envío.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="dm-send">
+      <button
+        type="button"
+        className="button button-small dm-whatsapp"
+        data-testid="send-demo-whatsapp"
+        disabled={Boolean(missing) || busy}
+        onClick={openDialog}
+      >
+        <MessageCircle size={15} /> Enviar por WhatsApp
+      </button>
+      {missing && <span className="dm-help">{missing}</span>}
+      {open && (
+        <Dialog title={`Enviar «${demo.title}» a ${demo.agencyName}`} onClose={() => !busy && setOpen(false)}>
+          <div className="dm-modal-body">
+            <p className="dm-help">
+              Se abre WhatsApp Web con el chat de +{phone} y el mensaje escrito. Lo enviás vos.
+              {demo.sentAt ? ` Ya se envió ${agoText(demo.sentAt)}: queda registrado otro envío.` : ""}
+            </p>
+            <label className="checkbox-label dm-check">
+              <input
+                type="checkbox"
+                checked={ownTemplate}
+                onChange={(e) => {
+                  setOwnTemplate(e.target.checked);
+                  // Back to the general text when the demo stops having its own.
+                  if (!e.target.checked) setTemplate(globalTemplate);
+                }}
+              />
+              Mensaje propio para esta demo
+            </label>
+            <textarea
+              rows={6}
+              maxLength={1000}
+              aria-label="Mensaje"
+              value={template}
+              disabled={!ownTemplate || busy}
+              onChange={(e) => setTemplate(e.target.value)}
+            />
+            {!ownTemplate && (
+              <p className="dm-help">Se usa el mensaje general. Para cambiarlo en todas las demos, usá «Mensaje de WhatsApp» en el listado.</p>
+            )}
+            <div className="dm-msg-preview" aria-label="Vista previa del mensaje">
+              <span className="dm-help">Vista previa</span>
+              <p>{preview}</p>
+              <span className="dm-help">El enlace definitivo se prepara al enviar.</span>
+            </div>
+            {demo.credits.reserved === null && (
+              <p className="inline-notice" role="status">
+                No pudimos leer los créditos reservados: revisá el texto antes de enviar.
+              </p>
+            )}
+            {error && (
+              <p className="inline-error" role="alert">
+                {error}
+              </p>
+            )}
+            <div className="dm-modal-actions">
+              <button type="button" className="text-link" disabled={busy} onClick={() => setOpen(false)}>
+                Cancelar
+              </button>
+              <button type="button" className="button button-small dm-whatsapp" data-testid="confirm-send-demo-whatsapp" disabled={busy || !template.trim()} onClick={send}>
+                {busy ? "Preparando…" : "Abrir WhatsApp"}
+              </button>
+            </div>
+          </div>
+        </Dialog>
+      )}
+    </div>
+  );
+}
+
+/** Marks the demo as sent by hand (it went out another way), or undoes it. The team's follow-up only. */
+export function SentToggle({ demo, onDone }: { demo: DemoSummary; onDone: (text: string) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const sent = Boolean(demo.sentAt);
+  async function toggle() {
+    setBusy(true);
+    setError("");
+    try {
+      await api(`/api/admin/demos/${demo.id}`, { method: "PATCH", body: JSON.stringify({ action: "sent", sent: !sent }) });
+      onDone(sent ? "Vuelve a «Sin enviar»." : "Marcada como enviada.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No pudimos guardar.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <>
+      <button type="button" className="dm-text" disabled={busy} onClick={toggle}>
+        {sent ? "Deshacer envío" : "Marcar como enviada"}
+      </button>
+      {error && (
+        <span className="inline-error" role="alert">
+          {error}
+        </span>
+      )}
+    </>
+  );
+}
+
+/** "+549 223 633-7191"-style display of wa.me digits, for the team to check the number at a glance. */
+export function phoneText(digits: string | null | undefined) {
+  return digits ? `+${digits}` : "";
+}
+
+/**
+ * The agency's WhatsApp where a demo is created: optional but highlighted,
+ * since without it the demo cannot be sent from the panel. Shows how the
+ * number will be saved.
+ */
+export function AgencyWhatsappField({
+  value,
+  onChange,
+  note,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  note?: string;
+}) {
+  const number = normalizeArNumber(value);
+  return (
+    <div className="dm-wa-field dm-wide">
+      <label>
+        WhatsApp de la inmobiliaria <small>(opcional, para enviarle la demo)</small>
+        <input
+          type="tel"
+          inputMode="tel"
+          maxLength={40}
+          placeholder="223 633-7191"
+          data-testid="agency-whatsapp-input"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+        />
+      </label>
+      <span className="dm-help">
+        {value.trim()
+          ? number
+            ? `Se guarda como ${phoneText(number)}.`
+            : "No parece un número argentino: incluí el código de área."
+          : (note ?? "Sin él, «Enviar por WhatsApp» queda deshabilitado. Se puede cargar después en la demo.")}
       </span>
     </div>
+  );
+}
+
+/** The agency's WhatsApp on the demo's screen, to correct it right there. It is the agency's: it applies to all its demos. */
+export function AgencyWhatsappEditor({ demo, onDone }: { demo: DemoSummary; onDone: (text: string) => void }) {
+  const [value, setValue] = useState(phoneText(demo.agencyWhatsapp));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => setValue(phoneText(demo.agencyWhatsapp)), [demo.agencyWhatsapp]);
+  const number = normalizeArNumber(value);
+  const changed = (number ?? "") !== (demo.agencyWhatsapp ?? "") || (!number && value.trim() !== "");
+  async function save() {
+    setBusy(true);
+    setError("");
+    try {
+      await api(`/api/admin/demos/${demo.id}`, { method: "PATCH", body: JSON.stringify({ action: "whatsapp", whatsapp: value.trim() || null }) });
+      onDone(value.trim() ? "WhatsApp de la inmobiliaria guardado." : "WhatsApp de la inmobiliaria borrado.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No pudimos guardar.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="dm-wa-field">
+      <label htmlFor={`wa-${demo.id}`}>WhatsApp de la inmobiliaria</label>
+      <div className="dm-wa-row">
+        <input
+          id={`wa-${demo.id}`}
+          type="tel"
+          inputMode="tel"
+          maxLength={40}
+          placeholder="223 633-7191"
+          data-testid="agency-whatsapp-input"
+          value={value}
+          disabled={busy}
+          onChange={(e) => setValue(e.target.value)}
+        />
+        <button type="button" className="button button-small button-outline" disabled={busy || !changed || (value.trim() !== "" && !number)} onClick={save}>
+          {busy ? "Guardando…" : "Guardar"}
+        </button>
+      </div>
+      <span className="dm-help">
+        {value.trim() && !number
+          ? "No parece un número argentino: incluí el código de área."
+          : number && changed
+            ? `Se guarda como ${phoneText(number)}, para todas sus demos.`
+            : demo.agencyWhatsapp
+              ? "Es el de la inmobiliaria: vale para todas sus demos."
+              : "Cargalo para poder enviar la demo por WhatsApp."}
+      </span>
+      {error && (
+        <span className="inline-error" role="alert">
+          {error}
+        </span>
+      )}
+    </div>
+  );
+}
+
+const SEND_KIND = { whatsapp: "Enviada por WhatsApp", manual: "Marcada como enviada", unsent: "Envío deshecho" } as const;
+
+/** The demo's sending history with date and time, newest first. */
+export function SendLog({ events }: { events: DemoSendEvent[] | undefined }) {
+  if (!events?.length) return null;
+  const when = (iso: string) =>
+    new Date(iso).toLocaleString("es-AR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  return (
+    <ul className="dm-send-log" aria-label="Historial de envío">
+      {events.map((e) => (
+        <li key={`${e.at}-${e.kind}`}>
+          {SEND_KIND[e.kind]} · {when(e.at)}
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -452,7 +841,8 @@ export function DemoList() {
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState("");
   const [query, setQuery] = useState("");
-  const [status, setStatus] = useState<"all" | DemoSummary["status"]>("all");
+  const [status, setStatus] = useState<"all" | DemoSummary["status"] | "unsent">("all");
+  const [template, setTemplate] = useState(false);
   const load = useCallback(async () => {
     const data = await api<{ demos: DemoSummary[] }>("/api/admin/demos");
     setDemos(data.demos);
@@ -496,7 +886,8 @@ export function DemoList() {
     const q = query.trim().toLowerCase();
     return (demos || []).filter(
       (d) =>
-        (status === "all" || d.status === status) &&
+        (status === "all" ||
+          (status === "unsent" ? notSent(stageOf(d.sentAt ?? null, d.activity.level), d.status) : d.status === status)) &&
         (!q || `${d.agencyName} ${d.propertyTitle} ${d.title}`.toLowerCase().includes(q)),
     );
   }, [demos, query, status]);
@@ -527,6 +918,15 @@ export function DemoList() {
           {notice}
         </p>
       )}
+      {template && (
+        <MessageTemplateDialog
+          onClose={() => setTemplate(false)}
+          onSaved={(text) => {
+            setTemplate(false);
+            setNotice(text);
+          }}
+        />
+      )}
       <div className="dm-filters">
         <label className="dm-search">
           <Search size={17} aria-hidden="true" />
@@ -546,7 +946,11 @@ export function DemoList() {
           <option value="all">Todas</option>
           <option value="draft">Borradores</option>
           <option value="published">Publicadas</option>
+          <option value="unsent">Sin enviar</option>
         </select>
+        <button type="button" className="button button-small button-outline" onClick={() => setTemplate(true)}>
+          Mensaje de WhatsApp
+        </button>
       </div>
       {!demos && !error && <p>Cargando demos…</p>}
       {demos && !demos.length && (
@@ -601,9 +1005,16 @@ export function DemoList() {
             <div className="dm-bottom">
               <div className="dm-facts">
                 <DemoCredits demo={d} onDone={(text) => { setNotice(text); void load(); }} />
-                <ActivityStatus activity={d.activity} />
+                <ActivityStatus activity={d.activity} sentAt={d.sentAt} />
               </div>
               <div className="dm-actions">
+                {d.status === "published" && (
+                  <>
+                    <SendWhatsapp demo={d} />
+                    <SentToggle demo={d} onDone={(text) => { setNotice(text); void load(); }} />
+                    <span className="dm-sep">·</span>
+                  </>
+                )}
                 <Link href={`/admin/demos/${d.id}`} className="dm-text">
                   Editar
                 </Link>
@@ -739,8 +1150,12 @@ export function NewDemoForm({ agencyId: fixedAgency = null }: { agencyId?: strin
   const [agencyId, setAgencyId] = useState(fixedAgency ?? "");
   const [agency, setAgency] = useState(emptyAgency);
   const [property, setProperty] = useState(emptyProperty);
+  const [whatsapp, setWhatsapp] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const chosen = agencies?.find((a) => a.id === agencyId) ?? null;
+  // Asked when it is a new agency, or one we have no WhatsApp for.
+  const askWhatsapp = mode === "new" || !agencies?.length || Boolean(chosen && !chosen.whatsapp);
   useEffect(() => {
     api<{ agencies: AgencyRow[] }>("/api/admin/demos")
       .then((d) => {
@@ -758,7 +1173,11 @@ export function NewDemoForm({ agencyId: fixedAgency = null }: { agencyId?: strin
       const { id } = await api<{ id: string }>("/api/admin/demos", {
         method: "POST",
         body: JSON.stringify(
-          mode === "existing" ? { agencyId, property } : { agency, property },
+          {
+            ...(mode === "existing" ? { agencyId } : { agency }),
+            property,
+            whatsapp: askWhatsapp && whatsapp.trim() ? whatsapp.trim() : undefined,
+          },
         ),
       });
       router.push(`/admin/demos/${id}`);
@@ -829,6 +1248,11 @@ export function NewDemoForm({ agencyId: fixedAgency = null }: { agencyId?: strin
             </label>
           ) : (
             <AgencyFields value={agency} onChange={setAgency} />
+          )}
+          {askWhatsapp ? (
+            <AgencyWhatsappField value={whatsapp} onChange={setWhatsapp} />
+          ) : (
+            chosen?.whatsapp && <p className="dm-help">WhatsApp para enviarle la demo: {phoneText(chosen.whatsapp)}.</p>
           )}
           <p className="dm-help">No necesita tener una cuenta en habita.</p>
         </section>

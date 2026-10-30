@@ -7,6 +7,7 @@ import {
   demoDetail,
   newToken,
   releaseProjects,
+  saveAgencyWhatsapp,
   saveJson,
   settingsOf,
 } from "@/lib/demos/server";
@@ -18,6 +19,7 @@ import {
   readJson,
   settingsInput,
   validStyle,
+  whatsappInput,
 } from "@/lib/demos/input";
 import { cleanText, isUuid } from "@/lib/demos/shared";
 import { adminClient } from "@/lib/supabase/server";
@@ -30,7 +32,12 @@ function viewOf(detail: Awaited<ReturnType<typeof demoDetail>>, admin: boolean) 
   // The agency's WhatsApp may come from the private prospecting base: team only.
   return admin
     ? detail
-    : { ...detail, demo: { ...detail.demo, agencyWhatsapp: null }, agency: { ...detail.agency, notes: null, contact_name: null } };
+    : {
+        ...detail,
+        demo: { ...detail.demo, agencyWhatsapp: null, agencyContact: null, sentAt: null, messageTemplate: null },
+        sendLog: undefined,
+        agency: { ...detail.agency, notes: null, contact_name: null },
+      };
 }
 
 export async function GET(_request: Request, { params }: Params) {
@@ -56,6 +63,8 @@ export async function PATCH(request: Request, { params }: Params) {
     // The team's notes and contact person are its own; the agency's identity
     // is edited by the team or the agency's owner.
     if (body.action === "agency" && !admin) throw new HttpError(403, "Acceso reservado al equipo.");
+    // Sending and the message are the team's follow-up, not the agency's.
+    if ((body.action === "sent" || body.action === "message" || body.action === "whatsapp") && !admin) throw new HttpError(403, "Acceso reservado al equipo.");
     if (body.action === "branding") assertManager(access, "Solo el dueño o un administrador de la inmobiliaria pueden cambiar su marca.");
     const saved = (r: { error: unknown }, code: string) => {
       if (r.error) throw new Error(code);
@@ -214,6 +223,43 @@ export async function PATCH(request: Request, { params }: Params) {
           }),
         );
         if (results.some((r) => r.error)) throw new Error("DEMO_STYLE_FAILED");
+        break;
+      }
+      case "sent": {
+        // By WhatsApp from the panel, or by hand when it went out another way;
+        // "unsent" goes back to "Sin enviar". Sending again keeps the first date
+        // and still goes to the history.
+        if (typeof body.sent !== "boolean") throw new HttpError(400, "Indicá si la demo ya se envió.");
+        const update = db.from("demos").update({ sent_at: body.sent ? new Date().toISOString() : null }).eq("id", demo.id);
+        saved(await (body.sent ? update.is("sent_at", null) : update), "DEMO_SENT_FAILED");
+        await db.from("admin_audit").insert({
+          actor_id: actor.id,
+          action: body.sent ? "demo_sent" : "demo_unsent",
+          subject_id: demo.id,
+          details: { by: body.sent && body.via === "whatsapp" ? "whatsapp" : "manual" },
+        });
+        break;
+      }
+      case "whatsapp": {
+        // The agency's WhatsApp, corrected from the demo: it is the agency's, for all its demos.
+        const number = whatsappInput(body.whatsapp);
+        await saveAgencyWhatsapp(demo.agency_id, number);
+        await db.from("admin_audit").insert({
+          actor_id: actor.id,
+          action: "agency_whatsapp",
+          subject_id: demo.agency_id,
+          details: { demo: demo.id, cleared: number === null },
+        });
+        break;
+      }
+      case "message": {
+        // This demo's own message; null goes back to the global template.
+        const text = body.message === null ? null : cleanText(body.message, 1000, true);
+        if (text !== null && !text.trim()) throw new HttpError(400, "El mensaje no puede estar vacío.");
+        saved(
+          await db.from("demos").update({ message_template: text }).eq("id", demo.id),
+          "DEMO_MESSAGE_FAILED",
+        );
         break;
       }
       default:

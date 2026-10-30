@@ -52,6 +52,12 @@ describe("agency WhatsApp for sending its demo", () => {
     expect((await whatsappOf(["ag1"])).get("ag1")).toBe("5492230000202");
   });
 
+  it("the number the team loaded for the agency wins", async () => {
+    db.tables.prospect_contacts.data = [contact({ verified_at: "2026-10-27T10:00:00Z" })];
+    db.tables.agencies.data = [{ id: "ag1", contact_whatsapp: "5492236337191" }];
+    expect((await whatsappOf(["ag1"])).get("ag1")).toBe("5492236337191");
+  });
+
   it("never uses an invalid number or one under a suppression", async () => {
     db.tables.prospect_contacts.data = [
       contact({ id: "c1", address: "+5492230000101", verified_at: "2026-10-27T10:00:00Z", invalid_at: "2026-10-28T10:00:00Z" }),

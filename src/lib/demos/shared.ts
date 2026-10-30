@@ -129,6 +129,12 @@ export type DemoSummary = {
   cover: { id: string; version: PhotoVersion | null } | null;
   createdAt: string;
   publishedAt: string | null;
+  /** When the team sent it on WhatsApp (or marked it sent by hand). Null: "Sin enviar" (team only). */
+  sentAt?: string | null;
+  /** This demo's own WhatsApp message; null uses the global template (team only). */
+  messageTemplate?: string | null;
+  /** The agency's contact person, to greet in the message (team only). */
+  agencyContact?: string | null;
   /** What visitors and the agency did with this demo (team only). */
   activity: DemoActivity;
   /** The agency's credits (team only): available (its balance) and reserved; null when unknown. */
@@ -140,7 +146,12 @@ export type AgencyRow = {
   website: string | null;
   contact_name: string | null;
   notes: string | null;
+  /** The agency's WhatsApp to send it its demos, as wa.me digits (team lists only). */
+  whatsapp?: string | null;
 };
+
+/** One entry of the demo's sending history: by WhatsApp from the panel, marked by hand, or undone. */
+export type DemoSendEvent = { at: string; kind: "whatsapp" | "manual" | "unsent" };
 export type GenerationRow = {
   id: string;
   status: "queued" | "running" | "succeeded" | "failed" | "needs_review";
@@ -191,6 +202,8 @@ export type DemoDetail = {
     listing_url: string | null;
     description: string | null;
   };
+  /** When it was sent or marked unsent, newest first (team only). */
+  sendLog?: DemoSendEvent[];
   photos: EditorPhoto[];
   /** Styles with a staged version, main one first. */
   styles: string[];
@@ -298,7 +311,7 @@ export const PRESENTATION_PARAM = "presentacion";
 /** The buyers' link (plain), or the presentation link for the agency. */
 export function demoUrl(origin: string, token: string, presentation = false) {
   const url = `${origin.replace(/\/$/, "")}${demoPath(token)}`;
-  return presentation ? `${url}?${PRESENTATION_PARAM}=1` : url;
+  return presentation ? `${url}/presentacion` : url;
 }
 /** wa.me opens WhatsApp Web or the app. The message is only the link: no greeting, no text of ours. */
 export function whatsappShareUrl(link: string, to?: string | null) {
