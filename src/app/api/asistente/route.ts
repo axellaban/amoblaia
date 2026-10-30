@@ -12,8 +12,11 @@ import { validOrigin } from "@/lib/session";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-/** The configured model first; if the account cannot use it, a widely available one. */
-const MODELS = () => [...new Set([process.env.OPENAI_CHAT_MODEL?.trim() || "gpt-5-mini", "gpt-4.1-mini"])];
+/**
+ * The configured model first, then fast ones: a help chat needs its first
+ * words within a second or two, which a reasoning model does not guarantee.
+ */
+const MODELS = () => [...new Set([process.env.OPENAI_CHAT_MODEL?.trim() || "gpt-4.1-mini", "gpt-4o-mini"])];
 const NO_STORE = { "Cache-Control": "no-store" };
 
 /**
@@ -122,8 +125,8 @@ async function ask(context: AssistantContext, input: AssistantInput) {
         instructions: assistantInstructions(context),
         input: input.messages.map((m) => ({ role: m.role, content: m.content })),
         max_output_tokens: 1200,
-        // Reasoning models answer a help question faster with little reasoning.
-        ...(/^(gpt-5|o\d)/.test(model) ? { reasoning: { effort: "low" } } : {}),
+        // A reasoning model, if configured, answers a help question faster with the least reasoning.
+        ...(/^(gpt-5|o\d)/.test(model) ? { reasoning: { effort: "minimal" } } : {}),
         store: false,
         stream: true,
       }),
@@ -161,7 +164,8 @@ export async function POST(request: Request) {
     if (!allowQuestion(key)) throw new HttpError(429, "Hiciste muchas preguntas seguidas. Esperá unos minutos y volvé a intentar.");
     const response = await ask(context, input);
     return new Response(textStream(response.body!), {
-      headers: { "Content-Type": "text/plain; charset=utf-8", ...NO_STORE },
+      // No proxy may hold the words back until the answer is complete.
+      headers: { "Content-Type": "text/plain; charset=utf-8", "X-Accel-Buffering": "no", ...NO_STORE },
     });
   } catch (e) {
     if (e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError"))

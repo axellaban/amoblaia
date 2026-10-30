@@ -42,20 +42,20 @@ describe("POST /api/asistente", () => {
     const res = await POST(question(n++));
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("¡Hola! Soy Miguel Ángel.");
-    expect(calls[0].model).toBe("gpt-5-mini");
+    expect(calls[0].model).toBe("gpt-4.1-mini");
   });
 
   it("tries a widely available model when the account cannot use the first", async () => {
     vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body));
       calls.push(body);
-      return body.model === "gpt-5-mini"
+      return body.model === "gpt-4.1-mini"
         ? Response.json({ error: { code: "model_not_found", message: "no access" } }, { status: 404 })
         : sse("Listo.");
     });
     const res = await POST(question(n++));
     expect(await res.text()).toBe("Listo.");
-    expect(calls.map((c) => c.model)).toEqual(["gpt-5-mini", "gpt-4.1-mini"]);
+    expect(calls.map((c) => c.model)).toEqual(["gpt-4.1-mini", "gpt-4o-mini"]);
   });
 
   it("says why when OpenAI refuses, as JSON a gateway keeps", async () => {

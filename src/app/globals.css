@@ -15019,7 +15019,7 @@ a.dm-agency:hover {
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  padding: 10px 12px 6px;
+  padding: 10px 12px 12px;
   border-top: 1px solid var(--line);
   background: #fff;
 }
@@ -15056,14 +15056,6 @@ a.dm-agency:hover {
 .pb-send:disabled {
   opacity: 0.45;
   cursor: default;
-}
-.pb-note {
-  margin: 0;
-  padding: 0 12px 10px;
-  background: #fff;
-  color: var(--muted);
-  font-size: 0.72rem;
-  text-align: center;
 }
 @media (max-width: 560px) {
   .pb-launcher-label {
