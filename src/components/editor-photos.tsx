@@ -99,8 +99,8 @@ export type WorkspaceActions = {
   download: (photoId: string, key: string, name: string, retouchId?: string) => void;
   /** Saves the retouch of what is viewed as a new version; the new version's id, or null when it failed. */
   retouch: (photoId: string, source: RetouchSource, adjust: Adjust) => Promise<string | null>;
-  /** An AI tool on what is viewed: it starts, and its result appears as a version. False when it did not start. */
-  tool: (photoId: string, tool: Tool, source: RetouchSource, mask?: string) => Promise<boolean>;
+  /** An AI tool on what is viewed: it starts and its result appears as a version. Null when it started, else why not. */
+  tool: (photoId: string, tool: Tool, source: RetouchSource, mask?: string) => Promise<string | null>;
   /** What a tool costs and who pays, as the server quotes it. */
   quote: (photoId: string) => Promise<string>;
   review: (photoId: string, generationId: string) => void;
@@ -271,14 +271,16 @@ export function PhotoWorkspace({
       return;
     }
     setToolBusy(true);
-    const ok = await actions.tool(photo.id, tool, viewSource, mask ?? undefined);
+    const error = await actions.tool(photo.id, tool, viewSource, mask ?? undefined);
     setToolBusy(false);
-    if (ok) {
-      setTool(null);
-      setPainted(false);
-      setToolNote("");
-      brush.current?.clear();
+    if (error) {
+      setToolNote(`No se inició: ${error}`);
+      return;
     }
+    setTool(null);
+    setPainted(false);
+    setToolNote("");
+    brush.current?.clear();
   };
   const toolsState: ToolsState | undefined = photo
     ? {

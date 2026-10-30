@@ -567,10 +567,9 @@ export function DemoEditor({
         });
         say({ tone: "notice", text: "Herramienta en marcha: el resultado aparece en Versiones de esta foto cuando esté listo.", section: "fotos" });
         void watchTool(ids);
-        return true;
+        return null;
       } catch (e) {
-        say({ tone: "error", text: e instanceof Error ? e.message : "No pudimos empezar la herramienta.", section: "fotos" });
-        return false;
+        return e instanceof Error ? e.message : "No pudimos empezar la herramienta.";
       }
     },
     quote: async (photoId) => {
