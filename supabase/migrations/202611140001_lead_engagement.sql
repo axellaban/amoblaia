@@ -127,10 +127,11 @@ begin
  insert into lead_visitor_scores(demo_id,visitor_id,agency_id,score,classification,score_version,visual_score,depth_score,commercial_score,
   activation_score,recurrence_score,score_breakdown,explanation,signals,aliases,sessions,events,calculated_at,first_event_at,last_event_at,
   last_qualifying_event_at,attribution_confidence,visitor_type,is_internal,internal_reasons,score_data_quality)
- select p_demo,r.visitor_id,r.agency_id,r.score,r.classification,r.score_version,r.visual_score,r.depth_score,r.commercial_score,
-  r.activation_score,r.recurrence_score,coalesce(r.score_breakdown,'{}'::jsonb),coalesce(r.explanation,''),coalesce(r.signals,'{}'),
+ select p_demo,r.visitor_id,r.agency_id,r.score,r.classification,r.score_version,coalesce(r.visual_score,0),coalesce(r.depth_score,0),
+  coalesce(r.commercial_score,0),coalesce(r.activation_score,0),coalesce(r.recurrence_score,0),coalesce(r.score_breakdown,'{}'::jsonb),coalesce(r.explanation,''),coalesce(r.signals,'{}'),
   coalesce(r.aliases,'{}'),coalesce(r.sessions,'{}'),coalesce(r.events,0),now(),r.first_event_at,r.last_event_at,r.last_qualifying_event_at,
-  r.attribution_confidence,r.visitor_type,coalesce(r.is_internal,false),coalesce(r.internal_reasons,'{}'),r.score_data_quality
+  coalesce(r.attribution_confidence,'anonymous'),coalesce(r.visitor_type,'unknown'),coalesce(r.is_internal,false),coalesce(r.internal_reasons,'{}'),
+  coalesce(r.score_data_quality,'complete')
  from jsonb_to_recordset(p_rows) as r(visitor_id text,agency_id uuid,score smallint,classification text,score_version text,visual_score smallint,
   depth_score smallint,commercial_score smallint,activation_score smallint,recurrence_score smallint,score_breakdown jsonb,explanation text,
   signals text[],aliases text[],sessions text[],events integer,first_event_at timestamptz,last_event_at timestamptz,
