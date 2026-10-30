@@ -49,11 +49,12 @@ test.describe("demo comercial", () => {
     expect(url.searchParams.get("demo"), "la demo viaja al alta").toBe(TOKEN);
     await expect(page.locator("h1").first()).toBeVisible();
     await expectNoSideScroll(page);
-    const email = page.locator('input[type="email"]');
+    const form = page.locator(".ap-start-form");
+    const email = form.locator('input[type="email"]');
     if (await email.isVisible()) {
       await expect(email).toHaveAttribute("autocomplete", "email");
-      await expect(page.locator('input[autocomplete="new-password"], input[autocomplete="current-password"]')).toBeVisible();
-      await expect(page.getByRole("button", { name: /Entrar/ })).toBeEnabled();
+      await expect(form.locator('input[autocomplete="new-password"], input[autocomplete="current-password"]')).toBeVisible();
+      await expect(form.getByRole("button", { name: /Entrar/ })).toBeEnabled();
       const back = page.getByRole("link", { name: "Volver a la demo" });
       if (await back.count()) {
         await back.click();
