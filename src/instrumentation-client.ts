@@ -20,3 +20,9 @@ if (key && (process.env.NEXT_PUBLIC_VERCEL_ENV === "production" || process.env.N
     },
   });
 }
+
+if (typeof window !== "undefined") {
+  void import("@/lib/demo-interaction-tracking").then(({ installDemoInteractionTracking }) => {
+    installDemoInteractionTracking();
+  });
+}
