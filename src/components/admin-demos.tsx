@@ -19,6 +19,7 @@ import {
   whatsappShareUrl,
   type AgencyRow,
   type DemoActivity,
+  type DemoSendEvent,
   type DemoSummary,
 } from "@/lib/demos/shared";
 import {
@@ -523,7 +524,7 @@ export function MessageTemplateDialog({ onClose, onSaved }: { onClose: () => voi
  * the agency and the message (the link included) already written. Shows the
  * final text first; sending marks the demo as "Enviada". Team only.
  */
-export function SendWhatsapp({ demo }: { demo: DemoSummary }) {
+export function SendWhatsapp({ demo, fixHere = false }: { demo: DemoSummary; fixHere?: boolean }) {
   const [open, setOpen] = useState(false);
   const [template, setTemplate] = useState(DEFAULT_MESSAGE_TEMPLATE);
   const [globalTemplate, setGlobalTemplate] = useState(DEFAULT_MESSAGE_TEMPLATE);
@@ -535,7 +536,7 @@ export function SendWhatsapp({ demo }: { demo: DemoSummary }) {
   const missing = !published
     ? "Publicá la demo para enviarla."
     : !phone
-      ? "Falta el WhatsApp de la inmobiliaria: cargalo en su ficha."
+      ? `Falta el WhatsApp de la inmobiliaria: ${fixHere ? "cargalo acá abajo" : "cargalo en la demo"}.`
       : null;
   const preview = renderMessage(template, {
     nombre: demo.agencyContact ?? null,
@@ -574,8 +575,8 @@ export function SendWhatsapp({ demo }: { demo: DemoSummary }) {
       const wanted = ownTemplate && template !== globalTemplate ? template : null;
       if (wanted !== demo.messageTemplate)
         await api(`/api/admin/demos/${demo.id}`, { method: "PATCH", body: JSON.stringify({ action: "message", message: wanted }) });
-      // Marked as sent before leaving: if the team sends it again later it still counts once.
-      if (!demo.sentAt) await api(`/api/admin/demos/${demo.id}`, { method: "PATCH", body: JSON.stringify({ action: "sent", sent: true }) });
+      // Marked as sent before leaving (a second send keeps the first date and goes to the history).
+      await api(`/api/admin/demos/${demo.id}`, { method: "PATCH", body: JSON.stringify({ action: "sent", sent: true, via: "whatsapp" }) });
       window.location.href = whatsappWebUrl(phone, text);
     } catch (e) {
       setError(e instanceof Error ? e.message : "No pudimos preparar el envío.");
@@ -598,7 +599,10 @@ export function SendWhatsapp({ demo }: { demo: DemoSummary }) {
       {open && (
         <Dialog title={`Enviar «${demo.title}» a ${demo.agencyName}`} onClose={() => !busy && setOpen(false)}>
           <div className="dm-modal-body">
-            <p className="dm-help">Se abre WhatsApp Web con el chat de +{phone} y el mensaje escrito. Lo enviás vos.</p>
+            <p className="dm-help">
+              Se abre WhatsApp Web con el chat de +{phone} y el mensaje escrito. Lo enviás vos.
+              {demo.sentAt ? ` Ya se envió ${agoText(demo.sentAt)}: queda registrado otro envío.` : ""}
+            </p>
             <label className="checkbox-label dm-check">
               <input
                 type="checkbox"
@@ -622,7 +626,7 @@ export function SendWhatsapp({ demo }: { demo: DemoSummary }) {
             {!ownTemplate && (
               <p className="dm-help">Se usa el mensaje general. Para cambiarlo en todas las demos, usá «Mensaje de WhatsApp» en el listado.</p>
             )}
-            <div className="dm-preview" aria-label="Vista previa del mensaje">
+            <div className="dm-msg-preview" aria-label="Vista previa del mensaje">
               <span className="dm-help">Vista previa</span>
               <p>{preview}</p>
               <span className="dm-help">El enlace definitivo se prepara al enviar.</span>
@@ -680,6 +684,126 @@ export function SentToggle({ demo, onDone }: { demo: DemoSummary; onDone: (text:
         </span>
       )}
     </>
+  );
+}
+
+/** "+549 223 633-7191"-style display of wa.me digits, for the team to check the number at a glance. */
+export function phoneText(digits: string | null | undefined) {
+  return digits ? `+${digits}` : "";
+}
+
+/**
+ * The agency's WhatsApp where a demo is created: optional but highlighted,
+ * since without it the demo cannot be sent from the panel. Shows how the
+ * number will be saved.
+ */
+export function AgencyWhatsappField({
+  value,
+  onChange,
+  note,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  note?: string;
+}) {
+  const number = normalizeArNumber(value);
+  return (
+    <div className="dm-wa-field dm-wide">
+      <label>
+        WhatsApp de la inmobiliaria <small>(opcional, para enviarle la demo)</small>
+        <input
+          type="tel"
+          inputMode="tel"
+          maxLength={40}
+          placeholder="223 633-7191"
+          data-testid="agency-whatsapp-input"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+        />
+      </label>
+      <span className="dm-help">
+        {value.trim()
+          ? number
+            ? `Se guarda como ${phoneText(number)}.`
+            : "No parece un número argentino: incluí el código de área."
+          : (note ?? "Sin él, «Enviar por WhatsApp» queda deshabilitado. Se puede cargar después en la demo.")}
+      </span>
+    </div>
+  );
+}
+
+/** The agency's WhatsApp on the demo's screen, to correct it right there. It is the agency's: it applies to all its demos. */
+export function AgencyWhatsappEditor({ demo, onDone }: { demo: DemoSummary; onDone: (text: string) => void }) {
+  const [value, setValue] = useState(phoneText(demo.agencyWhatsapp));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => setValue(phoneText(demo.agencyWhatsapp)), [demo.agencyWhatsapp]);
+  const number = normalizeArNumber(value);
+  const changed = (number ?? "") !== (demo.agencyWhatsapp ?? "") || (!number && value.trim() !== "");
+  async function save() {
+    setBusy(true);
+    setError("");
+    try {
+      await api(`/api/admin/demos/${demo.id}`, { method: "PATCH", body: JSON.stringify({ action: "whatsapp", whatsapp: value.trim() || null }) });
+      onDone(value.trim() ? "WhatsApp de la inmobiliaria guardado." : "WhatsApp de la inmobiliaria borrado.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No pudimos guardar.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="dm-wa-field">
+      <label htmlFor={`wa-${demo.id}`}>WhatsApp de la inmobiliaria</label>
+      <div className="dm-wa-row">
+        <input
+          id={`wa-${demo.id}`}
+          type="tel"
+          inputMode="tel"
+          maxLength={40}
+          placeholder="223 633-7191"
+          data-testid="agency-whatsapp-input"
+          value={value}
+          disabled={busy}
+          onChange={(e) => setValue(e.target.value)}
+        />
+        <button type="button" className="button button-small button-outline" disabled={busy || !changed || (value.trim() !== "" && !number)} onClick={save}>
+          {busy ? "Guardando…" : "Guardar"}
+        </button>
+      </div>
+      <span className="dm-help">
+        {value.trim() && !number
+          ? "No parece un número argentino: incluí el código de área."
+          : number && changed
+            ? `Se guarda como ${phoneText(number)}, para todas sus demos.`
+            : demo.agencyWhatsapp
+              ? "Es el de la inmobiliaria: vale para todas sus demos."
+              : "Cargalo para poder enviar la demo por WhatsApp."}
+      </span>
+      {error && (
+        <span className="inline-error" role="alert">
+          {error}
+        </span>
+      )}
+    </div>
+  );
+}
+
+const SEND_KIND = { whatsapp: "Enviada por WhatsApp", manual: "Marcada como enviada", unsent: "Envío deshecho" } as const;
+
+/** The demo's sending history with date and time, newest first. */
+export function SendLog({ events }: { events: DemoSendEvent[] | undefined }) {
+  if (!events?.length) return null;
+  const when = (iso: string) =>
+    new Date(iso).toLocaleString("es-AR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  return (
+    <ul className="dm-send-log" aria-label="Historial de envío">
+      {events.map((e) => (
+        <li key={`${e.at}-${e.kind}`}>
+          {SEND_KIND[e.kind]} · {when(e.at)}
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -1026,8 +1150,12 @@ export function NewDemoForm({ agencyId: fixedAgency = null }: { agencyId?: strin
   const [agencyId, setAgencyId] = useState(fixedAgency ?? "");
   const [agency, setAgency] = useState(emptyAgency);
   const [property, setProperty] = useState(emptyProperty);
+  const [whatsapp, setWhatsapp] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const chosen = agencies?.find((a) => a.id === agencyId) ?? null;
+  // Asked when it is a new agency, or one we have no WhatsApp for.
+  const askWhatsapp = mode === "new" || !agencies?.length || Boolean(chosen && !chosen.whatsapp);
   useEffect(() => {
     api<{ agencies: AgencyRow[] }>("/api/admin/demos")
       .then((d) => {
@@ -1045,7 +1173,11 @@ export function NewDemoForm({ agencyId: fixedAgency = null }: { agencyId?: strin
       const { id } = await api<{ id: string }>("/api/admin/demos", {
         method: "POST",
         body: JSON.stringify(
-          mode === "existing" ? { agencyId, property } : { agency, property },
+          {
+            ...(mode === "existing" ? { agencyId } : { agency }),
+            property,
+            whatsapp: askWhatsapp && whatsapp.trim() ? whatsapp.trim() : undefined,
+          },
         ),
       });
       router.push(`/admin/demos/${id}`);
@@ -1116,6 +1248,11 @@ export function NewDemoForm({ agencyId: fixedAgency = null }: { agencyId?: strin
             </label>
           ) : (
             <AgencyFields value={agency} onChange={setAgency} />
+          )}
+          {askWhatsapp ? (
+            <AgencyWhatsappField value={whatsapp} onChange={setWhatsapp} />
+          ) : (
+            chosen?.whatsapp && <p className="dm-help">WhatsApp para enviarle la demo: {phoneText(chosen.whatsapp)}.</p>
           )}
           <p className="dm-help">No necesita tener una cuenta en habita.</p>
         </section>

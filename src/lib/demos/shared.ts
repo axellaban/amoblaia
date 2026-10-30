@@ -146,7 +146,12 @@ export type AgencyRow = {
   website: string | null;
   contact_name: string | null;
   notes: string | null;
+  /** The agency's WhatsApp to send it its demos, as wa.me digits (team lists only). */
+  whatsapp?: string | null;
 };
+
+/** One entry of the demo's sending history: by WhatsApp from the panel, marked by hand, or undone. */
+export type DemoSendEvent = { at: string; kind: "whatsapp" | "manual" | "unsent" };
 export type GenerationRow = {
   id: string;
   status: "queued" | "running" | "succeeded" | "failed" | "needs_review";
@@ -197,6 +202,8 @@ export type DemoDetail = {
     listing_url: string | null;
     description: string | null;
   };
+  /** When it was sent or marked unsent, newest first (team only). */
+  sendLog?: DemoSendEvent[];
   photos: EditorPhoto[];
   /** Styles with a staged version, main one first. */
   styles: string[];

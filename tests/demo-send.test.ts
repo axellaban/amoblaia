@@ -1,4 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+vi.mock("server-only", () => ({}));
+vi.mock("@/lib/supabase/server", () => ({
+  adminClient: () => {
+    throw new Error("not used");
+  },
+  currentUser: async () => null,
+}));
+import { whatsappInput } from "@/lib/demos/input";
 import {
   DEFAULT_MESSAGE_TEMPLATE,
   normalizeArNumber,
@@ -90,5 +98,17 @@ describe("stages", () => {
     expect(notSent(0, "published")).toBe(true);
     expect(notSent(1, "published")).toBe(false);
     expect(notSent(0, "draft")).toBe(false);
+  });
+});
+
+describe("whatsappInput", () => {
+  it("is optional", () => {
+    for (const raw of [undefined, null, "", "   "]) expect(whatsappInput(raw)).toBeNull();
+  });
+  it("saves the number normalized", () => {
+    expect(whatsappInput("0223 15 633-7191")).toBe("5492236337191");
+  });
+  it("rejects what is not an Argentine number", () => {
+    for (const raw of ["123", "+1 555 123 4567", 2236337191, "9".repeat(41)]) expect(() => whatsappInput(raw)).toThrow(/WhatsApp/);
   });
 });
