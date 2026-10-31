@@ -4,10 +4,11 @@ import { adminClient } from "@/lib/supabase/server";
 import { recordAgencyPanel } from "@/lib/demos/activity";
 import { applyAgencyCredits } from "./admin";
 import { agencyRpc } from "./panel";
+import { INVITE_CODE } from "./demo-invite";
 import { claimHash } from "./server";
 import { slugify } from "./shared";
 
-export const validCode = (code: unknown): code is string => typeof code === "string" && /^[A-Za-z0-9_-]{20,64}$/.test(code);
+export const validCode = (code: unknown): code is string => typeof code === "string" && INVITE_CODE.test(code);
 
 export type Invitation = { agencyId: string; agencyName: string; properties: number; freeCredits: number; expiresAt: string };
 
@@ -44,6 +45,22 @@ export async function invitationOf(code: string | null): Promise<Invitation | nu
     freeCredits: pending.error ? 0 : ((pending.data as { free_credits_pending: number } | null)?.free_credits_pending ?? 0),
     expiresAt: c.expires_at,
   };
+}
+
+/**
+ * The demo a short link (/p/<propiedad>-<codigo>) leads to: its token, or
+ * null when no invitation has that code. A used, expired or revoked one still
+ * opens its demo, as the long link does, only without the way into the panel.
+ */
+export async function shortLinkDemoToken(code: string): Promise<string | null> {
+  const db = adminClient();
+  const claim = await db.from("agency_claims").select("demo_id").eq("code_hash", claimHash(code)).maybeSingle();
+  if (claim.error) throw new Error("SHORT_LINK_LOOKUP_FAILED");
+  const demoId = (claim.data as { demo_id: string | null } | null)?.demo_id;
+  if (!demoId) return null;
+  const demo = await db.from("demos").select("token").eq("id", demoId).maybeSingle();
+  if (demo.error) throw new Error("SHORT_LINK_LOOKUP_FAILED");
+  return (demo.data as { token: string } | null)?.token ?? null;
 }
 
 /**

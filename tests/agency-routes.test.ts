@@ -365,13 +365,16 @@ describe("Taking over a demo", () => {
     const stored = state.inserts.find((i) => i.table === "agency_claims")!.row;
     expect(stored.code_hash).toBe(createHash("sha256").update(code).digest("hex"));
     expect(JSON.stringify(stored)).not.toContain(code);
-    // The demo as the way in: its presentation link carries the same one-time code.
+    // Made from a demo: a short code, unambiguous characters only, and the claim remembers its demo.
+    expect(code).toMatch(/^[2-9a-hjkmnp-z]{10}$/);
+    expect(stored.demo_id).toBe(DEMO);
+    // The demo as the way in: its short link, with the property's name and the same one-time code.
     const demoLink = new URL(presentationUrl);
     // A path only: no query string, so it can be sent without any special handling.
-    expect(demoLink.pathname).toBe(`/demo/tok_abcdefghijklmnopqrstuvwx/presentacion/${code}`);
+    expect(demoLink.pathname).toMatch(new RegExp(`^/p/[a-z0-9-]+-${code}$`));
     expect(demoLink.search).toBe("");
     // The same demo opened on its plans, for an agency that asks about prices.
-    expect(new URL(pricesUrl).pathname).toBe(`/demo/tok_abcdefghijklmnopqrstuvwx/presentacion/${code}/precios`);
+    expect(new URL(pricesUrl).pathname).toBe(`${demoLink.pathname}/precios`);
   });
 });
 
