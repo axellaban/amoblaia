@@ -1,12 +1,12 @@
 import "server-only";
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomInt } from "node:crypto";
 import { HttpError, rpc } from "@/lib/commerce/http";
 import { isUuid } from "@/lib/demos/shared";
 import { adminClient } from "@/lib/supabase/server";
 import { agencyCredits } from "./panel";
 import { claimHash } from "./server";
 import { claimState, type AdminAgencyDetail, type AdminAgencyRow } from "./stage";
-import { presentationPath, pricesViewPath } from "./demo-invite";
+import { presentationPath, pricesViewPath, SHORT_CODE_ALPHABET, SHORT_CODE_LENGTH, shortLinkPath } from "./demo-invite";
 import type { AgencyRole } from "./shared";
 
 const CLAIM_DAYS = 30;
@@ -173,37 +173,54 @@ export async function adminAgency(id: string): Promise<AdminAgencyDetail> {
   };
 }
 
+/** The short code of a demo's link: 10 characters of SHORT_CODE_ALPHABET, uniformly random. */
+export const newShortCode = () =>
+  Array.from({ length: SHORT_CODE_LENGTH }, () => SHORT_CODE_ALPHABET[randomInt(SHORT_CODE_ALPHABET.length)]).join("");
+
+/** The demo a claim link is made from: its short link names the property. */
+export type ClaimDemo = { id: string; token: string; title: string };
+
 /**
  * A one-time link for an agency without an account to take over the demos
  * prepared for it. Only the team creates it; it works once and expires in
- * 30 days. Only its hash is stored.
+ * 30 days. Only its hash is stored. Made from a demo, the code is the short
+ * one of /p/<propiedad>-<codigo>, which leads to that demo.
  */
-export async function createClaim(agencyId: string, actorId: string, origin: string, demoToken?: string | null) {
+export async function createClaim(agencyId: string, actorId: string, origin: string, demo: ClaimDemo | null = null) {
   const db = adminClient();
   const { data, error } = await db.from("agencies").select("owner_id").eq("id", agencyId).single();
   if (error) throw new HttpError(409, "Para esto falta aplicar la migración 202610280001_agency_accounts.sql en Supabase.");
   if ((data as { owner_id: string | null }).owner_id) throw new HttpError(409, "Esta inmobiliaria ya tiene su cuenta en habita.");
-  const code = randomBytes(24).toString("base64url");
+  const code = demo ? newShortCode() : randomBytes(24).toString("base64url");
   const expiresAt = new Date(Date.now() + CLAIM_DAYS * 86400000).toISOString();
-  const saved = await db.from("agency_claims").insert({
-    agency_id: agencyId,
-    code_hash: claimHash(code),
-    created_by: actorId,
-    expires_at: expiresAt,
-  });
+  const row: Record<string, string> = { agency_id: agencyId, code_hash: claimHash(code), created_by: actorId, expires_at: expiresAt };
+  let saved = await db.from("agency_claims").insert(demo ? { ...row, demo_id: demo.id } : row);
+  // Before 202611160001_short_demo_links.sql there is no demo_id: the long links still work.
+  const short = Boolean(demo) && !saved.error;
+  if (saved.error && demo && missingDemoColumn(saved.error)) saved = await db.from("agency_claims").insert(row);
   if (saved.error) throw new Error("CLAIM_CREATE_FAILED");
   await rpc("amobla_account", { p_user: actorId, p_trial: false });
-  await db.from("admin_audit").insert({ actor_id: actorId, action: "agency_claim_link", subject_id: agencyId, details: { demo: demoToken ?? null } });
-  const demo = demoToken ? `&demo=${encodeURIComponent(demoToken)}` : "";
+  await db.from("admin_audit").insert({ actor_id: actorId, action: "agency_claim_link", subject_id: agencyId, details: { demo: demo?.token ?? null } });
+  const withDemo = demo ? `&demo=${encodeURIComponent(demo.token)}` : "";
+  const link = (view: "precios" | null) =>
+    !demo
+      ? null
+      : short
+        ? `${origin}${shortLinkPath(demo.title, code, view)}`
+        : `${origin}${view ? pricesViewPath(demo.token, code) : presentationPath(demo.token, code)}`;
   return {
-    url: `${origin}/panel/empezar?codigo=${code}${demo}`,
+    url: `${origin}/panel/empezar?codigo=${code}${withDemo}`,
     // The demo itself as the way in: it offers "Probar esta propiedad en mi panel" with this same code.
-    presentationUrl: demoToken ? `${origin}${presentationPath(demoToken, code)}` : null,
+    presentationUrl: link(null),
     // The same demo opened on its plans, for when the agency asks about prices.
-    pricesUrl: demoToken ? `${origin}${pricesViewPath(demoToken, code)}` : null,
+    pricesUrl: link("precios"),
     expiresAt,
   };
 }
+
+/** The error of a database without agency_claims.demo_id (PostgREST's schema cache or Postgres itself). */
+const missingDemoColumn = (error: { code?: string; message?: string }) =>
+  error.code === "PGRST204" || error.code === "42703" || /demo_id/.test(error.message ?? "");
 
 /** Revokes an invitation not used yet; the link stops working at once. */
 export async function revokeClaim(agencyId: string, claimId: string, actorId: string) {

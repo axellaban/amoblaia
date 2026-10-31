@@ -2,6 +2,8 @@
 // its demo ("modo demostración"). Client-safe and pure: the persona, the
 // limits of a conversation and the validation of what the browser sends.
 
+import { INVITE_CODE, redactInvite } from "@/lib/agency/demo-invite";
+
 /** Its name and title: a nod to the Renaissance masters. */
 export const ASSISTANT_NAME = "Miguel Ángel";
 export const ASSISTANT_TITLE = "Tu genio del diseño";
@@ -22,15 +24,14 @@ export type AssistantInput = { messages: ChatMessage[]; place: AssistantPlace; p
 export class AssistantInputError extends Error {}
 
 const TOKEN = /^[A-Za-z0-9_-]{8,64}$/;
-const CODE = /^[A-Za-z0-9_-]{20,64}$/;
+const CODE = INVITE_CODE;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** The page the question comes from, without query or invitation code: only for context. */
 export function cleanPath(path: unknown) {
   if (typeof path !== "string" || !path.startsWith("/") || path.startsWith("//")) return "/";
-  // The agency's invitation code may sit in the path (/demo/<token>/presentacion/<codigo>).
-  return path
-    .split(/[?#]/)[0]
+  // The agency's invitation code may sit in the path (/demo/<token>/presentacion/<codigo> or /p/<propiedad>-<codigo>).
+  return redactInvite(path.split(/[?#]/)[0])
     .replace(/(\/presentacion\/)[^/]+/, "$1[oculto]")
     .slice(0, 160);
 }

@@ -7,6 +7,50 @@
 /** The URL parameter that carries the invitation code (also on /panel/empezar). */
 export const INVITE_PARAM = "codigo";
 
+/**
+ * An invitation code: the short one of the links made from a demo (10
+ * characters) or the long one of earlier links and of the invitations sent
+ * without a demo.
+ */
+export const INVITE_CODE = /^[A-Za-z0-9_-]{10,64}$/;
+
+/**
+ * The short code: lowercase letters and digits that cannot be mistaken for
+ * one another (no 0/o, 1/l/i), so it survives being read aloud or retyped.
+ * 31^10 ≈ 8·10^14 codes; each one also expires, works once and can be revoked.
+ */
+export const SHORT_CODE_ALPHABET = "23456789abcdefghjkmnpqrstuvwxyz";
+export const SHORT_CODE_LENGTH = 10;
+const SHORT_LINK = /^(?:[a-z0-9-]*-)?([2-9a-hjkmnp-z]{10})$/;
+
+/** "Casa en Sierra de los Padres" → "casa-en-sierra-de-los-padres": the readable part of the short link. */
+export function propertySlug(title: string | null | undefined) {
+  const words = (title ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/&/g, " y ")
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+  // Whole words, up to 40 characters: a long title does not make a long link.
+  let slug = "";
+  for (const word of words) {
+    const next = slug ? `${slug}-${word}` : word;
+    if (next.length > 40) break;
+    slug = next;
+  }
+  return slug || (words[0]?.slice(0, 40) ?? "") || "propiedad";
+}
+
+/** The demo's short link: /p/<property>-<code>, and /precios or /ficha after it. */
+export const shortLinkPath = (title: string | null | undefined, code: string, view: "precios" | "ficha" | null = null) =>
+  `/p/${propertySlug(title)}-${code}${view ? `/${view}` : ""}`;
+
+/** The code of a short link's segment, or null. The readable part is not checked: a renamed property keeps its link. */
+export function shortLinkCode(segment: string) {
+  return SHORT_LINK.exec(segment)?.[1] ?? null;
+}
+
 export type DemoInvite =
   /** The private invitation to take this demo into the agency's own panel. */
   | { href: string; freeCredits: number }
@@ -45,4 +89,6 @@ export function inviteFor(
 export const redactInvite = (text: string) =>
   text
     .replace(/([?&#]codigo=)[^&#\s"]*/gi, "$1[oculto]")
-    .replace(/(\/demo\/[^/\s"?#]+\/presentacion\/)[^/\s"?#]+/gi, "$1[oculto]");
+    .replace(/(\/demo\/[^/\s"?#]+\/presentacion\/)[^/\s"?#]+/gi, "$1[oculto]")
+    // The short link /p/<property>-<code>: the property stays readable.
+    .replace(/(\/p\/(?:[^/\s"?#]*-)?)[2-9a-hjkmnp-z]{10}(?=[/?#\s"]|$)/g, "$1[oculto]");

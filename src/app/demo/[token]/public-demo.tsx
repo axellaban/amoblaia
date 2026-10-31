@@ -13,7 +13,8 @@ import { cloudConfigured } from "@/lib/supabase/config";
 import { adminClient } from "@/lib/supabase/server";
 
 // Shared by the buyers' page (/demo/<token>) and the agency's presentation
-// (/demo/<token>/presentacion[/<codigo>][/ficha]). Read on every request.
+// (/demo/<token>/presentacion[/<codigo>][/ficha], or its short link
+// /p/<propiedad>-<codigo>[/ficha]). Read on every request.
 export const load = cache(async (token: string) => {
   if (!cloudConfigured()) return null;
   try {
@@ -102,12 +103,15 @@ export async function PublicDemo({
   code,
   ficha,
   prices = false,
+  shortPath = null,
 }: {
   token: string;
   presentation: boolean;
   code: string | null;
   ficha: boolean;
   prices?: boolean;
+  /** Opened from its short link (/p/<propiedad>-<codigo>): the agency keeps moving under it. */
+  shortPath?: string | null;
 }) {
   const demo = await load(token);
   if (!demo) notFound();
@@ -125,13 +129,13 @@ export async function PublicDemo({
           code: invitation,
           href: invite.href,
           freeCredits: invite.freeCredits,
-          buyerHref: buyerViewPath(token, invitation),
-          demoHref: presentationPath(token, invitation),
-          pricesHref: pricesViewPath(token, invitation),
+          buyerHref: shortPath ? `${shortPath}/ficha` : buyerViewPath(token, invitation),
+          demoHref: shortPath ?? presentationPath(token, invitation),
+          pricesHref: shortPath ? `${shortPath}/precios` : pricesViewPath(token, invitation),
         }
       : null;
   // The plans live in the agency's environment: without it (a code no longer valid), the presentation itself.
-  if (prices && !owner) redirect(presentationPath(token, code));
+  if (prices && !owner) redirect(shortPath ?? presentationPath(token, code));
   const plans = owner ? await plansOf(owner.href) : null;
   return (
     <>
