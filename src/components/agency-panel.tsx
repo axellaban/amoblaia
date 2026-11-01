@@ -330,7 +330,7 @@ function PanelHome({ data, reload }: { data: PanelSummary; reload: () => Promise
                 <p>Pegá el enlace de una publicación y generá todo el contenido en minutos. Importar no usa créditos.</p>
               </div>
             </div>
-            <ImportProperty onDone={reload} />
+            <ImportProperty onDone={reload} existingCount={data.counts.total} />
           </div>
         )}
       </section>
@@ -944,6 +944,7 @@ export function ImportProperty({
   allowMany = true,
   where = "tu panel",
   onStep,
+  existingCount,
 }: {
   initialUrl?: string;
   onDone?: () => Promise<unknown>;
@@ -955,6 +956,8 @@ export function ImportProperty({
   where?: string;
   /** 1: bring the listing, 2: review its data and photos, 3: saving the draft. */
   onStep?: (step: 1 | 2 | 3) => void;
+  /** The agency's properties before this import (its own panel only): the second one is the activation signal. */
+  existingCount?: number;
 }) {
   const router = useRouter();
   const [many, setMany] = useState(false);
@@ -1015,6 +1018,7 @@ export function ImportProperty({
     track("listing_import_preview_started", { source: hostOf(url), mode: "single" });
     leadFromDemoRef("demo_property_import_started");
     trackMilestone("first_import_started", { source: hostOf(url), mode: "single" });
+    if (existingCount === 1) track("second_property_import_started", { stage: "panel", source: hostOf(url) });
     const started = Date.now();
     try {
       const data = await api<Preview>(endpoint, { method: "POST", body: JSON.stringify({ url, preview: true }) });
@@ -1065,6 +1069,11 @@ export function ImportProperty({
       const done = await finishPhotos(made, (t) => setStatus(`${made.title ?? "Propiedad"}. ${t}`), endpoint);
       track("property_import_completed", { source: hostOf(preview.listingUrl), photos: done.photosDone, mode: "single", status: done.status });
       track(done.status === "completed" ? "listing_import_completed" : "listing_import_partial", importEventProps(preview.diagnostics, { source: hostOf(preview.listingUrl), mode: "single", photos_done: done.photosDone, photos_total: done.photosTotal }));
+      // The agency created its second property on its own: the activation signal (spec §2.5, §8), once per browser.
+      if (existingCount === 1) {
+        track("second_property_created", { source: hostOf(preview.listingUrl), status: done.status, photos: done.photosDone });
+        trackMilestone("second_property_created_milestone", { source: hostOf(preview.listingUrl) });
+      }
       if (done.photosDone > 0) leadFromDemoRef("demo_property_import_completed");
       trackMilestone("first_import_completed", { source: hostOf(preview.listingUrl), photos: done.photosDone, mode: "single", status: done.status });
       await onDone?.();
@@ -1760,10 +1769,13 @@ export function AgencyOnboarding({
   hasAgency,
   code,
   demo,
+  autoClaim = false,
 }: {
   signedIn: boolean;
   hasAgency: boolean;
   code: string | null;
+  /** Back from "Continuar con Google" on the invitation: the claim the person already asked for runs by itself. */
+  autoClaim?: boolean;
   demo: { token: string; id: string; agencyId: string; agencyName: string; title: string; listingUrl: string | null } | null;
 }) {
   const router = useRouter();
@@ -1779,6 +1791,13 @@ export function AgencyOnboarding({
   }, [signedIn, origin, demo]);
   const flow = !signedIn ? "agency_start" : code ? "agency_claim" : "agency_create";
   const form = useSignupTracking(flow, { origin, has_invite: Boolean(code), ...(demo ? { demo_id: demo.id, agency_id: demo.agencyId } : {}) }, !hasAgency || Boolean(done));
+  const autoRan = useRef(false);
+  useEffect(() => {
+    if (!autoClaim || autoRan.current || !signedIn || hasAgency || !code) return;
+    autoRan.current = true;
+    void run("claimed");
+    // Once, on arrival from Google.
+  }, [autoClaim, signedIn, hasAgency, code]);
 
   if (!signedIn)
     return (
@@ -1827,6 +1846,8 @@ export function AgencyOnboarding({
           : await api<PanelSummary>("/api/panel", { method: "POST", body: JSON.stringify({ name }) });
       registerAgency(summary.agency.id);
       track(kind === "claimed" ? "agency_claimed" : "agency_created", { origin, agency_id: summary.agency.id, ...(demo ? { demo_id: demo.id } : {}) }, true);
+      // Funnel (spec §8): the panel is the agency's now. The server records the exact method for the team.
+      if (kind === "claimed") track("panel_claim_completed", { agency_id: summary.agency.id, method: autoClaim ? "google" : "signed_in", ...(demo ? { demo_id: demo.id } : {}) }, true);
       // Lead score: the server only takes it once the account belongs to the demo's agency.
       if (kind === "claimed") leadFromDemoRef("demo_account_created");
       if (demo) track("demo_to_agency_signup_completed", { demo_id: demo.id, claimed: kind === "claimed" });

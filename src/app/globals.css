@@ -17621,3 +17621,43 @@ main:has(.ap-sidebar) {
     top: 56px;
   }
 }
+
+/* Fase 4: who took over an agency, for the team. */
+.aa-claim {
+  border-left: 4px solid #9dbf8f;
+}
+.aa-claim.is-alert {
+  border-left-color: #b4532a;
+}
+.aa-claim h2 {
+  margin-top: 0;
+}
+.ap-start-google {
+  display: grid;
+  gap: 10px;
+  justify-items: stretch;
+}
+.ap-start-google > div {
+  justify-self: center;
+}
+.ap-start-or {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.ap-start-or::before,
+.ap-start-or::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+/* "Guardar mi panel" on a phone: the way in first, the property right after. */
+@media (max-width: 860px) {
+  .ap-invited-grid > .ap-start-form {
+    order: -1;
+  }
+}

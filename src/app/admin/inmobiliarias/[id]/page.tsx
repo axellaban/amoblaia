@@ -4,7 +4,8 @@ import { notFound } from "next/navigation";
 import { AgencyCredits, AgencyInvitations, AgencyProperties, SupportViewButton } from "@/components/admin-agencies";
 import { AddToProspecting } from "@/components/prospecting/add-agency";
 import { HttpError } from "@/lib/commerce/http";
-import { adminAgency } from "@/lib/agency/admin";
+import { adminAgency, agencyClaimInfo } from "@/lib/agency/admin";
+import { ClaimReviewNotice } from "@/components/admin-claim-review";
 import { ROLE_LABEL } from "@/lib/agency/shared";
 import { agencyStage, STAGE_LABEL } from "@/lib/agency/stage";
 import { requireAdminPage } from "@/lib/demos/admin-page";
@@ -43,6 +44,7 @@ export default async function AgencyPage({ params }: { params: Promise<{ id: str
       </div>
     );
   const { agency, counts } = data;
+  const claim = agency.hasOwner ? await agencyClaimInfo(agency.id).catch(() => null) : null;
   const pending = data.claims.find((c) => c.state === "pending");
   const stage = agencyStage({ hasOwner: agency.hasOwner, claimedAt: agency.claimedAt, liveClaimExpires: pending?.expiresAt ?? null, published: counts.published });
   return (
@@ -101,6 +103,8 @@ export default async function AgencyPage({ params }: { params: Promise<{ id: str
           <dd>{counts.review}</dd>
         </div>
       </dl>
+
+      {claim && <ClaimReviewNotice agencyId={agency.id} claim={claim} />}
 
       <AgencyCredits agency={{ id: agency.id, name: agency.name, hasOwner: agency.hasOwner }} credits={data.credits} />
 

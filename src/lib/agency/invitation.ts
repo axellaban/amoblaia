@@ -7,6 +7,27 @@ import { agencyRpc } from "./panel";
 import { INVITE_CODE } from "./demo-invite";
 import { claimHash } from "./server";
 import { slugify } from "./shared";
+import { claimReview, type ClaimMethod } from "./claim-review";
+
+/**
+ * Records who took over the agency and how, for the team's review: the
+ * e-mail, the method and whether its domain is the agency's (see
+ * claim-review.ts). Never blocks the claim: a failure is only logged.
+ */
+export async function recordClaim(agencyId: string, actor: { id: string; email?: string | null }, method: ClaimMethod) {
+  try {
+    const db = adminClient();
+    const { data } = await db.from("agencies").select("website,contact_email").eq("id", agencyId).maybeSingle();
+    const known = data as { website: string | null; contact_email: string | null } | null;
+    const email = (actor.email ?? "").toLowerCase();
+    const { review, domain } = claimReview(email, known?.website, known?.contact_email ?? null);
+    const update = await db.from("agencies").update({ claim_email: email || null, claim_method: method, claim_review: review, claim_reviewed_at: null }).eq("id", agencyId);
+    if (update.error) throw new Error("CLAIM_RECORD_FAILED");
+    await db.from("admin_audit").insert({ actor_id: actor.id, action: "agency_claim", subject_id: agencyId, details: { method, review, domain } });
+  } catch {
+    console.error("claim_record_failed");
+  }
+}
 
 export const validCode = (code: unknown): code is string => typeof code === "string" && INVITE_CODE.test(code);
 
@@ -97,6 +118,7 @@ export async function acceptWithNewAccount(code: unknown, email: unknown, passwo
     });
     await applyAgencyCredits(agencyId);
     await recordAgencyPanel(agencyId);
+    await recordClaim(agencyId, { id: userId, email: mail }, "email");
     return { agencyId, email: mail };
   } catch (e) {
     // The account was only for this invitation: nothing is left half done.
