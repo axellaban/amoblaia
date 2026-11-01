@@ -138,9 +138,12 @@ export function DemoEditor({
   mode = "admin",
   banner,
   agencyContext,
+  studio = false,
 }: {
   id: string;
   mode?: "admin" | "agency";
+  /** Inside "Estudio de imágenes": only the photo workspace, no ficha sections. */
+  studio?: boolean;
   /** The edit banner, when the team edits this agency (Editar inmobiliaria). */
   banner?: React.ReactNode;
   /** The agency the team is editing: the way back goes to its workspace. */
@@ -630,6 +633,87 @@ export function DemoEditor({
       {summary.issues ? ` · ${summary.issues} con problemas` : ""}
     </>
   );
+
+  const reviewModal = reviewPhoto && reviewGen && (
+        <Review
+          photosOnly={demo.kind === "fotos"}
+          photo={reviewPhoto}
+          g={reviewGen}
+          shown={reviewPhoto.shown[reviewGen.style] === reviewGen.id}
+          blocked={blocked}
+          downloading={downloading === reviewGen.id}
+          onClose={() => setReview(null)}
+          onDownload={() =>
+            void download(
+              generationDownloadUrl(reviewGen.id, versionFileName(demo.title, spaceName(reviewPhoto), styleName(reviewGen.style), versionNumber(reviewPhoto, reviewGen.id))),
+              reviewGen.id,
+              versionFileName(demo.title, spaceName(reviewPhoto), styleName(reviewGen.style), versionNumber(reviewPhoto, reviewGen.id)),
+            )
+          }
+          onShow={async () => {
+            await patchPhoto(reviewPhoto.id, { approve: reviewGen.id });
+          }}
+          onDiscard={async () => {
+            if (await patchPhoto(reviewPhoto.id, { discard: reviewGen.id })) setReview(null);
+          }}
+          onRegenerate={() => {
+            setReview(null);
+            void staging.request([{ photoId: reviewPhoto.id, style: reviewGen.style }], { fresh: true });
+          }}
+        />
+      );
+
+  // "Estudio de imágenes": the same workspace, routes and limits, without the ficha around it.
+  if (studio)
+    return (
+      <div className="st-editor">
+        {message && (
+          <p className={message.tone === "error" ? "inline-error" : "inline-notice"} role={message.tone === "error" ? "alert" : "status"}>
+            {message.text}
+            <button type="button" className="icon-button ed-dismiss" aria-label="Cerrar mensaje" onClick={() => setMessage(null)}>
+              <X size={14} />
+            </button>
+          </p>
+        )}
+        {payer && (
+          <p className="pw-note" role="note">
+            {payer}
+            {blocked ? " Podés ver, comparar, descargar y organizar todo lo creado." : ""}
+          </p>
+        )}
+        {uploads.length > 0 && (
+          <ul className="dm-uploads" aria-live="polite">
+            {uploads.map((u, i) => (
+              <li key={`${u.name}-${i}`} className={`is-${u.state}`}>
+                {u.state === "uploading" && <Loader2 size={15} className="spin" />}
+                {u.state === "done" && <Check size={15} />}
+                {u.state === "error" && <X size={15} />}
+                <span>{u.name}</span>
+                {u.error && <em>{u.error}</em>}
+              </li>
+            ))}
+          </ul>
+        )}
+        <PhotoWorkspace
+          detail={detail}
+          base={base}
+          propertyType={type}
+          demoStyles={demoStyles}
+          mainStyle={main}
+          blocked={blocked}
+          payerNote={payer}
+          staging={staging}
+          included={included}
+          setIncluded={setIncluded}
+          downloading={downloading}
+          busy={busy}
+          fileName={(p, g) => versionFileName(demo.title, spaceName(p), styleName(g.style), versionNumber(p, g.id))}
+          originalName={(p) => versionFileName(demo.title, spaceName(p), "original")}
+          actions={workspaceActions}
+        />
+        {reviewModal}
+      </div>
+    );
 
   return (
     <div className="account-page container dm-page ed-page">
@@ -1202,34 +1286,7 @@ export function DemoEditor({
         </div>
       </Fold>
 
-      {reviewPhoto && reviewGen && (
-        <Review
-          photosOnly={demo.kind === "fotos"}
-          photo={reviewPhoto}
-          g={reviewGen}
-          shown={reviewPhoto.shown[reviewGen.style] === reviewGen.id}
-          blocked={blocked}
-          downloading={downloading === reviewGen.id}
-          onClose={() => setReview(null)}
-          onDownload={() =>
-            void download(
-              generationDownloadUrl(reviewGen.id, versionFileName(demo.title, spaceName(reviewPhoto), styleName(reviewGen.style), versionNumber(reviewPhoto, reviewGen.id))),
-              reviewGen.id,
-              versionFileName(demo.title, spaceName(reviewPhoto), styleName(reviewGen.style), versionNumber(reviewPhoto, reviewGen.id)),
-            )
-          }
-          onShow={async () => {
-            await patchPhoto(reviewPhoto.id, { approve: reviewGen.id });
-          }}
-          onDiscard={async () => {
-            if (await patchPhoto(reviewPhoto.id, { discard: reviewGen.id })) setReview(null);
-          }}
-          onRegenerate={() => {
-            setReview(null);
-            void staging.request([{ photoId: reviewPhoto.id, style: reviewGen.style }], { fresh: true });
-          }}
-        />
-      )}
+      {reviewModal}
     </div>
   );
 }
