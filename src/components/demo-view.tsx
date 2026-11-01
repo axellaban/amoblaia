@@ -40,6 +40,9 @@ import {
   Sparkles,
   Tag,
   Eye,
+  ArrowRight,
+  Video,
+  House,
   X,
   Wand2,
   Sofa,
@@ -423,9 +426,20 @@ export function DemoView({
       )}
 
       <div className="container dv2-main" hidden={pricesOn}>
+        {owner ? (
+          <section id="propiedad" className="dv2-hero" aria-labelledby="dv2-hero-title">
+            <p className="dv2-hero-pill">Demo para inmobiliaria</p>
+            <div className="dv2-hero-text">
+              <h1 id="dv2-hero-title">Así podría verse esta propiedad con Habita</h1>
+              <p>Mejorá tus fotos, probá distintos estilos y generá contenido listo para publicar.</p>
+            </div>
+            <a className="dv2-buyer-link" href={owner.buyerHref} {...cta("owner_buyer_view", "heading", "demo_buyer_view", "navigation")} onClick={() => log("demo_owner_buyer_view", {}, true)}>
+              <Eye size={17} aria-hidden="true" /> Ver como comprador <ArrowRight size={17} aria-hidden="true" />
+            </a>
+          </section>
+        ) : (
         <section id="propiedad" className="dv2-heading" aria-labelledby="dv2-title">
           <div>
-            {owner && <p className="dv2-owner-eyebrow">Así podría verse esta propiedad con Habita</p>}
             {demo.reference && <p className="dv2-ref">Ref. {demo.reference}</p>}
             <h1 id="dv2-title">{demo.title}</h1>
             {demo.location && (
@@ -440,13 +454,9 @@ export function DemoView({
               {demo.operation && <span className="dv2-chip">{demo.operation}</span>}
               <strong>{priceLabel}</strong>
             </p>
-            {owner && (
-              <a className="dv2-buyer-link" href={owner.buyerHref} {...cta("owner_buyer_view", "heading", "demo_buyer_view", "navigation")} onClick={() => log("demo_owner_buyer_view", {}, true)}>
-                <Eye size={17} aria-hidden="true" /> Ver como comprador
-              </a>
-            )}
           </div>
         </section>
+        )}
 
         <Gallery
           demo={demo}
@@ -456,11 +466,11 @@ export function DemoView({
           sideAction={!owner && primary && primary.kind !== "listing" ? contactLink(primary, "dv2-contact-main", "gallery_side") : null}
           sideInvite={!owner && !backToDemo && presentation && demo.prospect && invite ? <PanelInvite invite={invite} place="lateral" log={log} /> : null}
           owner={owner}
+          ownerActions={owner && source.kind === "public" ? <OwnerValue demo={demo} token={source.token} log={log} /> : null}
         />
         {demo.photos.some((p) => p.versions.length) && <p className="dv2-illustrative">{TEXT.illustrative}</p>}
         {owner && source.kind === "public" && (
           <>
-            <OwnerValue demo={demo} token={source.token} log={log} />
             <AnotherProperty owner={owner} log={log} />
             <nav className="dv2-tabs" aria-label="La ficha de la propiedad">
               <a href="#sobre">Sobre la propiedad</a>
@@ -468,11 +478,30 @@ export function DemoView({
               {(demo.map || demo.location) && <a href="#ubicacion">Ubicación</a>}
               <a href="#contacto">Contactar</a>
             </nav>
+            <section id="sobre" className="dv2-heading is-ficha" aria-labelledby="dv2-title">
+          <div>
+            {demo.reference && <p className="dv2-ref">Ref. {demo.reference}</p>}
+            <h2 id="dv2-title">{demo.title}</h2>
+            {demo.location && (
+              <p className="dv2-location">
+                <MapPin size={17} aria-hidden="true" /> {demo.location}
+              </p>
+            )}
+            {demo.features && <p className="dv2-features">{demo.features}</p>}
+          </div>
+          <div className="dv2-heading-side">
+            <p className={`dv2-price ${demo.price ? "" : "is-ask"}`}>
+              {demo.operation && <span className="dv2-chip">{demo.operation}</span>}
+              <strong>{priceLabel}</strong>
+            </p>
+            {primary && primary.kind !== "listing" && contactLink(primary, "dv2-ficha-contact", "ficha_heading", "Consultar por esta propiedad")}
+          </div>
+        </section>
           </>
         )}
 
         {demo.facts.length > 0 && (
-          <ul className="dv2-facts" id="sobre" aria-label="Datos principales">
+          <ul className="dv2-facts" aria-label="Datos principales">
             {demo.facts.map((f, i) => {
               const Icon = FACT_ICON[f.icon];
               return (
@@ -809,6 +838,7 @@ function Gallery({
   sideAction,
   sideInvite = null,
   owner = null,
+  ownerActions = null,
 }: {
   demo: PublicDemo;
   source: Source;
@@ -819,6 +849,8 @@ function Gallery({
   sideInvite?: React.ReactNode;
   /** The agency's own view: every style with its download or generate action. */
   owner?: OwnerMode | null;
+  /** The agency's "Descargar imágenes" and "Compartir ficha", under its styles. */
+  ownerActions?: React.ReactNode;
 }) {
   const photos = demo.photos;
   const styleNames = useMemo(
@@ -849,6 +881,8 @@ function Gallery({
   const [saving, setSaving] = useState(false);
   const [editError, setEditError] = useState("");
   const [allStyles, setAllStyles] = useState(false);
+  // The agency's view shows five thumbnails and "+N fotos" (the mockup); the rest open on demand.
+  const [allThumbs, setAllThumbs] = useState(false);
   const router = useRouter();
   // The style being generated for a photo: the page refreshes until its version shows.
   const [staging, setStaging] = useState<{ photo: string; style: string; at: number } | null>(null);
@@ -1102,10 +1136,8 @@ function Gallery({
     note("demo_compare_opened", { photo_id: photo.id, style_id: state.style ?? "original" });
     setState({ ...state, compare: true });
   };
-  const ownerFile = (style: string | null) => `${fileSlug(`${demo.title}-${photo.label}-${style ? name(style) : "original"}`)}.jpg`;
   // The agency's single "Estilos" section: every style as a small card (ready, or "Generar"), and the actions of the one on screen.
   const ownerCards = allStyles ? ownerRows : ownerRows.slice(0, Math.max(OWNER_VISIBLE_STYLES, ownerRows.findIndex((r) => r.version && r.style === state.style) + 1));
-  const current = state.style ? versionOf(photo, state.style) : null;
   const ownerPanel = owner && (
     <section className="dv2-styles" aria-labelledby="dv2-panel-title" id="dv2-estilos">
       <div className="dv2-styles-head">
@@ -1119,17 +1151,6 @@ function Gallery({
         )}
       </div>
       <ul className="dv2-style-grid">
-        <li className={`dv2-style-card ${state.style ? "" : "is-on"}`}>
-          <button type="button" className="dv2-style-pick" aria-pressed={!state.style} onClick={backToOriginal}>
-            <img src={urlFor(source, photo.id, null, 480)} alt="" loading="lazy" />
-            <span className="dv2-style-name">Original</span>
-            {!state.style && (
-              <span className="dv2-style-check" aria-hidden="true">
-                <Check size={13} strokeWidth={3} />
-              </span>
-            )}
-          </button>
-        </li>
         {ownerCards.map((r) => {
           const on = Boolean(r.version) && state.style === r.style;
           const busy = staging?.photo === photo.id && staging.style === r.style;
@@ -1138,22 +1159,34 @@ function Gallery({
               <button type="button" className="dv2-style-pick" aria-pressed={on} onClick={() => choose(r.style)}>
                 <img src={urlFor(source, photo.id, r.version, 480)} alt="" loading="lazy" />
                 <span className="dv2-style-name">{name(r.style)}</span>
-                {on && (
-                  <span className="dv2-style-check" aria-hidden="true">
-                    <Check size={13} strokeWidth={3} />
-                  </span>
-                )}
               </button>
-              <button type="button" className="dv2-style-edit" aria-label={`Editar ${name(r.style)}`} onClick={() => startEdit(photo.id, r.style)}>
-                <Pencil size={15} aria-hidden="true" />
-              </button>
+              {on && (
+                <span className="dv2-style-check" aria-hidden="true">
+                  <Check size={13} strokeWidth={3} />
+                </span>
+              )}
+              <span className="dv2-style-tools">
+                <button type="button" className="dv2-style-tool" aria-label={`Editar ${name(r.style)}`} title="Editar" onClick={() => startEdit(photo.id, r.style)}>
+                  <Pencil size={16} aria-hidden="true" />
+                </button>
+                <a
+                  className="dv2-style-tool"
+                  href={owner.href}
+                  aria-label={`Crear un video con ${name(r.style)} en tu panel`}
+                  title="Crear video (en tu panel)"
+                  {...cta("owner_create_video", "styles_panel", "signup_invitation", "habita_b2b", { intent: "create_video" })}
+                  onClick={() => log("demo_agency_cta_clicked", { origen: "estilos_video", cta_id: "owner_create_video", cta_intent: "create_video" }, true)}
+                >
+                  <Video size={16} aria-hidden="true" />
+                </a>
+              </span>
             </li>
           ) : (
             <li key={r.style} className="dv2-style-card is-missing">
               <span className="dv2-style-pick" aria-hidden="true">
                 <img src={urlFor(source, photo.id, null, 480)} alt="" loading="lazy" />
+                <span className="dv2-style-name">{name(r.style)}</span>
               </span>
-              <span className="dv2-style-name">{name(r.style)}</span>
               <button
                 type="button"
                 className="dv2-style-generate"
@@ -1172,28 +1205,6 @@ function Gallery({
           );
         })}
       </ul>
-      <div className="dv2-style-actions" aria-label={`Acciones de ${current ? name(current.style) : "la foto original"}`}>
-        <span className="dv2-style-current">
-          {current ? <>Viendo <strong>{name(current.style)}</strong></> : <>Viendo la <strong>foto original</strong></>}
-        </span>
-        <button type="button" className="dv2-style-action" onClick={() => startEdit(photo.id, current?.style ?? null)}>
-          <Pencil size={16} aria-hidden="true" /> Editar foto
-        </button>
-        <a
-          className="dv2-style-action"
-          href={urlFor(source, photo.id, current, 2048)}
-          download={ownerFile(current?.style ?? null)}
-          {...cta("owner_download", "styles_panel", "file_download", "habita_b2b", { photo: photo.id, style: current?.style ?? "original" })}
-          onClick={() => log("demo_owner_download", { estilo: current?.style ?? "original", photo_id: photo.id, style_id: current?.style ?? "original", origen: "estilos" })}
-        >
-          <Download size={16} aria-hidden="true" /> Descargar
-        </a>
-        {state.style && !state.compare && !stagedFailed && (
-          <button type="button" className="dv2-style-action" onClick={compareAgain}>
-            {TEXT.compare}
-          </button>
-        )}
-      </div>
       {stagingError && (
         <p className="dv2-note is-error" role="alert">
           {stagingError}
@@ -1406,8 +1417,8 @@ function Gallery({
                 after={urlFor(source, photo.id, showing, 2048, retries[stagedKey])}
                 alt={`${alt(index, photo)}, ambientación ${name(showing.style)} con IA, ilustrativa`}
                 beforeAlt={`${alt(index, photo)}, original`}
-                beforeLabel={TEXT.original}
-                afterLabel={TEXT.staged}
+                beforeLabel={owner ? "Antes" : TEXT.original}
+                afterLabel={owner ? "Después" : TEXT.staged}
                 initial={state.position}
                 analytics={source.kind === "public" ? { ...base, photo_id: photo.id, photo_index: index, style_id: showing.style } : undefined}
                 onPositionChange={(position) => {
@@ -1474,8 +1485,8 @@ function Gallery({
             <button type="button" className="dv2-thumbs-step" aria-label="Ver miniaturas anteriores" onClick={() => scrollThumbs(-1)}>
               <ChevronLeft size={18} />
             </button>
-            <ol ref={thumbs} aria-label="Fotos de la propiedad">
-              {photos.map((p, i) => (
+            <ol ref={thumbs} aria-label="Fotos de la propiedad" className={owner && !allThumbs && photos.length > 6 ? "is-few" : ""}>
+              {(owner && !allThumbs && photos.length > 6 ? photos.slice(0, 5) : photos).map((p, i) => (
                 <li key={p.id}>
                   <button
                     type="button"
@@ -1492,6 +1503,14 @@ function Gallery({
                   </button>
                 </li>
               ))}
+              {owner && !allThumbs && photos.length > 6 && (
+                <li>
+                  <button type="button" className="dv2-thumbs-more" aria-label={`Ver las ${photos.length - 5} fotos restantes`} onClick={() => setAllThumbs(true)}>
+                    <strong>+{photos.length - 5}</strong>
+                    <span>fotos</span>
+                  </button>
+                </li>
+              )}
             </ol>
             <button type="button" className="dv2-thumbs-step" aria-label="Ver más miniaturas" onClick={() => scrollThumbs(1)}>
               <ChevronRight size={18} />
@@ -1502,6 +1521,7 @@ function Gallery({
       {panel && (
         <aside className="dv2-aside">
           {panel}
+          {ownerActions && <div className="dv2-aside-actions">{ownerActions}</div>}
           {sideInvite}
           {sideAction && <div className="dv2-side-action">{sideAction}</div>}
           <span className="dv2-tech dv2-side-tech">
@@ -1599,28 +1619,16 @@ function OwnerHeader({
     ...cta(`owner_${origin}`, origin === "guardar" ? "owner_bar" : "owner_menu", "signup_invitation", "habita_b2b", { intent: INTENT[origin] }),
     onClick: () => log("demo_agency_cta_clicked", { origen: `demo_encabezado_${origin}`, cta_id: `owner_${origin}`, cta_intent: INTENT[origin] }, true),
   });
-  const initials = demo.agencyName
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((w) => w[0]?.toUpperCase())
-    .join("");
   const versions = demo.photos.reduce((n, p) => n + p.versions.length, 0);
   return (
     <header className="dv2-owner">
       <div className="dv2-owner-bar">
         <div className="dv2-owner-brand">
-          {demo.agency.logo ? (
-            <img src={demo.agency.logo} alt="" className="dv2-owner-logo" />
-          ) : (
-            <span className="dv2-owner-logo" aria-hidden="true">
-              {initials}
-            </span>
-          )}
-          <span>
-            <strong>{demo.agencyName}</strong>
-            <small>Demo para inmobiliaria</small>
+          <span className="dv2-owner-habita" aria-label="Habita">
+            <House size={24} aria-hidden="true" />
+            <span aria-hidden="true">HABITA</span>
           </span>
+          <span className="dv2-owner-pill">Demo para inmobiliaria</span>
         </div>
         <div className="dv2-owner-ctas">
           <a
@@ -1648,7 +1656,10 @@ function OwnerHeader({
         <div className="dv2-owner-drawer-backdrop" onClick={() => setOpen(false)}>
           <nav className="dv2-owner-drawer" aria-label="Tu panel de demostración" onClick={(e) => e.stopPropagation()}>
             <div className="dv2-owner-drawer-head">
-              <strong>{demo.agencyName}</strong>
+              <span>
+                <small>Demo para</small>
+                <strong>{demo.agencyName}</strong>
+              </span>
               <button ref={closeRef} type="button" className="dv2-owner-menu-button" aria-label="Cerrar el menú" onClick={() => setOpen(false)}>
                 <X size={22} aria-hidden="true" />
               </button>
