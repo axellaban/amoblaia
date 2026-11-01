@@ -1,6 +1,6 @@
 # Habita V2 — Fase 2: panel, sitio web y features futuras
 
-**Estado:** implementado; tests, lint, typecheck y build OK. Evidencia visual tomada con los componentes reales y datos de prueba (ver §4). **Pendiente para cerrar:** aplicar la migración en Supabase y una pasada en el preview con una cuenta real (ver §6).
+**Estado:** implementado; tests, lint, typecheck y build OK. Evidencia visual tomada con los componentes reales y datos de prueba (ver §4). **Pendiente para cerrar:** una pasada en el preview con una cuenta real (ver §6). Migración aplicada.
 
 ## 1. Qué cambió
 
@@ -68,5 +68,5 @@ Capturas en [`docs/ux/habita-v2/evidencia/fase-2/`](../ux/habita-v2/evidencia/fa
 
 ## 6. Para cerrar la fase
 
-1. Aplicar la migración en el SQL Editor de Supabase: [`202611170001_feature_interest.sql`](https://github.com/axellaban/amoblaia/blob/claude/friendly-shannon-54k8z1/supabase/migrations/202611170001_feature_interest.sql). Sin ella, «Me interesa» responde error (el resto del panel funciona).
+1. ~~Aplicar la migración~~ **Aplicada el 01/11/2026** en el proyecto Supabase `cmpfwuycxdleunuumlkm` vía conector: tabla vacía, RLS activo, sin privilegios para `anon`/`authenticated`, escritura solo desde el servidor. El advisor marca «RLS sin políticas» (INFO), igual que las demás tablas solo-servidor: es intencional.
 2. Recorrer el preview con una cuenta real (dueño y viewer) en 1440 px y 390 px.
