@@ -48,8 +48,11 @@ export async function requireAdmin(request?: Request) {
   return user;
 }
 export function failure(error: unknown) {
-  if (error instanceof HttpError)
-    return Response.json({ error: error.message }, { status: error.status });
+  if (error instanceof HttpError) {
+    // A short machine code when the error has one (listing reads: "blocked", "challenge"…), for diagnostics.
+    const code = (error as HttpError & { code?: unknown }).code;
+    return Response.json(typeof code === "string" ? { error: error.message, code } : { error: error.message }, { status: error.status });
+  }
   // Internal messages are short codes (e.g. MERCADOPAGO_400), never secrets.
   console.error(
     "commerce_error",

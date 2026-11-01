@@ -3,18 +3,16 @@
 // photos. parseListing is pure and covered by tests; fetchPublic downloads
 // only from public internet addresses.
 import "server-only";
-import { lookup } from "node:dns/promises";
-import { isIP } from "node:net";
 import { HttpError } from "@/lib/commerce/http";
+import { analyzeListing, type ReadMeta } from "@/lib/listings/analyze";
+import { decodeHtml } from "@/lib/listings/charset";
+import { FetchFailure, publicAddress, safeFetch, type FetchErrorCode } from "@/lib/listings/fetch";
+import { renderProvider } from "@/lib/listings/render";
 import { cleanText, cleanUrl } from "./shared";
-import { extractDetails } from "./listing-details";
 import { toDemo, type ImportedDemo } from "./import";
 
+export { publicAddress };
 export const MAX_LISTING_PHOTOS = 30;
-const MAX_HTML_BYTES = 3 * 1024 * 1024;
-const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
-const USER_AGENT =
-  "Mozilla/5.0 (compatible; amoblaIA-demos/1.0; +https://amoblaia.vercel.app)";
 
 export type Listing = {
   title: string;
@@ -175,8 +173,9 @@ function siteName(host: string) {
     .join(" ");
 }
 
-/** Removes " | Agency" or " - Agency" suffixes that sites append to every title. */
+/** Removes " | Agency" or " - Agency" suffixes (or a "Agency :: " prefix) that sites add to every title. */
 function trimTitle(title: string, agency: string) {
+  if (title.includes("::")) title = title.split("::").slice(1).join("::").trim() || title;
   const parts = title.split(/\s+[|–—-]\s+/);
   if (parts.length > 1) {
     const kept = parts.filter((p) => p.toLowerCase() !== agency.toLowerCase());
@@ -361,128 +360,118 @@ export function parseListing(html: string, pageUrl: string): Listing {
   };
 }
 
-/** True for addresses on the public internet; private, local and metadata ranges are refused. */
-export function publicAddress(ip: string) {
-  if (isIP(ip) === 4) {
-    const [a, b] = ip.split(".").map(Number);
-    return !(
-      a === 0 ||
-      a === 10 ||
-      a === 127 ||
-      (a === 100 && b >= 64 && b <= 127) ||
-      (a === 169 && b === 254) ||
-      (a === 172 && b >= 16 && b <= 31) ||
-      (a === 192 && b === 168) ||
-      (a === 198 && (b === 18 || b === 19)) ||
-      a >= 224
-    );
+/** What the visitor reads when a fetch fails: actionable, without technical detail. */
+const PAGE_ERRORS: Record<FetchErrorCode, [number, string]> = {
+  invalid_url: [400, "Usá la dirección pública de la publicación (http o https)."],
+  not_public: [400, "Esa dirección no es un sitio público."],
+  dns: [400, "No encontramos ese sitio. Revisá la URL."],
+  network: [502, "No pudimos abrir la publicación."],
+  timeout: [504, "La publicación tardó demasiado en responder. Probá de nuevo en un rato o cargá las fotos a mano."],
+  too_large: [413, "La página es demasiado grande."],
+  too_many_redirects: [502, "La publicación redirige demasiadas veces."],
+  blocked: [502, "El sitio de la inmobiliaria no deja leer la publicación desde nuestros servidores. Probá con el enlace de la misma propiedad en Zonaprop o Argenprop, o cargá las fotos a mano."],
+  challenge: [502, "El sitio pide una verificación anti-robots que no salteamos. Probá con el enlace de la misma propiedad en Zonaprop o Argenprop, o cargá las fotos a mano."],
+  http_error: [502, "La publicación respondió con un error. Revisá la URL."],
+};
+
+/** The failure as the API answers it, keeping the code for diagnostics and analytics. */
+export class ListingFetchError extends HttpError {
+  constructor(
+    readonly code: FetchErrorCode,
+    readonly upstreamStatus: number | null,
+    kind: "page" | "image",
+  ) {
+    const [status, message] = kind === "page" ? PAGE_ERRORS[code] : code === "too_large" ? [413, "La foto es demasiado grande."] : PAGE_ERRORS[code][0] === 400 ? PAGE_ERRORS[code] : [502, "No pudimos descargar la foto."];
+    super(status, code === "http_error" && kind === "page" && upstreamStatus ? `La publicación respondió con error ${upstreamStatus}. Revisá la URL.` : message);
   }
-  if (isIP(ip) === 6) {
-    const v = ip.toLowerCase();
-    const mapped = v.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-    if (mapped) return publicAddress(mapped[1]);
-    return !(
-      v === "::" ||
-      v === "::1" ||
-      v.startsWith("fc") ||
-      v.startsWith("fd") ||
-      v.startsWith("fe8") ||
-      v.startsWith("fe9") ||
-      v.startsWith("fea") ||
-      v.startsWith("feb") ||
-      v.startsWith("ff")
-    );
-  }
-  return false;
 }
 
-async function assertPublic(url: URL) {
-  if (!["http:", "https:"].includes(url.protocol) || (url.port && !["80", "443"].includes(url.port)))
-    throw new HttpError(400, "Usá la dirección pública de la publicación (http o https).");
-  const host = url.hostname.replace(/^\[|\]$/g, "");
-  const addresses = isIP(host)
-    ? [host]
-    : (await lookup(host, { all: true }).catch(() => [])).map((a) => a.address);
-  if (!addresses.length) throw new HttpError(400, "No encontramos ese sitio. Revisá la URL.");
-  if (!addresses.every(publicAddress))
-    throw new HttpError(400, "Esa dirección no es un sitio público.");
-}
-
-/** GET from the public internet only, following up to 4 redirects, with a size cap. */
+/** GET from the public internet only (see safeFetch: checked on connect, redirects re-checked, size and time caps). */
 export async function fetchPublic(raw: string, kind: "page" | "image") {
-  let url = new URL(raw);
-  for (let hop = 0; hop < 5; hop++) {
-    await assertPublic(url);
-    const response = await fetch(url, {
-      redirect: "manual",
-      signal: AbortSignal.timeout(kind === "page" ? 15000 : 20000),
-      headers: {
-        "User-Agent": USER_AGENT,
-        Accept: kind === "page" ? "text/html,application/xhtml+xml" : "image/*",
-        "Accept-Language": "es-AR,es;q=0.9",
-      },
-    }).catch(() => {
-      throw new HttpError(502, kind === "page" ? "No pudimos abrir la publicación." : "No pudimos descargar la foto.");
-    });
-    const next = response.headers.get("location");
-    if (response.status >= 300 && response.status < 400 && next) {
-      url = new URL(next, url);
-      continue;
-    }
-    if (!response.ok)
-      throw new HttpError(
-        502,
-        kind === "page"
-          ? `La publicación respondió con error ${response.status}. Revisá la URL.`
-          : "No pudimos descargar la foto.",
-      );
-    const max = kind === "page" ? MAX_HTML_BYTES : MAX_IMAGE_BYTES;
-    if (Number(response.headers.get("content-length") || 0) > max)
-      throw new HttpError(413, kind === "page" ? "La página es demasiado grande." : "La foto es demasiado grande.");
-    const reader = response.body?.getReader();
-    const chunks: Uint8Array[] = [];
-    let size = 0;
-    while (reader) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      size += value.length;
-      if (size > max) {
-        await reader.cancel();
-        throw new HttpError(413, kind === "page" ? "La página es demasiado grande." : "La foto es demasiado grande.");
-      }
-      chunks.push(value);
-    }
-    return { url: url.toString(), type: response.headers.get("content-type") || "", body: Buffer.concat(chunks) };
+  try {
+    const res = await safeFetch(raw, kind);
+    return { url: res.url, type: res.type, body: res.body, durationMs: res.durationMs };
+  } catch (e) {
+    if (e instanceof FetchFailure) throw new ListingFetchError(e.code, e.status, kind);
+    throw e;
   }
-  throw new HttpError(502, "La publicación redirige demasiadas veces.");
+}
+
+/** A page drawn by JavaScript: almost no text, no title and no photos in the HTML. */
+export function looksEmpty(html: string) {
+  const text = html.replace(/<(script|style|noscript)[\s\S]*?<\/\1>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  return text.length < 200 && !/<h1\b/i.test(html) && !/og:image/i.test(html);
 }
 
 /**
  * Everything the demo needs from the listing page, with the state of each
- * field. The detailed reading wins; the generic one (JSON-LD, Open Graph,
- * photos anywhere on the page) only fills what it could not find.
+ * field and how it was read. The platform's template wins, then JSON-LD,
+ * then the generic reading (Open Graph, labels, photos anywhere on the page),
+ * which only fills what the others could not find.
  */
-export function importListing(html: string, pageUrl: string): ImportedDemo {
+export function importListing(html: string, pageUrl: string, meta: ReadMeta = { strategy: "direct_http" }): ImportedDemo {
   const listing = parseListing(html, pageUrl);
-  return toDemo(extractDetails(html, pageUrl), {
+  const { details, diagnostics } = analyzeListing(html, pageUrl, meta, {
     title: listing.title,
-    location: listing.location,
-    description: listing.fullDescription ?? listing.description,
-    prices: listing.headlinePrices,
     images: listing.images,
     agencyName: listing.agency.name,
-    website: listing.agency.website,
   });
+  return toDemo(
+    details,
+    {
+      title: listing.title,
+      location: listing.location,
+      description: listing.fullDescription ?? listing.description,
+      prices: listing.headlinePrices,
+      images: listing.images,
+      agencyName: listing.agency.name,
+      website: listing.agency.website,
+    },
+    diagnostics,
+  );
+}
+
+/**
+ * Reads the page: a direct request first; when the site refuses it (403/503,
+ * bot check), times out or only sends an empty shell drawn by JavaScript, the
+ * render provider if one is configured and approved. Without one, the
+ * failure says what happened and offers the manual or portal alternative.
+ */
+async function readPage(address: string): Promise<{ html: string; url: string; meta: ReadMeta }> {
+  const provider = renderProvider();
+  let direct: Awaited<ReturnType<typeof fetchPublic>> | null = null;
+  let failure: ListingFetchError | null = null;
+  try {
+    direct = await fetchPublic(address, "page");
+  } catch (e) {
+    if (!(e instanceof ListingFetchError)) throw e;
+    failure = e;
+  }
+  if (direct) {
+    if (direct.type && !/html|xml/i.test(direct.type))
+      throw new HttpError(400, "Esa URL no es una página web. Pegá la URL de la ficha.");
+    const { text, charset } = decodeHtml(direct.body, direct.type);
+    if (!provider || !looksEmpty(text))
+      return { html: text, url: direct.url, meta: { strategy: "direct_http", durationMs: direct.durationMs, charset } };
+  }
+  const retry = !failure || ["blocked", "challenge", "timeout", "http_error"].includes(failure.code);
+  if (provider && retry) {
+    const started = Date.now();
+    // Only addresses that pass the same public-internet check are handed to the provider.
+    const checked = new URL(direct?.url ?? address);
+    const rendered = await provider.render(checked, { timeoutMs: 45000 }).catch(() => null);
+    if (rendered && rendered.status >= 200 && rendered.status < 300 && rendered.html)
+      return { html: rendered.html, url: checked.toString(), meta: { strategy: "render_provider", provider: provider.id, durationMs: Date.now() - started, charset: "utf-8" } };
+  }
+  if (failure) throw failure;
+  throw new HttpError(422, "La publicación se arma con JavaScript y no trae los datos en la página. Cargá las fotos a mano o usá el enlace de Zonaprop o Argenprop.");
 }
 
 export async function readListing(raw: unknown) {
   const address = cleanUrl(raw);
   if (!address) throw new HttpError(400, "Pegá la URL de la ficha de la propiedad.");
-  const page = await fetchPublic(address, "page");
-  if (page.type && !/html|xml/i.test(page.type))
-    throw new HttpError(400, "Esa URL no es una página web. Pegá la URL de la ficha.");
-  const html = page.body.toString("utf8");
-  const listing = parseListing(html, page.url);
+  const page = await readPage(address);
+  const listing = parseListing(page.html, page.url);
   // Keep the address the admin pasted (the redirect target may be a tracking URL).
-  return { ...listing, listingUrl: address, imported: importListing(html, page.url) };
+  return { ...listing, listingUrl: address, imported: importListing(page.html, page.url, page.meta) };
 }
