@@ -43,6 +43,7 @@ import {
 } from "@/lib/agency/shared";
 import type { ImportedDemo } from "@/lib/demos/import";
 import { importErrorCode, importEventProps } from "@/lib/listings/events";
+import { PENDING_IMPORT_KEY, PENDING_IMPORT_TTL_MS } from "@/lib/agency/demo-invite";
 import { adminPhotoUrl } from "@/lib/demos/shared";
 import { leadFromDemoRef } from "@/lib/leads/client";
 import { PanelNav, PanelTopbar, type PanelSection } from "./panel-shell";
@@ -958,6 +959,23 @@ export function ImportProperty({
   const router = useRouter();
   const [many, setMany] = useState(false);
   const [url, setUrl] = useState(initialUrl);
+  const [carried, setCarried] = useState("");
+  // The listing pasted in the agency's demo before signing up: offered here once, then forgotten.
+  useEffect(() => {
+    if (initialUrl) return;
+    try {
+      const raw = localStorage.getItem(PENDING_IMPORT_KEY);
+      if (!raw) return;
+      localStorage.removeItem(PENDING_IMPORT_KEY);
+      const pending = JSON.parse(raw) as { url?: unknown; at?: unknown };
+      if (typeof pending.url !== "string" || typeof pending.at !== "number" || Date.now() - pending.at > PENDING_IMPORT_TTL_MS) return;
+      setUrl(pending.url);
+      setCarried("Seguimos con el enlace que pegaste en la demo: tocá «Importar propiedad» para leerlo.");
+      document.getElementById("crear")?.scrollIntoView({ block: "center" });
+    } catch {
+      /* Private mode or malformed: nothing to continue. */
+    }
+  }, [initialUrl]);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [fields, setFields] = useState({ title: "", location: "", price: "", operation: "", description: "" });
   const [keep, setKeep] = useState<Set<string>>(new Set());
@@ -1112,6 +1130,11 @@ export function ImportProperty({
           </button>
         )}
       </form>
+      {carried && !preview && (
+        <p className="inline-notice" role="status">
+          {carried}
+        </p>
+      )}
       {error && (
         <p className="inline-error" role="alert">
           {error}

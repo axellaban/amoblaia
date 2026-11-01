@@ -144,17 +144,13 @@ describe("the demo's tracked actions", () => {
     const html = renderToStaticMarkup(<DemoView demo={demo} source={{ kind: "public", token: "tok" }} presentation owner={owner} />);
     expect(ids(html)).toEqual(
       expect.arrayContaining([
-        "owner_inicio",
-        "owner_imagenes",
-        "owner_crear",
-        "owner_crear_movil",
         "owner_guardar",
-        "owner_credits",
-        "owner_generate_menu",
-        "owner_pricing",
         "owner_nav_pricing",
         "owner_buyer_view",
         "owner_download",
+        "owner_download_all",
+        "owner_share",
+        "owner_another_property",
         "owner_generate",
       ]),
     );

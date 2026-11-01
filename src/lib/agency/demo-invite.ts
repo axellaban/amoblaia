@@ -4,6 +4,11 @@
 // opens it: the buyers' link, or a demo token alone, never gives access.
 // Client-safe and pure: the server looks the invitation up and passes it in.
 
+/** Browser key: the listing an agency pasted in its demo ("¿Querés probarlo con otra propiedad?"), for its panel to continue with. */
+export const PENDING_IMPORT_KEY = "habita_pending_import";
+/** A pending listing older than this is not offered anymore. */
+export const PENDING_IMPORT_TTL_MS = 7 * 24 * 3600 * 1000;
+
 /** The URL parameter that carries the invitation code (also on /panel/empezar). */
 export const INVITE_PARAM = "codigo";
 

@@ -16967,3 +16967,657 @@ main:has(.ap-sidebar) {
   font-size: 14px;
   color: #3e4a42;
 }
+
+/* ===================== Habita V2: the agency's demo (Fase 3) ===================== */
+/* One compact line: the agency, "Demo para inmobiliaria", prices, save and a menu. */
+.dv2-owner {
+  background: #fff;
+  color: var(--forest);
+  border-bottom: 1px solid var(--line);
+  box-shadow: none;
+}
+.dv2-owner-bar {
+  min-height: 60px;
+  padding: 8px 20px;
+  gap: 12px;
+}
+.dv2-owner-brand {
+  flex: 1;
+}
+.dv2-owner-brand strong {
+  max-width: 320px;
+  color: var(--forest);
+}
+.dv2-owner-brand small {
+  display: inline-block;
+  justify-self: start;
+  margin-top: 2px;
+  padding: 1px 10px;
+  border-radius: 999px;
+  background: #e2ecd9;
+  color: var(--forest);
+  font-size: 12px;
+  font-weight: 700;
+  opacity: 1;
+}
+.dv2-owner .dv2-owner-logo {
+  background: var(--forest);
+  color: #fff;
+}
+.dv2-owner-ctas {
+  align-items: center;
+}
+.dv2-owner-prices {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 10px;
+  border-radius: 10px;
+  color: var(--forest);
+  font-weight: 700;
+  font-size: 14px;
+  text-decoration: none;
+}
+.dv2-owner-prices:hover,
+.dv2-owner-prices.is-on {
+  background: #eef3eb;
+}
+.dv2-owner .dv2-owner-save {
+  min-height: 44px;
+  background: var(--forest);
+  color: #fff;
+}
+.dv2-owner .dv2-owner-save:hover {
+  background: var(--forest-light);
+  color: #fff;
+}
+.dv2-owner-menu-button {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--forest);
+  cursor: pointer;
+}
+.dv2-owner-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: rgba(20, 30, 24, 0.4);
+}
+.dv2-owner-drawer {
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: min(340px, 88vw);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px 18px;
+  background: #fff;
+  overflow-y: auto;
+}
+.dv2-owner-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 0 8px 8px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 6px;
+}
+.dv2-owner-drawer > a:not(.dv2-owner-save) {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  color: var(--forest);
+  font-weight: 700;
+  text-decoration: none;
+}
+.dv2-owner-drawer > a:hover,
+.dv2-owner-drawer > a.is-on:not(.dv2-owner-save) {
+  background: #eef3eb;
+}
+.dv2-owner-drawer .dv2-owner-count {
+  margin-left: auto;
+}
+.dv2-owner-drawer-note {
+  display: flex;
+  gap: 8px;
+  margin: 8px 0;
+  padding: 10px;
+  border-radius: 10px;
+  background: #f4f7f2;
+  font-size: 13px;
+  color: #3e4a42;
+}
+.dv2-owner-save.is-block {
+  width: 100%;
+  margin-top: auto;
+}
+.dv2-page:has(.dv2-owner) [id] {
+  scroll-margin-top: 76px;
+}
+@media (max-width: 860px) {
+  .dv2-owner-bar {
+    flex-wrap: nowrap;
+    padding: 6px 6px 6px 14px;
+    gap: 4px;
+  }
+  .dv2-owner-brand {
+    min-width: 0;
+  }
+  .dv2-owner-brand strong {
+    max-width: 100%;
+    font-size: 14px;
+    white-space: nowrap;
+  }
+  .dv2-owner-brand small {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11px;
+  }
+  .dv2-owner-prices {
+    padding: 0 6px;
+  }
+  .dv2-price {
+    flex-wrap: nowrap;
+    white-space: nowrap;
+  }
+  .dv2-owner .dv2-owner-logo {
+    display: none;
+  }
+  .dv2-owner .dv2-owner-save:not(.is-block) {
+    padding: 0 12px;
+    font-size: 13px;
+  }
+}
+@media (max-width: 380px) {
+  .dv2-owner-prices svg {
+    display: none;
+  }
+}
+
+/* The property first: what it is, where, its price, and a discreet "Ver como comprador". */
+.dv2-owner-eyebrow {
+  margin: 0 0 6px;
+  color: var(--forest);
+  font-weight: 700;
+  font-size: 14px;
+}
+.dv2-heading-side {
+  display: grid;
+  justify-items: end;
+  gap: 10px;
+}
+.dv2-buyer-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1.5px solid var(--forest);
+  border-radius: 999px;
+  color: var(--forest);
+  font-weight: 700;
+  font-size: 14px;
+  text-decoration: none;
+}
+.dv2-buyer-link:hover {
+  background: #eef3eb;
+}
+.dv2-back-demo {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  z-index: 60;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: 999px;
+  background: var(--forest);
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+  text-decoration: none;
+  box-shadow: 0 8px 22px rgba(20, 30, 24, 0.25);
+  white-space: nowrap;
+}
+@media (max-width: 860px) {
+  .dv2-page:has(.dv2-owner) .dv2-main {
+    gap: 18px;
+    padding-top: 14px;
+  }
+  .dv2-page:has(.dv2-owner) .dv2-heading {
+    align-items: flex-start;
+  }
+  .dv2-page:has(.dv2-owner) .dv2-heading h1 {
+    font-size: 26px;
+  }
+  .dv2-page:has(.dv2-owner) .dv2-location {
+    font-size: 15px;
+    margin-top: 4px;
+  }
+  .dv2-heading-side {
+    width: 100%;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    justify-items: start;
+  }
+  .dv2-buyer-link {
+    padding: 0 12px;
+    font-size: 13px;
+  }
+  .dv2-page:has(.dv2-owner) .dv2-stage {
+    height: clamp(260px, 52vh, 440px);
+  }
+  .dv2-back-demo {
+    top: auto;
+    bottom: 84px;
+  }
+}
+
+/* One "Estilos" section: small cards, the actions of the one on screen right under them. */
+@media (min-width: 901px) {
+  .dv2-gallery.has-panel:has(.dv2-styles) {
+    grid-template-columns: minmax(0, 1fr) 340px;
+  }
+}
+.dv2-styles {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+}
+.dv2-styles-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.dv2-styles-head h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 20px;
+  color: var(--forest);
+}
+.dv2-styles-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 44px;
+  border: 0;
+  background: none;
+  color: var(--forest);
+  font-weight: 700;
+  cursor: pointer;
+}
+.dv2-style-grid {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+}
+.dv2-style-card {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding: 6px;
+  border: 1.5px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+}
+.dv2-style-card.is-on {
+  border-color: var(--forest);
+  box-shadow: 0 0 0 1px var(--forest);
+}
+.dv2-style-pick {
+  position: relative;
+  display: grid;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: center;
+  cursor: pointer;
+  color: inherit;
+}
+.dv2-style-pick img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: 8px;
+}
+.dv2-style-card.is-missing img {
+  filter: grayscale(0.85) opacity(0.6);
+}
+.dv2-style-name {
+  font-weight: 700;
+  font-size: 14px;
+  text-align: center;
+}
+.dv2-style-check {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--forest);
+  color: #fff;
+}
+.dv2-style-edit {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.95);
+  color: var(--forest);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+}
+.dv2-style-generate {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 36px;
+  border: 0;
+  border-radius: 8px;
+  background: #e8f0e3;
+  color: var(--forest);
+  font-weight: 800;
+  font-size: 13px;
+  cursor: pointer;
+}
+.dv2-style-generate:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+.dv2-style-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+}
+.dv2-style-current {
+  flex-basis: 100%;
+  font-size: 13px;
+  color: var(--muted);
+}
+.dv2-style-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--forest);
+  font-weight: 700;
+  font-size: 14px;
+  text-decoration: none;
+  cursor: pointer;
+}
+.dv2-style-action:hover {
+  background: #eef3eb;
+}
+@media (max-width: 860px) {
+  .dv2-style-grid {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    padding-bottom: 4px;
+  }
+  .dv2-style-card {
+    flex: 0 0 31%;
+    min-width: 108px;
+    scroll-snap-align: start;
+  }
+  .dv2-styles {
+    padding: 12px;
+  }
+}
+
+/* The contextual editor: the tools that really exist, and where each one runs. */
+.dv2-edit-tools {
+  list-style: none;
+  display: grid;
+  gap: 6px;
+  margin: 4px 0 8px;
+  padding: 0;
+}
+.dv2-edit-tools li > button,
+.dv2-edit-tools li > a,
+.dv2-edit-tools li.is-on {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--forest);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.dv2-edit-tools li.is-on {
+  border-color: var(--forest);
+  background: #f1f6ee;
+  cursor: default;
+}
+.dv2-edit-tools strong,
+.dv2-edit-tools small {
+  display: block;
+}
+.dv2-edit-tools small {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+/* What the agency takes away: downloads and the buyers' link. */
+.dv2-value {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  align-items: start;
+}
+.dv2-value-download > summary,
+.dv2-value-share {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 64px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  cursor: pointer;
+  list-style: none;
+  font: inherit;
+  text-align: left;
+}
+.dv2-value-download > summary::-webkit-details-marker {
+  display: none;
+}
+.dv2-value-download > summary {
+  background: var(--forest);
+  color: #fff;
+}
+.dv2-value-share {
+  border: 1px solid var(--line);
+  background: #f4f6f2;
+  color: var(--forest);
+}
+.dv2-value strong,
+.dv2-value small {
+  display: block;
+}
+.dv2-value small {
+  font-size: 13px;
+  opacity: 0.85;
+}
+.dv2-value-download ul {
+  list-style: none;
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.dv2-value-download li a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 4px;
+  border-radius: 8px;
+  color: var(--forest);
+  font-size: 14px;
+  text-decoration: none;
+}
+.dv2-value-download li a:hover {
+  background: #eef3eb;
+}
+.dv2-value-download li img {
+  width: 56px;
+  height: 42px;
+  object-fit: cover;
+  border-radius: 6px;
+}
+.dv2-value-download li span {
+  flex: 1;
+}
+.dv2-value > .dv2-note {
+  grid-column: 1 / -1;
+}
+
+/* "¿Querés probarlo con otra propiedad?" */
+.dv2-another {
+  display: grid;
+  gap: 8px;
+  padding: 18px;
+  border-radius: 14px;
+  background: #e9f1e5;
+}
+.dv2-another h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 20px;
+  color: var(--forest);
+}
+.dv2-another p {
+  margin: 0;
+  color: #3e4a42;
+}
+.dv2-another form {
+  display: flex;
+  gap: 10px;
+}
+.dv2-another input {
+  flex: 1;
+  min-width: 0;
+  min-height: 48px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+}
+.dv2-another button {
+  min-height: 48px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--forest);
+  color: #fff;
+  font-weight: 800;
+  cursor: pointer;
+}
+.dv2-another small {
+  color: var(--muted);
+}
+
+/* The listing below, by sections. */
+.dv2-tabs {
+  position: sticky;
+  top: 60px;
+  z-index: 20;
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin: 0 -4px;
+  padding: 0 4px;
+  border-bottom: 1px solid var(--line);
+  background: var(--cream, #f8f5ef);
+}
+.dv2-tabs a {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  min-height: 48px;
+  padding: 0 14px;
+  color: var(--muted);
+  font-weight: 700;
+  text-decoration: none;
+  border-bottom: 3px solid transparent;
+}
+.dv2-tabs a:hover,
+.dv2-tabs a:first-child {
+  color: var(--forest);
+  border-bottom-color: var(--forest);
+}
+@media (max-width: 860px) {
+  .dv2-value {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .dv2-value-download > summary,
+  .dv2-value-share {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+  .dv2-value-download[open] {
+    grid-column: 1 / -1;
+  }
+  .dv2-another form {
+    flex-direction: column;
+  }
+  .dv2-tabs {
+    top: 56px;
+  }
+}
