@@ -9255,6 +9255,24 @@ h2 .accent {
   border-radius: 10px;
   background: #fff;
 }
+.dm-diagnosis {
+  font-size: 13px;
+  color: var(--muted);
+  border-radius: 8px;
+  background: var(--soft, #f4f6f3);
+  padding: 8px 10px;
+}
+.dm-diagnosis summary {
+  cursor: pointer;
+  min-height: 24px;
+  overflow-wrap: anywhere;
+}
+.dm-diagnosis ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 2px;
+}
 .dm-preview-logo {
   max-width: 180px;
   max-height: 48px;

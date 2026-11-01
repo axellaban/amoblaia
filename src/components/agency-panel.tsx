@@ -40,6 +40,7 @@ import {
   type PanelSummary,
 } from "@/lib/agency/shared";
 import type { ImportedDemo } from "@/lib/demos/import";
+import { importErrorCode, importEventProps } from "@/lib/listings/events";
 import { adminPhotoUrl } from "@/lib/demos/shared";
 import { leadFromDemoRef } from "@/lib/leads/client";
 
@@ -910,13 +911,19 @@ export function ImportProperty({
     setPreview(null);
     setStatus("Leyendo la publicación…");
     track("property_import_started", { source: hostOf(url), mode: "single" });
+    track("listing_import_preview_started", { source: hostOf(url), mode: "single" });
     leadFromDemoRef("demo_property_import_started");
     trackMilestone("first_import_started", { source: hostOf(url), mode: "single" });
+    const started = Date.now();
     try {
-      show(await api<Preview>(endpoint, { method: "POST", body: JSON.stringify({ url, preview: true }) }));
+      const data = await api<Preview>(endpoint, { method: "POST", body: JSON.stringify({ url, preview: true }) });
+      show(data);
+      track("listing_import_preview_completed", importEventProps(data.diagnostics, { source: hostOf(url), mode: "single", client_ms: Date.now() - started, duplicate: Boolean(data.duplicateOf) }));
     } catch (err) {
       setError(message(err, "No pudimos leer la publicación."));
       track("property_import_failed", { source: hostOf(url), status: "preview" });
+      const api_ = err instanceof ApiError ? err : null;
+      track("listing_import_preview_failed", { source: hostOf(url), mode: "single", error_code: importErrorCode(api_?.status, api_?.body), client_ms: Date.now() - started });
     } finally {
       setStatus("");
     }
@@ -927,6 +934,7 @@ export function ImportProperty({
     setError("");
     setNotice("");
     setStatus("Creando la propiedad…");
+    track("listing_import_confirmed", importEventProps(preview.diagnostics, { source: hostOf(preview.listingUrl), mode: "single", photos_kept: keep.size }));
     let made: Created;
     try {
       made = await api<Created>(endpoint, {
@@ -948,12 +956,14 @@ export function ImportProperty({
         setPreview({ ...preview, duplicateOf: String(body.duplicateOf) });
       } else setError(message(err, "No pudimos crear la propiedad."));
       track("property_import_failed", { source: hostOf(preview.listingUrl), status: "create" });
+      track("listing_import_failed", importEventProps(preview.diagnostics, { source: hostOf(preview.listingUrl), mode: "single", stage: "create", error_code: importErrorCode(err instanceof ApiError ? err.status : undefined, err instanceof ApiError ? err.body : null) }));
       setStatus("");
       return;
     }
     try {
       const done = await finishPhotos(made, (t) => setStatus(`${made.title ?? "Propiedad"}. ${t}`), endpoint);
       track("property_import_completed", { source: hostOf(preview.listingUrl), photos: done.photosDone, mode: "single", status: done.status });
+      track(done.status === "completed" ? "listing_import_completed" : "listing_import_partial", importEventProps(preview.diagnostics, { source: hostOf(preview.listingUrl), mode: "single", photos_done: done.photosDone, photos_total: done.photosTotal }));
       if (done.photosDone > 0) leadFromDemoRef("demo_property_import_completed");
       trackMilestone("first_import_completed", { source: hostOf(preview.listingUrl), photos: done.photosDone, mode: "single", status: done.status });
       await onDone?.();
@@ -1170,9 +1180,11 @@ function ImportMany({ onDone, onSingle }: { onDone?: () => Promise<unknown>; onS
       try {
         const data = await api<Preview>("/api/panel/importar", { method: "POST", body: JSON.stringify({ url: row.url, preview: true }) });
         update(i, { state: data.duplicateOf ? "duplicate" : "ready", data, pick: !data.duplicateOf });
+        track("listing_import_preview_completed", importEventProps(data.diagnostics, { source: hostOf(row.url), mode: "batch", duplicate: Boolean(data.duplicateOf) }));
       } catch (e) {
         update(i, { state: "error", error: message(e, "No pudimos leerla."), pick: false });
         track("property_import_failed", { source: hostOf(row.url), status: "preview", mode: "batch" });
+        track("listing_import_preview_failed", { source: hostOf(row.url), mode: "batch", error_code: importErrorCode(e instanceof ApiError ? e.status : undefined, e instanceof ApiError ? e.body : null) });
       }
     }
     setRunning(false);
@@ -1192,11 +1204,13 @@ function ImportMany({ onDone, onSingle }: { onDone?: () => Promise<unknown>; onS
         const done = await finishPhotos(made, () => null);
         update(i, { state: done.status === "completed" ? "done" : "partial", result: done });
         track("property_import_completed", { source: hostOf(row.url), photos: done.photosDone, mode: "batch", status: done.status });
+        track(done.status === "completed" ? "listing_import_completed" : "listing_import_partial", importEventProps(row.data.diagnostics, { source: hostOf(row.url), mode: "batch", photos_done: done.photosDone, photos_total: done.photosTotal }));
         if (done.photosDone > 0) leadFromDemoRef("demo_property_import_completed");
         trackMilestone("first_import_completed", { source: hostOf(row.url), photos: done.photosDone, mode: "batch", status: done.status });
       } catch (e) {
         update(i, { state: "error", error: message(e, "No pudimos importarla.") });
         track("property_import_failed", { source: hostOf(row.url), status: "create", mode: "batch" });
+        track("listing_import_failed", importEventProps(row.data.diagnostics, { source: hostOf(row.url), mode: "batch", stage: "create", error_code: importErrorCode(e instanceof ApiError ? e.status : undefined, e instanceof ApiError ? e.body : null) }));
       }
     }
     setRunning(false);
