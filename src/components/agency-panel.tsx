@@ -65,7 +65,7 @@ function RetryRow({ error, onRetry, busy = false }: { error: string; onRetry: ()
   );
 }
 
-export function AgencyPanel({ section }: { section: Section }) {
+export function AgencyPanel({ section, plans = null }: { section: Section; /** The plans of /precios, for "Planes y créditos". */ plans?: React.ReactNode }) {
   const [data, setData] = useState<PanelSummary | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -97,7 +97,10 @@ export function AgencyPanel({ section }: { section: Section }) {
         ) : section === "propiedades" ? (
           <PropertiesSection data={data} reload={load} />
         ) : section === "creditos" ? (
-          <CreditsSection />
+          <>
+            {plans && <div className="ap-plans">{plans}</div>}
+            <CreditsSection />
+          </>
         ) : (
           <SiteSection data={data} setData={setData} reload={load} />
         )}

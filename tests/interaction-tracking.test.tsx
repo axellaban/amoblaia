@@ -147,7 +147,7 @@ describe("the demo's tracked actions", () => {
         "owner_guardar",
         "owner_nav_pricing",
         "owner_buyer_view",
-        "owner_download",
+        "owner_create_video",
         "owner_download_all",
         "owner_share",
         "owner_another_property",

@@ -5,6 +5,7 @@ import { RotateCcw, Send, X } from "lucide-react";
 import { track } from "@/lib/analytics";
 import {
   ASSISTANT_NAME,
+  OPEN_ASSISTANT_EVENT,
   ASSISTANT_TITLE,
   greeting,
   MAX_MESSAGE_CHARS,
@@ -146,6 +147,16 @@ export function Assistant({ place }: { place: AssistantPlace }) {
   const [restored, setRestored] = useState(false);
   // This chat's id, so the team's history groups its questions; a new conversation gets a new one.
   const conversation = useRef<string | null>(null);
+
+  // "Ayuda" in the panel's sidebar opens this same chat.
+  useEffect(() => {
+    const openChat = () => {
+      setOpen(true);
+      track("asistente_abierto", { area, origin: "sidebar_ayuda" });
+    };
+    window.addEventListener(OPEN_ASSISTANT_EVENT, openChat);
+    return () => window.removeEventListener(OPEN_ASSISTANT_EVENT, openChat);
+  }, [area]);
 
   useEffect(() => {
     // Restored after mount, so the server render and the first client render match.

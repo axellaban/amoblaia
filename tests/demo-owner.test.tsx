@@ -57,15 +57,17 @@ describe("the agency's own demo, under its panel header", () => {
   const html = renderToStaticMarkup(<DemoView demo={demo} source={{ kind: "public", token: "tok" }} presentation owner={owner} />);
   const hrefs = [...html.matchAll(/href="([^"]+)"/g)].map((m) => m[1].replace(/&amp;/g, "&"));
 
-  it("shows a compact bar (agency, «Demo para inmobiliaria», prices, save) and the whole listing, property first", () => {
-    for (const text of ["Inmobiliaria de prueba", "Demo para inmobiliaria", "Precios", "Guardar mi panel", "Ver como comprador", "Así podría verse esta propiedad con Habita", "Departamento de prueba"])
+  it("follows the mockup: HABITA bar with «Demo para inmobiliaria», the pitch, the photo, the styles, then the listing", () => {
+    for (const text of ["HABITA", "Demo para inmobiliaria", "Precios", "Guardar mi panel", "Ver como comprador", "Así podría verse esta propiedad con Habita", "Mejorá tus fotos, probá distintos estilos", "Departamento de prueba"])
       expect(html).toContain(text);
     expect(html).toContain('class="dv2-owner"');
-    // The old bar's sections and strip are gone; the menu opens on demand.
     for (const old of ["Modo demostración", "dv2-owner-nav", "dv2-owner-strip", "dv2-banner"]) expect(html).not.toContain(old);
-    // The property comes before the photo, and the photo before the tools.
-    expect(html.indexOf('id="dv2-title"')).toBeLessThan(html.indexOf("dv2-stage"));
+    // The pitch, the photo and the styles come first; the property's listing below.
+    expect(html.indexOf('id="dv2-hero-title"')).toBeLessThan(html.indexOf("dv2-stage"));
     expect(html.indexOf("dv2-stage")).toBeLessThan(html.indexOf('id="dv2-estilos"'));
+    expect(html.indexOf('id="dv2-estilos"')).toBeLessThan(html.indexOf('id="dv2-title"'));
+    expect(html).toContain("Antes");
+    expect(html).toContain("Después");
   });
 
   it("leads every saving action to the private invitation, never into the real panel", () => {
@@ -77,22 +79,21 @@ describe("the agency's own demo, under its panel header", () => {
     expect(hrefs).not.toContain("/precios");
   });
 
-  it("has one «Estilos» section: the original, the prepared styles with «Editar», then «Generar» for the rest", () => {
+  it("has one «Estilos» section: prepared styles with «Editar» and «Crear video» (in the panel), then «Generar» for the rest", () => {
     const cards = [...html.matchAll(/<li class="dv2-style-card[^"]*">[\s\S]*?<span class="dv2-style-name">([^<]+)<\/span>/g)].map((m) => m[1]);
-    expect(cards[0]).toBe("Original");
-    expect(cards[1]).toBe("Moderno");
-    expect(cards).toHaveLength(5);
+    expect(cards[0]).toBe("Moderno");
+    expect(cards).toHaveLength(4);
     expect((html.match(/class="dv2-style-card is-missing"/g) ?? []).length).toBe(3);
     expect((html.match(/class="dv2-style-generate"/g) ?? []).length).toBe(3);
     expect(html).toContain('aria-label="Editar Moderno"');
+    // The video action leads to the panel (where videos are made), never to a fake clip.
+    expect(html).toMatch(/href="\/panel\/empezar\?codigo=[^"]+" aria-label="Crear un video con Moderno en tu panel"/);
     expect(html).toContain("Ver todos");
-    // No second styles panel, and no video action while video does not exist.
     expect(html).not.toContain("Imaginá este espacio a tu estilo");
-    expect(html).not.toMatch(/Ver en movimiento|Crear video|Video IA/);
+    expect(html).not.toMatch(/Ver en movimiento/);
   });
 
-  it("downloads from the public images: the version on screen and every ready one, with the true count", () => {
-    expect(html).toMatch(/href="\/demo\/tok\/imagen\/p1\?e=modern&amp;r=1&amp;w=2048" download="departamento-de-prueba-living-moderno\.jpg"/);
+  it("downloads every ready version from the public images, with the true count, and shares the buyers' page", () => {
     expect(html).toMatch(/href="\/demo\/tok\/imagen\/p1\?e=modern&amp;r=1&amp;w=2048" download="departamento-de-prueba-foto-1-moderno\.jpg"/);
     expect(html).toContain("1 lista para publicar, gratis");
     expect(html).toContain("Compartir ficha");

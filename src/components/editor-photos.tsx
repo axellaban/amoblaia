@@ -30,6 +30,9 @@ import {
   Undo2,
   WandSparkles,
   X,
+  Sofa,
+  Eraser,
+  CloudSun,
 } from "lucide-react";
 import { Comparison } from "./comparison";
 import { api } from "./admin-demos";
@@ -159,6 +162,8 @@ export function PhotoWorkspace({
   const [viewOf, setViewOf] = useState<Record<string, string | null>>({});
   const [mode, setMode] = useState<ViewMode>("version");
   const [tab, setTab] = useState<"create" | "edit">("create");
+  // Which of the four actions is open: staging (create) or the editor with its tool preselected.
+  const [action, setAction] = useState<"stage" | "enhance" | "remove" | "sky">("stage");
   // The retouch of each photo, previewed live with CSS filters until it is saved as a version.
   const [adjusts, setAdjusts] = useState<Record<string, Adjust>>({});
   const [saving, setSaving] = useState(false);
@@ -552,29 +557,42 @@ export function PhotoWorkspace({
         </div>
 
         <aside id={`${uid}-side`} className="pw-side" aria-label="Ambientar y editar">
-          <div className="pw-tabs" role="tablist" aria-label="Qué querés hacer con esta foto">
-            <button
-              type="button"
-              role="tab"
-              id={`${uid}-tab-create`}
-              aria-selected={tab === "create"}
-              aria-controls={`${uid}-panel`}
-              onClick={() => setTab("create")}
-            >
-              <WandSparkles size={15} aria-hidden="true" /> Ambientación con IA
-            </button>
-            <button
-              type="button"
-              role="tab"
-              id={`${uid}-tab-edit`}
-              aria-selected={tab === "edit"}
-              aria-controls={`${uid}-panel`}
-              onClick={() => setTab("edit")}
-            >
-              <Pencil size={15} aria-hidden="true" /> Editar
-            </button>
-          </div>
-          <div role="tabpanel" id={`${uid}-panel`} aria-labelledby={`${uid}-tab-${tab}`}>
+          <h3 className="pw-side-title" id={`${uid}-what`}>¿Qué querés hacer?</h3>
+          {/* The four ways to work a photo; each opens its panel right below (spec: estudio de imágenes). */}
+          <ul className="pw-what" aria-labelledby={`${uid}-what`}>
+            {(
+              [
+                { id: "stage", icon: Sofa, title: "Ambientar con IA", text: "Agregá mobiliario y decoración." },
+                { id: "enhance", icon: WandSparkles, title: "Mejorar foto", text: "Ajustá luz, color y nitidez." },
+                { id: "remove", icon: Eraser, title: "Quitar muebles", text: "Vaciá el ambiente para mostrar su potencial." },
+                { id: "sky", icon: CloudSun, title: "Cambiar cielo", text: "Reemplazá el cielo y mejorá la luz." },
+              ] as const
+            ).map(({ id: what, icon: Icon, title, text }) => (
+              <li key={what}>
+                <button
+                  type="button"
+                  className="pw-what-item"
+                  aria-pressed={action === what}
+                  aria-controls={`${uid}-panel`}
+                  onClick={() => {
+                    setAction(what);
+                    setTab(what === "stage" ? "create" : "edit");
+                    pickTool(what === "remove" ? "remove" : what === "sky" ? "sky" : null);
+                  }}
+                >
+                  <span className="pw-what-icon" aria-hidden="true">
+                    <Icon size={18} />
+                  </span>
+                  <span className="pw-what-text">
+                    <strong>{title}</strong>
+                    <small>{text}</small>
+                  </span>
+                  <ChevronRight size={16} aria-hidden="true" />
+                </button>
+              </li>
+            ))}
+          </ul>
+          <div id={`${uid}-panel`} className="pw-what-panel" aria-labelledby={`${uid}-what`}>
             {tab === "create" ? (
               <CreatePanel
                 key={photo.id}
@@ -1306,7 +1324,7 @@ function CreatePanel({
       <div className="pw-create-actions">
         {step === "choose" ? (
           <button className="button button-primary" disabled={Boolean(why) || working}>
-            {working ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />} Generar
+            {working ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />} Generar versión
           </button>
         ) : (
           <>
