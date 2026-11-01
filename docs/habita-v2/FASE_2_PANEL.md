@@ -70,3 +70,7 @@ Capturas en [`docs/ux/habita-v2/evidencia/fase-2/`](../ux/habita-v2/evidencia/fa
 
 1. ~~Aplicar la migración~~ **Aplicada el 01/11/2026** en el proyecto Supabase `cmpfwuycxdleunuumlkm` vía conector: tabla vacía, RLS activo, sin privilegios para `anon`/`authenticated`, escritura solo desde el servidor. El advisor marca «RLS sin políticas» (INFO), igual que las demás tablas solo-servidor: es intencional.
 2. Recorrer el preview con una cuenta real (dueño y viewer) en 1440 px y 390 px.
+
+## 7. Pendiente pedido (01/11/2026)
+
+- Mover **«Usuarios»** en la sidebar al primer grupo, **arriba de «Sitio web»** (hoy está junto a «Planes y créditos»). Mantiene la restricción a dueño/administrador. Al hacerlo: actualizar el test de sidebar y las capturas de esta fase.
