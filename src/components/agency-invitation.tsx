@@ -14,6 +14,7 @@ import { cta, markInternal } from "@/lib/interaction-tracking";
 import { useSignupTracking } from "@/lib/signup-tracking";
 import { browserClient } from "@/lib/supabase/client";
 import { leadFromDemoRef } from "@/lib/leads/client";
+import { GoogleSignIn } from "./google-signin";
 
 export type InvitationInfo = { agencyName: string; properties: number; freeCredits: number; expiresAt: string };
 
@@ -58,7 +59,11 @@ export function InvitationSignup({
   // The same signup step as the form without a code, so the demo funnel does not break here.
   // Legacy name kept for the current funnels: it fires when this screen is seen, not when the form is begun.
   useEffect(() => {
-    if (invitation && !preview) track("agency_signup_started", { origin: property ? "demo_invitation" : "invitation", ...(property ? { demo_id: property.id } : {}) });
+    if (invitation && !preview) {
+      track("agency_signup_started", { origin: property ? "demo_invitation" : "invitation", ...(property ? { demo_id: property.id } : {}) });
+      // Funnel (spec §8): the "Guardar mi panel" step was reached.
+      track("panel_claim_started", { origin: property ? "demo_invitation" : "invitation", ...(property ? { demo_id: property.id } : {}) });
+    }
   }, [invitation, property, preview]);
   // The team previewing the step is not an agency signing up.
   useEffect(() => {
@@ -118,6 +123,7 @@ export function InvitationSignup({
         await api("/api/panel/reclamar", { method: "POST", body: JSON.stringify({ code }) });
       }
       track("agency_claimed", { origin: property ? "demo_invitation" : "invitation", new_account: mode === "new", ...(property ? { demo_id: property.id } : {}) }, true);
+      track("panel_claim_completed", { method: mode === "new" ? "email" : "existing", ...(property ? { demo_id: property.id } : {}) }, true);
       // Lead score: the server only takes it once the account belongs to the demo's agency.
       leadFromDemoRef("demo_account_created");
       // Into the property it came from, ready for a first try; otherwise the panel's home.
@@ -147,9 +153,18 @@ export function InvitationSignup({
         ) : (
           property && <h2>Entrá a tu panel</h2>
         )}
+        {mode === "new" && !preview && (
+          <div className="ap-start-google">
+            {/* Back here signed in: the claim continues by itself (continuar=google). */}
+            <GoogleSignIn next={`${here}${here.includes("?") ? "&" : "?"}continuar=google`} />
+            <p className="ap-start-or">
+              <span>o con tu email</span>
+            </p>
+          </div>
+        )}
         <label>
           Email
-          <input type="email" required autoComplete="email" inputMode="email" value={email} onChange={(e) => setEmail(e.target.value)} autoFocus />
+          <input type="email" required autoComplete="email" inputMode="email" value={email} onChange={(e) => setEmail(e.target.value)} />
         </label>
         <label>
           {mode === "new" ? "Elegí una contraseña" : "Tu contraseña"}
@@ -185,11 +200,7 @@ export function InvitationSignup({
               ¿Ya tenés cuenta en habita?{" "}
               <button type="button" className="text-link" onClick={() => (setMode("existing"), setError(""))}>
                 Entrá con ella
-              </button>{" "}
-              o{" "}
-              <Link href={`/acceso?next=${encodeURIComponent(here)}`} className="text-link" {...cta("invitation_google", "invitation_form", "auth_login")}>
-                con Google
-              </Link>
+              </button>
               .
             </>
           ) : (

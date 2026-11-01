@@ -63,6 +63,7 @@ export default async function StartPage({ searchParams }: Props) {
   }
   return (
     <AgencyOnboarding
+      autoClaim={one(q.continuar) === "google"}
       signedIn={signedIn}
       hasAgency={Boolean(membership)}
       code={code}

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { adminAgencies } from "@/lib/agency/admin";
+import { adminAgencies, claimsToReview } from "@/lib/agency/admin";
+import { CLAIM_REVIEW_LABEL } from "@/lib/agency/claim-review";
 import { AgenciesTable } from "@/components/admin-agencies";
 import { requireAdminPage } from "@/lib/demos/admin-page";
 export const dynamic = "force-dynamic";
@@ -18,7 +19,7 @@ export default async function AgenciesPage({ searchParams }: Props) {
   const sp = await searchParams;
   const q = one(sp.q).slice(0, 80);
   const page = Math.max(1, Number(one(sp.pagina)) || 1);
-  const data = await adminAgencies({ q, page }).catch(() => null);
+  const [data, toReview] = await Promise.all([adminAgencies({ q, page }).catch(() => null), claimsToReview().catch(() => [])]);
   const pages = data ? Math.max(1, Math.ceil(data.total / data.perPage)) : 1;
   const href = (p: number) => `/admin/inmobiliarias?${new URLSearchParams({ ...(q ? { q } : {}), ...(p > 1 ? { pagina: String(p) } : {}) })}`;
   return (
@@ -37,6 +38,21 @@ export default async function AgenciesPage({ searchParams }: Props) {
           </Link>
         </div>
       </div>
+      {toReview.length > 0 && (
+        <section className="account-panel aa-claim" aria-labelledby="aa-claims-review">
+          <h2 id="aa-claims-review">Cuentas reclamadas para revisar ({toReview.length})</h2>
+          <ul className="aa-list">
+            {toReview.map((a) => (
+              <li key={a.id}>
+                <Link href={`/admin/inmobiliarias/${a.id}`} className="text-link">
+                  {a.name}
+                </Link>{" "}
+                · {a.claim_email} · <span className={`dm-status ${a.claim_review === "mismatch" ? "is-alert" : ""}`}>{CLAIM_REVIEW_LABEL[a.claim_review]}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       <form className="dm-filters" action="/admin/inmobiliarias" role="search">
         <label className="dm-search">
           <input type="search" name="q" defaultValue={q} placeholder="Buscar por nombre o dirección del sitio" aria-label="Buscar inmobiliaria" />

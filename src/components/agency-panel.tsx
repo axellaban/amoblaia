@@ -7,19 +7,21 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  CreditCard,
+  ArrowRight,
+  CircleHelp,
   ExternalLink,
+  Eye,
   Globe,
-  Home,
-  ImagePlus,
   LayoutGrid,
   LayoutList,
   Link2,
+  MapPin,
   MoreHorizontal,
+  PlayCircle,
   Search,
   Share2,
   Sparkles,
-  Users,
+  Wand2,
 } from "lucide-react";
 import { ApiError, api } from "./admin-demos";
 import { ImportPreview, MapReview, exceptions, initialMapChoice, mapOverride, syncPhotos, type MapChoice } from "./demo-import";
@@ -40,41 +42,15 @@ import {
   type PanelSummary,
 } from "@/lib/agency/shared";
 import type { ImportedDemo } from "@/lib/demos/import";
+import { importErrorCode, importEventProps } from "@/lib/listings/events";
+import { PENDING_IMPORT_KEY, PENDING_IMPORT_TTL_MS } from "@/lib/agency/demo-invite";
 import { adminPhotoUrl } from "@/lib/demos/shared";
 import { leadFromDemoRef } from "@/lib/leads/client";
+import { PanelNav, PanelTopbar, type PanelSection } from "./panel-shell";
+import { videoEnabled } from "@/lib/agency/flags";
 
-type Section = "inicio" | "propiedades" | "creditos" | "sitio" | "usuarios";
-const SECTIONS: { id: Section; href: string; label: string; icon: typeof Home; managers?: boolean }[] = [
-  { id: "inicio", href: "/panel", label: "Inicio", icon: Home },
-  { id: "propiedades", href: "/panel/propiedades", label: "Mis propiedades", icon: LayoutGrid },
-  { id: "creditos", href: "/panel/creditos", label: "Créditos IA", icon: CreditCard },
-  { id: "sitio", href: "/panel/sitio", label: "Mi sitio web", icon: Globe, managers: true },
-  { id: "usuarios", href: "/panel/usuarios", label: "Usuarios", icon: Users, managers: true },
-];
-
-/** The panel's sections; the site and users only for the owner and administrators. */
-export function PanelNav({ section, agencyName, role }: { section: Section; agencyName?: string; role?: AgencyRole }) {
-  return (
-    <div className="ap-nav-wrap">
-      <nav className="container ap-nav" aria-label="Panel de la inmobiliaria">
-        {agencyName && <strong className="ap-nav-name">{agencyName}</strong>}
-        <div className="ap-nav-links">
-          {SECTIONS.filter((s) => !s.managers || (role && canManage(role))).map(({ id, href, label, icon: Icon }) => (
-            <Link
-              key={id}
-              href={href}
-              className={id === section ? "is-on" : ""}
-              aria-current={id === section ? "page" : undefined}
-              {...cta(`panel_nav_${id}`, "panel_nav", `panel_${id}`, "navigation")}
-            >
-              <Icon size={16} aria-hidden="true" /> {label}
-            </Link>
-          ))}
-        </div>
-      </nav>
-    </div>
-  );
-}
+type Section = PanelSection;
+export { PanelNav };
 
 const message = (e: unknown, fallback: string) => (e instanceof Error && e.message ? e.message : fallback);
 
@@ -111,7 +87,7 @@ export function AgencyPanel({ section }: { section: Section }) {
   }, [load]);
   return (
     <>
-      <PanelNav section={section} agencyName={data?.agency.name} role={data?.role} />
+      <PanelNav section={section} agencyName={data?.agency.name} role={data?.role} credits={data?.credits} />
       <div className="account-page container ap-page">
         {error && <RetryRow error={error} busy={loading} onRetry={() => void load()} />}
         {!data ? (
@@ -152,22 +128,128 @@ function nextStep(d: PanelSummary): { text: string; href: string; action: string
   return null;
 }
 
+/** The three ways in (spec §2.1): exactly these, as large cards. Video only where it is enabled. */
+function HomeCards({ creator }: { creator: boolean }) {
+  if (!creator) return null;
+  const cards = [
+    {
+      id: "crear",
+      href: "#crear",
+      title: "Crear demostraciones",
+      tag: "Ideal para mostrar a tus clientes",
+      text: "Fichas interactivas de tus propiedades a partir del enlace de la publicación.",
+      image: "/ejemplos/living-scandinavian.webp",
+      icon: Sparkles,
+    },
+    {
+      id: "imagenes",
+      href: "/panel/imagenes",
+      title: "Estudio de imágenes",
+      tag: "Recomendado",
+      text: "Mejorá, ambientá y quitá muebles de tus fotos con IA, y descargalas.",
+      image: "/ejemplos/bedroom-modern.webp",
+      icon: Wand2,
+    },
+    ...(videoEnabled()
+      ? [
+          {
+            id: "video",
+            href: "/panel/video",
+            title: "Video",
+            tag: "IA",
+            text: "Videos de tus propiedades a partir de sus fotos.",
+            image: "/ejemplos/outdoor-modern.webp",
+            icon: PlayCircle,
+          },
+        ]
+      : []),
+  ];
+  return (
+    <div className="ap-cards" role="list">
+      {cards.map(({ id, href, title, tag, text, image, icon: Icon }) => (
+        <Link
+          key={id}
+          role="listitem"
+          href={href}
+          className={`ap-bigcard ap-bigcard-${id}`}
+          {...cta(`panel_home_${id}`, "panel_home_cards", id === "crear" ? "property_import" : id === "imagenes" ? "image_studio" : "video_section")}
+          onClick={(e) => {
+            if (href === "#crear") {
+              e.preventDefault();
+              const target = document.getElementById("crear");
+              target?.scrollIntoView({ behavior: "smooth", block: "center" });
+              (document.getElementById("ap-import-url") as HTMLInputElement | null)?.focus({ preventScroll: true });
+            }
+          }}
+        >
+          <span className="ap-bigcard-art" aria-hidden="true">
+            <img src={image} alt="" loading="lazy" />
+          </span>
+          <span className="ap-bigcard-icon" aria-hidden="true">
+            <Icon size={24} />
+          </span>
+          <span className="ap-bigcard-title">{title}</span>
+          <span className="ap-bigcard-tag">{tag}</span>
+          <span className="ap-bigcard-text">{text}</span>
+          <span className="ap-bigcard-go" aria-hidden="true">
+            <ArrowRight size={18} />
+          </span>
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+/** A property on the home: photo, title, place, price and state, with the same actions as in «Mis propiedades». */
+function HomeProperty({ p, agency, reload, canDelete, canPublish, primary }: { p: PanelProperty; agency: PanelSummary["agency"]; reload: () => Promise<unknown>; canDelete: boolean; canPublish: boolean; primary: boolean }) {
+  const actions = usePropertyActions(p, agency, reload);
+  return (
+    <article className="ap-prop">
+      <Link href={editorLink(p.id, "fotos", "/panel")} className="ap-prop-photo" aria-label={`Abrir ${p.title}`}>
+        {p.coverPhotoId ? <img src={adminPhotoUrl(p.coverPhotoId, null, 640)} alt="" loading="lazy" /> : <span>Sin fotos</span>}
+        {primary && <span className="ap-prop-flag">Principal</span>}
+      </Link>
+      <div className="ap-prop-body">
+        <h3>
+          <Link href={editorLink(p.id, "fotos", "/panel")}>{p.title}</Link>
+        </h3>
+        {p.location && (
+          <p className="ap-prop-location">
+            <MapPin size={16} aria-hidden="true" /> {p.location}
+          </p>
+        )}
+        <p className="ap-prop-meta">
+          {p.operation && <span className="ap-chip">{p.operation}</span>}
+          <span>{p.price ?? "Consultar precio"}</span>
+          <span className={`ap-badge ${actions.live ? "is-live" : ""}`}>{actions.live ? "Publicada" : "Borrador"}</span>
+        </p>
+        <p className="ap-prop-progress">
+          <ProgressLine p={p} />
+        </p>
+        <ActionNote note={actions.note} />
+      </div>
+      <div className="ap-prop-actions">
+        <Link href={editorLink(p.id, "fotos", "/panel")} className="button button-outline ap-prop-open">
+          Ver detalle <ArrowRight size={16} aria-hidden="true" />
+        </Link>
+        <MoreMenu p={p} actions={actions} canDelete={canDelete} canPublish={canPublish} backTo="/panel" />
+      </div>
+    </article>
+  );
+}
+
 function PanelHome({ data, reload }: { data: PanelSummary; reload: () => Promise<unknown> }) {
   const editor = canEdit(data.role);
   const creator = canCreate(data);
   const step = editor ? nextStep(data) : null;
-  const firstSteps = creator && data.counts.published === 0;
+  const latest = data.properties[0] ?? null;
+  const shown = data.properties.slice(0, 3);
+  const buyerLink = latest ? (data.agency.slug && data.agency.sitePublished ? agencySitePath(data.agency.slug) : `/panel/propiedades/${latest.id}/vista-previa`) : null;
   return (
     <>
-      <div className="ap-head">
-        <div>
-          <span className="eyebrow">
-            Tu inmobiliaria{data.role !== "owner" ? ` · ${ROLE_LABEL[data.role]}` : ""}
-          </span>
-          <h1>{data.agency.name}</h1>
-        </div>
-        <SiteLink agency={data.agency} />
-      </div>
+      <PanelTopbar agencyName={data.agency.name} logo={data.agency.logo}>
+        {data.role !== "owner" && <span className="ap-chip">{ROLE_LABEL[data.role]}</span>}
+      </PanelTopbar>
       {(!editor || data.scope) && (
         <p className="inline-notice" role="note">
           {!editor
@@ -175,6 +257,25 @@ function PanelHome({ data, reload }: { data: PanelSummary; reload: () => Promise
             : "Tu usuario trabaja en las propiedades que te asignaron."}
         </p>
       )}
+      <section className="ap-hero" aria-labelledby="ap-hero-title">
+        <div>
+          <h1 id="ap-hero-title">Hola, ¿qué querés crear hoy?</h1>
+          <p>Transformá tus propiedades en contenido visual de alto impacto con IA.</p>
+        </div>
+        {latest && (
+          <div className="ap-hero-latest">
+            <div>
+              <strong>{data.counts.total === 1 ? "Tu propiedad" : "Tu última propiedad"}</strong>
+              <span>{latest.title}</span>
+              <Link href={editorLink(latest.id, "fotos", "/panel")} className="button button-small button-outline" {...cta("panel_hero_latest", "panel_home", "property_editor")}>
+                Ver propiedad <ArrowRight size={14} aria-hidden="true" />
+              </Link>
+            </div>
+            {latest.coverPhotoId && <img src={adminPhotoUrl(latest.coverPhotoId, null, 320)} alt="" />}
+          </div>
+        )}
+      </section>
+      <HomeCards creator={creator} />
       {step && (
         <section className="ap-next" aria-label="Siguiente paso">
           <p>{step.text}</p>
@@ -183,79 +284,6 @@ function PanelHome({ data, reload }: { data: PanelSummary; reload: () => Promise
           </Link>
         </section>
       )}
-      {creator && (
-      <div className="ap-entries">
-        <section className="ap-import-hero" aria-labelledby="ap-import-title">
-          <h2 id="ap-import-title">Crear demostraciones</h2>
-          <p className="ap-entry-sub">o fichas de propiedades</p>
-          <ImportProperty onDone={reload} />
-        </section>
-        <section className="ap-entry" aria-labelledby="ap-images-title">
-          <h2 id="ap-images-title">
-            <ImagePlus size={22} aria-hidden="true" /> Importar imágenes
-          </h2>
-          <p className="ap-entry-sub">Para ambientar y descargar tus fotos.</p>
-          <ul className="ap-entry-methods" aria-label="Formas de traer las fotos">
-            <li>
-              <Link href="/panel/imagenes?metodo=url" {...cta("import_images_url", "panel_home", "image_import_url")}>
-                Desde URL
-              </Link>
-            </li>
-            <li>
-              <Link href="/panel/imagenes?metodo=many" {...cta("import_images_many", "panel_home", "image_import_many")}>
-                Varias URLs
-              </Link>
-            </li>
-            <li>
-              <Link href="/panel/imagenes?metodo=files" {...cta("import_images_files", "panel_home", "image_upload")}>
-                Subir fotos
-              </Link>
-            </li>
-          </ul>
-          <Link href="/panel/imagenes?metodo=url" className="button button-outline" {...cta("import_images_search", "panel_home", "image_import_url")}>
-            Buscar fotos
-          </Link>
-          <Link href="/panel/imagenes/lote" className="text-link" {...cta("imported_images", "panel_home", "image_batch", "navigation")}>
-            Ver fotos importadas
-          </Link>
-          <p className="dm-help">Importar no genera imágenes ni usa créditos. Publicar la ficha es una acción aparte.</p>
-        </section>
-      </div>
-      )}
-      {firstSteps && (
-        <ol className="ap-steps" aria-label="Primeros pasos">
-          <li className={data.counts.total ? "is-done" : ""}>Agregá una propiedad pegando su enlace</li>
-          <li>Revisá datos y fotos</li>
-          <li>Ambientá con IA, si querés (es opcional y usa créditos)</li>
-          <li>Publicá la ficha y compartila: importar y publicar no usan créditos</li>
-        </ol>
-      )}
-      <dl className="ap-stats">
-        <div>
-          <dt>Propiedades</dt>
-          <dd>{data.counts.total}</dd>
-        </div>
-        <div>
-          <dt>Publicadas</dt>
-          <dd>{data.counts.published}</dd>
-        </div>
-        <div>
-          <dt>Borradores</dt>
-          <dd>{data.counts.drafts}</dd>
-        </div>
-        <div>
-          <dt>Con imágenes IA</dt>
-          <dd>{data.counts.staged}</dd>
-        </div>
-        <div>
-          <dt>Créditos IA</dt>
-          <dd>
-            {data.credits === null ? <span className="ap-unknown">No disponible</span> : data.credits} <Link href="/panel/creditos" {...cta("panel_credits", "panel_summary", "panel_credits")}>
-              Ver
-            </Link>
-          </dd>
-        </div>
-      </dl>
       {creator && data.imports.length > 0 && (
         <section className="account-panel" aria-labelledby="ap-imports-title">
           <h2 id="ap-imports-title">Importaciones pendientes</h2>
@@ -266,17 +294,24 @@ function PanelHome({ data, reload }: { data: PanelSummary; reload: () => Promise
           </ul>
         </section>
       )}
-      <section>
+      <section className="ap-props" aria-labelledby="ap-props-title">
         <div className="ap-section-head">
-          <h2>Últimas propiedades</h2>
-          <Link href="/panel/propiedades" className="text-link">
-            Ver todas ({data.counts.total})
-          </Link>
+          <h2 id="ap-props-title">
+            Tus propiedades{" "}
+            <span className="ap-count">
+              {data.counts.total} {data.counts.total === 1 ? "propiedad" : "propiedades"}
+            </span>
+          </h2>
+          {data.counts.total > 0 && (
+            <Link href="/panel/propiedades" className="text-link ap-see-all">
+              Ver todas <ArrowRight size={16} aria-hidden="true" />
+            </Link>
+          )}
         </div>
-        {data.properties.length ? (
-          <div className="ap-grid">
-            {data.properties.map((p) => (
-              <PropertyCard key={p.id} property={p} agency={data.agency} reload={reload} canDelete={canManage(data.role)} canPublish={canEdit(data.role)} backTo="/panel" />
+        {shown.length ? (
+          <div className="ap-prop-list">
+            {shown.map((p, i) => (
+              <HomeProperty key={p.id} p={p} agency={data.agency} reload={reload} canDelete={canManage(data.role)} canPublish={canEdit(data.role)} primary={i === 0 && data.counts.total > 1} />
             ))}
           </div>
         ) : (
@@ -284,7 +319,57 @@ function PanelHome({ data, reload }: { data: PanelSummary; reload: () => Promise
             {data.scope ? "Todavía no te asignaron propiedades." : creator ? "Todavía no cargaste propiedades. Pegá el enlace de una publicación para empezar." : "Todavía no hay propiedades cargadas."}
           </p>
         )}
+        {creator && (
+          <div className="ap-create" id="crear">
+            <div className="ap-create-intro">
+              <span className="ap-create-icon" aria-hidden="true">
+                <Sparkles size={22} />
+              </span>
+              <div>
+                <h3>{data.counts.total ? "¿Querés crear otra propiedad?" : "Creá tu primera propiedad"}</h3>
+                <p>Pegá el enlace de una publicación y generá todo el contenido en minutos. Importar no usa créditos.</p>
+              </div>
+            </div>
+            <ImportProperty onDone={reload} existingCount={data.counts.total} />
+          </div>
+        )}
       </section>
+      <nav className="ap-quick" aria-label="Accesos útiles">
+        <Link href="/ayuda" {...cta("panel_quick_help", "panel_home", "support")}>
+          <span className="ap-quick-icon" aria-hidden="true">
+            <CircleHelp size={22} />
+          </span>
+          <span>
+            <strong>¿Necesitás ayuda?</strong>
+            <small>Te acompañamos en todo el proceso.</small>
+            <em>Contactar soporte</em>
+          </span>
+        </Link>
+        {buyerLink && (
+          <Link href={buyerLink} {...cta("panel_quick_buyer", "panel_home", "buyer_view")}>
+            <span className="ap-quick-icon" aria-hidden="true">
+              <Eye size={22} />
+            </span>
+            <span>
+              <strong>Ver como comprador</strong>
+              <small>Así ven tus clientes tus propiedades.</small>
+              <em>{data.agency.sitePublished ? "Ver mi sitio" : "Ver ficha"}</em>
+            </span>
+          </Link>
+        )}
+        {canManage(data.role) && (
+          <Link href="/panel/sitio" {...cta("panel_quick_site", "panel_home", "panel_site")}>
+            <span className="ap-quick-icon" aria-hidden="true">
+              <Globe size={22} />
+            </span>
+            <span>
+              <strong>Tu sitio web</strong>
+              <small>Tu catálogo con tus fichas publicadas.</small>
+              <em>Configurar sitio</em>
+            </span>
+          </Link>
+        )}
+      </nav>
     </>
   );
 }
@@ -859,6 +944,7 @@ export function ImportProperty({
   allowMany = true,
   where = "tu panel",
   onStep,
+  existingCount,
 }: {
   initialUrl?: string;
   onDone?: () => Promise<unknown>;
@@ -870,10 +956,29 @@ export function ImportProperty({
   where?: string;
   /** 1: bring the listing, 2: review its data and photos, 3: saving the draft. */
   onStep?: (step: 1 | 2 | 3) => void;
+  /** The agency's properties before this import (its own panel only): the second one is the activation signal. */
+  existingCount?: number;
 }) {
   const router = useRouter();
   const [many, setMany] = useState(false);
   const [url, setUrl] = useState(initialUrl);
+  const [carried, setCarried] = useState("");
+  // The listing pasted in the agency's demo before signing up: offered here once, then forgotten.
+  useEffect(() => {
+    if (initialUrl) return;
+    try {
+      const raw = localStorage.getItem(PENDING_IMPORT_KEY);
+      if (!raw) return;
+      localStorage.removeItem(PENDING_IMPORT_KEY);
+      const pending = JSON.parse(raw) as { url?: unknown; at?: unknown };
+      if (typeof pending.url !== "string" || typeof pending.at !== "number" || Date.now() - pending.at > PENDING_IMPORT_TTL_MS) return;
+      setUrl(pending.url);
+      setCarried("Seguimos con el enlace que pegaste en la demo: tocá «Importar propiedad» para leerlo.");
+      document.getElementById("crear")?.scrollIntoView({ block: "center" });
+    } catch {
+      /* Private mode or malformed: nothing to continue. */
+    }
+  }, [initialUrl]);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [fields, setFields] = useState({ title: "", location: "", price: "", operation: "", description: "" });
   const [keep, setKeep] = useState<Set<string>>(new Set());
@@ -910,13 +1015,20 @@ export function ImportProperty({
     setPreview(null);
     setStatus("Leyendo la publicación…");
     track("property_import_started", { source: hostOf(url), mode: "single" });
+    track("listing_import_preview_started", { source: hostOf(url), mode: "single" });
     leadFromDemoRef("demo_property_import_started");
     trackMilestone("first_import_started", { source: hostOf(url), mode: "single" });
+    if (existingCount === 1) track("second_property_import_started", { stage: "panel", source: hostOf(url) });
+    const started = Date.now();
     try {
-      show(await api<Preview>(endpoint, { method: "POST", body: JSON.stringify({ url, preview: true }) }));
+      const data = await api<Preview>(endpoint, { method: "POST", body: JSON.stringify({ url, preview: true }) });
+      show(data);
+      track("listing_import_preview_completed", importEventProps(data.diagnostics, { source: hostOf(url), mode: "single", client_ms: Date.now() - started, duplicate: Boolean(data.duplicateOf) }));
     } catch (err) {
       setError(message(err, "No pudimos leer la publicación."));
       track("property_import_failed", { source: hostOf(url), status: "preview" });
+      const api_ = err instanceof ApiError ? err : null;
+      track("listing_import_preview_failed", { source: hostOf(url), mode: "single", error_code: importErrorCode(api_?.status, api_?.body), client_ms: Date.now() - started });
     } finally {
       setStatus("");
     }
@@ -927,6 +1039,7 @@ export function ImportProperty({
     setError("");
     setNotice("");
     setStatus("Creando la propiedad…");
+    track("listing_import_confirmed", importEventProps(preview.diagnostics, { source: hostOf(preview.listingUrl), mode: "single", photos_kept: keep.size }));
     let made: Created;
     try {
       made = await api<Created>(endpoint, {
@@ -948,12 +1061,19 @@ export function ImportProperty({
         setPreview({ ...preview, duplicateOf: String(body.duplicateOf) });
       } else setError(message(err, "No pudimos crear la propiedad."));
       track("property_import_failed", { source: hostOf(preview.listingUrl), status: "create" });
+      track("listing_import_failed", importEventProps(preview.diagnostics, { source: hostOf(preview.listingUrl), mode: "single", stage: "create", error_code: importErrorCode(err instanceof ApiError ? err.status : undefined, err instanceof ApiError ? err.body : null) }));
       setStatus("");
       return;
     }
     try {
       const done = await finishPhotos(made, (t) => setStatus(`${made.title ?? "Propiedad"}. ${t}`), endpoint);
       track("property_import_completed", { source: hostOf(preview.listingUrl), photos: done.photosDone, mode: "single", status: done.status });
+      track(done.status === "completed" ? "listing_import_completed" : "listing_import_partial", importEventProps(preview.diagnostics, { source: hostOf(preview.listingUrl), mode: "single", photos_done: done.photosDone, photos_total: done.photosTotal }));
+      // The agency created its second property on its own: the activation signal (spec §2.5, §8), once per browser.
+      if (existingCount === 1) {
+        track("second_property_created", { source: hostOf(preview.listingUrl), status: done.status, photos: done.photosDone });
+        trackMilestone("second_property_created_milestone", { source: hostOf(preview.listingUrl) });
+      }
       if (done.photosDone > 0) leadFromDemoRef("demo_property_import_completed");
       trackMilestone("first_import_completed", { source: hostOf(preview.listingUrl), photos: done.photosDone, mode: "single", status: done.status });
       await onDone?.();
@@ -1019,6 +1139,11 @@ export function ImportProperty({
           </button>
         )}
       </form>
+      {carried && !preview && (
+        <p className="inline-notice" role="status">
+          {carried}
+        </p>
+      )}
       {error && (
         <p className="inline-error" role="alert">
           {error}
@@ -1170,9 +1295,11 @@ function ImportMany({ onDone, onSingle }: { onDone?: () => Promise<unknown>; onS
       try {
         const data = await api<Preview>("/api/panel/importar", { method: "POST", body: JSON.stringify({ url: row.url, preview: true }) });
         update(i, { state: data.duplicateOf ? "duplicate" : "ready", data, pick: !data.duplicateOf });
+        track("listing_import_preview_completed", importEventProps(data.diagnostics, { source: hostOf(row.url), mode: "batch", duplicate: Boolean(data.duplicateOf) }));
       } catch (e) {
         update(i, { state: "error", error: message(e, "No pudimos leerla."), pick: false });
         track("property_import_failed", { source: hostOf(row.url), status: "preview", mode: "batch" });
+        track("listing_import_preview_failed", { source: hostOf(row.url), mode: "batch", error_code: importErrorCode(e instanceof ApiError ? e.status : undefined, e instanceof ApiError ? e.body : null) });
       }
     }
     setRunning(false);
@@ -1192,11 +1319,13 @@ function ImportMany({ onDone, onSingle }: { onDone?: () => Promise<unknown>; onS
         const done = await finishPhotos(made, () => null);
         update(i, { state: done.status === "completed" ? "done" : "partial", result: done });
         track("property_import_completed", { source: hostOf(row.url), photos: done.photosDone, mode: "batch", status: done.status });
+        track(done.status === "completed" ? "listing_import_completed" : "listing_import_partial", importEventProps(row.data.diagnostics, { source: hostOf(row.url), mode: "batch", photos_done: done.photosDone, photos_total: done.photosTotal }));
         if (done.photosDone > 0) leadFromDemoRef("demo_property_import_completed");
         trackMilestone("first_import_completed", { source: hostOf(row.url), photos: done.photosDone, mode: "batch", status: done.status });
       } catch (e) {
         update(i, { state: "error", error: message(e, "No pudimos importarla.") });
         track("property_import_failed", { source: hostOf(row.url), status: "create", mode: "batch" });
+        track("listing_import_failed", importEventProps(row.data.diagnostics, { source: hostOf(row.url), mode: "batch", stage: "create", error_code: importErrorCode(e instanceof ApiError ? e.status : undefined, e instanceof ApiError ? e.body : null) }));
       }
     }
     setRunning(false);
@@ -1640,10 +1769,13 @@ export function AgencyOnboarding({
   hasAgency,
   code,
   demo,
+  autoClaim = false,
 }: {
   signedIn: boolean;
   hasAgency: boolean;
   code: string | null;
+  /** Back from "Continuar con Google" on the invitation: the claim the person already asked for runs by itself. */
+  autoClaim?: boolean;
   demo: { token: string; id: string; agencyId: string; agencyName: string; title: string; listingUrl: string | null } | null;
 }) {
   const router = useRouter();
@@ -1659,6 +1791,13 @@ export function AgencyOnboarding({
   }, [signedIn, origin, demo]);
   const flow = !signedIn ? "agency_start" : code ? "agency_claim" : "agency_create";
   const form = useSignupTracking(flow, { origin, has_invite: Boolean(code), ...(demo ? { demo_id: demo.id, agency_id: demo.agencyId } : {}) }, !hasAgency || Boolean(done));
+  const autoRan = useRef(false);
+  useEffect(() => {
+    if (!autoClaim || autoRan.current || !signedIn || hasAgency || !code) return;
+    autoRan.current = true;
+    void run("claimed");
+    // Once, on arrival from Google.
+  }, [autoClaim, signedIn, hasAgency, code]);
 
   if (!signedIn)
     return (
@@ -1707,6 +1846,8 @@ export function AgencyOnboarding({
           : await api<PanelSummary>("/api/panel", { method: "POST", body: JSON.stringify({ name }) });
       registerAgency(summary.agency.id);
       track(kind === "claimed" ? "agency_claimed" : "agency_created", { origin, agency_id: summary.agency.id, ...(demo ? { demo_id: demo.id } : {}) }, true);
+      // Funnel (spec §8): the panel is the agency's now. The server records the exact method for the team.
+      if (kind === "claimed") track("panel_claim_completed", { agency_id: summary.agency.id, method: autoClaim ? "google" : "signed_in", ...(demo ? { demo_id: demo.id } : {}) }, true);
       // Lead score: the server only takes it once the account belongs to the demo's agency.
       if (kind === "claimed") leadFromDemoRef("demo_account_created");
       if (demo) track("demo_to_agency_signup_completed", { demo_id: demo.id, claimed: kind === "claimed" });

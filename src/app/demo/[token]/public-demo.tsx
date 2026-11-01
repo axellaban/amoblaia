@@ -134,12 +134,14 @@ export async function PublicDemo({
           pricesHref: shortPath ? `${shortPath}/precios` : pricesViewPath(token, invitation),
         }
       : null;
+  // "Ver como comprador": the buyers' page, with only the way back to the agency's demo.
+  const backToDemo = invitation && invite && "href" in invite && ficha ? (shortPath ?? presentationPath(token, invitation)) : null;
   // The plans live in the agency's environment: without it (a code no longer valid), the presentation itself.
   if (prices && !owner) redirect(shortPath ?? presentationPath(token, code));
   const plans = owner ? await plansOf(owner.href) : null;
   return (
     <>
-      <DemoView demo={demo} source={{ kind: "public", token }} presentation={presentation} invite={invite} owner={owner} plans={plans} />
+      <DemoView demo={demo} source={{ kind: "public", token }} presentation={presentation} invite={invite} owner={owner} plans={plans} backToDemo={backToDemo} />
       {/* Miguel Ángel helps the agency in its own demo; buyers never see him. */}
       {owner && invitation && <Assistant place={{ kind: "demo", token, code: invitation }} />}
     </>

@@ -7,6 +7,7 @@ import { claimHash, membershipOf } from "@/lib/agency/server";
 import { slugify } from "@/lib/agency/shared";
 import { readJson } from "@/lib/demos/input";
 import { adminClient } from "@/lib/supabase/server";
+import { recordClaim } from "@/lib/agency/invitation";
 export const runtime = "nodejs";
 
 /**
@@ -32,6 +33,8 @@ export async function POST(request: Request) {
     // Credits the team left waiting for this agency move to its new owner.
     await applyAgencyCredits(agencyId);
     await recordAgencyPanel(agencyId);
+    // Google proves the address; any other existing account signed in with its own password.
+    await recordClaim(agencyId, user, user.app_metadata?.provider === "google" ? "google" : "existing");
     const membership = await membershipOf(user.id);
     return Response.json(await panelSummary(membership!), { headers: { "Cache-Control": "private, no-store" } });
   } catch (e) {

@@ -58,6 +58,26 @@ export async function adminAgencies(query: { q?: string | null; page?: number; p
   return { items, total: rows?.length ? Number(rows[0].total) : 0, page, perPage };
 }
 
+/** Who took over the agency (Fase 4). Tolerates a database without the columns yet: nothing to show. */
+export async function agencyClaimInfo(id: string) {
+  const { data, error } = await adminClient().from("agencies").select("website,claim_email,claim_method,claim_review").eq("id", id).maybeSingle();
+  if (error || !data) return null;
+  const d = data as { website: string | null; claim_email: string | null; claim_method: "google" | "email" | "existing" | null; claim_review: "ok" | "personal" | "mismatch" | "confirmed" | null };
+  return { email: d.claim_email, method: d.claim_method, review: d.claim_review, website: d.website };
+}
+
+/** Agencies whose new owner the team has not checked yet, latest first. */
+export async function claimsToReview(limit = 20) {
+  const { data, error } = await adminClient()
+    .from("agencies")
+    .select("id,name,claim_email,claim_review,claimed_at")
+    .in("claim_review", ["mismatch", "personal"])
+    .order("claimed_at", { ascending: false })
+    .limit(limit);
+  if (error) return [];
+  return (data ?? []) as { id: string; name: string; claim_email: string | null; claim_review: "mismatch" | "personal"; claimed_at: string | null }[];
+}
+
 /** One agency as the team sees it: stage, invitations, members, properties and what needs attention. */
 export async function adminAgency(id: string): Promise<AdminAgencyDetail> {
   const db = adminClient();
