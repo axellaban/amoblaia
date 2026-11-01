@@ -6,6 +6,8 @@ import { INVITE_CODE, redactInvite } from "@/lib/agency/demo-invite";
 
 /** Its name and title: a nod to the Renaissance masters. */
 export const ASSISTANT_NAME = "Miguel Ángel";
+/** Window event that opens the assistant's chat (the panel's "Ayuda"). */
+export const OPEN_ASSISTANT_EVENT = "habita:assistant-open";
 export const ASSISTANT_TITLE = "Tu genio del diseño";
 
 /** How much of the conversation travels on each question. */

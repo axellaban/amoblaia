@@ -140,6 +140,15 @@ describe("Panel navigation and home", () => {
     expect(html.indexOf("<span>Estudio de imágenes</span>")).toBeLessThan(html.indexOf("<span>Usuarios</span>"));
   });
 
+  it("«Ayuda» opens Miguel Ángel (a button, no page) and «Mi cuenta» and the plans stay inside the panel", () => {
+    const html = renderToStaticMarkup(<PanelNav section="inicio" agencyName="Inmo Sur" role="owner" />);
+    expect(html).toMatch(/<button type="button" class="ap-side-button"[^>]*>[\s\S]*?<span>Ayuda<\/span><\/button>/);
+    expect(html).not.toContain('href="/ayuda"');
+    expect(html).toContain('href="/panel/cuenta"');
+    expect(html).not.toContain('href="/cuenta"');
+    expect(html).toContain('href="/panel/creditos"');
+  });
+
   it("the site and users are only for the owner and administrators", () => {
     const html = renderToStaticMarkup(<PanelNav section="inicio" agencyName="Inmo Sur" role="viewer" />);
     expect(html).not.toContain("<span>Sitio web</span>");

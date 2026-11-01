@@ -28,6 +28,7 @@ import { cta } from "@/lib/interaction-tracking";
 import { canManage, type AgencyRole } from "@/lib/agency/shared";
 import type { FutureFeature } from "@/lib/agency/future-features";
 import { videoEnabled } from "@/lib/agency/flags";
+import { OPEN_ASSISTANT_EVENT } from "@/lib/assistant/shared";
 
 export type PanelSection =
   | "inicio"
@@ -40,7 +41,8 @@ export type PanelSection =
   | "redes"
   | "api"
   | "creditos"
-  | "usuarios";
+  | "usuarios"
+  | "cuenta";
 
 type Item = { id: PanelSection; href: string; label: string; icon: typeof Home; managers?: boolean; future?: FutureFeature };
 
@@ -98,13 +100,27 @@ function NavList({ section, role, onNavigate }: { section: PanelSection; role?: 
       ))}
       <ul className="ap-side-group ap-side-bottom">
         <li>
-          <Link href="/ayuda" onClick={onNavigate}>
+          {/* Help is Miguel Ángel, the assistant: the chat opens here, the page stays. */}
+          <button
+            type="button"
+            className="ap-side-button"
+            {...cta("panel_nav_ayuda", "panel_sidebar", "assistant_open", "navigation")}
+            onClick={() => {
+              onNavigate?.();
+              window.dispatchEvent(new Event(OPEN_ASSISTANT_EVENT));
+            }}
+          >
             <CircleHelp size={19} aria-hidden="true" />
             <span>Ayuda</span>
-          </Link>
+          </button>
         </li>
         <li>
-          <Link href="/cuenta" onClick={onNavigate}>
+          <Link
+            href="/panel/cuenta"
+            className={section === "cuenta" ? "is-on" : ""}
+            aria-current={section === "cuenta" ? "page" : undefined}
+            onClick={onNavigate}
+          >
             <UserRound size={19} aria-hidden="true" />
             <span>Mi cuenta</span>
           </Link>
@@ -220,7 +236,7 @@ export function PanelTopbar({ agencyName, logo, children }: { agencyName: string
       </div>
       <div className="ap-topbar-actions">
         {children}
-        <Link href="/cuenta" className="ap-topbar-account" aria-label="Mi cuenta">
+        <Link href="/panel/cuenta" className="ap-topbar-account" aria-label="Mi cuenta">
           <UserRound size={20} aria-hidden="true" />
         </Link>
       </div>
