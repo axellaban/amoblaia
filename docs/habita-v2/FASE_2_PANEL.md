@@ -25,7 +25,7 @@
 | §2.1 Exactamente 3 tarjetas grandes: Crear demostraciones, Estudio de imágenes, Video | `HomeCards` | `compare-panel-home-desktop.jpg`, test «exactly three» | ✅ (Video tras flag en prod) |
 | Crear demostraciones funcional | Lleva a «¿Querés crear otra propiedad?» con el importador de la Fase 1 y enfoca el campo | captura | ✅ |
 | Estudio de imágenes → editor/importador existente | `/panel/imagenes` | — | ✅ |
-| Sidebar: Inicio, Mis propiedades, Estudio, Video, Sitio web, Tour 360, Planos, Redes, API, Planes y créditos, Usuarios, Ayuda, Mi cuenta | `GROUPS` | test «sidebar» | ✅ |
+| Sidebar: Inicio, Mis propiedades, Estudio, Video, Usuarios, Sitio web, Tour 360, Planos, Redes, API, Planes y créditos, Ayuda, Mi cuenta | `GROUPS` | test «sidebar» | ✅ |
 | Tour 360/Planos/Redes/API sin «Próximamente» ni aspecto deshabilitado en sidebar | ítems normales con hover/foco/activo | test (`not.toMatch(/Próximamente/)`) | ✅ |
 | …y sin tarjetas ni CTA en home | — | test «never the upcoming tools» | ✅ |
 | Página propia: ilustración, título, beneficio, «Próximamente», «Me interesa / Avisame» | `FutureFeaturePage` + SVG original por feature | `compare-tour360-desktop.jpg`, test por feature | ✅ |
@@ -71,6 +71,6 @@ Capturas en [`docs/ux/habita-v2/evidencia/fase-2/`](../ux/habita-v2/evidencia/fa
 1. ~~Aplicar la migración~~ **Aplicada el 01/11/2026** en el proyecto Supabase `cmpfwuycxdleunuumlkm` vía conector: tabla vacía, RLS activo, sin privilegios para `anon`/`authenticated`, escritura solo desde el servidor. El advisor marca «RLS sin políticas» (INFO), igual que las demás tablas solo-servidor: es intencional.
 2. Recorrer el preview con una cuenta real (dueño y viewer) en 1440 px y 390 px.
 
-## 7. Pendiente pedido (01/11/2026)
+## 7. Pedido del 01/11/2026 — hecho
 
-- Mover **«Usuarios»** en la sidebar al primer grupo, **arriba de «Sitio web»** (hoy está junto a «Planes y créditos»). Mantiene la restricción a dueño/administrador. Al hacerlo: actualizar el test de sidebar y las capturas de esta fase.
+- **«Usuarios»** pasó al primer grupo de la sidebar, **arriba de «Sitio web»** (antes estaba junto a «Planes y créditos»). Sigue visible solo para dueño y administradores. Test de orden en `tests/panel-v2.test.tsx`; capturas de esta fase actualizadas.

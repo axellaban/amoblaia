@@ -51,6 +51,8 @@ const GROUPS = (): Item[][] => [
     { id: "propiedades", href: "/panel/propiedades", label: "Mis propiedades", icon: LayoutGrid },
     { id: "imagenes", href: "/panel/imagenes", label: "Estudio de imágenes", icon: Images },
     ...(videoEnabled() ? [{ id: "video", href: "/panel/video", label: "Video", icon: PlayCircle, future: "video" } as Item] : []),
+    // The agency's team, right above its website (owner and administrators only).
+    { id: "usuarios", href: "/panel/usuarios", label: "Usuarios", icon: Users, managers: true },
     { id: "sitio", href: "/panel/sitio", label: "Sitio web", icon: Globe, managers: true },
   ],
   [
@@ -61,7 +63,6 @@ const GROUPS = (): Item[][] => [
   ],
   [
     { id: "creditos", href: "/panel/creditos", label: "Planes y créditos", icon: CreditCard },
-    { id: "usuarios", href: "/panel/usuarios", label: "Usuarios", icon: Users, managers: true },
   ],
 ];
 

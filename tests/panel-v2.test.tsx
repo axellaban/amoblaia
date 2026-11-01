@@ -135,6 +135,9 @@ describe("Panel navigation and home", () => {
     for (const slug of ["tour-360", "planos", "redes", "api"]) expect(html).toContain(`href="/panel/${slug}"`);
     expect(html).not.toMatch(/Pr[oó]ximamente/i);
     expect(html).not.toMatch(/aria-disabled|disabled/);
+    // «Usuarios» sits right above «Sitio web».
+    expect(html.indexOf("<span>Usuarios</span>")).toBeLessThan(html.indexOf("<span>Sitio web</span>"));
+    expect(html.indexOf("<span>Estudio de imágenes</span>")).toBeLessThan(html.indexOf("<span>Usuarios</span>"));
   });
 
   it("the site and users are only for the owner and administrators", () => {
