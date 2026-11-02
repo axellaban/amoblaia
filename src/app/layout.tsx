@@ -13,7 +13,7 @@ const manrope = Manrope({
 });
 export const viewport: Viewport = { themeColor: "#24382e" };
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.APP_URL || "https://amoblaia.vercel.app"),
+  metadataBase: new URL(process.env.APP_URL || "https://www.habitaia.app"),
   title: {
     default: "habita. — De espacios a hogares",
     template: "%s · habita.",

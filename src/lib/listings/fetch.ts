@@ -17,7 +17,7 @@ export const MAX_HTML_BYTES = 3 * 1024 * 1024;
 export const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
 export const MAX_REDIRECTS = 4;
 /** Says who we are; sites that refuse it can be read through the render provider (if configured). */
-export const USER_AGENT = "Mozilla/5.0 (compatible; HabitaBot/2.0; +https://habitaia.vercel.app/)";
+export const USER_AGENT = "Mozilla/5.0 (compatible; HabitaBot/2.0; +https://www.habitaia.app/)";
 
 export type FetchErrorCode =
   | "invalid_url"
