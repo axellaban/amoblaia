@@ -177,7 +177,7 @@ describe("Panel navigation and home", () => {
 describe("Start picker (spec v3 §1.3–1.4)", () => {
   it("opens each tool straight on the chosen property or photo group", () => {
     const id = "11111111-1111-4111-8111-111111111111";
-    expect(toolPath("ambientar", id)).toBe(`/panel/imagenes?pestana=fotos&fotos=${id}`);
+    expect(toolPath("ambientar", id)).toBe(`/panel/imagenes?pestana=fotos&fotos=${id}&modo=ambientar`);
     expect(toolPath("editar", id)).toBe(`/panel/imagenes?pestana=fotos&fotos=${id}&modo=editar`);
     expect(toolPath("video", id)).toBe(`/panel/video?propiedad=${id}`);
     // The demo's three ways in end in the same editor of the property.

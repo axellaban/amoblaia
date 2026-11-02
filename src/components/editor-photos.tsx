@@ -43,6 +43,8 @@ import {
   Trees,
   Utensils,
   Zap,
+  SlidersHorizontal,
+  Link2,
 } from "lucide-react";
 import { Comparison } from "./comparison";
 import { api } from "./admin-demos";
@@ -79,6 +81,7 @@ import { DEMO_STYLES as STYLE_LIST, styleFits, type PropertyType } from "@/lib/d
 import { NO_ADJUST, adjustFilter, sameAdjust, type Adjust } from "@/lib/demos/retouch";
 import type { Tool } from "@/lib/demos/tools";
 import { MaskBrush, type BrushHandle } from "./mask-brush";
+import { track } from "@/lib/analytics";
 import { RetouchControls, type ToolsState } from "./retouch-controls";
 
 /** A state of one style of one photo, in words: created, in the queue, failed, uncertain… */
@@ -145,8 +148,17 @@ export function PhotoWorkspace({
   busy,
   actions,
   variant = "studio",
+  gallery = "spaces",
+  onUseInDemo,
+  editHref,
   belowGrid = null,
 }: {
+  /** "flat": Estudio de imágenes, every photo in one gallery (no spaces on screen; they stay saved). "spaces": by space. */
+  gallery?: "spaces" | "flat";
+  /** Estudio de imágenes: «Usar en una demostración» of what is viewed (photo and version). */
+  onUseInDemo?: (photoId: string, versionId: string | null) => void;
+  /** The demo's «Editar imagen»: the studio's link for this photo and version; without it, it edits here. */
+  editHref?: (photoId: string, versionId: string | null) => string;
   /** "demo": the agency's «Crear demostración interactiva» layout; "studio": Estudio de imágenes and the team's editor. */
   variant?: "studio" | "demo";
   /** The demo's «Generar video», right under the photos. */
@@ -172,20 +184,33 @@ export function PhotoWorkspace({
   // Imported photos without a ficha: what is chosen is a version, not what a ficha shows.
   const photosOnly = detail.demo.kind === "fotos";
   const shownLabel = photosOnly ? "Versión seleccionada" : "Se muestra en la ficha";
-  const groups = groupBySpace(photos, spaces);
+  const flat = gallery === "flat";
+  // Estudio de imágenes shows every photo in one gallery: its spaces are kept, never shown there.
+  const groups = flat ? [{ space: null, photos: [...photos].sort((a, b) => a.position - b.position) }] : groupBySpace(photos, spaces);
   const [activeId, setActiveId] = useState<string | null>(null);
-  // The version being looked at, per photo; null: the original. A view only.
-  const [viewOf, setViewOf] = useState<Record<string, string | null>>({});
+  // The version being looked at, per photo; null: the original. A view only. ?foto=&version= opens one (from the demo and back).
+  const [viewOf, setViewOf] = useState<Record<string, string | null>>(() => {
+    if (typeof window === "undefined") return {};
+    const q = new URLSearchParams(window.location.search);
+    const photoId = q.get("foto");
+    const version = q.get("version");
+    return photoId && version ? { [photoId]: version === "original" ? null : version } : {};
+  });
   const demoUi = variant === "demo";
-  // The demo opens each photo compared (before / after) when it has a version.
-  const [mode, setMode] = useState<ViewMode>(demoUi ? "compare" : "version");
+  // The demo and the studio open each photo compared (before / after) when it has a version.
+  const [mode, setMode] = useState<ViewMode>(demoUi || flat ? "compare" : "version");
   // The demo's chosen space when it has no photos yet; and the style «Generar versión con IA» opens with.
   const [pickedSpace, setPickedSpace] = useState<string | null>(null);
   const [generating, setGenerating] = useState<string | null>(null);
-  // ?modo=editar (Inicio → «Editar imágenes») opens the editor, not staging.
-  const [tab, setTab] = useState<"create" | "edit">(() =>
-    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("modo") === "editar" ? "edit" : "create",
-  );
+  // ?modo=editar (Inicio → «Editar imágenes») opens the editor, not staging. The studio opens on
+  // «Editar con IA» unless it comes from a staging action (?modo=ambientar, or a style to create).
+  const [tab, setTab] = useState<"create" | "edit">(() => {
+    if (typeof window === "undefined") return flat ? "edit" : "create";
+    const q = new URLSearchParams(window.location.search);
+    if (q.get("modo") === "editar") return "edit";
+    if (flat) return q.get("modo") === "ambientar" || q.get("estilo") ? "create" : "edit";
+    return "create";
+  });
   // The retouch of each photo, previewed live with CSS filters until it is saved as a version.
   const [adjusts, setAdjusts] = useState<Record<string, Adjust>>({});
   const [saving, setSaving] = useState(false);
@@ -197,10 +222,15 @@ export function PhotoWorkspace({
   const [toolBusy, setToolBusy] = useState(false);
   const [photoEl, setPhotoEl] = useState<HTMLImageElement | null>(null);
   const brush = useRef<BrushHandle>(null);
+  const figureRef = useRef<HTMLElement>(null);
   const uid = useId();
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [batch, setBatch] = useState(false);
   const [awaiting, setAwaiting] = useState<{ photoId: string; style: string; since: string } | null>(null);
+  // The studio's «¡Imagen lista!»: the version just saved or created, while it is the one on screen.
+  const [ready, setReady] = useState<{ photoId: string; versionId: string } | null>(null);
+  // An AI tool asked here: its result arrives as a new retouch of the photo.
+  const [awaitingTool, setAwaitingTool] = useState<{ photoId: string; known: string[] } | null>(null);
   // From the agency's demo (Generar a style, or a photo still without one): ?foto= and ?estilo= open it ready, nothing generated yet.
   const [preset] = useState(() => {
     if (typeof window === "undefined") return null;
@@ -270,10 +300,21 @@ export function PhotoWorkspace({
     if (p && made) {
       setAwaiting(null);
       if (activeId === p.id) choose(p.id, made.id);
+      if (flat) setReady({ photoId: p.id, versionId: made.id });
     }
     const last = p?.generations.find((g) => g.style === awaiting.style);
     if (last && (last.status === "failed" || last.status === "needs_review") && last.created_at >= awaiting.since) setAwaiting(null);
   }, [photos, awaiting, activeId]);
+  // A tool's result (a new retouch) opens by itself on the photo it was asked for.
+  useEffect(() => {
+    if (!awaitingTool) return;
+    const p = photos.find((x) => x.id === awaitingTool.photoId);
+    const made = p?.retouches.find((r) => !awaitingTool.known.includes(r.id));
+    if (!p || !made) return;
+    setAwaitingTool(null);
+    if (activeId === p.id) choose(p.id, made.id);
+    setReady({ photoId: p.id, versionId: made.id });
+  }, [photos, awaitingTool, activeId]);
 
   if (!photos.length)
     return (
@@ -284,13 +325,17 @@ export function PhotoWorkspace({
     );
   if (!photo) return null;
   const isCover = detail.demo.cover?.id === photo.id;
-  // The photo's own name, else its place in the space ("Vista 2"): never the space's name twice.
-  const name = photo.label?.trim() || `Vista ${(activeGroup?.photos.findIndex((p) => p.id === photo.id) ?? 0) + 1}`;
-
-  // Every photo in the order of its space: what the arrows step through.
+  // Every photo in the order of its space (the studio: in their order): what the arrows step through.
   const ordered = groups.flatMap((g) => g.photos);
   const at = ordered.findIndex((p) => p.id === photo.id);
-  const step = (n: number) => setActiveId(ordered[(at + n + ordered.length) % ordered.length].id);
+  // The photo's own name, else its place in the space ("Vista 2"; the studio: "Foto 3"): never the space's name twice.
+  const name = photo.label?.trim() || (flat ? `Foto ${at + 1}` : `Vista ${(activeGroup?.photos.findIndex((p) => p.id === photo.id) ?? 0) + 1}`);
+  /** Another photo to work on: the viewer, its versions and the panel follow it. */
+  const pick = (photoId: string, how: "thumb" | "arrow") => {
+    setActiveId(photoId);
+    if (flat) track("studio_photo_selected", { property_id: detail.demo.id, photo_id: photoId, how });
+  };
+  const step = (n: number) => pick(ordered[(at + n + ordered.length) % ordered.length].id, "arrow");
   const shownHere = Boolean(viewGen && shownIds.has(viewGen.id));
   const retouchShown = Boolean(viewRetouch && photo.shownRetouch === viewRetouch.id);
   // A version still being made: the clock turns over the photo until it is ready.
@@ -304,6 +349,7 @@ export function PhotoWorkspace({
     setPainted(false);
     setToolNote("");
     if (photo && next) void actions.quote(photo.id).then(setToolNote);
+    if (flat && next) track("studio_tool_selected", { property_id: detail.demo.id, photo_id: photo.id, tool: next });
   };
   const applyTool = async () => {
     if (!photo || !tool) return;
@@ -313,12 +359,14 @@ export function PhotoWorkspace({
       return;
     }
     setToolBusy(true);
+    const known = photo.retouches.map((r) => r.id);
     const error = await actions.tool(photo.id, tool, viewSource, mask ?? undefined);
     setToolBusy(false);
     if (error) {
       setToolNote(`No se inició: ${error}`);
       return;
     }
+    if (flat) setAwaitingTool({ photoId: photo.id, known });
     setTool(null);
     setPainted(false);
     setToolNote("");
@@ -351,8 +399,10 @@ export function PhotoWorkspace({
 
   return (
     <>
-      <div className={`pw ${demoUi ? "dx-photos" : ""}`} data-testid="photo-workspace">
-        {demoUi ? (
+      <div className={`pw ${demoUi ? "dx-photos" : ""} ${flat ? "pw-flat" : ""}`} data-testid="photo-workspace">
+        {flat ? (
+          <FlatGallery photos={ordered} activeId={photo.id} mainStyle={mainStyle} onPick={(id) => pick(id, "thumb")} onUpload={(f) => actions.upload(f, null)} />
+        ) : demoUi ? (
           <SpaceList
             groups={groups}
             spaces={spaces}
@@ -397,6 +447,14 @@ export function PhotoWorkspace({
               <button type="button" className="icon-button" aria-label="Foto anterior" disabled={ordered.length < 2} onClick={() => step(-1)}>
                 <ChevronLeft size={18} />
               </button>
+              {flat ? (
+                <div className="pw-stage-title" aria-live="polite">
+                  <h3>
+                    Foto {at + 1} de {ordered.length}
+                  </h3>
+                  {photo.label?.trim() && <small>{photo.label.trim()}</small>}
+                </div>
+              ) : (
               <div className="pw-stage-title">
                 <h3>
                   {space ? space.name : "Sin organizar"} · {name}
@@ -405,9 +463,11 @@ export function PhotoWorkspace({
                   Foto {at + 1} de {ordered.length}
                 </small>
               </div>
+              )}
               <button type="button" className="icon-button" aria-label="Foto siguiente" disabled={ordered.length < 2} onClick={() => step(1)}>
                 <ChevronRight size={18} />
               </button>
+              {!flat && (
               <span className="pw-badges">
                 {hasView && (
                   <span className={`pw-badge ${shownHere ? "is-on" : ""}`}>
@@ -417,16 +477,17 @@ export function PhotoWorkspace({
                 {!photo.visible && <span className="pw-badge">Oculta en la ficha</span>}
                 {isCover && <span className="pw-badge is-on">Portada</span>}
               </span>
+              )}
             </header>
-            <figure className="pw-figure">
+            <figure className="pw-figure" ref={figureRef}>
               {hasView && effectiveMode === "compare" && !brushing ? (
                 <Comparison
                   before={adminPhotoUrl(photo.id, null, 1600)}
                   after={afterUrl}
                   afterFilter={retouch}
-                  beforeLabel={demoUi ? "Antes" : "Original"}
+                  beforeLabel={demoUi || flat ? "Antes" : "Original"}
                   beforeAlt={`${name}, foto original`}
-                  afterLabel={demoUi ? `Después (${viewName})` : viewName}
+                  afterLabel={demoUi || flat ? `Después (${viewName})` : viewName}
                   alt={`${name}, ${viewName}`}
                   initial={50}
                 />
@@ -446,10 +507,22 @@ export function PhotoWorkspace({
                   {viewGen && effectiveMode !== "original" && <span> · Ambientación ilustrativa con IA</span>}
                 </figcaption>
               )}
-              {viewGen && (
+              {viewGen ? (
                 <button type="button" className="pw-expand icon-button" aria-label="Ver versión completa" onClick={() => actions.review(photo.id, viewGen.id)}>
                   <Expand size={18} />
                 </button>
+              ) : (
+                flat &&
+                !brushing && (
+                  <button
+                    type="button"
+                    className="pw-expand icon-button"
+                    aria-label="Ver la foto en pantalla completa"
+                    onClick={() => void figureRef.current?.requestFullscreen?.().catch(() => null)}
+                  >
+                    <Expand size={18} />
+                  </button>
+                )
               )}
               {liveGen && (
                 <div className="pw-generating" role="status" aria-live="polite">
@@ -491,6 +564,7 @@ export function PhotoWorkspace({
                 actions={actions}
               />
             )}
+            {!flat && (
             <div className="pw-actions">
               {viewGen && !shownHere && (
                 <button type="button" className="button button-small button-primary" onClick={() => void actions.patchPhoto(photo.id, { approve: viewGen.id })}>
@@ -579,7 +653,8 @@ export function PhotoWorkspace({
                 </details>
               )}
             </div>
-            <p className="pw-hint">Descargar no usa créditos ni publica nada: JPEG de hasta 2048 px.</p>
+            )}
+            {!flat && <p className="pw-hint">Descargar no usa créditos ni publica nada: JPEG de hasta 2048 px.</p>}
           </section>
 
           <section className="pw-versions-panel" aria-labelledby={`${uid}-versions`}>
@@ -589,7 +664,7 @@ export function PhotoWorkspace({
             </div>
             <ul className="pw-versions">
               <li>
-                <button type="button" className="pw-version" aria-pressed={!viewGen} onClick={() => choose(photo.id, null)}>
+                <button type="button" className="pw-version" aria-pressed={flat ? !hasView : !viewGen} onClick={() => choose(photo.id, null, flat ? "original" : undefined)}>
                   <img src={adminPhotoUrl(photo.id, null, 480)} alt="" loading="lazy" />
                   <span>
                     <strong>Original</strong>
@@ -644,7 +719,12 @@ export function PhotoWorkspace({
               <h3 className="dx-col-title" id={`${uid}-what`}>
                 {tab === "create" ? "Ambientar con IA" : "Editar imagen"}
               </h3>
-              {tab === "create" ? (
+              {tab === "create" && editHref ? (
+                // «Editar imagen» opens this photo and version in Estudio de imágenes, which comes back here.
+                <a className="button button-small button-outline dx-edit-image" href={editHref(photo.id, viewGen?.id ?? viewRetouch?.id ?? null)}>
+                  <Pencil size={14} aria-hidden="true" /> Editar imagen
+                </a>
+              ) : tab === "create" ? (
                 <button type="button" className="button button-small button-outline dx-edit-image" onClick={() => setTab("edit")}>
                   <Pencil size={14} aria-hidden="true" /> Editar imagen
                 </button>
@@ -661,11 +741,34 @@ export function PhotoWorkspace({
                 </button>
               )}
             </div>
+          ) : flat ? (
+            <div className="pw-modes" role="group" aria-label="Qué querés hacer" id={`${uid}-what`}>
+              {(
+                [
+                  { id: "create", icon: Sparkles, title: "Ambientar con IA" },
+                  { id: "edit", icon: SlidersHorizontal, title: "Editar con IA" },
+                ] as const
+              ).map(({ id: what, icon: Icon, title }) => (
+                <button
+                  key={what}
+                  type="button"
+                  aria-pressed={tab === what}
+                  aria-controls={`${uid}-panel`}
+                  onClick={() => {
+                    if (tab !== what) track("studio_mode_selected", { property_id: detail.demo.id, photo_id: photo.id, mode: what === "create" ? "ambientar" : "editar" });
+                    setTab(what);
+                    if (what === "create") pickTool(null);
+                  }}
+                >
+                  <Icon size={16} aria-hidden="true" /> {title}
+                </button>
+              ))}
+            </div>
           ) : (
           <h3 className="pw-side-title" id={`${uid}-what`}>¿Qué querés hacer?</h3>
           )}
           {/* Two modes (spec v3 §3.3): staging, or the existing editor with its light, colour and AI tools. */}
-          {!demoUi && (
+          {!demoUi && !flat && (
           <ul className="pw-what pw-what-modes" aria-labelledby={`${uid}-what`}>
             {(
               [
@@ -724,6 +827,9 @@ export function PhotoWorkspace({
                 waiting={staging.waiting}
                 draft={drafts[photo.id]}
                 preset={preset?.photoId === photo.id ? preset : null}
+                compact={flat}
+                onViewVersion={flat ? (generationId) => choose(photo.id, generationId, "compare") : undefined}
+                onStylePicked={flat ? (style) => track("studio_style_selected", { property_id: detail.demo.id, photo_id: photo.id, style }) : undefined}
                 onDraft={(d) => setDrafts((all) => ({ ...all, [photo.id]: d }))}
                 onConfirm={async (task, fresh) => {
                   const since = new Date(Date.now() - 5000).toISOString();
@@ -741,6 +847,7 @@ export function PhotoWorkspace({
               />
             ) : (
               <EditPanel
+                compact={flat}
                 photo={photo}
                 viewing={label}
                 adjust={adjust}
@@ -754,6 +861,10 @@ export function PhotoWorkspace({
                     if (id) {
                       setAdjust(NO_ADJUST);
                       choose(photo.id, id);
+                      if (flat) {
+                        setReady({ photoId: photo.id, versionId: id });
+                        track("studio_version_saved", { property_id: detail.demo.id, photo_id: photo.id, kind: "retouch", from: viewSource.kind });
+                      }
                     }
                   } finally {
                     setSaving(false);
@@ -767,6 +878,69 @@ export function PhotoWorkspace({
               />
             )}
           </div>
+          {flat && (
+            <ResultActions
+              photo={photo}
+              ready={Boolean(ready && ready.photoId === photo.id && ready.versionId === chosen && hasView)}
+              viewName={hasView ? viewName : "Original"}
+              downloading={downloading === (viewRetouch?.id ?? viewGen?.id ?? `o-${photo.id}`)}
+              photosOnly={photosOnly}
+              onDownload={() =>
+                viewRetouch
+                  ? actions.download("", `r-${viewRetouch.id}`, `${originalName(photo).replace(/\.jpg$/, "")}-retoque-${viewRetouch.id.slice(0, 6)}.jpg`, viewRetouch.id)
+                  : viewGen
+                    ? actions.download("", viewGen.id, fileName(photo, viewGen))
+                    : actions.download(photo.id, `o-${photo.id}`, originalName(photo))
+              }
+              onUseInDemo={onUseInDemo ? () => onUseInDemo(photo.id, viewGen?.id ?? viewRetouch?.id ?? null) : undefined}
+              more={
+                <>
+                  {viewGen && !shownHere && !photosOnly && (
+                    <button type="button" className="button button-small button-outline" onClick={() => void actions.patchPhoto(photo.id, { approve: viewGen.id })}>
+                      <Check size={14} /> Mostrar esta en la ficha
+                    </button>
+                  )}
+                  {viewRetouch && !retouchShown && !photosOnly && (
+                    <button type="button" className="button button-small button-outline" onClick={() => void actions.patchPhoto(photo.id, { approveRetouch: viewRetouch.id })}>
+                      <Check size={14} /> Mostrar esta en la ficha
+                    </button>
+                  )}
+                  {(shownHere || retouchShown) && <span className="pw-badge is-on">{shownLabel}</span>}
+                  {!photosOnly && (
+                    <button
+                      type="button"
+                      className={`button button-small button-outline ${isCover ? "is-on" : ""}`}
+                      aria-pressed={isCover}
+                      onClick={() => actions.cover(isCover ? null : photo.id)}
+                    >
+                      <Star size={14} /> {isCover ? "Portada" : "Usar de portada"}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className={`button button-small button-outline ${photo.visible ? "" : "is-off"}`}
+                    aria-pressed={!photo.visible}
+                    onClick={() => void actions.patchPhoto(photo.id, { changes: { visible: !photo.visible } })}
+                  >
+                    {photo.visible ? <Eye size={14} /> : <EyeOff size={14} />}{" "}
+                    {photosOnly ? (photo.visible ? "Se incluye si creás la ficha" : "No se incluye en la ficha") : photo.visible ? "Se muestra en la ficha" : "Oculta en la ficha"}
+                  </button>
+                  {viewGen && (
+                    <button
+                      type="button"
+                      className="text-link"
+                      onClick={() => {
+                        if (window.confirm("La versión deja de mostrarse y queda en el historial de la foto, donde podés recuperarla. ¿Continuar?"))
+                          void actions.patchPhoto(photo.id, { discard: viewGen.id });
+                      }}
+                    >
+                      Descartar esta versión
+                    </button>
+                  )}
+                </>
+              }
+            />
+          )}
         </aside>
       </div>
 
@@ -804,6 +978,7 @@ export function PhotoWorkspace({
       </div>
       {batch && (
         <BatchPanel
+          flat={flat}
           detail={detail}
           groups={groups}
           demoStyles={demoStyles}
@@ -905,6 +1080,121 @@ function StyleItem({
         </li>
       )}
     </>
+  );
+}
+
+/**
+ * Estudio de imágenes: «Todas las fotos (N)», one gallery without spaces. Two
+ * thumbnails a row on a computer (scrolling down), a strip on a phone; the
+ * active one in green with its check, and «Agregar fotos» at the end.
+ */
+function FlatGallery({
+  photos,
+  activeId,
+  mainStyle,
+  onPick,
+  onUpload,
+}: {
+  photos: EditorPhoto[];
+  activeId: string;
+  mainStyle: string;
+  onPick: (photoId: string) => void;
+  onUpload: (files: FileList) => void;
+}) {
+  const activeRef = useRef<HTMLButtonElement>(null);
+  // The active photo stays in sight when the arrows change it.
+  useEffect(() => {
+    activeRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [activeId]);
+  return (
+    <nav className="pw-gallery" aria-labelledby="pw-gallery-title">
+      <h3 id="pw-gallery-title" className="pw-gallery-title">
+        Todas las fotos <span>({photos.length})</span>
+      </h3>
+      <ul className="pw-gallery-grid">
+        {photos.map((p, i) => (
+          <li key={p.id}>
+            <button
+              ref={p.id === activeId ? activeRef : undefined}
+              type="button"
+              className="pw-thumb"
+              aria-pressed={p.id === activeId}
+              aria-label={`Foto ${i + 1}${p.label?.trim() ? `: ${p.label.trim()}` : ""}`}
+              onClick={() => onPick(p.id)}
+            >
+              <img src={p.shown[mainStyle] ? adminGenerationUrl(p.shown[mainStyle], 480) : adminPhotoUrl(p.id, null, 480)} alt="" loading="lazy" />
+              {p.id === activeId && (
+                <span className="pw-thumb-check" aria-hidden="true">
+                  <Check size={13} strokeWidth={3} />
+                </span>
+              )}
+            </button>
+          </li>
+        ))}
+        <li className="pw-gallery-add-item">
+          <UploadButton label="Agregar fotos" onFiles={onUpload} />
+        </li>
+      </ul>
+    </nav>
+  );
+}
+
+/**
+ * The studio's result of what is on screen: download it and, as a secondary
+ * choice, use it in a demo. «¡Imagen lista!» right after it was saved or
+ * created. What a ficha shows (version, cover, visibility) is folded under
+ * «Opciones de la ficha»: viewing or saving a version never publishes it.
+ */
+function ResultActions({
+  photo,
+  ready,
+  viewName,
+  downloading,
+  photosOnly,
+  onDownload,
+  onUseInDemo,
+  more,
+}: {
+  photo: EditorPhoto;
+  ready: boolean;
+  viewName: string;
+  downloading: boolean;
+  photosOnly: boolean;
+  onDownload: () => void;
+  onUseInDemo?: () => void;
+  more: React.ReactNode;
+}) {
+  return (
+    <section className={`pw-result ${ready ? "is-ready" : ""}`} aria-label="Resultado" aria-live="polite" key={photo.id}>
+      {ready ? (
+        <div className="pw-result-head">
+          <span className="pw-result-icon" aria-hidden="true">
+            <Check size={20} strokeWidth={3} />
+          </span>
+          <span>
+            <strong>¡Imagen lista!</strong>
+            <small>Guardada como nueva versión: {viewName}.</small>
+          </span>
+        </div>
+      ) : (
+        <p className="pw-result-on">
+          En pantalla: <strong>{viewName}</strong>
+        </p>
+      )}
+      <button type="button" className="button button-outline pw-result-button" disabled={downloading} onClick={onDownload} data-testid="download-active">
+        {downloading ? <Loader2 size={16} className="spin" aria-hidden="true" /> : <Download size={16} aria-hidden="true" />} Descargar imagen
+      </button>
+      {onUseInDemo && (
+        <button type="button" className="button button-outline pw-result-button" onClick={onUseInDemo}>
+          <Link2 size={16} aria-hidden="true" /> Usar en una demostración
+        </button>
+      )}
+      <p className="pw-hint">Descargar no usa créditos ni publica nada: JPEG de hasta 2048 px.</p>
+      <details className="pw-result-more">
+        <summary>{photosOnly ? "Opciones de la foto" : "Opciones de la ficha"}</summary>
+        <div>{more}</div>
+      </details>
+    </section>
   );
 }
 
@@ -1116,6 +1406,7 @@ function SpaceMenu({ space, spaces, count, actions }: { space: PropertySpace; sp
 
 /** "Editar": the retouch of the photo the large view shows, like the studio's editor: light and colour, AI tools, then the photo's settings. */
 function EditPanel({
+  compact = false,
   photo,
   viewing,
   adjust,
@@ -1129,6 +1420,8 @@ function EditPanel({
   total,
   actions,
 }: {
+  /** Estudio de imágenes: the controls first, the approved names («Guardar versión»), no spaces. */
+  compact?: boolean;
   photo: EditorPhoto;
   /** What the large photo shows, in words. */
   viewing: string;
@@ -1145,7 +1438,13 @@ function EditPanel({
 }) {
   const dirty = !sameAdjust(adjust, NO_ADJUST);
   return (
-    <div className="pw-edit">
+    <div className={`pw-edit ${compact ? "pw-edit-compact" : ""}`}>
+      {compact ? (
+        <p className="pw-edit-on" aria-live="polite">
+          Editando: <strong>{viewing}</strong>
+          {dirty && <span className="pw-badge is-on">Sin guardar</span>}
+        </p>
+      ) : (
       <div className="pw-edit-head">
         <div>
           <p className="pw-kicker">Editando</p>
@@ -1153,20 +1452,22 @@ function EditPanel({
         </div>
         {dirty && <span className="pw-badge is-on">Sin guardar</span>}
       </div>
+      )}
 
-      <RetouchControls id={photo.id} adjust={adjust} onAdjust={onAdjust} tools={tools} />
+      <RetouchControls id={photo.id} adjust={adjust} onAdjust={onAdjust} tools={tools} layout={compact ? "tiles" : "list"} />
 
       <div className="pw-edit-actions">
         <button type="button" className="button button-outline button-small" disabled={!dirty} onClick={() => onAdjust(NO_ADJUST)}>
           Descartar
         </button>
         <button type="button" className="button button-primary button-small" disabled={!dirty || saving} onClick={onSave}>
-          {saving ? <Loader2 size={14} className="spin" /> : null} {saving ? "Guardando…" : "Guardar como versión"}
+          {saving ? <Loader2 size={14} className="spin" /> : compact ? <Check size={15} aria-hidden="true" /> : null}{" "}
+          {saving ? "Guardando…" : compact ? "Guardar versión" : "Guardar como versión"}
         </button>
       </div>
       <p className="pw-hint">Guardar crea una versión nueva, sin créditos. El original no se toca.</p>
 
-      <PhotoSettings photo={photo} spaces={spaces} propertyType={propertyType} index={index} total={total} actions={actions} />
+      <PhotoSettings photo={photo} spaces={spaces} propertyType={propertyType} index={index} total={total} actions={actions} hideSpace={compact} />
     </div>
   );
 }
@@ -1179,7 +1480,10 @@ function PhotoSettings({
   index,
   total,
   actions,
+  hideSpace = false,
 }: {
+  /** Estudio de imágenes does not show spaces: the photo keeps its own. */
+  hideSpace?: boolean;
   photo: EditorPhoto;
   spaces: PropertySpace[];
   propertyType: PropertyType;
@@ -1206,6 +1510,8 @@ function PhotoSettings({
           }}
           onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
         />
+        {!hideSpace && (
+          <>
         <label htmlFor={`${uid}-space`}>Espacio</label>
         <select
           id={`${uid}-space`}
@@ -1220,6 +1526,8 @@ function PhotoSettings({
             </option>
           ))}
         </select>
+          </>
+        )}
         {propertyType === "residential" && (
           <>
             <label htmlFor={`${uid}-room`}>Ambiente para crear</label>
@@ -1283,9 +1591,17 @@ function CreatePanel({
   waiting,
   draft,
   preset = null,
+  compact = false,
+  onViewVersion,
+  onStylePicked,
   onDraft,
   onConfirm,
 }: {
+  /** Estudio de imágenes: the styles first, the cost on the button, the other options folded. */
+  compact?: boolean;
+  /** Picking a style this photo already has shows that version (no credits). */
+  onViewVersion?: (generationId: string) => void;
+  onStylePicked?: (style: string) => void;
   /** Chosen in the agency's demo before its panel was its own: the photo, and the style when it picked one. */
   preset?: { photoId: string; style: string | null } | null;
   photo: EditorPhoto;
@@ -1318,6 +1634,18 @@ function CreatePanel({
   const [error, setError] = useState("");
   const [done, setDone] = useState("");
   const [working, setWorking] = useState(false);
+  // The studio says the cost on the button before anything starts: asking the server costs nothing.
+  const [estimate, setEstimate] = useState<Quote | null>(null);
+  useEffect(() => {
+    if (!compact || staging?.payer !== "agency") return;
+    let live = true;
+    api<Quote>(`${base}/costo`, { method: "POST", body: JSON.stringify({ photoIds: [photo.id] }) })
+      .then((q) => live && setEstimate(q))
+      .catch(() => live && setEstimate(null));
+    return () => {
+      live = false;
+    };
+  }, [compact, base, photo.id, staging?.payer]);
   const set = (patch: Partial<Draft>) => {
     const next = { ...value, ...patch };
     setValue(next);
@@ -1339,6 +1667,50 @@ function CreatePanel({
           ? "Elegí un estilo."
           : null);
 
+  const moreFields = (
+    <>
+      <div className="pw-field">
+        <span id={`${uid}-mode`}>Qué querés hacer</span>
+        <div className="pw-seg" role="group" aria-labelledby={`${uid}-mode`}>
+          <button type="button" aria-pressed={value.mode === "furnish"} onClick={() => set({ mode: "furnish" })}>
+            Amoblar
+          </button>
+          <button type="button" aria-pressed={value.mode === "redesign"} onClick={() => set({ mode: "redesign" })}>
+            Rediseñar
+          </button>
+        </div>
+        <small>{value.mode === "furnish" ? "El espacio está vacío: lo amoblamos." : "Ya tiene muebles: los cambiamos por otros."}</small>
+      </div>
+      {propertyType === "residential" &&
+        (roomStart.conflict ? (
+          <fieldset className="pw-conflict">
+            <legend>El ambiente no coincide</legend>
+            <p className="dm-help">
+              El espacio es {spaceTypeName(space!.roomType)} y esta foto tenía «{roomName(roomStart.conflict)}» como ajuste propio.
+            </p>
+            <label>
+              <input type="radio" name={`${uid}-room`} checked={value.room === roomStart.room} onChange={() => set({ room: roomStart.room })} />
+              Crear como {roomName(roomStart.room)} (el espacio)
+            </label>
+            <label>
+              <input type="radio" name={`${uid}-room`} checked={value.room === roomStart.conflict} onChange={() => set({ room: roomStart.conflict! })} />
+              Mantener {roomName(roomStart.conflict)} (la foto)
+            </label>
+          </fieldset>
+        ) : (
+          <label className="pw-field">
+            Ambiente
+            <select value={value.room} onChange={(e) => set({ room: e.target.value })}>
+              {rooms.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ))}
+    </>
+  );
   async function review() {
     setError("");
     setWorking(true);
@@ -1382,9 +1754,11 @@ function CreatePanel({
         else void confirm();
       }}
     >
-      <p className="dm-help">
-        {space ? space.name : "Sin organizar"} · {photoName}. El costo se revisa antes de generar.
-      </p>
+      {!compact && (
+        <p className="dm-help">
+          {space ? space.name : "Sin organizar"} · {photoName}. El costo se revisa antes de generar.
+        </p>
+      )}
       {preset && !draft && (
         <p className="inline-notice" role="status">
           {preset.style
@@ -1392,55 +1766,32 @@ function CreatePanel({
             : "Seguís con la foto que elegiste en la demo: elegí un estilo, revisá el costo y confirmá para ambientarla."}
         </p>
       )}
-      <div className="pw-field">
-        <span id={`${uid}-mode`}>Qué querés hacer</span>
-        <div className="pw-seg" role="group" aria-labelledby={`${uid}-mode`}>
-          <button type="button" aria-pressed={value.mode === "furnish"} onClick={() => set({ mode: "furnish" })}>
-            Amoblar
-          </button>
-          <button type="button" aria-pressed={value.mode === "redesign"} onClick={() => set({ mode: "redesign" })}>
-            Rediseñar
-          </button>
-        </div>
-        <small>{value.mode === "furnish" ? "El espacio está vacío: lo amoblamos." : "Ya tiene muebles: los cambiamos por otros."}</small>
-      </div>
-      {propertyType === "residential" &&
-        (roomStart.conflict ? (
-          <fieldset className="pw-conflict">
-            <legend>El ambiente no coincide</legend>
-            <p className="dm-help">
-              El espacio es {spaceTypeName(space!.roomType)} y esta foto tenía «{roomName(roomStart.conflict)}» como ajuste propio.
-            </p>
-            <label>
-              <input type="radio" name={`${uid}-room`} checked={value.room === roomStart.room} onChange={() => set({ room: roomStart.room })} />
-              Crear como {roomName(roomStart.room)} (el espacio)
-            </label>
-            <label>
-              <input type="radio" name={`${uid}-room`} checked={value.room === roomStart.conflict} onChange={() => set({ room: roomStart.conflict! })} />
-              Mantener {roomName(roomStart.conflict)} (la foto)
-            </label>
-          </fieldset>
-        ) : (
-          <label className="pw-field">
-            Ambiente
-            <select value={value.room} onChange={(e) => set({ room: e.target.value })}>
-              {rooms.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        ))}
+      {!compact && moreFields}
       <StyleGrid
         value={value.style}
         room={propertyType === "residential" ? value.room : null}
         demoStyles={demoStyles}
         propertyType={propertyType}
         stateOf={stateOf}
-        onPick={(style) => set({ style })}
+        compact={compact}
+        onPick={(style) => {
+          set({ style });
+          onStylePicked?.(style);
+          // A style this photo already has: it is shown at once, nothing is generated.
+          const s = stateOf(style);
+          if (s.kind === "ready") onViewVersion?.(s.generationId);
+        }}
       />
-      {exists && !why && (
+      {compact && (
+        <details className="pw-create-more">
+          <summary>Más opciones</summary>
+          {moreFields}
+        </details>
+      )}
+      {exists && !why && compact && (
+        <p className="pw-note">Ya hay una versión {styleName(value.style)} (la ves en la foto, sin costo). Generar crea otra y la anterior se conserva.</p>
+      )}
+      {exists && !why && !compact && (
         <p className="pw-note">
           Ya hay una versión {styleName(value.style)}: se crea otra y la anterior se conserva. Cuando esté lista, la nueva pasa a mostrarse en la ficha en ese
           estilo; podés volver a elegir la anterior.
@@ -1468,7 +1819,7 @@ function CreatePanel({
                 : "No usa créditos: la foto ya está paga y su cobertura sigue vigente."}
             </span>
           )
-        ) : (
+        ) : compact ? null : (
           <span>{payerNote}</span>
         )}
       </div>
@@ -1481,6 +1832,11 @@ function CreatePanel({
         {step === "choose" ? (
           <button className="button button-primary" disabled={Boolean(why) || working}>
             {working ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />} Generar versión
+            {compact && estimate && !estimate.blocked
+              ? estimate.newPhotos
+                ? ` (${estimate.newPhotos} ${estimate.newPhotos === 1 ? "crédito" : "créditos"})`
+                : " (sin costo)"
+              : ""}
           </button>
         ) : (
           <>
@@ -1509,7 +1865,9 @@ function StyleGrid({
   propertyType,
   stateOf,
   onPick,
+  compact = false,
 }: {
+  compact?: boolean;
   value: string;
   room: string | null;
   demoStyles: string[];
@@ -1522,11 +1880,21 @@ function StyleGrid({
   const full = demoStyles.length >= MAX_DEMO_STYLES;
   const list = [...STYLE_LIST[propertyType]].sort((a, b) => Number(!demoStyles.includes(a.id)) - Number(!demoStyles.includes(b.id)));
   // Four styles (the property's own first), plus the chosen one; the rest with «Ver más estilos» (spec v3 §3.3).
-  const listed = all ? list : list.filter((st, i) => i < 4 || st.id === value);
+  const first = list.slice(0, 4);
+  const listed = all
+    ? list
+    : compact
+      ? // Four in one row: the chosen one takes the last place when it is not among them.
+        first.some((st) => st.id === value) || !list.some((st) => st.id === value)
+        ? first
+        : [...first.slice(0, 3), list.find((st) => st.id === value)!]
+      : list.filter((st, i) => i < 4 || st.id === value);
   return (
     <div className="pw-field">
-      <span id={`${uid}-styles`}>Estilo</span>
-      <div className="pw-styles" role="radiogroup" aria-labelledby={`${uid}-styles`}>
+      <span id={`${uid}-styles`} className={compact ? "dv2-sr" : undefined}>
+        Estilo
+      </span>
+      <div className={`pw-styles ${compact ? "pw-styles-row" : ""}`} role="radiogroup" aria-labelledby={`${uid}-styles`}>
         {listed.map((st) => {
           const s = stateOf(st.id);
           const isNew = !demoStyles.includes(st.id);
@@ -1556,7 +1924,7 @@ function StyleGrid({
         })}
       </div>
       {list.length > listed.length || all ? (
-        <button type="button" className="text-link pw-more-styles" aria-expanded={all} onClick={() => setAll((v) => !v)}>
+        <button type="button" className={compact ? "button button-outline pw-more-styles is-block" : "text-link pw-more-styles"} aria-expanded={all} onClick={() => setAll((v) => !v)}>
           {all ? "Menos estilos" : `Ver más estilos (${list.length - listed.length})`}
         </button>
       ) : null}
@@ -1570,6 +1938,7 @@ function StyleGrid({
  * only leaves it out of the next batch: its versions and states stay.
  */
 function BatchPanel({
+  flat = false,
   detail,
   groups,
   demoStyles,
@@ -1580,6 +1949,8 @@ function BatchPanel({
   blocked,
   actions,
 }: {
+  /** Estudio de imágenes: one list with every photo, no spaces. */
+  flat?: boolean;
   detail: DemoDetail;
   groups: ReturnType<typeof groupBySpace>;
   demoStyles: string[];
@@ -1626,7 +1997,7 @@ function BatchPanel({
       {groups.map((g) => (
         <fieldset key={g.space?.id ?? "loose"} className="pw-batch-group">
           <legend>
-            {g.space ? g.space.name : "Sin organizar"}{" "}
+            {flat ? `Todas las fotos (${g.photos.length})` : g.space ? g.space.name : "Sin organizar"}{" "}
             {g.photos.length > 0 && (
               <button type="button" className="text-link" onClick={() => setIncluded((s) => new Set([...s, ...g.photos.map((p) => p.id)]))}>
                 Elegir todas
@@ -1665,7 +2036,7 @@ function BatchPanel({
               Quitar pendientes
             </button>
           )}
-          {detail.spaces.length > 0 && (
+          {detail.spaces.length > 0 && !flat && (
             <span className="pw-row">
               <select value={moveTo} onChange={(e) => setMoveTo(e.target.value)} aria-label="Mover las fotos elegidas a">
                 <option value="">Sin organizar</option>
