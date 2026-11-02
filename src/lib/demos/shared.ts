@@ -110,9 +110,23 @@ export type PublicDemo = {
   prospect: boolean;
   /** «Mostrar selector de estilos»: false keeps the buyer's style picker out (the opening style still shows). */
   styleSelector?: boolean;
-  /** The property's latest finished video, where the agency placed it; null without one or when hidden. */
-  video?: { url: string; format: "9:16" | "16:9"; place: "first" | "second" | "below" } | null;
+  /**
+   * The property's latest finished video and where the agency placed it
+   * (first or second thumbnail, or a card under the gallery). Null when there
+   * is none or the agency hid it: no empty player is ever shown.
+   */
+  video: PublicVideoRef | null;
 };
+
+export type PublicVideoRef = {
+  id: string;
+  format: "9:16" | "16:9";
+  durationMs: number | null;
+  placement: "first" | "second" | "below";
+};
+
+/** A published demo's video: the route checks the demo and the video, then hands a short-lived link to the file. */
+export const publicVideoUrl = (token: string, videoId: string) => `/demo/${token}/video/${videoId}`;
 
 export type DemoStatus = "draft" | "published";
 export type DemoSummary = {

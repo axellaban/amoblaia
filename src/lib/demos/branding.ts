@@ -19,6 +19,13 @@ export type AgencyBranding = {
   visitUrl?: string;
 };
 export type OpenMode = "original" | "styled";
+/**
+ * Where the property's video goes in its ficha and its demo: first or second
+ * among the thumbnails, under the gallery as its own card, or not shown.
+ * Chosen per property from the panel (Video); never a global preference.
+ */
+export type VideoPlacement = "first" | "second" | "below" | "hidden";
+export const VIDEO_PLACEMENTS: VideoPlacement[] = ["first", "second", "below", "hidden"];
 /** Icons of the key facts, chosen per property (no empty or invented fields). */
 export const FACT_ICONS = ["area", "rooms", "bedrooms", "offices", "bathrooms", "floor", "parking", "age", "other"] as const;
 export type FactIcon = (typeof FACT_ICONS)[number];
@@ -79,9 +86,6 @@ export const HIDEABLE_FIELDS = [
   "listingUrl",
 ] as const;
 export type HideableField = (typeof HIDEABLE_FIELDS)[number];
-/** Where the property's video goes in the public gallery. */
-export const VIDEO_PLACES = ["first", "second", "below"] as const;
-export type VideoPlace = (typeof VIDEO_PLACES)[number];
 
 export type DemoSettings = {
   propertyType: "residential" | "office";
@@ -119,9 +123,7 @@ export type DemoSettings = {
   showStyles: boolean;
   /** «Incluir datos de contacto»: the agent and every inquiry channel. */
   showContact: boolean;
-  /** «Mostrar video»: the latest finished video, when there is one. */
-  showVideo: boolean;
-  videoPlace: VideoPlace;
+  videoPlacement: VideoPlacement;
 };
 export const DEFAULT_SETTINGS: DemoSettings = {
   propertyType: "residential",
@@ -151,8 +153,7 @@ export const DEFAULT_SETTINGS: DemoSettings = {
   showData: true,
   showStyles: true,
   showContact: true,
-  showVideo: true,
-  videoPlace: "below",
+  videoPlacement: "first",
 };
 
 /** The colors of a page without branding: the neutral blue of habita. */
@@ -261,8 +262,7 @@ export function readSettings(raw: unknown): DemoSettings {
     showData: v.showData !== false,
     showStyles: v.showStyles !== false,
     showContact: v.showContact !== false,
-    showVideo: v.showVideo !== false,
-    videoPlace: VIDEO_PLACES.includes(v.videoPlace as VideoPlace) ? (v.videoPlace as VideoPlace) : "below",
+    videoPlacement: VIDEO_PLACEMENTS.includes(v.videoPlacement as VideoPlacement) ? (v.videoPlacement as VideoPlacement) : "first",
   };
 }
 

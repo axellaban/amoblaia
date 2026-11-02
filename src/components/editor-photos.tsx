@@ -201,6 +201,14 @@ export function PhotoWorkspace({
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [batch, setBatch] = useState(false);
   const [awaiting, setAwaiting] = useState<{ photoId: string; style: string; since: string } | null>(null);
+  // From the agency's demo (Generar a style, or a photo still without one): ?foto= and ?estilo= open it ready, nothing generated yet.
+  const [preset] = useState(() => {
+    if (typeof window === "undefined") return null;
+    const q = new URLSearchParams(window.location.search);
+    const photoId = q.get("foto");
+    const style = q.get("estilo");
+    return photoId ? { photoId, style: style && STYLE_LIST[propertyType].some((st) => st.id === style) ? style : null } : null;
+  });
 
   // The photo comes from ?foto= (deep link, kept on reload), else the first one.
   useEffect(() => {
@@ -715,6 +723,7 @@ export function PhotoWorkspace({
                 payerNote={payerNote}
                 waiting={staging.waiting}
                 draft={drafts[photo.id]}
+                preset={preset?.photoId === photo.id ? preset : null}
                 onDraft={(d) => setDrafts((all) => ({ ...all, [photo.id]: d }))}
                 onConfirm={async (task, fresh) => {
                   const since = new Date(Date.now() - 5000).toISOString();
@@ -1273,9 +1282,12 @@ function CreatePanel({
   payerNote,
   waiting,
   draft,
+  preset = null,
   onDraft,
   onConfirm,
 }: {
+  /** Chosen in the agency's demo before its panel was its own: the photo, and the style when it picked one. */
+  preset?: { photoId: string; style: string | null } | null;
   photo: EditorPhoto;
   photoName: string;
   space: PropertySpace | null;
@@ -1294,7 +1306,12 @@ function CreatePanel({
   const options = useMemo(() => photoVersions(photo, STYLE_LIST[propertyType].map((s) => s.id), waiting), [photo, propertyType, waiting]);
   const stateOf = (style: string) => options.find((o) => o.style === style)?.state ?? ({ kind: "none" } as CellState);
   const [value, setValue] = useState<Draft>(
-    () => draft ?? { style: demoStyles.find((s) => stateOf(s).kind === "none") ?? demoStyles[0] ?? "", mode: photo.mode, room: roomStart.room },
+    () =>
+      draft ?? {
+        style: preset?.style ?? demoStyles.find((s) => stateOf(s).kind === "none") ?? demoStyles[0] ?? "",
+        mode: photo.mode,
+        room: roomStart.room,
+      },
   );
   const [quote, setQuote] = useState<Quote | null>(null);
   const [step, setStep] = useState<"choose" | "confirm">("choose");
@@ -1368,6 +1385,13 @@ function CreatePanel({
       <p className="dm-help">
         {space ? space.name : "Sin organizar"} · {photoName}. El costo se revisa antes de generar.
       </p>
+      {preset && !draft && (
+        <p className="inline-notice" role="status">
+          {preset.style
+            ? `Seguís con lo que elegiste en la demo: ${styleName(preset.style)} para esta foto. Revisá el costo y confirmá para generarla.`
+            : "Seguís con la foto que elegiste en la demo: elegí un estilo, revisá el costo y confirmá para ambientarla."}
+        </p>
+      )}
       <div className="pw-field">
         <span id={`${uid}-mode`}>Qué querés hacer</span>
         <div className="pw-seg" role="group" aria-labelledby={`${uid}-mode`}>

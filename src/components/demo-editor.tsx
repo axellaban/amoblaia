@@ -29,7 +29,7 @@ import { optimizePhoto } from "@/lib/images";
 import { PROPERTY_TYPE_NAMES, styleFits, type PropertyType } from "@/lib/demos/styles";
 import { ListingForm, type ListingPart, type Visibility } from "./demo-listing-form";
 import { videoEnabled } from "@/lib/agency/flags";
-import { VIDEO_PLACES, type HideableField, type VideoPlace } from "@/lib/demos/branding";
+import { type HideableField, type VideoPlacement } from "@/lib/demos/branding";
 import { ImportPreview, ImportReport, exceptions, foreignPhotos, syncPhotos } from "./demo-import";
 import type { ImportChange, ImportField, ImportedDemo } from "@/lib/demos/import";
 import { track } from "@/lib/analytics";
@@ -113,7 +113,9 @@ const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 /** The agency's demo editor: three tabs. The older sections (and their links) open in the tab that holds them. */
 type DemoTab = "fotos" | "datos" | "publicacion";
 const tabOf = (s: Section): DemoTab => (s === "fotos" ? "fotos" : s === "publicacion" ? "publicacion" : "datos");
-const VIDEO_PLACE_LABEL: Record<VideoPlace, [string, string]> = {
+/** Where the video goes, as Panel > Video stores it (settings.videoPlacement); "hidden" is «Mostrar video» off. */
+const VIDEO_PLACES = ["first", "second", "below"] as const satisfies readonly VideoPlacement[];
+const VIDEO_PLACE_LABEL: Record<(typeof VIDEO_PLACES)[number], [string, string]> = {
   first: ["Primero", "en la galería"],
   second: ["Segundo", "en la galería"],
   below: ["Debajo", "de las fotos"],
@@ -1198,10 +1200,10 @@ export function DemoEditor({
                 <input
                   type="radio"
                   name="dx-video-place"
-                  checked={detail.settings.videoPlace === place}
+                  checked={detail.settings.videoPlacement === place}
                   onChange={() =>
                     void demoAction(
-                      { action: "settings", settings: { videoPlace: place } },
+                      { action: "settings", settings: { videoPlacement: place } },
                       video ? "Ubicación del video guardada." : "Ubicación guardada: se aplica cuando generes el video.",
                       "fotos",
                     )
@@ -1473,9 +1475,9 @@ export function DemoEditor({
                     <label className="dx-check">
                       <input
                         type="checkbox"
-                        checked={detail.settings.showVideo}
+                        checked={detail.settings.videoPlacement !== "hidden"}
                         disabled={!videoEnabled()}
-                        onChange={(e) => setting({ showVideo: e.target.checked })}
+                        onChange={(e) => setting({ videoPlacement: e.target.checked ? "first" : "hidden" })}
                       />
                       Mostrar video {!video && <small>(cuando exista)</small>}
                     </label>
@@ -1485,9 +1487,9 @@ export function DemoEditor({
                           <input
                             type="radio"
                             name="dx-pub-video-place"
-                            checked={detail.settings.videoPlace === place}
-                            disabled={!detail.settings.showVideo || !videoEnabled()}
-                            onChange={() => setting({ videoPlace: place })}
+                            checked={detail.settings.videoPlacement === place}
+                            disabled={detail.settings.videoPlacement === "hidden" || !videoEnabled()}
+                            onChange={() => setting({ videoPlacement: place })}
                           />
                           {place === "below" ? "Video debajo de las fotos" : `Video ${VIDEO_PLACE_LABEL[place][0].toLowerCase()} (en la galería)`}
                         </label>

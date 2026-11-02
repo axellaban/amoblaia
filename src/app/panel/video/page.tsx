@@ -5,7 +5,8 @@ import { VideoStudio } from "@/components/video-studio";
 import { videoEnabled } from "@/lib/agency/flags";
 import { requirePanelPage } from "@/lib/agency/page";
 import { canEdit, inScopeOf } from "@/lib/agency/video-access";
-import { demoRow, previewDemo } from "@/lib/demos/server";
+import { demoRow, previewDemo, settingsOf } from "@/lib/demos/server";
+import type { VideoPlacement } from "@/lib/demos/branding";
 import { isUuid } from "@/lib/demos/shared";
 import { safeReturn } from "@/lib/agency/shared";
 export const dynamic = "force-dynamic";
@@ -24,11 +25,13 @@ export default async function Page({ searchParams }: Props) {
   const { propiedad, volver } = await searchParams;
   const id = typeof propiedad === "string" && isUuid(propiedad) ? propiedad : null;
   let demo = null;
+  let placement: VideoPlacement = "first";
   if (id) {
     const row = await demoRow(id).catch(() => null);
     if (!row || row.agency_id !== membership.agency.id || !inScopeOf(membership, row.property_id)) notFound();
     demo = await previewDemo(id, { raw: true }).catch(() => null);
     if (!demo) notFound();
+    placement = (await settingsOf(id).catch(() => null))?.settings.videoPlacement ?? "first";
   }
   return (
     <>
@@ -38,6 +41,7 @@ export default async function Page({ searchParams }: Props) {
           demoId={id}
           demo={demo}
           canEdit={canEdit(membership)}
+          placement={placement}
           backTo={typeof volver === "string" && id ? safeReturn(volver, "") || null : null}
         />
       </div>

@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { cache } from "react";
-import { Assistant } from "@/components/assistant";
 import { DemoView } from "@/components/demo-view";
 import { PricingPlans } from "@/components/pricing";
 import { buyerViewPath, inviteFor, presentationPath, pricesViewPath, type DemoInvite } from "@/lib/agency/demo-invite";
@@ -140,11 +139,6 @@ export async function PublicDemo({
   // The plans live in the agency's environment: without it (a code no longer valid), the presentation itself.
   if (prices && !owner) redirect(shortPath ?? presentationPath(token, code));
   const plans = owner ? await plansOf(owner.href) : null;
-  return (
-    <>
-      <DemoView demo={demo} source={{ kind: "public", token }} presentation={presentation} invite={invite} owner={owner} plans={plans} backToDemo={backToDemo} />
-      {/* Miguel Ángel helps the agency in its own demo; buyers never see him. */}
-      {owner && invitation && <Assistant place={{ kind: "demo", token, code: invitation }} />}
-    </>
-  );
+  // No floating assistant here: nothing covers the photo, the styles or the contact (demo and buyers' page alike).
+  return <DemoView demo={demo} source={{ kind: "public", token }} presentation={presentation} invite={invite} owner={owner} plans={plans} backToDemo={backToDemo} />;
 }

@@ -22,7 +22,6 @@ import { fetchPublic } from "./listing";
 import type { ImportedDemo } from "./import";
 import { OG_LABEL_ORIGINAL, OG_LABEL_STAGED } from "./og-labels";
 import { applyVisibility } from "./visibility";
-import { pageVideo } from "@/lib/video/server";
 import {
   TOKEN_PATTERN,
   coverVersion,
@@ -688,7 +687,7 @@ async function publicPayload(demo: DemoRow, logoUrl: (v: string) => string, raw 
     photosOf(demo.property_id),
     brandingOf(demo.agency_id),
     settingsOf(demo.id),
-    pageVideo(demo.id),
+    latestVideo(demo.id),
   ]);
   const visible = photos.filter((p) => p.visible);
   const shown = await shownOf(visible);
@@ -756,9 +755,56 @@ async function publicPayload(demo: DemoRow, logoUrl: (v: string) => string, raw 
     share: { title: settings.shareTitle, description: settings.shareDescription },
     prospect,
     styleSelector: settings.showStyles,
-    video: settings.showVideo && video ? { ...video, place: settings.videoPlace } : null,
+    video: video && settings.videoPlacement !== "hidden" ? { ...video, placement: settings.videoPlacement } : null,
   };
   return raw ? page : applyVisibility(page, settings);
+}
+
+/**
+ * The property's newest finished video (its file really stored), or null.
+ * Never breaks the page: without the videos table (202611190001_property_videos.sql)
+ * or on a failed read, the demo simply shows no video.
+ */
+async function latestVideo(demoId: string): Promise<Omit<NonNullable<PublicDemo["video"]>, "placement"> | null> {
+  try {
+    const { data, error } = await adminClient()
+      .from("property_videos")
+      .select("id,format,duration_ms")
+      .eq("demo_id", demoId)
+      .eq("status", "completed")
+      .not("storage_path", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error || !data) return null;
+    const row = data as { id: string; format: string; duration_ms: number | null };
+    return { id: row.id, format: row.format === "16:9" ? "16:9" : "9:16", durationMs: row.duration_ms };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A short-lived link to a published demo's video: only its newest finished
+ * one, only while the agency shows it. The bucket stays private.
+ */
+export async function publicVideoLink(token: string, videoId: string) {
+  if (!TOKEN_PATTERN.test(token) || !isUuid(videoId)) return null;
+  const db = adminClient();
+  const demo = check(
+    await db.from("demos").select("id").eq("token", token).eq("status", "published").maybeSingle(),
+    "DEMO_LOOKUP_FAILED",
+  ) as { id: string } | null;
+  if (!demo) return null;
+  const [{ settings }, video] = await Promise.all([settingsOf(demo.id), latestVideo(demo.id)]);
+  if (!video || video.id !== videoId || settings.videoPlacement === "hidden") return null;
+  const row = check(
+    await db.from("property_videos").select("storage_path").eq("id", videoId).eq("demo_id", demo.id).maybeSingle(),
+    "DEMO_VIDEO_LOOKUP_FAILED",
+  ) as { storage_path: string | null } | null;
+  if (!row?.storage_path) return null;
+  const signed = await db.storage.from("property-videos").createSignedUrl(row.storage_path, 3600);
+  return signed.data?.signedUrl ?? null;
 }
 
 /** The property's data as the page shows it: only confirmed prices, a map never more precise than published. */

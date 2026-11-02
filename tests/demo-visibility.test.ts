@@ -30,9 +30,9 @@ const page = {
 };
 
 describe("demo visibility", () => {
-  it("old settings show everything; the video goes below the photos by default", () => {
+  it("old settings show everything", () => {
     const s = readSettings({ price: "USD 1" });
-    expect(s).toMatchObject({ hidden: [], showData: true, showStyles: true, showContact: true, showVideo: true, videoPlace: "below" });
+    expect(s).toMatchObject({ hidden: [], showData: true, showStyles: true, showContact: true });
     expect(applyVisibility(page, s)).toEqual({ ...page, facts: [page.facts[0]] });
   });
 
@@ -75,8 +75,9 @@ describe("demo visibility", () => {
 
   it("rejects unknown fields and places", () => {
     expect(() => settingsInput({ hidden: ["title"] }, DEFAULT_SETTINGS)).toThrow();
-    expect(() => settingsInput({ videoPlace: "top" }, DEFAULT_SETTINGS)).toThrow();
+    expect(() => settingsInput({ videoPlacement: "top" }, DEFAULT_SETTINGS)).toThrow();
     expect(() => settingsInput({ showData: "no" }, DEFAULT_SETTINGS)).toThrow();
-    expect(settingsInput({ videoPlace: "first", showStyles: false }, DEFAULT_SETTINGS)).toMatchObject({ videoPlace: "first", showStyles: false });
+    expect(settingsInput({ videoPlacement: "below", showStyles: false }, DEFAULT_SETTINGS)).toMatchObject({ videoPlacement: "below", showStyles: false });
+    expect(settingsInput({ videoPlacement: "hidden" }, DEFAULT_SETTINGS).videoPlacement).toBe("hidden");
   });
 });

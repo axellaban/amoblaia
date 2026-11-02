@@ -187,28 +187,3 @@ export async function listVideos(demoId: string, fileName: (row: VideoRow) => st
   );
 }
 
-/**
- * The video a property's public page plays: its latest finished one, with a
- * link that lasts a day (the page is rendered on every visit). Null without
- * one, or when it cannot be read: the page never shows an empty player.
- */
-export async function pageVideo(demoId: string): Promise<{ url: string; format: VideoFormat } | null> {
-  try {
-    const db = adminClient();
-    const { data, error } = await db
-      .from("property_videos")
-      .select("storage_path,format")
-      .eq("demo_id", demoId)
-      .eq("status", "completed")
-      .not("storage_path", "is", null)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    const row = data as { storage_path: string; format: VideoFormat } | null;
-    if (error || !row) return null;
-    const signed = await db.storage.from(VIDEO_BUCKET).createSignedUrl(row.storage_path, 86400);
-    return signed.data?.signedUrl ? { url: signed.data.signedUrl, format: row.format } : null;
-  } catch {
-    return null;
-  }
-}
