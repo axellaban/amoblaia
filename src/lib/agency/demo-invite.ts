@@ -107,3 +107,59 @@ export const redactInvite = (text: string) =>
     .replace(/(\/demo\/[^/\s"?#]+\/presentacion\/)[^/\s"?#]+/gi, "$1[oculto]")
     // The short link /p/<property>-<code>: the property stays readable.
     .replace(/(\/p\/(?:[^/\s"?#]*-)?)[2-9a-hjkmnp-z]{10}(?=[/?#\s"]|$)/g, "$1[oculto]");
+
+/**
+ * What the agency asked for in its demo before it had its panel: a style for
+ * a photo, staging a photo still without one, or importing another listing.
+ * It travels with the invitation's sign-up (?accion=&foto=&estilo=) and the
+ * panel opens that tool ready, never generating by itself: credits and the
+ * confirmation work as always there. The URL pasted for an import stays in
+ * this browser (PENDING_IMPORT_KEY), not in the link.
+ */
+export type DemoIntent =
+  | { kind: "generate"; photo: string; style: string }
+  | { kind: "stage"; photo: string }
+  | { kind: "import" }
+  | null;
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const STYLE_ID = /^[a-z0-9_-]{1,40}$/;
+
+/** The sign-up (or panel) link with the intent attached. */
+export function withIntent(href: string, intent: DemoIntent) {
+  if (!intent) return href;
+  const [path, query = ""] = href.split("?");
+  const q = new URLSearchParams(query);
+  q.set("accion", intent.kind === "generate" ? "generar" : intent.kind === "stage" ? "ambientar" : "importar");
+  if (intent.kind !== "import") q.set("foto", intent.photo);
+  if (intent.kind === "generate") q.set("estilo", intent.style);
+  return `${path}?${q}`;
+}
+
+/** The intent of a query, validated: an unknown action or a malformed photo or style is ignored. */
+export function intentOf(q: { accion?: unknown; foto?: unknown; estilo?: unknown }): DemoIntent {
+  const photo = typeof q.foto === "string" && UUID.test(q.foto) ? q.foto : null;
+  const style = typeof q.estilo === "string" && STYLE_ID.test(q.estilo) ? q.estilo : null;
+  if (q.accion === "importar") return { kind: "import" };
+  if (q.accion === "generar" && photo && style) return { kind: "generate", photo, style };
+  if ((q.accion === "generar" || q.accion === "ambientar") && photo) return { kind: "stage", photo };
+  return null;
+}
+
+/**
+ * Where the agency lands once its panel is its own: the property with the
+ * photo (and style) chosen, or the panel's import with the pasted link.
+ * Without an intent, the property as before.
+ */
+export function intentDestination(propertyId: string | null, intent: DemoIntent, welcome = true) {
+  const hello: Record<string, string> = welcome ? { bienvenida: "1" } : {};
+  if (intent?.kind === "import") return `/panel?${new URLSearchParams({ ...hello, continuar: "importar" })}#crear`;
+  if (!propertyId) return welcome ? "/panel?bienvenida=1" : "/panel";
+  const q = new URLSearchParams(hello);
+  if (intent) {
+    q.set("foto", intent.photo);
+    if (intent.kind === "generate") q.set("estilo", intent.style);
+  }
+  const query = q.toString();
+  return `/panel/propiedades/${propertyId}${query ? `?${query}` : ""}`;
+}

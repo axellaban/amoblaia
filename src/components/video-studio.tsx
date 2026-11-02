@@ -14,6 +14,15 @@ import type { PanelProperty } from "@/lib/agency/shared";
 import { browserClient } from "@/lib/supabase/client";
 import { MAX_VIDEO_PHOTOS, MODE_INFO, planVideo, suggestPhotos, type VideoFormat, type VideoMode } from "@/lib/video/plan";
 import type { PublicVideo } from "@/lib/video/server";
+import type { VideoPlacement } from "@/lib/demos/branding";
+
+/** Where the property's video goes in its ficha and its demo (spec: one demo, three positions). */
+const PLACEMENTS: { id: VideoPlacement; name: string; text: string }[] = [
+  { id: "first", name: "Video primero", text: "El primer elemento del carrusel de fotos." },
+  { id: "second", name: "Video segundo", text: "Después de la primera foto del carrusel." },
+  { id: "below", name: "Video debajo", text: "Una tarjeta debajo de la galería." },
+  { id: "hidden", name: "No mostrar", text: "La ficha no muestra el video." },
+];
 
 const deviceType = () => (typeof window !== "undefined" && window.matchMedia("(max-width: 860px)").matches ? "mobile" : "desktop");
 const seconds = (ms: number) => Math.round(ms / 1000);
@@ -66,7 +75,18 @@ function PropertyPicker() {
 
 type Choice = { id: string; label: string; staged: boolean; version: PublicDemo["photos"][number]["versions"][number] | null };
 
-export function VideoStudio({ demoId, demo, canEdit }: { demoId: string | null; demo: PublicDemo | null; canEdit: boolean }) {
+export function VideoStudio({
+  demoId,
+  demo,
+  canEdit,
+  placement = "first",
+}: {
+  demoId: string | null;
+  demo: PublicDemo | null;
+  canEdit: boolean;
+  /** Where this property's ficha shows its video. */
+  placement?: VideoPlacement;
+}) {
   useEffect(() => {
     track("video_section_viewed", { has_property: Boolean(demo), device_type: deviceType() });
   }, [demo]);
@@ -81,10 +101,72 @@ export function VideoStudio({ demoId, demo, canEdit }: { demoId: string | null; 
       </div>
     );
   }
-  return <Studio demoId={demoId} demo={demo} canEdit={canEdit} />;
+  return <Studio demoId={demoId} demo={demo} canEdit={canEdit} placement={placement} />;
 }
 
-function Studio({ demoId, demo, canEdit }: { demoId: string; demo: PublicDemo; canEdit: boolean }) {
+/** "En la ficha": where the newest finished video shows, for buyers and in the demo. Saved per property. */
+function PlacementPicker({ demoId, initial, canEdit, hasVideo }: { demoId: string; initial: VideoPlacement; canEdit: boolean; hasVideo: boolean }) {
+  const [placement, setPlacement] = useState<VideoPlacement>(initial);
+  const [saving, setSaving] = useState<VideoPlacement | null>(null);
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
+  async function choose(next: VideoPlacement) {
+    if (!canEdit || saving || next === placement) return;
+    setSaving(next);
+    setError("");
+    setSaved(false);
+    try {
+      await api("/api/panel/videos/ficha", { method: "POST", body: JSON.stringify({ demoId, placement: next }) });
+      setPlacement(next);
+      setSaved(true);
+      track("video_placement_selected", { placement: next });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No pudimos guardar dónde se muestra el video.");
+    } finally {
+      setSaving(null);
+    }
+  }
+  return (
+    <section className="vs-step" aria-labelledby="vs-placement">
+      <h2 id="vs-placement">En la ficha</h2>
+      <p className="vs-hint">
+        {hasVideo
+          ? "La ficha y la demo muestran el último video terminado. Se reproduce sin registro y sin sonido automático."
+          : "Cuando tengas un video terminado, la ficha y la demo lo muestran acá."}
+      </p>
+      <div className="vs-options is-placements" role="radiogroup" aria-labelledby="vs-placement">
+        {PLACEMENTS.map((o) => (
+          <button
+            key={o.id}
+            type="button"
+            role="radio"
+            aria-checked={placement === o.id}
+            aria-disabled={!canEdit}
+            className={`vs-option ${placement === o.id ? "is-on" : ""}`}
+            onClick={() => void choose(o.id)}
+          >
+            <strong>
+              {saving === o.id ? <Loader2 size={16} className="spin" aria-hidden="true" /> : o.id === "hidden" ? <X size={16} aria-hidden="true" /> : <Play size={16} aria-hidden="true" />} {o.name}
+            </strong>
+            <span>{o.text}</span>
+          </button>
+        ))}
+      </div>
+      {saved && (
+        <p className="vs-done" role="status">
+          <Check size={15} aria-hidden="true" /> Guardado: así se ve en la ficha de esta propiedad.
+        </p>
+      )}
+      {error && (
+        <p className="inline-error" role="alert">
+          {error}
+        </p>
+      )}
+    </section>
+  );
+}
+
+function Studio({ demoId, demo, canEdit, placement }: { demoId: string; demo: PublicDemo; canEdit: boolean; placement: VideoPlacement }) {
   const [useStaged, setUseStaged] = useState(true);
   const all: Choice[] = useMemo(
     () =>
@@ -419,6 +501,8 @@ function Studio({ demoId, demo, canEdit }: { demoId: string; demo: PublicDemo; c
         </ul>
         {done.length > 0 && <p className="vs-hint">Los enlaces de los videos se renuevan cada vez que abrís esta página.</p>}
       </section>
+
+      <PlacementPicker demoId={demoId} initial={placement} canEdit={canEdit} hasVideo={done.length > 0} />
     </div>
   );
 }

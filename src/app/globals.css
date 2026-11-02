@@ -18664,3 +18664,471 @@ main:has(.ap-sidebar) {
   flex-wrap: wrap;
   gap: 8px;
 }
+
+/* ===================== Demo y vista comprador V1A (pedido 02/11) ===================== */
+/* The demo starts with the experience: no pitch before the picture. */
+.dv2-hero.is-compact {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-bottom: -10px;
+}
+.dv2-hero.is-compact .dv2-buyer-link {
+  min-height: 44px;
+  padding: 0 18px;
+  font-size: 14.5px;
+}
+@media (max-width: 900px) {
+  .dv2-hero.is-compact {
+    flex-direction: column;
+    justify-content: center;
+    gap: 10px;
+    margin-bottom: -6px;
+  }
+  .dv2-hero.is-compact .dv2-hero-pill {
+    display: inline-block;
+  }
+}
+
+/* The video in the big frame: its own proportions (vertical or horizontal), never stretched. */
+.dv2-video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #0d0f14;
+}
+.dv2-stage.is-video .dv2-backdrop {
+  filter: blur(30px) brightness(0.55);
+}
+.dv2-play {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: rgba(20, 24, 36, 0.62);
+  color: #fff;
+  padding-left: 2px;
+}
+.dv2-thumbs li button {
+  position: relative;
+  overflow: hidden;
+}
+.dv2-thumbs li button .dv2-play {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 32px;
+  height: 32px;
+}
+.dv2-thumb-label {
+  position: absolute;
+  left: 6px;
+  bottom: 5px;
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 700;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+.dv2-thumbs li button.dv2-thumb-video.is-on,
+.dv2-thumbs li button.is-on {
+  outline-color: var(--forest);
+}
+/* A photo still without a staging: visible, dimmed, with the way to stage it in the panel. */
+.dv2-thumbs li button.is-locked img {
+  filter: grayscale(0.45) brightness(0.62);
+}
+.dv2-thumb-lock {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 4px 6px;
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1.15;
+  text-align: center;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+.dv2-pending-cta {
+  position: absolute;
+  z-index: 5;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100% - 120px);
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.95);
+  color: var(--forest);
+  font-weight: 800;
+  font-size: 14px;
+  text-decoration: none;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+}
+.dv2-pending-cta:hover {
+  background: #fff;
+}
+@media (max-width: 900px) {
+  .dv2-thumb-lock span {
+    display: none;
+  }
+  .dv2-pending-cta {
+    bottom: 12px;
+    max-width: calc(100% - 24px);
+    font-size: 13px;
+    padding: 0 12px;
+  }
+  .dv2-stage:has(.dv2-pending-cta) .dv2-counter,
+  .dv2-stage:has(.dv2-pending-cta) .dv2-full {
+    top: 12px;
+    bottom: auto;
+  }
+}
+
+/* "Recorré la transformación": the video as its own card under the gallery. */
+.dv2-video-card {
+  display: grid;
+  grid-template-columns: minmax(120px, 38%) minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+}
+.dv2-video-cover {
+  position: relative;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #eceef2;
+  cursor: pointer;
+}
+.dv2-video-cover img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+}
+.dv2-video-cover .dv2-play {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 44px;
+  height: 44px;
+}
+.dv2-video-card h2 {
+  margin: 0;
+  color: var(--forest);
+  font-size: 18px;
+}
+.dv2-video-card p {
+  margin: 4px 0 10px;
+  color: var(--muted);
+  font-size: 14px;
+}
+.dv2-video-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--forest);
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.dv2-styles.is-buyer ~ .dv2-video-card .dv2-video-cta {
+  background: #e8f0e3;
+  color: var(--forest);
+}
+
+/* "Generar" is a link to the panel now: the same look as before. */
+a.dv2-style-generate {
+  padding: 0 12px;
+  text-decoration: none;
+}
+a.dv2-style-generate:hover {
+  background: #dbe8d3;
+}
+
+/* ---- Vista comprador ---- */
+.dv2-header.is-buyer .container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 60px;
+}
+.dv2-habita-mark {
+  font-size: 15px;
+  letter-spacing: 0.3em;
+}
+.dv2-header-share {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.dv2-header-share:hover {
+  background: #eef3eb;
+}
+.dv2-share-note {
+  margin: 0;
+  padding: 6px 16px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--forest);
+}
+.dv2-heading.is-buyer h1 {
+  margin: 0;
+  color: var(--ink);
+}
+@media (min-width: 901px) {
+  .dv2-page:not(:has(.dv2-owner)) .dv2-gallery.has-panel {
+    grid-template-columns: minmax(0, 1fr) 380px;
+  }
+}
+.dv2-styles.is-buyer .dv2-style-grid,
+.dv2-styles.is-buyer .dv2-style-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  overflow: visible;
+}
+@media (min-width: 901px) {
+  .dv2-styles.is-buyer .dv2-style-card {
+    display: grid;
+    padding: 5px;
+  }
+  .dv2-styles.is-buyer .dv2-style-pick {
+    display: grid;
+    gap: 6px;
+    text-align: center;
+  }
+  .dv2-styles.is-buyer .dv2-style-pick img {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 4 / 3;
+  }
+  .dv2-styles.is-buyer .dv2-style-name {
+    text-align: center;
+    font-size: 14px;
+  }
+  .dv2-styles.is-buyer .dv2-style-check {
+    position: absolute;
+    width: 22px;
+    height: 22px;
+  }
+}
+@media (max-width: 900px) {
+  .dv2-styles.is-buyer .dv2-style-card {
+    min-width: 0;
+    flex: none;
+  }
+}
+.dv2-summary {
+  display: grid;
+  gap: 4px;
+  padding: 0 2px;
+}
+.dv2-summary .dv2-price {
+  margin: 0;
+}
+.dv2-summary .dv2-features {
+  margin: 0;
+}
+.dv2-buyer-contact {
+  display: grid;
+  gap: 10px;
+}
+.dv2-buyer-contact .dv2-contact-main,
+.dv2-buyer-contact .dv2-contact-alt {
+  width: 100%;
+  min-height: 50px;
+  border-radius: 10px;
+}
+.dv2-buyer-contact .dv2-contact-main {
+  background: var(--forest);
+  color: #fff;
+  font-size: 16px;
+}
+.dv2-buyer-contact .dv2-contact-alt {
+  border: 1.5px solid var(--ink);
+  color: var(--ink);
+  background: #fff;
+  text-decoration: none;
+}
+.dv2-buyer-contact .dv2-contact-alt:hover {
+  background: #f4f6f2;
+}
+.dv2-page:not(:has(.dv2-owner)) .dv2-tabs a:first-child {
+  color: var(--forest);
+  border-bottom-color: var(--forest);
+}
+
+/* The panel's Video: where the ficha shows it. */
+.vs-options.is-placements {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+@media (max-width: 760px) {
+  .vs-options.is-placements {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Buyers on phones: «Estilos» and «Video» as two tabs; on desktop both are shown and the tabs hide. */
+.dv2-aside-group {
+  display: grid;
+  gap: 12px;
+}
+.dv2-aside-tabs {
+  display: none;
+}
+@media (min-width: 901px) {
+  .dv2-video-card.is-tab-only {
+    display: none;
+  }
+}
+@media (max-width: 900px) {
+  .dv2-aside-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    border-bottom: 1px solid var(--line);
+  }
+  .dv2-aside-tabs button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 46px;
+    border: 0;
+    border-bottom: 3px solid transparent;
+    background: none;
+    color: var(--muted);
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .dv2-aside-tabs button.is-on {
+    color: var(--forest);
+    border-bottom-color: var(--forest);
+  }
+  .dv2-aside-group.has-tabs.is-styles > .dv2-video-card,
+  .dv2-aside-group.has-tabs.is-video > .dv2-styles {
+    display: none;
+  }
+  .dv2-aside-group.has-tabs .dv2-styles {
+    border: 0;
+    padding: 4px 0 0;
+  }
+  /* The tab already says «Estilos»: only «Ver todos» stays in its head. */
+  .dv2-aside-group.has-tabs .dv2-styles-head {
+    justify-content: flex-end;
+  }
+  .dv2-aside-group.has-tabs .dv2-styles-head h2 {
+    display: none;
+  }
+}
+
+/*
+ * Phones: the styles right under the big photo, before the thumbnails, so the
+ * AI versions are in view without scrolling. The gallery's two columns melt
+ * into one list (display: contents) and are ordered here; desktop is unchanged.
+ */
+.dv2-styles-hint {
+  display: none;
+}
+@media (max-width: 900px) {
+  .dv2-gallery.has-panel {
+    gap: 12px;
+  }
+  .dv2-gallery > .dv2-media,
+  .dv2-gallery > .dv2-aside {
+    display: contents;
+  }
+  .dv2-media > *,
+  .dv2-aside > * {
+    order: 10;
+  }
+  .dv2-media > .dv2-stage {
+    order: 1;
+  }
+  .dv2-aside > .dv2-styles,
+  .dv2-aside > .dv2-aside-tabs {
+    order: 2;
+  }
+  .dv2-aside > .dv2-aside-group {
+    order: 3;
+  }
+  .dv2-media > .dv2-thumbs {
+    order: 4;
+  }
+  .dv2-media > .dv2-video-card {
+    order: 5;
+  }
+  .dv2-aside > .dv2-aside-actions {
+    order: 6;
+  }
+  .dv2-styles {
+    gap: 8px;
+    padding: 10px 12px;
+  }
+  .dv2-styles-head h2 {
+    font-size: 17px;
+  }
+  .dv2-styles-all {
+    min-height: 36px;
+    font-size: 14px;
+  }
+  .dv2-styles-hint {
+    display: block;
+    margin: -4px 0 0;
+    overflow: hidden;
+    color: var(--muted);
+    font-size: 13px;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  /* The chosen style reads at a glance. */
+  .dv2-style-card.is-on {
+    border-width: 2px;
+  }
+}
+@media (max-width: 900px) {
+  /* The demo's photo as tall as the photo itself (no empty bands), so its styles show without scrolling. */
+  .dv2-page:has(.dv2-owner) .dv2-stage {
+    height: min(76vw, 52vh);
+  }
+}
+@media (max-width: 900px) {
+  .dv2-styles .dv2-style-grid {
+    align-items: start;
+  }
+}

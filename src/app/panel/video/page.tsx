@@ -5,7 +5,8 @@ import { VideoStudio } from "@/components/video-studio";
 import { videoEnabled } from "@/lib/agency/flags";
 import { requirePanelPage } from "@/lib/agency/page";
 import { canEdit, inScopeOf } from "@/lib/agency/video-access";
-import { demoRow, previewDemo } from "@/lib/demos/server";
+import { demoRow, previewDemo, settingsOf } from "@/lib/demos/server";
+import type { VideoPlacement } from "@/lib/demos/branding";
 import { isUuid } from "@/lib/demos/shared";
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Video", robots: { index: false, follow: false } };
@@ -23,17 +24,19 @@ export default async function Page({ searchParams }: Props) {
   const { propiedad } = await searchParams;
   const id = typeof propiedad === "string" && isUuid(propiedad) ? propiedad : null;
   let demo = null;
+  let placement: VideoPlacement = "first";
   if (id) {
     const row = await demoRow(id).catch(() => null);
     if (!row || row.agency_id !== membership.agency.id || !inScopeOf(membership, row.property_id)) notFound();
     demo = await previewDemo(id).catch(() => null);
     if (!demo) notFound();
+    placement = (await settingsOf(id).catch(() => null))?.settings.videoPlacement ?? "first";
   }
   return (
     <>
       <PanelNav section="video" agencyName={membership.agency.name} role={membership.role} />
       <div className="account-page container ap-page">
-        <VideoStudio demoId={id} demo={demo} canEdit={canEdit(membership)} />
+        <VideoStudio demoId={id} demo={demo} canEdit={canEdit(membership)} placement={placement} />
       </div>
     </>
   );
