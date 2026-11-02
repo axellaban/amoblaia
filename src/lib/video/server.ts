@@ -5,7 +5,7 @@
 import "server-only";
 import { HttpError } from "@/lib/commerce/http";
 import { adminClient } from "@/lib/supabase/server";
-import { VIDEO_FORMATS, VIDEO_MODES, type VideoFormat, type VideoMode } from "./plan";
+import { formatOf, INFO_FIELDS, isVideoFormat, MAX_VIDEO_PHOTOS, VIDEO_MODES, VIDEO_SIZE, type InfoField, type VideoFormat, type VideoMode } from "./plan";
 
 export const VIDEO_BUCKET = "property-videos";
 export const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
@@ -34,13 +34,37 @@ export type VideoRow = {
   created_at: string;
   updated_at: string;
   completed_at: string | null;
+  /** Added by 202611200001_video_formats.sql: the file's real size and how it was made. */
+  width?: number | null;
+  height?: number | null;
+  options?: unknown;
 };
+
+/**
+ * How a video was made, so another format can be exported later from the same
+ * photos without choosing them again: the photos in order, whether AI stagings
+ * were used, and which information it carries. Ids and switches only.
+ */
+export type VideoOptions = { photos: string[]; staged: boolean; info: boolean; fields: InfoField[] };
+
+export function readOptions(raw: unknown): VideoOptions | null {
+  if (!raw || typeof raw !== "object") return null;
+  const v = raw as Record<string, unknown>;
+  const photos = Array.isArray(v.photos) ? v.photos.filter((p): p is string => typeof p === "string" && /^[0-9a-f-]{36}$/i.test(p)).slice(0, MAX_VIDEO_PHOTOS) : [];
+  if (!photos.length) return null;
+  const fields = Array.isArray(v.fields) ? [...new Set(v.fields)].filter((f): f is InfoField => INFO_FIELDS.includes(f as InfoField)) : [];
+  return { photos, staged: v.staged !== false, info: v.info === true, fields };
+}
 
 export type PublicVideo = {
   id: string;
   mode: VideoMode;
   format: VideoFormat;
   status: VideoRow["status"];
+  /** The exported file's real size. */
+  width: number;
+  height: number;
+  options: VideoOptions | null;
   photoCount: number;
   durationMs: number | null;
   sizeBytes: number | null;
@@ -62,11 +86,12 @@ export async function createVideo(input: {
   mode: unknown;
   format: unknown;
   photoCount: unknown;
+  options?: unknown;
 }) {
   if (typeof input.key !== "string" || !/^[0-9a-f-]{36}$/i.test(input.key)) throw new HttpError(400, "Pedido inválido.");
   if (!VIDEO_MODES.includes(input.mode as VideoMode)) throw new HttpError(400, "Modo de video desconocido.");
   if (!LIVE_MODES.includes(input.mode as VideoMode)) throw new HttpError(409, "Ese modo de video todavía no está disponible.");
-  if (!VIDEO_FORMATS.includes(input.format as VideoFormat)) throw new HttpError(400, "Formato desconocido.");
+  if (!isVideoFormat(input.format)) throw new HttpError(400, "Formato desconocido.");
   const count = Number(input.photoCount);
   if (!Number.isInteger(count) || count < 1 || count > 30) throw new HttpError(400, "Elegí entre 1 y 30 fotos.");
   const db = adminClient();
@@ -75,23 +100,33 @@ export async function createVideo(input: {
   let row = existing.data as VideoRow | null;
   if (row && (row.demo_id !== input.demoId || row.actor_id !== input.actorId)) throw new HttpError(409, "Pedido inválido.");
   if (!row) {
-    const created = await db
+    const format = input.format as VideoFormat;
+    const base = {
+      agency_id: input.agencyId,
+      demo_id: input.demoId,
+      actor_id: input.actorId,
+      idempotency_key: input.key,
+      mode: input.mode,
+      format,
+      status: "processing",
+      photo_count: count,
+      provider: "browser",
+      credits_charged: 0,
+    };
+    const options = readOptions(input.options);
+    let created = await db
       .from("property_videos")
-      .insert({
-        agency_id: input.agencyId,
-        demo_id: input.demoId,
-        actor_id: input.actorId,
-        idempotency_key: input.key,
-        mode: input.mode,
-        format: input.format,
-        status: "processing",
-        photo_count: count,
-        provider: "browser",
-        credits_charged: 0,
-      })
+      .insert({ ...base, width: VIDEO_SIZE[format].width, height: VIDEO_SIZE[format].height, options: options ?? {} })
       .select("*")
       .single();
-    if (created.error) throw new Error("VIDEO_CREATE_FAILED");
+    // Before 202611200001_video_formats.sql: the original two formats still work, without the extra columns.
+    if (created.error && (format === "9:16" || format === "16:9") && /column|schema cache/i.test(created.error.message ?? ""))
+      created = await db.from("property_videos").insert(base).select("*").single();
+    if (created.error) {
+      if (/check|constraint/i.test(created.error.message ?? "") || created.error.code === "23514" || /column/i.test(created.error.message ?? ""))
+        throw new HttpError(409, "Los formatos 4:5 y 1:1 se habilitan al aplicar la migración 202611200001_video_formats.sql en Supabase.");
+      throw new Error("VIDEO_CREATE_FAILED");
+    }
     row = created.data as VideoRow;
     const path = pathOf(row);
     const saved = await db.from("property_videos").update({ storage_path: path }).eq("id", row.id);
@@ -170,11 +205,15 @@ export async function listVideos(demoId: string, fileName: (row: VideoRow) => st
         url = view.data?.signedUrl ?? null;
         downloadUrl = download.data?.signedUrl ?? null;
       }
+      const format = formatOf(r.format);
       return {
         id: r.id,
         mode: r.mode,
-        format: r.format,
+        format,
         status: r.status,
+        width: r.width ?? VIDEO_SIZE[format].width,
+        height: r.height ?? VIDEO_SIZE[format].height,
+        options: readOptions(r.options),
         photoCount: r.photo_count,
         durationMs: r.duration_ms,
         sizeBytes: r.size_bytes,

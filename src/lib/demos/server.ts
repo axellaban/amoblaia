@@ -1,4 +1,5 @@
 import "server-only";
+import { formatOf } from "@/lib/video/plan";
 import { createHash, randomBytes } from "node:crypto";
 import sharp from "sharp";
 import { adminClient } from "@/lib/supabase/server";
@@ -778,7 +779,7 @@ async function latestVideo(demoId: string): Promise<Omit<NonNullable<PublicDemo[
       .maybeSingle();
     if (error || !data) return null;
     const row = data as { id: string; format: string; duration_ms: number | null };
-    return { id: row.id, format: row.format === "16:9" ? "16:9" : "9:16", durationMs: row.duration_ms };
+    return { id: row.id, format: formatOf(row.format), durationMs: row.duration_ms };
   } catch {
     return null;
   }
@@ -1322,6 +1323,8 @@ export async function createDemo(input: {
         token: newToken(),
         created_by: input.actorId,
         kind: input.kind ?? "ficha",
+        // New demos show their video under the gallery until the agency chooses otherwise (older ones keep theirs).
+        settings: { videoPlacement: "below" },
       })
       .select("id")
       .single();

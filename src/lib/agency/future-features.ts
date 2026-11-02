@@ -51,7 +51,7 @@ export const FUTURE_FEATURE_INFO: Record<FutureFeature, FutureFeatureInfo> = {
     title: "Video",
     description:
       "Videos de tus propiedades a partir de sus fotos: un montaje con transiciones o fotos en movimiento creadas con IA, en formato vertical u horizontal.",
-    benefits: ["Formatos 9:16 y 16:9", "Con los datos reales de la propiedad", "Costo visible antes de generar"],
+    benefits: ["Formatos 9:16, 16:9, 4:5 y 1:1", "Con los datos reales de la propiedad", "Costo visible antes de generar"],
   },
 };
 

@@ -61,8 +61,8 @@ vi.mock("@/lib/supabase/server", () => {
   return { adminClient: () => ({ from: () => query(), storage }), currentUser: async () => null };
 });
 
-import { coverCrop, planVideo, sceneAt, suggestPhotos, MAX_VIDEO_PHOTOS } from "../src/lib/video/plan";
-import { createVideo, finishVideo, listVideos, MAX_VIDEO_BYTES, STALE_MS } from "../src/lib/video/server";
+import { coverCrop, formatOf, formatRatio, planVideo, sceneAt, suggestPhotos, videoCards, videoFileName, infoAvailable, MAX_VIDEO_PHOTOS, VIDEO_FORMATS, VIDEO_SIZE, type InfoSource } from "../src/lib/video/plan";
+import { createVideo, finishVideo, listVideos, readOptions, MAX_VIDEO_BYTES, STALE_MS } from "../src/lib/video/server";
 
 const AG = "00000000-0000-4000-8000-0000000000a1";
 const DEMO = "00000000-0000-4000-8000-0000000000d1";
@@ -100,6 +100,47 @@ describe("Video plan", () => {
           expect(c.sw / c.sh).toBeCloseTo(frame.width / frame.height, 5);
         }
   });
+  it("four real export formats, each at its own size", () => {
+    expect(VIDEO_FORMATS).toEqual(["9:16", "16:9", "4:5", "1:1"]);
+    expect(planVideo(3, "9:16")).toMatchObject({ width: 1080, height: 1920 });
+    expect(planVideo(3, "16:9")).toMatchObject({ width: 1920, height: 1080 });
+    expect(planVideo(3, "4:5")).toMatchObject({ width: 1080, height: 1350 });
+    expect(planVideo(3, "1:1")).toMatchObject({ width: 1080, height: 1080 });
+    for (const f of VIDEO_FORMATS) {
+      // H.264 needs even sizes; the ratio is the file's, not a CSS crop.
+      expect(VIDEO_SIZE[f].width % 2 + VIDEO_SIZE[f].height % 2).toBe(0);
+      const [w, h] = f.split(":").map(Number);
+      expect(formatRatio(f)).toBeCloseTo(w / h, 5);
+    }
+    expect(() => planVideo(2, "2:3" as never)).toThrow();
+    expect(formatOf("4:5")).toBe("4:5");
+    expect(formatOf("21:9")).toBe("9:16");
+  });
+  it("without information: only the photos, the last one plays whole", () => {
+    const p = planVideo(3, "1:1", { intro: false, outro: false });
+    expect(p.scenes.map((s) => s.kind)).toEqual(["photo", "photo", "photo"]);
+    expect(p.durationMs).toBe(3 * 3200 - 2 * 700);
+    expect(planVideo(3, "1:1", { intro: true, outro: false }).scenes.map((s) => s.kind)).toEqual(["intro", "photo", "photo", "photo"]);
+  });
+  it("cards carry only chosen, available, visible data; nothing when off", () => {
+    const src: InfoSource = { title: "Casa", location: null, price: null, priceFallback: "Consultar precio", operation: "Venta", facts: ["3 ambientes"], agencyName: "Inmo", logo: false, contact: null };
+    const all = { title: true, location: true, price: true, facts: true, agencyName: true, logo: true, contact: true };
+    expect(videoCards(src, false, all)).toEqual({ intro: null, outro: null });
+    const on = videoCards(src, true, all);
+    expect(on.intro).toEqual({ operation: "Venta", title: "Casa", location: null, price: "Consultar precio", facts: ["3 ambientes"] });
+    expect(on.outro).toEqual({ agencyName: "Inmo", logo: false, contact: null });
+    expect(videoCards(src, true, { ...all, title: false, price: false, facts: false })).toMatchObject({ intro: null });
+    // A photo group without a ficha: no property data, not even «Consultar precio».
+    const group = { ...src, title: null, facts: [], operation: null };
+    expect(infoAvailable(group, "price")).toBe(false);
+    expect(videoCards(group, true, all).intro).toBeNull();
+  });
+  it("downloads are named by property and format", () => {
+    expect(videoFileName("Dúplex en Pompeya", "9:16")).toBe("duplex-en-pompeya-vertical.mp4");
+    expect(videoFileName("Dúplex en Pompeya", "16:9")).toBe("duplex-en-pompeya-horizontal.mp4");
+    expect(videoFileName("Dúplex en Pompeya", "4:5")).toBe("duplex-en-pompeya-vertical-4x5.mp4");
+    expect(videoFileName("", "1:1")).toBe("propiedad-cuadrado.mp4");
+  });
   it("suggests staged photos first, in order, up to 8", () => {
     const photos = Array.from({ length: 12 }, (_, i) => ({ id: `p${i}`, staged: i % 3 === 0 }));
     expect(suggestPhotos(photos).map((p) => p.id)).toEqual(["p0", "p3", "p6", "p9", "p1", "p2", "p4", "p5"]);
@@ -129,9 +170,20 @@ describe("Video jobs on the server", () => {
   it("refuses AI modes until they are live, unknown formats and bad photo counts", async () => {
     await expect(create(key(), { mode: "cinematic" })).rejects.toMatchObject({ status: 409 });
     await expect(create(key(), { mode: "teleport" })).rejects.toMatchObject({ status: 400 });
-    await expect(create(key(), { format: "1:1" })).rejects.toMatchObject({ status: 400 });
+    await expect(create(key(), { format: "2:3" })).rejects.toMatchObject({ status: 400 });
     await expect(create(key(), { photoCount: 0 })).rejects.toMatchObject({ status: 400 });
     await expect(create("not-a-key")).rejects.toMatchObject({ status: 400 });
+  });
+
+  it("stores the real size and how it was made for the four formats", async () => {
+    const photo = "00000000-0000-4000-8000-0000000000f1";
+    for (const format of VIDEO_FORMATS) {
+      await create(key(), { format, options: { photos: [photo, "nope"], staged: false, info: true, fields: ["title", "bogus"] } });
+      expect(store.rows.at(-1)).toMatchObject({ format, width: VIDEO_SIZE[format].width, height: VIDEO_SIZE[format].height, options: { photos: [photo], staged: false, info: true, fields: ["title"] } });
+    }
+    expect(readOptions({ photos: [] })).toBeNull();
+    const list = await listVideos(DEMO, () => "x.mp4");
+    expect(list.map((v) => [v.format, v.width, v.height])).toEqual(expect.arrayContaining([["4:5", 1080, 1350], ["1:1", 1080, 1080]]));
   });
 
   it("a key reused for another property or person is refused", async () => {
@@ -199,7 +251,11 @@ describe("property_videos table", () => {
     const ins = "insert into property_videos(agency_id,demo_id,actor_id,idempotency_key,mode,format,photo_count) values($1,$2,$3,$4,$5,$6,$7)";
     await pg.query(ins, [agency, demo, user, k, "classic", "9:16", 4]);
     await expect(pg.query(ins, [agency, demo, user, k, "classic", "9:16", 4])).rejects.toThrow(/unique|duplicate/i);
-    await expect(pg.query(ins, [agency, demo, user, crypto.randomUUID(), "classic", "1:1", 4])).rejects.toThrow(/check/i);
+    await expect(pg.query(ins, [agency, demo, user, crypto.randomUUID(), "classic", "2:3", 4])).rejects.toThrow(/check/i);
+    // 202611200001_video_formats.sql: 4:5 and 1:1, with their real size and options.
+    for (const f of ["4:5", "1:1", "16:9"]) await pg.query(ins, [agency, demo, user, crypto.randomUUID(), "classic", f, 4]);
+    await pg.query("update property_videos set width=1080,height=1350,options='{\"photos\":[]}' where format='4:5'");
+    expect((await pg.query("select width,height from property_videos where format='9:16'")).rows[0]).toEqual({ width: null, height: null });
     await expect(pg.query(ins, [agency, demo, user, crypto.randomUUID(), "classic", "9:16", 31])).rejects.toThrow(/check/i);
     await pg.exec("set role authenticated");
     await expect(pg.query("select * from property_videos")).rejects.toThrow(/permission/i);

@@ -1,4 +1,5 @@
 "use client";
+import { formatRatio } from "@/lib/video/plan";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
@@ -1102,7 +1103,7 @@ function Gallery({
   }, [photo?.id, viewStyle, viewMode, index, videoOn]);
 
   if (!photo) return <p className="dv2-empty">Esta propiedad todavía no tiene fotos.</p>;
-  const ratio = videoOn && video ? (video.format === "9:16" ? 9 / 16 : 16 / 9) : (ratios[photo.id] ?? 4 / 3);
+  const ratio = videoOn && video ? formatRatio(video.format) : (ratios[photo.id] ?? 4 / 3);
   const originalKey = `${photo.id}:o`;
   // The video's cover: the property's cover in its main style, a real picture of this property.
   const cover = demo.cover ?? photos[0];

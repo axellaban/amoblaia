@@ -36,22 +36,36 @@ export function toolPath(tool: StartTool, id: string) {
 }
 
 type Item = PanelProperty & { group: boolean };
-type Source = "elegir" | "importar" | "subir";
+export type Source = "elegir" | "importar" | "subir";
 const MB = Math.round(MAX_UPLOAD_BYTES / (1024 * 1024));
 const message = (e: unknown, fallback: string) => (e instanceof ApiError || e instanceof Error ? e.message || fallback : fallback);
 
-export function StartPicker({ tool, existingCount, onClose }: { tool: StartTool; existingCount: number; onClose: () => void }) {
+export function StartPicker({
+  tool,
+  existingCount,
+  onClose,
+  initialSource = null,
+}: {
+  tool: StartTool;
+  existingCount: number;
+  onClose: () => void;
+  /** Opened on one of the three ways in (the video page lists them itself). */
+  initialSource?: Source | null;
+}) {
   const router = useRouter();
   const uid = useId();
   const ref = useRef<HTMLDialogElement>(null);
   const [items, setItems] = useState<Item[] | null>(null);
   const [loadError, setLoadError] = useState("");
-  const [source, setSource] = useState<Source | null>(null);
+  const [source, setSource] = useState<Source | null>(initialSource);
   const [query, setQuery] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const demo = tool === "demo";
+  const video = tool === "video";
+  // Demo and video: a property is chosen first (visual selection), then «Continuar».
+  const selectFirst = demo || video;
   // «Elegir una propiedad existente» of the demo: chosen first, then «Continuar».
   const [chosen, setChosen] = useState<string | null>(null);
   // «Subir fotos» of the demo: the one that opens the ficha (its cover).
@@ -92,6 +106,10 @@ export function StartPicker({ tool, existingCount, onClose }: { tool: StartTool;
 
   const go = (id: string, how: Source) => {
     track("panel_start_picker_chosen", { tool, source: how });
+    if (video) {
+      const item = items?.find((p) => p.id === id);
+      track("video_property_selected", { source: how, property_id: id, is_group: Boolean(item?.group), photos: item?.photos ?? 0, staged: item?.staged ?? 0 });
+    }
     router.push(toolPath(tool, id));
   };
 
@@ -103,7 +121,7 @@ export function StartPicker({ tool, existingCount, onClose }: { tool: StartTool;
     let id: string;
     try {
       setStatus("Preparando…");
-      id = (await api<{ id: string }>("/api/panel/imagenes/grupo", { method: "POST", body: JSON.stringify({ name: demo ? "Propiedad nueva" : "Fotos subidas" }) })).id;
+      id = (await api<{ id: string }>("/api/panel/imagenes/grupo", { method: "POST", body: JSON.stringify({ name: demo ? "Propiedad nueva" : video ? "Fotos para video" : "Fotos subidas" }) })).id;
     } catch (e) {
       setStatus("");
       setError(message(e, "No pudimos empezar la subida."));
@@ -147,7 +165,13 @@ export function StartPicker({ tool, existingCount, onClose }: { tool: StartTool;
     go(id, "subir");
   }
 
-  const options: { id: Source; icon: typeof Home; title: string; text: string }[] = demo
+  const options: { id: Source; icon: typeof Home; title: string; text: string }[] = video
+    ? [
+        { id: "elegir", icon: Home, title: "Elegir una propiedad existente", text: "Usá sus fotos, sus ambientaciones y sus datos." },
+        { id: "importar", icon: Link2, title: "Importar nueva propiedad desde URL", text: "Traé sus fotos desde una publicación." },
+        { id: "subir", icon: Upload, title: "Subir fotos", text: "Sin crear una ficha: generá y descargá el video igual." },
+      ]
+    : demo
     ? [
         { id: "elegir", icon: Home, title: "Elegir una propiedad existente", text: "Usá una de tus propiedades ya creadas." },
         { id: "importar", icon: Link2, title: "Importar nueva propiedad desde URL", text: "Traé sus datos y fotografías desde una publicación." },
@@ -176,7 +200,7 @@ export function StartPicker({ tool, existingCount, onClose }: { tool: StartTool;
           <button type="button" className="icon-button" aria-label="Volver a las opciones" disabled={Boolean(status)} onClick={() => setSource(null)}>
             <ArrowLeft size={18} />
           </button>
-        ) : demo ? (
+        ) : selectFirst ? (
           <h2 className="sp-demo-title">{TOOL_TITLE[tool]}</h2>
         ) : (
           <span className="sp-kicker">{TOOL_TITLE[tool]}</span>
@@ -198,7 +222,9 @@ export function StartPicker({ tool, existingCount, onClose }: { tool: StartTool;
               ? demo
                 ? "Subir fotos"
                 : "Subí tus fotos"
-              : demo
+              : video
+                ? "Elegí cómo empezar"
+                : demo
                 ? "¿Con qué querés empezar?"
                 : "¿Con qué imágenes querés empezar?"}
       </h2>
@@ -244,21 +270,21 @@ export function StartPicker({ tool, existingCount, onClose }: { tool: StartTool;
 
       {source === "elegir" && (
         <div className="sp-pick">
-          {(demo || sorted.length > 5) && (
+          {(selectFirst || sorted.length > 5) && (
             <label className="ap-search sp-search">
               <Search size={16} aria-hidden="true" />
               <input type="search" placeholder="Buscar por título o ubicación" aria-label="Buscar propiedades" value={query} onChange={(e) => setQuery(e.target.value)} autoFocus />
             </label>
           )}
-          <ul className="sp-list" role={demo ? "listbox" : undefined} aria-label={demo ? "Tus propiedades" : undefined}>
+          <ul className="sp-list" role={selectFirst ? "listbox" : undefined} aria-label={selectFirst ? "Tus propiedades" : undefined}>
             {listed.map((p) => (
               <li key={p.id}>
                 <button
                   type="button"
                   className={`sp-prop ${chosen === p.id ? "is-on" : ""}`}
-                  role={demo ? "option" : undefined}
-                  aria-selected={demo ? chosen === p.id : undefined}
-                  onClick={() => (demo ? setChosen(p.id) : go(p.id, "elegir"))}
+                  role={selectFirst ? "option" : undefined}
+                  aria-selected={selectFirst ? chosen === p.id : undefined}
+                  onClick={() => (selectFirst ? setChosen(p.id) : go(p.id, "elegir"))}
                 >
                   <PropertyThumb p={p} />
                   <span className="sp-option-text">
@@ -268,7 +294,7 @@ export function StartPicker({ tool, existingCount, onClose }: { tool: StartTool;
                       {p.photos} {p.photos === 1 ? "foto" : "fotos"}
                     </small>
                   </span>
-                  {demo && chosen === p.id ? (
+                  {selectFirst && chosen === p.id ? (
                     <span className="sp-chosen" aria-hidden="true">
                       <Check size={15} strokeWidth={3} />
                     </span>
@@ -284,7 +310,7 @@ export function StartPicker({ tool, existingCount, onClose }: { tool: StartTool;
           {!listed.length && (
             <p className="ap-empty">{q ? "Ninguna propiedad coincide con la búsqueda." : "Todavía no tenés propiedades: importá una o subí sus fotos."}</p>
           )}
-          {demo && (
+          {selectFirst && (
             <button type="button" className="button button-primary sp-continue" disabled={!chosen} onClick={() => chosen && go(chosen, "elegir")}>
               Continuar
             </button>
@@ -327,8 +353,9 @@ export function StartPicker({ tool, existingCount, onClose }: { tool: StartTool;
               aria-label="Elegir fotos desde el dispositivo"
               disabled={Boolean(status)}
               onChange={(e) => {
-                const list = e.target.files;
-                if (list?.length) setFiles((all) => [...all, ...Array.from(list)]);
+                // Copied before clearing the field: the FileList is live and empties with it.
+                const list = Array.from(e.target.files ?? []);
+                if (list.length) setFiles((all) => [...all, ...list]);
                 e.target.value = "";
               }}
             />
@@ -338,8 +365,8 @@ export function StartPicker({ tool, existingCount, onClose }: { tool: StartTool;
               {files.map((f, i) => {
                 const problem = fileProblem(f);
                 return (
-                  <li key={`${f.name}-${i}`} className={`${problem ? "is-bad" : ""} ${demo ? "is-demo" : ""}`}>
-                    {demo && previews[i] && <img src={previews[i]!} alt="" className="sp-file-thumb" />}
+                  <li key={`${f.name}-${i}`} className={`${problem ? "is-bad" : ""} ${selectFirst ? "is-demo" : ""}`}>
+                    {selectFirst && previews[i] && <img src={previews[i]!} alt="" className="sp-file-thumb" />}
                     <span>{f.name}</span>
                     {problem && <em>{problem}</em>}
                     {demo && !problem && (
@@ -394,7 +421,9 @@ export function StartPicker({ tool, existingCount, onClose }: { tool: StartTool;
           <p className="dm-help">
             {demo
               ? "Subir no usa créditos. Se crea un borrador de la propiedad con estas fotos: el título, la ubicación y los demás datos se completan en el editor."
-              : "Subir no usa créditos. Después podés crear una ficha con estas fotos o sumarlas a una propiedad."}
+              : video
+                ? "Subir no usa créditos ni crea una ficha: generás y descargás el video con estas fotos. Nada se publica."
+                : "Subir no usa créditos. Después podés crear una ficha con estas fotos o sumarlas a una propiedad."}
           </p>
           <button type="button" className="button button-primary" disabled={Boolean(status) || !files.some((f) => !fileProblem(f))} onClick={() => void upload()}>
             {status ? (

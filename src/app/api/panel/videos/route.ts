@@ -3,19 +3,11 @@ import { requireDemoAccess, requireDemoRead } from "@/lib/agency/server";
 import { readJson } from "@/lib/demos/input";
 import { isUuid } from "@/lib/demos/shared";
 import { adminClient } from "@/lib/supabase/server";
+import { formatOf, videoFileName } from "@/lib/video/plan";
 import { createVideo, finishVideo, listVideos, type VideoRow } from "@/lib/video/server";
 export const runtime = "nodejs";
 
 const PRIVATE = { "Cache-Control": "private, no-store" };
-const slug = (s: string) =>
-  s
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^A-Za-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .toLowerCase()
-    .slice(0, 60) || "propiedad";
-
 async function titleOf(propertyId: string) {
   const { data } = await adminClient().from("demo_properties").select("title").eq("id", propertyId).maybeSingle();
   return (data as { title: string } | null)?.title ?? "propiedad";
@@ -27,18 +19,18 @@ export async function GET(request: Request) {
     const demoId = new URL(request.url).searchParams.get("demo");
     if (!isUuid(demoId)) throw new HttpError(400, "Propiedad inválida.");
     const access = await requireDemoRead(demoId);
-    const title = slug(await titleOf(access.demo.property_id));
-    const videos = await listVideos(access.demo.id, (r: VideoRow) => `${title}-${r.format === "9:16" ? "vertical" : "horizontal"}.mp4`);
+    const title = await titleOf(access.demo.property_id);
+    const videos = await listVideos(access.demo.id, (r: VideoRow) => videoFileName(title, formatOf(r.format)));
     return Response.json({ videos }, { headers: PRIVATE });
   } catch (e) {
     return failure(e);
   }
 }
 
-/** { demoId, key, mode, format, photoCount }: a new video and where its MP4 is uploaded. Editors only (requireDemoAccess on POST). */
+/** { demoId, key, mode, format, photoCount, options }: a new video and where its MP4 is uploaded. Editors only (requireDemoAccess on POST). */
 export async function POST(request: Request) {
   try {
-    const body = await readJson(request, 2048);
+    const body = await readJson(request, 4096);
     if (!isUuid(body.demoId)) throw new HttpError(400, "Propiedad inválida.");
     const access = await requireDemoAccess(request, body.demoId);
     const created = await createVideo({
@@ -49,6 +41,7 @@ export async function POST(request: Request) {
       mode: body.mode,
       format: body.format,
       photoCount: body.photoCount,
+      options: body.options,
     });
     return Response.json(created, { status: 201, headers: PRIVATE });
   } catch (e) {

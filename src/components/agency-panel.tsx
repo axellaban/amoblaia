@@ -191,13 +191,13 @@ function HomeCards({ creator, existingCount }: { creator: boolean; existingCount
           {
             id: "video" as const,
             title: "Crear video",
-            text: "Generá videos de tus propiedades listos para publicar.",
+            text: "Generá videos de tus propiedades listos para publicar y compartir.",
             icon: Clapperboard,
             art: { src: "/ejemplos/outdoor-modern.webp", play: true },
             features: [
               [PlayCircle, "Recorridos con fotos"],
-              [FileText, "Con los datos de la ficha"],
-              [MonitorPlay, "En alta calidad"],
+              [Clapperboard, "Movimiento y transiciones"],
+              [MonitorPlay, "Formatos para publicar"],
             ] as [typeof Sparkles, string][],
           },
         ]

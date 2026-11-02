@@ -120,7 +120,7 @@ export type PublicDemo = {
 
 export type PublicVideoRef = {
   id: string;
-  format: "9:16" | "16:9";
+  format: import("../video/plan").VideoFormat;
   durationMs: number | null;
   placement: "first" | "second" | "below";
 };
