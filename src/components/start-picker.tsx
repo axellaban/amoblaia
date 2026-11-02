@@ -40,7 +40,28 @@ type Source = "elegir" | "importar" | "subir";
 const MB = Math.round(MAX_UPLOAD_BYTES / (1024 * 1024));
 const message = (e: unknown, fallback: string) => (e instanceof ApiError || e instanceof Error ? e.message || fallback : fallback);
 
-export function StartPicker({ tool, existingCount, onClose }: { tool: StartTool; existingCount: number; onClose: () => void }) {
+/**
+ * The team creating a demo for an agency (Administración, inside its signed
+ * edit context): the same three ways in and the same editor, on that agency's
+ * own routes. Nothing is tracked as the agency's own activity.
+ */
+export type TeamStart = { agencyId: string; agencyName: string; back: string };
+
+/** The agency's property in the team's editor (the shared three-tab editor, with the edit banner). */
+export const teamEditorPath = (team: TeamStart, id: string) =>
+  `/admin/inmobiliarias/${team.agencyId}/propiedades/${id}?${new URLSearchParams({ seccion: "fotos", volver: team.back })}`;
+
+export function StartPicker({
+  tool,
+  existingCount,
+  onClose,
+  team = null,
+}: {
+  tool: StartTool;
+  existingCount: number;
+  onClose: () => void;
+  team?: TeamStart | null;
+}) {
   const router = useRouter();
   const uid = useId();
   const ref = useRef<HTMLDialogElement>(null);
@@ -59,12 +80,30 @@ export function StartPicker({ tool, existingCount, onClose }: { tool: StartTool;
   const previews = useMemo(() => files.map((f) => (fileProblem(f) ? null : URL.createObjectURL(f))), [files]);
   useEffect(() => () => previews.forEach((u) => u && URL.revokeObjectURL(u)), [previews]);
 
+  // The agency's funnel counts the agency's own steps: the team's are not reported as them.
+  const note = (event: string, props: Record<string, string | number>) => {
+    if (!team) track(event, props);
+  };
+  // One draft per opening: a retried upload reuses it instead of creating another.
+  const teamKey = useRef(typeof crypto !== "undefined" ? crypto.randomUUID() : "");
+  const openPath = (id: string) => (team ? teamEditorPath(team, id) : toolPath(tool, id));
   useEffect(() => {
     ref.current?.showModal();
-    track("panel_start_picker_opened", { tool });
+    note("panel_start_picker_opened", { tool });
+    // Once per opening.
   }, [tool]);
 
   useEffect(() => {
+    if (team) {
+      // The agency's properties, from the team's own route (checked against this tab's edit context).
+      api<{ items: PanelProperty[] }>(`/api/admin/inmobiliarias/${team.agencyId}/propiedades?por=48`)
+        .then((d) => setItems(d.items.map((p) => ({ ...p, group: false }))))
+        .catch((e) => {
+          setItems([]);
+          setLoadError(message(e, "No pudimos cargar sus propiedades."));
+        });
+      return;
+    }
     Promise.all([
       api<{ items: PanelProperty[] }>("/api/panel/propiedades?por=48").then((d) => d.items.map((p) => ({ ...p, group: false }))),
       api<{ items: PanelProperty[] }>("/api/panel/imagenes")
@@ -91,8 +130,8 @@ export function StartPicker({ tool, existingCount, onClose }: { tool: StartTool;
   const hasItems = sorted.length > 0;
 
   const go = (id: string, how: Source) => {
-    track("panel_start_picker_chosen", { tool, source: how });
-    router.push(toolPath(tool, id));
+    note("panel_start_picker_chosen", { tool, source: how });
+    router.push(openPath(id));
   };
 
   /** The same photo group as «Estudio de imágenes → Subir fotos»: no ficha, one request per file. */
@@ -103,7 +142,15 @@ export function StartPicker({ tool, existingCount, onClose }: { tool: StartTool;
     let id: string;
     try {
       setStatus("Preparando…");
-      id = (await api<{ id: string }>("/api/panel/imagenes/grupo", { method: "POST", body: JSON.stringify({ name: demo ? "Propiedad nueva" : "Fotos subidas" }) })).id;
+      id = team
+        ? // The team's draft property of that agency (its data is completed in the editor); the key makes a retry safe.
+          (
+            await api<{ id: string }>(`/api/admin/inmobiliarias/${team.agencyId}/propiedades`, {
+              method: "POST",
+              body: JSON.stringify({ key: teamKey.current, property: { title: "Propiedad nueva" } }),
+            })
+          ).id
+        : (await api<{ id: string }>("/api/panel/imagenes/grupo", { method: "POST", body: JSON.stringify({ name: demo ? "Propiedad nueva" : "Fotos subidas" }) })).id;
     } catch (e) {
       setStatus("");
       setError(message(e, "No pudimos empezar la subida."));
@@ -130,8 +177,10 @@ export function StartPicker({ tool, existingCount, onClose }: { tool: StartTool;
       setError(`No se pudo subir ninguna foto. ${failed.slice(0, 3).join(" ")}`);
       return;
     }
-    track("panel_start_photos_uploaded", { tool, photos: saved, failed: failed.length });
-    if (demo) {
+    note("panel_start_photos_uploaded", { tool, photos: saved, failed: failed.length });
+    if (team) {
+      if (coverId) await api(`/api/admin/demos/${id}`, { method: "PATCH", body: JSON.stringify({ action: "cover", photoId: coverId }) }).catch(() => null);
+    } else if (demo) {
       // A draft ficha with only what is needed: its data is completed in the editor, whenever.
       try {
         setStatus("Creando la ficha…");
@@ -149,9 +198,9 @@ export function StartPicker({ tool, existingCount, onClose }: { tool: StartTool;
 
   const options: { id: Source; icon: typeof Home; title: string; text: string }[] = demo
     ? [
-        { id: "elegir", icon: Home, title: "Elegir una propiedad existente", text: "Usá una de tus propiedades ya creadas." },
+        { id: "elegir", icon: Home, title: "Elegir una propiedad existente", text: team ? `Usá una propiedad de ${team.agencyName} ya cargada.` : "Usá una de tus propiedades ya creadas." },
         { id: "importar", icon: Link2, title: "Importar nueva propiedad desde URL", text: "Traé sus datos y fotografías desde una publicación." },
-        { id: "subir", icon: Upload, title: "Subir fotos", text: "Cargá tus fotos y creá la ficha." },
+        { id: "subir", icon: Upload, title: "Subir fotos", text: team ? "Cargá sus fotos y completá la ficha en el editor." : "Cargá tus fotos y creá la ficha." },
       ]
     : [
         { id: "elegir", icon: Home, title: "Elegir una propiedad existente", text: "Usá las fotos que ya están en tu panel." },
@@ -205,8 +254,8 @@ export function StartPicker({ tool, existingCount, onClose }: { tool: StartTool;
 
       {!source && (
         <>
-          {!items && <p role="status">Cargando tus propiedades…</p>}
-          {items && hasItems && sorted[0].origin === "admin" && !sorted[0].group && (
+          {!items && <p role="status">{team ? "Cargando sus propiedades…" : "Cargando tus propiedades…"}</p>}
+          {items && !team && hasItems && sorted[0].origin === "admin" && !sorted[0].group && (
             <button type="button" className="sp-featured" onClick={() => go(sorted[0].id, "elegir")}>
               <PropertyThumb p={sorted[0]} />
               <span className="sp-option-text">
@@ -250,7 +299,7 @@ export function StartPicker({ tool, existingCount, onClose }: { tool: StartTool;
               <input type="search" placeholder="Buscar por título o ubicación" aria-label="Buscar propiedades" value={query} onChange={(e) => setQuery(e.target.value)} autoFocus />
             </label>
           )}
-          <ul className="sp-list" role={demo ? "listbox" : undefined} aria-label={demo ? "Tus propiedades" : undefined}>
+          <ul className="sp-list" role={demo ? "listbox" : undefined} aria-label={demo ? (team ? "Sus propiedades" : "Tus propiedades") : undefined}>
             {listed.map((p) => (
               <li key={p.id}>
                 <button
@@ -282,7 +331,7 @@ export function StartPicker({ tool, existingCount, onClose }: { tool: StartTool;
             ))}
           </ul>
           {!listed.length && (
-            <p className="ap-empty">{q ? "Ninguna propiedad coincide con la búsqueda." : "Todavía no tenés propiedades: importá una o subí sus fotos."}</p>
+            <p className="ap-empty">{q ? "Ninguna propiedad coincide con la búsqueda." : team ? "Todavía no tiene propiedades: importá una o subí sus fotos." : "Todavía no tenés propiedades: importá una o subí sus fotos."}</p>
           )}
           {demo && (
             <button type="button" className="button button-primary sp-continue" disabled={!chosen} onClick={() => chosen && go(chosen, "elegir")}>
@@ -294,7 +343,13 @@ export function StartPicker({ tool, existingCount, onClose }: { tool: StartTool;
 
       {source === "importar" && (
         <div className="sp-import">
-          <ImportProperty inputId="sp-import-url" allowMany={false} existingCount={existingCount} openPath={(id) => toolPath(tool, id)} />
+          <ImportProperty
+            inputId="sp-import-url"
+            allowMany={false}
+            existingCount={team ? undefined : existingCount}
+            openPath={openPath}
+            {...(team ? { endpoint: `/api/admin/inmobiliarias/${team.agencyId}/importar`, where: "esta inmobiliaria" } : {})}
+          />
           {demo && (
             <p className="dm-help">
               ¿La publicación no se puede leer?{" "}
