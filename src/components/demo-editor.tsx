@@ -182,6 +182,14 @@ export function DemoEditor({
   agencyContext?: string;
 }) {
   const agencyMode = mode === "agency";
+  // The team inside an agency's edit context (Administración › Editar inmobiliaria) works in the agency's
+  // own three-tab editor: one editor, one infrastructure. Only what lives in the agency's panel changes.
+  const team = !agencyMode && Boolean(agencyContext);
+  const tabbed = agencyMode || team;
+  // The agency's funnel counts the agency's own steps, never the team's.
+  const agencyTrack = (...args: Parameters<typeof track>) => {
+    if (agencyMode) track(...args);
+  };
   const [detail, setDetail] = useState<DemoDetail | null>(null);
   const [message, setMessage] = useState<Message | null>(null);
   const [loadError, setLoadError] = useState("");
@@ -259,14 +267,14 @@ export function DemoEditor({
   };
   // The property's latest finished video (Video Studio makes it): played here and placed on the public page.
   useEffect(() => {
-    if (!agencyMode || studio || !videoEnabled()) return;
+    if (!tabbed || studio || !videoEnabled()) return;
     api<{ videos: { status: string; url: string | null; format: string }[] }>(`/api/panel/videos?demo=${id}`)
       .then(({ videos }) => {
         const v = videos.find((x) => x.status === "completed" && x.url);
         setVideo(v ? { url: v.url!, format: v.format } : null);
       })
       .catch(() => setVideo(null));
-  }, [agencyMode, studio, id]);
+  }, [tabbed, studio, id]);
   const welcomeTracked = useRef(false);
   useEffect(() => {
     if (!welcome || !detail || welcomeTracked.current) return;
@@ -776,7 +784,7 @@ export function DemoEditor({
     );
 
   // «Mostrar en demostración»: each switch saves at once; hiding never clears the value.
-  const visibility: Visibility | undefined = agencyMode
+  const visibility: Visibility | undefined = tabbed
     ? {
         hidden: detail.settings.hidden,
         disabled: busy || !detail.settingsReady || Boolean(detail.readOnly),
@@ -1149,7 +1157,9 @@ export function DemoEditor({
     </>
   );
   // ---- «Crear demostración interactiva»: the agency's editor, in three tabs (the approved design) ----
-  if (agencyMode) {
+  if (tabbed) {
+    // The buyers' preview: the agency's own page in its panel, the team's under Administración.
+    const previewHref = team ? `/admin/demos/${id}/vista-previa` : `/panel/propiedades/${id}/vista-previa`;
     const status = staging.busy || livePhotos.length ? "Creando versiones…" : dirtyAny ? "Cambios sin guardar" : busy ? "Guardando…" : "Guardado";
     const coverPhoto = (demo.cover ? photos.find((p) => p.id === demo.cover!.id) : null) ?? visiblePhotos[0] ?? photos[0] ?? null;
     const coverGen = coverPhoto ? (coverPhoto.shown[main] ?? Object.values(coverPhoto.shown)[0] ?? null) : null;
@@ -1178,7 +1188,7 @@ export function DemoEditor({
       if (dirtyAny && !window.confirm("Hay cambios sin guardar en «Datos de la propiedad». Se publica lo guardado; los cambios sin guardar quedan en el formulario. ¿Publicar igual?")) return;
       const ok = await run(async () => {
         apply(await api<DemoDetail>(base, { method: "PATCH", body: JSON.stringify({ action: "publish" }) }));
-        track("property_published", { property_id: demo.id, photos: demo.photos, staged: demo.staged });
+        agencyTrack("property_published", { property_id: demo.id, photos: demo.photos, staged: demo.staged });
       }, undefined, "publicacion");
       if (ok) setJustPublished(true);
     }
@@ -1217,11 +1227,11 @@ export function DemoEditor({
               </label>
             ))}
           </fieldset>
-          {canWork && (
+          {canWork && !team && (
             <Link
               href={`/panel/video?${new URLSearchParams({ propiedad: id, volver: `/panel/propiedades/${id}?seccion=fotos` })}`}
               className="button button-primary dx-video-go"
-              onClick={() => track("demo_editor_video_opened", { property_id: id, has_video: Boolean(video) })}
+              onClick={() => agencyTrack("demo_editor_video_opened", { property_id: id, has_video: Boolean(video) })}
             >
               <PlayCircle size={17} aria-hidden="true" /> Generar video
             </Link>
@@ -1239,6 +1249,7 @@ export function DemoEditor({
 
     return (
       <div className="account-page container dm-page ed-page dx-page">
+        {banner}
         <header className="dx-head">
           <Link href={backTo} className="icon-button dx-back" aria-label={backTo.startsWith("/panel/propiedades") ? "Volver a Mis propiedades" : "Volver"}>
             ←
@@ -1271,7 +1282,7 @@ export function DemoEditor({
               </button>
             )
           ) : (
-            <Link href={`/panel/propiedades/${id}/vista-previa`} className="button button-outline dx-preview">
+            <Link href={previewHref} className="button button-outline dx-preview">
               <Eye size={17} aria-hidden="true" /> Vista previa
             </Link>
           )}
@@ -1386,7 +1397,7 @@ export function DemoEditor({
                 <h2 id="ed-next-title">¿Querés probar con otra propiedad?</h2>
                 <p>Pegá una publicación y traé sus datos y fotos.</p>
               </div>
-              <Link href="/panel" className="button button-outline" onClick={() => track("invited_next_property_clicked", { property_id: demo.id })}>
+              <Link href="/panel" className="button button-outline" onClick={() => agencyTrack("invited_next_property_clicked", { property_id: demo.id })}>
                 <Plus size={16} aria-hidden="true" /> Agregar otra propiedad
               </Link>
             </section>
@@ -1522,7 +1533,7 @@ export function DemoEditor({
                 {!live && (
                   <p className="dm-help">
                     Publicar no usa créditos y no necesita ambientaciones: podés publicar con las fotos originales. Antes, revisala en{" "}
-                    <Link href={`/panel/propiedades/${id}/vista-previa`}>Vista previa</Link>.
+                    <Link href={previewHref}>Vista previa</Link>.
                   </p>
                 )}
               </section>
@@ -1536,7 +1547,12 @@ export function DemoEditor({
                       </span>
                       <div>
                         <h2 id="dx-published-title">{justPublished ? "¡Demostración publicada!" : "Demostración publicada"}</h2>
-                        <p>Tu propiedad ya está online y lista para compartir.</p>
+                        <p>{team ? "La ficha ya está online." : "Tu propiedad ya está online y lista para compartir."}</p>
+                        {team && (
+                          <p className="dm-help">
+                            Para mandársela a la inmobiliaria con su invitación, usá «Enviar» en <Link href="/admin/demos">Demos</Link>.
+                          </p>
+                        )}
                       </div>
                     </div>
                     <div className="dx-link">
@@ -1546,7 +1562,7 @@ export function DemoEditor({
                         value={link}
                         aria-label="Enlace de la demostración"
                         onFocus={(e) => e.target.select()}
-                        onCopy={() => track("property_shared", { property_id: demo.id, channel: "manual_copy" })}
+                        onCopy={() => agencyTrack("property_shared", { property_id: demo.id, channel: "manual_copy" })}
                       />
                       <button
                         type="button"
@@ -1555,7 +1571,7 @@ export function DemoEditor({
                         onClick={async () => {
                           try {
                             await navigator.clipboard.writeText(link);
-                            track("property_shared", { property_id: demo.id, channel: "copy_button" });
+                            agencyTrack("property_shared", { property_id: demo.id, channel: "copy_button" });
                             setMessage({ tone: "notice", text: "Enlace copiado." });
                           } catch {
                             say({ tone: "error", text: "No pudimos copiar el enlace: seleccionalo en el campo y copialo." });
@@ -1565,7 +1581,7 @@ export function DemoEditor({
                         <Copy size={17} />
                       </button>
                     </div>
-                    <a className="button button-primary dx-wa" href={whatsappShareUrl(link)} target="_blank" rel="noopener noreferrer" onClick={() => whatsappOpened(demo.id)}>
+                    <a className="button button-primary dx-wa" href={whatsappShareUrl(link)} target="_blank" rel="noopener noreferrer" onClick={() => agencyMode && whatsappOpened(demo.id)}>
                       <MessageCircle size={18} aria-hidden="true" /> Compartir por WhatsApp
                     </a>
                     <a className="button button-outline dx-view" href={link} target="_blank" rel="noopener noreferrer">
@@ -1578,13 +1594,13 @@ export function DemoEditor({
                         disabled={busy}
                         onClick={() =>
                           window.confirm(
-                            `¿Despublicar «${demo.title}»? El enlace deja de funcionar enseguida para quien lo tenga y sale de tu catálogo. La ficha, sus fotos y versiones se conservan; al volver a publicar, el enlace es el mismo.`,
+                            `¿Despublicar «${demo.title}»? El enlace deja de funcionar enseguida para quien lo tenga ${team ? "" : " y sale de tu catálogo"}. La ficha, sus fotos y versiones se conservan; al volver a publicar, el enlace es el mismo.`,
                           ) &&
                           void run(
                             async () => {
                               apply(await api<DemoDetail>(base, { method: "PATCH", body: JSON.stringify({ action: "unpublish" }) }));
                               setJustPublished(false);
-                              track("property_unpublished", { property_id: demo.id, photos: demo.photos, staged: demo.staged });
+                              agencyTrack("property_unpublished", { property_id: demo.id, photos: demo.photos, staged: demo.staged });
                             },
                             "Ficha despublicada: el enlace dejó de estar disponible.",
                             "publicacion",
