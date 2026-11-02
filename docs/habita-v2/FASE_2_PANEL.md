@@ -69,8 +69,27 @@ Capturas en [`docs/ux/habita-v2/evidencia/fase-2/`](../ux/habita-v2/evidencia/fa
 ## 6. Para cerrar la fase
 
 1. ~~Aplicar la migración~~ **Aplicada el 01/11/2026** en el proyecto Supabase `cmpfwuycxdleunuumlkm` vía conector: tabla vacía, RLS activo, sin privilegios para `anon`/`authenticated`, escritura solo desde el servidor. El advisor marca «RLS sin políticas» (INFO), igual que las demás tablas solo-servidor: es intencional.
-2. Recorrer el preview con una cuenta real (dueño y viewer) en 1440 px y 390 px.
+2. ~~Recorrer con una cuenta real (dueño y viewer) en 1440 px y 390 px~~ **Hecho el 02/11/2026 en producción** (ver §8).
 
 ## 7. Pedido del 01/11/2026 — hecho
 
 - **«Usuarios»** pasó al primer grupo de la sidebar, **arriba de «Sitio web»** (antes estaba junto a «Planes y créditos»). Sigue visible solo para dueño y administradores. Test de orden en `tests/panel-v2.test.tsx`; capturas de esta fase actualizadas.
+
+## 8. Recorrido real en producción (02/11/2026)
+
+En el preview el panel no funciona: `SUPABASE_SECRET_KEY` está cargada solo para Production. Como la Fase 2 ya está en producción, el recorrido se hizo en `www.habitaia.app`, con cuentas de prueba creadas para esto y borradas al terminar:
+
+- `qa-dueno@habitaia.app` (dueño) creó la inmobiliaria «QA Habita» desde `/panel/empezar`, importó una propiedad de la lista de QA (Tormes, Tokko: 37 fotos, USD 47.000, sin créditos) y desde **Usuarios** creó un acceso **Solo vista** para `qa-viewer@habitaia.app`, que entró con el enlace de `/panel/unirme`.
+- Playwright (Chromium) a 1440×900 y 390×844, páginas `/panel`, `/panel/propiedades`, la ficha, `/panel/usuarios`, `/panel/sitio`, `/panel/tour-360`, `/panel/creditos`, `/panel/imagenes`, `/panel/video` y el menú móvil.
+- Capturas en [`docs/ux/habita-v2/evidencia/fase-2/real/`](../ux/habita-v2/evidencia/fase-2/real/).
+
+**Resultado:** sin errores de JavaScript ni respuestas 4xx/5xx en ninguna página. El inicio del dueño coincide con `final-panel-desktop.png` (tarjeta «Tu propiedad», tres herramientas, «Tus propiedades» con acciones e importador). El viewer no ve Usuarios ni Sitio web (y esas rutas lo devuelven a `/panel`), ve el aviso «Solo vista» y el servidor le rechaza cualquier cambio (`assertCan`).
+
+| Hallazgo | Estado |
+| --- | --- |
+| `/panel/creditos` se desbordaba 10 px a 390 px (52 px a 320): la grilla de planes usaba `1fr` y los 9 topes del deslizador de créditos medían 34 px cada uno | **Corregido** en `globals.css` (`minmax(0, 1fr)` y topes sin ancho mínimo bajo 480 px). Verificado inyectando el CSS en la página real: 0 px de desborde a 390, 360 y 320; sin cambios a 768 y 1440 |
+| El viewer veía «Publicar ficha» activo en la ficha (al tocarlo, el servidor lo rechaza) | **Corregido**: el botón no se muestra con `readOnly` |
+| El viewer ve activos «Nuevo espacio» y «Portada» en la ficha | Pendiente menor: el servidor los rechaza con el mensaje de solo vista; conviene deshabilitarlos igual que las acciones de IA (`blocked`) |
+| El viewer tiene «Estudio de imágenes» en la sidebar, pero la ruta lo devuelve a `/panel` | Pendiente menor: ocultar el enlace o permitir la vista de solo lectura |
+| El viewer ve «Comprar 20 créditos» activo en `/panel/creditos` | **A decidir**: según los roles, solo el dueño compra créditos para la inmobiliaria |
+| Al importar, el logo de la inmobiliaria pasa a ser el de la publicación (aquí, Tormes) y se ve recortado en el cuadro de 44 px | A revisar: es lo esperado cuando la inmobiliaria importa sus propias fichas, pero el recorte achica logos horizontales |

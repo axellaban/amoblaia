@@ -810,6 +810,8 @@ export function DemoEditor({
                 <Eye size={17} /> {agencyMode ? "Vista para comprador" : "Vista previa"}
               </Link>
             )}
+            {/* A view-only user can't publish (the server refuses it too): don't offer it. */}
+            {!detail.readOnly && (
             <button
               type="button"
               className={`button ${live ? "button-outline" : "button-primary"}`}
@@ -835,6 +837,7 @@ export function DemoEditor({
             >
               {live ? "Despublicar" : agencyMode ? "Publicar ficha" : "Publicar demo"}
             </button>
+            )}
           </div>
           )}
         </div>

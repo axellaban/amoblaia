@@ -2717,8 +2717,15 @@ fieldset {
   }
 }
 @media (max-width: 480px) {
+  /* minmax(0, …): a bare 1fr keeps the cards as wide as their content and the page scrolls sideways. */
   .pricing-grid.commercial-plans {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* The nine pack stops share the row instead of each keeping 34px (306px in all). */
+  .credits-stops button {
+    min-width: 0;
+    padding: 4px 0;
+    font-size: 12px;
   }
   .commercial-plans .price-card {
     padding: 35px 28px 28px;
@@ -3021,7 +3028,7 @@ fieldset {
 }
 @media (max-width: 760px) {
   .credits-card .price-panel {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .credits-buy {
     padding: 18px;
