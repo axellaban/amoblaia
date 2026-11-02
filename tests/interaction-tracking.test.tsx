@@ -128,6 +128,7 @@ const demo: PublicDemo = {
   banner: true,
   share: { title: null, description: null },
   prospect: true,
+  video: null,
 };
 const ids = (html: string) => [...html.matchAll(/data-cta="([^"]+)"/g)].map((m) => m[1]);
 
@@ -148,7 +149,6 @@ describe("the demo's tracked actions", () => {
         "owner_guardar",
         "owner_nav_pricing",
         "owner_buyer_view",
-        "owner_create_video",
         "owner_download_all",
         "owner_share",
         "owner_another_property",
@@ -163,7 +163,7 @@ describe("the demo's tracked actions", () => {
     const html = renderToStaticMarkup(<DemoView demo={demo} source={{ kind: "public", token: "tok" }} presentation />);
     expect(ids(html)).toEqual(expect.arrayContaining(["contact_whatsapp", "contact_listing", "banner_by_habita", "create_agency", "agency_website", "nav_contact"]));
     expect(html).toMatch(/data-cta="create_agency" data-cta-location="habita_section" data-cta-destination="agency_signup" data-cta-kind="habita_b2b"/);
-    expect(html).toMatch(/data-cta="contact_whatsapp" data-cta-location="header" data-cta-destination="whatsapp" data-cta-kind="buyer_contact"/);
+    expect(html).toMatch(/data-cta="contact_whatsapp" data-cta-location="gallery_side" data-cta-destination="whatsapp" data-cta-kind="buyer_contact"/);
   });
 
   it("tracks nothing while rendering: events come only from what the visitor does", () => {

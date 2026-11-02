@@ -36,6 +36,7 @@ export function InvitationSignup({
   property = null,
   plan = null,
   preview = false,
+  destination = null,
 }: {
   code: string;
   invitation: InvitationInfo | null;
@@ -45,6 +46,8 @@ export function InvitationSignup({
   plan?: string | null;
   /** The team looking at this step: the form shows, but creates nothing. */
   preview?: boolean;
+  /** Where the panel opens once it is the agency's: the property with what it asked for in its demo. */
+  destination?: string | null;
 }) {
   const [mode, setMode] = useState<"new" | "existing">("new");
   const [email, setEmail] = useState("");
@@ -128,7 +131,7 @@ export function InvitationSignup({
       leadFromDemoRef("demo_account_created");
       // Into the property it came from, ready for a first try; otherwise the panel's home.
       // To finish the purchase it came for; otherwise into the property, ready for a first try.
-      window.location.assign(plan ? `/precios?${new URLSearchParams({ plan })}` : property ? `/panel/propiedades/${property.id}?bienvenida=1` : "/panel?bienvenida=1");
+      window.location.assign(plan ? `/precios?${new URLSearchParams({ plan })}` : (destination ?? (property ? `/panel/propiedades/${property.id}?bienvenida=1` : "/panel?bienvenida=1")));
     } catch (err) {
       steps.failed(err instanceof ApiError ? (err.status === 409 ? "account_exists" : `api_${err.status}`) : step === "signin" ? "signin" : "network", { step });
       if (err instanceof ApiError && err.status === 409 && mode === "new" && /ya tiene una cuenta/.test(err.message)) setMode("existing");

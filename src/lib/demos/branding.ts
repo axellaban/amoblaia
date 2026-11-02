@@ -19,6 +19,13 @@ export type AgencyBranding = {
   visitUrl?: string;
 };
 export type OpenMode = "original" | "styled";
+/**
+ * Where the property's video goes in its ficha and its demo: first or second
+ * among the thumbnails, under the gallery as its own card, or not shown.
+ * Chosen per property from the panel (Video); never a global preference.
+ */
+export type VideoPlacement = "first" | "second" | "below" | "hidden";
+export const VIDEO_PLACEMENTS: VideoPlacement[] = ["first", "second", "below", "hidden"];
 /** Stored in demos.settings. Private: the buyer's page only gets their effect. */
 /** Icons of the key facts, chosen per property (no empty or invented fields). */
 export const FACT_ICONS = ["area", "rooms", "bedrooms", "offices", "bathrooms", "floor", "parking", "age", "other"] as const;
@@ -86,6 +93,7 @@ export type DemoSettings = {
   shareDescription: string | null;
   /** When the admin last checked the demo against the listing (ISO date). */
   reviewedAt: string | null;
+  videoPlacement: VideoPlacement;
 };
 export const DEFAULT_SETTINGS: DemoSettings = {
   propertyType: "residential",
@@ -111,6 +119,7 @@ export const DEFAULT_SETTINGS: DemoSettings = {
   shareTitle: null,
   shareDescription: null,
   reviewedAt: null,
+  videoPlacement: "first",
 };
 
 /** The colors of a page without branding: the neutral blue of habita. */
@@ -209,6 +218,7 @@ export function readSettings(raw: unknown): DemoSettings {
     shareTitle: text(v.shareTitle, 90),
     shareDescription: text(v.shareDescription, 200),
     reviewedAt: typeof v.reviewedAt === "string" && !Number.isNaN(Date.parse(v.reviewedAt)) ? v.reviewedAt : null,
+    videoPlacement: VIDEO_PLACEMENTS.includes(v.videoPlacement as VideoPlacement) ? (v.videoPlacement as VideoPlacement) : "first",
   };
 }
 

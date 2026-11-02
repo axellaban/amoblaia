@@ -1827,7 +1827,10 @@ export function AgencyOnboarding({
   code,
   demo,
   autoClaim = false,
+  destination = null,
 }: {
+  /** Where the agency lands after claiming its own demo: the property with what it asked for there. */
+  destination?: string | null;
   signedIn: boolean;
   hasAgency: boolean;
   code: string | null;
@@ -1910,7 +1913,7 @@ export function AgencyOnboarding({
       if (demo) track("demo_to_agency_signup_completed", { demo_id: demo.id, claimed: kind === "claimed" });
       // Claimed from its own demo: straight into that property, ready for a first try.
       if (kind === "claimed" && demo && summary.agency.id === demo.agencyId) {
-        window.location.assign(`/panel/propiedades/${demo.id}?bienvenida=1`);
+        window.location.assign(destination ?? `/panel/propiedades/${demo.id}?bienvenida=1`);
         return;
       }
       setDone({ kind, summary });
