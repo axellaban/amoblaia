@@ -18510,3 +18510,206 @@ main:has(.ap-sidebar) {
     justify-content: center;
   }
 }
+
+/* ---- Habita v3: inicio compacto, selector de origen y acciones por propiedad ---- */
+.ap-hero-compact {
+  padding: 16px 22px;
+  margin-bottom: 16px;
+}
+.ap-hero-compact h1 {
+  margin-bottom: 2px;
+  font-size: clamp(22px, 2.6vw, 30px);
+}
+.ap-hero-compact .ap-hero-latest {
+  padding: 10px;
+}
+.ap-hero-compact .ap-hero-latest img {
+  width: 84px;
+  height: 62px;
+}
+button.ap-bigcard {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.ap-prop-actions,
+.ap-card-actions {
+  flex-wrap: wrap;
+}
+/* Two or three actions per property: they go under its data, not beside it. */
+.ap-prop {
+  grid-template-columns: 180px minmax(0, 1fr);
+}
+.ap-prop-actions {
+  grid-column: 2;
+}
+.ap-quick-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.sp-dialog {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100dvh - 48px);
+  padding: 20px 22px 22px;
+  border: 0;
+  border-radius: 18px;
+  background: #fff;
+  color: var(--ink);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.25);
+}
+.sp-dialog::backdrop {
+  background: rgba(20, 25, 20, 0.45);
+}
+.sp-dialog h2 {
+  margin: 4px 0 16px;
+  font-size: 20px;
+  color: var(--forest);
+}
+.sp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 32px;
+}
+.sp-kicker {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.sp-options,
+.sp-list,
+.sp-files {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.sp-option,
+.sp-prop,
+.sp-featured {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.sp-option:hover,
+.sp-prop:hover,
+.sp-featured:hover {
+  border-color: var(--forest);
+  background: #f6f9f4;
+}
+.sp-featured {
+  margin-bottom: 12px;
+  background: #e9f1e5;
+  border-color: #cfdcc8;
+}
+.sp-option-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: #eef1ec;
+  color: var(--forest);
+}
+.sp-option-text {
+  display: grid;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.sp-option-text strong {
+  color: var(--forest);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sp-option-text small {
+  color: var(--muted);
+  font-size: 13px;
+}
+.sp-thumb {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 64px;
+  height: 48px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #eef1ec;
+  color: var(--forest);
+}
+.sp-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.sp-pick,
+.sp-upload,
+.sp-import {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+.sp-dialog {
+  box-sizing: border-box;
+  overflow-x: hidden;
+}
+.sp-upload .ap-img-drop input {
+  max-width: 100%;
+}
+.sp-list {
+  max-height: min(52dvh, 420px);
+  overflow-y: auto;
+}
+.sp-search {
+  width: 100%;
+}
+.sp-files li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+.sp-files li span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sp-files li.is-bad em {
+  color: #a3361f;
+  font-style: normal;
+}
+.sp-import .ap-import-row {
+  margin: 0;
+}
+@media (max-width: 720px) {
+  .sp-dialog {
+    padding: 16px;
+  }
+}
+@media (max-width: 860px) {
+  .ap-prop {
+    grid-template-columns: 1fr;
+  }
+  .ap-prop-actions {
+    grid-column: 1 / -1;
+  }
+}

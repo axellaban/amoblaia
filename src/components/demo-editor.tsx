@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronDown, Eye, Home, Image as ImageIcon, Loader2, Plus, RefreshCw, Star, Trash2, X } from "lucide-react";
+import { Check, ChevronDown, Eye, Home, Image as ImageIcon, Loader2, Plus, RefreshCw, Share2, Star, Trash2, X } from "lucide-react";
 import { Comparison } from "./comparison";
 import { ActivityStatus, AgencyFields, AgencyWhatsappEditor, LinkPreview, PropertyFields, SendLog, SendWhatsapp, SentToggle, ShareCards, StatusChip, api, publicLink } from "./admin-demos";
 import { PhotoWorkspace, type WorkspaceActions } from "./editor-photos";
@@ -787,9 +787,29 @@ export function DemoEditor({
             </div>
           ) : (
           <div className="dm-heading-actions">
-            <Link href={agencyMode ? `/panel/propiedades/${id}/vista-previa` : `/admin/demos/${id}/vista-previa`} className="button button-outline">
-              <Eye size={17} /> Vista previa
-            </Link>
+            {/* Sharing first (spec v3 §3.1): not at the end of a long page. */}
+            {live && agencyMode && (
+              <button
+                type="button"
+                className="button button-primary"
+                onClick={async () => {
+                  const outcome = await shareLink(publicLink(demo.token), demo.title, demo.id);
+                  if (outcome === "copied") setMessage({ tone: "notice", text: "Enlace copiado." });
+                  else if (outcome === "failed") say({ tone: "error", text: "No pudimos copiar el enlace: copialo desde «Publicación y compartir».", section: "publicacion" });
+                }}
+              >
+                <Share2 size={17} aria-hidden="true" /> Compartir
+              </button>
+            )}
+            {live && agencyMode ? (
+              <a href={publicLink(demo.token)} target="_blank" rel="noopener noreferrer" className="button button-outline">
+                <Eye size={17} /> Vista para comprador
+              </a>
+            ) : (
+              <Link href={agencyMode ? `/panel/propiedades/${id}/vista-previa` : `/admin/demos/${id}/vista-previa`} className="button button-outline">
+                <Eye size={17} /> {agencyMode ? "Vista para comprador" : "Vista previa"}
+              </Link>
+            )}
             <button
               type="button"
               className={`button ${live ? "button-outline" : "button-primary"}`}

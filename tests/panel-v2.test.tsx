@@ -70,6 +70,7 @@ import { GET, POST, DELETE } from "../src/app/api/panel/interes/route";
 import { PanelNav } from "../src/components/panel-shell";
 import { FutureFeaturePage } from "../src/components/future-feature";
 import { FUTURE_FEATURE_INFO, FUTURE_FEATURES } from "../src/lib/agency/future-features";
+import { TOOL_TITLE, toolPath } from "../src/components/start-picker";
 
 const req = (method: string, query = "", body?: unknown, origin = "https://habitaia.vercel.app") =>
   new Request(`https://habitaia.vercel.app/api/panel/interes${query}`, {
@@ -159,9 +160,30 @@ describe("Panel navigation and home", () => {
   it("the home offers exactly three large cards and never the upcoming tools", () => {
     const source = readFileSync("src/components/agency-panel.tsx", "utf8");
     const cards = source.slice(source.indexOf("function HomeCards"), source.indexOf("function HomeProperty"));
-    expect([...cards.matchAll(/\btitle: "([^"]+)"/g)].map((m) => m[1])).toEqual(["Crear demostraciones", "Estudio de imágenes", "Video"]);
+    // Spec v3 §1.2: Ambientar con IA, Editar imágenes, Crear video, each opening the start picker.
+    expect([...cards.matchAll(/\bid: "([a-z]+)"(?: as const)?,/g)].map((m) => m[1])).toEqual(["ambientar", "editar", "video"]);
+    expect(TOOL_TITLE).toEqual({ ambientar: "Ambientar con IA", editar: "Editar imágenes", video: "Crear video" });
+    expect(cards).toContain("<StartPicker");
     const home = source.slice(source.indexOf("function HomeCards"), source.indexOf('/** "Ver mi sitio"'));
     expect(home).not.toMatch(/Tour 360|Planos|Redes|\/panel\/api|Pr[oó]ximamente|Guardar (mi )?panel/);
+  });
+});
+
+describe("Start picker (spec v3 §1.3–1.4)", () => {
+  it("opens each tool straight on the chosen property or photo group", () => {
+    const id = "11111111-1111-4111-8111-111111111111";
+    expect(toolPath("ambientar", id)).toBe(`/panel/imagenes?pestana=fotos&fotos=${id}`);
+    expect(toolPath("editar", id)).toBe(`/panel/imagenes?pestana=fotos&fotos=${id}&modo=editar`);
+    expect(toolPath("video", id)).toBe(`/panel/video?propiedad=${id}`);
+  });
+
+  it("offers the three sources and never an empty list of properties", () => {
+    const source = readFileSync("src/components/start-picker.tsx", "utf8");
+    for (const t of ["¿Con qué imágenes querés empezar?", "Elegir una propiedad existente", "Importar nueva propiedad", "Subir fotos"]) expect(source).toContain(t);
+    expect(source).toContain('hasItems ? options : options.filter((o) => o.id !== "elegir")');
+    // Reuses the panel's importer and photo-group routes, no service of its own.
+    expect(source).toContain("<ImportProperty");
+    expect(source).toContain("/api/panel/imagenes/grupo");
   });
 });
 

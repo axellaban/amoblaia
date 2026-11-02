@@ -9,8 +9,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
   CircleHelp,
+  Download,
   ExternalLink,
   Eye,
+  FileText,
   Globe,
   LayoutGrid,
   LayoutList,
@@ -20,6 +22,7 @@ import {
   PlayCircle,
   Search,
   Share2,
+  Sofa,
   Sparkles,
   Wand2,
 } from "lucide-react";
@@ -33,7 +36,6 @@ import {
   agencySitePath,
   canEdit,
   canManage,
-  nextAction,
   propertyLink,
   ROLE_LABEL,
   type AgencyRole,
@@ -48,6 +50,7 @@ import { adminPhotoUrl } from "@/lib/demos/shared";
 import { leadFromDemoRef } from "@/lib/leads/client";
 import { PanelNav, PanelTopbar, type PanelSection } from "./panel-shell";
 import { videoEnabled } from "@/lib/agency/flags";
+import { StartPicker, TOOL_TITLE, toolPath, type StartTool } from "./start-picker";
 
 type Section = PanelSection;
 export { PanelNav };
@@ -131,36 +134,38 @@ function nextStep(d: PanelSummary): { text: string; href: string; action: string
   return null;
 }
 
-/** The three ways in (spec §2.1): exactly these, as large cards. Video only where it is enabled. */
-function HomeCards({ creator }: { creator: boolean }) {
+/**
+ * The three ways in (spec v3 §1.2): Ambientar, Editar, Crear video, as the
+ * same large cards. Each asks first which images to start with (§1.3).
+ * Video only where it is enabled: its page does not exist otherwise.
+ */
+function HomeCards({ creator, existingCount }: { creator: boolean; existingCount: number }) {
+  const [open, setOpen] = useState<StartTool | null>(null);
   if (!creator) return null;
-  const cards = [
+  const cards: { id: StartTool; className: string; tag: string; text: string; image: string; icon: typeof Sparkles }[] = [
     {
-      id: "crear",
-      href: "#crear",
-      title: "Crear demostraciones",
-      tag: "Ideal para mostrar a tus clientes",
-      text: "Fichas interactivas de tus propiedades a partir del enlace de la publicación.",
+      id: "ambientar",
+      className: "crear",
+      tag: "Recomendado",
+      text: "Mejorá y amoblá tus fotos de forma realista.",
       image: "/ejemplos/living-scandinavian.webp",
-      icon: Sparkles,
+      icon: Sofa,
     },
     {
-      id: "imagenes",
-      href: "/panel/imagenes",
-      title: "Estudio de imágenes",
-      tag: "Recomendado",
-      text: "Mejorá, ambientá y quitá muebles de tus fotos con IA, y descargalas.",
+      id: "editar",
+      className: "imagenes",
+      tag: "Luz, color y objetos",
+      text: "Ajustá luz, color, quitá objetos o cambiá el cielo.",
       image: "/ejemplos/bedroom-modern.webp",
       icon: Wand2,
     },
     ...(videoEnabled()
       ? [
           {
-            id: "video",
-            href: "/panel/video",
-            title: "Video",
-            tag: "IA",
-            text: "Videos de tus propiedades a partir de sus fotos.",
+            id: "video" as const,
+            className: "video",
+            tag: "Reels y WhatsApp",
+            text: "Creá un video de tu propiedad en minutos.",
             image: "/ejemplos/outdoor-modern.webp",
             icon: PlayCircle,
           },
@@ -168,38 +173,35 @@ function HomeCards({ creator }: { creator: boolean }) {
       : []),
   ];
   return (
-    <div className="ap-cards" role="list">
-      {cards.map(({ id, href, title, tag, text, image, icon: Icon }) => (
-        <Link
-          key={id}
-          role="listitem"
-          href={href}
-          className={`ap-bigcard ap-bigcard-${id}`}
-          {...cta(`panel_home_${id}`, "panel_home_cards", id === "crear" ? "property_import" : id === "imagenes" ? "image_studio" : "video_section")}
-          onClick={(e) => {
-            if (href === "#crear") {
-              e.preventDefault();
-              const target = document.getElementById("crear");
-              target?.scrollIntoView({ behavior: "smooth", block: "center" });
-              (document.getElementById("ap-import-url") as HTMLInputElement | null)?.focus({ preventScroll: true });
-            }
-          }}
-        >
-          <span className="ap-bigcard-art" aria-hidden="true">
-            <img src={image} alt="" loading="lazy" />
-          </span>
-          <span className="ap-bigcard-icon" aria-hidden="true">
-            <Icon size={24} />
-          </span>
-          <span className="ap-bigcard-title">{title}</span>
-          <span className="ap-bigcard-tag">{tag}</span>
-          <span className="ap-bigcard-text">{text}</span>
-          <span className="ap-bigcard-go" aria-hidden="true">
-            <ArrowRight size={18} />
-          </span>
-        </Link>
-      ))}
-    </div>
+    <>
+      <div className="ap-cards" role="list">
+        {cards.map(({ id, className, tag, text, image, icon: Icon }) => (
+          <button
+            key={id}
+            type="button"
+            role="listitem"
+            className={`ap-bigcard ap-bigcard-${className}`}
+            aria-haspopup="dialog"
+            {...cta(`panel_home_${id}`, "panel_home_cards", id === "video" ? "video_section" : "image_studio")}
+            onClick={() => setOpen(id)}
+          >
+            <span className="ap-bigcard-art" aria-hidden="true">
+              <img src={image} alt="" loading="lazy" />
+            </span>
+            <span className="ap-bigcard-icon" aria-hidden="true">
+              <Icon size={24} />
+            </span>
+            <span className="ap-bigcard-title">{TOOL_TITLE[id]}</span>
+            <span className="ap-bigcard-tag">{tag}</span>
+            <span className="ap-bigcard-text">{text}</span>
+            <span className="ap-bigcard-go" aria-hidden="true">
+              <ArrowRight size={18} />
+            </span>
+          </button>
+        ))}
+      </div>
+      {open && <StartPicker tool={open} existingCount={existingCount} onClose={() => setOpen(null)} />}
+    </>
   );
 }
 
@@ -232,9 +234,7 @@ function HomeProperty({ p, agency, reload, canDelete, canPublish, primary }: { p
         <ActionNote note={actions.note} />
       </div>
       <div className="ap-prop-actions">
-        <Link href={editorLink(p.id, "fotos", "/panel")} className="button button-outline ap-prop-open">
-          Ver detalle <ArrowRight size={16} aria-hidden="true" />
-        </Link>
+        <QuickActions list={quickActions(p, actions, "/panel", canPublish)} />
         <MoreMenu p={p} actions={actions} canDelete={canDelete} canPublish={canPublish} backTo="/panel" />
       </div>
     </article>
@@ -260,10 +260,10 @@ function PanelHome({ data, reload }: { data: PanelSummary; reload: () => Promise
             : "Tu usuario trabaja en las propiedades que te asignaron."}
         </p>
       )}
-      <section className="ap-hero" aria-labelledby="ap-hero-title">
+      <section className="ap-hero ap-hero-compact" aria-labelledby="ap-hero-title">
         <div>
           <h1 id="ap-hero-title">Hola, ¿qué querés crear hoy?</h1>
-          <p>Transformá tus propiedades en contenido visual de alto impacto con IA.</p>
+          <p>Transformá tus propiedades con IA.</p>
         </div>
         {latest && (
           <div className="ap-hero-latest">
@@ -278,7 +278,7 @@ function PanelHome({ data, reload }: { data: PanelSummary; reload: () => Promise
           </div>
         )}
       </section>
-      <HomeCards creator={creator} />
+      <HomeCards creator={creator} existingCount={data.counts.total} />
       {step && (
         <section className="ap-next" aria-label="Siguiente paso">
           <p>{step.text}</p>
@@ -636,8 +636,62 @@ function PropertiesSection({ data, reload }: { data: PanelSummary; reload: () =>
 type Note = { text: string; link?: string; error?: boolean } | null;
 
 /** The editor at one section, with the way back to this exact list (filters, page, view). */
-const editorLink = (id: string, section: "fotos" | "publicacion" | "datos", backTo: string) =>
-  `/panel/propiedades/${id}?${new URLSearchParams({ seccion: section, volver: backTo })}`;
+const editorLink = (id: string, section: "fotos" | "publicacion" | "datos", backTo: string, modo?: "editar") =>
+  `/panel/propiedades/${id}?${new URLSearchParams({ seccion: section, volver: backTo, ...(modo ? { modo } : {}) })}`;
+
+type Quick = { id: string; label: string; icon: typeof Sparkles; href?: string; external?: boolean; onClick?: () => void };
+
+/**
+ * The two or three actions that matter for a property's real state (spec v3
+ * §1.5, §2): each opens this property in that tool, never the home's picker.
+ * The rest stays in «Más». Nothing is offered that the panel cannot do.
+ */
+function quickActions(p: PanelProperty, actions: ReturnType<typeof usePropertyActions>, backTo: string, canWork: boolean): Quick[] {
+  const share: Quick = { id: "share", label: "Compartir ficha", icon: Share2, onClick: () => void actions.share() };
+  const buyer: Quick = actions.live
+    ? { id: "buyer", label: "Vista para comprador", icon: Eye, href: actions.link, external: true }
+    : { id: "buyer", label: "Vista para comprador", icon: Eye, href: `/panel/propiedades/${p.id}/vista-previa` };
+  if (!canWork) return actions.live ? [share, buyer] : [buyer];
+  const stage: Quick = { id: "stage", label: "Ambientar con IA", icon: Sofa, href: editorLink(p.id, "fotos", backTo) };
+  const edit: Quick = { id: "edit", label: "Editar imágenes", icon: Wand2, href: editorLink(p.id, "fotos", backTo, "editar") };
+  const video: Quick | null = videoEnabled() && p.photos ? { id: "video", label: "Crear video", icon: PlayCircle, href: toolPath("video", p.id) } : null;
+  if (!p.photos) return [{ id: "photos", label: "Agregar fotos", icon: Sparkles, href: editorLink(p.id, "fotos", backTo) }];
+  if (p.versions.active || p.versions.issues)
+    return [{ id: "progress", label: p.versions.active ? "Ver progreso" : "Revisar fallos", icon: Sparkles, href: editorLink(p.id, "fotos", backTo) }, ...(video ? [video] : [])];
+  if (actions.live) return [share, p.staged ? edit : stage, ...(video ? [video] : [buyer])];
+  if (p.staged) return [edit, ...(video ? [video] : []), { id: "publish", label: "Revisar y publicar", icon: Globe, href: editorLink(p.id, "publicacion", backTo) }];
+  return [stage, ...(video ? [video] : []), { id: "data", label: "Editar ficha", icon: FileText, href: editorLink(p.id, "datos", backTo) }];
+}
+
+function QuickActions({ list, first = "button-primary" }: { list: Quick[]; first?: string }) {
+  return (
+    <>
+      {list.map(({ id, label, icon: Icon, href, external, onClick }, i) => {
+        const cls = `button button-small ${i === 0 ? first : "button-outline"} ap-quick-action`;
+        const body = (
+          <>
+            <Icon size={14} aria-hidden="true" /> {label}
+          </>
+        );
+        return href ? (
+          external ? (
+            <a key={id} href={href} target="_blank" rel="noopener noreferrer" className={cls}>
+              {body}
+            </a>
+          ) : (
+            <Link key={id} href={href} className={cls}>
+              {body}
+            </Link>
+          )
+        ) : (
+          <button key={id} type="button" className={cls} onClick={onClick}>
+            {body}
+          </button>
+        );
+      })}
+    </>
+  );
+}
 
 /** Photos, spaces and versions by their real state (ready is "created", never "approved"). */
 function ProgressLine({ p }: { p: PanelProperty }) {
@@ -727,6 +781,21 @@ function MoreMenu({
         <Link href={editorLink(p.id, "fotos", backTo)}>
           <Sparkles size={14} aria-hidden="true" /> Fotos y espacios
         </Link>
+        {canPublish && p.photos > 0 && (
+          <Link href={editorLink(p.id, "fotos", backTo, "editar")}>
+            <Wand2 size={14} aria-hidden="true" /> Editar imágenes
+          </Link>
+        )}
+        {p.staged > 0 && (
+          <Link href={editorLink(p.id, "fotos", backTo)}>
+            <Download size={14} aria-hidden="true" /> Descargar imágenes
+          </Link>
+        )}
+        {canPublish && videoEnabled() && p.photos > 0 && (
+          <Link href={toolPath("video", p.id)}>
+            <PlayCircle size={14} aria-hidden="true" /> Videos
+          </Link>
+        )}
         {canPublish && <Link href={editorLink(p.id, "datos", backTo)}>Editar datos</Link>}
         {actions.live ? (
           <a href={actions.link} target="_blank" rel="noopener noreferrer">
@@ -768,7 +837,6 @@ function PropertyCard({
   backTo: string;
 }) {
   const actions = usePropertyActions(p, agency, reload);
-  const next = nextAction(p);
   return (
     <article className="ap-card">
       <Link href={editorLink(p.id, "fotos", backTo)} className="ap-card-photo" aria-label={`Fotos y espacios de ${p.title}`}>
@@ -793,15 +861,7 @@ function PropertyCard({
           <ProgressLine p={p} />
         </p>
         <div className="ap-card-actions">
-          {next.label === "Compartir" ? (
-            <button type="button" className="button button-small button-primary" onClick={() => void actions.share()}>
-              <Share2 size={14} aria-hidden="true" /> Compartir
-            </button>
-          ) : (
-            <Link href={editorLink(p.id, next.section, backTo)} className="button button-small button-primary">
-              {next.label}
-            </Link>
-          )}
+          <QuickActions list={quickActions(p, actions, backTo, canPublish)} />
           <MoreMenu p={p} actions={actions} canDelete={canDelete} canPublish={canPublish} backTo={backTo} />
         </div>
         <ActionNote note={actions.note} />
@@ -867,7 +927,6 @@ function PropertyRow({
   backTo: string;
 }) {
   const actions = usePropertyActions(p, agency, reload);
-  const next = nextAction(p);
   return (
     <tr>
       <td className="ap-table-cover">
@@ -887,15 +946,7 @@ function PropertyRow({
         <span className={`ap-badge ${actions.live ? "is-live" : ""}`}>{actions.live ? "Publicada" : "Borrador"}</span>
       </td>
       <td className="ap-table-actions">
-        {next.label === "Compartir" ? (
-          <button type="button" className="button button-small" onClick={() => void actions.share()}>
-            Compartir
-          </button>
-        ) : (
-          <Link href={editorLink(p.id, next.section, backTo)} className="button button-small">
-            {next.label}
-          </Link>
-        )}
+        <QuickActions list={quickActions(p, actions, backTo, canPublish).slice(0, 2)} first="" />
         <MoreMenu p={p} actions={actions} canDelete={canDelete} canPublish={canPublish} backTo={backTo} />
       </td>
     </tr>
@@ -948,7 +999,10 @@ export function ImportProperty({
   where = "tu panel",
   onStep,
   existingCount,
+  inputId = "ap-import-url",
 }: {
+  /** The URL field's id: the home already has one importer, the start picker brings another. */
+  inputId?: string;
   initialUrl?: string;
   onDone?: () => Promise<unknown>;
   /** Where the import goes: the agency's own panel, or the agency the team is editing. */
@@ -968,7 +1022,7 @@ export function ImportProperty({
   const [carried, setCarried] = useState("");
   // The listing pasted in the agency's demo before signing up: offered here once, then forgotten.
   useEffect(() => {
-    if (initialUrl) return;
+    if (initialUrl || inputId !== "ap-import-url") return;
     try {
       const raw = localStorage.getItem(PENDING_IMPORT_KEY);
       if (!raw) return;
@@ -981,7 +1035,7 @@ export function ImportProperty({
     } catch {
       /* Private mode or malformed: nothing to continue. */
     }
-  }, [initialUrl]);
+  }, [initialUrl, inputId]);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [fields, setFields] = useState({ title: "", location: "", price: "", operation: "", description: "" });
   const [keep, setKeep] = useState<Set<string>>(new Set());
@@ -1113,12 +1167,12 @@ export function ImportProperty({
   return (
     <div className="ap-import">
       <form className="ap-import-row" onSubmit={read}>
-        <label className="ap-import-label" htmlFor="ap-import-url">
+        <label className="ap-import-label" htmlFor={inputId}>
           Pegá el enlace de una propiedad
         </label>
         <div className="ap-import-inputs">
           <input
-            id="ap-import-url"
+            id={inputId}
             required
             type="text"
             inputMode="url"

@@ -31,8 +31,6 @@ import {
   WandSparkles,
   X,
   Sofa,
-  Eraser,
-  CloudSun,
 } from "lucide-react";
 import { Comparison } from "./comparison";
 import { api } from "./admin-demos";
@@ -161,9 +159,10 @@ export function PhotoWorkspace({
   // The version being looked at, per photo; null: the original. A view only.
   const [viewOf, setViewOf] = useState<Record<string, string | null>>({});
   const [mode, setMode] = useState<ViewMode>("version");
-  const [tab, setTab] = useState<"create" | "edit">("create");
-  // Which of the four actions is open: staging (create) or the editor with its tool preselected.
-  const [action, setAction] = useState<"stage" | "enhance" | "remove" | "sky">("stage");
+  // ?modo=editar (Inicio → «Editar imágenes») opens the editor, not staging.
+  const [tab, setTab] = useState<"create" | "edit">(() =>
+    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("modo") === "editar" ? "edit" : "create",
+  );
   // The retouch of each photo, previewed live with CSS filters until it is saved as a version.
   const [adjusts, setAdjusts] = useState<Record<string, Adjust>>({});
   const [saving, setSaving] = useState(false);
@@ -558,26 +557,23 @@ export function PhotoWorkspace({
 
         <aside id={`${uid}-side`} className="pw-side" aria-label="Ambientar y editar">
           <h3 className="pw-side-title" id={`${uid}-what`}>¿Qué querés hacer?</h3>
-          {/* The four ways to work a photo; each opens its panel right below (spec: estudio de imágenes). */}
-          <ul className="pw-what" aria-labelledby={`${uid}-what`}>
+          {/* Two modes (spec v3 §3.3): staging, or the existing editor with its light, colour and AI tools. */}
+          <ul className="pw-what pw-what-modes" aria-labelledby={`${uid}-what`}>
             {(
               [
-                { id: "stage", icon: Sofa, title: "Ambientar con IA", text: "Agregá mobiliario y decoración." },
-                { id: "enhance", icon: WandSparkles, title: "Mejorar foto", text: "Ajustá luz, color y nitidez." },
-                { id: "remove", icon: Eraser, title: "Quitar muebles", text: "Vaciá el ambiente para mostrar su potencial." },
-                { id: "sky", icon: CloudSun, title: "Cambiar cielo", text: "Reemplazá el cielo y mejorá la luz." },
+                { id: "create", icon: Sofa, title: "Ambientar con IA", text: "Amoblá o rediseñá el ambiente." },
+                { id: "edit", icon: WandSparkles, title: "Editar con IA", text: "Mejorá la foto, quitá objetos o cambiá el cielo." },
               ] as const
             ).map(({ id: what, icon: Icon, title, text }) => (
               <li key={what}>
                 <button
                   type="button"
                   className="pw-what-item"
-                  aria-pressed={action === what}
+                  aria-pressed={tab === what}
                   aria-controls={`${uid}-panel`}
                   onClick={() => {
-                    setAction(what);
-                    setTab(what === "stage" ? "create" : "edit");
-                    pickTool(what === "remove" ? "remove" : what === "sky" ? "sky" : null);
+                    setTab(what);
+                    if (what === "create") pickTool(null);
                   }}
                 >
                   <span className="pw-what-icon" aria-hidden="true">
@@ -587,7 +583,6 @@ export function PhotoWorkspace({
                     <strong>{title}</strong>
                     <small>{text}</small>
                   </span>
-                  <ChevronRight size={16} aria-hidden="true" />
                 </button>
               </li>
             ))}
@@ -1365,9 +1360,8 @@ function StyleGrid({
   const [all, setAll] = useState(false);
   const full = demoStyles.length >= MAX_DEMO_STYLES;
   const list = [...STYLE_LIST[propertyType]].sort((a, b) => Number(!demoStyles.includes(a.id)) - Number(!demoStyles.includes(b.id)));
-  const own = list.filter((st) => demoStyles.includes(st.id)).length;
-  // The property's styles (at least four), plus the chosen one; the rest on request.
-  const listed = all ? list : list.filter((st, i) => i < Math.max(own, 4) || st.id === value);
+  // Four styles (the property's own first), plus the chosen one; the rest with «Ver más estilos» (spec v3 §3.3).
+  const listed = all ? list : list.filter((st, i) => i < 4 || st.id === value);
   return (
     <div className="pw-field">
       <span id={`${uid}-styles`}>Estilo</span>
@@ -1402,7 +1396,7 @@ function StyleGrid({
       </div>
       {list.length > listed.length || all ? (
         <button type="button" className="text-link pw-more-styles" aria-expanded={all} onClick={() => setAll((v) => !v)}>
-          {all ? "Menos estilos" : `Ver todos los estilos (${list.length})`}
+          {all ? "Menos estilos" : `Ver más estilos (${list.length - listed.length})`}
         </button>
       ) : null}
     </div>
