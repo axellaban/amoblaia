@@ -161,21 +161,6 @@ function Fold({
 }
 
 /**
- * «Editar imagen» of the demo: this photo and version in Estudio de imágenes
- * («Editar con IA»), which comes back to the same property, tab and photo.
- */
-function studioEditLink(demoId: string, photoId: string, versionId: string | null) {
-  const back = new URL(typeof window === "undefined" ? `https://x.local/panel/propiedades/${demoId}` : window.location.href);
-  back.searchParams.set("seccion", "fotos");
-  back.searchParams.set("foto", photoId);
-  if (versionId) back.searchParams.set("version", versionId);
-  else back.searchParams.delete("version");
-  const q = new URLSearchParams({ pestana: "fotos", fotos: demoId, foto: photoId, modo: "editar", volver: `${back.pathname}${back.search}` });
-  if (versionId) q.set("version", versionId);
-  return `/panel/imagenes?${q}`;
-}
-
-/**
  * The property page, shared by the team ("admin": commercial demos) and by
  * agencies ("agency": its own properties, staged with its credits). Photos
  * and spaces first; everything else in folds that keep their drafts.
@@ -187,7 +172,6 @@ export function DemoEditor({
   agencyContext,
   studio = false,
   onUseInDemo,
-  studioEditing = false,
 }: {
   id: string;
   mode?: "admin" | "agency";
@@ -195,8 +179,6 @@ export function DemoEditor({
   studio?: boolean;
   /** Estudio de imágenes: «Usar en una demostración» of the photo and version on screen. */
   onUseInDemo?: (photoId: string, versionId: string | null) => void;
-  /** The demo's «Editar imagen» opens Estudio de imágenes (this user can use it); else it edits in the demo. */
-  studioEditing?: boolean;
   /** The edit banner, when the team edits this agency (Editar inmobiliaria). */
   banner?: React.ReactNode;
   /** The agency the team is editing: the way back goes to its workspace. */
@@ -1397,7 +1379,6 @@ export function DemoEditor({
           )}
           <PhotoWorkspace
             variant="demo"
-            editHref={studioEditing ? (photoId, versionId) => studioEditLink(id, photoId, versionId) : undefined}
             belowGrid={videoBlock}
             detail={detail}
             base={base}
