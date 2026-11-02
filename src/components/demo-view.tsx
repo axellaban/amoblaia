@@ -1139,7 +1139,8 @@ function Gallery({
     : photo.versions.map((v) => ({ style: v.style, version: v as PhotoVersion | null }));
   const visibleCount = owner ? OWNER_VISIBLE_STYLES : VISIBLE_STYLES;
   const cards = allStyles ? rows : rows.filter((r, i) => i < visibleCount || (r.version && r.style === state.style));
-  const stylesCard = rows.length > 0 && (
+  // «Mostrar selector de estilos» off: buyers see the opening style only (the agency's own view keeps its picker).
+  const stylesCard = rows.length > 0 && (owner || demo.styleSelector !== false) && (
     <section className={`dv2-styles ${owner ? "" : "is-buyer"}`} aria-labelledby="dv2-panel-title" id="dv2-estilos">
       <div className="dv2-styles-head">
         <h2 id="dv2-panel-title">

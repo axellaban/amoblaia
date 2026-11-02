@@ -1,14 +1,35 @@
 "use client";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronDown, Eye, Home, Image as ImageIcon, Loader2, Plus, RefreshCw, Share2, Star, Trash2, X } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  Copy,
+  ExternalLink,
+  Eye,
+  Home,
+  Image as ImageIcon,
+  Info,
+  Link2,
+  Loader2,
+  MessageCircle,
+  PlayCircle,
+  Plus,
+  RefreshCw,
+  Share2,
+  Star,
+  Trash2,
+  X,
+} from "lucide-react";
 import { Comparison } from "./comparison";
 import { ActivityStatus, AgencyFields, AgencyWhatsappEditor, LinkPreview, PropertyFields, SendLog, SendWhatsapp, SentToggle, ShareCards, StatusChip, api, publicLink } from "./admin-demos";
 import { PhotoWorkspace, type WorkspaceActions } from "./editor-photos";
 import { useStagingQueue, type QueueReport } from "./use-staging-queue";
 import { optimizePhoto } from "@/lib/images";
 import { PROPERTY_TYPE_NAMES, styleFits, type PropertyType } from "@/lib/demos/styles";
-import { ListingForm, type ListingPart } from "./demo-listing-form";
+import { ListingForm, type ListingPart, type Visibility } from "./demo-listing-form";
+import { videoEnabled } from "@/lib/agency/flags";
+import { type HideableField, type VideoPlacement } from "@/lib/demos/branding";
 import { ImportPreview, ImportReport, exceptions, foreignPhotos, syncPhotos } from "./demo-import";
 import type { ImportChange, ImportField, ImportedDemo } from "@/lib/demos/import";
 import { track } from "@/lib/analytics";
@@ -89,6 +110,16 @@ const formsOf = (d: DemoDetail) => ({
   },
 });
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+/** The agency's demo editor: three tabs. The older sections (and their links) open in the tab that holds them. */
+type DemoTab = "fotos" | "datos" | "publicacion";
+const tabOf = (s: Section): DemoTab => (s === "fotos" ? "fotos" : s === "publicacion" ? "publicacion" : "datos");
+/** Where the video goes, as Panel > Video stores it (settings.videoPlacement); "hidden" is «Mostrar video» off. */
+const VIDEO_PLACES = ["first", "second", "below"] as const satisfies readonly VideoPlacement[];
+const VIDEO_PLACE_LABEL: Record<(typeof VIDEO_PLACES)[number], [string, string]> = {
+  first: ["Primero", "en la galería"],
+  second: ["Segundo", "en la galería"],
+  below: ["Debajo", "de las fotos"],
+};
 
 /** A fold of the editor: its header always says what is inside; folding saves, clears or stops nothing. */
 function Fold({
@@ -166,6 +197,10 @@ export function DemoEditor({
   const [forms, setForms] = useState<ReturnType<typeof formsOf> | null>(null);
   const [dirtyParts, setDirtyParts] = useState<Set<ListingPart>>(new Set());
   const [reread, setReread] = useState<Reread | null>(null);
+  // The agency's demo editor: its three tabs (kept in ?seccion=), the moment it was published and the property's latest video.
+  const [tab, setTab] = useState<DemoTab>("fotos");
+  const [justPublished, setJustPublished] = useState(false);
+  const [video, setVideo] = useState<{ url: string; format: string } | null>(null);
   const home = agencyMode ? "/panel/propiedades" : agencyContext ? `/admin/inmobiliarias/${agencyContext}/editar` : "/admin/inmobiliarias";
   const [backTo, setBackTo] = useState(home);
   const base = `/api/admin/demos/${id}`;
@@ -174,6 +209,8 @@ export function DemoEditor({
   const say = useCallback((m: Message) => {
     setMessage(m);
     if (m.section) setOpen((o) => new Set(o).add(m.section!));
+    // An error is shown where it happened.
+    if (m.section && m.tone === "error") setTab(tabOf(m.section));
   }, []);
   const report = useCallback((r: QueueReport) => say({ ...r, section: r.tone === "error" ? "fotos" : undefined }), [say]);
 
@@ -205,8 +242,30 @@ export function DemoEditor({
     setBackTo(safeReturn(q.get("volver"), home));
     if (agencyMode && q.get("bienvenida") === "1") setWelcome(true);
     const target = q.get("seccion") ?? window.location.hash.slice(1);
-    if (isSection(target)) setOpen((o) => new Set(o).add(target));
+    if (isSection(target)) {
+      setOpen((o) => new Set(o).add(target));
+      setTab(tabOf(target));
+    }
+    if (q.get("publicada") === "1") setJustPublished(true);
   }, [home]);
+  // The tab on screen survives a reload (and the way back from video or the preview).
+  const pickTab = (t: DemoTab) => {
+    setTab(t);
+    const url = new URL(window.location.href);
+    url.searchParams.set("seccion", t);
+    url.searchParams.delete("publicada");
+    window.history.replaceState(window.history.state, "", url);
+  };
+  // The property's latest finished video (Video Studio makes it): played here and placed on the public page.
+  useEffect(() => {
+    if (!agencyMode || studio || !videoEnabled()) return;
+    api<{ videos: { status: string; url: string | null; format: string }[] }>(`/api/panel/videos?demo=${id}`)
+      .then(({ videos }) => {
+        const v = videos.find((x) => x.status === "completed" && x.url);
+        setVideo(v ? { url: v.url!, format: v.format } : null);
+      })
+      .catch(() => setVideo(null));
+  }, [agencyMode, studio, id]);
   const welcomeTracked = useRef(false);
   useEffect(() => {
     if (!welcome || !detail || welcomeTracked.current) return;
@@ -715,216 +774,24 @@ export function DemoEditor({
       </div>
     );
 
-  return (
-    <div className="account-page container dm-page ed-page">
-      {banner}
-      <header className="ed-header">
-        {!banner && (
-          <Link href={backTo} className="text-link">
-            ←{" "}
-            {backTo.startsWith("/panel/imagenes/lote")
-              ? "Volver al lote"
-              : backTo.startsWith("/panel/imagenes")
-                ? "Fotos importadas"
-                : backTo.startsWith("/panel")
-                  ? "Mis propiedades"
-                  : backTo.startsWith("/admin/demos")
-                    ? "Demos"
-                    : "Inmobiliarias"}
-          </Link>
-        )}
-        {detail.readOnly && (
-          <p className="inline-notice" role="note">
-            Tu usuario es de solo vista: podés ver esta propiedad y compartir su enlace, pero no cambiarla.
-          </p>
-        )}
-        {demo.kind === "fotos" && (
-          <p className="inline-notice" role="note">
-            Son fotos importadas, todavía sin ficha. Podés ambientarlas y descargarlas sin crearla; ver o elegir una versión no publica nada.
-          </p>
-        )}
-        <div className="ed-header-row">
-          <div>
-            <span className="eyebrow">{demo.agencyName}</span>
-            <h1>
-              {demo.title}
-              <span className="accent">.</span>
-            </h1>
-            <p className="ed-header-meta">
-              {demo.kind === "fotos" ? <span className="dm-status">Fotos sin ficha</span> : <StatusChip status={demo.status} />}{" "}
-              <span role="status">
-                {staging.busy || livePhotos.length
-                  ? "Creando versiones…"
-                  : dirtyAny
-                    ? "Hay cambios sin guardar"
-                    : busy
-                      ? "Guardando…"
-                      : "Todo guardado"}
-              </span>
-            </p>
-          </div>
-          {demo.kind === "fotos" ? (
-            <div className="dm-heading-actions">
-              {agencyMode && (
-                <button
-                  type="button"
-                  className="button button-primary"
-                  disabled={busy}
-                  onClick={() =>
-                    void run(
-                      async () => {
-                        await api(`/api/panel/imagenes/${id}/ficha`, { method: "POST" });
-                        await load();
-                      },
-                      "La ficha se creó en borrador con estas fotos y sus versiones. Completá sus datos y publicala cuando quieras.",
-                      "publicacion",
-                    )
-                  }
-                >
-                  Crear ficha con estas fotos
-                </button>
-              )}
-            </div>
-          ) : (
-          <div className="dm-heading-actions">
-            {/* Sharing first (spec v3 §3.1): not at the end of a long page. */}
-            {live && agencyMode && (
-              <button
-                type="button"
-                className="button button-primary"
-                onClick={async () => {
-                  const outcome = await shareLink(publicLink(demo.token), demo.title, demo.id);
-                  if (outcome === "copied") setMessage({ tone: "notice", text: "Enlace copiado." });
-                  else if (outcome === "failed") say({ tone: "error", text: "No pudimos copiar el enlace: copialo desde «Publicación y compartir».", section: "publicacion" });
-                }}
-              >
-                <Share2 size={17} aria-hidden="true" /> Compartir
-              </button>
-            )}
-            {live && agencyMode ? (
-              <a href={publicLink(demo.token)} target="_blank" rel="noopener noreferrer" className="button button-outline">
-                <Eye size={17} /> Vista para comprador
-              </a>
-            ) : (
-              <Link href={agencyMode ? `/panel/propiedades/${id}/vista-previa` : `/admin/demos/${id}/vista-previa`} className="button button-outline">
-                <Eye size={17} /> {agencyMode ? "Vista para comprador" : "Vista previa"}
-              </Link>
-            )}
-            <button
-              type="button"
-              className={`button ${live ? "button-outline" : "button-primary"}`}
-              disabled={busy}
-              onClick={() =>
-                window.confirm(
-                  live
-                    ? `¿Despublicar «${demo.title}»? El enlace deja de funcionar enseguida para quien lo tenga${agencyMode ? " y sale de tu catálogo" : ""}. La ficha, sus fotos y versiones se conservan.`
-                    : `¿Publicar «${demo.title}»? Cualquiera con el enlace va a poder verla${agencyMode ? ", y aparece en tu catálogo si está publicado" : ""}. Publicar no usa créditos.`,
-                ) &&
-                void run(
-                  async () => {
-                    apply(await api<DemoDetail>(base, { method: "PATCH", body: JSON.stringify({ action: live ? "unpublish" : "publish" }) }));
-                    // Counted once the server confirmed it.
-                    if (agencyMode) track(live ? "property_unpublished" : "property_published", { property_id: demo.id, photos: demo.photos, staged: demo.staged });
-                  },
-                  live
-                    ? `${agencyMode ? "Ficha despublicada" : "Demo despublicada"}: el enlace dejó de estar disponible.`
-                    : `${agencyMode ? "Ficha publicada" : "Demo publicada"}. Ya podés compartir el enlace.`,
-                  "publicacion",
-                )
-              }
-            >
-              {live ? "Despublicar" : agencyMode ? "Publicar ficha" : "Publicar demo"}
-            </button>
-          </div>
-          )}
-        </div>
-      </header>
-      {message && (
-        <p className={message.tone === "error" ? "inline-error" : "inline-notice"} role={message.tone === "error" ? "alert" : "status"}>
-          {message.text}
-          <button type="button" className="icon-button ed-dismiss" aria-label="Cerrar mensaje" onClick={() => setMessage(null)}>
-            <X size={14} />
-          </button>
-        </p>
-      )}
-
-      {welcome && (
-        <section className="ed-welcome" aria-labelledby="ed-welcome-title">
-          <span className="ed-welcome-icon" aria-hidden="true">
-            <ImageIcon size={20} />
-          </span>
-          <div>
-            <h2 id="ed-welcome-title">Empezá con una foto</h2>
-            <p>Elegí una versión, comparala con el original y descargala. Descargar no usa créditos.</p>
-          </div>
-          <button type="button" className="icon-button" aria-label="Cerrar la guía" onClick={() => setWelcome(false)}>
-            <X size={16} />
-          </button>
-        </section>
-      )}
-
-      <Fold id="fotos" title="Fotos y espacios" summary={photosSummary} open={open.has("fotos")} onToggle={() => toggle("fotos")}>
-        {payer && (
-          <p className="pw-note" role="note">
-            {payer}
-            {blocked ? " Podés ver, comparar, descargar y organizar todo lo creado." : ""}
-          </p>
-        )}
-        {uploads.length > 0 && (
-          <ul className="dm-uploads" aria-live="polite">
-            {uploads.map((u, i) => (
-              <li key={`${u.name}-${i}`} className={`is-${u.state}`}>
-                {u.state === "uploading" && <Loader2 size={15} className="spin" />}
-                {u.state === "done" && <Check size={15} />}
-                {u.state === "error" && <X size={15} />}
-                <span>{u.name}</span>
-                {u.error && <em>{u.error}</em>}
-              </li>
-            ))}
-          </ul>
-        )}
-        <PhotoWorkspace
-          detail={detail}
-          base={base}
-          propertyType={type}
-          demoStyles={demoStyles}
-          mainStyle={main}
-          blocked={blocked}
-          payerNote={payer}
-          staging={staging}
-          included={included}
-          setIncluded={setIncluded}
-          downloading={downloading}
-          busy={busy}
-          fileName={(p, g) => versionFileName(demo.title, spaceName(p), styleName(g.style), versionNumber(p, g.id))}
-          originalName={(p) => versionFileName(demo.title, spaceName(p), "original")}
-          actions={workspaceActions}
-        />
-      </Fold>
-
-      {agencyMode && welcome && (
-        <section className="ed-next-property" aria-labelledby="ed-next-title">
-          <span className="ed-welcome-icon" aria-hidden="true">
-            <Home size={20} />
-          </span>
-          <div>
-            <h2 id="ed-next-title">¿Querés probar con otra propiedad?</h2>
-            <p>Pegá una publicación y traé sus datos y fotos.</p>
-          </div>
-          <Link href="/panel" className="button button-outline" onClick={() => track("invited_next_property_clicked", { property_id: demo.id })}>
-            <Plus size={16} aria-hidden="true" /> Agregar otra propiedad
-          </Link>
-        </section>
-      )}
-
-      <Fold
-        id="datos"
-        title="Datos de la propiedad"
-        summary={absent.length ? `Falta: ${absent.join(", ")}` : "Completos"}
-        open={open.has("datos")}
-        onToggle={() => toggle("datos")}
-        dirty={formsDirty ? formsDirty.property || formsDirty.title || dirtyParts.has("datos") : false}
-      >
+  // «Mostrar en demostración»: each switch saves at once; hiding never clears the value.
+  const visibility: Visibility | undefined = agencyMode
+    ? {
+        hidden: detail.settings.hidden,
+        disabled: busy || !detail.settingsReady || Boolean(detail.readOnly),
+        onToggle: (field: HideableField, show: boolean) =>
+          void demoAction(
+            {
+              action: "settings",
+              settings: { hidden: show ? detail.settings.hidden.filter((f) => f !== field) : [...detail.settings.hidden, field] },
+            },
+            show ? "Se muestra en la demostración." : "Oculto en la demostración: el dato queda guardado.",
+            "datos",
+          ),
+      }
+    : undefined;
+  const dataBody = (
+    <>
         <label className="dm-select dm-type">
           Tipo de inmueble
           <select
@@ -953,7 +820,7 @@ export function DemoEditor({
             }, "Propiedad guardada.", "datos");
           }}
         >
-          <PropertyFields value={forms.property} onChange={(property) => setForms({ ...forms, property })} />
+          <PropertyFields visibility={visibility} value={forms.property} onChange={(property) => setForms({ ...forms, property })} />
           <button className="button button-small" disabled={busy || !formsDirty || !formsDirty.property}>
             Guardar propiedad
           </button>
@@ -975,6 +842,7 @@ export function DemoEditor({
         </form>
         {!detail.settingsReady && <MigrationNote />}
         <ListingForm
+          visibility={visibility}
           parts={["datos"]}
           settings={detail.settings}
           disabled={busy || !detail.settingsReady}
@@ -982,28 +850,18 @@ export function DemoEditor({
           onDirty={partHandlers.datos}
           saveLabel="Guardar datos"
         />
-      </Fold>
-
-      <Fold
-        id="mapa"
-        title="Ubicación y mapa"
-        summary={MAP_SUMMARY[detail.settings.map.precision]}
-        open={open.has("mapa")}
-        onToggle={() => toggle("mapa")}
-        dirty={dirtyParts.has("mapa")}
-      >
-        <ListingForm parts={["mapa"]} settings={detail.settings} disabled={busy || !detail.settingsReady} onSave={saveSettings("mapa")} onDirty={partHandlers.mapa} saveLabel="Guardar mapa" />
-      </Fold>
-
-      <Fold
-        id="condiciones"
-        title="Características y condiciones"
-        summary={`${detail.settings.facts.length} datos con íconos · ${detail.settings.amenities.length} grupos de características`}
-        open={open.has("condiciones")}
-        onToggle={() => toggle("condiciones")}
-        dirty={dirtyParts.has("condiciones")}
-      >
+    </>
+  );
+  const mapaBody = (
+    <>
         <ListingForm
+          visibility={visibility} parts={["mapa"]} settings={detail.settings} disabled={busy || !detail.settingsReady} onSave={saveSettings("mapa")} onDirty={partHandlers.mapa} saveLabel="Guardar mapa" />
+    </>
+  );
+  const condBody = (
+    <>
+        <ListingForm
+          visibility={visibility}
           parts={["condiciones"]}
           settings={detail.settings}
           disabled={busy || !detail.settingsReady}
@@ -1011,22 +869,10 @@ export function DemoEditor({
           onDirty={partHandlers.condiciones}
           saveLabel="Guardar características"
         />
-      </Fold>
-
-      <Fold
-        id="marca"
-        title="Marca y contacto"
-        summary={
-          detail.settings.agent?.name
-            ? `Agente: ${detail.settings.agent.name}`
-            : detail.branding.contactKind && detail.branding.contactValue
-              ? "Contacto de la inmobiliaria"
-              : "Sin contacto para consultas"
-        }
-        open={open.has("marca")}
-        onToggle={() => toggle("marca")}
-        dirty={dirtyParts.has("contacto") || (formsDirty ? formsDirty.agency || formsDirty.brand : false)}
-      >
+    </>
+  );
+  const marcaBody = (
+    <>
         {agencyMode ? (
           <p className="dm-help">
             El logo, los colores y el canal de consultas de la inmobiliaria se cambian en <Link href="/panel/sitio">Mi sitio web</Link> (solo el dueño).
@@ -1045,6 +891,7 @@ export function DemoEditor({
           />
         )}
         <ListingForm
+          visibility={visibility}
           parts={["contacto"]}
           settings={detail.settings}
           disabled={busy || !detail.settingsReady}
@@ -1052,16 +899,10 @@ export function DemoEditor({
           onDirty={partHandlers.contacto}
           saveLabel="Guardar agente"
         />
-      </Fold>
-
-      <Fold
-        id="publicacion"
-        title="Publicación y compartir"
-        summary={`${live ? "Publicada" : "Borrador"}${detail.warnings.length ? ` · ${detail.warnings.length} ${detail.warnings.length === 1 ? "aviso" : "avisos"}` : ""}`}
-        open={open.has("publicacion")}
-        onToggle={() => toggle("publicacion")}
-        dirty={dirtyParts.has("compartir")}
-      >
+    </>
+  );
+  const pubBody = (
+    <>
         <div className="ed-publish">
           <div>
             <h3>{agencyMode ? "Revisar antes de publicar" : "Antes de compartir"}</h3>
@@ -1304,6 +1145,738 @@ export function DemoEditor({
             )}
           </aside>
         </div>
+    </>
+  );
+  // ---- «Crear demostración interactiva»: the agency's editor, in three tabs (the approved design) ----
+  if (agencyMode) {
+    const status = staging.busy || livePhotos.length ? "Creando versiones…" : dirtyAny ? "Cambios sin guardar" : busy ? "Guardando…" : "Guardado";
+    const coverPhoto = (demo.cover ? photos.find((p) => p.id === demo.cover!.id) : null) ?? visiblePhotos[0] ?? photos[0] ?? null;
+    const coverGen = coverPhoto ? (coverPhoto.shown[main] ?? Object.values(coverPhoto.shown)[0] ?? null) : null;
+    const link = publicLink(demo.token);
+    const canWork = !detail.readOnly;
+    const setting = (settings: Record<string, unknown>, done = "Guardado.") => void demoAction({ action: "settings", settings }, done, "publicacion");
+    const coverArt = (big: boolean) =>
+      coverPhoto ? (
+        coverGen ? (
+          <Comparison
+            before={adminPhotoUrl(coverPhoto.id, null, big ? 1200 : 640)}
+            after={adminGenerationUrl(coverGen, big ? 1200 : 640)}
+            beforeLabel="Antes"
+            afterLabel="Después"
+            beforeAlt={`${demo.title}, foto original`}
+            alt={`${demo.title}, ambientada con IA`}
+            initial={50}
+          />
+        ) : (
+          <img src={adminPhotoUrl(coverPhoto.id, null, big ? 1200 : 640)} alt={`${demo.title}, portada`} />
+        )
+      ) : (
+        <span className="dx-noimg">Sin fotos todavía</span>
+      );
+    async function publish() {
+      if (dirtyAny && !window.confirm("Hay cambios sin guardar en «Datos de la propiedad». Se publica lo guardado; los cambios sin guardar quedan en el formulario. ¿Publicar igual?")) return;
+      const ok = await run(async () => {
+        apply(await api<DemoDetail>(base, { method: "PATCH", body: JSON.stringify({ action: "publish" }) }));
+        track("property_published", { property_id: demo.id, photos: demo.photos, staged: demo.staged });
+      }, undefined, "publicacion");
+      if (ok) setJustPublished(true);
+    }
+    const videoBlock =
+      videoEnabled() && demo.kind !== "fotos" ? (
+        <section className="dx-video" aria-labelledby="dx-video-title">
+          <div className="dx-video-intro">
+            <span className="dx-video-icon" aria-hidden="true">
+              <PlayCircle size={26} />
+            </span>
+            <div>
+              <h3 id="dx-video-title">Generar video</h3>
+              <p>Creá un video con las fotos de esta propiedad.</p>
+            </div>
+          </div>
+          <fieldset className="dx-video-place" disabled={busy || !detail.settingsReady || !canWork}>
+            <legend>¿Dónde mostrar el video?</legend>
+            {VIDEO_PLACES.map((place) => (
+              <label key={place}>
+                <input
+                  type="radio"
+                  name="dx-video-place"
+                  checked={detail.settings.videoPlacement === place}
+                  onChange={() =>
+                    void demoAction(
+                      { action: "settings", settings: { videoPlacement: place } },
+                      video ? "Ubicación del video guardada." : "Ubicación guardada: se aplica cuando generes el video.",
+                      "fotos",
+                    )
+                  }
+                />
+                <span>
+                  <strong>{VIDEO_PLACE_LABEL[place][0]}</strong>
+                  <small>({VIDEO_PLACE_LABEL[place][1]})</small>
+                </span>
+              </label>
+            ))}
+          </fieldset>
+          {canWork && (
+            <Link
+              href={`/panel/video?${new URLSearchParams({ propiedad: id, volver: `/panel/propiedades/${id}?seccion=fotos` })}`}
+              className="button button-primary dx-video-go"
+              onClick={() => track("demo_editor_video_opened", { property_id: id, has_video: Boolean(video) })}
+            >
+              <PlayCircle size={17} aria-hidden="true" /> Generar video
+            </Link>
+          )}
+          {video ? (
+            <details className="dx-video-current">
+              <summary>Ver el video actual</summary>
+              <video src={video.url} controls playsInline preload="metadata" className={video.format === "9:16" ? "is-vertical" : ""} />
+            </details>
+          ) : (
+            <p className="dm-help dx-video-note">Todavía no hay video: la ubicación elegida se aplica cuando lo generes. La ficha no muestra un reproductor vacío.</p>
+          )}
+        </section>
+      ) : null;
+
+    return (
+      <div className="account-page container dm-page ed-page dx-page">
+        <header className="dx-head">
+          <Link href={backTo} className="icon-button dx-back" aria-label={backTo.startsWith("/panel/propiedades") ? "Volver a Mis propiedades" : "Volver"}>
+            ←
+          </Link>
+          <div className="dx-head-title">
+            <h1>{demo.title}</h1>
+            {demo.kind === "fotos" ? <span className="dm-status">Fotos sin ficha</span> : <StatusChip status={demo.status} />}
+          </div>
+          <span className={`dx-saved ${status === "Guardado" ? "is-ok" : ""}`} role="status">
+            {status === "Guardado" ? <Check size={15} aria-hidden="true" /> : busy || staging.busy ? <Loader2 size={15} className="spin" aria-hidden="true" /> : null} {status}
+          </span>
+          {demo.kind === "fotos" ? (
+            canWork && (
+              <button
+                type="button"
+                className="button button-primary"
+                disabled={busy}
+                onClick={() =>
+                  void run(
+                    async () => {
+                      await api(`/api/panel/imagenes/${id}/ficha`, { method: "POST" });
+                      await load();
+                    },
+                    "La ficha se creó en borrador con estas fotos y sus versiones. Completá sus datos y publicala cuando quieras.",
+                    "datos",
+                  )
+                }
+              >
+                Crear ficha con estas fotos
+              </button>
+            )
+          ) : (
+            <Link href={`/panel/propiedades/${id}/vista-previa`} className="button button-outline dx-preview">
+              <Eye size={17} aria-hidden="true" /> Vista previa
+            </Link>
+          )}
+        </header>
+
+        {detail.readOnly && (
+          <p className="inline-notice" role="note">
+            Tu usuario es de solo vista: podés ver esta propiedad y compartir su enlace, pero no cambiarla.
+          </p>
+        )}
+
+        {demo.kind !== "fotos" && (
+          <div className="dx-tabs" role="tablist" aria-label="Editor de la demostración">
+            {(
+              [
+                ["fotos", "Fotos y espacios"],
+                ["datos", "Datos de la propiedad"],
+                ["publicacion", "Publicación y enlace"],
+              ] as const
+            ).map(([t, label]) => (
+              <button
+                key={t}
+                type="button"
+                role="tab"
+                id={`dx-tab-${t}`}
+                aria-selected={tab === t}
+                aria-controls={`dx-panel-${t}`}
+                className={tab === t ? "is-on" : ""}
+                onClick={() => pickTab(t)}
+              >
+                {label}
+                {t === "datos" && (dirtyParts.size > 0 || (formsDirty && (formsDirty.property || formsDirty.title))) && <span className="dx-dot" aria-label="(cambios sin guardar)" />}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {message && (
+          <p className={message.tone === "error" ? "inline-error" : "inline-notice"} role={message.tone === "error" ? "alert" : "status"}>
+            {message.text}
+            <button type="button" className="icon-button ed-dismiss" aria-label="Cerrar mensaje" onClick={() => setMessage(null)}>
+              <X size={14} />
+            </button>
+          </p>
+        )}
+
+        {/* Every tab stays mounted (hidden): drafts, selections and progress are kept when switching. */}
+        <section id="dx-panel-fotos" role="tabpanel" aria-labelledby="dx-tab-fotos" hidden={tab !== "fotos" && demo.kind !== "fotos"} className="dx-panel">
+          {welcome && (
+            <section className="ed-welcome" aria-labelledby="ed-welcome-title">
+              <span className="ed-welcome-icon" aria-hidden="true">
+                <ImageIcon size={20} />
+              </span>
+              <div>
+                <h2 id="ed-welcome-title">Empezá con una foto</h2>
+                <p>Elegí un estilo, comparalo con el original y descargalo. Descargar no usa créditos.</p>
+              </div>
+              <button type="button" className="icon-button" aria-label="Cerrar la guía" onClick={() => setWelcome(false)}>
+                <X size={16} />
+              </button>
+            </section>
+          )}
+          {demo.kind === "fotos" && (
+            <p className="inline-notice" role="note">
+              Son fotos importadas, todavía sin ficha. Podés ambientarlas y descargarlas sin crearla; para la demostración, creá la ficha.
+            </p>
+          )}
+          {payer && (
+            <p className="pw-note" role="note">
+              {payer}
+              {blocked ? " Podés ver, comparar, descargar y organizar todo lo creado." : ""}
+            </p>
+          )}
+          {uploads.length > 0 && (
+            <ul className="dm-uploads" aria-live="polite">
+              {uploads.map((u, i) => (
+                <li key={`${u.name}-${i}`} className={`is-${u.state}`}>
+                  {u.state === "uploading" && <Loader2 size={15} className="spin" />}
+                  {u.state === "done" && <Check size={15} />}
+                  {u.state === "error" && <X size={15} />}
+                  <span>{u.name}</span>
+                  {u.error && <em>{u.error}</em>}
+                </li>
+              ))}
+            </ul>
+          )}
+          <PhotoWorkspace
+            variant="demo"
+            belowGrid={videoBlock}
+            detail={detail}
+            base={base}
+            propertyType={type}
+            demoStyles={demoStyles}
+            mainStyle={main}
+            blocked={blocked}
+            payerNote={payer}
+            staging={staging}
+            included={included}
+            setIncluded={setIncluded}
+            downloading={downloading}
+            busy={busy}
+            fileName={(p, g) => versionFileName(demo.title, spaceName(p), styleName(g.style), versionNumber(p, g.id))}
+            originalName={(p) => versionFileName(demo.title, spaceName(p), "original")}
+            actions={workspaceActions}
+          />
+          {welcome && (
+            <section className="ed-next-property" aria-labelledby="ed-next-title">
+              <span className="ed-welcome-icon" aria-hidden="true">
+                <Home size={20} />
+              </span>
+              <div>
+                <h2 id="ed-next-title">¿Querés probar con otra propiedad?</h2>
+                <p>Pegá una publicación y traé sus datos y fotos.</p>
+              </div>
+              <Link href="/panel" className="button button-outline" onClick={() => track("invited_next_property_clicked", { property_id: demo.id })}>
+                <Plus size={16} aria-hidden="true" /> Agregar otra propiedad
+              </Link>
+            </section>
+          )}
+        </section>
+
+        {demo.kind !== "fotos" && (
+          <>
+            <section id="dx-panel-datos" role="tabpanel" aria-labelledby="dx-tab-datos" hidden={tab !== "datos"} className="dx-panel dx-data">
+              {!detail.settings.showData && (
+                <p className="inline-notice" role="note">
+                  «Mostrar datos de la propiedad» está apagado en «Publicación y enlace»: la demostración no muestra ninguno de estos datos (quedan guardados).
+                </p>
+              )}
+              <section className="dx-card" aria-labelledby="dx-data-title">
+                <div className="dx-card-head">
+                  <h2 id="dx-data-title">Información de la propiedad</h2>
+                  <span className="dx-vis-head" title="Apagado: el dato queda guardado y editable, pero no se muestra en la ficha pública.">
+                    Mostrar en demostración <Info size={14} aria-hidden="true" />
+                  </span>
+                </div>
+                {dataBody}
+              </section>
+              <section className="dx-card" aria-labelledby="dx-cond-title">
+                <div className="dx-card-head">
+                  <h2 id="dx-cond-title">Características y condiciones</h2>
+                </div>
+                {condBody}
+              </section>
+              <section className="dx-card" aria-labelledby="dx-map-title">
+                <div className="dx-card-head">
+                  <h2 id="dx-map-title">Ubicación y mapa</h2>
+                </div>
+                {mapaBody}
+              </section>
+              <section className="dx-card" aria-labelledby="dx-contact-title">
+                <div className="dx-card-head">
+                  <h2 id="dx-contact-title">Contacto</h2>
+                </div>
+                {marcaBody}
+              </section>
+              <section className="dx-card" aria-labelledby="dx-sync-title">
+                <div className="dx-card-head">
+                  <h2 id="dx-sync-title">Completar desde la publicación</h2>
+                </div>
+                <p className="dm-help">
+                  {detail.property.listing_url
+                    ? "Volvé a leer la publicación original para completar los datos que falten. Nada se reemplaza sin que lo confirmes."
+                    : "Esta propiedad no tiene publicación original: sus datos se completan a mano en esta pestaña."}
+                </p>
+                <button
+                  type="button"
+                  className="button button-small button-outline"
+                  disabled={busy || !detail.property.listing_url || !canWork}
+                  onClick={() => run(async () => setReread(await api<Reread>(`${base}/publicacion`)), undefined, "datos")}
+                >
+                  Completar desde la publicación
+                </button>
+                {reread && (
+                  <ListingSync
+                    reread={reread}
+                    detail={detail}
+                    base={base}
+                    busy={busy}
+                    onClose={() => setReread(null)}
+                    onDone={(d, done) => {
+                      apply(d);
+                      setReread(null);
+                      setMessage({ tone: "notice", text: done });
+                    }}
+                  />
+                )}
+              </section>
+            </section>
+
+            <section id="dx-panel-publicacion" role="tabpanel" aria-labelledby="dx-tab-publicacion" hidden={tab !== "publicacion"} className="dx-panel">
+              <section className="dx-card dx-config" aria-labelledby="dx-config-title">
+                <h2 id="dx-config-title">Configuración de la demostración</h2>
+                {!detail.settingsReady && <MigrationNote />}
+                <div className="dx-config-grid">
+                  <fieldset className="dx-checks" disabled={busy || !detail.settingsReady || !canWork}>
+                    <legend className="dv2-sr">Qué muestra la demostración</legend>
+                    <label className="dx-check">
+                      <input type="checkbox" checked={detail.settings.showStyles} onChange={(e) => setting({ showStyles: e.target.checked })} />
+                      Mostrar selector de estilos
+                    </label>
+                    <label className="dx-check">
+                      <input
+                        type="checkbox"
+                        checked={detail.settings.videoPlacement !== "hidden"}
+                        disabled={!videoEnabled()}
+                        onChange={(e) => setting({ videoPlacement: e.target.checked ? "first" : "hidden" })}
+                      />
+                      Mostrar video {!video && <small>(cuando exista)</small>}
+                    </label>
+                    <div className="dx-radios" role="radiogroup" aria-label="Ubicación del video">
+                      {VIDEO_PLACES.map((place) => (
+                        <label key={place}>
+                          <input
+                            type="radio"
+                            name="dx-pub-video-place"
+                            checked={detail.settings.videoPlacement === place}
+                            disabled={detail.settings.videoPlacement === "hidden" || !videoEnabled()}
+                            onChange={() => setting({ videoPlacement: place })}
+                          />
+                          {place === "below" ? "Video debajo de las fotos" : `Video ${VIDEO_PLACE_LABEL[place][0].toLowerCase()} (en la galería)`}
+                        </label>
+                      ))}
+                    </div>
+                    <label className="dx-check">
+                      <input type="checkbox" checked={detail.settings.showData} onChange={(e) => setting({ showData: e.target.checked })} />
+                      Mostrar datos de la propiedad
+                    </label>
+                    <small className="dx-check-help">
+                      Usa la configuración definida en{" "}
+                      <button type="button" className="text-link" onClick={() => pickTab("datos")}>
+                        «Datos de la propiedad»
+                      </button>
+                      .
+                    </small>
+                    <label className="dx-check">
+                      <input type="checkbox" checked={detail.settings.showContact} onChange={(e) => setting({ showContact: e.target.checked })} />
+                      Incluir datos de contacto
+                    </label>
+                  </fieldset>
+                  <figure className="dx-config-preview">{coverArt(false)}</figure>
+                </div>
+                {!live && canWork && (
+                  <button type="button" className="button button-primary dx-publish" disabled={busy} onClick={() => void publish()}>
+                    <Link2 size={18} aria-hidden="true" /> Publicar y obtener enlace
+                  </button>
+                )}
+                {!live && (
+                  <p className="dm-help">
+                    Publicar no usa créditos y no necesita ambientaciones: podés publicar con las fotos originales. Antes, revisala en{" "}
+                    <Link href={`/panel/propiedades/${id}/vista-previa`}>Vista previa</Link>.
+                  </p>
+                )}
+              </section>
+
+              {live && (
+                <section className="dx-card dx-published" aria-labelledby="dx-published-title">
+                  <div className="dx-published-main">
+                    <div className="dx-published-head">
+                      <span className="dx-ok" aria-hidden="true">
+                        <Check size={26} strokeWidth={3} />
+                      </span>
+                      <div>
+                        <h2 id="dx-published-title">{justPublished ? "¡Demostración publicada!" : "Demostración publicada"}</h2>
+                        <p>Tu propiedad ya está online y lista para compartir.</p>
+                      </div>
+                    </div>
+                    <div className="dx-link">
+                      <Link2 size={17} aria-hidden="true" />
+                      <input
+                        readOnly
+                        value={link}
+                        aria-label="Enlace de la demostración"
+                        onFocus={(e) => e.target.select()}
+                        onCopy={() => track("property_shared", { property_id: demo.id, channel: "manual_copy" })}
+                      />
+                      <button
+                        type="button"
+                        className="icon-button"
+                        aria-label="Copiar enlace"
+                        onClick={async () => {
+                          try {
+                            await navigator.clipboard.writeText(link);
+                            track("property_shared", { property_id: demo.id, channel: "copy_button" });
+                            setMessage({ tone: "notice", text: "Enlace copiado." });
+                          } catch {
+                            say({ tone: "error", text: "No pudimos copiar el enlace: seleccionalo en el campo y copialo." });
+                          }
+                        }}
+                      >
+                        <Copy size={17} />
+                      </button>
+                    </div>
+                    <a className="button button-primary dx-wa" href={whatsappShareUrl(link)} target="_blank" rel="noopener noreferrer" onClick={() => whatsappOpened(demo.id)}>
+                      <MessageCircle size={18} aria-hidden="true" /> Compartir por WhatsApp
+                    </a>
+                    <a className="button button-outline dx-view" href={link} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink size={17} aria-hidden="true" /> Ver demostración
+                    </a>
+                    {canWork && (
+                      <button
+                        type="button"
+                        className="text-link dx-unpublish"
+                        disabled={busy}
+                        onClick={() =>
+                          window.confirm(
+                            `¿Despublicar «${demo.title}»? El enlace deja de funcionar enseguida para quien lo tenga y sale de tu catálogo. La ficha, sus fotos y versiones se conservan; al volver a publicar, el enlace es el mismo.`,
+                          ) &&
+                          void run(
+                            async () => {
+                              apply(await api<DemoDetail>(base, { method: "PATCH", body: JSON.stringify({ action: "unpublish" }) }));
+                              setJustPublished(false);
+                              track("property_unpublished", { property_id: demo.id, photos: demo.photos, staged: demo.staged });
+                            },
+                            "Ficha despublicada: el enlace dejó de estar disponible.",
+                            "publicacion",
+                          )
+                        }
+                      >
+                        Despublicar
+                      </button>
+                    )}
+                  </div>
+                  <figure className="dx-published-card">
+                    <div className="dx-published-art">{coverArt(true)}</div>
+                    <figcaption>
+                      <strong>{demo.title}</strong>
+                      {detail.property.location && <small>{detail.property.location}</small>}
+                    </figcaption>
+                  </figure>
+                </section>
+              )}
+
+              <details className="dx-card dx-more">
+                <summary>Más opciones de publicación</summary>
+                <p className="dm-help">Revisión, estilo principal, cómo abre la ficha, textos al compartir y enlace.</p>
+                {pubBody}
+              </details>
+            </section>
+          </>
+        )}
+        {reviewModal}
+      </div>
+    );
+  }
+  return (
+    <div className="account-page container dm-page ed-page">
+      {banner}
+      <header className="ed-header">
+        {!banner && (
+          <Link href={backTo} className="text-link">
+            ←{" "}
+            {backTo.startsWith("/panel/imagenes/lote")
+              ? "Volver al lote"
+              : backTo.startsWith("/panel/imagenes")
+                ? "Fotos importadas"
+                : backTo.startsWith("/panel")
+                  ? "Mis propiedades"
+                  : backTo.startsWith("/admin/demos")
+                    ? "Demos"
+                    : "Inmobiliarias"}
+          </Link>
+        )}
+        {detail.readOnly && (
+          <p className="inline-notice" role="note">
+            Tu usuario es de solo vista: podés ver esta propiedad y compartir su enlace, pero no cambiarla.
+          </p>
+        )}
+        {demo.kind === "fotos" && (
+          <p className="inline-notice" role="note">
+            Son fotos importadas, todavía sin ficha. Podés ambientarlas y descargarlas sin crearla; ver o elegir una versión no publica nada.
+          </p>
+        )}
+        <div className="ed-header-row">
+          <div>
+            <span className="eyebrow">{demo.agencyName}</span>
+            <h1>
+              {demo.title}
+              <span className="accent">.</span>
+            </h1>
+            <p className="ed-header-meta">
+              {demo.kind === "fotos" ? <span className="dm-status">Fotos sin ficha</span> : <StatusChip status={demo.status} />}{" "}
+              <span role="status">
+                {staging.busy || livePhotos.length
+                  ? "Creando versiones…"
+                  : dirtyAny
+                    ? "Hay cambios sin guardar"
+                    : busy
+                      ? "Guardando…"
+                      : "Todo guardado"}
+              </span>
+            </p>
+          </div>
+          {demo.kind === "fotos" ? (
+            <div className="dm-heading-actions">
+              {agencyMode && (
+                <button
+                  type="button"
+                  className="button button-primary"
+                  disabled={busy}
+                  onClick={() =>
+                    void run(
+                      async () => {
+                        await api(`/api/panel/imagenes/${id}/ficha`, { method: "POST" });
+                        await load();
+                      },
+                      "La ficha se creó en borrador con estas fotos y sus versiones. Completá sus datos y publicala cuando quieras.",
+                      "publicacion",
+                    )
+                  }
+                >
+                  Crear ficha con estas fotos
+                </button>
+              )}
+            </div>
+          ) : (
+          <div className="dm-heading-actions">
+            {/* Sharing first (spec v3 §3.1): not at the end of a long page. */}
+            {live && agencyMode && (
+              <button
+                type="button"
+                className="button button-primary"
+                onClick={async () => {
+                  const outcome = await shareLink(publicLink(demo.token), demo.title, demo.id);
+                  if (outcome === "copied") setMessage({ tone: "notice", text: "Enlace copiado." });
+                  else if (outcome === "failed") say({ tone: "error", text: "No pudimos copiar el enlace: copialo desde «Publicación y compartir».", section: "publicacion" });
+                }}
+              >
+                <Share2 size={17} aria-hidden="true" /> Compartir
+              </button>
+            )}
+            {live && agencyMode ? (
+              <a href={publicLink(demo.token)} target="_blank" rel="noopener noreferrer" className="button button-outline">
+                <Eye size={17} /> Vista para comprador
+              </a>
+            ) : (
+              <Link href={agencyMode ? `/panel/propiedades/${id}/vista-previa` : `/admin/demos/${id}/vista-previa`} className="button button-outline">
+                <Eye size={17} /> {agencyMode ? "Vista para comprador" : "Vista previa"}
+              </Link>
+            )}
+            <button
+              type="button"
+              className={`button ${live ? "button-outline" : "button-primary"}`}
+              disabled={busy}
+              onClick={() =>
+                window.confirm(
+                  live
+                    ? `¿Despublicar «${demo.title}»? El enlace deja de funcionar enseguida para quien lo tenga${agencyMode ? " y sale de tu catálogo" : ""}. La ficha, sus fotos y versiones se conservan.`
+                    : `¿Publicar «${demo.title}»? Cualquiera con el enlace va a poder verla${agencyMode ? ", y aparece en tu catálogo si está publicado" : ""}. Publicar no usa créditos.`,
+                ) &&
+                void run(
+                  async () => {
+                    apply(await api<DemoDetail>(base, { method: "PATCH", body: JSON.stringify({ action: live ? "unpublish" : "publish" }) }));
+                    // Counted once the server confirmed it.
+                    if (agencyMode) track(live ? "property_unpublished" : "property_published", { property_id: demo.id, photos: demo.photos, staged: demo.staged });
+                  },
+                  live
+                    ? `${agencyMode ? "Ficha despublicada" : "Demo despublicada"}: el enlace dejó de estar disponible.`
+                    : `${agencyMode ? "Ficha publicada" : "Demo publicada"}. Ya podés compartir el enlace.`,
+                  "publicacion",
+                )
+              }
+            >
+              {live ? "Despublicar" : agencyMode ? "Publicar ficha" : "Publicar demo"}
+            </button>
+          </div>
+          )}
+        </div>
+      </header>
+      {message && (
+        <p className={message.tone === "error" ? "inline-error" : "inline-notice"} role={message.tone === "error" ? "alert" : "status"}>
+          {message.text}
+          <button type="button" className="icon-button ed-dismiss" aria-label="Cerrar mensaje" onClick={() => setMessage(null)}>
+            <X size={14} />
+          </button>
+        </p>
+      )}
+
+      {welcome && (
+        <section className="ed-welcome" aria-labelledby="ed-welcome-title">
+          <span className="ed-welcome-icon" aria-hidden="true">
+            <ImageIcon size={20} />
+          </span>
+          <div>
+            <h2 id="ed-welcome-title">Empezá con una foto</h2>
+            <p>Elegí una versión, comparala con el original y descargala. Descargar no usa créditos.</p>
+          </div>
+          <button type="button" className="icon-button" aria-label="Cerrar la guía" onClick={() => setWelcome(false)}>
+            <X size={16} />
+          </button>
+        </section>
+      )}
+
+      <Fold id="fotos" title="Fotos y espacios" summary={photosSummary} open={open.has("fotos")} onToggle={() => toggle("fotos")}>
+        {payer && (
+          <p className="pw-note" role="note">
+            {payer}
+            {blocked ? " Podés ver, comparar, descargar y organizar todo lo creado." : ""}
+          </p>
+        )}
+        {uploads.length > 0 && (
+          <ul className="dm-uploads" aria-live="polite">
+            {uploads.map((u, i) => (
+              <li key={`${u.name}-${i}`} className={`is-${u.state}`}>
+                {u.state === "uploading" && <Loader2 size={15} className="spin" />}
+                {u.state === "done" && <Check size={15} />}
+                {u.state === "error" && <X size={15} />}
+                <span>{u.name}</span>
+                {u.error && <em>{u.error}</em>}
+              </li>
+            ))}
+          </ul>
+        )}
+        <PhotoWorkspace
+          detail={detail}
+          base={base}
+          propertyType={type}
+          demoStyles={demoStyles}
+          mainStyle={main}
+          blocked={blocked}
+          payerNote={payer}
+          staging={staging}
+          included={included}
+          setIncluded={setIncluded}
+          downloading={downloading}
+          busy={busy}
+          fileName={(p, g) => versionFileName(demo.title, spaceName(p), styleName(g.style), versionNumber(p, g.id))}
+          originalName={(p) => versionFileName(demo.title, spaceName(p), "original")}
+          actions={workspaceActions}
+        />
+      </Fold>
+
+      {agencyMode && welcome && (
+        <section className="ed-next-property" aria-labelledby="ed-next-title">
+          <span className="ed-welcome-icon" aria-hidden="true">
+            <Home size={20} />
+          </span>
+          <div>
+            <h2 id="ed-next-title">¿Querés probar con otra propiedad?</h2>
+            <p>Pegá una publicación y traé sus datos y fotos.</p>
+          </div>
+          <Link href="/panel" className="button button-outline" onClick={() => track("invited_next_property_clicked", { property_id: demo.id })}>
+            <Plus size={16} aria-hidden="true" /> Agregar otra propiedad
+          </Link>
+        </section>
+      )}
+
+      <Fold
+        id="datos"
+        title="Datos de la propiedad"
+        summary={absent.length ? `Falta: ${absent.join(", ")}` : "Completos"}
+        open={open.has("datos")}
+        onToggle={() => toggle("datos")}
+        dirty={formsDirty ? formsDirty.property || formsDirty.title || dirtyParts.has("datos") : false}
+      >
+        {dataBody}
+      </Fold>
+
+      <Fold
+        id="mapa"
+        title="Ubicación y mapa"
+        summary={MAP_SUMMARY[detail.settings.map.precision]}
+        open={open.has("mapa")}
+        onToggle={() => toggle("mapa")}
+        dirty={dirtyParts.has("mapa")}
+      >
+        {mapaBody}
+      </Fold>
+
+      <Fold
+        id="condiciones"
+        title="Características y condiciones"
+        summary={`${detail.settings.facts.length} datos con íconos · ${detail.settings.amenities.length} grupos de características`}
+        open={open.has("condiciones")}
+        onToggle={() => toggle("condiciones")}
+        dirty={dirtyParts.has("condiciones")}
+      >
+        {condBody}
+      </Fold>
+
+      <Fold
+        id="marca"
+        title="Marca y contacto"
+        summary={
+          detail.settings.agent?.name
+            ? `Agente: ${detail.settings.agent.name}`
+            : detail.branding.contactKind && detail.branding.contactValue
+              ? "Contacto de la inmobiliaria"
+              : "Sin contacto para consultas"
+        }
+        open={open.has("marca")}
+        onToggle={() => toggle("marca")}
+        dirty={dirtyParts.has("contacto") || (formsDirty ? formsDirty.agency || formsDirty.brand : false)}
+      >
+        {marcaBody}
+      </Fold>
+
+      <Fold
+        id="publicacion"
+        title="Publicación y compartir"
+        summary={`${live ? "Publicada" : "Borrador"}${detail.warnings.length ? ` · ${detail.warnings.length} ${detail.warnings.length === 1 ? "aviso" : "avisos"}` : ""}`}
+        open={open.has("publicacion")}
+        onToggle={() => toggle("publicacion")}
+        dirty={dirtyParts.has("compartir")}
+      >
+        {pubBody}
       </Fold>
 
       {reviewModal}

@@ -8,6 +8,7 @@ import { canEdit, inScopeOf } from "@/lib/agency/video-access";
 import { demoRow, previewDemo, settingsOf } from "@/lib/demos/server";
 import type { VideoPlacement } from "@/lib/demos/branding";
 import { isUuid } from "@/lib/demos/shared";
+import { safeReturn } from "@/lib/agency/shared";
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Video", robots: { index: false, follow: false } };
 
@@ -21,14 +22,14 @@ type Props = { searchParams: Promise<Record<string, string | string[] | undefine
 export default async function Page({ searchParams }: Props) {
   if (!videoEnabled()) notFound();
   const { membership } = await requirePanelPage("/panel/video");
-  const { propiedad } = await searchParams;
+  const { propiedad, volver } = await searchParams;
   const id = typeof propiedad === "string" && isUuid(propiedad) ? propiedad : null;
   let demo = null;
   let placement: VideoPlacement = "first";
   if (id) {
     const row = await demoRow(id).catch(() => null);
     if (!row || row.agency_id !== membership.agency.id || !inScopeOf(membership, row.property_id)) notFound();
-    demo = await previewDemo(id).catch(() => null);
+    demo = await previewDemo(id, { raw: true }).catch(() => null);
     if (!demo) notFound();
     placement = (await settingsOf(id).catch(() => null))?.settings.videoPlacement ?? "first";
   }
@@ -36,7 +37,13 @@ export default async function Page({ searchParams }: Props) {
     <>
       <PanelNav section="video" agencyName={membership.agency.name} role={membership.role} />
       <div className="account-page container ap-page">
-        <VideoStudio demoId={id} demo={demo} canEdit={canEdit(membership)} placement={placement} />
+        <VideoStudio
+          demoId={id}
+          demo={demo}
+          canEdit={canEdit(membership)}
+          placement={placement}
+          backTo={typeof volver === "string" && id ? safeReturn(volver, "") || null : null}
+        />
       </div>
     </>
   );

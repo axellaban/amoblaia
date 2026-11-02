@@ -9,11 +9,15 @@ import {
   CONTACT_KINDS,
   DEFAULT_SETTINGS,
   FACT_ICONS,
+  HIDEABLE_FIELDS,
   TITLE_FONTS,
+  VIDEO_PLACEMENTS,
   color,
   readSettings,
   whatsappNumber,
   type FactIcon,
+  type HideableField,
+  type VideoPlacement,
   type AgencyBranding,
   type ContactKind,
   type DemoSettings,
@@ -213,6 +217,21 @@ export function settingsInput(raw: unknown, current: DemoSettings): DemoSettings
         throw new HttpError(400, "La foto del agente tiene que ser un enlace https (la de su publicación).");
       out.agent = { ...a, photoUrl: cleanText(a.photoUrl, 500) };
     }
+  }
+  if ("hidden" in v) {
+    if (!Array.isArray(v.hidden) || v.hidden.some((k) => !HIDEABLE_FIELDS.includes(k as HideableField)))
+      throw new HttpError(400, "Campo a ocultar inválido.");
+    out.hidden = v.hidden;
+  }
+  for (const key of ["showData", "showStyles", "showContact"] as const)
+    if (key in v) {
+      if (typeof v[key] !== "boolean") throw new HttpError(400, "Valor inválido.");
+      out[key] = v[key];
+    }
+  // The same choice as Panel > Video («En la ficha»): first, second, below, or hidden.
+  if ("videoPlacement" in v) {
+    if (!VIDEO_PLACEMENTS.includes(v.videoPlacement as VideoPlacement)) throw new HttpError(400, "Ubicación del video inválida.");
+    out.videoPlacement = v.videoPlacement;
   }
   if ("reviewedAt" in v) out.reviewedAt = v.reviewedAt === null ? null : new Date().toISOString();
   return readSettings(out);

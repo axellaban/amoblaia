@@ -21,6 +21,7 @@ import { activityOf } from "./activity";
 import { fetchPublic } from "./listing";
 import type { ImportedDemo } from "./import";
 import { OG_LABEL_ORIGINAL, OG_LABEL_STAGED } from "./og-labels";
+import { applyVisibility } from "./visibility";
 import {
   TOKEN_PATTERN,
   coverVersion,
@@ -667,7 +668,7 @@ export function reviewWarnings(input: {
 }
 
 /** Builds the minimal public payload. Only visible photos; a staged version only when it can be delivered. */
-async function publicPayload(demo: DemoRow, logoUrl: (v: string) => string): Promise<PublicDemo> {
+async function publicPayload(demo: DemoRow, logoUrl: (v: string) => string, raw = false): Promise<PublicDemo> {
   const db = adminClient();
   const [agency, prospect, property, photos, branding, { settings }, video] = await Promise.all([
     db.from("agencies").select("name,website").eq("id", demo.agency_id).single(),
@@ -722,7 +723,8 @@ async function publicPayload(demo: DemoRow, logoUrl: (v: string) => string): Pro
   const opening = settings.openStyle ?? main;
   const openStyle = settings.openMode === "styled" && list.some((p) => p.versions.some((v) => v.style === opening)) ? opening : null;
   const version = logoVersion(branding);
-  return {
+  // The agency's switches are applied here: a hidden value never reaches the page (it stays saved).
+  const page: PublicDemo = {
     id: demo.id,
     agencyId: demo.agency_id,
     agencyName: ag.name,
@@ -752,8 +754,10 @@ async function publicPayload(demo: DemoRow, logoUrl: (v: string) => string): Pro
     banner: settings.banner,
     share: { title: settings.shareTitle, description: settings.shareDescription },
     prospect,
+    styleSelector: settings.showStyles,
     video: video && settings.videoPlacement !== "hidden" ? { ...video, placement: settings.videoPlacement } : null,
   };
+  return raw ? page : applyVisibility(page, settings);
 }
 
 /**
@@ -887,10 +891,14 @@ export async function publishedDemo(token: string) {
   ) as DemoRow | null;
   return demo ? publicPayload(demo, (v) => `/demo/${token}/logo?v=${v}`) : null;
 }
-/** The same payload for an admin preview, whatever the state. */
-export async function previewDemo(id: string) {
+/**
+ * The same payload for an admin preview, whatever the state. raw: every saved
+ * field, ignoring «Mostrar en demostración» (Video Studio works with the
+ * property's real data, as before those switches).
+ */
+export async function previewDemo(id: string, opts: { raw?: boolean } = {}) {
   const demo = await demoRow(id);
-  return publicPayload(demo, (v) => `/api/admin/demos/${demo.id}/logo?v=${v}`);
+  return publicPayload(demo, (v) => `/api/admin/demos/${demo.id}/logo?v=${v}`, opts.raw);
 }
 
 /** Storage path of a photo: the original, or the version it shows in a style. */

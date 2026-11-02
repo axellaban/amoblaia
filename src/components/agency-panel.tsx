@@ -163,7 +163,7 @@ function HomeCards({ creator, existingCount }: { creator: boolean; existingCount
     features: [typeof Sparkles, string][];
   }[] = [
     {
-      id: "ambientar",
+      id: "demo",
       title: "Crear demostración interactiva",
       text: "Ambientá con IA tus fotos y creá una experiencia para compartir con tus clientes.",
       icon: Layers,
@@ -171,7 +171,7 @@ function HomeCards({ creator, existingCount }: { creator: boolean; existingCount
       features: [
         [ImageIcon, "Antes / después"],
         [Layers, "Distintos estilos"],
-        [Share2, "Enlace para compartir"],
+        [FileText, "Ficha interactiva"],
       ],
     },
     {
@@ -242,7 +242,7 @@ function HomeCards({ creator, existingCount }: { creator: boolean; existingCount
               className="button button-primary ap-tool-go"
               aria-haspopup="dialog"
               aria-label={`Comenzar: ${title}`}
-              {...cta(`panel_home_${id}`, "panel_home_cards", id === "video" ? "video_section" : "image_studio")}
+              {...cta(`panel_home_${id}`, "panel_home_cards", id === "video" ? "video_section" : id === "demo" ? "property_editor" : "image_studio")}
               onClick={() => setOpen(id)}
             >
               Comenzar <ArrowRight size={17} aria-hidden="true" />

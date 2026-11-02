@@ -80,12 +80,15 @@ export function VideoStudio({
   demo,
   canEdit,
   placement = "first",
+  backTo = null,
 }: {
   demoId: string | null;
   demo: PublicDemo | null;
   canEdit: boolean;
   /** Where this property's ficha shows its video. */
   placement?: VideoPlacement;
+  /** Opened from the demo's editor («Generar video»): the way back to it, with its tab. */
+  backTo?: string | null;
 }) {
   useEffect(() => {
     track("video_section_viewed", { has_property: Boolean(demo), device_type: deviceType() });
@@ -101,7 +104,7 @@ export function VideoStudio({
       </div>
     );
   }
-  return <Studio demoId={demoId} demo={demo} canEdit={canEdit} placement={placement} />;
+  return <Studio demoId={demoId} demo={demo} canEdit={canEdit} placement={placement} backTo={backTo} />;
 }
 
 /** "En la ficha": where the newest finished video shows, for buyers and in the demo. Saved per property. */
@@ -166,7 +169,19 @@ function PlacementPicker({ demoId, initial, canEdit, hasVideo }: { demoId: strin
   );
 }
 
-function Studio({ demoId, demo, canEdit, placement }: { demoId: string; demo: PublicDemo; canEdit: boolean; placement: VideoPlacement }) {
+function Studio({
+  demoId,
+  demo,
+  canEdit,
+  placement,
+  backTo,
+}: {
+  demoId: string;
+  demo: PublicDemo;
+  canEdit: boolean;
+  placement: VideoPlacement;
+  backTo: string | null;
+}) {
   const [useStaged, setUseStaged] = useState(true);
   const all: Choice[] = useMemo(
     () =>
@@ -301,9 +316,15 @@ function Studio({ demoId, demo, canEdit, placement }: { demoId: string; demo: Pu
   return (
     <div className="vs">
       <p>
-        <Link href="/panel/video" className="text-link">
-          <ArrowLeft size={15} aria-hidden="true" /> Elegir otra propiedad
-        </Link>
+        {backTo ? (
+          <Link href={backTo} className="text-link">
+            <ArrowLeft size={15} aria-hidden="true" /> Volver a la demostración
+          </Link>
+        ) : (
+          <Link href="/panel/video" className="text-link">
+            <ArrowLeft size={15} aria-hidden="true" /> Elegir otra propiedad
+          </Link>
+        )}
       </p>
       <header className="vs-head">
         <h1>Video de {demo.title}</h1>
