@@ -19056,3 +19056,79 @@ a.dv2-style-generate:hover {
     display: none;
   }
 }
+
+/*
+ * Phones: the styles right under the big photo, before the thumbnails, so the
+ * AI versions are in view without scrolling. The gallery's two columns melt
+ * into one list (display: contents) and are ordered here; desktop is unchanged.
+ */
+.dv2-styles-hint {
+  display: none;
+}
+@media (max-width: 900px) {
+  .dv2-gallery.has-panel {
+    gap: 12px;
+  }
+  .dv2-gallery > .dv2-media,
+  .dv2-gallery > .dv2-aside {
+    display: contents;
+  }
+  .dv2-media > *,
+  .dv2-aside > * {
+    order: 10;
+  }
+  .dv2-media > .dv2-stage {
+    order: 1;
+  }
+  .dv2-aside > .dv2-styles,
+  .dv2-aside > .dv2-aside-tabs {
+    order: 2;
+  }
+  .dv2-aside > .dv2-aside-group {
+    order: 3;
+  }
+  .dv2-media > .dv2-thumbs {
+    order: 4;
+  }
+  .dv2-media > .dv2-video-card {
+    order: 5;
+  }
+  .dv2-aside > .dv2-aside-actions {
+    order: 6;
+  }
+  .dv2-styles {
+    gap: 8px;
+    padding: 10px 12px;
+  }
+  .dv2-styles-head h2 {
+    font-size: 17px;
+  }
+  .dv2-styles-all {
+    min-height: 36px;
+    font-size: 14px;
+  }
+  .dv2-styles-hint {
+    display: block;
+    margin: -4px 0 0;
+    overflow: hidden;
+    color: var(--muted);
+    font-size: 13px;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  /* The chosen style reads at a glance. */
+  .dv2-style-card.is-on {
+    border-width: 2px;
+  }
+}
+@media (max-width: 900px) {
+  /* The demo's photo as tall as the photo itself (no empty bands), so its styles show without scrolling. */
+  .dv2-page:has(.dv2-owner) .dv2-stage {
+    height: min(76vw, 52vh);
+  }
+}
+@media (max-width: 900px) {
+  .dv2-styles .dv2-style-grid {
+    align-items: start;
+  }
+}

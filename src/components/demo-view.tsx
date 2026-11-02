@@ -1151,6 +1151,8 @@ function Gallery({
           </button>
         )}
       </div>
+      {/* Phones: one short line inviting to play with the styles, right under the photo. */}
+      {photo.versions.length > 0 && <p className="dv2-styles-hint">Tocá un estilo y mové el antes/después</p>}
       <ul className="dv2-style-grid">
         {cards.map((r) => {
           const on = Boolean(r.version) && state.style === r.style && !videoOn;
