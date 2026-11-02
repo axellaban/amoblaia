@@ -4,6 +4,14 @@ Se detiene el trabajo a pedido del usuario para conservar créditos. Los cambios
 
 Producción: https://amoblaia.vercel.app/
 
+## UX/UI v3 — 2 de noviembre de 2026 (rama `claude/zealous-feynman-r8b8ba`)
+
+- Inicio: encabezado compacto y tres tarjetas (Ambientar con IA, Editar imágenes, Crear video) con el mismo diseño. Cada una abre «¿Con qué imágenes querés empezar?» (`src/components/start-picker.tsx`): propiedad existente (con buscador; la preparada en la demo va primero), importar URL (el importador de siempre, que al terminar sigue a la herramienta) o subir fotos sin ficha (los mismos grupos de fotos del estudio). Sin propiedades, la lista no se ofrece.
+- Destinos: Ambientar → `/panel/imagenes?fotos=<id>`; Editar → lo mismo con `&modo=editar`, que abre directo el modo Editar; Video → `/panel/video?propiedad=<id>`.
+- Propiedades (inicio y Mis propiedades): dos o tres acciones según el estado real (Ambientar / Editar imágenes / Crear video / Compartir ficha / Vista para comprador / Revisar y publicar); el resto en «Más». Abren esa propiedad en esa herramienta, sin el selector.
+- Estudio y ficha: el panel derecho tiene dos modos, «Ambientar con IA» y «Editar con IA» (las herramientas existentes, sin duplicarlas); cuatro estilos y «Ver más estilos». La ficha muestra arriba a la derecha «Compartir» (si está publicada) y «Vista para comprador».
+- Pendiente: pestañas de la ficha (§3.2; hoy siguen las secciones plegables), «Ver/Descargar video» en el listado (el resumen no trae si hay video), descarga masiva de imágenes (hoy «Descargar imágenes» abre el estudio) y el resto de la especificación desde §4, que llegó cortada. Verificado con tests, lint, typecheck y capturas con las APIs interceptadas; falta recorrerlo con una cuenta real en el preview.
+
 ## Edición administrativa y editor por foto — 27 de octubre de 2026 (rama `claude/admiring-faraday-p44fxt`)
 
 - Guía, permisos, verificación e integración con Prospección: [EDICION_ADMINISTRATIVA.md](EDICION_ADMINISTRATIVA.md).
