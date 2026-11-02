@@ -150,15 +150,12 @@ export function PhotoWorkspace({
   variant = "studio",
   gallery = "spaces",
   onUseInDemo,
-  editHref,
   belowGrid = null,
 }: {
   /** "flat": Estudio de imágenes, every photo in one gallery (no spaces on screen; they stay saved). "spaces": by space. */
   gallery?: "spaces" | "flat";
   /** Estudio de imágenes: «Usar en una demostración» of what is viewed (photo and version). */
   onUseInDemo?: (photoId: string, versionId: string | null) => void;
-  /** The demo's «Editar imagen»: the studio's link for this photo and version; without it, it edits here. */
-  editHref?: (photoId: string, versionId: string | null) => string;
   /** "demo": the agency's «Crear demostración interactiva» layout; "studio": Estudio de imágenes and the team's editor. */
   variant?: "studio" | "demo";
   /** The demo's «Generar video», right under the photos. */
@@ -205,10 +202,9 @@ export function PhotoWorkspace({
   // ?modo=editar (Inicio → «Editar imágenes») opens the editor, not staging. The studio opens on
   // «Editar con IA» unless it comes from a staging action (?modo=ambientar, or a style to create).
   const [tab, setTab] = useState<"create" | "edit">(() => {
-    if (typeof window === "undefined") return flat ? "edit" : "create";
+    if (typeof window === "undefined") return "create";
     const q = new URLSearchParams(window.location.search);
     if (q.get("modo") === "editar") return "edit";
-    if (flat) return q.get("modo") === "ambientar" || q.get("estilo") ? "create" : "edit";
     return "create";
   });
   // The retouch of each photo, previewed live with CSS filters until it is saved as a version.
@@ -714,34 +710,7 @@ export function PhotoWorkspace({
         )}
 
         <aside id={`${uid}-side`} className={`pw-side ${demoUi ? "dx-side" : ""}`} aria-label={demoUi ? (tab === "create" ? "Ambientar con IA" : "Editar imagen") : "Ambientar y editar"}>
-          {demoUi ? (
-            <div className="dx-side-head">
-              <h3 className="dx-col-title" id={`${uid}-what`}>
-                {tab === "create" ? "Ambientar con IA" : "Editar imagen"}
-              </h3>
-              {tab === "create" && editHref ? (
-                // «Editar imagen» opens this photo and version in Estudio de imágenes, which comes back here.
-                <a className="button button-small button-outline dx-edit-image" href={editHref(photo.id, viewGen?.id ?? viewRetouch?.id ?? null)}>
-                  <Pencil size={14} aria-hidden="true" /> Editar imagen
-                </a>
-              ) : tab === "create" ? (
-                <button type="button" className="button button-small button-outline dx-edit-image" onClick={() => setTab("edit")}>
-                  <Pencil size={14} aria-hidden="true" /> Editar imagen
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="text-link"
-                  onClick={() => {
-                    setTab("create");
-                    pickTool(null);
-                  }}
-                >
-                  ← Volver a Ambientar con IA
-                </button>
-              )}
-            </div>
-          ) : flat ? (
+          {demoUi || flat ? (
             <div className="pw-modes" role="group" aria-label="Qué querés hacer" id={`${uid}-what`}>
               {(
                 [
@@ -847,7 +816,8 @@ export function PhotoWorkspace({
               />
             ) : (
               <EditPanel
-                compact={flat}
+                compact={flat || demoUi}
+                hideSpace={flat}
                 photo={photo}
                 viewing={label}
                 adjust={adjust}
@@ -1407,6 +1377,7 @@ function SpaceMenu({ space, spaces, count, actions }: { space: PropertySpace; sp
 /** "Editar": the retouch of the photo the large view shows, like the studio's editor: light and colour, AI tools, then the photo's settings. */
 function EditPanel({
   compact = false,
+  hideSpace = false,
   photo,
   viewing,
   adjust,
@@ -1422,6 +1393,7 @@ function EditPanel({
 }: {
   /** Estudio de imágenes: the controls first, the approved names («Guardar versión»), no spaces. */
   compact?: boolean;
+  hideSpace?: boolean;
   photo: EditorPhoto;
   /** What the large photo shows, in words. */
   viewing: string;
@@ -1467,7 +1439,7 @@ function EditPanel({
       </div>
       <p className="pw-hint">Guardar crea una versión nueva, sin créditos. El original no se toca.</p>
 
-      <PhotoSettings photo={photo} spaces={spaces} propertyType={propertyType} index={index} total={total} actions={actions} hideSpace={compact} />
+      <PhotoSettings photo={photo} spaces={spaces} propertyType={propertyType} index={index} total={total} actions={actions} hideSpace={hideSpace} />
     </div>
   );
 }
