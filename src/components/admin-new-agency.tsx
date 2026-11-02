@@ -4,13 +4,22 @@
 // creating, never merged. Creating it does not create the client's account,
 // does not invite anyone and gives no credits: those stay separate actions.
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import { Loader2, Plus } from "lucide-react";
 import { ApiError, api } from "./admin-demos";
 import { REASON_LABEL, type DuplicateMatch } from "@/lib/agency/duplicates";
 
+/**
+ * Right after the agency is created: its first demo, in the panel's own
+ * «Crear demostración interactiva» flow (inside the team's edit context).
+ */
+export const firstDemoPath = (agencyId: string) =>
+  `/admin/inmobiliarias/${agencyId}/propiedades/nueva?${new URLSearchParams({ creada: "1", volver: `/admin/inmobiliarias/${agencyId}/editar` })}`;
+
 export function NewAgencyForm() {
   const uid = useId();
+  const router = useRouter();
   const [form, setForm] = useState({ name: "", contactName: "", contactEmail: "", website: "" });
   const [hints, setHints] = useState<DuplicateMatch[]>([]);
   const [blocked, setBlocked] = useState<DuplicateMatch[] | null>(null);
@@ -58,6 +67,8 @@ export function NewAgencyForm() {
         body: JSON.stringify({ key: key.current, ...form, confirmDuplicates }),
       });
       setCreated(r);
+      // Straight on to its first demo: the agency exists, the panel's flow does the rest.
+      router.push(firstDemoPath(r.id));
     } catch (e) {
       if (e instanceof ApiError && e.status === 409 && Array.isArray(e.body.duplicates)) setBlocked(e.body.duplicates as DuplicateMatch[]);
       else {
@@ -82,8 +93,8 @@ export function NewAgencyForm() {
             No se creó ninguna cuenta ni se envió ninguna invitación, y no tiene créditos. Podés hacerlo cuando quieras desde su ficha.
           </p>
           <div className="na-next">
-            <Link href={`/admin/inmobiliarias/${created.id}/propiedades/nueva?${new URLSearchParams({ volver: `/admin/inmobiliarias/${created.id}/editar` })}`} className="button button-primary">
-              <Plus size={16} /> Agregar primera propiedad
+            <Link href={firstDemoPath(created.id)} className="button button-primary">
+              <Plus size={16} /> Crear demostración interactiva
             </Link>
             <Link href={`/admin/inmobiliarias?abierta=${created.id}`} className="button button-outline">
               Continuar más tarde
