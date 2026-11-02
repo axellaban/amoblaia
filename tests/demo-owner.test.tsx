@@ -44,6 +44,7 @@ const demo: PublicDemo = {
   prospect: true,
 };
 const INVITE = "/panel/empezar?codigo=codigoSecretoDeVeinteMasCaracteres&demo=tok";
+const VISIT = "/panel/visita?codigo=codigoSecretoDeVeinteMasCaracteres";
 
 
 describe("the agency's own demo, under its panel header", () => {
@@ -53,6 +54,7 @@ describe("the agency's own demo, under its panel header", () => {
     buyerHref: "/demo/tok/presentacion/codigo/ficha",
     demoHref: "/demo/tok/presentacion/codigo",
     pricesHref: "/demo/tok/presentacion/codigo/precios",
+    panelHref: VISIT,
   };
   const html = renderToStaticMarkup(<DemoView demo={demo} source={{ kind: "public", token: "tok" }} presentation owner={owner} />);
   const hrefs = [...html.matchAll(/href="([^"]+)"/g)].map((m) => m[1].replace(/&amp;/g, "&"));
@@ -70,10 +72,11 @@ describe("the agency's own demo, under its panel header", () => {
     expect(html).toContain("Después");
   });
 
-  it("leads every saving action to the private invitation, never into the real panel", () => {
+  it("leads every saving action to the private invitation, and «Mi panel» to its visit (no account needed yet)", () => {
     const panel = hrefs.filter((h) => h.startsWith("/panel"));
     expect(panel.length).toBeGreaterThanOrEqual(1);
-    expect(panel.every((h) => h === INVITE)).toBe(true);
+    expect(panel.every((h) => h === INVITE || h === VISIT)).toBe(true);
+    expect(panel).toContain(VISIT);
     // The only other ways out are the buyers' view and the plans, both inside the agency's environment.
     expect(hrefs.filter((h) => !h.startsWith("/panel")).every((h) => h === owner.buyerHref || h === owner.pricesHref || h.startsWith("#") || h.startsWith("/demo/tok/imagen/"))).toBe(true);
     expect(hrefs).not.toContain("/precios");
@@ -108,7 +111,7 @@ describe("the agency's own demo, under its panel header", () => {
 
 describe("«Ver como comprador» from the agency's demo", () => {
   const html = renderToStaticMarkup(
-    <DemoView demo={demo} source={{ kind: "public", token: "tok" }} presentation invite={{ href: INVITE, freeCredits: 3 }} backToDemo="/demo/tok/presentacion/codigo" />,
+    <DemoView demo={demo} source={{ kind: "public", token: "tok" }} presentation invite={{ href: INVITE, panelHref: VISIT, freeCredits: 3 }} backToDemo="/demo/tok/presentacion/codigo" />,
   );
   it("is the buyers' page: no tools, no sign-up, no banner; only the way back to the demo", () => {
     expect(html).toContain("Volver al modo demo");
@@ -125,6 +128,7 @@ describe("the agency's plans, from its link …/precios", () => {
     buyerHref: "/demo/tok/presentacion/codigo/ficha",
     demoHref: "/demo/tok/presentacion/codigo",
     pricesHref: "/demo/tok/presentacion/codigo/precios",
+    panelHref: VISIT,
   };
   const render = (path: string) => {
     pathname = path;

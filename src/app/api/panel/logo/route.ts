@@ -1,5 +1,5 @@
 import { failure, HttpError } from "@/lib/commerce/http";
-import { requireAgency } from "@/lib/agency/server";
+import { requireAgency, requireAgencyRead } from "@/lib/agency/server";
 import { brandingOf, logoFromBytes, logoOf, saveJson } from "@/lib/demos/server";
 export const runtime = "nodejs";
 
@@ -7,7 +7,7 @@ const MAX_UPLOAD = 2 * 1024 * 1024;
 
 export async function GET() {
   try {
-    const { agency } = await requireAgency();
+    const { agency } = await requireAgencyRead();
     const logo = await logoOf(agency.id);
     if (!logo) throw new HttpError(404, "Tu inmobiliaria todavía no tiene logo.");
     return new Response(new Uint8Array(logo.bytes), {

@@ -110,6 +110,8 @@ export type OwnerMode = {
   /** The invitation code: the agency's way into its demo's editing (the server checks it). */
   code: string;
   href: string;
+  /** Its own panel, opened on its home without creating the account first (Ingresar al panel). */
+  panelHref: string;
   freeCredits: number;
   buyerHref: string;
   /** The presentation itself and its plans: the two sections under the agency's bar, each with its own link. */
@@ -1563,14 +1565,14 @@ function PanelInvite({
       <p>Preparamos esta demostración para tu inmobiliaria. Entrá a tu panel para trabajar sus fotos y sumar otras propiedades.</p>
       <a
         className="dv2-invite-cta"
-        href={invite.href}
-        {...cta(`invite_panel_${place}`, `invite_${place}`, "signup_invitation")}
+        href={invite.panelHref}
+        {...cta(`invite_panel_${place}`, `invite_${place}`, "panel_visit")}
         onClick={() => log("demo_agency_cta_clicked", { origen: `demo_invitacion_${place}`, cta_id: `invite_panel_${place}`, cta_location: `invite_${place}` }, true)}
       >
-        Probar esta propiedad en mi panel
+        Ingresar a mi panel
       </a>
       <small>
-        <Lock size={14} aria-hidden="true" /> Conservás las fotos y ambientaciones que estás viendo.
+        <Lock size={14} aria-hidden="true" /> Sin crear cuenta todavía: la creás cuando quieras guardar, y conservás las fotos y ambientaciones que estás viendo.
       </small>
       {invite.freeCredits > 0 && (
         <small>
@@ -1644,6 +1646,14 @@ function OwnerHeader({
           >
             <Tag size={16} aria-hidden="true" /> Precios
           </a>
+          <a
+            href={owner.panelHref}
+            className="dv2-owner-prices"
+            {...cta("owner_nav_panel", "owner_bar", "panel_visit", "navigation")}
+            onClick={() => log("demo_agency_cta_clicked", { origen: "demo_encabezado_panel", cta_id: "owner_nav_panel", cta_intent: "panel_home" }, true)}
+          >
+            <House size={16} aria-hidden="true" /> Mi panel
+          </a>
           <a className="dv2-owner-save" {...go("guardar")}>
             Guardar mi panel
           </a>
@@ -1664,6 +1674,13 @@ function OwnerHeader({
                 <X size={22} aria-hidden="true" />
               </button>
             </div>
+            <a
+              href={owner.panelHref}
+              {...cta("owner_menu_panel", "owner_menu", "panel_visit", "navigation")}
+              onClick={() => log("demo_agency_cta_clicked", { origen: "demo_menu_panel", cta_id: "owner_menu_panel", cta_intent: "panel_home" }, true)}
+            >
+              <House size={18} aria-hidden="true" /> Ingresar a mi panel
+            </a>
             <a
               href={pricesOn ? owner.demoHref : "#propiedad"}
               className={pricesOn ? undefined : "is-on"}

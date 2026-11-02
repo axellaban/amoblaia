@@ -49,6 +49,17 @@ export function setEditContext(token: string | null) {
 }
 export const EDIT_EXPIRED_EVENT = "habita:edicion-vencida";
 
+/**
+ * The agency looking around its panel before creating its account (set by
+ * the visit's banner): a change it tries opens "Creá tu cuenta" instead of
+ * sending it to sign in.
+ */
+let visiting = false;
+export function setVisiting(on: boolean) {
+  visiting = on;
+}
+export const VISIT_ACCOUNT_EVENT = "habita:visita-cuenta";
+
 /** fetch for the admin API: JSON in and out, the server's message on errors. */
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const json = typeof init.body === "string";
@@ -61,6 +72,11 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     headers,
   });
   const payload = await r.json().catch(() => ({}));
+  // The agency's visit to its panel (no account yet): a change asks it to create the account, here.
+  if ((r.status === 401 && visiting) || (r.status === 403 && payload.code === "visita")) {
+    window.dispatchEvent(new Event(VISIT_ACCOUNT_EVENT));
+    throw new ApiError(payload.error || "Creá tu cuenta gratis para guardar cambios.", r.status, payload);
+  }
   if (r.status === 401) {
     window.location.assign(`/acceso?next=${encodeURIComponent(window.location.pathname)}`);
     throw new Error("Tu sesión venció. Volvé a ingresar.");
@@ -141,8 +157,31 @@ async function agencyPricesLink(demo: Pick<DemoSummary, "id" | "token" | "agency
   return claim.pricesUrl ?? publicLink(demo.token, true);
 }
 
-/** A text action that copies one of the demo's links (the agency's, its prices or the buyers'). */
-export function LinkCopy({ demo, which }: { demo: Pick<DemoSummary, "id" | "token" | "status" | "agencyClaimed">; which: "agency" | "prices" | "buyer" }) {
+/**
+ * "Ingresar al panel", the next step after the demo: the agency's own panel,
+ * opened on its home without creating its account first (it only reads; the
+ * account is asked for when it wants to change something). A fresh one-time
+ * code too; with its account, the panel itself (it signs in).
+ */
+async function agencyPanelLink(demo: Pick<DemoSummary, "id" | "token" | "agencyClaimed">) {
+  if (demo.agencyClaimed === true) return `${window.location.origin}/panel`;
+  const claim = await api<{ panelUrl?: string | null }>(`/api/admin/demos/${demo.id}/reclamo`, { method: "POST" });
+  if (!claim.panelUrl) throw new Error("No pudimos crear el enlace al panel.");
+  return claim.panelUrl;
+}
+
+/** The link of each "which": the agency's demo, its prices, its panel or the buyers' page. */
+const linkOf = (demo: Pick<DemoSummary, "id" | "token" | "agencyClaimed">, which: "agency" | "prices" | "panel" | "buyer") =>
+  which === "agency"
+    ? agencyLink(demo)
+    : which === "prices"
+      ? agencyPricesLink(demo)
+      : which === "panel"
+        ? agencyPanelLink(demo)
+        : Promise.resolve(publicLink(demo.token));
+
+/** A text action that copies one of the demo's links (the agency's, its prices, its panel or the buyers'). */
+export function LinkCopy({ demo, which }: { demo: Pick<DemoSummary, "id" | "token" | "status" | "agencyClaimed">; which: "agency" | "prices" | "panel" | "buyer" }) {
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -151,9 +190,7 @@ export function LinkCopy({ demo, which }: { demo: Pick<DemoSummary, "id" | "toke
     setBusy(true);
     setError("");
     try {
-      const ok = await copyLinkWhenReady(() =>
-        which === "agency" ? agencyLink(demo) : which === "prices" ? agencyPricesLink(demo) : Promise.resolve(publicLink(demo.token)),
-      );
+      const ok = await copyLinkWhenReady(() => linkOf(demo, which));
       if (ok) {
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
@@ -166,7 +203,14 @@ export function LinkCopy({ demo, which }: { demo: Pick<DemoSummary, "id" | "toke
   }
   return (
     <>
-      <button type="button" className="dm-text" disabled={!live || busy} title={live ? undefined : "Publicá la demo para compartirla"} onClick={copy}>
+      <button
+        type="button"
+        className="dm-text"
+        disabled={!live || busy}
+        title={live ? undefined : "Publicá la demo para compartirla"}
+        data-link={which}
+        onClick={copy}
+      >
         {copied ? "Copiado" : "Copiar link"}
       </button>
       {error && (
@@ -179,10 +223,18 @@ export function LinkCopy({ demo, which }: { demo: Pick<DemoSummary, "id" | "toke
 }
 
 /**
- * "Ver": the agency's view (the same link as Copiar link) or the buyers' page.
- * A draft has no public page yet, so the buyers' view opens the team's preview.
+ * "Ver": the agency's view (the same link as Copiar link), the buyers' page
+ * or the agency's panel. A draft has no public page yet, so the buyers' view
+ * opens the team's preview. The panel opens in the support view (read only,
+ * one hour, audited): the team sees it as the agency will, without using its code.
  */
-export function ViewLink({ demo, which }: { demo: Pick<DemoSummary, "id" | "token" | "status" | "agencyClaimed">; which: "agency" | "buyer" }) {
+export function ViewLink({
+  demo,
+  which,
+}: {
+  demo: Pick<DemoSummary, "id" | "token" | "status" | "agencyClaimed"> & { agencyId?: string };
+  which: "agency" | "panel" | "buyer";
+}) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   async function open() {
@@ -194,6 +246,8 @@ export function ViewLink({ demo, which }: { demo: Pick<DemoSummary, "id" | "toke
       const url =
         which === "agency"
           ? await agencyLink(demo)
+          : which === "panel"
+            ? await supportPanel(demo.agencyId)
           : demo.status === "published"
             ? publicLink(demo.token)
             : `${window.location.origin}/admin/demos/${demo.id}/vista-previa`;
@@ -210,7 +264,14 @@ export function ViewLink({ demo, which }: { demo: Pick<DemoSummary, "id" | "toke
   }
   return (
     <>
-      <button type="button" className="dm-text" disabled={busy} onClick={open}>
+      <button
+        type="button"
+        className="dm-text"
+        disabled={busy}
+        data-view={which}
+        title={which === "panel" ? "Abre su panel como lo ve la inmobiliaria: solo lectura, por una hora. Queda registrado." : undefined}
+        onClick={open}
+      >
         Ver
       </button>
       {error && (
@@ -220,6 +281,13 @@ export function ViewLink({ demo, which }: { demo: Pick<DemoSummary, "id" | "toke
       )}
     </>
   );
+}
+
+/** The agency's panel in the team's support view (read only): its address once the view is open. */
+async function supportPanel(agencyId: string | undefined) {
+  if (!agencyId) throw new Error("No encontramos la inmobiliaria.");
+  const { url } = await api<{ url: string }>(`/api/admin/inmobiliarias/${agencyId}/soporte`, { method: "POST", body: JSON.stringify({ mode: "view" }) });
+  return `${window.location.origin}${url}`;
 }
 
 /** WhatsApp with only the agency's link: no text of ours. Opens the agency's chat when its number is known. */
@@ -365,6 +433,14 @@ export function ShareCards({ demo }: { demo: Pick<DemoSummary, "id" | "token" | 
         shown={`${publicLink(demo.token, true)}/…/precios`}
         live={live}
         resolve={() => agencyPricesLink(demo)}
+        to={demo.agencyWhatsapp ?? null}
+      />
+      <ShareCard
+        title="Ingreso al panel"
+        hint="El próximo paso después de la demo: entra al inicio de su panel sin crear la cuenta; la crea cuando quiera guardar o ambientar."
+        shown={demo.agencyClaimed ? `${window.location.origin}/panel` : `${publicLink(demo.token, true)}/…/panel`}
+        live={live}
+        resolve={() => agencyPanelLink(demo)}
         to={demo.agencyWhatsapp ?? null}
       />
       <ShareCard
@@ -1068,6 +1144,10 @@ export function DemoList() {
               <span className="dm-sep">·</span>
               <span className="dm-who">Precios</span>
               <LinkCopy demo={d} which="prices" />
+              <span className="dm-sep">·</span>
+              <span className="dm-who">Panel</span>
+              <ViewLink demo={d} which="panel" />
+              <LinkCopy demo={d} which="panel" />
               {d.status === "published" && (
                 <>
                   <span className="dm-sep">·</span>

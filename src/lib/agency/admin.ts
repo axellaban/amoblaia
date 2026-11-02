@@ -6,7 +6,7 @@ import { adminClient } from "@/lib/supabase/server";
 import { agencyCredits } from "./panel";
 import { claimHash } from "./server";
 import { claimState, type AdminAgencyDetail, type AdminAgencyRow } from "./stage";
-import { presentationPath, pricesViewPath, SHORT_CODE_ALPHABET, SHORT_CODE_LENGTH, shortLinkPath } from "./demo-invite";
+import { panelViewPath, presentationPath, pricesViewPath, SHORT_CODE_ALPHABET, SHORT_CODE_LENGTH, shortLinkPath, visitPath } from "./demo-invite";
 import type { AgencyRole } from "./shared";
 
 const CLAIM_DAYS = 30;
@@ -222,18 +222,20 @@ export async function createClaim(agencyId: string, actorId: string, origin: str
   await rpc("amobla_account", { p_user: actorId, p_trial: false });
   await db.from("admin_audit").insert({ actor_id: actorId, action: "agency_claim_link", subject_id: agencyId, details: { demo: demo?.token ?? null } });
   const withDemo = demo ? `&demo=${encodeURIComponent(demo.token)}` : "";
-  const link = (view: "precios" | null) =>
+  const link = (view: "precios" | "panel" | null) =>
     !demo
       ? null
       : short
         ? `${origin}${shortLinkPath(demo.title, code, view)}`
-        : `${origin}${view ? pricesViewPath(demo.token, code) : presentationPath(demo.token, code)}`;
+        : `${origin}${view === "precios" ? pricesViewPath(demo.token, code) : view === "panel" ? panelViewPath(demo.token, code) : presentationPath(demo.token, code)}`;
   return {
     url: `${origin}/panel/empezar?codigo=${code}${withDemo}`,
     // The demo itself as the way in: it offers "Probar esta propiedad en mi panel" with this same code.
     presentationUrl: link(null),
     // The same demo opened on its plans, for when the agency asks about prices.
     pricesUrl: link("precios"),
+    // Its own panel, opened on its home without creating the account first (Ingresar al panel).
+    panelUrl: demo ? link("panel") : `${origin}${visitPath(code)}`,
     expiresAt,
   };
 }

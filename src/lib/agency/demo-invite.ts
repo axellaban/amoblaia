@@ -47,8 +47,8 @@ export function propertySlug(title: string | null | undefined) {
   return slug || (words[0]?.slice(0, 40) ?? "") || "propiedad";
 }
 
-/** The demo's short link: /p/<property>-<code>, and /precios or /ficha after it. */
-export const shortLinkPath = (title: string | null | undefined, code: string, view: "precios" | "ficha" | null = null) =>
+/** The demo's short link: /p/<property>-<code>, and /precios, /ficha or /panel after it. */
+export const shortLinkPath = (title: string | null | undefined, code: string, view: "precios" | "ficha" | "panel" | null = null) =>
   `/p/${propertySlug(title)}-${code}${view ? `/${view}` : ""}`;
 
 /** The code of a short link's segment, or null. The readable part is not checked: a renamed property keeps its link. */
@@ -57,8 +57,8 @@ export function shortLinkCode(segment: string) {
 }
 
 export type DemoInvite =
-  /** The private invitation to take this demo into the agency's own panel. */
-  | { href: string; freeCredits: number }
+  /** The private invitation to take this demo into the agency's own panel: its sign-up (href) and its visit (panelHref). */
+  | { href: string; panelHref: string; freeCredits: number }
   /** A code was sent but it can no longer be used (expired, used, revoked or another agency's). */
   | { unavailable: true }
   /** No code: the presentation keeps its general call to action. */
@@ -66,6 +66,16 @@ export type DemoInvite =
 
 export const invitationPath = (code: string, demoToken: string) =>
   `/panel/empezar?${new URLSearchParams({ [INVITE_PARAM]: code, demo: demoToken })}`;
+
+/**
+ * "Ingresar al panel": the agency's own panel, opened on its home before it
+ * creates its account (read only; the account is asked for when it wants to
+ * change something). The route keeps the code in a cookie and leaves it out of the panel's URLs.
+ */
+export const visitPath = (code: string) => `/panel/visita?${new URLSearchParams({ [INVITE_PARAM]: code })}`;
+
+/** The panel from the agency's presentation link (the short one adds /panel the same way). */
+export const panelViewPath = (demoToken: string, code: string) => `${presentationPath(demoToken, code)}/panel`;
 
 /** The agency's presentation: a path only, with the invitation inside it when there is one. */
 export const presentationPath = (demoToken: string, code: string | null = null) =>
@@ -84,7 +94,7 @@ export function inviteFor(
 ): DemoInvite {
   if (!code) return null;
   if (!invitation || invitation.agencyId !== demo.agencyId) return { unavailable: true };
-  return { href: invitationPath(code, demo.token), freeCredits: invitation.freeCredits };
+  return { href: invitationPath(code, demo.token), panelHref: visitPath(code), freeCredits: invitation.freeCredits };
 }
 
 /**

@@ -1,6 +1,6 @@
 import { after } from "next/server";
 import { failure, HttpError, rpc } from "@/lib/commerce/http";
-import { requireDemoAccess, stagingRule } from "@/lib/agency/server";
+import { requireDemoAccess, requireDemoRead, stagingRule } from "@/lib/agency/server";
 import { auditAgencyEdit } from "@/lib/agency/edit-context";
 import { onFreeTier } from "@/lib/commerce/jobs";
 import { runJob } from "@/lib/commerce/jobs";
@@ -117,7 +117,7 @@ export async function GET(_request: Request, { params }: Params) {
   const deadline = Date.now() + maxDuration * 1000 - 5000;
   try {
     const { id, photoId } = await params;
-    const { demo } = await requireDemoAccess(undefined, id);
+    const { demo } = await requireDemoRead(id);
     const photo = await photoOf(demo, photoId);
     const db = adminClient();
     const { data: jobs, error } = await db

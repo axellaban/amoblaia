@@ -18713,3 +18713,29 @@ button.ap-bigcard {
     grid-column: 1 / -1;
   }
 }
+
+/* The agency's visit to its own panel before creating its account: an invitation, not a warning. */
+.support-banner.visit-banner {
+  background: #1f4d3a;
+}
+.support-banner.visit-banner .button {
+  color: #1f4d3a;
+  text-decoration: none;
+}
+.visit-ask {
+  display: grid;
+  gap: 12px;
+}
+.visit-ask p {
+  margin: 0;
+}
+.visit-ask .dm-help {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.visit-ask-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

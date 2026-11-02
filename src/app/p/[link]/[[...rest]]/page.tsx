@@ -1,6 +1,6 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { cache } from "react";
-import { shortLinkCode } from "@/lib/agency/demo-invite";
+import { shortLinkCode, visitPath } from "@/lib/agency/demo-invite";
 import { shortLinkDemoToken } from "@/lib/agency/invitation";
 import { cloudConfigured } from "@/lib/supabase/config";
 import { PublicDemo, publicDemoMetadata } from "../../../demo/[token]/public-demo";
@@ -8,6 +8,7 @@ import { PublicDemo, publicDemoMetadata } from "../../../demo/[token]/public-dem
 // The agency's short link: /p/<propiedad>-<codigo>, the same presentation as
 // /demo/<token>/presentacion/<codigo>; /precios or /ficha after it. The
 // property's name is only for reading: the code alone finds the demo.
+// /panel after it opens the agency's own panel (Ingresar al panel).
 export const dynamic = "force-dynamic";
 
 type Props = {
@@ -26,9 +27,10 @@ const tokenOf = cache(async (code: string) => {
 
 /** The view, from the path after the link. */
 function viewOf(rest: string[] = []) {
-  if (rest.length === 0) return { ficha: false, prices: false };
-  if (rest.length === 1 && rest[0] === "ficha") return { ficha: true, prices: false };
-  if (rest.length === 1 && rest[0] === "precios") return { ficha: false, prices: true };
+  if (rest.length === 0) return { ficha: false, prices: false, panel: false };
+  if (rest.length === 1 && rest[0] === "ficha") return { ficha: true, prices: false, panel: false };
+  if (rest.length === 1 && rest[0] === "precios") return { ficha: false, prices: true, panel: false };
+  if (rest.length === 1 && rest[0] === "panel") return { ficha: false, prices: false, panel: true };
   return null;
 }
 
@@ -44,6 +46,7 @@ export default async function ShortLinkPage({ params }: Props) {
   const code = shortLinkCode(link);
   const view = viewOf(rest);
   if (!code || !view) notFound();
+  if (view.panel) redirect(visitPath(code));
   const token = await tokenOf(code);
   if (!token) notFound();
   return <PublicDemo token={token} presentation code={code} ficha={view.ficha} prices={view.prices} shortPath={`/p/${link}`} />;

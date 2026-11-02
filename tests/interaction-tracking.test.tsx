@@ -140,6 +140,7 @@ describe("the demo's tracked actions", () => {
       buyerHref: "/demo/tok/presentacion/secreto/ficha",
       demoHref: "/demo/tok/presentacion/secreto",
       pricesHref: "/demo/tok/presentacion/secreto/precios",
+      panelHref: "/panel/visita?codigo=secreto",
     };
     const html = renderToStaticMarkup(<DemoView demo={demo} source={{ kind: "public", token: "tok" }} presentation owner={owner} />);
     expect(ids(html)).toEqual(

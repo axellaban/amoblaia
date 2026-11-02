@@ -10,6 +10,8 @@ import {
   redactInvite,
   shortLinkCode,
   shortLinkPath,
+  panelViewPath,
+  visitPath,
 } from "@/lib/agency/demo-invite";
 
 const demo = { token: "tok_demo_aaaaaaaaaaaaaaaa", agencyId: "ag1" };
@@ -21,7 +23,7 @@ describe("inviteFor", () => {
   });
 
   it("opens the panel only with a live invitation for this same agency", () => {
-    expect(inviteFor(demo, CODE, { agencyId: "ag1", freeCredits: 3 })).toEqual({ href: invitationPath(CODE, demo.token), freeCredits: 3 });
+    expect(inviteFor(demo, CODE, { agencyId: "ag1", freeCredits: 3 })).toEqual({ href: invitationPath(CODE, demo.token), panelHref: visitPath(CODE), freeCredits: 3 });
   });
 
   it("never lets a code of another agency, or a spent one, open this demo's panel", () => {
@@ -89,5 +91,18 @@ describe("short links", () => {
     // Ambiguous characters (0, 1, i, l, o) are never in a code.
     expect(shortLinkCode("casa-k7f3x2qm9o")).toBeNull();
     expect(shortLinkCode("casa-k7f3x2qm9ab")).toBeNull();
+  });
+});
+
+describe("Ingresar al panel", () => {
+  it("opens the agency's own panel from its links, the code kept out of the panel's addresses", () => {
+    expect(visitPath(CODE)).toBe(`/panel/visita?codigo=${CODE}`);
+    expect(panelViewPath("tok", CODE)).toBe(`/demo/tok/presentacion/${CODE}/panel`);
+    expect(shortLinkPath("Dúplex en Pompeya", "abcdefghjk", "panel")).toBe("/p/duplex-en-pompeya-abcdefghjk/panel");
+  });
+
+  it("never lets analytics carry the code of a panel link", () => {
+    expect(redactInvite(`https://x.app/panel/visita?codigo=${CODE}`)).not.toContain(CODE);
+    expect(redactInvite("https://x.app/p/duplex-abcdefghjk/panel")).not.toContain("abcdefghjk");
   });
 });

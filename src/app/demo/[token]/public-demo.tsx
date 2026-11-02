@@ -128,6 +128,7 @@ export async function PublicDemo({
       ? {
           code: invitation,
           href: invite.href,
+          panelHref: invite.panelHref,
           freeCredits: invite.freeCredits,
           buyerHref: shortPath ? `${shortPath}/ficha` : buyerViewPath(token, invitation),
           demoHref: shortPath ?? presentationPath(token, invitation),

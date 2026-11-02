@@ -1,4 +1,5 @@
 import { requireUser, failure, HttpError } from "@/lib/commerce/http";
+import { visitorMembership } from "@/lib/agency/visit";
 import { canSeeImage } from "@/lib/agency/server";
 import { adminImagePaths, renderImage, renderPreview } from "@/lib/demos/server";
 import { validStyle } from "@/lib/demos/input";
@@ -8,7 +9,11 @@ export const runtime = "nodejs";
 /** Web-sized copies of demo photos and proposals for the panel and the preview: the team, or members of the photo's agency. */
 export async function GET(request: Request) {
   try {
-    const user = await requireUser();
+    // Without an account, only the agency's own visit to its panel (canSeeImage checks it).
+    const user = await requireUser().catch(async (e) => {
+      if (e instanceof HttpError && e.status === 401 && (await visitorMembership())) return null;
+      throw e;
+    });
     const q = new URL(request.url).searchParams;
     if (!(await canSeeImage(user, { photoId: q.get("foto"), generationId: q.get("generacion"), retouchId: q.get("retoque") })))
       throw new HttpError(404, "No encontramos la imagen.");

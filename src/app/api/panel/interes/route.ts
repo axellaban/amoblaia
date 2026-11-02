@@ -1,5 +1,5 @@
 import { failure, HttpError, requireUser } from "@/lib/commerce/http";
-import { membershipFor, requireAgency } from "@/lib/agency/server";
+import { membershipFor, requireAgencyRead } from "@/lib/agency/server";
 import { isFutureFeature } from "@/lib/agency/future-features";
 import { readJson } from "@/lib/demos/input";
 import { adminClient } from "@/lib/supabase/server";
@@ -40,10 +40,10 @@ async function current(agencyId: string, userId: string, feature: string) {
 /** ?feature=tour_360: whether this user already asked to be told. */
 export async function GET(request: Request) {
   try {
-    const m = await requireAgency();
+    const m = await requireAgencyRead();
     const feature = new URL(request.url).searchParams.get("feature");
     if (!isFutureFeature(feature)) throw new HttpError(400, "Funcionalidad desconocida.");
-    if (m.support) return Response.json(state(null), { headers: PRIVATE });
+    if (m.support || !m.user) return Response.json(state(null), { headers: PRIVATE });
     return Response.json(state(await current(m.agency.id, m.user.id, feature)), { headers: PRIVATE });
   } catch (e) {
     return failure(e);

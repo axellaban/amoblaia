@@ -1,6 +1,6 @@
 import { failure } from "@/lib/commerce/http";
 import { agencyCredits } from "@/lib/agency/panel";
-import { requireAgency } from "@/lib/agency/server";
+import { requireAgencyRead } from "@/lib/agency/server";
 import { adminClient } from "@/lib/supabase/server";
 export const runtime = "nodejs";
 
@@ -12,11 +12,11 @@ export const runtime = "nodejs";
  */
 export async function GET() {
   try {
-    const { user, agency, role, support } = await requireAgency();
+    const { user, agency, role, support } = await requireAgencyRead();
     const owner = agency.owner_id;
     const credits = await agencyCredits(owner);
     // The team in the agency's panel sees its plans but never buys for it: a purchase would be the team member's own.
-    const base = { role, payer: { agency: agency.name, isYou: owner === user.id }, credits, creditsError: credits === null, ...(support ? { support: true } : {}) };
+    const base = { role, payer: { agency: agency.name, isYou: Boolean(user && owner === user.id) }, credits, creditsError: credits === null, ...(support ? { support: true } : {}) };
     if (role !== "owner" || !owner)
       return Response.json(base, { headers: { "Cache-Control": "private, no-store" } });
     const db = adminClient();
