@@ -39,6 +39,44 @@ format|duration=14.700000|size=8195610
 
 `video_section_viewed`, `video_property_selected`, `video_photos_selected`, `video_mode_selected`, `video_format_selected`, `video_generate_clicked`, `video_generation_started`, `video_generation_completed` (`duration_ms`, `video_ms`, `size_kb`, `credits_charged: 0`, `provider: browser`), `video_generation_failed` (`error_code`: `unsupported_browser`, `cancelled`, `api_<status>`, `render`), `video_preview_played`, `video_downloaded`, `video_shared`.
 
+## Crear video — versión definitiva (V1A)
+
+Las tres entradas (propiedad existente, importar desde URL, subir fotos) terminan en el mismo editor `/panel/video?propiedad=<id>`. El sidebar (`PanelNav`) no cambió: captura antes/después idéntica píxel a píxel ([`00-sidebar-antes-despues.jpg`](../ux/habita-v2/evidencia/crear-video/00-sidebar-antes-despues.jpg)).
+
+| Cambio | Dónde |
+| --- | --- |
+| Cuatro formatos reales: 9:16 (1080×1920), 16:9 (1920×1080), 4:5 (1080×1350), 1:1 (1080×1080). `VIDEO_FORMATS`, `VIDEO_SIZE`, `FORMAT_INFO`, `formatRatio`, `videoFileName` | `src/lib/video/plan.ts` |
+| Información opcional: `planVideo(n, formato, { intro, outro })`; sin información el MP4 es solo fotos (sin placas ni textos). `videoCards` arma las placas solo con los campos elegidos y disponibles | `src/lib/video/plan.ts`, `src/lib/video/render.ts` |
+| Placas centradas y medidas: se achican si no entran en el área segura (8 %) en ningún formato | `src/lib/video/render.ts` |
+| Respeta «Mostrar en demostración»: la información sale de la ficha **con visibilidad aplicada**; lo oculto no llega al video. Grupos de fotos sin ficha: solo datos de la inmobiliaria | `src/app/panel/video/page.tsx` |
+| Ancho, alto y cómo se hizo cada video (`options`: fotos en orden, ambientaciones sí/no, campos) → «Exportar en otro formato» sin volver a elegir fotos; cada formato es un MP4 propio en el historial | `src/lib/video/server.ts`, migración |
+| Editor: barra (título, Guardado, Vista previa, Generar video · Sin créditos), Fotos y orden, Estilo (Clásico; Equilibrado/Cinematográfico «No disponible»), visor con los cuadros reales (`drawFrame` a media resolución) y tira ordenable (botones y arrastrar), Formato de exportación, Texto del video, Ubicación en la demostración, resumen, progreso real, errores con «Reintentar», «¡Video listo!» | `src/components/video-studio.tsx` |
+| Selector compartido: para video, selección visual + «Continuar», buscador, miniaturas al subir; el grupo subido no crea ficha ni publica nada | `src/components/start-picker.tsx` |
+| Ubicación por defecto de demostraciones **nuevas**: «Debajo de las fotos»; las existentes conservan la suya | `createDemo` en `src/lib/demos/server.ts` |
+| Demo pública y editor: el reproductor usa la proporción real de cualquiera de los cuatro formatos | `demo-view.tsx`, `demo-editor.tsx` |
+
+**Migración a aplicar:** [`202611200001_video_formats.sql`](https://github.com/axellaban/amoblaia/blob/claude/wizardly-meitner-9e5lzh/supabase/migrations/202611200001_video_formats.sql). Antes de aplicarla, 9:16 y 16:9 siguen funcionando (sin guardar `options`); 4:5 y 1:1 responden 409 con el nombre de la migración.
+
+### MP4 reales (render en Chromium con el código de producción, 4 fotos)
+
+```
+codec_name=h264|profile=High|width=1080|height=1920|r_frame_rate=30/1|nb_read_frames=441|duration=14.7|size=8085602  vertical
+codec_name=h264|profile=High|width=1920|height=1080|r_frame_rate=30/1|nb_read_frames=441|duration=14.7|size=8090199  horizontal
+codec_name=h264|profile=High|width=1080|height=1350|r_frame_rate=30/1|nb_read_frames=441|duration=14.7|size=8009717  vertical-4x5
+codec_name=h264|profile=High|width=1080|height=1080|r_frame_rate=30/1|nb_read_frames=441|duration=14.7|size=8051562  cuadrado
+codec_name=h264|profile=High|width=1080|height=1080|r_frame_rate=30/1|nb_read_frames=321|duration=10.7|size=7837909  cuadrado, solo fotos
+```
+
+Los cinco se decodifican completos con `ffmpeg -f null`. Cuadros: `mp4-cuadros-*.jpg` en [`evidencia/crear-video`](../ux/habita-v2/evidencia/crear-video/).
+
+### Capturas (datos ilustrativos, componentes reales)
+
+`01a`–`01d` entradas · `02` editor · `03a/03b/03c` información activada/desactivada · `04` cuatro formatos · `05`/`06` vista previa 9:16, 16:9, 4:5, 1:1 · `07` progreso · `08` video listo · `09` ubicación · `10a`–`10d` mobile (sin scroll horizontal).
+
+### Eventos PostHog nuevos
+
+`video_photos_reordered`, `video_staged_toggled`, `video_info_toggled`, `video_draft_previewed`, `video_used_in_demo`. Los existentes suman `agency_id`, `property_id`, `video_id`, `video_mode`, `video_format`, `photo_count`, `duration_ms`, `device_type`, `is_group` (sin datos personales).
+
 ## Pendiente
 
 | Ítem | Necesita |

@@ -17625,11 +17625,11 @@ main:has(.ap-sidebar) {
   }
 }
 
-/* ===================== Habita V2: Video (Fase 5B) ===================== */
+/* ===================== Habita: Crear video ===================== */
 .vs {
   display: grid;
-  gap: 18px;
-  max-width: 980px;
+  gap: 16px;
+  min-width: 0;
   margin-bottom: 48px;
 }
 .vs-head h1 {
@@ -17640,85 +17640,140 @@ main:has(.ap-sidebar) {
   margin: 4px 0 0;
   color: var(--muted);
 }
-.vs-step {
+.vs-card {
   display: grid;
+  align-content: start;
   gap: 12px;
+  min-width: 0;
   padding: 18px;
   border: 1px solid var(--line);
   border-radius: 14px;
   background: #fff;
 }
-.vs-step h2 {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+.vs-card h2 {
   margin: 0;
-  font-size: 20px;
+  font-size: 18px;
   color: var(--forest);
 }
-.vs-n {
-  display: inline-grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: var(--forest);
-  color: #fff;
-  font-size: 14px;
+.vs-start {
+  max-width: 640px;
 }
 .vs-hint {
   margin: 0;
   color: var(--muted);
-  font-size: 14px;
-}
-.vs-check {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 44px;
+  font-size: 13.5px;
 }
 .vs-props,
 .vs-grid,
-.vs-order-list,
+.vs-strip,
+.vs-fields,
 .vs-videos {
   list-style: none;
   margin: 0;
   padding: 0;
 }
-.vs-props {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+
+/* Top bar: the property, saved state, preview and the main CTA. */
+.vs-bar {
+  display: flex;
+  align-items: center;
   gap: 12px;
-}
-.vs-props a {
-  display: grid;
-  gap: 4px;
-  padding: 8px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
   border: 1px solid var(--line);
-  border-radius: 12px;
-  color: var(--ink);
-  text-decoration: none;
+  border-radius: 14px;
+  background: #fff;
 }
-.vs-props a:hover {
-  border-color: var(--forest);
+.vs-back {
+  flex: none;
 }
-.vs-props img,
-.vs-noimg {
-  width: 100%;
-  aspect-ratio: 4 / 3;
-  object-fit: cover;
-  border-radius: 8px;
-  background: #eef1ec;
+.vs-bar-title {
+  flex: 1;
+  min-width: 0;
+}
+.vs-bar-title h1 {
+  margin: 0;
+  font-size: 20px;
+  color: var(--forest);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vs-bar-title p {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 13.5px;
+}
+.vs-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.vs-saved {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--forest);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.vs-preview-go {
+  gap: 6px;
+  min-height: 44px;
+}
+.vs-generate {
+  gap: 8px;
+  min-height: 46px;
+}
+.vs-generate small {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 16%);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* The editor: photos and style · preview and summary · format, text and placement. */
+.vs-editor {
   display: grid;
-  place-items: center;
-  color: var(--muted);
+  grid-template-columns: minmax(250px, 300px) minmax(0, 1fr) minmax(270px, 330px);
+  gap: 16px;
+  align-items: start;
 }
-.vs-props small {
+.vs-col {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.vs-switch {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+}
+.vs-switch input {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin: 2px 0 0;
+  accent-color: var(--forest);
+}
+.vs-switch span {
+  display: grid;
+  gap: 2px;
+}
+.vs-switch strong {
+  font-size: 14px;
+  color: var(--ink);
+}
+.vs-switch small {
   color: var(--muted);
+  font-size: 12.5px;
 }
 .vs-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
   gap: 8px;
 }
 .vs-photo {
@@ -17732,12 +17787,15 @@ main:has(.ap-sidebar) {
   cursor: pointer;
   overflow: hidden;
 }
+.vs-photo:disabled {
+  cursor: not-allowed;
+}
 .vs-photo img {
   display: block;
   width: 100%;
   aspect-ratio: 4 / 3;
   object-fit: cover;
-  opacity: 0.55;
+  opacity: 0.5;
 }
 .vs-photo.is-on {
   border-color: var(--forest);
@@ -17747,83 +17805,45 @@ main:has(.ap-sidebar) {
 }
 .vs-order {
   position: absolute;
-  top: 6px;
-  left: 6px;
+  top: 4px;
+  left: 4px;
   display: grid;
   place-items: center;
-  width: 26px;
-  height: 26px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   background: var(--forest);
   color: #fff;
   font-weight: 800;
-  font-size: 13px;
+  font-size: 12px;
+}
+.vs-order.is-off {
+  background: rgb(255 255 255 / 85%);
+  border: 1.5px solid var(--forest);
 }
 .vs-ai {
   position: absolute;
-  bottom: 6px;
-  right: 6px;
-  padding: 1px 8px;
+  bottom: 4px;
+  right: 4px;
+  padding: 1px 6px;
   border-radius: 999px;
-  background: rgba(20, 30, 24, 0.7);
+  background: rgba(20, 30, 24, 0.72);
   color: #fff;
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 700;
 }
-.vs-order-list {
+
+/* Style: Clásico live, the AI modes «No disponible». */
+.vs-modes {
   display: grid;
-  gap: 6px;
-}
-.vs-order-list li {
-  display: flex;
-  align-items: center;
   gap: 8px;
-  padding: 4px;
-  border-radius: 10px;
-  background: #f4f6f2;
 }
-.vs-order-list img {
-  width: 56px;
-  height: 42px;
-  object-fit: cover;
-  border-radius: 6px;
-}
-.vs-order-list span {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 14px;
-}
-.vs-order-list button {
+.vs-mode {
+  position: relative;
   display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  border: 0;
-  border-radius: 8px;
-  background: #fff;
-  color: var(--forest);
-  cursor: pointer;
-}
-.vs-order-list button:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-.vs-options {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-}
-.vs-options.is-two {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-.vs-option {
-  display: grid;
-  gap: 4px;
-  align-content: start;
-  padding: 14px;
+  grid-template-columns: auto 1fr;
+  gap: 4px 10px;
+  padding: 12px;
   border: 1.5px solid var(--line);
   border-radius: 12px;
   background: #fff;
@@ -17832,45 +17852,274 @@ main:has(.ap-sidebar) {
   font: inherit;
   cursor: pointer;
 }
-.vs-option strong {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+.vs-mode-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: #eef3ea;
   color: var(--forest);
 }
-.vs-option span,
-.vs-option small {
-  font-size: 13.5px;
-  color: #3e4a42;
+.vs-mode-text {
+  display: grid;
+  gap: 2px;
+  padding-right: 18px;
 }
-.vs-option small {
-  color: var(--muted);
+.vs-mode-text strong {
+  color: var(--forest);
 }
-.vs-option.is-on {
+.vs-mode-text small {
+  color: #4b554e;
+  font-size: 12.5px;
+}
+.vs-mode .vs-tag {
+  grid-column: 2;
+  justify-self: start;
+}
+.vs-mode.is-on {
   border-color: var(--forest);
-  box-shadow: 0 0 0 1px var(--forest);
   background: #f1f6ee;
 }
-.vs-option.is-later {
+.vs-mode.is-later {
   cursor: default;
   background: #fafaf8;
+  color: var(--muted);
 }
-.vs-frame {
-  display: block;
-  border: 2px solid var(--forest);
-  border-radius: 4px;
-  margin-bottom: 4px;
+.vs-mode.is-later .vs-mode-icon {
+  background: #f0f0ec;
+  color: var(--muted);
 }
-.vs-frame.is-v {
+.vs-mode.is-later .vs-mode-text strong {
+  color: var(--muted);
+}
+.vs-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #efefea;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+.vs-tag.is-free {
+  background: #e3efdc;
+  color: var(--forest);
+}
+.vs-tick,
+.vs-radio {
+  display: grid;
+  place-items: center;
   width: 22px;
-  height: 38px;
+  height: 22px;
+  border-radius: 50%;
 }
-.vs-frame.is-h {
-  width: 44px;
-  height: 25px;
+.vs-tick {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: var(--forest);
+  color: #fff;
 }
-.vs-summary p {
+.vs-duration {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+}
+.vs-duration strong {
+  color: var(--ink);
+}
+.vs-duration span {
+  flex-basis: 100%;
+}
+
+/* Preview: the real frames, in the chosen proportion. */
+.vs-stage {
+  padding: 12px;
+}
+.vs-viewer {
+  display: grid;
+  gap: 8px;
+  border-radius: 12px;
+  background: #1d2420;
+  padding: 10px;
+}
+.vs-viewer:fullscreen {
+  align-content: center;
+  padding: 24px;
+  --vs-stage-h: 82vh;
+}
+.vs-screen {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: var(--vs-stage-h, 480px);
+}
+.vs-canvas {
+  display: block;
+  width: min(100%, calc(var(--vs-stage-h, 480px) * var(--ratio)));
+  aspect-ratio: var(--ratio);
+  border-radius: 6px;
+  background: #2a322d;
+}
+.vs-canvas-empty {
+  display: grid;
+  place-items: center;
+  color: #cfd6d0;
+  font-size: 14px;
+}
+.vs-screen-note {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 55%);
+  color: #fff;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.vs-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #fff;
+}
+.vs-play {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 12%);
+  color: #fff;
+  cursor: pointer;
+}
+.vs-play:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.vs-time {
+  flex: none;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.vs-seek {
+  flex: 1;
+  min-width: 0;
+  accent-color: #9dbf8f;
+}
+.vs-strip {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 2px 2px 6px;
+  scroll-snap-type: x proximity;
+}
+.vs-strip li {
+  flex: none;
+  display: grid;
+  gap: 4px;
+  width: 96px;
+  scroll-snap-align: start;
+}
+.vs-strip-thumb {
+  position: relative;
+  display: block;
+  padding: 0;
+  border: 2px solid var(--forest);
+  border-radius: 9px;
+  overflow: hidden;
+  background: none;
+  cursor: pointer;
+}
+.vs-strip-thumb img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+}
+.vs-strip-n {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  display: grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--forest);
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 800;
+}
+.vs-strip-tools {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
+}
+.vs-strip-tools button {
+  display: grid;
+  place-items: center;
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--forest);
+  cursor: pointer;
+}
+.vs-strip-tools button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.vs-strip-add button {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 4px;
+  width: 96px;
+  height: 72px;
+  border: 1.5px dashed var(--line);
+  border-radius: 9px;
+  background: #fafaf7;
+  color: var(--forest);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Summary before generating. */
+.vs-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 8px 14px;
   margin: 0;
+}
+.vs-facts div {
+  display: grid;
+  gap: 1px;
+}
+.vs-facts .is-wide {
+  grid-column: 1 / -1;
+}
+.vs-facts dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+.vs-facts dd {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.vs-summary .vs-generate {
+  justify-content: center;
+  width: 100%;
 }
 .vs-progress {
   display: grid;
@@ -17891,9 +18140,254 @@ main:has(.ap-sidebar) {
   border: 0;
   cursor: pointer;
 }
-.vs-videos {
+.vs-progress .vs-hint {
+  grid-column: 1 / -1;
+}
+.vs-error {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+}
+.vs-error .inline-error {
+  margin: 0;
+}
+.vs-error .button {
+  gap: 6px;
+}
+
+/* Export format: four cards with their proportion. */
+.vs-format-list,
+.vs-places {
+  display: grid;
+  gap: 8px;
+}
+.vs-format,
+.vs-place-option {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1.5px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--ink);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.vs-format.is-on,
+.vs-place-option.is-on {
+  border-color: var(--forest);
+  background: #f1f6ee;
+}
+.vs-ratio {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 36px;
+}
+.vs-ratio span {
+  display: block;
+  border: 2px solid var(--forest);
+  border-radius: 4px;
+}
+.vs-format-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.vs-format-text strong {
+  font-size: 14px;
+  color: var(--forest);
+}
+.vs-format-text .vs-res {
+  color: var(--forest);
+  font-weight: 600;
+  font-size: 12px;
+}
+.vs-format-text > small {
+  color: #4b554e;
+  font-size: 12.5px;
+}
+.vs-radio {
+  border: 1.5px solid #b9bfb7;
+}
+.vs-radio.is-on {
+  border-color: var(--forest);
+  background: var(--forest);
+  color: #fff;
+}
+
+/* Text of the video: the real values, each opt-in. */
+.vs-fields {
+  display: grid;
+  gap: 8px;
+}
+.vs-fields li {
+  display: grid;
+  gap: 4px;
+}
+.vs-fields label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.vs-fields input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--forest);
+}
+.vs-field-value {
+  margin-left: 26px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfaf7;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.vs-fields li.is-off {
+  opacity: 0.6;
+}
+.vs-fields li.is-off label {
+  cursor: default;
+}
+
+/* Placement in the demo: a tiny drawing of each position. */
+.vs-place-option {
+  grid-template-columns: auto 1fr;
+  padding: 8px 10px;
+}
+.vs-place-option span:last-child {
+  display: grid;
+  gap: 1px;
+}
+.vs-place-option strong {
+  font-size: 13.5px;
+  color: var(--forest);
+}
+.vs-place-option small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.vs-place-art {
+  display: grid;
+  grid-template-columns: repeat(3, 10px);
+  grid-template-rows: 16px 8px;
+  gap: 2px;
+  width: 36px;
+}
+.vs-place-art i {
+  display: block;
+  border-radius: 2px;
+  background: #d9dfd5;
+  grid-row: 2;
+}
+.vs-place-art::before {
+  content: "";
+  grid-column: 1 / -1;
+  grid-row: 1;
+  border-radius: 3px;
+  background: #d9dfd5;
+}
+.vs-place-art.is-first i:nth-child(1),
+.vs-place-art.is-second i:nth-child(2) {
+  background: var(--forest);
+}
+.vs-place-art.is-below {
+  grid-template-rows: 12px 5px 7px;
+}
+.vs-place-art.is-below i {
+  grid-row: 2;
+}
+.vs-place-art.is-below::after {
+  content: "";
+  grid-column: 1 / -1;
+  grid-row: 3;
+  border-radius: 2px;
+  background: var(--forest);
+}
+.vs-place-art.is-hidden {
+  opacity: 0.45;
+}
+
+/* Result: ¡Video listo! */
+.vs-result {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 20px;
+  border-color: #b9d3ad;
+  background: #f5f9f2;
+}
+.vs-result-main {
   display: grid;
   gap: 14px;
+  align-content: start;
+  min-width: 0;
+}
+.vs-ready {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.vs-ready-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: #dcebd3;
+  color: var(--forest);
+}
+.vs-ready h2 {
+  font-size: 24px;
+}
+.vs-ready p {
+  margin: 2px 0 0;
+  color: var(--muted);
+}
+.vs-facts.is-compact {
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+}
+.vs-result-actions {
+  display: grid;
+  gap: 8px;
+  max-width: 420px;
+}
+.vs-result-actions .button {
+  justify-content: center;
+  gap: 8px;
+  min-height: 46px;
+}
+.vs-again {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  color: var(--muted);
+}
+.vs-again .button {
+  min-height: 40px;
+}
+.vs-result-video {
+  display: block;
+  width: auto;
+  height: min(440px, 70vh);
+  max-width: min(100%, 560px);
+  border-radius: 12px;
+  background: #111;
+  justify-self: end;
+}
+
+/* History: every exported MP4 stays. */
+.vs-videos {
+  display: grid;
+  gap: 12px;
 }
 .vs-videos li {
   display: flex;
@@ -17912,12 +18406,12 @@ main:has(.ap-sidebar) {
   background: #111;
 }
 .vs-video.is-v {
-  width: 180px;
-  aspect-ratio: 9 / 16;
+  height: 220px;
+  width: auto;
+  max-width: 220px;
 }
 .vs-video.is-h {
   width: 320px;
-  aspect-ratio: 16 / 9;
 }
 .vs-video-empty {
   display: grid;
@@ -17929,6 +18423,7 @@ main:has(.ap-sidebar) {
   display: grid;
   gap: 4px;
   min-width: 0;
+  justify-items: start;
 }
 .vs-video-meta small {
   color: var(--muted);
@@ -17943,29 +18438,86 @@ main:has(.ap-sidebar) {
   gap: 6px;
   min-height: 44px;
 }
-.vs-done {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--forest);
-  font-weight: 700;
+
+@media (max-width: 1240px) {
+  .vs-editor {
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+  }
+  .vs-col-left {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+    align-items: start;
+  }
 }
-@media (max-width: 760px) {
-  .vs-options {
+/* Phones and tablets: the same steps, one under the other, in the order of the flow. */
+@media (max-width: 860px) {
+  .vs {
+    padding-bottom: 88px; /* The assistant's button never covers «Generar video» or the player. */
+  }
+  .vs-editor {
+    display: flex;
+    flex-direction: column;
+  }
+  .vs-col {
+    display: contents;
+  }
+  .vs-photos {
+    order: 1;
+  }
+  .vs-stage {
+    order: 2;
+  }
+  .vs-info {
+    order: 3;
+  }
+  .vs-style {
+    order: 4;
+  }
+  .vs-formats {
+    order: 5;
+  }
+  .vs-place {
+    order: 6;
+  }
+  .vs-summary {
+    order: 7;
+  }
+  .vs-bar-generate {
+    display: none;
+  }
+  .vs-bar-actions {
+    width: 100%;
+  }
+  .vs-saved {
+    margin-right: auto;
+  }
+  .vs-screen {
+    --vs-stage-h: 56vh;
+  }
+  .vs-card {
+    padding: 14px;
+  }
+  .vs-result {
     grid-template-columns: 1fr;
+  }
+  .vs-result-video {
+    order: -1;
+    justify-self: center;
+    height: auto;
+    width: 100%;
+    max-height: 70vh;
+    max-width: 100%;
+    object-fit: contain;
+  }
+  .vs-result-actions {
+    max-width: none;
   }
   .vs-videos li {
     flex-direction: column;
   }
-  .vs-video.is-v {
-    width: 100%;
-    max-width: 260px;
-  }
   .vs-video.is-h {
     width: 100%;
-  }
-  .vs-step {
-    padding: 14px;
   }
 }
 

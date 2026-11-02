@@ -2,21 +2,14 @@
 // → MP4 (mp4-muxer). No server time and no provider cost; the MP4 is then
 // uploaded straight to Habita's storage. Browser only.
 import { ArrayBufferTarget, Muxer } from "mp4-muxer";
-import { cameraAt, coverCrop, sceneAt, type VideoPlan } from "./plan";
+import { cameraAt, coverCrop, sceneAt, type VideoCards, type VideoPlan } from "./plan";
 
-export type VideoInfo = {
-  title: string;
-  location: string | null;
-  /** As published, or "Consultar precio": never an invented amount. */
-  price: string;
-  operation: string | null;
-  facts: string[];
-  agencyName: string;
-  contact: string | null;
-};
+/** What the cards say: only the information the agency chose (spec: optional). */
+export type VideoInfo = VideoCards;
+
 export type VideoAsset = { image: ImageBitmap; staged: boolean };
 
-const CODEC = "avc1.640028"; // H.264 High 4.0: 1080×1920 at 30 fps, plays on iPhone and WhatsApp.
+const CODEC = "avc1.640028"; // H.264 High 4.0: up to 1920×1080 / 1080×1920 at 30 fps, plays on iPhone and WhatsApp.
 
 /** Whether this browser can make the MP4 (WebCodecs with H.264). */
 export async function canRender(plan: Pick<VideoPlan, "width" | "height" | "fps">) {
@@ -54,61 +47,65 @@ function wrap(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, max
 const GREEN = "#24382e";
 const CREAM = "#f8f5ef";
 
+type Line = { text: string; font: string; gap: number };
+
+/**
+ * An opening or closing card, centered in the frame whatever its shape: the
+ * lines are measured first and scaled down if they would not fit inside the
+ * safe area (8% margins), so no text is ever cut in 1:1 or 16:9.
+ */
 function card(ctx: CanvasRenderingContext2D, plan: VideoPlan, info: VideoInfo, kind: "intro" | "outro", logo: ImageBitmap | null) {
   const { width: W, height: H } = plan;
-  const s = Math.min(W, H) / 1080;
   ctx.fillStyle = kind === "intro" ? GREEN : CREAM;
   ctx.fillRect(0, 0, W, H);
+  const safeW = W * 0.84;
+  const safeH = H * 0.84;
+  const layout = (s: number) => {
+    const lines: Line[] = [];
+    const add = (text: string, weight: number, size: number, gap: number, maxLines: number) => {
+      ctx.font = `${weight} ${size * s}px Arial, sans-serif`;
+      for (const l of wrap(ctx, text, safeW, maxLines)) lines.push({ text: l, font: ctx.font, gap: size * s * 1.18 + gap * s });
+    };
+    let logoBox: { w: number; h: number } | null = null;
+    if (kind === "intro" && info.intro) {
+      const i = info.intro;
+      if (i.operation) add(i.operation.toUpperCase(), 700, 34, 30, 1);
+      if (i.title) add(i.title, 800, 72, 6, 3);
+      if (i.location) add(i.location, 500, 40, 10, 2);
+      if (i.price) add(i.price, 800, 60, 26, 1);
+      if (i.facts.length) add(i.facts.join("  ·  "), 500, 36, 0, 2);
+    } else if (kind === "outro" && info.outro) {
+      const o = info.outro;
+      if (o.logo && logo) {
+        const lh = 160 * s;
+        const lw = Math.min(safeW * 0.6, logo.width * (lh / logo.height));
+        logoBox = { w: lw, h: (logo.height / logo.width) * lw };
+      }
+      if (o.agencyName) add(o.agencyName, 800, 60, 8, 2);
+      if (o.contact) add(o.contact, 600, 44, 20, 1);
+      if (o.contact) add("Consultanos por esta propiedad", 500, 34, 0, 2);
+    }
+    const height = lines.reduce((h, l) => h + l.gap, 0) + (logoBox ? logoBox.h + 40 * s : 0);
+    return { lines, logoBox, height };
+  };
+  let s = Math.min(W, H) / 1080;
+  let l = layout(s);
+  for (let i = 0; i < 6 && l.height > safeH; i++) {
+    s *= 0.85;
+    l = layout(s);
+  }
+  let y = (H - l.height) / 2;
+  if (l.logoBox && logo) {
+    ctx.drawImage(logo, (W - l.logoBox.w) / 2, y, l.logoBox.w, l.logoBox.h);
+    y += l.logoBox.h + 40 * s;
+  }
   ctx.fillStyle = kind === "intro" ? "#fff" : GREEN;
   ctx.textAlign = "center";
-  ctx.textBaseline = "alphabetic";
-  let y = H * (kind === "intro" ? 0.36 : 0.34);
-  if (kind === "intro") {
-    if (info.operation) {
-      ctx.font = `700 ${34 * s}px Arial, sans-serif`;
-      ctx.fillText(info.operation.toUpperCase(), W / 2, y);
-      y += 70 * s;
-    }
-    ctx.font = `800 ${72 * s}px Arial, sans-serif`;
-    for (const l of wrap(ctx, info.title, W * 0.84, 3)) {
-      ctx.fillText(l, W / 2, y);
-      y += 84 * s;
-    }
-    if (info.location) {
-      ctx.font = `500 ${40 * s}px Arial, sans-serif`;
-      y += 10 * s;
-      for (const l of wrap(ctx, info.location, W * 0.84, 2)) {
-        ctx.fillText(l, W / 2, y);
-        y += 52 * s;
-      }
-    }
-    ctx.font = `800 ${60 * s}px Arial, sans-serif`;
-    y += 40 * s;
-    ctx.fillText(info.price, W / 2, y);
-    if (info.facts.length) {
-      ctx.font = `500 ${36 * s}px Arial, sans-serif`;
-      y += 70 * s;
-      ctx.fillText(info.facts.slice(0, 4).join("  ·  "), W / 2, y);
-    }
-  } else {
-    if (logo) {
-      const lw = Math.min(W * 0.5, logo.width * ((160 * s) / logo.height));
-      const lh = (logo.height / logo.width) * lw;
-      ctx.drawImage(logo, (W - lw) / 2, y - lh - 30 * s, lw, lh);
-    }
-    ctx.font = `800 ${60 * s}px Arial, sans-serif`;
-    for (const l of wrap(ctx, info.agencyName, W * 0.84, 2)) {
-      ctx.fillText(l, W / 2, y);
-      y += 72 * s;
-    }
-    if (info.contact) {
-      ctx.font = `600 ${44 * s}px Arial, sans-serif`;
-      y += 20 * s;
-      ctx.fillText(info.contact, W / 2, y);
-    }
-    ctx.font = `500 ${34 * s}px Arial, sans-serif`;
-    y += 90 * s;
-    ctx.fillText("Consultanos por esta propiedad", W / 2, y);
+  ctx.textBaseline = "top";
+  for (const line of l.lines) {
+    ctx.font = line.font;
+    ctx.fillText(line.text, W / 2, y);
+    y += line.gap;
   }
 }
 
@@ -128,6 +125,7 @@ function photoScene(ctx: CanvasRenderingContext2D, plan: VideoPlan, asset: Video
     ctx.fillRect(W - tw - pad * 3, H - 64 * s - pad, tw + pad * 2, 48 * s);
     ctx.fillStyle = "#fff";
     ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
     ctx.fillText(text, W - tw - pad * 2, H - 64 * s - pad + 33 * s);
   }
 }

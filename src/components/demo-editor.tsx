@@ -1,4 +1,5 @@
 "use client";
+import { formatOf, formatRatio } from "@/lib/video/plan";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -1264,7 +1265,7 @@ export function DemoEditor({
           {video ? (
             <details className="dx-video-current">
               <summary>Ver el video actual</summary>
-              <video src={video.url} controls playsInline preload="metadata" className={video.format === "9:16" ? "is-vertical" : ""} />
+              <video src={video.url} controls playsInline preload="metadata" className={video.format === "16:9" ? "" : "is-vertical"} style={{ aspectRatio: formatRatio(formatOf(video.format)) }} />
             </details>
           ) : (
             <p className="dm-help dx-video-note">Todavía no hay video: la ubicación elegida se aplica cuando lo generes. La ficha no muestra un reproductor vacío.</p>
@@ -1515,7 +1516,7 @@ export function DemoEditor({
                         type="checkbox"
                         checked={detail.settings.videoPlacement !== "hidden"}
                         disabled={!videoEnabled()}
-                        onChange={(e) => setting({ videoPlacement: e.target.checked ? "first" : "hidden" })}
+                        onChange={(e) => setting({ videoPlacement: e.target.checked ? "below" : "hidden" })}
                       />
                       Mostrar video {!video && <small>(cuando exista)</small>}
                     </label>
