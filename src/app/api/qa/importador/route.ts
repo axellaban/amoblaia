@@ -9,7 +9,8 @@ const same = (a: string, b: string) => timingSafeEqual(createHash("sha256").upda
 
 /**
  * Importer QA from a Vercel preview (its outbound IP is what sites block):
- * GET ?i=<index in the QA list> with the x-qa-token header. Off in
+ * GET ?i=<index in the QA list> with the x-qa-token header (or ?token=, for
+ * fetchers that cannot send headers, like Vercel's share links). Off in
  * production and without IMPORTER_QA_TOKEN; only reads the pages of the QA
  * list (never an arbitrary URL), saves nothing and answers a summary.
  */
@@ -17,8 +18,9 @@ export async function GET(request: Request) {
   try {
     const token = process.env.IMPORTER_QA_TOKEN;
     if (process.env.VERCEL_ENV === "production" || !token || token.length < 24) return new Response(null, { status: 404 });
-    if (!same(request.headers.get("x-qa-token") ?? "", token)) return new Response(null, { status: 404 });
-    const raw = new URL(request.url).searchParams.get("i") ?? "";
+    const params = new URL(request.url).searchParams;
+    if (!same(request.headers.get("x-qa-token") ?? params.get("token") ?? "", token)) return new Response(null, { status: 404 });
+    const raw = params.get("i") ?? "";
     const index = /^\d{1,3}$/.test(raw) ? Number(raw) : -1;
     const url = QA_LISTING_URLS[index];
     if (!url) throw new HttpError(400, `i: 0..${QA_LISTING_URLS.length - 1}`);

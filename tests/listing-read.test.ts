@@ -95,6 +95,8 @@ describe("Preview QA endpoint", () => {
     fetchMock.impl = ok(PAGE);
     const res = await call("?i=0", "t".repeat(32));
     expect(await res.json()).toMatchObject({ ok: true, price: "USD 80.000" });
+    expect((await call(`?i=0&token=${"t".repeat(32)}`)).status).toBe(200);
+    expect((await call("?i=0&token=wrong-token-wrong-token-wrong")).status).toBe(404);
     process.env.VERCEL_ENV = "production";
     expect((await call("?i=0", "t".repeat(32))).status).toBe(404);
     delete process.env.VERCEL_ENV;
