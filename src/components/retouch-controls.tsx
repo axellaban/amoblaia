@@ -3,8 +3,8 @@
 // owner panel: light and colour with a live preview, and the AI tools
 // (shown, not yet available). Saving is the caller's.
 import { useState, type ChangeEvent } from "react";
-import { Loader2 } from "lucide-react";
-import { AUTO_ADJUST, type Adjust } from "@/lib/demos/retouch";
+import { Cloud, Eraser, Loader2, Sparkles, Sun } from "lucide-react";
+import { AUTO_ADJUST, sameAdjust, type Adjust } from "@/lib/demos/retouch";
 import { TOOLS, type Tool } from "@/lib/demos/tools";
 
 export type ToolsState = {
@@ -23,18 +23,38 @@ export type ToolsState = {
 };
 
 const LABEL: Record<Tool, string> = { sky: "Cambiar cielo", dusk: "Día a atardecer", remove: "Quitar objetos" };
+const ICON: Record<Tool, typeof Cloud> = { sky: Cloud, dusk: Sun, remove: Eraser };
 const HINT: Record<Tool, string> = {
   sky: "Reemplaza el cielo por uno despejado. El resto de la foto no cambia.",
   dusk: "Pasa la luz de día a un atardecer. Las luces y ventanas existentes se mantienen.",
   remove: "Pintá sobre la foto lo que querés quitar. Lo demás no cambia.",
 };
 
-function ToolsSection({ tools, id }: { tools: ToolsState; id: string }) {
+function ToolsSection({ tools, id, tiles }: { tools: ToolsState; id: string; tiles: boolean }) {
   const can = tools.tool === "remove" ? tools.painted : true;
   return (
-    <section className="pw-edit-group" aria-labelledby={`${id}-ai`}>
-      <span id={`${id}-ai`}>Herramientas IA · 1 crédito</span>
-      {TOOLS.map((t) => (
+    <section className={`pw-edit-group ${tiles ? "pw-tools-tiles" : ""}`} aria-labelledby={`${id}-ai`}>
+      <span id={`${id}-ai`}>{tiles ? "Herramientas con IA" : "Herramientas IA · 1 crédito"}</span>
+      {tiles && (
+        <div className="pw-tool-tiles">
+          {TOOLS.map((t) => {
+            const Icon = ICON[t];
+            return (
+              <button
+                key={t}
+                type="button"
+                className={`pw-tool-tile ${tools.tool === t ? "is-on" : ""}`}
+                aria-pressed={tools.tool === t}
+                onClick={() => tools.onPick(tools.tool === t ? null : t)}
+              >
+                <Icon size={22} aria-hidden="true" />
+                <span>{LABEL[t]}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {!tiles && TOOLS.map((t) => (
         <button
           key={t}
           type="button"
@@ -67,6 +87,7 @@ function ToolsSection({ tools, id }: { tools: ToolsState; id: string }) {
             </>
           )}
           {tools.note && <p className="pw-note">{tools.note}</p>}
+          {tiles && !tools.note && <p className="pw-note">Cada herramienta usa 1 crédito; el costo se confirma antes de aplicar.</p>}
           <button type="button" className="button button-primary button-small" disabled={!can || tools.busy} onClick={tools.onApply}>
             {tools.busy ? <Loader2 size={14} className="spin" /> : null} {tools.busy ? "Empezando…" : "Aplicar"}
           </button>
@@ -86,14 +107,19 @@ export function RetouchControls({
   adjust,
   onAdjust,
   tools,
+  layout = "list",
 }: {
+  /** "tiles": Estudio de imágenes (Mejora automática under the sliders, the AI tools as three tiles). */
+  layout?: "list" | "tiles";
   id: string;
   adjust: Adjust;
   onAdjust: (next: Adjust) => void;
   /** The AI tools; without them the section is not shown (the demo's panel). */
   tools?: ToolsState;
 }) {
-  const [auto, setAuto] = useState(false);
+  const [autoPicked, setAuto] = useState(false);
+  // «Aplicada» only while the values are still the automatic ones (not after saving, discarding or moving a slider).
+  const auto = autoPicked && sameAdjust(adjust, AUTO_ADJUST);
   const set = (key: keyof Adjust) => (e: ChangeEvent<HTMLInputElement>) => {
     setAuto(false);
     onAdjust({ ...adjust, [key]: Number(e.target.value) });
@@ -104,6 +130,39 @@ export function RetouchControls({
     { key: "temp", label: "Temperatura", min: -50, max: 50, shown: adjust.temp === 0 ? "Neutra" : adjust.temp > 0 ? "Cálida" : "Fría" },
     { key: "sha", label: "Sombras", min: -50, max: 50, shown: signed(adjust.sha) },
   ];
+  const tiles = layout === "tiles";
+  const autoButton = (
+    <button
+      type="button"
+      className={`button button-small button-outline ${tiles ? "pw-auto" : ""}`}
+      aria-pressed={auto}
+      onClick={() => {
+        setAuto(true);
+        onAdjust(AUTO_ADJUST);
+      }}
+    >
+      {tiles && <Sparkles size={15} aria-hidden="true" />} {auto ? "Aplicada" : "Mejora automática"}
+    </button>
+  );
+  if (tiles)
+    return (
+      <>
+        <section className="pw-edit-group" aria-labelledby={`${id}-light`}>
+          <span id={`${id}-light`} className="pw-edit-title">
+            Luz y color
+          </span>
+          {sliders.map((s) => (
+            <label key={s.key} className="pw-slider">
+              <span>{s.label}</span>
+              <input type="range" min={s.min} max={s.max} value={adjust[s.key]} onChange={set(s.key)} aria-label={s.label} />
+              <output>{s.shown}</output>
+            </label>
+          ))}
+          {autoButton}
+        </section>
+        {tools && <ToolsSection tools={tools} id={id} tiles />}
+      </>
+    );
   return (
     <>
       <section className="pw-edit-group" aria-labelledby={`${id}-light`}>
@@ -130,7 +189,7 @@ export function RetouchControls({
         ))}
       </section>
 
-      {tools && <ToolsSection tools={tools} id={id} />}
+      {tools && <ToolsSection tools={tools} id={id} tiles={false} />}
     </>
   );
 }

@@ -160,6 +160,21 @@ function Fold({
 }
 
 /**
+ * «Editar imagen» of the demo: this photo and version in Estudio de imágenes
+ * («Editar con IA»), which comes back to the same property, tab and photo.
+ */
+function studioEditLink(demoId: string, photoId: string, versionId: string | null) {
+  const back = new URL(typeof window === "undefined" ? `https://x.local/panel/propiedades/${demoId}` : window.location.href);
+  back.searchParams.set("seccion", "fotos");
+  back.searchParams.set("foto", photoId);
+  if (versionId) back.searchParams.set("version", versionId);
+  else back.searchParams.delete("version");
+  const q = new URLSearchParams({ pestana: "fotos", fotos: demoId, foto: photoId, modo: "editar", volver: `${back.pathname}${back.search}` });
+  if (versionId) q.set("version", versionId);
+  return `/panel/imagenes?${q}`;
+}
+
+/**
  * The property page, shared by the team ("admin": commercial demos) and by
  * agencies ("agency": its own properties, staged with its credits). Photos
  * and spaces first; everything else in folds that keep their drafts.
@@ -170,11 +185,17 @@ export function DemoEditor({
   banner,
   agencyContext,
   studio = false,
+  onUseInDemo,
+  studioEditing = false,
 }: {
   id: string;
   mode?: "admin" | "agency";
-  /** Inside "Estudio de imágenes": only the photo workspace, no ficha sections. */
+  /** Inside "Estudio de imágenes": only the photo workspace (every photo together), no ficha sections. */
   studio?: boolean;
+  /** Estudio de imágenes: «Usar en una demostración» of the photo and version on screen. */
+  onUseInDemo?: (photoId: string, versionId: string | null) => void;
+  /** The demo's «Editar imagen» opens Estudio de imágenes (this user can use it); else it edits in the demo. */
+  studioEditing?: boolean;
   /** The edit banner, when the team edits this agency (Editar inmobiliaria). */
   banner?: React.ReactNode;
   /** The agency the team is editing: the way back goes to its workspace. */
@@ -468,7 +489,7 @@ export function DemoEditor({
         URL.revokeObjectURL(href);
       }, 10000);
       setMessage({ tone: "notice", text: `Descarga lista: ${downloadName(name).ascii}.` });
-      if (agencyMode) track("property_version_downloaded", { property_id: id });
+      if (agencyMode) track("property_version_downloaded", { property_id: id, surface: studio ? "studio" : "property" });
     } catch {
       say({ tone: "error", text: "No pudimos descargar la imagen. Probá de nuevo.", section: "fotos" });
     } finally {
@@ -585,7 +606,7 @@ export function DemoEditor({
   const spaceName = (p: EditorPhoto) => detail.spaces.find((s) => s.id === p.spaceId)?.name ?? photoLabel(p);
 
   /** Follows an AI tool until its jobs end, so the result shows up as a version without a reload. */
-  async function watchTool(ids: string[]) {
+  async function watchTool(ids: string[], what: { photoId: string; tool: string }) {
     for (let i = 0; i < 90; i++) {
       await new Promise((r) => setTimeout(r, 4000));
       try {
@@ -595,6 +616,8 @@ export function DemoEditor({
         const settled = jobs.length > 0 && jobs.every((g) => g.status !== "queued" && g.status !== "running");
         if (settled) {
           const done = jobs.every((g) => g.status === "succeeded");
+          if (agencyMode)
+            track(done ? "photo_tool_completed" : "photo_tool_failed", { property_id: id, photo_id: what.photoId, tool: what.tool, surface: studio ? "studio" : "property" });
           say({
             tone: done ? "notice" : "error",
             text: done
@@ -636,7 +659,8 @@ export function DemoEditor({
           body: JSON.stringify({ tool, source, mask, key: crypto.randomUUID() }),
         });
         say({ tone: "notice", text: "Herramienta en marcha: el resultado aparece en Versiones de esta foto cuando esté listo.", section: "fotos" });
-        void watchTool(ids);
+        if (agencyMode) track("photo_tool_started", { property_id: id, photo_id: photoId, tool, surface: studio ? "studio" : "property" });
+        void watchTool(ids, { photoId, tool });
         return null;
       } catch (e) {
         return e instanceof Error ? e.message : "No pudimos empezar la herramienta.";
@@ -762,6 +786,8 @@ export function DemoEditor({
           </ul>
         )}
         <PhotoWorkspace
+          gallery="flat"
+          onUseInDemo={onUseInDemo}
           detail={detail}
           base={base}
           propertyType={type}
@@ -1370,6 +1396,7 @@ export function DemoEditor({
           )}
           <PhotoWorkspace
             variant="demo"
+            editHref={studioEditing ? (photoId, versionId) => studioEditLink(id, photoId, versionId) : undefined}
             belowGrid={videoBlock}
             detail={detail}
             base={base}

@@ -62,7 +62,7 @@ const host = (url: string) => {
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 const MB = Math.round(MAX_UPLOAD_BYTES / (1024 * 1024));
 
-export function ImportImages({ initialMethod = "url" }: { initialMethod?: Method }) {
+export function ImportImages({ initialMethod = "url", studioPath }: { initialMethod?: Method; /** Inside Estudio de imágenes: where its photos open there. */ studioPath?: (id: string) => string }) {
   const [method, setMethod] = useState<Method>(initialMethod);
   const [url, setUrl] = useState("");
   const [text, setText] = useState("");
@@ -651,6 +651,11 @@ export function ImportImages({ initialMethod = "url" }: { initialMethod?: Method
                   )}
                 </span>
                 <span className="ap-img-actions">
+                  {item.demoId && item.done > 0 && studioPath && (
+                    <a href={studioPath(item.demoId)} className="button button-small button-primary">
+                      Abrir en el Estudio
+                    </a>
+                  )}
                   {item.demoId && (
                     <Link href={`/panel/propiedades/${item.demoId}?volver=${encodeURIComponent("/panel/imagenes")}`} className="button button-small button-outline">
                       Abrir en el editor
@@ -677,9 +682,14 @@ export function ImportImages({ initialMethod = "url" }: { initialMethod?: Method
                 Importar más
               </button>
               {imported.some((i) => i.demoId && i.done > 0) && (
-                <Link href={`/panel/imagenes/lote?grupo=${imported.find((i) => i.demoId && i.done > 0)?.demoId}`} className="button button-primary">
+                <Link href={`/panel/imagenes/lote?grupo=${imported.find((i) => i.demoId && i.done > 0)?.demoId}`} className={`button ${studioPath ? "button-outline" : "button-primary"}`}>
                   Ambientar estas fotos →
                 </Link>
+              )}
+              {studioPath && imported.some((i) => i.demoId && i.done > 0) && (
+                <a href={studioPath(imported.find((i) => i.demoId && i.done > 0)!.demoId!)} className="button button-primary">
+                  Abrir en el Estudio →
+                </a>
               )}
             </span>
           </div>

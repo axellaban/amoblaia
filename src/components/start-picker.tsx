@@ -31,7 +31,7 @@ export function toolPath(tool: StartTool, id: string) {
   if (tool === "demo") return `/panel/propiedades/${id}?${new URLSearchParams({ seccion: "fotos", volver: "/panel" })}`;
   if (tool === "video") return `/panel/video?${new URLSearchParams({ propiedad: id })}`;
   const q = new URLSearchParams({ pestana: "fotos", fotos: id });
-  if (tool === "editar") q.set("modo", "editar");
+  q.set("modo", tool === "editar" ? "editar" : "ambientar");
   return `/panel/imagenes?${q}`;
 }
 

@@ -20035,3 +20035,628 @@ body:has(.pv-root) .pb-root {
   background: none;
   font-size: inherit;
 }
+
+/* ===================== Estudio de imágenes: diseño aprobado (02/11) =====================
+   Only the studio's own classes (.st-*, .pw-flat …): the sidebar, the header and the demo's layout stay as they are. */
+.st-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  justify-self: start;
+  font-weight: 700;
+}
+.st-head {
+  align-items: center;
+}
+.st-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.st-source {
+  position: relative;
+  min-width: 0;
+}
+.st-source-button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(340px, 100%);
+  min-height: 52px;
+  padding: 6px 12px 6px 6px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.st-source-button:hover {
+  border-color: #b9cbb1;
+}
+.st-source-thumb {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 52px;
+  height: 38px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--sand);
+  color: var(--forest);
+}
+.st-source-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.st-source-text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  line-height: 1.25;
+}
+.st-source-text strong {
+  overflow: hidden;
+  font-size: 15px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.st-source-text small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.st-source-pop {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  right: 0;
+  display: grid;
+  gap: 8px;
+  width: min(380px, calc(100vw - 32px));
+  max-height: min(440px, 70vh);
+  padding: 8px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 16px 40px rgba(31, 45, 36, 0.16);
+}
+.st-source-pop ul {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.st-source-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  padding: 6px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.st-source-option:hover,
+.st-source-option[aria-selected="true"] {
+  background: #eef5ea;
+}
+.st-source-check {
+  flex: none;
+  color: var(--forest);
+}
+.st-source-search {
+  margin: 0;
+}
+.st-menu {
+  position: relative;
+}
+.st-menu summary {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  color: var(--ink);
+  list-style: none;
+  cursor: pointer;
+}
+.st-menu summary::-webkit-details-marker {
+  display: none;
+}
+.st-menu summary:hover,
+.st-menu[open] summary {
+  background: #eef1ec;
+}
+.st-menu > div {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  right: 0;
+  display: grid;
+  min-width: 240px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 16px 40px rgba(31, 45, 36, 0.16);
+}
+.st-menu > div > * {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14.5px;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.st-menu > div > *:hover {
+  background: #eef5ea;
+}
+
+/* The three columns: every photo · the photo and its versions · Ambientar / Editar con IA. */
+.pw.pw-flat {
+  grid-template-columns: 228px minmax(0, 1fr) 340px;
+}
+/* The photo: «Antes» and «Después (estilo)» at the bottom, what to see at the top left, «ampliar» at the top right. */
+.pw-flat .comparison-label {
+  top: auto;
+  bottom: 14px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: rgba(36, 40, 36, 0.78);
+  color: #fff;
+  font-size: 13px;
+}
+.pw-flat .after-label {
+  background: #2e7d4f;
+}
+.pw-flat .pw-tools {
+  top: 12px;
+  bottom: auto;
+  left: 12px;
+  transform: none;
+}
+.pw-flat .pw-caption {
+  top: auto;
+  bottom: 14px;
+}
+.pw-gallery {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--paper);
+}
+.pw-gallery-title {
+  margin: 0;
+  color: var(--ink);
+  font-size: 18px;
+}
+.pw-gallery-title span {
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 600;
+}
+.pw-gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  max-height: calc(100vh - 260px);
+  min-height: 240px;
+  margin: 0;
+  padding: 2px 6px 2px 2px;
+  overflow-y: auto;
+  list-style: none;
+  overscroll-behavior: contain;
+}
+.pw-gallery-add-item {
+  grid-column: 1 / -1;
+  position: sticky;
+  bottom: 0;
+  padding-top: 4px;
+  background: var(--paper);
+}
+.pw-flat .pw-thumb[aria-pressed="true"] {
+  border-color: #2e7d4f;
+  box-shadow: 0 0 0 2px #cfe5d3;
+}
+.pw-thumb-check {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: #2e7d4f;
+  color: #fff;
+  box-shadow: 0 0 0 2px #fff;
+}
+.pw-flat .pw-stage-head {
+  justify-content: center;
+  flex-wrap: nowrap;
+}
+.pw-flat .pw-stage-title {
+  flex: 0 1 auto;
+  min-width: 120px;
+  text-align: center;
+}
+.pw-flat .pw-stage-head .icon-button {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+}
+.pw-flat .pw-figure > img {
+  max-height: min(600px, calc(100vh - 300px));
+}
+.pw-flat .pw-figure:fullscreen {
+  display: grid;
+  place-items: center;
+  background: #111;
+}
+.pw-flat .pw-figure:fullscreen > img {
+  max-height: 100vh;
+}
+.pw-flat .pw-versions-head small {
+  display: none;
+}
+.pw-flat .pw-versions {
+  gap: 8px;
+}
+.pw-flat .pw-versions > li {
+  flex: 0 0 max(76px, calc((100% - 40px) / 6));
+}
+.pw-flat .pw-version img,
+.pw-flat .pw-version-new-art {
+  aspect-ratio: 4 / 3;
+  border-radius: 10px;
+}
+.pw-flat .pw-version span {
+  text-align: center;
+}
+.pw-flat .pw-version small {
+  display: none;
+}
+.pw-flat .pw-version strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.pw-flat .pw-version[aria-pressed="true"] strong {
+  color: #2e7d4f;
+}
+.pw-flat .pw-version-state {
+  flex-basis: 180px;
+}
+
+/* «Ambientar con IA» / «Editar con IA»: one panel, two compact modes. */
+.pw-modes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0 0 14px;
+}
+.pw-modes button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 6px;
+  white-space: nowrap;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--forest);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.pw-modes button[aria-pressed="true"] {
+  border-color: var(--forest);
+  background: var(--forest);
+  color: #fff;
+}
+.pw-styles-row {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+.pw-styles-row .pw-style-art {
+  border-radius: 9px;
+}
+.pw-styles-row .pw-style-name {
+  justify-content: center;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+}
+.pw-styles-row .pw-style-name small {
+  display: none;
+}
+.pw-styles-row .pw-style-check {
+  top: 3px;
+  right: 3px;
+  padding: 2px;
+}
+.pw-more-styles.is-block {
+  justify-self: stretch;
+  min-height: 42px;
+  padding-bottom: 0;
+}
+.pw-flat .pw-create-actions .button-primary {
+  flex: 1;
+}
+.pw-create-more {
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+.pw-create-more summary {
+  color: var(--muted);
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.pw-create-more[open] {
+  display: grid;
+  gap: 10px;
+}
+.pw-edit-compact .pw-edit-on {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.pw-edit-compact .pw-edit-on strong {
+  color: var(--ink);
+}
+.pw-edit-title {
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 750;
+}
+.pw-auto {
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 42px;
+  margin-top: 4px;
+}
+.pw-tools-tiles > span {
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 750;
+}
+.pw-tool-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.pw-tool-tile {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 6px;
+  min-height: 82px;
+  padding: 8px 4px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--forest);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.2;
+  text-align: center;
+  cursor: pointer;
+}
+.pw-tool-tile:hover {
+  border-color: #b9cbb1;
+}
+.pw-tool-tile.is-on {
+  border-color: var(--forest);
+  background: #eef5ea;
+  box-shadow: 0 0 0 2px #e3ebdc;
+}
+.pw-edit-compact .pw-edit-actions .button {
+  flex: 1;
+  min-height: 44px;
+}
+
+/* The result: download it, use it in a demo (secondary), and the ficha's choices folded. */
+.pw-result {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fbf9f5;
+}
+.pw-result.is-ready {
+  border-color: #cfe5d3;
+  background: #f1f7ef;
+}
+.pw-result-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.pw-result-head > span:last-child {
+  display: grid;
+}
+.pw-result-head strong {
+  color: var(--ink);
+  font-size: 17px;
+}
+.pw-result-head small,
+.pw-result-on {
+  color: var(--muted);
+  font-size: 13px;
+}
+.pw-result-on {
+  margin: 0;
+}
+.pw-result-on strong {
+  color: var(--ink);
+}
+.pw-result-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  background: #d8ecd9;
+  color: #2e7d4f;
+}
+.pw-result-button {
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  background: #fff;
+}
+.pw-result .pw-hint {
+  margin: 0;
+}
+.pw-result-more summary {
+  color: var(--muted);
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.pw-result-more > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding-top: 8px;
+}
+
+@media (max-width: 1280px) {
+  .pw.pw-flat {
+    grid-template-columns: 196px minmax(0, 1fr) 316px;
+  }
+  .pw-flat .pw-modes button {
+    font-size: 13px;
+  }
+}
+@media (max-width: 1100px) {
+  .pw.pw-flat {
+    grid-template-columns: 200px minmax(0, 1fr);
+  }
+  .pw-flat .pw-side {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 760px) {
+  .st-head {
+    align-items: stretch;
+  }
+  .st-head-actions {
+    width: 100%;
+  }
+  .st-source {
+    flex: 1;
+  }
+  .st-source-button {
+    width: 100%;
+  }
+  .pw.pw-flat {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* On a phone every photo scrolls sideways, «Agregar fotos» at the end of the strip. */
+  .pw-gallery {
+    gap: 8px;
+    padding: 12px;
+  }
+  .pw-gallery-title {
+    font-size: 16px;
+  }
+  .pw-gallery-grid {
+    display: flex;
+    gap: 8px;
+    max-height: none;
+    min-height: 0;
+    padding: 2px 2px 6px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+  }
+  .pw-gallery-grid > li {
+    flex: 0 0 96px;
+    scroll-snap-align: start;
+  }
+  .pw-gallery-add-item {
+    position: static;
+    flex-basis: 120px;
+    padding-top: 0;
+  }
+  .pw-gallery-add-item .pw-add {
+    height: 100%;
+    min-height: 72px;
+    flex-direction: column;
+    font-size: 13px;
+  }
+  .pw-flat .pw-figure > img {
+    max-height: 70vh;
+  }
+  .pw-flat .pw-versions > li {
+    flex-basis: 96px;
+  }
+  .pw-tool-tile {
+    min-height: 76px;
+  }
+}
+.pw-flat .pw-quote:empty {
+  display: none;
+}
+.pw-flat .pw-version strong {
+  font-size: 12px;
+  line-height: 1.2;
+}
+.pw-flat .pw-side,
+.pw-flat .pw-what-panel,
+.pw-flat .pw-create,
+.pw-flat .pw-field {
+  min-width: 0;
+}
+.pw-flat .pw-create-actions {
+  flex-wrap: wrap;
+}
+.pw-flat .pw-create-actions .button {
+  min-width: 0;
+  justify-content: center;
+}
+.pw-flat .pw-create-actions .button {
+  flex: 1 1 auto;
+  white-space: normal;
+}
