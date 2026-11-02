@@ -1,6 +1,6 @@
 # Habita V2 — Fase 1: importador de propiedades por URL
 
-**Estado:** implementado y verificado offline; **QA desde la IP de Vercel pendiente** (ver §6). No cerrar la fase hasta completar §6.
+**Estado:** implementado, verificado offline y **medido desde la IP de Vercel el 02/11/2026** (ver §6): 15 de 16 leídas, ningún 403 ni challenge. Queda abierto un sitio que no responde a Vercel (Scagliola).
 
 ## 1. Qué cambió
 
@@ -62,15 +62,35 @@ Desde el entorno de desarrollo de esta fase (no Vercel) las 16 URLs respondieron
 
 Solo hace falta si el preview confirma 403/challenge. Opciones a evaluar entonces (costo por página y términos): ScrapingBee, Browserless, Zyte, Firecrawl. Alternativa sin costo: IP de salida fija (Vercel Static IPs o proxy propio) — también requiere aprobación. Mientras tanto el importador responde con un error accionable (portal o carga manual), nunca con un éxito falso.
 
-## 6. QA desde Vercel — bloqueado por acceso
+## 6. QA desde Vercel (02/11/2026)
 
-El preview se construye en la cuenta Vercel `labans-projects-c5c64fdc`, que no está conectada a esta sesión. Para completar la tabla desde la IP de Vercel:
+Medido desde el preview de `claude/sleepy-cori-jcis44` (commit `1a36175`, región `iad1`) con `/api/qa/importador?i=<n>`. Como el proxy de la sesión no llega a los dominios de Vercel, se usó el enlace compartido de Vercel, que no permite headers: por eso la ruta acepta también `?token=` (sigue apagada en producción y solo lee la lista de QA). Al terminar, `IMPORTER_QA_TOKEN` quedó con un valor corto (endpoint apagado).
 
-1. En Vercel → proyecto `amoblaia` → Settings → Environment Variables: crear `IMPORTER_QA_TOKEN` (valor aleatorio de 32+ caracteres), entorno **Preview**, rama `claude/friendly-shannon-54k8z1`. Redeploy del preview.
-2. Ejecutar para `i` de 0 a 15 (orden alfabético del manifest):
-   `curl -H "x-qa-token: $TOKEN" "https://<preview>/api/qa/importador?i=0"`
-   (si el preview tiene Vercel Authentication, agregar el bypass o compartir el enlace).
-3. Pegar los resultados: completo la tabla «preview» y, si hay 403, la propuesta de proveedor.
+| i | Caso | Resultado desde Vercel | ms | Precio | Fotos |
+| --- | --- | --- | --- | --- | --- |
+| 0 | elementor-scagliola | **timeout** (sin respuesta en 15 s, 2 de 2 intentos) | 15.000 | — | — |
+| 1 | houzez-grande | OK | 219 | USD 200.000 | 12 |
+| 2 | inmobiliatica-acampora | OK | 271 | USD 143.640 | 14 |
+| 3 | inmobiliatica-businessmanager | OK | 368 | USD 55.000 | 29 |
+| 4 | inmobiliatica-damianfernandez | OK | 360 | USD 72.000 | 22 |
+| 5 | inmobiliatica-homesland | OK | 373 | $ 210.000 | 12 |
+| 6 | nextrsc-dar | OK (falta operación, no la publica) | 2.731 | USD 55.000 | 9 |
+| 7 | nextsanity-goicoechea | OK | 335 | USD 155.000 | 15 |
+| 8 | php-berasueta | OK | 856 | USD 58.000 | 6 |
+| 9 | tecnogestion-ordonez | OK | 3.724 | USD 399.000 | 28 |
+| 10 | tokko-bibbo | OK | 124 | USD 49.900 | 34 |
+| 11 | tokko-galan | OK | 241 | USD 720.000 | 62 |
+| 12 | tokko-mendiondo | OK | 1.634 | USD 189.000 | 60 |
+| 13 | tokko-tormes | OK | 124 | USD 47.000 | 37 |
+| 14 | tokkoapi-sanzyordoqui (Cloudflare) | OK | 293 | USD 119.900 | 27 |
+| 15 | wasi-piglia | OK | 653 | USD 500.000 | 4 |
+
+Todo por `direct_http`, sin proveedor. Los datos coinciden con la tabla offline de §2.
+
+**Conclusión:**
+- **No hay 403 ni challenge desde Vercel**, tampoco en los sitios con Cloudflare (Inmobiliatica, Sanz y Ordoqui). El 403 histórico no se reproduce con el transporte nuevo.
+- **Scagliola (WP + Elementor) no responde a Vercel**, pero desde el entorno de desarrollo respondió 200. Lo más probable es que su servidor descarte en silencio las conexiones de IP de datacenter. El usuario recibe el error accionable de timeout.
+- **Decisión:** no contratar proveedor de render por ahora. Reevaluar si los eventos `listing_import_failed` con `timeout`/`blocked`/`challenge` muestran más sitios así en producción.
 
 ## 7. Deudas / pendientes de esta fase (no implementados)
 
