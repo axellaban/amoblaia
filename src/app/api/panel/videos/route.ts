@@ -1,5 +1,5 @@
 import { failure, HttpError } from "@/lib/commerce/http";
-import { requireDemoAccess } from "@/lib/agency/server";
+import { requireDemoAccess, requireDemoRead } from "@/lib/agency/server";
 import { readJson } from "@/lib/demos/input";
 import { isUuid } from "@/lib/demos/shared";
 import { adminClient } from "@/lib/supabase/server";
@@ -26,7 +26,7 @@ export async function GET(request: Request) {
   try {
     const demoId = new URL(request.url).searchParams.get("demo");
     if (!isUuid(demoId)) throw new HttpError(400, "Propiedad inválida.");
-    const access = await requireDemoAccess(undefined, demoId);
+    const access = await requireDemoRead(demoId);
     const title = slug(await titleOf(access.demo.property_id));
     const videos = await listVideos(access.demo.id, (r: VideoRow) => `${title}-${r.format === "9:16" ? "vertical" : "horizontal"}.mp4`);
     return Response.json({ videos }, { headers: PRIVATE });

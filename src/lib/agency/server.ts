@@ -8,6 +8,7 @@ import { adminClient } from "@/lib/supabase/server";
 import { canEdit, canManage, READ_ONLY_ROLE, type AgencyRole } from "./shared";
 import { assertEditTarget, editContextOf } from "./edit-context";
 import { assertReadable, supportAgency } from "./support";
+import { VisitorError, visitorMembership } from "./visit";
 
 export type AgencyAccount = {
   id: string;
@@ -21,8 +22,10 @@ export type AgencyAccount = {
  * support: a team member looking at this agency's panel (read only), or
  * acting as the agency with its owner's permissions (acting).
  * scope: the properties (demo_properties.id) this user is limited to; null, all.
+ * visitor: the agency itself, before creating its account, looking around its
+ * panel from its demo's invitation (visit.ts): it only reads.
  */
-export type Membership = { role: AgencyRole; agency: AgencyAccount; scope: string[] | null; support?: boolean; acting?: boolean };
+export type Membership = { role: AgencyRole; agency: AgencyAccount; scope: string[] | null; support?: boolean; acting?: boolean; visitor?: boolean };
 const AGENCY_FIELDS = "id,name,website,slug,owner_id,site_published";
 
 /** The agency this account works for, if any (one per account for now). */
@@ -74,13 +77,41 @@ export async function membershipFor(user: Pick<User, "id" | "email">): Promise<M
  * view, which only reads). A viewer only reads too; `action` asks for more.
  */
 export async function requireAgency(request?: Request, action?: "edit" | "create" | "manage") {
-  const user = await requireUser(request);
+  const user = await requireUser(request).catch(async (e) => {
+    // A visitor (no account yet) is asked to create it, never sent to sign in.
+    if (e instanceof HttpError && e.status === 401 && (await visitorMembership())) throw new VisitorError();
+    throw e;
+  });
   const membership = await membershipFor(user);
   if (!membership) throw new HttpError(404, "Todavía no creaste tu inmobiliaria.");
   if (membership.support && !membership.acting) assertReadable(request);
   if (action) assertCan(membership, action);
   else if (request && request.method !== "GET" && request.method !== "HEAD") assertCan(membership, "edit");
   return { user, ...membership };
+}
+
+/** The account behind a request, or null when there is none (an unverified one counts as none). */
+async function optionalUser(request?: Request) {
+  try {
+    return await requireUser(request);
+  } catch (e) {
+    if (e instanceof HttpError && e.status === 401) return null;
+    throw e;
+  }
+}
+
+/**
+ * For the panel's reads (GET handlers): requireAgency, or the agency's own
+ * visit before it has an account (user null). Changes go through requireAgency.
+ */
+export async function requireAgencyRead(): Promise<{ user: User | null } & Membership> {
+  const user = await optionalUser();
+  const membership = user ? await membershipFor(user) : null;
+  if (membership) return { user, ...membership };
+  const visit = await visitorMembership();
+  if (visit) return { user, ...visit };
+  if (!user) throw new HttpError(401, "Ingresá a tu cuenta y verificá tu email.");
+  throw new HttpError(404, "Todavía no creaste tu inmobiliaria.");
 }
 
 /**
@@ -91,7 +122,10 @@ export async function requireAgency(request?: Request, action?: "edit" | "create
  * demo the team prepares (staged with the team's zero-balance demo grant).
  */
 export async function requireDemoAccess(request: Request | undefined, demoId: string) {
-  const actor = await requireUser(request);
+  const actor = await requireUser(request).catch(async (e) => {
+    if (e instanceof HttpError && e.status === 401 && (await visitorMembership())) throw new VisitorError();
+    throw e;
+  });
   let admin = isAdmin(actor.email);
   const support = admin ? await supportAgency(actor) : null;
   // From the panel in a support view the team only reads, like the agency's panel itself.
@@ -141,6 +175,23 @@ export function assertManager(access: Pick<DemoAccess, "admin" | "role">, messag
 }
 export type DemoAccess = Awaited<ReturnType<typeof requireDemoAccess>>;
 
+/**
+ * The reads of a property page (GET handlers): requireDemoAccess, or the
+ * agency's own visit to one of its properties before it has an account
+ * (actor null). It sees the page as its owner would; changes ask for the account.
+ */
+export async function requireDemoRead(demoId: string) {
+  const user = await optionalUser();
+  if (user) return requireDemoAccess(undefined, demoId);
+  const visit = await visitorMembership();
+  if (!visit) throw new HttpError(401, "Ingresá a tu cuenta y verificá tu email.");
+  const demo = await demoRow(demoId);
+  if (demo.agency_id !== visit.agency.id) throw new HttpError(404, "No encontramos la demo.");
+  // A visit's agency has no account yet: nobody pays its stagings, the visitor cannot make one.
+  return { actor: null, demo, admin: false, role: visit.role, billingUser: null, editContext: null, acting: false, visitor: true as const };
+}
+export type DemoRead = Awaited<ReturnType<typeof requireDemoRead>>;
+
 /** Why the team cannot stage an agency's photos from the admin panel. */
 export const TEAM_ON_AGENCY = "Esta inmobiliaria ya tiene su cuenta: las ambientaciones se crean desde su panel, con sus créditos.";
 
@@ -151,11 +202,13 @@ export const TEAM_ON_AGENCY = "Esta inmobiliaria ya tiene su cuenta: las ambient
  * agency with an account pays with its owner's credits, and the team never
  * spends them, unless the team member is that owner.
  */
-export function stagingRule(access: Pick<DemoAccess, "actor" | "admin" | "billingUser"> & { role?: AgencyRole | null }) {
+export function stagingRule(access: { actor: Pick<User, "id"> | null; admin: boolean; billingUser: string | null; role?: AgencyRole | null; visitor?: boolean }) {
+  // A visitor sees the actions as its owner will: trying one asks it to create its account (VisitorError).
+  if (access.visitor) return { payer: "agency" as const, blocked: null };
   if (!access.billingUser) return { payer: "team" as const, blocked: null };
   return {
     payer: "agency" as const,
-    blocked: access.admin && access.billingUser !== access.actor.id ? TEAM_ON_AGENCY : access.role === "viewer" ? READ_ONLY_ROLE : null,
+    blocked: access.admin && access.billingUser !== access.actor?.id ? TEAM_ON_AGENCY : access.role === "viewer" ? READ_ONLY_ROLE : null,
   };
 }
 
@@ -191,9 +244,10 @@ export async function imageOwners(params: { photoId?: string | null; generationI
 }
 
 /** For the team and for members: may this account see that picture? */
-export async function canSeeImage(user: User, params: { photoId?: string | null; generationId?: string | null; retouchId?: string | null }) {
-  if (isAdmin(user.email)) return true;
-  const membership = await membershipOf(user.id);
+export async function canSeeImage(user: User | null, params: { photoId?: string | null; generationId?: string | null; retouchId?: string | null }) {
+  if (user && isAdmin(user.email)) return true;
+  // Without an account, only the agency's own visit (its invitation) sees its pictures.
+  const membership = user ? await membershipOf(user.id) : await visitorMembership();
   if (!membership) return false;
   return (await imageOwners(params))?.some((o) => o.agencyId === membership.agency.id && inScope(membership, o.propertyId)) ?? false;
 }

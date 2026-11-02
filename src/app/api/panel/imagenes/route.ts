@@ -1,14 +1,14 @@
 import { failure } from "@/lib/commerce/http";
 import { agencyProperties } from "@/lib/agency/panel";
 import { importPhotoGroup } from "@/lib/agency/photo-groups";
-import { requireAgency } from "@/lib/agency/server";
+import { requireAgency, requireAgencyRead } from "@/lib/agency/server";
 export const runtime = "nodejs";
 
 /** The agency's photo groups (not fichas yet), newest first, with their real photo counts. */
 // Without the request: browsers send no Origin on a same-origin GET, so its origin check would refuse every read.
 export async function GET() {
   try {
-    const { agency, scope } = await requireAgency();
+    const { agency, scope } = await requireAgencyRead();
     const { items, total } = await agencyProperties(agency.id, { kind: "fotos", perPage: 48, scope });
     return Response.json({ items, total }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (e) {

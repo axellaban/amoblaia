@@ -1,5 +1,5 @@
 import { failure, HttpError } from "@/lib/commerce/http";
-import { assertManager, requireDemoAccess } from "@/lib/agency/server";
+import { assertManager, requireDemoAccess, requireDemoRead } from "@/lib/agency/server";
 import { auditAgencyEdit } from "@/lib/agency/edit-context";
 import { brandingOf, logoFromBytes, logoOf, saveJson } from "@/lib/demos/server";
 export const runtime = "nodejs";
@@ -10,7 +10,7 @@ const MAX_UPLOAD = 2 * 1024 * 1024;
 export async function GET(_request: Request, { params }: Params) {
   try {
     const { id } = await params;
-    const { demo } = await requireDemoAccess(undefined, id);
+    const { demo } = await requireDemoRead(id);
     const logo = await logoOf(demo.agency_id);
     if (!logo) throw new HttpError(404, "La inmobiliaria no tiene logo.");
     return new Response(new Uint8Array(logo.bytes), {

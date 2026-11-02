@@ -2,7 +2,7 @@ import "server-only";
 import { cookies } from "next/headers";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { User } from "@supabase/supabase-js";
-import { HttpError, isAdmin } from "@/lib/commerce/http";
+import { HttpError, isAdmin, rpc } from "@/lib/commerce/http";
 import { isUuid } from "@/lib/demos/shared";
 import { adminClient } from "@/lib/supabase/server";
 import type { AgencyAccount } from "./server";
@@ -71,4 +71,23 @@ export async function supportAgency(user: Pick<User, "id" | "email">): Promise<S
 /** Writes are refused in the support view; reads (GET) go through. */
 export function assertReadable(request?: Request) {
   if (request && request.method !== "GET" && request.method !== "HEAD") throw new HttpError(403, READ_ONLY);
+}
+
+/** Records a support view starting or ending; a view that cannot be recorded does not start. */
+export async function auditSupport(actorId: string, action: string, agencyId: string) {
+  await rpc("amobla_account", { p_user: actorId, p_trial: false });
+  const { error } = await adminClient().from("admin_audit").insert({ actor_id: actorId, action, subject_id: agencyId, details: {} });
+  if (error) throw new Error("SUPPORT_AUDIT_FAILED");
+}
+
+/** Opens the agency's panel for this team member, for one hour (audited first). */
+export async function startSupport(actorId: string, agencyId: string, mode: SupportMode) {
+  await auditSupport(actorId, mode === "act" ? "agency_support_act" : "agency_support_view", agencyId);
+  (await cookies()).set(SUPPORT_COOKIE, supportToken(agencyId, actorId, Date.now(), mode), {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: SUPPORT_SECONDS,
+  });
 }

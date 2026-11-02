@@ -1,5 +1,5 @@
 import { failure, HttpError, rpc } from "@/lib/commerce/http";
-import { assertManager, requireDemoAccess, stagingRule } from "@/lib/agency/server";
+import { assertManager, requireDemoAccess, requireDemoRead, stagingRule } from "@/lib/agency/server";
 import { auditAgencyEdit } from "@/lib/agency/edit-context";
 import {
   assertNoLiveJobs,
@@ -43,7 +43,7 @@ function viewOf(detail: Awaited<ReturnType<typeof demoDetail>>, admin: boolean) 
 export async function GET(_request: Request, { params }: Params) {
   try {
     const { id } = await params;
-    const access = await requireDemoAccess(undefined, id);
+    const access = await requireDemoRead(id);
     return Response.json(
       { ...viewOf(await demoDetail(access.demo.id), access.admin), staging: stagingRule(access), readOnly: access.role === "viewer" },
       { headers: PRIVATE },

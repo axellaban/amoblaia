@@ -1,9 +1,11 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
+import { visitPath } from "@/lib/agency/demo-invite";
 import { PublicDemo, publicDemoMetadata } from "../../public-demo";
 
 // The agency's link: /demo/<token>/presentacion, or /demo/<token>/presentacion/<codigo>
 // (with its invitation), /ficha after the code to see the buyers' page and
-// /precios to open its plans inside the agency's demo.
+// /precios to open its plans inside the agency's demo; /panel opens its own
+// panel (Ingresar al panel).
 export const dynamic = "force-dynamic";
 
 type Props = {
@@ -16,6 +18,7 @@ function viewOf(rest: string[] = []) {
   if (rest.length === 1) return { code: rest[0], ficha: false, prices: false };
   if (rest.length === 2 && rest[1] === "ficha") return { code: rest[0], ficha: true, prices: false };
   if (rest.length === 2 && rest[1] === "precios") return { code: rest[0], ficha: false, prices: true };
+  if (rest.length === 2 && rest[1] === "panel") return { code: rest[0], ficha: false, prices: false, panel: true };
   return null;
 }
 
@@ -28,5 +31,6 @@ export default async function PresentationPage({ params }: Props) {
   const { token, rest } = await params;
   const view = viewOf(rest);
   if (!view) notFound();
+  if ("panel" in view && view.code) redirect(visitPath(view.code));
   return <PublicDemo token={token} presentation code={view.code} ficha={view.ficha} prices={view.prices} />;
 }

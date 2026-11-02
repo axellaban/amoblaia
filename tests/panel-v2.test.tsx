@@ -36,6 +36,11 @@ vi.mock("@/lib/agency/server", async () => {
       if (!auth.membership) throw new HttpError(404, "Todavía no creaste tu inmobiliaria.");
       return { user: auth.user, ...auth.membership };
     },
+    requireAgencyRead: async () => {
+      if (!auth.user) throw new HttpError(401, "Ingresá a tu cuenta.");
+      if (!auth.membership) throw new HttpError(404, "Todavía no creaste tu inmobiliaria.");
+      return { user: auth.user, ...auth.membership };
+    },
   };
 });
 vi.mock("@/lib/supabase/server", () => {
