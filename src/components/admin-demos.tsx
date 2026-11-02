@@ -872,7 +872,7 @@ export function SendLog({ events }: { events: DemoSendEvent[] | undefined }) {
 
 /** How the link will look when pasted in WhatsApp (image, title, description, domain). */
 export function LinkPreview({ demo, location }: { demo: DemoSummary; location?: string | null }) {
-  const host = typeof window === "undefined" ? "amoblaia.vercel.app" : window.location.host;
+  const host = typeof window === "undefined" ? "www.habitaia.app" : window.location.host;
   return (
     <div className="dm-link-preview" aria-label="Previsualización del enlace">
       {demo.cover ? (

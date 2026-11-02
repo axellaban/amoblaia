@@ -1,6 +1,6 @@
 import type { MetadataRoute } from "next";
 import { resources, articles } from "@/lib/content";
-const base = process.env.APP_URL || "https://amoblaia.vercel.app";
+const base = process.env.APP_URL || "https://www.habitaia.app";
 export default function sitemap(): MetadataRoute.Sitemap {
   return [
     "",
