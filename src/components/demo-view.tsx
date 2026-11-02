@@ -927,6 +927,8 @@ function Gallery({
   const [allStyles, setAllStyles] = useState(false);
   // Five thumbnails and "+N fotos" (the mockup); the rest open on demand.
   const [allThumbs, setAllThumbs] = useState(false);
+  // Buyers on phones: «Estilos» and «Video» share one place, as two tabs (the mockup); on desktop both show.
+  const [asideTab, setAsideTab] = useState<"styles" | "video">("styles");
   const thumbs = useRef<HTMLOListElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const swipe = useRef<{ x: number; y: number } | null>(null);
@@ -1201,8 +1203,15 @@ function Gallery({
   );
 
   // "Recorré la transformación": the video as its own card, under the gallery.
-  const videoCard = video?.placement === "below" && (
-    <section className="dv2-video-card" aria-labelledby="dv2-video-title">
+  // The buyers' phone tabs: the card also lives in «Video» when the video sits among the thumbnails.
+  const buyerTabs = !owner && Boolean(video) && rows.length > 0;
+  const videoCard = (video?.placement === "below" || buyerTabs) && (
+    <section
+      className={`dv2-video-card ${video?.placement === "below" ? "" : "is-tab-only"}`}
+      aria-labelledby="dv2-video-title"
+      id="dv2-aside-video"
+      {...(buyerTabs ? { role: "tabpanel" } : {})}
+    >
       <button type="button" className="dv2-video-cover" aria-label="Ver el video" onClick={() => openVideo("card_cover")}>
         <img src={posterThumb} alt="" loading="lazy" />
         <span className="dv2-play" aria-hidden="true">
@@ -1433,8 +1442,30 @@ function Gallery({
         {owner && videoCard}
       </div>
       <aside className="dv2-aside">
-        {stylesCard}
-        {!owner && videoCard}
+        {buyerTabs && (
+          <div className="dv2-aside-tabs" role="tablist" aria-label="Estilos y video">
+            {(["styles", "video"] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                role="tab"
+                aria-selected={asideTab === t}
+                aria-controls={t === "styles" ? "dv2-estilos" : "dv2-aside-video"}
+                className={asideTab === t ? "is-on" : ""}
+                onClick={() => {
+                  setAsideTab(t);
+                  note("demo_aside_tab", { tab: t });
+                }}
+              >
+                {t === "styles" ? <Sparkles size={16} aria-hidden="true" /> : <Play size={16} aria-hidden="true" />} {t === "styles" ? "Estilos" : "Video"}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className={`dv2-aside-group ${buyerTabs ? `has-tabs is-${asideTab}` : ""}`}>
+          {stylesCard}
+          {!owner && videoCard}
+        </div>
         {ownerActions && <div className="dv2-aside-actions">{ownerActions}</div>}
         {aside}
       </aside>

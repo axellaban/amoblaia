@@ -19077,3 +19077,57 @@ a.dv2-style-generate:hover {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* Buyers on phones: «Estilos» and «Video» as two tabs; on desktop both are shown and the tabs hide. */
+.dv2-aside-group {
+  display: grid;
+  gap: 12px;
+}
+.dv2-aside-tabs {
+  display: none;
+}
+@media (min-width: 901px) {
+  .dv2-video-card.is-tab-only {
+    display: none;
+  }
+}
+@media (max-width: 900px) {
+  .dv2-aside-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    border-bottom: 1px solid var(--line);
+  }
+  .dv2-aside-tabs button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 46px;
+    border: 0;
+    border-bottom: 3px solid transparent;
+    background: none;
+    color: var(--muted);
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .dv2-aside-tabs button.is-on {
+    color: var(--forest);
+    border-bottom-color: var(--forest);
+  }
+  .dv2-aside-group.has-tabs.is-styles > .dv2-video-card,
+  .dv2-aside-group.has-tabs.is-video > .dv2-styles {
+    display: none;
+  }
+  .dv2-aside-group.has-tabs .dv2-styles {
+    border: 0;
+    padding: 4px 0 0;
+  }
+  /* The tab already says «Estilos»: only «Ver todos» stays in its head. */
+  .dv2-aside-group.has-tabs .dv2-styles-head {
+    justify-content: flex-end;
+  }
+  .dv2-aside-group.has-tabs .dv2-styles-head h2 {
+    display: none;
+  }
+}

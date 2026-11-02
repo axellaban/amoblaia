@@ -248,3 +248,14 @@ describe("the buyers' page", () => {
     expect(html).not.toContain(">Guardar<");
   });
 });
+
+describe("buyers' «Estilos / Video» tabs on phones", () => {
+  const withVideo = { ...demo, prospect: false, video: { id: "vid1", format: "9:16" as const, durationMs: 20000, placement: "first" as const } };
+  it("appear only with a real video, next to the existing styles", () => {
+    const html = renderToStaticMarkup(<DemoView demo={withVideo} source={{ kind: "public", token: "tok" }} />);
+    expect(html).toContain('role="tablist" aria-label="Estilos y video"');
+    expect(html).toContain('class="dv2-video-card is-tab-only"');
+    const none = renderToStaticMarkup(<DemoView demo={{ ...demo, prospect: false }} source={{ kind: "public", token: "tok" }} />);
+    expect(none).not.toContain('role="tablist"');
+  });
+});
