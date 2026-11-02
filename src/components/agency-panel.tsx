@@ -8,23 +8,34 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
-  CircleHelp,
+  Check,
+  ChevronsLeftRight,
+  Clapperboard,
+  CloudSun,
   Download,
+  Eraser,
   ExternalLink,
   Eye,
   FileText,
   Globe,
+  Image as ImageIcon,
+  Layers,
   LayoutGrid,
   LayoutList,
   Link2,
-  MapPin,
+  MonitorPlay,
   MoreHorizontal,
+  MoreVertical,
+  Pencil,
+  Play,
   PlayCircle,
   Search,
   Share2,
   Sofa,
   Sparkles,
+  Sun,
   Wand2,
+  Zap,
 } from "lucide-react";
 import { ApiError, api } from "./admin-demos";
 import { ImportPreview, MapReview, exceptions, initialMapChoice, mapOverride, syncPhotos, type MapChoice } from "./demo-import";
@@ -50,7 +61,7 @@ import { adminPhotoUrl } from "@/lib/demos/shared";
 import { leadFromDemoRef } from "@/lib/leads/client";
 import { PanelNav, PanelTopbar, type PanelSection } from "./panel-shell";
 import { videoEnabled } from "@/lib/agency/flags";
-import { StartPicker, TOOL_TITLE, toolPath, type StartTool } from "./start-picker";
+import { StartPicker, toolPath, type StartTool } from "./start-picker";
 
 type Section = PanelSection;
 export { PanelNav };
@@ -135,109 +146,136 @@ function nextStep(d: PanelSummary): { text: string; href: string; action: string
 }
 
 /**
- * The three ways in (spec v3 §1.2): Ambientar, Editar, Crear video, as the
- * same large cards. Each asks first which images to start with (§1.3).
- * Video only where it is enabled: its page does not exist otherwise.
+ * The three ways in (spec v3 §1.2), as the home's three large cards: an
+ * interactive demo (staging), the image studio and video. Each card names
+ * what that tool really does and «Comenzar» asks first which images to start
+ * with (§1.3). Video only where it is enabled: its page does not exist otherwise.
  */
 function HomeCards({ creator, existingCount }: { creator: boolean; existingCount: number }) {
   const [open, setOpen] = useState<StartTool | null>(null);
   if (!creator) return null;
-  const cards: { id: StartTool; className: string; tag: string; text: string; image: string; icon: typeof Sparkles }[] = [
+  const cards: {
+    id: StartTool;
+    title: string;
+    text: string;
+    icon: typeof Sparkles;
+    art: { src: string; before?: string; play?: boolean };
+    features: [typeof Sparkles, string][];
+  }[] = [
     {
       id: "ambientar",
-      className: "crear",
-      tag: "Recomendado",
-      text: "Mejorá y amoblá tus fotos de forma realista.",
-      image: "/ejemplos/living-scandinavian.webp",
-      icon: Sofa,
+      title: "Crear demostración interactiva",
+      text: "Ambientá con IA tus fotos y creá una experiencia para compartir con tus clientes.",
+      icon: Layers,
+      art: { before: "/ejemplos/living-before.webp", src: "/ejemplos/living-scandinavian.webp" },
+      features: [
+        [ImageIcon, "Antes / después"],
+        [Layers, "Distintos estilos"],
+        [Share2, "Enlace para compartir"],
+      ],
     },
     {
       id: "editar",
-      className: "imagenes",
-      tag: "Luz, color y objetos",
-      text: "Ajustá luz, color, quitá objetos o cambiá el cielo.",
-      image: "/ejemplos/bedroom-modern.webp",
-      icon: Wand2,
+      title: "Estudio de imágenes",
+      text: "Mejorá y transformá tus fotos para que se vean más atractivas.",
+      icon: ImageIcon,
+      art: { src: "/ejemplos/living-modern.webp" },
+      features: [
+        [Sun, "Mejorar luz y color"],
+        [Eraser, "Quitar objetos"],
+        [CloudSun, "Cambiar el cielo"],
+      ],
     },
     ...(videoEnabled()
       ? [
           {
             id: "video" as const,
-            className: "video",
-            tag: "Reels y WhatsApp",
-            text: "Creá un video de tu propiedad en minutos.",
-            image: "/ejemplos/outdoor-modern.webp",
-            icon: PlayCircle,
+            title: "Crear video",
+            text: "Generá videos de tus propiedades listos para publicar.",
+            icon: Clapperboard,
+            art: { src: "/ejemplos/outdoor-modern.webp", play: true },
+            features: [
+              [PlayCircle, "Recorridos con fotos"],
+              [FileText, "Con los datos de la ficha"],
+              [MonitorPlay, "En alta calidad"],
+            ] as [typeof Sparkles, string][],
           },
         ]
       : []),
   ];
   return (
     <>
-      <div className="ap-cards" role="list">
-        {cards.map(({ id, className, tag, text, image, icon: Icon }) => (
-          <button
-            key={id}
-            type="button"
-            role="listitem"
-            className={`ap-bigcard ap-bigcard-${className}`}
-            aria-haspopup="dialog"
-            {...cta(`panel_home_${id}`, "panel_home_cards", id === "video" ? "video_section" : "image_studio")}
-            onClick={() => setOpen(id)}
-          >
-            <span className="ap-bigcard-art" aria-hidden="true">
-              <img src={image} alt="" loading="lazy" />
+      <ul className="ap-tools">
+        {cards.map(({ id, title, text, icon: Icon, art, features }, i) => (
+          <li key={id} className={`ap-tool ${i === 0 ? "is-featured" : ""}`}>
+            <span className={`ap-tool-art ${art.before ? "is-compare" : ""}`} aria-hidden="true">
+              {art.before && <img src={art.before} alt="" loading="lazy" />}
+              <img src={art.src} alt="" loading="lazy" />
+              {art.before && (
+                <span className="ap-tool-handle">
+                  <ChevronsLeftRight size={16} />
+                </span>
+              )}
+              {art.play && (
+                <span className="ap-tool-play">
+                  <Play size={22} fill="currentColor" />
+                </span>
+              )}
             </span>
-            <span className="ap-bigcard-icon" aria-hidden="true">
-              <Icon size={24} />
-            </span>
-            <span className="ap-bigcard-title">{TOOL_TITLE[id]}</span>
-            <span className="ap-bigcard-tag">{tag}</span>
-            <span className="ap-bigcard-text">{text}</span>
-            <span className="ap-bigcard-go" aria-hidden="true">
-              <ArrowRight size={18} />
-            </span>
-          </button>
+            <div className="ap-tool-head">
+              <span className="ap-tool-icon" aria-hidden="true">
+                <Icon size={22} />
+              </span>
+              <h2>{title}</h2>
+            </div>
+            <p className="ap-tool-text">{text}</p>
+            <ul className="ap-tool-features">
+              {features.map(([F, label]) => (
+                <li key={label}>
+                  <F size={20} aria-hidden="true" />
+                  <span>{label}</span>
+                </li>
+              ))}
+            </ul>
+            <button
+              type="button"
+              className="button button-primary ap-tool-go"
+              aria-haspopup="dialog"
+              aria-label={`Comenzar: ${title}`}
+              {...cta(`panel_home_${id}`, "panel_home_cards", id === "video" ? "video_section" : "image_studio")}
+              onClick={() => setOpen(id)}
+            >
+              Comenzar <ArrowRight size={17} aria-hidden="true" />
+            </button>
+          </li>
         ))}
-      </div>
+      </ul>
       {open && <StartPicker tool={open} existingCount={existingCount} onClose={() => setOpen(null)} />}
     </>
   );
 }
 
-/** A property on the home: photo, title, place, price and state, with the same actions as in «Mis propiedades». */
-function HomeProperty({ p, agency, reload, canDelete, canPublish, primary }: { p: PanelProperty; agency: PanelSummary["agency"]; reload: () => Promise<unknown>; canDelete: boolean; canPublish: boolean; primary: boolean }) {
+/** A recent property on the home: photo, title, place and state; its actions in the «⋮» menu, the same as in «Mis propiedades». */
+function HomeProperty({ p, agency, reload, canDelete, canPublish }: { p: PanelProperty; agency: PanelSummary["agency"]; reload: () => Promise<unknown>; canDelete: boolean; canPublish: boolean }) {
   const actions = usePropertyActions(p, agency, reload);
   return (
-    <article className="ap-prop">
-      <Link href={editorLink(p.id, "fotos", "/panel")} className="ap-prop-photo" aria-label={`Abrir ${p.title}`}>
-        {p.coverPhotoId ? <img src={adminPhotoUrl(p.coverPhotoId, null, 640)} alt="" loading="lazy" /> : <span>Sin fotos</span>}
-        {primary && <span className="ap-prop-flag">Principal</span>}
+    <li className="ap-recent">
+      <Link href={editorLink(p.id, "fotos", "/panel")} className="ap-recent-photo" tabIndex={-1} aria-hidden="true">
+        {p.coverPhotoId ? <img src={adminPhotoUrl(p.coverPhotoId, null, 320)} alt="" loading="lazy" /> : <span>Sin fotos</span>}
       </Link>
-      <div className="ap-prop-body">
+      <div className="ap-recent-body">
         <h3>
           <Link href={editorLink(p.id, "fotos", "/panel")}>{p.title}</Link>
         </h3>
-        {p.location && (
-          <p className="ap-prop-location">
-            <MapPin size={16} aria-hidden="true" /> {p.location}
-          </p>
-        )}
-        <p className="ap-prop-meta">
-          {p.operation && <span className="ap-chip">{p.operation}</span>}
-          <span>{p.price ?? "Consultar precio"}</span>
-          <span className={`ap-badge ${actions.live ? "is-live" : ""}`}>{actions.live ? "Publicada" : "Borrador"}</span>
-        </p>
-        <p className="ap-prop-progress">
-          <ProgressLine p={p} />
-        </p>
+        {p.location && <p className="ap-recent-location">{p.location}</p>}
+        <span className={`ap-state ${actions.live ? "is-live" : "is-draft"}`}>
+          {actions.live ? <Check size={14} aria-hidden="true" /> : <Pencil size={14} aria-hidden="true" />}
+          {actions.live ? "Publicada" : "Borrador"}
+        </span>
         <ActionNote note={actions.note} />
       </div>
-      <div className="ap-prop-actions">
-        <QuickActions list={quickActions(p, actions, "/panel", canPublish)} />
-        <MoreMenu p={p} actions={actions} canDelete={canDelete} canPublish={canPublish} backTo="/panel" />
-      </div>
-    </article>
+      <MoreMenu p={p} actions={actions} canDelete={canDelete} canPublish={canPublish} backTo="/panel" compact />
+    </li>
   );
 }
 
@@ -245,13 +283,16 @@ function PanelHome({ data, reload }: { data: PanelSummary; reload: () => Promise
   const editor = canEdit(data.role);
   const creator = canCreate(data);
   const step = editor ? nextStep(data) : null;
-  const latest = data.properties[0] ?? null;
   const shown = data.properties.slice(0, 3);
-  const buyerLink = latest ? (data.agency.slug && data.agency.sitePublished ? agencySitePath(data.agency.slug) : `/panel/propiedades/${latest.id}/vista-previa`) : null;
   return (
     <>
       <PanelTopbar agencyName={data.agency.name} logo={data.agency.logo}>
         {data.role !== "owner" && <span className="ap-chip">{ROLE_LABEL[data.role]}</span>}
+        {typeof data.credits === "number" && (
+          <Link href="/panel/creditos" className="ap-credits-chip" {...cta("panel_topbar_credits", "panel_home", "panel_credits")}>
+            <Zap size={16} aria-hidden="true" /> {data.credits} {data.credits === 1 ? "crédito" : "créditos"}
+          </Link>
+        )}
       </PanelTopbar>
       {(!editor || data.scope) && (
         <p className="inline-notice" role="note">
@@ -260,31 +301,14 @@ function PanelHome({ data, reload }: { data: PanelSummary; reload: () => Promise
             : "Tu usuario trabaja en las propiedades que te asignaron."}
         </p>
       )}
-      <section className="ap-hero ap-hero-compact" aria-labelledby="ap-hero-title">
-        <div>
-          <h1 id="ap-hero-title">Hola, ¿qué querés crear hoy?</h1>
-          <p>Transformá tus propiedades con IA.</p>
-        </div>
-        {latest && (
-          <div className="ap-hero-latest">
-            <div>
-              <strong>{data.counts.total === 1 ? "Tu propiedad" : "Tu última propiedad"}</strong>
-              <span>{latest.title}</span>
-              <Link href={editorLink(latest.id, "fotos", "/panel")} className="button button-small button-outline" {...cta("panel_hero_latest", "panel_home", "property_editor")}>
-                Ver propiedad <ArrowRight size={14} aria-hidden="true" />
-              </Link>
-            </div>
-            {latest.coverPhotoId && <img src={adminPhotoUrl(latest.coverPhotoId, null, 320)} alt="" />}
-          </div>
-        )}
-      </section>
+      <header className="ap-welcome">
+        <h1>Hola, ¿qué querés crear hoy?</h1>
+        <p>Generá contenido atractivo para tus propiedades y compartilo con tus clientes.</p>
+      </header>
       <HomeCards creator={creator} existingCount={data.counts.total} />
-      {step && (
-        <section className="ap-next" aria-label="Siguiente paso">
-          <p>{step.text}</p>
-          <Link href={step.href} className="button button-primary" {...cta("panel_next_step", "panel_home", "property_editor")}>
-            {step.action}
-          </Link>
+      {creator && (
+        <section className="ap-home-import" id="crear" aria-label="Importar una propiedad">
+          <ImportProperty onDone={reload} existingCount={data.counts.total} bar />
         </section>
       )}
       {creator && data.imports.length > 0 && (
@@ -297,14 +321,17 @@ function PanelHome({ data, reload }: { data: PanelSummary; reload: () => Promise
           </ul>
         </section>
       )}
-      <section className="ap-props" aria-labelledby="ap-props-title">
+      {step && (
+        <section className="ap-next" aria-label="Siguiente paso">
+          <p>{step.text}</p>
+          <Link href={step.href} className="button button-primary" {...cta("panel_next_step", "panel_home", "property_editor")}>
+            {step.action}
+          </Link>
+        </section>
+      )}
+      <section className="ap-recents" aria-labelledby="ap-props-title">
         <div className="ap-section-head">
-          <h2 id="ap-props-title">
-            Tus propiedades{" "}
-            <span className="ap-count">
-              {data.counts.total} {data.counts.total === 1 ? "propiedad" : "propiedades"}
-            </span>
-          </h2>
+          <h2 id="ap-props-title">Mis propiedades recientes</h2>
           {data.counts.total > 0 && (
             <Link href="/panel/propiedades" className="text-link ap-see-all">
               Ver todas <ArrowRight size={16} aria-hidden="true" />
@@ -312,67 +339,17 @@ function PanelHome({ data, reload }: { data: PanelSummary; reload: () => Promise
           )}
         </div>
         {shown.length ? (
-          <div className="ap-prop-list">
-            {shown.map((p, i) => (
-              <HomeProperty key={p.id} p={p} agency={data.agency} reload={reload} canDelete={canManage(data.role)} canPublish={canEdit(data.role)} primary={i === 0 && data.counts.total > 1} />
+          <ul className="ap-recent-list">
+            {shown.map((p) => (
+              <HomeProperty key={p.id} p={p} agency={data.agency} reload={reload} canDelete={canManage(data.role)} canPublish={canEdit(data.role)} />
             ))}
-          </div>
+          </ul>
         ) : (
           <p className="ap-empty">
             {data.scope ? "Todavía no te asignaron propiedades." : creator ? "Todavía no cargaste propiedades. Pegá el enlace de una publicación para empezar." : "Todavía no hay propiedades cargadas."}
           </p>
         )}
-        {creator && (
-          <div className="ap-create" id="crear">
-            <div className="ap-create-intro">
-              <span className="ap-create-icon" aria-hidden="true">
-                <Sparkles size={22} />
-              </span>
-              <div>
-                <h3>{data.counts.total ? "¿Querés crear otra propiedad?" : "Creá tu primera propiedad"}</h3>
-                <p>Pegá el enlace de una publicación y generá todo el contenido en minutos. Importar no usa créditos.</p>
-              </div>
-            </div>
-            <ImportProperty onDone={reload} existingCount={data.counts.total} />
-          </div>
-        )}
       </section>
-      <nav className="ap-quick" aria-label="Accesos útiles">
-        <Link href="/ayuda" {...cta("panel_quick_help", "panel_home", "support")}>
-          <span className="ap-quick-icon" aria-hidden="true">
-            <CircleHelp size={22} />
-          </span>
-          <span>
-            <strong>¿Necesitás ayuda?</strong>
-            <small>Te acompañamos en todo el proceso.</small>
-            <em>Contactar soporte</em>
-          </span>
-        </Link>
-        {buyerLink && (
-          <Link href={buyerLink} {...cta("panel_quick_buyer", "panel_home", "buyer_view")}>
-            <span className="ap-quick-icon" aria-hidden="true">
-              <Eye size={22} />
-            </span>
-            <span>
-              <strong>Ver como comprador</strong>
-              <small>Así ven tus clientes tus propiedades.</small>
-              <em>{data.agency.sitePublished ? "Ver mi sitio" : "Ver ficha"}</em>
-            </span>
-          </Link>
-        )}
-        {canManage(data.role) && (
-          <Link href="/panel/sitio" {...cta("panel_quick_site", "panel_home", "panel_site")}>
-            <span className="ap-quick-icon" aria-hidden="true">
-              <Globe size={22} />
-            </span>
-            <span>
-              <strong>Tu sitio web</strong>
-              <small>Tu catálogo con tus fichas publicadas.</small>
-              <em>Configurar sitio</em>
-            </span>
-          </Link>
-        )}
-      </nav>
     </>
   );
 }
@@ -765,19 +742,27 @@ function MoreMenu({
   canDelete,
   canPublish,
   backTo,
+  compact = false,
 }: {
   p: PanelProperty;
   actions: ReturnType<typeof usePropertyActions>;
   canDelete: boolean;
   canPublish: boolean;
   backTo: string;
+  /** The home's recent properties: an icon-only «⋮» that also shares the ficha (they have no quick actions). */
+  compact?: boolean;
 }) {
   return (
-    <details className="ap-menu">
+    <details className={`ap-menu ${compact ? "ap-menu-compact" : ""}`}>
       <summary aria-label={`Más acciones de ${p.title}`}>
-        <MoreHorizontal size={16} aria-hidden="true" /> Más
+        {compact ? <MoreVertical size={18} aria-hidden="true" /> : <><MoreHorizontal size={16} aria-hidden="true" /> Más</>}
       </summary>
       <div className="ap-menu-list">
+        {compact && actions.live && (
+          <button type="button" onClick={() => void actions.share()}>
+            <Share2 size={14} aria-hidden="true" /> Compartir ficha
+          </button>
+        )}
         <Link href={editorLink(p.id, "fotos", backTo)}>
           <Sparkles size={14} aria-hidden="true" /> Fotos y espacios
         </Link>
@@ -1000,7 +985,10 @@ export function ImportProperty({
   onStep,
   existingCount,
   inputId = "ap-import-url",
+  bar = false,
 }: {
+  /** The home's one-line bar: «Importar una propiedad», the field and «Importar»; the review opens below it. */
+  bar?: boolean;
   /** The URL field's id: the home already has one importer, the start picker brings another. */
   inputId?: string;
   initialUrl?: string;
@@ -1030,12 +1018,12 @@ export function ImportProperty({
       const pending = JSON.parse(raw) as { url?: unknown; at?: unknown };
       if (typeof pending.url !== "string" || typeof pending.at !== "number" || Date.now() - pending.at > PENDING_IMPORT_TTL_MS) return;
       setUrl(pending.url);
-      setCarried("Seguimos con el enlace que pegaste en la demo: tocá «Importar propiedad» para leerlo.");
+      setCarried(`Seguimos con el enlace que pegaste en la demo: tocá «${bar ? "Importar" : "Importar propiedad"}» para leerlo.`);
       document.getElementById("crear")?.scrollIntoView({ block: "center" });
     } catch {
       /* Private mode or malformed: nothing to continue. */
     }
-  }, [initialUrl, inputId]);
+  }, [initialUrl, inputId, bar]);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [fields, setFields] = useState({ title: "", location: "", price: "", operation: "", description: "" });
   const [keep, setKeep] = useState<Set<string>>(new Set());
@@ -1166,10 +1154,19 @@ export function ImportProperty({
   const pending = preview ? exceptions(preview.report).filter((r) => r.field !== "Precio" || !fields.price) : [];
   return (
     <div className="ap-import">
-      <form className="ap-import-row" onSubmit={read}>
-        <label className="ap-import-label" htmlFor={inputId}>
-          Pegá el enlace de una propiedad
-        </label>
+      <form className={`ap-import-row ${bar ? "ap-import-bar" : ""}`} onSubmit={read}>
+        {bar ? (
+          <label className="ap-import-bar-title" htmlFor={inputId}>
+            <span className="ap-import-bar-icon" aria-hidden="true">
+              <Link2 size={20} />
+            </span>
+            Importar una propiedad
+          </label>
+        ) : (
+          <label className="ap-import-label" htmlFor={inputId}>
+            Pegá el enlace de una propiedad
+          </label>
+        )}
         <div className="ap-import-inputs">
           <input
             id={inputId}
@@ -1177,7 +1174,7 @@ export function ImportProperty({
             type="text"
             inputMode="url"
             maxLength={500}
-            placeholder="https://inmobiliaria.com/propiedad/..."
+            placeholder={bar ? "Pegá el enlace de la publicación (Zonaprop, Argenprop, el sitio de tu inmobiliaria…)" : "https://inmobiliaria.com/propiedad/..."}
             value={url}
             disabled={busy}
             onChange={(e) => {
@@ -1186,7 +1183,7 @@ export function ImportProperty({
             }}
           />
           <button className="button button-primary" disabled={busy || !url.trim()}>
-            {status && !preview ? "Leyendo…" : preview ? "Volver a leer" : "Importar propiedad"}
+            {status && !preview ? "Leyendo…" : preview ? "Volver a leer" : bar ? "Importar" : "Importar propiedad"}
           </button>
         </div>
         <p className="ap-import-help">Importar y publicar no usan créditos. Ambientar con IA es opcional.</p>
