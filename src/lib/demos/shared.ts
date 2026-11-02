@@ -108,6 +108,10 @@ export type PublicDemo = {
   share: { title: string | null; description: string | null };
   /** Prepared by the team for an agency without a habita account: its presentation link invites it to create one. */
   prospect: boolean;
+  /** «Mostrar selector de estilos»: false keeps the buyer's style picker out (the opening style still shows). */
+  styleSelector?: boolean;
+  /** The property's latest finished video, where the agency placed it; null without one or when hidden. */
+  video?: { url: string; format: "9:16" | "16:9"; place: "first" | "second" | "below" } | null;
 };
 
 export type DemoStatus = "draft" | "published";

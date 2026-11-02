@@ -1,4 +1,5 @@
 import "server-only";
+import { visibleCard } from "@/lib/demos/visibility";
 import { brandingOf } from "@/lib/demos/server";
 import { DEFAULT_PRIMARY, readSettings, textOn, whatsappNumber } from "@/lib/demos/branding";
 import { publicImageUrl } from "@/lib/demos/shared";
@@ -99,10 +100,13 @@ export async function publicSite(slug: string, opts: { preview?: boolean } = {})
       return {
         token: r.token,
         title: r.demo_properties?.title ?? "Propiedad",
-        location: r.demo_properties?.location ?? null,
-        operation: s.operation,
-        price: s.priceConflict ? null : s.price,
-        features: s.features,
+        // The same switches as its page: a field hidden there is hidden here.
+        ...visibleCard(s, {
+          location: r.demo_properties?.location ?? null,
+          operation: s.operation,
+          price: s.priceConflict ? null : s.price,
+          features: s.features,
+        }),
         cover: cover ? publicImageUrl(r.token, cover.id, null, 960) : null,
         staged: own.some((p) => staged.has(p.project_id)),
       };

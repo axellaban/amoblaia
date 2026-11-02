@@ -31,6 +31,18 @@ import {
   WandSparkles,
   X,
   Sofa,
+  Bath,
+  BedDouble,
+  Briefcase,
+  ChevronDown,
+  ChevronUp,
+  CookingPot,
+  Flame,
+  House,
+  LayoutGrid,
+  Trees,
+  Utensils,
+  Zap,
 } from "lucide-react";
 import { Comparison } from "./comparison";
 import { api } from "./admin-demos";
@@ -132,7 +144,13 @@ export function PhotoWorkspace({
   originalName,
   busy,
   actions,
+  variant = "studio",
+  belowGrid = null,
 }: {
+  /** "demo": the agency's «Crear demostración interactiva» layout; "studio": Estudio de imágenes and the team's editor. */
+  variant?: "studio" | "demo";
+  /** The demo's «Generar video», right under the photos. */
+  belowGrid?: React.ReactNode;
   detail: DemoDetail;
   base: string;
   propertyType: PropertyType;
@@ -158,7 +176,12 @@ export function PhotoWorkspace({
   const [activeId, setActiveId] = useState<string | null>(null);
   // The version being looked at, per photo; null: the original. A view only.
   const [viewOf, setViewOf] = useState<Record<string, string | null>>({});
-  const [mode, setMode] = useState<ViewMode>("version");
+  const demoUi = variant === "demo";
+  // The demo opens each photo compared (before / after) when it has a version.
+  const [mode, setMode] = useState<ViewMode>(demoUi ? "compare" : "version");
+  // The demo's chosen space when it has no photos yet; and the style «Generar versión con IA» opens with.
+  const [pickedSpace, setPickedSpace] = useState<string | null>(null);
+  const [generating, setGenerating] = useState<string | null>(null);
   // ?modo=editar (Inicio → «Editar imágenes») opens the editor, not staging.
   const [tab, setTab] = useState<"create" | "edit">(() =>
     typeof window !== "undefined" && new URLSearchParams(window.location.search).get("modo") === "editar" ? "edit" : "create",
@@ -224,6 +247,13 @@ export function PhotoWorkspace({
     setAdjusts((all) => ({ ...all, [photoId]: NO_ADJUST }));
     setMode(m);
   };
+  // Photos uploaded to the empty space on screen: it opens on them.
+  const pickedFirst = pickedSpace ? groups.find((g) => (g.space?.id ?? "loose") === pickedSpace)?.photos[0]?.id : undefined;
+  useEffect(() => {
+    if (!pickedFirst) return;
+    setActiveId(pickedFirst);
+    setPickedSpace(null);
+  }, [pickedFirst]);
   // A version asked from "Crear otra versión" opens by itself when it is ready, unless another view was chosen meanwhile.
   useEffect(() => {
     if (!awaiting) return;
@@ -301,13 +331,36 @@ export function PhotoWorkspace({
       }
     : undefined;
   const openCreate = () => {
+    if (demoUi) {
+      // «Nueva versión»: the window that says the cost first, on a style this photo does not have yet.
+      const fresh = STYLE_LIST[propertyType].find((st) => !photo?.shown[st.id]);
+      setGenerating(fresh?.id ?? STYLE_LIST[propertyType][0].id);
+      return;
+    }
     setTab("create");
     document.getElementById(`${uid}-side`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   };
 
   return (
     <>
-      <div className="pw" data-testid="photo-workspace">
+      <div className={`pw ${demoUi ? "dx-photos" : ""}`} data-testid="photo-workspace">
+        {demoUi ? (
+          <SpaceList
+            groups={groups}
+            spaces={spaces}
+            active={pickedSpace ?? activeGroup?.space?.id ?? "loose"}
+            spacesReady={detail.spacesReady}
+            busy={busy}
+            actions={actions}
+            onPick={(key) => {
+              const g = groups.find((x) => (x.space?.id ?? "loose") === key);
+              if (g?.photos.length) {
+                setPickedSpace(null);
+                setActiveId(g.photos[0].id);
+              } else setPickedSpace(key);
+            }}
+          />
+        ) : (
         <PhotoNav
           groups={groups}
           spaces={spaces}
@@ -320,7 +373,16 @@ export function PhotoWorkspace({
           onPick={setActiveId}
           actions={actions}
         />
+        )}
 
+        {demoUi && pickedSpace ? (
+          <div className="pw-main dx-empty-space">
+            <p>
+              {spaces.find((x) => x.id === pickedSpace)?.name ?? "Sin organizar"} todavía no tiene fotos.
+            </p>
+            <UploadButton label="Agregar fotos" primary onFiles={(f) => actions.upload(f, pickedSpace === "loose" ? null : pickedSpace)} />
+          </div>
+        ) : (
         <div className="pw-main">
           <section className="pw-stage" aria-label="Foto activa">
             <header className="pw-stage-head">
@@ -354,9 +416,9 @@ export function PhotoWorkspace({
                   before={adminPhotoUrl(photo.id, null, 1600)}
                   after={afterUrl}
                   afterFilter={retouch}
-                  beforeLabel="Original"
+                  beforeLabel={demoUi ? "Antes" : "Original"}
                   beforeAlt={`${name}, foto original`}
-                  afterLabel={viewName}
+                  afterLabel={demoUi ? `Después (${viewName})` : viewName}
                   alt={`${name}, ${viewName}`}
                   initial={50}
                 />
@@ -409,6 +471,18 @@ export function PhotoWorkspace({
                 </button>
               </div>
             </figure>
+            {demoUi && (
+              <SpaceStrip
+                photos={activeGroup?.photos ?? []}
+                activeId={photo.id}
+                mainStyle={mainStyle}
+                coverId={detail.demo.cover?.id ?? null}
+                spaceId={activeGroup?.space?.id ?? null}
+                spaceName={space ? space.name : "Sin organizar"}
+                onPick={setActiveId}
+                actions={actions}
+              />
+            )}
             <div className="pw-actions">
               {viewGen && !shownHere && (
                 <button type="button" className="button button-small button-primary" onClick={() => void actions.patchPhoto(photo.id, { approve: viewGen.id })}>
@@ -554,10 +628,36 @@ export function PhotoWorkspace({
             </ul>
           </section>
         </div>
+        )}
 
-        <aside id={`${uid}-side`} className="pw-side" aria-label="Ambientar y editar">
+        <aside id={`${uid}-side`} className={`pw-side ${demoUi ? "dx-side" : ""}`} aria-label={demoUi ? (tab === "create" ? "Ambientar con IA" : "Editar imagen") : "Ambientar y editar"}>
+          {demoUi ? (
+            <div className="dx-side-head">
+              <h3 className="dx-col-title" id={`${uid}-what`}>
+                {tab === "create" ? "Ambientar con IA" : "Editar imagen"}
+              </h3>
+              {tab === "create" ? (
+                <button type="button" className="button button-small button-outline dx-edit-image" onClick={() => setTab("edit")}>
+                  <Pencil size={14} aria-hidden="true" /> Editar imagen
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="text-link"
+                  onClick={() => {
+                    setTab("create");
+                    pickTool(null);
+                  }}
+                >
+                  ← Volver a Ambientar con IA
+                </button>
+              )}
+            </div>
+          ) : (
           <h3 className="pw-side-title" id={`${uid}-what`}>¿Qué querés hacer?</h3>
+          )}
           {/* Two modes (spec v3 §3.3): staging, or the existing editor with its light, colour and AI tools. */}
+          {!demoUi && (
           <ul className="pw-what pw-what-modes" aria-labelledby={`${uid}-what`}>
             {(
               [
@@ -587,8 +687,22 @@ export function PhotoWorkspace({
               </li>
             ))}
           </ul>
+          )}
           <div id={`${uid}-panel`} className="pw-what-panel" aria-labelledby={`${uid}-what`}>
-            {tab === "create" ? (
+            {tab === "create" && demoUi ? (
+              <DemoStyles
+                key={photo.id}
+                photo={photo}
+                space={space}
+                propertyType={propertyType}
+                demoStyles={demoStyles}
+                waiting={staging.waiting}
+                viewing={viewGen?.style ?? null}
+                blocked={blocked}
+                onView={(generationId) => choose(photo.id, generationId, "compare")}
+                onGenerate={setGenerating}
+              />
+            ) : tab === "create" ? (
               <CreatePanel
                 key={photo.id}
                 photo={photo}
@@ -646,6 +760,29 @@ export function PhotoWorkspace({
           </div>
         </aside>
       </div>
+
+      {belowGrid}
+      {generating && photo && (
+        <GenerateDialog
+          photo={photo}
+          photoName={name}
+          space={space}
+          base={base}
+          propertyType={propertyType}
+          demoStyles={demoStyles}
+          staging={detail.staging}
+          waiting={staging.waiting}
+          initialStyle={generating}
+          onClose={() => setGenerating(null)}
+          onConfirm={async (task, fresh) => {
+            const since = new Date(Date.now() - 5000).toISOString();
+            if (!actions.addStyles([task.style])) return false;
+            const ok = await actions.request([task], { fresh, quoted: true });
+            if (ok) setAwaiting({ photoId: task.photoId, style: task.style, since });
+            return ok;
+          }}
+        />
+      )}
 
       <div className="pw-batch-bar">
         <span>
@@ -1585,3 +1722,423 @@ export function NewSpace({
   );
 }
 
+
+/* ------------------------------------------------------------------------------------------------
+ * «Crear demostración interactiva» (the agency's property editor): the same workspace, laid out as
+ * the approved design. Ambientes on the left, the photo (before/after) with its space's photos in
+ * the middle, «Ambientar con IA» on the right. «Editar imagen» opens this same workspace's editor
+ * (the studio's), and a new version is created from the «Generar versión con IA» window, always
+ * after its cost. Every action is the one the studio already uses (WorkspaceActions).
+ * ---------------------------------------------------------------------------------------------- */
+
+const SPACE_ICONS: Record<string, typeof Sofa> = {
+  living: Sofa,
+  bedroom: BedDouble,
+  dining: Utensils,
+  kitchen: CookingPot,
+  office: Briefcase,
+  outdoor: Trees,
+  studio: Sofa,
+  quincho: Flame,
+  bathroom: Bath,
+  exterior: House,
+  other: LayoutGrid,
+};
+
+/** «Ambientes»: the property's real spaces with how many photos each has; add one, or adjust the active one. */
+function SpaceList({
+  groups,
+  spaces,
+  active,
+  spacesReady,
+  busy,
+  onPick,
+  actions,
+}: {
+  groups: ReturnType<typeof groupBySpace>;
+  spaces: PropertySpace[];
+  /** The space on screen: an id, "loose" (Sin organizar). */
+  active: string;
+  spacesReady: boolean;
+  busy: boolean;
+  onPick: (key: string) => void;
+  actions: WorkspaceActions;
+}) {
+  const [adding, setAdding] = useState(false);
+  const current = spaces.find((s) => s.id === active) ?? null;
+  return (
+    <nav className="pw-spaces dx-spaces" aria-label="Ambientes">
+      <h3 className="dx-col-title">Ambientes</h3>
+      <ul className="dx-space-list">
+        {groups.map((g) => {
+          const key = g.space?.id ?? "loose";
+          const Icon = g.space ? (SPACE_ICONS[g.space.roomType] ?? LayoutGrid) : ImagePlus;
+          return (
+            <li key={key}>
+              <button type="button" className="dx-space" aria-current={key === active ? "true" : undefined} onClick={() => onPick(key)}>
+                <Icon size={18} aria-hidden="true" />
+                <span>
+                  {g.space ? g.space.name : "Sin organizar"} ({g.photos.length})
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      {spacesReady ? (
+        adding ? (
+          <NewSpace
+            disabled={busy}
+            onCancel={() => setAdding(false)}
+            onCreate={async (name, roomType) => {
+              const ok = await actions.spaces("", { method: "POST", body: JSON.stringify({ name, roomType }) }, `Ambiente «${name.trim()}» creado.`);
+              if (ok) setAdding(false);
+              return ok;
+            }}
+          />
+        ) : (
+          <button type="button" className="button button-small button-outline dx-add-space" onClick={() => setAdding(true)}>
+            <Plus size={16} aria-hidden="true" /> Agregar ambiente
+          </button>
+        )
+      ) : (
+        <p className="dm-help">Para organizar por ambientes falta aplicar la migración 202610310001_property_spaces.sql.</p>
+      )}
+      {current && (
+        <SpaceMenu space={current} spaces={spaces} count={groups.find((g) => g.space?.id === current.id)?.photos.length ?? 0} actions={actions} />
+      )}
+    </nav>
+  );
+}
+
+/** The photos of the space on screen, under the large photo, and «+» to add more to it. */
+function SpaceStrip({
+  photos,
+  activeId,
+  mainStyle,
+  coverId,
+  spaceId,
+  spaceName,
+  onPick,
+  actions,
+}: {
+  photos: EditorPhoto[];
+  activeId: string | null;
+  mainStyle: string;
+  coverId: string | null;
+  spaceId: string | null;
+  spaceName: string;
+  onPick: (id: string) => void;
+  actions: WorkspaceActions;
+}) {
+  return (
+    <ul className="dx-strip" aria-label={`Fotos de ${spaceName}`}>
+      {photos.map((p, i) => (
+        <li key={p.id}>
+          <button
+            type="button"
+            className="pw-thumb"
+            aria-pressed={p.id === activeId}
+            aria-label={`${spaceName}, foto ${i + 1}${p.visible ? "" : " (oculta)"}${p.id === coverId ? " (portada)" : ""}`}
+            onClick={() => onPick(p.id)}
+          >
+            <img src={p.shown[mainStyle] ? adminGenerationUrl(p.shown[mainStyle], 480) : adminPhotoUrl(p.id, null, 480)} alt="" loading="lazy" />
+            {!p.visible && <EyeOff size={13} className="pw-thumb-off" aria-hidden="true" />}
+            {p.id === coverId && <Star size={12} className="pw-thumb-cover" aria-hidden="true" />}
+          </button>
+        </li>
+      ))}
+      <li>
+        <label className="dx-strip-add" title={`Agregar fotos a ${spaceName}`}>
+          <Plus size={20} aria-hidden="true" />
+          <span className="dv2-sr">Agregar fotos a {spaceName}</span>
+          <input
+            type="file"
+            className="dm-hidden-input"
+            accept="image/jpeg,image/png,image/webp"
+            multiple
+            onChange={(e) => {
+              if (e.target.files?.length) actions.upload(e.target.files, spaceId);
+              e.target.value = "";
+            }}
+          />
+        </label>
+      </li>
+    </ul>
+  );
+}
+
+/** How many styles «Ambientar con IA» lists before «Más estilos». */
+const DEMO_VISIBLE_STYLES = 4;
+
+/**
+ * «Ambientar con IA»: the styles of this photo. One already created is shown
+ * at once (no credits); another one opens «Generar versión con IA», which
+ * says its cost first. «Más estilos» only unfolds the full catalog.
+ */
+function DemoStyles({
+  photo,
+  space,
+  propertyType,
+  demoStyles,
+  waiting,
+  viewing,
+  blocked,
+  onView,
+  onGenerate,
+}: {
+  photo: EditorPhoto;
+  space: PropertySpace | null;
+  propertyType: PropertyType;
+  demoStyles: string[];
+  waiting: Set<string>;
+  /** The style on screen (its version), or null: the original. */
+  viewing: string | null;
+  blocked: string | null;
+  onView: (generationId: string) => void;
+  onGenerate: (style: string) => void;
+}) {
+  const [all, setAll] = useState(false);
+  const catalog = STYLE_LIST[propertyType];
+  const states = useMemo(() => photoVersions(photo, catalog.map((s) => s.id), waiting), [photo, catalog, waiting]);
+  const stateOf = (style: string) => states.find((o) => o.style === style)?.state ?? ({ kind: "none" } as CellState);
+  // Created first, then the property's styles, then the rest of the catalog.
+  const rank = (id: string) => (stateOf(id).kind === "ready" ? 0 : demoStyles.includes(id) ? 1 : 2);
+  const ordered = [...catalog].sort((a, b) => rank(a.id) - rank(b.id));
+  const listed = all ? ordered : ordered.filter((st, i) => i < DEMO_VISIBLE_STYLES || st.id === viewing);
+  const room = propertyType === "residential" ? initialRoom(photo, space).room : null;
+  return (
+    <div className="dx-styles">
+      <ul className="dx-style-list" role="radiogroup" aria-label="Estilos para esta foto">
+        {listed.map((st) => {
+          const s = stateOf(st.id);
+          const ready = s.kind === "ready" ? s : null;
+          const live = s.kind === "running" || s.kind === "queued" || s.kind === "waiting";
+          const on = Boolean(ready && viewing === st.id);
+          return (
+            <li key={st.id}>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={on}
+                className={`dx-style ${on ? "is-on" : ""}`}
+                disabled={live || (!ready && Boolean(blocked))}
+                title={!ready && blocked ? blocked : undefined}
+                onClick={() => (ready ? onView(ready.generationId) : onGenerate(st.id))}
+              >
+                <span className="dx-style-art" style={room ? undefined : { background: st.color }}>
+                  {ready ? (
+                    <img src={adminGenerationUrl(ready.generationId, 240)} alt="" loading="lazy" />
+                  ) : room ? (
+                    <img src={`/ejemplos/${room}-${st.id}.webp`} alt="" loading="lazy" />
+                  ) : null}
+                </span>
+                <span className="dx-style-name">
+                  {st.name}
+                  <small>
+                    {ready ? (ready.running ? "Lista · creando otra" : "Lista") : live ? "Creando…" : s.kind === "uncertain" ? "En revisión" : s.kind === "failed" ? "Falló: generar de nuevo" : "Generar"}
+                  </small>
+                </span>
+                <span className={`dx-radio ${on ? "is-on" : ""}`} aria-hidden="true">
+                  {on ? <Check size={13} strokeWidth={3} /> : live ? <Loader2 size={13} className="spin" /> : null}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      {ordered.length > DEMO_VISIBLE_STYLES && (
+        <button type="button" className="button button-outline dx-more-styles" aria-expanded={all} onClick={() => setAll((v) => !v)}>
+          {all ? (
+            <>
+              Menos estilos <ChevronUp size={16} aria-hidden="true" />
+            </>
+          ) : (
+            <>
+              <Plus size={16} aria-hidden="true" /> Más estilos <ChevronDown size={16} aria-hidden="true" />
+            </>
+          )}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * «Generar versión con IA»: the original, the style, what it costs (the
+ * server's quote: opening this or choosing a style costs nothing) and the
+ * confirmation. Its options (amoblar o rediseñar, el ambiente) are the same
+ * as «Crear otra versión». The result keeps the original and every version.
+ */
+function GenerateDialog({
+  photo,
+  photoName,
+  space,
+  base,
+  propertyType,
+  demoStyles,
+  staging,
+  waiting,
+  initialStyle,
+  onClose,
+  onConfirm,
+}: {
+  photo: EditorPhoto;
+  photoName: string;
+  space: PropertySpace | null;
+  base: string;
+  propertyType: PropertyType;
+  demoStyles: string[];
+  staging: DemoDetail["staging"];
+  waiting: Set<string>;
+  initialStyle: string;
+  onClose: () => void;
+  onConfirm: (task: Task, fresh: boolean) => Promise<boolean>;
+}) {
+  const uid = useId();
+  const ref = useRef<HTMLDialogElement>(null);
+  const roomStart = initialRoom(photo, space);
+  const catalog = STYLE_LIST[propertyType];
+  const states = useMemo(() => photoVersions(photo, catalog.map((s) => s.id), waiting), [photo, catalog, waiting]);
+  const stateOf = (style: string) => states.find((o) => o.style === style)?.state ?? ({ kind: "none" } as CellState);
+  const [style, setStyle] = useState(initialStyle);
+  const [mode, setMode] = useState(photo.mode);
+  const [room, setRoom] = useState(roomStart.room);
+  const [quote, setQuote] = useState<Quote | null>(null);
+  const [quoteError, setQuoteError] = useState("");
+  const [error, setError] = useState("");
+  const [working, setWorking] = useState(false);
+  const full = demoStyles.length >= MAX_DEMO_STYLES;
+  useEffect(() => {
+    ref.current?.showModal();
+  }, []);
+  // The cost of this photo, as the server works it out: asking costs nothing.
+  useEffect(() => {
+    if (staging?.payer !== "agency") {
+      setQuote({ payer: "team", credits: null, newPhotos: 0, blocked: null });
+      return;
+    }
+    let live = true;
+    api<Quote>(`${base}/costo`, { method: "POST", body: JSON.stringify({ photoIds: [photo.id] }) })
+      .then((q) => live && setQuote(q))
+      .catch((e) => live && setQuoteError(e instanceof Error ? e.message : "No pudimos calcular el costo."));
+    return () => {
+      live = false;
+    };
+  }, [base, photo.id, staging?.payer]);
+  const state = stateOf(style);
+  const exists = state.kind === "ready";
+  const live = state.kind === "running" || state.kind === "queued" || state.kind === "waiting" || (state.kind === "ready" && state.running);
+  const why =
+    staging?.blocked ??
+    quote?.blocked ??
+    (live
+      ? "Ese estilo ya se está creando para esta foto."
+      : state.kind === "uncertain"
+        ? "Ese estilo tiene un resultado en revisión técnica: descartalo antes de crear otro."
+        : !style
+          ? "Elegí un estilo."
+          : full && !demoStyles.includes(style)
+            ? `La propiedad ya tiene ${MAX_DEMO_STYLES} estilos.`
+            : null);
+  const cost = !quote
+    ? quoteError || "Calculando…"
+    : quote.payer === "team"
+      ? "Sin costo para la inmobiliaria (demo del equipo habita)."
+      : quote.newPhotos
+        ? `${quote.newPhotos} ${quote.newPhotos === 1 ? "crédito" : "créditos"} · te quedarían ${(quote.credits ?? 0) - quote.newPhotos}`
+        : "Sin costo: la foto ya está paga y su cobertura sigue vigente.";
+  async function confirm() {
+    setError("");
+    setWorking(true);
+    try {
+      const ok = await onConfirm({ photoId: photo.id, style, mode, ...(propertyType === "residential" ? { room } : {}) }, exists);
+      if (ok) ref.current?.close();
+      else setError("No se inició: revisá el mensaje del editor. Lo que elegiste se conserva.");
+    } finally {
+      setWorking(false);
+    }
+  }
+  return (
+    <dialog ref={ref} className="dx-dialog" aria-labelledby={`${uid}-title`} onClose={onClose} onCancel={onClose}>
+      <div className="dx-dialog-head">
+        <h2 id={`${uid}-title`}>Generar versión con IA</h2>
+        <button type="button" className="icon-button" aria-label="Cerrar" disabled={working} onClick={() => ref.current?.close()}>
+          <X size={18} />
+        </button>
+      </div>
+      <form
+        className="dx-generate"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void confirm();
+        }}
+      >
+        <img className="dx-generate-photo" src={adminPhotoUrl(photo.id, null, 640)} alt={`${space ? space.name : "Foto"}, ${photoName}: original`} />
+        <div className="dx-generate-fields">
+          <label className="pw-field">
+            Estilo
+            <select value={style} onChange={(e) => setStyle(e.target.value)} autoFocus>
+              {catalog.map((st) => (
+                <option key={st.id} value={st.id} disabled={full && !demoStyles.includes(st.id)}>
+                  {st.name}
+                  {stateOf(st.id).kind === "ready" ? " (ya creada)" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="dx-cost" role="status" aria-live="polite">
+            <Zap size={16} aria-hidden="true" /> Costo estimado: {cost}
+          </p>
+          <details className="dx-generate-more">
+            <summary>Más opciones</summary>
+            <div className="pw-field">
+              <span id={`${uid}-mode`}>Qué querés hacer</span>
+              <div className="pw-seg" role="group" aria-labelledby={`${uid}-mode`}>
+                <button type="button" aria-pressed={mode === "furnish"} onClick={() => setMode("furnish")}>
+                  Amoblar
+                </button>
+                <button type="button" aria-pressed={mode === "redesign"} onClick={() => setMode("redesign")}>
+                  Rediseñar
+                </button>
+              </div>
+            </div>
+            {propertyType === "residential" && (
+              <label className="pw-field">
+                Ambiente
+                <select value={room} onChange={(e) => setRoom(e.target.value)}>
+                  {rooms.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name}
+                    </option>
+                  ))}
+                </select>
+                {roomStart.conflict && <small>La foto tenía «{roomName(roomStart.conflict)}» como ajuste propio.</small>}
+              </label>
+            )}
+          </details>
+          {exists && !why && <p className="pw-note">Ya hay una versión {styleName(style)}: se crea otra y la anterior se conserva.</p>}
+          {why && (
+            <p className="inline-error" role="alert">
+              {why}{" "}
+              {quote?.blocked && typeof window !== "undefined" && window.location.pathname.startsWith("/panel/") && <a href="/panel/creditos">Comprar créditos</a>}
+            </p>
+          )}
+          {error && (
+            <p className="inline-error" role="alert">
+              {error}
+            </p>
+          )}
+        </div>
+        <div className="dx-dialog-actions">
+          <button type="button" className="button button-outline" disabled={working} onClick={() => ref.current?.close()}>
+            Cancelar
+          </button>
+          <button className="button button-primary" disabled={Boolean(why) || !quote || working} data-testid="confirm-version">
+            {working ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />} Generar con IA
+          </button>
+        </div>
+      </form>
+    </dialog>
+  );
+}

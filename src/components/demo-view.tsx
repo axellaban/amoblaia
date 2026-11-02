@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   Bath,
@@ -48,6 +48,7 @@ import {
   Sofa,
   CloudSun,
   Eraser,
+  Play,
 } from "lucide-react";
 import { Comparison } from "./comparison";
 import { RetouchControls } from "./retouch-controls";
@@ -471,6 +472,20 @@ export function DemoView({
           ownerActions={owner && source.kind === "public" ? <OwnerValue demo={demo} token={source.token} log={log} /> : null}
         />
         {demo.photos.some((p) => p.versions.length) && <p className="dv2-illustrative">{TEXT.illustrative}</p>}
+        {demo.video?.place === "below" && (
+          <section className="dv2-section dv2-video-below" aria-labelledby="dv2-video-title">
+            <h2 id="dv2-video-title">Video de la propiedad</h2>
+            <video
+              className={`dv2-video is-${demo.video.format === "9:16" ? "vertical" : "wide"}`}
+              src={demo.video.url}
+              controls
+              playsInline
+              preload="metadata"
+              aria-label={`Video de ${demo.title}`}
+              onPlay={() => note("demo_video_played", { place: "below" })}
+            />
+          </section>
+        )}
         {owner && source.kind === "public" && (
           <>
             <AnotherProperty owner={owner} log={log} />
@@ -867,6 +882,9 @@ function Gallery({
     : demo.openStyle;
   // The agency opens on the first photo that already has a staging, compared; the buyers start at the first photo.
   const [index, setIndex] = useState(() => (owner ? Math.max(0, photos.findIndex((p) => p.versions.length > 0)) : 0));
+  // The property's video, where the agency placed it: first or second in the gallery (below the photos is the page's).
+  const video = demo.video && demo.video.place !== "below" ? demo.video : null;
+  const [videoOn, setVideoOn] = useState(() => Boolean(video && video.place === "first" && !owner));
   // Remembered per photo during the visit.
   const [states, setStates] = useState<Record<string, PhotoState>>({});
   // The style last chosen: photos not seen yet open in it when they have it.
@@ -956,6 +974,7 @@ function Gallery({
   const go = useCallback(
     (step: number, method = "arrow") => {
       navMethod.current = method;
+      setVideoOn(false);
       setIndex((i) => (photos.length ? (i + step + photos.length) % photos.length : 0));
     },
     [photos.length],
@@ -1295,7 +1314,7 @@ function Gallery({
       </p>
     </section>
   );
-  const panel = retouchPanel || ownerPanel || (photo.versions.length > 0 && (
+  const panel = retouchPanel || ownerPanel || (photo.versions.length > 0 && demo.styleSelector !== false && (
     <section className="dv2-panel" aria-labelledby="dv2-panel-title">
       <h2 id="dv2-panel-title">{panelTitle}</h2>
       <p className="dv2-panel-hint">Elegí una propuesta para esta foto.</p>
@@ -1397,8 +1416,19 @@ function Gallery({
             aria-hidden="true"
             style={{ backgroundImage: `url("${urlFor(source, photo.id, comparing ? null : showing, 480)}")` }}
           />
-          <div className="dv2-frame" style={{ "--ratio": String(ratio) } as React.CSSProperties}>
-            {failed[originalKey] ? (
+          <div className="dv2-frame" style={{ "--ratio": String(videoOn && video ? (video.format === "9:16" ? 9 / 16 : 16 / 9) : ratio) } as React.CSSProperties}>
+            {videoOn && video ? (
+              <video
+                key={video.url}
+                className="dv2-video"
+                src={video.url}
+                controls
+                playsInline
+                preload="metadata"
+                aria-label={`Video de ${demo.title}`}
+                onPlay={() => note("demo_video_played", { place: video.place })}
+              />
+            ) : failed[originalKey] ? (
               <div className="dv2-broken">
                 No pudimos cargar esta foto.
                 <button
@@ -1466,9 +1496,7 @@ function Gallery({
               </button>
             </>
           )}
-          <span className="dv2-counter">
-            {index + 1} / {photos.length}
-          </span>
+          <span className="dv2-counter">{videoOn ? "Video" : `${index + 1} / ${photos.length}`}</span>
           <button
             type="button"
             className="dv2-full"
@@ -1482,29 +1510,58 @@ function Gallery({
             {full ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
           </button>
         </div>
-        {photos.length > 1 && (
+        {(photos.length > 1 || video) && (
           <div className="dv2-thumbs">
             <button type="button" className="dv2-thumbs-step" aria-label="Ver miniaturas anteriores" onClick={() => scrollThumbs(-1)}>
               <ChevronLeft size={18} />
             </button>
             <ol ref={thumbs} aria-label="Fotos de la propiedad" className={owner && !allThumbs && photos.length > 6 ? "is-few" : ""}>
               {(owner && !allThumbs && photos.length > 6 ? photos.slice(0, 5) : photos).map((p, i) => (
-                <li key={p.id}>
-                  <button
-                    type="button"
-                    data-index={i}
-                    aria-label={`Ver foto ${i + 1}`}
-                    aria-current={i === index ? "true" : undefined}
-                    className={i === index ? "is-on" : ""}
-                    onClick={() => {
-                      navMethod.current = "thumbnail";
-                      setIndex(i);
-                    }}
-                  >
-                    <img src={urlFor(source, p.id, null, 480)} alt="" loading="lazy" />
+                <Fragment key={p.id}>
+                  {video && i === (video.place === "first" ? 0 : 1) && (
+                    <li>
+                      <button
+                        type="button"
+                        className={`dv2-thumb-video ${videoOn ? "is-on" : ""}`}
+                        aria-label="Ver el video de la propiedad"
+                        aria-current={videoOn ? "true" : undefined}
+                        onClick={() => setVideoOn(true)}
+                      >
+                        <img src={urlFor(source, (photos[0] ?? p).id, null, 480)} alt="" loading="lazy" />
+                        <span aria-hidden="true">
+                          <Play size={18} fill="currentColor" />
+                        </span>
+                      </button>
+                    </li>
+                  )}
+                  <li>
+                    <button
+                      type="button"
+                      data-index={i}
+                      aria-label={`Ver foto ${i + 1}`}
+                      aria-current={!videoOn && i === index ? "true" : undefined}
+                      className={!videoOn && i === index ? "is-on" : ""}
+                      onClick={() => {
+                        navMethod.current = "thumbnail";
+                        setVideoOn(false);
+                        setIndex(i);
+                      }}
+                    >
+                      <img src={urlFor(source, p.id, null, 480)} alt="" loading="lazy" />
+                    </button>
+                  </li>
+                </Fragment>
+              ))}
+              {video && video.place === "second" && photos.length === 1 && (
+                <li>
+                  <button type="button" className={`dv2-thumb-video ${videoOn ? "is-on" : ""}`} aria-label="Ver el video de la propiedad" onClick={() => setVideoOn(true)}>
+                    <img src={urlFor(source, photos[0].id, null, 480)} alt="" loading="lazy" />
+                    <span aria-hidden="true">
+                      <Play size={18} fill="currentColor" />
+                    </span>
                   </button>
                 </li>
-              ))}
+              )}
               {owner && !allThumbs && photos.length > 6 && (
                 <li>
                   <button type="button" className="dv2-thumbs-more" aria-label={`Ver las ${photos.length - 5} fotos restantes`} onClick={() => setAllThumbs(true)}>

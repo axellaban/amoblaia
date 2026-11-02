@@ -66,7 +66,18 @@ function PropertyPicker() {
 
 type Choice = { id: string; label: string; staged: boolean; version: PublicDemo["photos"][number]["versions"][number] | null };
 
-export function VideoStudio({ demoId, demo, canEdit }: { demoId: string | null; demo: PublicDemo | null; canEdit: boolean }) {
+export function VideoStudio({
+  demoId,
+  demo,
+  canEdit,
+  backTo = null,
+}: {
+  demoId: string | null;
+  demo: PublicDemo | null;
+  canEdit: boolean;
+  /** Opened from the demo's editor («Generar video»): the way back to it, with its tab. */
+  backTo?: string | null;
+}) {
   useEffect(() => {
     track("video_section_viewed", { has_property: Boolean(demo), device_type: deviceType() });
   }, [demo]);
@@ -81,10 +92,10 @@ export function VideoStudio({ demoId, demo, canEdit }: { demoId: string | null; 
       </div>
     );
   }
-  return <Studio demoId={demoId} demo={demo} canEdit={canEdit} />;
+  return <Studio demoId={demoId} demo={demo} canEdit={canEdit} backTo={backTo} />;
 }
 
-function Studio({ demoId, demo, canEdit }: { demoId: string; demo: PublicDemo; canEdit: boolean }) {
+function Studio({ demoId, demo, canEdit, backTo }: { demoId: string; demo: PublicDemo; canEdit: boolean; backTo: string | null }) {
   const [useStaged, setUseStaged] = useState(true);
   const all: Choice[] = useMemo(
     () =>
@@ -219,9 +230,15 @@ function Studio({ demoId, demo, canEdit }: { demoId: string; demo: PublicDemo; c
   return (
     <div className="vs">
       <p>
-        <Link href="/panel/video" className="text-link">
-          <ArrowLeft size={15} aria-hidden="true" /> Elegir otra propiedad
-        </Link>
+        {backTo ? (
+          <Link href={backTo} className="text-link">
+            <ArrowLeft size={15} aria-hidden="true" /> Volver a la demostración
+          </Link>
+        ) : (
+          <Link href="/panel/video" className="text-link">
+            <ArrowLeft size={15} aria-hidden="true" /> Elegir otra propiedad
+          </Link>
+        )}
       </p>
       <header className="vs-head">
         <h1>Video de {demo.title}</h1>

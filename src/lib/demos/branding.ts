@@ -19,11 +19,11 @@ export type AgencyBranding = {
   visitUrl?: string;
 };
 export type OpenMode = "original" | "styled";
-/** Stored in demos.settings. Private: the buyer's page only gets their effect. */
 /** Icons of the key facts, chosen per property (no empty or invented fields). */
 export const FACT_ICONS = ["area", "rooms", "bedrooms", "offices", "bathrooms", "floor", "parking", "age", "other"] as const;
 export type FactIcon = (typeof FACT_ICONS)[number];
-export type Fact = { icon: FactIcon; value: string; label: string };
+/** hidden: kept and editable, but not shown on the public page («Mostrar en demostración» off). */
+export type Fact = { icon: FactIcon; value: string; label: string; hidden?: boolean };
 export type AmenityGroup = { title: string; items: string[] };
 /** How precise the published location is: the map never shows more. */
 export type MapPrecision = "none" | "zone" | "approx" | "exact";
@@ -58,6 +58,31 @@ export type Agent = {
   photoUrl: string | null;
 };
 /** Stored in demos.settings. Private: the buyer's page only gets their effect. */
+/**
+ * The property's data that can be left out of the public page one by one
+ * («Mostrar en demostración»): the value stays saved and editable. The title
+ * is not here: it names the page, its link preview and the agency's catalog.
+ */
+export const HIDEABLE_FIELDS = [
+  "location",
+  "operation",
+  "price",
+  "expenses",
+  "availability",
+  "requirements",
+  "features",
+  "reference",
+  "description",
+  "amenities",
+  "map",
+  "agent",
+  "listingUrl",
+] as const;
+export type HideableField = (typeof HIDEABLE_FIELDS)[number];
+/** Where the property's video goes in the public gallery. */
+export const VIDEO_PLACES = ["first", "second", "below"] as const;
+export type VideoPlace = (typeof VIDEO_PLACES)[number];
+
 export type DemoSettings = {
   propertyType: "residential" | "office";
   openMode: OpenMode;
@@ -86,6 +111,17 @@ export type DemoSettings = {
   shareDescription: string | null;
   /** When the admin last checked the demo against the listing (ISO date). */
   reviewedAt: string | null;
+  /** Fields saved but left out of the public page. */
+  hidden: HideableField[];
+  /** «Mostrar datos de la propiedad»: off hides every field above (facts included); the title stays. */
+  showData: boolean;
+  /** «Mostrar selector de estilos»: the buyer's style picker under the gallery. */
+  showStyles: boolean;
+  /** «Incluir datos de contacto»: the agent and every inquiry channel. */
+  showContact: boolean;
+  /** «Mostrar video»: the latest finished video, when there is one. */
+  showVideo: boolean;
+  videoPlace: VideoPlace;
 };
 export const DEFAULT_SETTINGS: DemoSettings = {
   propertyType: "residential",
@@ -111,6 +147,12 @@ export const DEFAULT_SETTINGS: DemoSettings = {
   shareTitle: null,
   shareDescription: null,
   reviewedAt: null,
+  hidden: [],
+  showData: true,
+  showStyles: true,
+  showContact: true,
+  showVideo: true,
+  videoPlace: "below",
 };
 
 /** The colors of a page without branding: the neutral blue of habita. */
@@ -174,7 +216,12 @@ export function readSettings(raw: unknown): DemoSettings {
       .map((f) => f as Record<string, unknown>)
       .filter((f) => FACT_ICONS.includes(f?.icon as FactIcon) && cleanText(f.value, 30))
       .slice(0, 8)
-      .map((f) => ({ icon: f.icon as FactIcon, value: cleanText(f.value, 30)!, label: cleanText(f.label, 40) ?? "" })),
+      .map((f) => ({
+        icon: f.icon as FactIcon,
+        value: cleanText(f.value, 30)!,
+        label: cleanText(f.label, 40) ?? "",
+        ...(f.hidden === true ? { hidden: true } : {}),
+      })),
     description: text(v.description, 6000, true),
     amenities: list(v.amenities)
       .map((g) => g as Record<string, unknown>)
@@ -209,7 +256,20 @@ export function readSettings(raw: unknown): DemoSettings {
     shareTitle: text(v.shareTitle, 90),
     shareDescription: text(v.shareDescription, 200),
     reviewedAt: typeof v.reviewedAt === "string" && !Number.isNaN(Date.parse(v.reviewedAt)) ? v.reviewedAt : null,
+    hidden: [...new Set(list(v.hidden))].filter((k): k is HideableField => HIDEABLE_FIELDS.includes(k as HideableField)),
+    // Absent (every demo before these switches): everything shows, as before.
+    showData: v.showData !== false,
+    showStyles: v.showStyles !== false,
+    showContact: v.showContact !== false,
+    showVideo: v.showVideo !== false,
+    videoPlace: VIDEO_PLACES.includes(v.videoPlace as VideoPlace) ? (v.videoPlace as VideoPlace) : "below",
   };
+}
+
+/** Whether a field reaches the public page: «Mostrar datos de la propiedad» on and its own switch on. */
+export function shows(settings: Pick<DemoSettings, "hidden" | "showData" | "showContact">, field: HideableField) {
+  if (field === "agent" && !settings.showContact) return false;
+  return settings.showData && !settings.hidden.includes(field);
 }
 
 /**

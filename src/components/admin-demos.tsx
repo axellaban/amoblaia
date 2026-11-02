@@ -15,6 +15,8 @@ import { LeadBadge } from "./lead-score";
 import { CreditsDialog, type CreditTarget } from "./admin-agencies";
 import { EDIT_HEADER } from "@/lib/agency/edit-scope";
 import type { LeadClassKey } from "@/lib/leads/config";
+import { ShowSwitch, type Visibility } from "./demo-listing-form";
+import type { HideableField } from "@/lib/demos/branding";
 
 type DemoLeadScore = { score: number | null; classification: LeadClassKey | null; external: number; internal: number; quality: string | null };
 import {
@@ -1257,42 +1259,78 @@ export function AgencyFields({
 export function PropertyFields({
   value,
   onChange,
+  visibility,
 }: {
   value: typeof emptyProperty;
   onChange: (v: typeof emptyProperty) => void;
+  /** The demo's «Mostrar en demostración» switches. The title has none: it names the page and its link. */
+  visibility?: Visibility;
 }) {
   const set = (k: keyof typeof emptyProperty) => (e: { target: { value: string } }) =>
     onChange({ ...value, [k]: e.target.value });
+  const vis = (field: HideableField | null, name: string, el: React.ReactNode, wide = false) =>
+    visibility ? (
+      <div className={`dm-vis-row ${wide ? "dm-wide" : ""}`}>
+        {el}
+        <ShowSwitch
+          on={field ? !visibility.hidden.includes(field) : true}
+          locked={!field}
+          label={name}
+          disabled={visibility.disabled}
+          onChange={(on) => field && visibility.onToggle(field, on)}
+        />
+      </div>
+    ) : (
+      el
+    );
   return (
     <div className="dm-fields">
-      <label>
-        Título de la propiedad *
-        <input
-          required
-          maxLength={160}
-          placeholder="Departamento de 3 ambientes con balcón"
-          value={value.title}
-          onChange={set("title")}
-        />
-      </label>
-      <label>
-        Ubicación o barrio <small>(visible)</small>
-        <input maxLength={160} placeholder="Palermo, CABA" value={value.location} onChange={set("location")} />
-      </label>
-      <label className="dm-wide">
-        URL de la publicación original <small>(visible: «Ver publicación original»)</small>
-        <input
-          maxLength={500}
-          inputMode="url"
-          placeholder="https://…"
-          value={value.listing_url}
-          onChange={set("listing_url")}
-        />
-      </label>
-      <label className="dm-wide">
-        Descripción breve <small>(visible en la demo)</small>
-        <textarea rows={3} maxLength={1000} value={value.description} onChange={set("description")} />
-      </label>
+      {vis(
+        null,
+        "el título",
+        <label>
+          Título de la propiedad *
+          <input
+            required
+            maxLength={160}
+            placeholder="Departamento de 3 ambientes con balcón"
+            value={value.title}
+            onChange={set("title")}
+          />
+        </label>,
+      )}
+      {vis(
+        "location",
+        "la ubicación",
+        <label>
+          Ubicación o barrio <small>(visible)</small>
+          <input maxLength={160} placeholder="Palermo, CABA" value={value.location} onChange={set("location")} />
+        </label>,
+      )}
+      {vis(
+        "listingUrl",
+        "el enlace a la publicación original",
+        <label className={visibility ? "" : "dm-wide"}>
+          URL de la publicación original <small>(visible: «Ver publicación original»)</small>
+          <input
+            maxLength={500}
+            inputMode="url"
+            placeholder="https://…"
+            value={value.listing_url}
+            onChange={set("listing_url")}
+          />
+        </label>,
+        true,
+      )}
+      {vis(
+        "description",
+        "la descripción",
+        <label className={visibility ? "" : "dm-wide"}>
+          Descripción breve <small>(visible en la demo; la completa, si está cargada, la reemplaza)</small>
+          <textarea rows={3} maxLength={1000} value={value.description} onChange={set("description")} />
+        </label>,
+        true,
+      )}
     </div>
   );
 }

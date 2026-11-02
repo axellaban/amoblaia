@@ -165,9 +165,9 @@ describe("Panel navigation and home", () => {
   it("the home offers exactly three large cards and never the upcoming tools", () => {
     const source = readFileSync("src/components/agency-panel.tsx", "utf8");
     const cards = source.slice(source.indexOf("function HomeCards"), source.indexOf("function HomeProperty"));
-    // Spec v3 §1.2: Ambientar con IA, Editar imágenes, Crear video, each opening the start picker.
-    expect([...cards.matchAll(/\bid: "([a-z]+)"(?: as const)?,/g)].map((m) => m[1])).toEqual(["ambientar", "editar", "video"]);
-    expect(TOOL_TITLE).toEqual({ ambientar: "Ambientar con IA", editar: "Editar imágenes", video: "Crear video" });
+    // Crear demostración interactiva, Estudio de imágenes (Editar imágenes), Crear video, each opening the start picker.
+    expect([...cards.matchAll(/\bid: "([a-z]+)"(?: as const)?,/g)].map((m) => m[1])).toEqual(["demo", "editar", "video"]);
+    expect(TOOL_TITLE).toEqual({ demo: "Crear demostración interactiva", ambientar: "Ambientar con IA", editar: "Editar imágenes", video: "Crear video" });
     expect(cards).toContain("<StartPicker");
     const home = source.slice(source.indexOf("function HomeCards"), source.indexOf('/** "Ver mi sitio"'));
     expect(home).not.toMatch(/Tour 360|Planos|Redes|\/panel\/api|Pr[oó]ximamente|Guardar (mi )?panel/);
@@ -180,6 +180,8 @@ describe("Start picker (spec v3 §1.3–1.4)", () => {
     expect(toolPath("ambientar", id)).toBe(`/panel/imagenes?pestana=fotos&fotos=${id}`);
     expect(toolPath("editar", id)).toBe(`/panel/imagenes?pestana=fotos&fotos=${id}&modo=editar`);
     expect(toolPath("video", id)).toBe(`/panel/video?propiedad=${id}`);
+    // The demo's three ways in end in the same editor of the property.
+    expect(toolPath("demo", id)).toBe(`/panel/propiedades/${id}?seccion=fotos&volver=%2Fpanel`);
   });
 
   it("offers the three sources and never an empty list of properties", () => {
