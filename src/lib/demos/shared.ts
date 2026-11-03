@@ -116,6 +116,12 @@ export type PublicDemo = {
    * is none or the agency hid it: no empty player is ever shown.
    */
   video: PublicVideoRef | null;
+  /**
+   * Every style id in the order this demo offers them (settings.styleOrder
+   * resolved by the property's location). The agency's own view lists the
+   * styles still to generate in this order. Absent: the catalog's.
+   */
+  styleOrder?: string[];
 };
 
 export type PublicVideoRef = {
@@ -293,10 +299,13 @@ export function shownVersions<G extends Candidate>(
   for (const g of generations) if (ok(g) && !shown.has(g.style)) shown.set(g.style, g);
   return shown;
 }
-/** Main style first, then the catalog order; unknown styles are left out. */
-export function orderStyles(ids: Iterable<string>, main: string) {
+/**
+ * Main style first, then the demo's order (the catalog's unless given, see
+ * styleSequence); unknown styles are left out.
+ */
+export function orderStyles(ids: Iterable<string>, main: string, sequence: readonly string[] = demoStyleOrder) {
   const set = new Set(ids);
-  return demoStyleOrder.filter((id) => set.has(id)).sort((a, b) => Number(b === main) - Number(a === main));
+  return sequence.filter((id) => set.has(id)).sort((a, b) => Number(b === main) - Number(a === main));
 }
 type CoverCandidate = { id: string; visible: boolean; versions: PhotoVersion[] };
 /** The chosen cover if visible, else the first visible photo staged in the main style, else the first visible. */

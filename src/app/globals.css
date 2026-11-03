@@ -22055,6 +22055,483 @@ body:has(.pv-root) .pb-root {
   color: var(--pr-muted, #5f6f64);
 }
 
+/* ===================== Demo comercial: ajustes finales ===================== */
+
+/* Comparador: un control central claramente arrastrable y la indicación de la primera visita. */
+.dv2-page:has(.dv2-owner) .dv2-frame .comparison-line > span {
+  width: 46px;
+  height: 46px;
+  border: 2px solid rgba(36, 56, 46, 0.12);
+  color: var(--forest);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+}
+.comparison-hint {
+  position: absolute;
+  z-index: 3;
+  /* Just above the central control, whatever the photo's proportions. */
+  top: max(10px, calc(50% - 72px));
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 13px;
+  border-radius: 999px;
+  background: rgba(20, 24, 36, 0.72);
+  color: #fff;
+  /* On a narrow (vertical) photo it wraps instead of being cut by the frame. */
+  max-width: calc(100% - 20px);
+  width: max-content;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
+  pointer-events: none;
+  animation: comparison-hint-in 0.3s ease-out;
+}
+@keyframes comparison-hint-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -4px);
+  }
+}
+
+/* Vertical photos are narrow frames: smaller Antes / Después labels so they never overlap. */
+.dv2-page:has(.dv2-owner) .dv2-frame {
+  container-type: inline-size;
+}
+@container (max-width: 300px) {
+  .dv2-page:has(.dv2-owner) .dv2-frame .comparison-label {
+    bottom: 10px;
+    padding: 4px 8px;
+    font-size: 11.5px;
+  }
+  .dv2-page:has(.dv2-owner) .dv2-frame .before-label {
+    left: 8px;
+  }
+  .dv2-page:has(.dv2-owner) .dv2-frame .after-label {
+    right: 8px;
+  }
+  .comparison-hint {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+}
+
+/* Galería: todas las miniaturas del mismo tamaño, recortadas sin deformar (solo las miniaturas). La vista comprador no cambia. */
+.dv2-page:has(.dv2-owner) .dv2-thumbs {
+  --thumb-w: 112px;
+  --thumb-h: 76px;
+}
+.dv2-page:has(.dv2-owner) .dv2-thumbs img,
+.dv2-page:has(.dv2-owner) .dv2-thumbs li button img {
+  width: var(--thumb-w);
+  min-width: var(--thumb-w);
+  height: var(--thumb-h);
+  object-fit: cover;
+}
+.dv2-page:has(.dv2-owner) .dv2-thumbs .dv2-thumbs-more {
+  width: var(--thumb-w);
+  min-width: var(--thumb-w);
+  height: var(--thumb-h);
+  min-height: 0;
+}
+@media (max-width: 900px) {
+  .dv2-page:has(.dv2-owner) .dv2-thumbs {
+    --thumb-w: 88px;
+    --thumb-h: 60px;
+  }
+}
+
+/* Estilos de la demo comercial: tarjetas iguales, miniatura 1:1, nombre en una línea. */
+.dv2-styles.is-owner .dv2-style-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  overflow: visible;
+}
+.dv2-styles.is-owner .dv2-style-card {
+  container-type: inline-size;
+  display: grid;
+  align-content: start;
+  gap: 0;
+  min-width: 0;
+  padding: 5px;
+  border: 1.5px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+}
+.dv2-styles.is-owner .dv2-style-card.is-on {
+  border-width: 1.5px;
+  border-color: var(--forest);
+  box-shadow: 0 0 0 1px var(--forest);
+}
+.dv2-styles.is-owner .dv2-style-pick {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  text-align: center;
+}
+.dv2-styles.is-owner .dv2-style-pick img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  border-radius: 8px;
+}
+.dv2-styles.is-owner .dv2-style-name {
+  display: block;
+  min-width: 0;
+  padding: 0 0 2px;
+  overflow: hidden;
+  font-size: clamp(12px, 12.5cqi, 14px);
+  letter-spacing: -0.005em;
+  line-height: 1.25;
+  text-align: center;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  hyphens: none;
+}
+.dv2-styles.is-owner .dv2-style-check {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  width: 22px;
+  height: 22px;
+  box-shadow: 0 0 0 2px #fff;
+}
+/* Pendientes: borde punteado, miniatura apagada y «Generar» sobre la foto (la tarjeta entera es el enlace). */
+.dv2-styles.is-owner .dv2-style-card.is-missing {
+  border-style: dashed;
+  border-color: #c9c1b3;
+  background: #faf8f4;
+}
+.dv2-styles.is-owner .dv2-style-card.is-missing .dv2-style-name {
+  color: var(--muted);
+}
+.dv2-styles.is-owner a.dv2-style-generate {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: auto;
+  min-height: 0;
+  padding: 0;
+  border-radius: 12px;
+  background: none;
+}
+.dv2-styles.is-owner a.dv2-style-generate:hover,
+.dv2-styles.is-owner a.dv2-style-generate:focus-visible {
+  background: rgba(36, 56, 46, 0.05);
+}
+.dv2-style-generate-pill {
+  position: absolute;
+  left: 50%;
+  /* The middle of the square thumbnail: card padding + half its side. */
+  top: calc(5px + (100cqi - 10px) / 2);
+  transform: translate(-50%, -50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 30px;
+  padding: 0 11px;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--forest);
+  font-size: 12.5px;
+  font-weight: 800;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+}
+@media (min-width: 901px) {
+  .dv2-styles.is-owner .dv2-style-card {
+    display: grid;
+    padding: 5px;
+  }
+  .dv2-styles.is-owner .dv2-style-pick {
+    display: grid;
+    flex: none;
+  }
+  .dv2-styles.is-owner .dv2-style-pick img {
+    width: 100%;
+    height: auto;
+  }
+  .dv2-styles.is-owner .dv2-style-name {
+    text-align: center;
+    font-size: clamp(12px, 12.5cqi, 14px);
+  }
+  .dv2-styles.is-owner .dv2-style-check {
+    position: absolute;
+    width: 22px;
+    height: 22px;
+  }
+}
+/* Phones: one row that scrolls sideways; three cards in view and the next one peeking. */
+@media (max-width: 900px) {
+  .dv2-styles.is-owner .dv2-style-grid {
+    display: flex;
+    gap: 8px;
+    margin: 0 -12px;
+    padding: 2px 12px 6px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x mandatory;
+    scroll-padding: 0 12px;
+    scrollbar-width: none;
+  }
+  .dv2-styles.is-owner .dv2-style-grid::-webkit-scrollbar {
+    display: none;
+  }
+  .dv2-styles.is-owner .dv2-style-card {
+    /* Never narrower than the longest name needs («Mid-century» in one line). */
+    flex: 0 0 max(100px, calc((100% - 24px - 16px) / 3.15));
+    scroll-snap-align: start;
+  }
+}
+
+/* Video de la demo comercial: tarjeta horizontal compacta (toda la tarjeta abre el video), debajo de la galería. */
+.dv2-video-card.is-owner {
+  display: block;
+  padding: 0;
+  overflow: hidden;
+}
+.dv2-video-open {
+  display: grid;
+  grid-template-columns: 168px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 8px 14px 8px 8px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.dv2-video-open:hover {
+  background: #f6f8f4;
+}
+.dv2-video-card.is-owner .dv2-video-cover {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #eceef2;
+}
+.dv2-video-card.is-owner .dv2-video-cover img,
+.dv2-video-card.is-owner .dv2-video-cover video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+  object-fit: cover;
+}
+.dv2-video-card.is-owner .dv2-video-cover video {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+.dv2-video-card.is-owner .dv2-video-cover video.is-ready {
+  opacity: 1;
+}
+.dv2-video-card.is-owner .dv2-play {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 44px;
+  height: 44px;
+  border: 2px solid #fff;
+}
+.dv2-video-time {
+  position: absolute;
+  z-index: 1;
+  right: 6px;
+  bottom: 6px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: rgba(20, 24, 36, 0.75);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.dv2-video-text {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.dv2-video-text strong {
+  color: var(--forest);
+  font-size: 16px;
+  line-height: 1.25;
+}
+.dv2-video-text small {
+  color: var(--muted);
+  font-size: 13px;
+}
+.dv2-video-chevron {
+  color: var(--forest);
+}
+@media (max-width: 900px) {
+  .dv2-video-open {
+    grid-template-columns: 128px minmax(0, 1fr) auto;
+    gap: 12px;
+    padding: 6px 10px 6px 6px;
+  }
+  .dv2-video-text strong {
+    font-size: 15px;
+  }
+  .dv2-video-card.is-owner .dv2-play {
+    width: 40px;
+    height: 40px;
+  }
+}
+
+/* Foto principal de la demo comercial: el recuadro toma las proporciones de la foto (sin franjas); las verticales, con fondo desenfocado a los lados. */
+.dv2-page:has(.dv2-owner) .dv2-stage:not(.is-full) {
+  /* The width is the column's: the height follows the photo, never the other way round. */
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  aspect-ratio: var(--ratio, 4 / 3);
+  max-height: min(70vh, 640px);
+}
+@media (max-width: 900px) {
+  .dv2-page:has(.dv2-owner) .dv2-stage:not(.is-full) {
+    max-height: 62vh;
+  }
+}
+/* Los puntos debajo de la foto y el título de la galería (el mockup). */
+.dv2-dots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  padding: 2px 0;
+}
+.dv2-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #cfd6cb;
+  transition: width 0.2s;
+}
+.dv2-dots span.is-on {
+  width: 16px;
+  background: var(--forest);
+}
+.dv2-gallery-title {
+  display: none;
+}
+@media (max-width: 900px) {
+  .dv2-media > .dv2-dots {
+    order: 1;
+  }
+  .dv2-gallery-title {
+    order: 4;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 4px 0 -4px;
+    color: var(--ink);
+    font-size: 16px;
+  }
+}
+
+/* Descargar / Compartir: dos botones iguales, con contorno y el texto completo (el mockup). */
+.dv2-page:has(.dv2-owner) .dv2-value {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  align-items: stretch;
+}
+.dv2-page:has(.dv2-owner) .dv2-value:has(.dv2-value-download[open]) {
+  align-items: start;
+}
+.dv2-page:has(.dv2-owner) .dv2-value-download:not([open]) > summary {
+  height: 100%;
+}
+.dv2-page:has(.dv2-owner) .dv2-value-download > summary,
+.dv2-page:has(.dv2-owner) .dv2-value-share {
+  justify-content: center;
+  gap: 10px;
+  min-height: 56px;
+  padding: 8px 12px;
+  border: 1.5px solid var(--forest);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--forest);
+}
+.dv2-page:has(.dv2-owner) .dv2-value-download > summary:hover,
+.dv2-page:has(.dv2-owner) .dv2-value-share:hover {
+  background: #f1f6ee;
+}
+.dv2-page:has(.dv2-owner) .dv2-value-download > summary > svg,
+.dv2-page:has(.dv2-owner) .dv2-value-share > svg {
+  flex: none;
+}
+.dv2-page:has(.dv2-owner) .dv2-value strong {
+  font-size: 14px;
+  line-height: 1.2;
+}
+@media (max-width: 900px) {
+  .dv2-page:has(.dv2-owner) .dv2-value-download[open] {
+    grid-column: 1 / -1;
+  }
+}
+
+/* «¿Te imaginás esto con todas tus propiedades?» y «Guardar esta demo en mi panel». */
+.dv2-save-demo {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 16px;
+  border-radius: 14px;
+  background: #eaf2e4;
+}
+.dv2-save-demo h2 {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0;
+  color: var(--ink);
+  font-size: 16px;
+  line-height: 1.3;
+}
+.dv2-save-demo h2 svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--forest);
+}
+.dv2-save-demo-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 16px;
+  border-radius: 12px;
+  background: var(--forest);
+  color: #fff;
+  font-weight: 700;
+  text-decoration: none;
+}
+.dv2-save-demo-cta:hover {
+  background: var(--forest-light);
+}
+/* Desktop: the actions right under «Estilos», as in the mockup (not pushed to the bottom of the column). */
+@media (min-width: 901px) {
+  .dv2-page:has(.dv2-owner) .dv2-aside-actions {
+    margin-top: 0;
+  }
+}
+
 /* ===================== Crear video: AI modes (confirmation, progress per photo) ===================== */
 .vs-confirm .vs-facts {
   margin: 0 0 14px;

@@ -2,6 +2,7 @@
 // (opening mode, presentation strip, listing data). Pure and safe for the
 // browser; the panel's input validation lives in input.ts.
 import { cleanText, cleanUrl } from "./shared";
+import { isDemoStyle, type StyleOrderSetting } from "./styles";
 
 export const CONTACT_KINDS = ["whatsapp", "url", "phone", "email"] as const;
 export type ContactKind = (typeof CONTACT_KINDS)[number];
@@ -124,6 +125,13 @@ export type DemoSettings = {
   /** «Incluir datos de contacto»: the agent and every inquiry channel. */
   showContact: boolean;
   videoPlacement: VideoPlacement;
+  /**
+   * The order the demo offers its styles in (see styleSequence). Every demo
+   * is "auto" unless chosen otherwise: the order of the property's region
+   * (REGIONAL_STYLE_ORDERS), else the catalog's. Only the order changes:
+   * the main style and every generated image stay as they are.
+   */
+  styleOrder: StyleOrderSetting;
 };
 export const DEFAULT_SETTINGS: DemoSettings = {
   propertyType: "residential",
@@ -155,6 +163,8 @@ export const DEFAULT_SETTINGS: DemoSettings = {
   showContact: true,
   // New demos (every importer starts from these): the video under the gallery. Older demos without a saved choice keep reading "first".
   videoPlacement: "below",
+  // The order of the property's region (older demos without a saved choice read the same).
+  styleOrder: "auto",
 };
 
 /** The colors of a page without branding: the neutral blue of habita. */
@@ -264,7 +274,18 @@ export function readSettings(raw: unknown): DemoSettings {
     showStyles: v.showStyles !== false,
     showContact: v.showContact !== false,
     videoPlacement: VIDEO_PLACEMENTS.includes(v.videoPlacement as VideoPlacement) ? (v.videoPlacement as VideoPlacement) : "first",
+    styleOrder: readStyleOrder(v.styleOrder),
   };
+}
+
+/** A saved style order: "catalog" or an explicit list of known styles when chosen; otherwise "auto" (by region). */
+export function readStyleOrder(v: unknown): StyleOrderSetting {
+  if (v === "catalog") return "catalog";
+  if (Array.isArray(v)) {
+    const ids = [...new Set(v.filter(isDemoStyle))];
+    if (ids.length) return ids;
+  }
+  return "auto";
 }
 
 /** Whether a field reaches the public page: «Mostrar datos de la propiedad» on and its own switch on. */

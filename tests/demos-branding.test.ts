@@ -78,7 +78,7 @@ describe("Branding and settings input", () => {
   });
 });
 
-import { buildDemoPrompt, styleFits } from "../src/lib/demos/styles";
+import { buildDemoPrompt, demoStyleName, demoStyleOrder, REGIONAL_STYLE_ORDERS, styleFits, styleSequence } from "../src/lib/demos/styles";
 import { moneyMentions, parseListing } from "../src/lib/demos/listing";
 import { reviewWarnings } from "../src/lib/demos/server";
 
@@ -137,6 +137,33 @@ describe("Listing data", () => {
 });
 
 describe("Video placement default", () => {
+  it("offers the styles in the order of the property's region, older demos included; «catalog» only when chosen", () => {
+    expect(DEFAULT_SETTINGS.styleOrder).toBe("auto");
+    expect(readSettings({}).styleOrder).toBe("auto");
+    expect(readSettings({ styleOrder: "catalog" }).styleOrder).toBe("catalog");
+    expect(readSettings({ ...DEFAULT_SETTINGS }).styleOrder).toBe("auto");
+    const mdp = styleSequence("auto", "Playa Grande, Mar del Plata");
+    expect(mdp.slice(0, 7)).toEqual(["modern", "coastal", "scandinavian", "minimalist", "midcentury", "luxury", "industrial"]);
+    // The rest of the catalog follows, nothing lost or repeated.
+    expect([...mdp].sort()).toEqual([...demoStyleOrder].sort());
+    // Not tied to one city: elsewhere (or with no location) the catalog order stays.
+    expect(styleSequence("auto", "Palermo, CABA")).toEqual(demoStyleOrder);
+    expect(styleSequence("auto", null)).toEqual(demoStyleOrder);
+    expect(styleSequence("catalog", "Mar del Plata")).toEqual(demoStyleOrder);
+    // An explicit order, per demo.
+    expect(styleSequence(["luxury", "nope", "modern"], null).slice(0, 2)).toEqual(["luxury", "modern"]);
+    expect(REGIONAL_STYLE_ORDERS.every((r) => r.order.every((id) => demoStyleOrder.includes(id)))).toBe(true);
+  });
+  it("Costero is a real style of the catalog", () => {
+    expect(demoStyleName("coastal")).toBe("Costero");
+  });
+  it("validates a style order chosen for a demo", () => {
+    expect(settingsInput({ styleOrder: ["coastal", "modern"] }, readSettings({})).styleOrder).toEqual(["coastal", "modern"]);
+    expect(settingsInput({ styleOrder: "auto" }, readSettings({})).styleOrder).toBe("auto");
+    expect(settingsInput({ price: "USD 1" }, { ...DEFAULT_SETTINGS }).styleOrder).toBe("auto");
+    expect(() => settingsInput({ styleOrder: ["costero"] }, readSettings({}))).toThrow(/Orden de estilos/);
+    expect(() => settingsInput({ styleOrder: [] }, readSettings({}))).toThrow(/Orden de estilos/);
+  });
   it("new demos (every importer starts from DEFAULT_SETTINGS) show the video under the gallery; older ones without a choice keep «first»", () => {
     expect(DEFAULT_SETTINGS.videoPlacement).toBe("below");
     expect(readSettings({ ...DEFAULT_SETTINGS }).videoPlacement).toBe("below");

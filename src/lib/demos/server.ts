@@ -15,7 +15,7 @@ import {
   type AgencyBranding,
   type DemoSettings,
 } from "./branding";
-import { demoStyleName, demoStyleOrder, styleFits } from "./styles";
+import { demoStyleName, demoStyleOrder, styleFits, styleSequence } from "./styles";
 import { retouchOps, type Adjust } from "./retouch";
 import { TOOL_NAMES, validTool } from "./tools";
 import { activityOf } from "./activity";
@@ -524,7 +524,11 @@ export async function demoDetail(id: string): Promise<DemoDetail> {
     settingsOf(demo.id),
   ]);
   const main = mainOf(photos, shown);
-  const order = orderStyles(photos.flatMap((p) => [...(shown.get(p.id)?.keys() ?? [])]), main);
+  const order = orderStyles(
+    photos.flatMap((p) => [...(shown.get(p.id)?.keys() ?? [])]),
+    main,
+    styleSequence(saved.settings.styleOrder, prop.location),
+  );
   const photoList: EditorPhoto[] = photos.map((p) => ({
     id: p.id,
     spaceId: spaces.photoSpace.get(p.id) ?? null,
@@ -690,9 +694,13 @@ async function publicPayload(demo: DemoRow, logoUrl: (v: string) => string, raw 
   const shown = await shownOf(visible);
   const main = mainOf(visible.length ? visible : photos, shown);
   // Only styles that fit the property: an office never shows a living room.
+  // The demo's own order (its region's for new demos), the main style always first.
+  const location = (property.data as { location?: string | null } | null)?.location ?? null;
+  const sequence = styleSequence(settings.styleOrder, location).filter((style) => styleFits(style, settings.propertyType));
   const order = orderStyles(
     visible.flatMap((p) => [...(shown.get(p.id)?.keys() ?? [])]),
     main,
+    sequence,
   ).filter((style) => styleFits(style, settings.propertyType));
   const list: PublicPhoto[] = visible.map((p) => ({
     id: p.id,
@@ -754,6 +762,7 @@ async function publicPayload(demo: DemoRow, logoUrl: (v: string) => string, raw 
     prospect,
     styleSelector: settings.showStyles,
     video: video && settings.videoPlacement !== "hidden" ? { ...video, placement: settings.videoPlacement } : null,
+    styleOrder: sequence,
   };
   return raw ? page : applyVisibility(page, settings);
 }
@@ -1321,7 +1330,8 @@ export async function createDemo(input: {
         created_by: input.actorId,
         kind: input.kind ?? "ficha",
         // New demos show their video under the gallery until the agency chooses otherwise (older ones keep theirs).
-        settings: { videoPlacement: "below" },
+        // …and offer their styles in the order of the property's region (styleSequence).
+        settings: { videoPlacement: "below", styleOrder: "auto" },
       })
       .select("id")
       .single();
