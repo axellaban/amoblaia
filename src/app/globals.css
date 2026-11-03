@@ -18259,6 +18259,224 @@ main:has(.ap-sidebar) {
   cursor: default;
 }
 
+/* Music and watermark: the same shape as «Texto del video» (a switch, then its options). */
+.vs-seg {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 10px;
+  background: #f1efe9;
+}
+.vs-seg button {
+  min-height: 36px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.vs-seg button.is-on {
+  background: #fff;
+  color: var(--ink);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 10%);
+}
+.vs-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.vs-chip {
+  min-height: 32px;
+  padding: 4px 12px;
+  border: 1.5px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.vs-chip.is-on {
+  border-color: var(--forest);
+  background: #f1f6ee;
+  color: var(--forest);
+}
+.vs-tracks-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+.vs-tracks-head .text-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+}
+.vs-tracks {
+  display: grid;
+  gap: 6px;
+  max-height: 260px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+.vs-tracks li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1.5px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+}
+.vs-tracks li.is-on {
+  border-color: var(--forest);
+  background: #f1f6ee;
+}
+.vs-track-play {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 50%;
+  background: #eef3ea;
+  color: var(--forest);
+  cursor: pointer;
+}
+.vs-tracks li.is-on .vs-track-play {
+  background: var(--forest);
+  color: #fff;
+}
+.vs-track-name {
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+.vs-tracks li.is-on .vs-track-name {
+  color: var(--forest);
+  font-weight: 700;
+}
+.vs-upload {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+}
+.vs-file {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fbfaf7;
+  color: var(--forest);
+  font-size: 13.5px;
+}
+.vs-file > span {
+  display: grid;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+}
+.vs-file small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.vs-file img,
+.vs-file-thumb {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  object-fit: contain;
+  background: #fff;
+  border: 1px solid var(--line);
+}
+.vs-file .text-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.vs-media-up {
+  justify-self: start;
+  gap: 6px;
+}
+.vs-upload .button,
+.vs-media .button {
+  gap: 6px;
+}
+.vs-range {
+  display: grid;
+  grid-template-columns: auto 1fr 44px;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.vs-range input {
+  width: 100%;
+  accent-color: var(--forest);
+}
+.vs-range span:last-child {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.vs-corner-pick {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.vs-corner-pick .vs-hint {
+  font-weight: 400;
+}
+.vs-corners {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 18px 10px;
+  width: 52px;
+  padding: 5px;
+  border: 1.5px solid var(--line);
+  border-radius: 8px;
+}
+.vs-corners button {
+  height: 14px;
+  padding: 0;
+  border: 1.5px solid var(--line);
+  border-radius: 3px;
+  background: #fff;
+  cursor: pointer;
+}
+.vs-corners button.is-on {
+  border-color: var(--forest);
+  background: var(--forest);
+}
+
 /* Placement in the demo: a tiny drawing of each position. */
 .vs-place-option {
   grid-template-columns: auto 1fr;

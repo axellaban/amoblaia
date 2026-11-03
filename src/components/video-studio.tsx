@@ -38,6 +38,19 @@ import {
 } from "lucide-react";
 import { ApiError, api } from "./admin-demos";
 import { StartPicker } from "./start-picker";
+import {
+  DEFAULT_MUSIC,
+  DEFAULT_WATERMARK,
+  mediaLink,
+  musicChoiceOf,
+  musicOption,
+  MusicCard,
+  watermarkChoiceOf,
+  watermarkOption,
+  WatermarkCard,
+  type MusicChoice,
+  type WatermarkChoice,
+} from "./video-media";
 import { track as trackEvent, type EventProperties } from "@/lib/analytics";
 import { adminPhotoUrl, type PublicDemo } from "@/lib/demos/shared";
 import type { VideoPlacement } from "@/lib/demos/branding";
@@ -71,7 +84,8 @@ import {
   type VideoMode,
   type VideoPlan,
 } from "@/lib/video/plan";
-import { drawFrame, type VideoAsset, type VideoInfo } from "@/lib/video/render";
+import { CORNER_LABEL, GENRE_LABEL, readMusic, readWatermark, trackOf, type LibraryTrack, type VideoMusic, type VideoWatermark, type WatermarkCorner } from "@/lib/video/media";
+import { drawFrame, type RenderExtras, type VideoAsset, type VideoInfo } from "@/lib/video/render";
 import type { PublicVideo, VideoOptions } from "@/lib/video/server";
 
 /** Where the property's video goes in its demo (spec: three positions; «No mostrar» kept). */
@@ -189,7 +203,7 @@ export function VideoStudio({
 }
 
 /** The editor's choices, kept per property in this browser while the person works (not the property's data). */
-type Draft = { photos: string[]; staged: boolean; format: VideoFormat; info: boolean; fields: InfoField[] };
+type Draft = { photos: string[]; staged: boolean; format: VideoFormat; info: boolean; fields: InfoField[]; music?: VideoMusic | null; watermark?: VideoWatermark | null };
 const draftKey = (id: string) => `habita.video.${id}`;
 function readDraft(id: string): Draft | null {
   try {
@@ -201,6 +215,8 @@ function readDraft(id: string): Draft | null {
       format: isVideoFormat(raw.format) ? raw.format : DEFAULT_FORMAT,
       info: raw.info === true,
       fields: Array.isArray(raw.fields) ? raw.fields.filter((f): f is InfoField => INFO_FIELDS.includes(f as InfoField)) : [],
+      ...("music" in raw ? { music: readMusic(raw.music) } : {}),
+      ...("watermark" in raw ? { watermark: readWatermark(raw.watermark) } : {}),
     };
   } catch {
     return null;
@@ -236,14 +252,16 @@ type Command = { kind: "play" | "seek"; ms: number; n: number };
 
 /**
  * The big viewer: the real frames of the video (the same drawFrame the MP4
- * uses), at half size, in the chosen format's proportion. Silent: the
- * montage has no music.
+ * uses), at half size, in the chosen format's proportion, with the
+ * watermark and, while it plays, the chosen music.
  */
 function Preview({
   plan,
   cards,
   sources,
   logoUrl,
+  watermark,
+  music,
   command,
   onPlay,
 }: {
@@ -251,6 +269,8 @@ function Preview({
   cards: VideoInfo;
   sources: { url: string; staged: boolean }[];
   logoUrl: string | null;
+  watermark: { url: string; corner: WatermarkCorner } | null;
+  music: { url: string; volume: number } | null;
   command: Command | null;
   onPlay: () => void;
 }) {
@@ -258,6 +278,8 @@ function Preview({
   const stage = useRef<HTMLDivElement>(null);
   const [assets, setAssets] = useState<VideoAsset[] | null>(null);
   const [logo, setLogo] = useState<ImageBitmap | null>(null);
+  const [mark, setMark] = useState<ImageBitmap | null>(null);
+  const audio = useRef<HTMLAudioElement | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [t, setT] = useState(0);
@@ -282,6 +304,19 @@ function Preview({
       .then(setLogo)
       .catch(() => setLogo(null));
   }, [logoUrl]);
+  const markUrl = watermark?.url ?? null;
+  useEffect(() => {
+    if (!markUrl) return setMark(null);
+    let live = true;
+    bitmap(markUrl)
+      .then((b) => live && setMark(b))
+      .catch(() => live && setMark(null));
+    return () => {
+      live = false;
+    };
+  }, [markUrl]);
+  const corner = watermark?.corner ?? "br";
+  const wm = useMemo(() => (mark ? { image: mark, corner } : null), [mark, corner]);
 
   const small = useMemo(() => (plan ? { ...plan, width: Math.round(plan.width / 2), height: Math.round(plan.height / 2) } : null), [plan]);
   const ready = Boolean(small && assets && assets.length === sources.length && sources.length > 0);
@@ -290,9 +325,9 @@ function Preview({
     (ms: number) => {
       const ctx = canvas.current?.getContext("2d");
       if (!ctx || !small || !assets || assets.length !== sources.length) return;
-      drawFrame(ctx, small, cards, assets, logo, ms);
+      drawFrame(ctx, small, cards, assets, logo, ms, wm);
     },
-    [small, assets, sources.length, cards, logo],
+    [small, assets, sources.length, cards, logo, wm],
   );
 
   // A new plan (format, photos, information): back to a still frame that shows it.
@@ -324,6 +359,34 @@ function Preview({
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
   }, [playing, plan, draw]);
+
+  // The music follows the preview: from the same second, looped like in the MP4.
+  const musicUrl = music?.url ?? null;
+  const musicVolume = music?.volume ?? 70;
+  useEffect(() => {
+    if (!musicUrl) {
+      audio.current?.pause();
+      return;
+    }
+    if (!audio.current) {
+      audio.current = new Audio();
+      audio.current.loop = true;
+    }
+    if (audio.current.src !== musicUrl) audio.current.src = musicUrl;
+  }, [musicUrl]);
+  useEffect(() => {
+    if (audio.current) audio.current.volume = Math.min(1, musicVolume / 100);
+  }, [musicVolume, musicUrl]);
+  useEffect(() => {
+    const a = audio.current;
+    if (!a || !musicUrl) return;
+    if (playing) {
+      const d = a.duration;
+      a.currentTime = Number.isFinite(d) && d > 0 ? (time.current / 1000) % d : time.current / 1000;
+      void a.play().catch(() => null);
+    } else a.pause();
+  }, [playing, musicUrl]);
+  useEffect(() => () => audio.current?.pause(), []);
 
   useEffect(() => {
     if (!command || !plan) return;
@@ -546,6 +609,11 @@ function Studio({
   // Without a ficha the video is only the photos by default; a property may add its data.
   const [includeInfo, setIncludeInfo] = useState(!group);
   const [fields, setFields] = useState<InfoChoice>(() => Object.fromEntries(INFO_FIELDS.map((f) => [f, true])) as InfoChoice);
+  const [music, setMusic] = useState<MusicChoice>(DEFAULT_MUSIC);
+  const [watermark, setWatermark] = useState<WatermarkChoice>(DEFAULT_WATERMARK);
+  const [library, setLibrary] = useState<LibraryTrack[] | null>(null);
+  const [libraryError, setLibraryError] = useState(false);
+  const profileLogo = demo.agency.logo ?? null;
   const [placement, setPlacement] = useState<VideoPlacement>(initialPlacement);
   const [videos, setVideos] = useState<PublicVideo[] | null>(null);
   const [listError, setListError] = useState("");
@@ -569,7 +637,7 @@ function Studio({
   );
 
   const applyConfig = useCallback(
-    (c: { photos: string[]; staged: boolean; info: boolean; fields: InfoField[]; format?: VideoFormat }) => {
+    (c: { photos: string[]; staged: boolean; info: boolean; fields: InfoField[]; format?: VideoFormat; music?: VideoMusic | null; watermark?: VideoWatermark | null }) => {
       const photos = c.photos.filter((id) => known.has(id)).slice(0, MAX_VIDEO_PHOTOS);
       if (!photos.length) return false;
       setPicked(photos);
@@ -577,6 +645,8 @@ function Studio({
       setIncludeInfo(c.info);
       if (c.fields.length) setFields(Object.fromEntries(INFO_FIELDS.map((f) => [f, c.fields.includes(f)])) as InfoChoice);
       if (c.format) setFormat(c.format);
+      setMusic((m) => musicChoiceOf(c.music, m));
+      setWatermark((w) => watermarkChoiceOf(c.watermark, w));
       return true;
     },
     [known],
@@ -607,6 +677,62 @@ function Studio({
     void load();
   }, [load]);
 
+  // The music library: the tracks already generated, each with a short link to hear it.
+  const fetchLibrary = useCallback(async () => (await api<{ library: LibraryTrack[] }>(`/api/panel/videos/medios?demo=${demoId}`)).library, [demoId]);
+  useEffect(() => {
+    let live = true;
+    fetchLibrary()
+      .then((l) => live && (setLibrary(l), setLibraryError(false)))
+      .catch(() => live && setLibraryError(true));
+    return () => {
+      live = false;
+    };
+  }, [fetchLibrary]);
+  // A browser that cannot write audio (some Safari versions) starts without music instead of failing at «Generar».
+  useEffect(() => {
+    let live = true;
+    void import("@/lib/video/render")
+      .then((r) => r.audioCodec())
+      .then((codec) => {
+        if (live && !codec && !touched.current) setMusic((m) => ({ ...m, on: false }));
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+  // A library track by default (the chosen style's first), once the library is known.
+  useEffect(() => {
+    if (!library?.length) return;
+    setMusic((m) => {
+      if (m.source !== "library" || (m.track && library.some((t) => t.id === m.track))) return m;
+      const first = library.find((t) => t.genre === m.genre) ?? library[0];
+      return { ...m, genre: first.genre, track: first.id };
+    });
+  }, [library]);
+  // Uploaded files restored from a draft or a past video: their links are asked for again.
+  const musicUpload = music.upload;
+  useEffect(() => {
+    if (!musicUpload || musicUpload.url) return;
+    let live = true;
+    mediaLink(demoId, musicUpload.path)
+      .then((url) => live && setMusic((m) => (m.upload?.path === musicUpload.path ? { ...m, upload: { ...musicUpload, url } } : m)))
+      .catch(() => live && setMusic((m) => (m.upload?.path === musicUpload.path ? { ...m, upload: null } : m)));
+    return () => {
+      live = false;
+    };
+  }, [demoId, musicUpload]);
+  const markUpload = watermark.upload;
+  useEffect(() => {
+    if (!markUpload || markUpload.url) return;
+    let live = true;
+    mediaLink(demoId, markUpload.path)
+      .then((url) => live && setWatermark((w) => (w.upload?.path === markUpload.path ? { ...w, upload: { ...markUpload, url } } : w)))
+      .catch(() => live && setWatermark((w) => (w.upload?.path === markUpload.path ? { ...w, upload: null } : w)));
+    return () => {
+      live = false;
+    };
+  }, [demoId, markUpload]);
+
   // AI videos being animated: the history is asked again every few seconds (that also moves them forward).
   const joinWhenReady = useRef<string | null>(null);
   const animating = (videos ?? []).some((v) => v.ai?.stage === "animating");
@@ -620,9 +746,17 @@ function Studio({
   // Kept for this property in this browser: the selection survives a reload and the way back from the demo.
   useEffect(() => {
     if (!touched.current) return;
-    const ok = saveDraft(demoId, { photos: picked, staged: useStaged, format, info: includeInfo, fields: INFO_FIELDS.filter((f) => fields[f]) });
+    const ok = saveDraft(demoId, {
+      photos: picked,
+      staged: useStaged,
+      format,
+      info: includeInfo,
+      fields: INFO_FIELDS.filter((f) => fields[f]),
+      music: musicOption(music),
+      watermark: watermarkOption(watermark, profileLogo),
+    });
     setSaved(ok);
-  }, [demoId, picked, useStaged, format, includeInfo, fields]);
+  }, [demoId, picked, useStaged, format, includeInfo, fields, music, watermark, profileLogo]);
   const touch = () => {
     touched.current = true;
     restored.current = true;
@@ -643,6 +777,43 @@ function Studio({
     [chosen.length, format, cards, mode],
   );
   const sources = useMemo(() => chosen.map((c) => ({ url: adminPhotoUrl(c.id, c.version, 960), staged: c.staged })), [chosen]);
+  const musicChoice = musicOption(music);
+  const markChoice = watermarkOption(watermark, profileLogo);
+  const previewMusic = useMemo(() => {
+    const url = !musicChoice ? null : musicChoice.kind === "library" ? library?.find((t) => t.id === musicChoice.track)?.url : music.upload?.url;
+    return musicChoice && url ? { url, volume: musicChoice.volume } : null;
+  }, [musicChoice, library, music.upload]);
+  const previewMark = useMemo(() => {
+    const url = !markChoice ? null : markChoice.kind === "profile" ? profileLogo : watermark.upload?.url;
+    return markChoice && url ? { url, corner: markChoice.corner } : null;
+  }, [markChoice, profileLogo, watermark.upload]);
+  const musicText = !musicChoice ? "Sin música" : musicChoice.kind === "library" ? `${trackOf(musicChoice.track)?.name ?? "Pista"} (${GENRE_LABEL[trackOf(musicChoice.track)?.genre ?? "chill"]})` : musicChoice.name;
+  const markText = !markChoice ? "Sin marca de agua" : `${markChoice.kind === "profile" ? "Logo de tu perfil" : "Tu marca de agua"} · ${CORNER_LABEL[markChoice.corner].toLowerCase()}`;
+
+  /** The music and watermark a video was asked with, loaded for the MP4 (fresh links: the old ones may have expired). */
+  async function extrasFor(m: VideoMusic | null | undefined, w: VideoWatermark | null | undefined): Promise<RenderExtras> {
+    const { audioCodec, loadAsset, loadMusic } = await import("@/lib/video/render");
+    const out: RenderExtras = {};
+    if (m) {
+      const codec = await audioCodec();
+      if (!codec) throw new Error("Este navegador no puede agregar música al video. Probá con Chrome o Edge actualizados, o sacá la música.");
+      const url = m.kind === "library" ? ((await fetchLibrary()).find((t) => t.id === m.track)?.url ?? null) : await mediaLink(demoId, m.path);
+      if (!url) throw new Error("No encontramos la pista elegida. Elegí otra en «Música de fondo».");
+      out.music = { song: await loadMusic(url), volume: m.volume, codec };
+    }
+    if (w) {
+      const url = w.kind === "profile" ? profileLogo : await mediaLink(demoId, w.path);
+      const image = url ? (await loadAsset(url, false)).image : null;
+      if (image) out.watermark = { image, corner: w.corner };
+    }
+    return out;
+  }
+  /** Music needs this browser to write audio: checked before anything is created or charged. */
+  async function musicProblem() {
+    if (!musicChoice) return null;
+    const { audioCodec } = await import("@/lib/video/render");
+    return (await audioCodec()) ? null : "Este navegador no puede agregar música al video. Probá con Chrome o Edge actualizados, o sacá la música.";
+  }
 
   const toggle = (id: string) => {
     touch();
@@ -696,6 +867,9 @@ function Studio({
     animated_photo_count: aiMode ? chosen.length : 0,
     credits_quoted: credits,
     provider: aiMode ? "fal" : "browser",
+    has_music: Boolean(musicChoice),
+    music_source: musicChoice?.kind ?? "none",
+    has_watermark: Boolean(markChoice),
   });
 
   // Leaving while the browser renders loses the video: the browser asks first.
@@ -722,13 +896,18 @@ function Studio({
       setError("Este navegador no puede crear el video. Probá con Chrome, Edge o Safari actualizados (en iPhone, iOS 17 o posterior), o desde una computadora.");
       return;
     }
+    const noAudio = await musicProblem();
+    if (noAudio) {
+      track("video_generation_failed", { ...p, error_code: "unsupported_audio" });
+      return setError(noAudio);
+    }
     let videoId: string | null = null;
     let step = "create";
     const controller = new AbortController();
     abort.current = controller;
     try {
       setBusy({ stage: "Preparando…", progress: 0 });
-      const options: VideoOptions = { photos: chosen.map((c) => c.id), staged: useStaged, info: includeInfo, fields: chosenFields };
+      const options: VideoOptions = { photos: chosen.map((c) => c.id), staged: useStaged, info: includeInfo, fields: chosenFields, music: musicChoice, watermark: markChoice };
       const created = await api<{ id: string; status: string; upload: { path: string; token: string; bucket: string } | null }>("/api/panel/videos", {
         method: "POST",
         body: JSON.stringify({ demoId, key: crypto.randomUUID(), mode, format, photoCount: chosen.length, options }),
@@ -740,8 +919,11 @@ function Studio({
       setBusy({ stage: "Cargando fotos…", progress: 0.02 });
       const assets = await Promise.all(chosen.map((c) => loadAsset(adminPhotoUrl(c.id, c.version, 2048), c.staged)));
       const logo = cards.outro?.logo && demo.agency.logo ? await loadAsset(demo.agency.logo, false).then((a) => a.image ?? null).catch(() => null) : null;
+      step = "media";
+      if (musicChoice) setBusy({ stage: "Preparando la música…", progress: 0.04 });
+      const extras = await extrasFor(musicChoice, markChoice);
       step = "render";
-      const blob = await renderMp4(plan, cards, assets, logo, (x) => setBusy({ stage: `Creando el video… ${Math.round(x * 100)}%`, progress: 0.05 + x * 0.8 }), controller.signal);
+      const blob = await renderMp4(plan, cards, assets, logo, (x) => setBusy({ stage: `Creando el video… ${Math.round(x * 100)}%`, progress: 0.05 + x * 0.8 }), controller.signal, extras);
       step = "upload";
       setBusy({ stage: "Guardando…", progress: 0.9 });
       const client = browserClient();
@@ -778,7 +960,9 @@ function Studio({
         ? "Cancelaste el video."
         : step === "photos"
           ? "No pudimos cargar una de las fotos. Revisá tu conexión y reintentá."
-          : step === "render"
+          : step === "media"
+            ? message(e, "No pudimos cargar la música o la marca de agua. Reintentá.")
+            : step === "render"
             ? "Falló la creación del video en este navegador. Reintentá; si se repite, probá desde una computadora."
             : step === "storage"
               ? `No pudimos confirmar el video guardado: ${message(e, "probá de nuevo")}`
@@ -812,6 +996,11 @@ function Studio({
       setError("Este navegador no puede armar el video. Probá con Chrome, Edge o Safari actualizados (en iPhone, iOS 17 o posterior), o desde una computadora. No se usaron créditos.");
       return;
     }
+    const noAudio = await musicProblem();
+    if (noAudio) {
+      track("video_generation_failed", { ...p, error_code: "unsupported_audio" });
+      return setError(`${noAudio} No se usaron créditos.`);
+    }
     // Nothing is charged until the person confirms in the dialog (launchAi).
     setConfirming(true);
   }
@@ -822,7 +1011,7 @@ function Studio({
     const p = props();
     try {
       setBusy({ kind: "send", stage: "Enviando las fotos a la IA…", progress: 0.02 });
-      const options: VideoOptions = { photos: chosen.map((c) => c.id), staged: useStaged, info: includeInfo, fields: chosenFields };
+      const options: VideoOptions = { photos: chosen.map((c) => c.id), staged: useStaged, info: includeInfo, fields: chosenFields, music: musicChoice, watermark: markChoice };
       const started = await api<{ id: string; status: string; error: string | null }>("/api/panel/videos", {
         method: "POST",
         body: JSON.stringify({ demoId, key: crypto.randomUUID(), mode, format, photoCount: chosen.length, options }),
@@ -863,8 +1052,10 @@ function Studio({
       setBusy({ kind: "join", stage: "Cargando los clips animados…", progress: 0.03 });
       const assets = await Promise.all(v.ai.clips.map((c) => loadClip(c.url, c.staged)));
       const logo = vCards.outro?.logo && demo.agency.logo ? await loadAsset(demo.agency.logo, false).then((a) => a.image ?? null).catch(() => null) : null;
+      step = "media";
+      const extras = await extrasFor(opts?.music, opts?.watermark);
       step = "render";
-      const blob = await renderMp4(vPlan, vCards, assets, logo, (x) => setBusy({ kind: "join", stage: `Armando el video… ${Math.round(x * 100)}%`, progress: 0.05 + x * 0.8 }), controller.signal);
+      const blob = await renderMp4(vPlan, vCards, assets, logo, (x) => setBusy({ kind: "join", stage: `Armando el video… ${Math.round(x * 100)}%`, progress: 0.05 + x * 0.8 }), controller.signal, extras);
       step = "upload";
       setBusy({ kind: "join", stage: "Guardando…", progress: 0.9 });
       const target = await api<{ upload: { path: string; token: string; bucket: string } }>("/api/panel/videos", { method: "PUT", body: JSON.stringify({ demoId, id: v.id }) });
@@ -893,7 +1084,9 @@ function Studio({
         ? "Pausaste el armado. Los clips quedan guardados: tocá «Terminar video» cuando quieras."
         : step === "clips"
           ? message(e, "No pudimos cargar los clips. Revisá tu conexión y tocá «Terminar video».")
-          : step === "render"
+          : step === "media"
+            ? `${message(e, "No pudimos cargar la música o la marca de agua.")} Tocá «Terminar video» para reintentar.`
+            : step === "render"
             ? "Falló el armado del video en este navegador. Tocá «Terminar video» para reintentar; si se repite, probá desde una computadora."
             : message(e, "No pudimos guardar el video. Tocá «Terminar video» para reintentar.");
       setError(text);
@@ -1123,6 +1316,8 @@ function Studio({
                 cards={cards}
                 sources={sources}
                 logoUrl={cards.outro?.logo ? demo.agency.logo : null}
+                watermark={previewMark}
+                music={previewMusic}
                 command={command}
                 onPlay={() => track("video_draft_previewed", { ...props() })}
               />
@@ -1205,6 +1400,14 @@ function Studio({
                   <div className="is-wide">
                     <dt>Información</dt>
                     <dd>{infoText}</dd>
+                  </div>
+                  <div className="is-wide">
+                    <dt>Música</dt>
+                    <dd>{musicText}</dd>
+                  </div>
+                  <div className="is-wide">
+                    <dt>Marca de agua</dt>
+                    <dd>{markText}</dd>
                   </div>
                   <div>
                     <dt>Créditos</dt>
@@ -1384,6 +1587,31 @@ function Studio({
               )}
               {includeInfo && <p className="vs-hint">Solo datos guardados y visibles en la ficha. No se modifican ni se inventan.</p>}
             </section>
+
+            <MusicCard
+              demoId={demoId}
+              canEdit={canEdit}
+              choice={music}
+              onChange={(c) => {
+                touch();
+                if (c.on !== music.on) track("video_music_toggled", { ...base, enabled: c.on });
+                setMusic(c);
+              }}
+              library={library}
+              libraryError={libraryError}
+            />
+
+            <WatermarkCard
+              demoId={demoId}
+              canEdit={canEdit}
+              choice={watermark}
+              onChange={(c) => {
+                touch();
+                if (c.on !== watermark.on) track("video_watermark_toggled", { ...base, enabled: c.on });
+                setWatermark(c);
+              }}
+              profileLogo={profileLogo}
+            />
 
             {group ? (
               <section className="vs-card vs-place" aria-labelledby="vs-place">

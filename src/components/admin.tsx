@@ -454,8 +454,91 @@ export function AdminDashboard() {
             ))}
             {!data.events.length && <p>Sin errores registrados.</p>}
           </section>
+          <MusicLibrary />
         </>
       )}
     </div>
+  );
+}
+
+type MusicStatus = { model: string; enabled: boolean; tracks: { id: string; genre: string; name: string; ready: boolean }[] };
+/**
+ * The videos' music library: generated once with fal (one call per track,
+ * a few cents each) and kept in Habita's storage. Agencies see only the
+ * tracks already made.
+ */
+function MusicLibrary() {
+  const [status, setStatus] = useState<MusicStatus | null>(null);
+  const [working, setWorking] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  async function load() {
+    const r = await fetch("/api/admin/video-musica", { cache: "no-store" });
+    const p = await r.json();
+    if (!r.ok) throw new Error(p.error);
+    setStatus(p);
+  }
+  useEffect(() => {
+    void load().catch((e) => setError(e.message));
+  }, []);
+  async function generate(ids: string[]) {
+    setError("");
+    for (const id of ids) {
+      setWorking(id);
+      try {
+        const r = await fetch("/api/admin/video-musica", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
+        const p = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(p.error || "No pudimos generar la pista.");
+        setStatus((s) => (s ? { ...s, tracks: s.tracks.map((t) => (t.id === id ? { ...t, ready: true } : t)) } : s));
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "No pudimos generar la pista.");
+        break;
+      }
+    }
+    setWorking(null);
+  }
+  const missing = status?.tracks.filter((t) => !t.ready) ?? [];
+  return (
+    <section className="account-panel">
+      <h2>Música para videos</h2>
+      <p>
+        La biblioteca de «Crear video». Cada pista se genera una vez con fal ({status?.model ?? "…"}) y queda guardada en Habita. Las inmobiliarias ven solo las pistas listas.
+      </p>
+      {error && (
+        <p className="inline-error" role="alert">
+          {error}
+        </p>
+      )}
+      {status && !status.enabled && <p className="inline-error">Falta cargar FAL_KEY en Vercel.</p>}
+      {status && (
+        <>
+          <p>
+            {status.tracks.length - missing.length} de {status.tracks.length} pistas listas.{" "}
+            {missing.length > 0 && (
+              <button type="button" className="button button-small button-primary" disabled={Boolean(working) || !status.enabled} onClick={() => void generate(missing.map((t) => t.id))}>
+                {working ? "Generando…" : `Generar ${missing.length} pistas faltantes`}
+              </button>
+            )}
+          </p>
+          <div className="table-scroll">
+            <table>
+              <tbody>
+                {status.tracks.map((t) => (
+                  <tr key={t.id}>
+                    <td>{t.genre}</td>
+                    <td>{t.name}</td>
+                    <td>{working === t.id ? "Generando…" : t.ready ? "Lista" : "Falta"}</td>
+                    <td>
+                      <button type="button" className="text-link" disabled={Boolean(working) || !status.enabled} onClick={() => void generate([t.id])}>
+                        {t.ready ? "Generar de nuevo" : "Generar"}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </section>
   );
 }
