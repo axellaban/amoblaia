@@ -67,39 +67,68 @@ export function Header() {
           className={open ? "nav-links is-open" : "nav-links"}
           aria-label="Navegación principal"
         >
-          <Link
-            href={appNav ? "/proyectos" : "/"}
-            onClick={() => setOpen(false)}
-          >
-            {appNav ? "Mis fotos" : "Inicio"}
-          </Link>
-          <Link
-            className={pathname.startsWith("/panel") ? "active" : ""}
-            href={appNav ? "/panel" : "/#inmobiliarias"}
-            onClick={() => setOpen(false)}
-          >
-            {appNav ? "Mi inmobiliaria" : "Para inmobiliarias"}
-          </Link>
-          <Link
-            className={pathname === "/galeria" ? "active" : ""}
-            href="/galeria"
-            onClick={() => setOpen(false)}
-          >
-            Galería
-          </Link>
-          <Link
-            className={pathname === "/precios" ? "active" : ""}
-            href="/precios"
-            onClick={() => setOpen(false)}
-          >
-            Precios
-          </Link>
-          <Link
-            href={appNav ? "/cuenta" : "/blog"}
-            onClick={() => setOpen(false)}
-          >
-            {appNav ? "Mi cuenta" : "Blog"}
-          </Link>
+          {appNav ? (
+            <>
+              <Link href="/proyectos" onClick={() => setOpen(false)}>
+                Mis fotos
+              </Link>
+              <Link
+                className={pathname.startsWith("/panel") ? "active" : ""}
+                href="/panel"
+                onClick={() => setOpen(false)}
+              >
+                Mi inmobiliaria
+              </Link>
+              <Link
+                className={pathname === "/galeria" ? "active" : ""}
+                href="/galeria"
+                onClick={() => setOpen(false)}
+              >
+                Galería
+              </Link>
+              <Link
+                className={pathname === "/precios" ? "active" : ""}
+                href="/precios"
+                onClick={() => setOpen(false)}
+              >
+                Precios
+              </Link>
+              <Link href="/cuenta" onClick={() => setOpen(false)}>
+                Mi cuenta
+              </Link>
+            </>
+          ) : (
+            // The home's sections: what you can create and how it works.
+            <>
+              <Link href="/#crear" onClick={() => setOpen(false)}>
+                Qué podés crear
+              </Link>
+              <Link
+                className={pathname === "/galeria" ? "active" : ""}
+                href="/galeria"
+                onClick={() => setOpen(false)}
+              >
+                Ejemplos
+              </Link>
+              <Link href="/#como-funciona" onClick={() => setOpen(false)}>
+                Cómo funciona
+              </Link>
+              <Link
+                className={pathname === "/precios" ? "active" : ""}
+                href="/precios"
+                onClick={() => setOpen(false)}
+              >
+                Precios
+              </Link>
+              <Link
+                className={pathname.startsWith("/blog") ? "active" : ""}
+                href="/blog"
+                onClick={() => setOpen(false)}
+              >
+                Blog
+              </Link>
+            </>
+          )}
           {/* The header buttons are hidden on small screens. */}
           {(!signedIn || account || create) && (
             <div className="mobile-nav-actions">
@@ -131,14 +160,14 @@ export function Header() {
                     className="button button-outline"
                     onClick={() => setOpen(false)}
                   >
-                    Entrar
+                    Ingresar
                   </Link>
                   <Link
-                    href="/acceso?modo=registro"
+                    href="/panel/empezar"
                     className="button button-primary"
                     onClick={() => setOpen(false)}
                   >
-                    Crear cuenta
+                    Empezar
                   </Link>
                 </>
               )}
@@ -167,13 +196,13 @@ export function Header() {
                 href="/acceso"
                 className={`account-nav ${signedIn === null ? "nav-pending" : ""}`}
               >
-                Entrar
+                Ingresar
               </Link>
               <Link
-                href="/acceso?modo=registro"
+                href="/panel/empezar"
                 className={`button button-small ${signedIn === null ? "nav-pending" : ""}`}
               >
-                Crear cuenta
+                Empezar
               </Link>
             </>
           )}
