@@ -937,6 +937,7 @@ function Gallery({
   const [failed, setFailed] = useState<Record<string, boolean>>({});
   const [retries, setRetries] = useState<Record<string, number>>({});
   const [ratios, setRatios] = useState<Record<string, number>>({});
+  const lastRatio = useRef(4 / 3);
   const [full, setFull] = useState(false);
   const [allStyles, setAllStyles] = useState(false);
   // Five thumbnails and "+N fotos" (the mockup); the rest open on demand.
@@ -1084,6 +1085,25 @@ function Gallery({
     if (next && next !== photo) new Image().src = urlFor(source, next.id, null, 2048);
   }, [index, at, photos, photo, source]);
 
+  // Every photo's proportions, measured up front from the thumbnail-sized original: opening one
+  // never shows it in other proportions first (the frame of the agency's demo follows the photo).
+  const sourceKey = source.kind === "public" ? source.token : "preview";
+  useEffect(() => {
+    let alive = true;
+    for (const p of photos) {
+      const img = new Image();
+      img.onload = () => {
+        const { naturalWidth: w, naturalHeight: h } = img;
+        if (alive && w && h) setRatios((r) => (r[p.id] ? r : { ...r, [p.id]: w / h }));
+      };
+      img.src = urlFor(source, p.id, null, 480);
+    }
+    return () => {
+      alive = false;
+    };
+    // The photos and where they are served from; source itself is the same link.
+  }, [photos, sourceKey]);
+
   // The strip scrolls a page at a time; the photo changes only on a thumbnail or the arrows on it.
   const scrollThumbs = (step: number) => {
     note("demo_thumbnails_scrolled", { direction: step > 0 ? "next" : "previous" });
@@ -1116,7 +1136,9 @@ function Gallery({
   }, [photo?.id, viewStyle, viewMode, index, videoOn]);
 
   if (!photo) return <p className="dv2-empty">Esta propiedad todavía no tiene fotos.</p>;
-  const ratio = videoOn && video ? formatRatio(video.format) : (ratios[photo.id] ?? 4 / 3);
+  // Until a photo is measured, the frame keeps the last proportions it had (never a jump to 4:3 and back).
+  const ratio = videoOn && video ? formatRatio(video.format) : (ratios[photo.id] ?? lastRatio.current);
+  if (!videoOn && ratios[photo.id]) lastRatio.current = ratios[photo.id];
   const originalKey = `${photo.id}:o`;
   // The video's cover: the property's cover in its main style, a real picture of this property.
   const cover = demo.cover ?? photos[0];

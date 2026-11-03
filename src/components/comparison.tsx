@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState, type PointerEvent } from "react";
-import { ChevronsLeftRight } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronsLeftRight, Pointer } from "lucide-react";
 import type { EventProperties } from "@/lib/analytics";
 import { reportSlider, SliderGesture } from "@/lib/interaction-tracking";
 /** Set once this browser has been shown how the comparison works. */
@@ -8,8 +8,10 @@ const TAUGHT_KEY = "habita:comparison-taught";
 const SWEEP_MS = 1300;
 /** Anything the visitor does ends the lesson. */
 const STOP_EVENTS = ["pointerdown", "keydown", "wheel", "touchstart"] as const;
-/** Also kept in memory: with blocked storage the lesson still shows once per visit. */
-let taughtThisVisit = false;
+/** The sweep runs once per visit even with blocked storage. */
+let sweptThisVisit = false;
+/** Once the visitor moved a comparison, the help stays away for the rest of the visit. */
+let learnedThisVisit = false;
 
 export function Comparison({
   before,
@@ -44,9 +46,10 @@ export function Comparison({
   /** Which photo and style this is: with it, each completed gesture is one comparison_slider_used. */
   analytics?: EventProperties;
   /**
-   * The first time this browser sees a comparison: a discreet «Deslizá para
-   * comparar» and one short sweep of the line (none with reduced motion).
-   * Any interaction stops it.
+   * The help of the mockup: «Deslizá para comparar» on the photo until the
+   * visitor moves the line, and, the first time this browser sees a
+   * comparison, one short sweep (none with reduced motion; any interaction
+   * stops it).
    */
   teach?: boolean;
 }) {
@@ -80,48 +83,56 @@ export function Comparison({
     gesture.current ??= new SliderGesture(input, where.current);
   };
   useEffect(() => {
-    if (!teach || taughtThisVisit) return;
-    taughtThisVisit = true;
+    if (!teach || learnedThisVisit) return;
+    // The help («Deslizá para comparar») stays on the photo until the visitor moves the line.
+    setHint(true);
+    // The sweep: only the first time this browser sees a comparison.
+    let first = !sweptThisVisit;
     try {
-      if (localStorage.getItem(TAUGHT_KEY)) return;
+      if (localStorage.getItem(TAUGHT_KEY)) first = false;
       localStorage.setItem(TAUGHT_KEY, "1");
     } catch {
-      // Blocked storage: shown on this visit only.
+      // Blocked storage: once per visit.
     }
-    setHint(true);
+    sweptThisVisit = true;
+    const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (!first || reduced) return;
     let frame = 0;
     let timer = 0;
-    let hide = 0;
     const stop = () => {
       window.cancelAnimationFrame(frame);
       window.clearTimeout(timer);
-      window.clearTimeout(hide);
-      setHint(false);
       for (const type of STOP_EVENTS) window.removeEventListener(type, stop, true);
     };
     stopTeaching.current = stop;
+    // Any interaction stops the sweep at once.
     for (const type of STOP_EVENTS) window.addEventListener(type, stop, { capture: true, passive: true });
-    const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    if (!reduced) {
-      // One sweep: a little to each side and back where it was.
-      const from = where.current;
-      const amp = Math.min(14, from, 100 - from);
-      timer = window.setTimeout(() => {
-        const t0 = performance.now();
-        const step = (now: number) => {
-          const t = Math.min(1, (now - t0) / SWEEP_MS);
-          setPosition(from + amp * Math.sin(t * 2 * Math.PI) * (1 - t * 0.15));
-          if (t < 1) frame = window.requestAnimationFrame(step);
-          else setPosition(from);
-        };
-        frame = window.requestAnimationFrame(step);
-      }, 700);
-    }
-    // The hint leaves by itself after a few seconds.
-    hide = window.setTimeout(stop, reduced ? 5000 : 700 + SWEEP_MS + 2500);
+    // One sweep: a little to each side and back where it was.
+    const from = where.current;
+    const amp = Math.min(14, from, 100 - from);
+    timer = window.setTimeout(() => {
+      const t0 = performance.now();
+      const step = (now: number) => {
+        const t = Math.min(1, (now - t0) / SWEEP_MS);
+        setPosition(from + amp * Math.sin(t * 2 * Math.PI) * (1 - t * 0.15));
+        if (t < 1) frame = window.requestAnimationFrame(step);
+        else {
+          setPosition(from);
+          stop();
+        }
+      };
+      frame = window.requestAnimationFrame(step);
+    }, 700);
     return stop;
-    // Once per mount: the lesson is for the first comparison seen.
+    // Once per mount.
   }, [teach]);
+  // The visitor moved the line: the help leaves (and does not come back during the visit).
+  const learned = () => {
+    stopTeaching.current();
+    if (!teach) return;
+    learnedThisVisit = true;
+    setHint(false);
+  };
   // Leaving the page or the photo mid-gesture still reports it.
   useEffect(() => {
     window.addEventListener("pagehide", finish);
@@ -146,7 +157,7 @@ export function Comparison({
   // input only moves from its thumb). touch-action: pan-y keeps vertical
   // swipes scrolling the page; the browser cancels those pointers.
   const down = (e: PointerEvent<HTMLDivElement>) => {
-    stopTeaching.current();
+    learned();
     if (e.button !== 0) return;
     const mouse = e.pointerType === "mouse";
     start.current = { x: e.clientX, y: e.clientY, dragging: mouse };
@@ -237,7 +248,12 @@ export function Comparison({
       </div>
       {hint && (
         <div className="comparison-hint" aria-hidden="true">
-          <ChevronsLeftRight size={16} /> Deslizá para comparar
+          <span className="comparison-hint-gesture">
+            <ArrowLeft size={15} strokeWidth={2.2} />
+            <Pointer size={22} strokeWidth={1.8} />
+            <ArrowRight size={15} strokeWidth={2.2} />
+          </span>
+          <span>Deslizá para comparar</span>
         </div>
       )}
       {/* Kept for the keyboard: arrows move the line. */}
@@ -253,6 +269,7 @@ export function Comparison({
         }}
         // Arrow keys: one gesture until they stop for a moment or the focus leaves.
         onKeyDown={() => {
+          learned();
           begin("keyboard");
           window.clearTimeout(keysDone.current);
           keysDone.current = window.setTimeout(finish, 1200);
