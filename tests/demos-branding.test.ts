@@ -137,9 +137,10 @@ describe("Listing data", () => {
 });
 
 describe("Video placement default", () => {
-  it("offers the styles of a new demo in its region's order; older demos keep the catalog's", () => {
+  it("offers the styles in the order of the property's region, older demos included; «catalog» only when chosen", () => {
     expect(DEFAULT_SETTINGS.styleOrder).toBe("auto");
-    expect(readSettings({}).styleOrder).toBe("catalog");
+    expect(readSettings({}).styleOrder).toBe("auto");
+    expect(readSettings({ styleOrder: "catalog" }).styleOrder).toBe("catalog");
     expect(readSettings({ ...DEFAULT_SETTINGS }).styleOrder).toBe("auto");
     const mdp = styleSequence("auto", "Playa Grande, Mar del Plata");
     expect(mdp.slice(0, 7)).toEqual(["modern", "coastal", "scandinavian", "minimalist", "midcentury", "luxury", "industrial"]);

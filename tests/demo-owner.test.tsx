@@ -109,11 +109,24 @@ describe("the agency's own demo, under its panel header", () => {
     expect(html).not.toContain("créditos de regalo.");
   });
 
-  it("keeps the full labels for desktop and short ones for phones, without changing the actions", () => {
-    expect(html).toMatch(/<span class="dv2-label-full">Descargar imágenes<\/span><span class="dv2-label-short">Descargar<\/span>/);
-    expect(html).toMatch(/<span class="dv2-label-full">Compartir ficha<\/span><span class="dv2-label-short">Compartir<\/span>/);
-    expect(html).toMatch(/<summary[^>]*data-cta="owner_download_all"/);
-    expect(html).toMatch(/<button type="button" class="dv2-value-share"/);
+  it("shows Descargar imágenes and Compartir ficha as two equal buttons, then «Guardar esta demo en mi panel»", () => {
+    expect(html).toMatch(/<summary[^>]*data-cta="owner_download_all"[\s\S]*?<strong>Descargar imágenes<\/strong>/);
+    expect(html).toMatch(/<button type="button" class="dv2-value-share"[\s\S]*?<strong>Compartir ficha<\/strong>/);
+    expect(html).toContain("¿Te imaginás esto con todas tus propiedades?");
+    expect(html).toContain(`<a class="dv2-save-demo-cta" href="${INVITE.replace(/&/g, "&amp;")}" data-cta="owner_save_demo"`);
+    expect(html.indexOf("dv2-value")).toBeLessThan(html.indexOf("dv2-save-demo"));
+  });
+
+  it("follows the mockup around the photo: dots under it and «Galería de la propiedad (2)»", () => {
+    expect(html).toContain('class="dv2-dots"');
+    expect(html).toContain("Galería de la propiedad (2)");
+  });
+
+  it("lists every style in the demo's order, the main one first and «Costero» right after it in Mar del Plata", () => {
+    const mdp = { ...demo, styleOrder: ["modern", "coastal", "scandinavian", "minimalist", "midcentury", "luxury", "industrial", "farmhouse", "classic"], photos: [{ id: "p1", label: "", versions: [v("modern"), v("scandinavian")] }] };
+    const out = renderToStaticMarkup(<DemoView demo={mdp} source={{ kind: "public", token: "tok" }} presentation owner={owner} />);
+    const names = [...out.matchAll(/<span class="dv2-style-name"[^>]*>([^<]+)<\/span>/g)].map((m) => m[1]);
+    expect(names).toEqual(["Moderno", "Costero", "Nórdico", "Minimalista", "Mid-century", "Lujo"]);
   });
 
   it("asks for another listing before the invitation's sign-up, without sending it anywhere else", () => {
@@ -199,7 +212,8 @@ describe("the property's video, where the agency placed it", () => {
     expect(html).toContain('class="dv2-video-card is-owner"');
     expect(html).toContain("Recorré la propiedad en video");
     expect(html).toContain('<span class="dv2-video-time">0:20</span>');
-    expect(html).toContain("Ver video");
+    // The whole card is the «Ver video» action.
+    expect(html).toMatch(/<button type="button" class="dv2-video-open"[\s\S]*?Ver video \(0:20\)/);
     // A frame of the video itself as its thumbnail: muted, only its metadata, never playing by itself.
     const thumb = html.match(/<video[^>]*>/)?.[0] ?? "";
     expect(thumb).toContain('src="/demo/tok/video/vid1#t=0.1"');

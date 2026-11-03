@@ -55,9 +55,8 @@ export const REGIONAL_STYLE_ORDERS: { region: string; match: RegExp; order: stri
 ];
 
 /**
- * A demo's saved style order (settings.styleOrder): "catalog" for demos made
- * before this existed (they keep the order they always had), "auto" for new
- * ones (resolved by the property's location), or an explicit list.
+ * A demo's style order (settings.styleOrder): "auto" (the default, resolved
+ * by the property's location), "catalog", or an explicit list.
  */
 export type StyleOrderSetting = "catalog" | "auto" | string[];
 
