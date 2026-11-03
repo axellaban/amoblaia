@@ -38,6 +38,9 @@ export type VideoRow = {
   width?: number | null;
   height?: number | null;
   options?: unknown;
+  /** Added by 202611210001_video_ai.sql: who paid an AI video, and when all its clips were stored. */
+  payer_id?: string | null;
+  clips_ready_at?: string | null;
 };
 
 /**
@@ -73,6 +76,13 @@ export type PublicVideo = {
   /** Short-lived links, only for completed videos. */
   url: string | null;
   downloadUrl: string | null;
+  /** Credits it took (0 for the «Clásico», and once an AI video's credits were given back). */
+  credits: number;
+  /**
+   * An AI video still being made: the provider animating its photos, or every
+   * clip stored and waiting for a browser to join them (with short links to them).
+   */
+  ai: { stage: "animating" | "joining"; done: number; total: number; clips: { url: string; staged: boolean }[] | null } | null;
 };
 
 const pathOf = (row: Pick<VideoRow, "agency_id" | "demo_id" | "id">) => `${row.agency_id}/${row.demo_id}/${row.id}.mp4`;
@@ -154,6 +164,19 @@ export async function finishVideo(input: { demoId: string; id: unknown; ok: unkn
   if (row.status !== "processing") return row;
   const db = adminClient();
   const now = new Date().toISOString();
+  if (row.provider !== "browser") {
+    // An AI video: its clips are paid and stored, so a failed join is only noted and can be retried.
+    if (!row.clips_ready_at) {
+      if (input.ok === true) throw new HttpError(409, "La IA todavía está animando las fotos.");
+      return row;
+    }
+    if (input.ok !== true) {
+      const reason = typeof input.error === "string" ? input.error.slice(0, 300) : "No se pudo armar el video.";
+      const { data, error } = await db.from("property_videos").update({ error: reason, updated_at: now }).eq("id", row.id).eq("status", "processing").select("*").maybeSingle();
+      if (error) throw new Error("VIDEO_UPDATE_FAILED");
+      return (data as VideoRow | null) ?? row;
+    }
+  }
   if (input.ok !== true) {
     const reason = typeof input.error === "string" ? input.error.slice(0, 300) : "No se pudo crear el video.";
     const { data, error } = await db.from("property_videos").update({ status: "failed", error: reason, updated_at: now }).eq("id", row.id).eq("status", "processing").select("*").maybeSingle();
@@ -184,10 +207,12 @@ export async function finishVideo(input: { demoId: string; id: unknown; ok: unkn
 export async function listVideos(demoId: string, fileName: (row: VideoRow) => string): Promise<PublicVideo[]> {
   const db = adminClient();
   const stale = new Date(Date.now() - STALE_MS).toISOString();
+  // Only browser renders are abandoned this way; AI videos have their own rules (ai.ts).
   await db
     .from("property_videos")
     .update({ status: "failed", error: "El video no terminó de crearse (se cerró la página o se cortó la conexión).", updated_at: new Date().toISOString() })
     .eq("demo_id", demoId)
+    .eq("provider", "browser")
     .in("status", ["queued", "processing"])
     .lt("updated_at", stale);
   const { data, error } = await db.from("property_videos").select("*").eq("demo_id", demoId).order("created_at", { ascending: false }).limit(20);
@@ -195,6 +220,7 @@ export async function listVideos(demoId: string, fileName: (row: VideoRow) => st
   const rows = (data ?? []) as VideoRow[];
   return Promise.all(
     rows.map(async (r) => {
+      const ai = r.provider !== "browser" && r.status === "processing" ? await aiProgress(r) : null;
       let url: string | null = null;
       let downloadUrl: string | null = null;
       if (r.status === "completed" && r.storage_path) {
@@ -221,8 +247,24 @@ export async function listVideos(demoId: string, fileName: (row: VideoRow) => st
         error: r.error,
         url,
         downloadUrl,
+        credits: r.credits_charged ?? 0,
+        ai,
       };
     }),
   );
+}
+
+/** How far an AI video is: clips animated so far and, once all are stored, links to them for the browser that joins them. */
+async function aiProgress(r: VideoRow): Promise<PublicVideo["ai"]> {
+  const db = adminClient();
+  const { data, error } = await db.from("property_video_clips").select("position,status,staged,storage_path").eq("video_id", r.id).order("position");
+  if (error) return { stage: "animating", done: 0, total: r.photo_count, clips: null };
+  const clips = (data ?? []) as { position: number; status: string; staged: boolean; storage_path: string | null }[];
+  const done = clips.filter((c) => c.status === "ready").length;
+  if (!r.clips_ready_at || done !== clips.length || !clips.length) return { stage: "animating", done, total: clips.length || r.photo_count, clips: null };
+  const links = await Promise.all(clips.map((c) => (c.storage_path ? db.storage.from(VIDEO_BUCKET).createSignedUrl(c.storage_path, 3600) : null)));
+  const urls = links.map((l) => l?.data?.signedUrl ?? null);
+  if (urls.some((u) => !u)) return { stage: "animating", done, total: clips.length, clips: null };
+  return { stage: "joining", done, total: clips.length, clips: clips.map((c, i) => ({ url: urls[i]!, staged: c.staged })) };
 }
 

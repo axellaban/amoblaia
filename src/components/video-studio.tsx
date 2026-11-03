@@ -5,9 +5,10 @@
 // that renders the MP4, the optional information, the style, one of four
 // export formats and, for a ficha, where its demo shows the video. The
 // "Clásico" montage is made in this browser (WebCodecs H.264 → MP4) and
-// uploaded to Habita's storage, without credits. The AI modes are shown
-// as not available until their provider is enabled. Guided steps, not a
-// timeline: it has to work on a phone.
+// uploaded to Habita's storage, without credits. The AI modes («Foto en
+// movimiento», «Recorrido cinematográfico») charge credits: the provider
+// animates each photo and this browser joins the clips into the same kind of
+// MP4. Guided steps, not a timeline: it has to work on a phone.
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -42,19 +43,25 @@ import { adminPhotoUrl, type PublicDemo } from "@/lib/demos/shared";
 import type { VideoPlacement } from "@/lib/demos/branding";
 import { browserClient } from "@/lib/supabase/client";
 import {
+  AI_PHOTOS,
+  AI_TIMING,
   DEFAULT_FORMAT,
   FORMAT_INFO,
   formatRatio,
   INFO_FIELDS,
   INFO_LABEL,
   infoAvailable,
+  isAiMode,
   isVideoFormat,
   MAX_VIDEO_PHOTOS,
   MODE_INFO,
+  photoCountProblem,
   photoStarts,
   planVideo,
   resolutionOf,
   suggestPhotos,
+  timingOf,
+  VIDEO_CREDITS,
   VIDEO_FORMATS,
   videoCards,
   type InfoChoice,
@@ -135,6 +142,7 @@ export function VideoStudio({
   backTo = null,
   team = false,
   previewHref = null,
+  ai = false,
 }: {
   demoId: string | null;
   demo: PublicDemo | null;
@@ -152,6 +160,8 @@ export function VideoStudio({
   team?: boolean;
   /** Where «Ver vista previa de la ficha» goes (the team's own preview from administration). */
   previewHref?: string | null;
+  /** Whether the AI modes can be used here (their provider is configured). */
+  ai?: boolean;
 }) {
   useEffect(() => {
     if (!team) trackEvent("video_section_viewed", { has_property: Boolean(demo), is_group: kind === "fotos", device_type: deviceType() });
@@ -169,6 +179,7 @@ export function VideoStudio({
       backTo={backTo}
       team={team}
       previewHref={previewHref ?? `/panel/propiedades/${demoId}/vista-previa`}
+      ai={ai}
     />
   );
 }
@@ -395,6 +406,7 @@ function Studio({
   backTo,
   team,
   previewHref,
+  ai,
 }: {
   demoId: string;
   demo: PublicDemo;
@@ -406,6 +418,7 @@ function Studio({
   backTo: string | null;
   team: boolean;
   previewHref: string;
+  ai: boolean;
 }) {
   const router = useRouter();
   // The team's work on an agency is not the agency's funnel: nothing is reported then.
@@ -488,6 +501,15 @@ function Studio({
     void load();
   }, [load]);
 
+  // AI videos being animated: the history is asked again every few seconds (that also moves them forward).
+  const joinWhenReady = useRef<string | null>(null);
+  const animating = (videos ?? []).some((v) => v.ai?.stage === "animating");
+  useEffect(() => {
+    if (!animating) return;
+    const t = setTimeout(() => void load(), 6000);
+    return () => clearTimeout(t);
+  }, [animating, videos, load]);
+
   const chosenFields = INFO_FIELDS.filter((f) => fields[f] && infoAvailable(info, f));
   // Kept for this property in this browser: the selection survives a reload and the way back from the demo.
   useEffect(() => {
@@ -500,11 +522,19 @@ function Studio({
     restored.current = true;
   };
 
-  const chosen = picked.map((id) => all.find((c) => c.id === id)).filter((c): c is Choice => Boolean(c));
+  const picks = picked.map((id) => all.find((c) => c.id === id)).filter((c): c is Choice => Boolean(c));
+  // «Foto en movimiento» animates one photo: the first of the order.
+  const chosen = mode === "clip" ? picks.slice(0, 1) : picks;
+  const aiMode = isAiMode(mode);
+  const credits = VIDEO_CREDITS[mode];
+  const countProblem = chosen.length ? photoCountProblem(mode, chosen.length) : null;
   const cards = useMemo(() => videoCards(info, includeInfo, fields), [info, includeInfo, fields]);
   const plan = useMemo(
-    () => (chosen.length ? planVideo(chosen.length, format, { intro: Boolean(cards.intro), outro: Boolean(cards.outro) }) : null),
-    [chosen.length, format, cards],
+    () =>
+      chosen.length && !photoCountProblem(mode, chosen.length)
+        ? planVideo(chosen.length, format, { intro: Boolean(cards.intro), outro: Boolean(cards.outro), timing: timingOf(mode) })
+        : null,
+    [chosen.length, format, cards, mode],
   );
   const sources = useMemo(() => chosen.map((c) => ({ url: adminPhotoUrl(c.id, c.version, 960), staged: c.staged })), [chosen]);
 
@@ -557,9 +587,9 @@ function Studio({
     photo_count: chosen.length,
     staged_count: chosen.filter((c) => c.staged).length,
     info_included: Boolean(cards.intro || cards.outro),
-    animated_photo_count: 0,
-    credits_quoted: 0,
-    provider: "browser",
+    animated_photo_count: aiMode ? chosen.length : 0,
+    credits_quoted: credits,
+    provider: aiMode ? "fal" : "browser",
   });
 
   // Leaving while the browser renders loses the video: the browser asks first.
@@ -572,6 +602,7 @@ function Studio({
 
   async function generate() {
     if (!plan || busy || !canEdit) return;
+    if (aiMode) return startAi();
     setError("");
     setFresh(null);
     const started = Date.now();
@@ -602,7 +633,7 @@ function Studio({
       step = "photos";
       setBusy({ stage: "Cargando fotos…", progress: 0.02 });
       const assets = await Promise.all(chosen.map((c) => loadAsset(adminPhotoUrl(c.id, c.version, 2048), c.staged)));
-      const logo = cards.outro?.logo && demo.agency.logo ? await loadAsset(demo.agency.logo, false).then((a) => a.image).catch(() => null) : null;
+      const logo = cards.outro?.logo && demo.agency.logo ? await loadAsset(demo.agency.logo, false).then((a) => a.image ?? null).catch(() => null) : null;
       step = "render";
       const blob = await renderMp4(plan, cards, assets, logo, (x) => setBusy({ stage: `Creando el video… ${Math.round(x * 100)}%`, progress: 0.05 + x * 0.8 }), controller.signal);
       step = "upload";
@@ -656,6 +687,122 @@ function Studio({
     }
   }
 
+
+  /**
+   * An AI video: its credits are charged and the provider animates each photo
+   * (a minute or two). The history follows it; once every clip is stored,
+   * this browser joins them (join). The page may be closed meanwhile.
+   */
+  async function startAi() {
+    if (!plan || busy || !canEdit || !aiMode) return;
+    setError("");
+    setFresh(null);
+    const p = props();
+    track("video_generate_clicked", p);
+    // The browser that will join the clips must be able to: checked before any credit is spent.
+    const { canRender } = await import("@/lib/video/render");
+    if (!(await canRender(plan))) {
+      track("video_generation_failed", { ...p, error_code: "unsupported_browser" });
+      setError("Este navegador no puede armar el video. Probá con Chrome, Edge o Safari actualizados (en iPhone, iOS 17 o posterior), o desde una computadora. No se usaron créditos.");
+      return;
+    }
+    if (!window.confirm(`${MODE_INFO[mode].name} usa ${credits} créditos. ¿Generar el video?`)) return;
+    try {
+      setBusy({ stage: "Enviando las fotos a la IA…", progress: 0.02 });
+      const options: VideoOptions = { photos: chosen.map((c) => c.id), staged: useStaged, info: includeInfo, fields: chosenFields };
+      const started = await api<{ id: string; status: string; error: string | null }>("/api/panel/videos", {
+        method: "POST",
+        body: JSON.stringify({ demoId, key: crypto.randomUUID(), mode, format, photoCount: chosen.length, options }),
+      });
+      if (started.status === "failed") {
+        setError(started.error || "No pudimos empezar la animación con IA. No se usaron créditos.");
+        track("video_generation_failed", { ...p, video_id: started.id, error_code: "provider_submit" });
+      } else {
+        track("video_generation_started", { ...p, video_id: started.id, credits_charged: credits });
+        joinWhenReady.current = started.id;
+      }
+      await load();
+    } catch (e) {
+      setError(message(e, "No pudimos empezar el video con IA."));
+      track("video_generation_failed", { ...p, error_code: e instanceof ApiError ? `api_${e.status}` : "start" });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /** Joins an AI video's stored clips into its MP4, with its own cards and format (as it was asked). */
+  async function join(v: PublicVideo) {
+    if (busy || !canEdit || !v.ai?.clips?.length) return;
+    joinWhenReady.current = null;
+    setError("");
+    const started = Date.now();
+    const opts = v.options;
+    const choice = Object.fromEntries(INFO_FIELDS.map((f) => [f, Boolean(opts?.fields.includes(f))])) as InfoChoice;
+    const vCards = videoCards(info, Boolean(opts?.info), choice);
+    const vPlan = planVideo(v.ai.clips.length, v.format, { intro: Boolean(vCards.intro), outro: Boolean(vCards.outro), timing: AI_TIMING });
+    const p = { ...base, video_id: v.id, mode: v.mode, format: v.format, video_mode: v.mode, video_format: v.format, photo_count: v.ai.clips.length, provider: "fal" };
+    const controller = new AbortController();
+    abort.current = controller;
+    let step = "clips";
+    try {
+      const { canRender, loadClip, loadAsset, renderMp4 } = await import("@/lib/video/render");
+      if (!(await canRender(vPlan))) throw new Error("Este navegador no puede armar el video. Abrí esta página en Chrome, Edge o Safari actualizados, o desde una computadora: los clips te esperan.");
+      setBusy({ stage: "Cargando los clips animados…", progress: 0.03 });
+      const assets = await Promise.all(v.ai.clips.map((c) => loadClip(c.url, c.staged)));
+      const logo = vCards.outro?.logo && demo.agency.logo ? await loadAsset(demo.agency.logo, false).then((a) => a.image ?? null).catch(() => null) : null;
+      step = "render";
+      const blob = await renderMp4(vPlan, vCards, assets, logo, (x) => setBusy({ stage: `Armando el video… ${Math.round(x * 100)}%`, progress: 0.05 + x * 0.8 }), controller.signal);
+      step = "upload";
+      setBusy({ stage: "Guardando…", progress: 0.9 });
+      const target = await api<{ upload: { path: string; token: string; bucket: string } }>("/api/panel/videos", { method: "PUT", body: JSON.stringify({ demoId, id: v.id }) });
+      const client = browserClient();
+      if (!client) throw new Error("No pudimos guardar el video.");
+      const up = await client.storage.from(target.upload.bucket).uploadToSignedUrl(target.upload.path, target.upload.token, blob, { contentType: "video/mp4", upsert: true });
+      if (up.error) throw new Error("No pudimos subir el video. Revisá tu conexión e intentá de nuevo.");
+      step = "storage";
+      setBusy({ stage: "Confirmando…", progress: 0.97 });
+      for (let attempt = 0; ; attempt++) {
+        try {
+          await api("/api/panel/videos", { method: "PATCH", body: JSON.stringify({ demoId, id: v.id, ok: true, durationMs: vPlan.durationMs }) });
+          break;
+        } catch (e) {
+          if (!(e instanceof ApiError && e.status === 409) || attempt >= 3) throw e;
+          await wait(1500 * (attempt + 1));
+        }
+      }
+      track("video_generation_completed", { ...p, credits_charged: v.credits, duration_ms: vPlan.durationMs, render_ms: Date.now() - started, video_ms: vPlan.durationMs, size_kb: Math.round(blob.size / 1024) });
+      setFresh(v.id);
+      await load();
+      requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    } catch (e) {
+      const cancelled = e instanceof DOMException && e.name === "AbortError";
+      const text = cancelled
+        ? "Pausaste el armado. Los clips quedan guardados: tocá «Terminar video» cuando quieras."
+        : step === "clips"
+          ? message(e, "No pudimos cargar los clips. Revisá tu conexión y tocá «Terminar video».")
+          : step === "render"
+            ? "Falló el armado del video en este navegador. Tocá «Terminar video» para reintentar; si se repite, probá desde una computadora."
+            : message(e, "No pudimos guardar el video. Tocá «Terminar video» para reintentar.");
+      setError(text);
+      track("video_generation_failed", { ...p, error_code: cancelled ? "cancelled" : e instanceof ApiError ? `api_${e.status}` : `join_${step}`, duration_ms: Date.now() - started });
+      await api("/api/panel/videos", { method: "PATCH", body: JSON.stringify({ demoId, id: v.id, ok: false, error: text }) }).catch(() => null);
+      await load();
+    } finally {
+      abort.current = null;
+      setBusy(null);
+    }
+  }
+
+  // The video this tab started: joined here as soon as its clips are stored.
+  useEffect(() => {
+    if (busy || !joinWhenReady.current) return;
+    const v = (videos ?? []).find((x) => x.id === joinWhenReady.current);
+    if (!v) return;
+    if (v.ai?.stage === "joining") void join(v);
+    else if (v.status !== "processing") joinWhenReady.current = null;
+    // join is this render's; it only runs once per video (joinWhenReady is cleared first).
+  }, [videos, busy]);
+
   async function share(v: PublicVideo) {
     if (!v.url) return;
     track("video_shared", { ...base, video_id: v.id, mode: v.mode, format: v.format, video_mode: v.mode, video_format: v.format });
@@ -699,15 +846,18 @@ function Studio({
   }
 
   const done = (videos ?? []).filter((v) => v.status === "completed");
+  // The newest AI video still being made (animating, or waiting to be joined).
+  const pendingAi = (videos ?? []).find((v) => v.status === "processing" && v.ai) ?? null;
   const result = fresh ? done.find((v) => v.id === fresh) : null;
   const editorHref = `/panel/propiedades/${demoId}?seccion=fotos`;
   const title = group ? demo.title || "Fotos subidas" : demo.title;
   const infoText = cards.intro || cards.outro ? chosenFields.map((f) => INFO_LABEL[f]).join(", ") : "No: solo fotos";
 
+  const creditsText = credits ? `${credits} créditos` : "Sin créditos";
   const generateButton = (cls = "") => (
     <button type="button" className={`button button-primary vs-generate ${cls}`} disabled={!plan || Boolean(busy) || !canEdit} onClick={() => void generate()}>
-      {busy ? <Loader2 size={18} className="spin" aria-hidden="true" /> : <Film size={18} aria-hidden="true" />} Generar video
-      <small>Sin créditos</small>
+      {busy ? <Loader2 size={18} className="spin" aria-hidden="true" /> : aiMode ? <Sparkles size={18} aria-hidden="true" /> : <Film size={18} aria-hidden="true" />} Generar video
+      <small>{creditsText}</small>
     </button>
   );
 
@@ -759,7 +909,9 @@ function Studio({
             <section className="vs-card vs-photos" ref={photosRef} aria-labelledby="vs-photos" id="vs-fotos">
               <h2 id="vs-photos">Fotos y orden</h2>
               <p className="vs-hint">
-                Tocá para sumar o sacar. {chosen.length} de {Math.min(MAX_VIDEO_PHOTOS, all.length)} elegidas (hasta {MAX_VIDEO_PHOTOS}).
+                Tocá para sumar o sacar. {picks.length} de {Math.min(MAX_VIDEO_PHOTOS, all.length)} elegidas (hasta {MAX_VIDEO_PHOTOS}).
+                {mode === "clip" && picks.length > 1 && " «Foto en movimiento» anima solo la primera del orden."}
+                {mode === "cinematic" && ` El recorrido anima entre ${AI_PHOTOS.cinematic.min} y ${AI_PHOTOS.cinematic.max}.`}
               </p>
               <label className="vs-switch">
                 <input
@@ -809,8 +961,8 @@ function Studio({
             <section className="vs-card vs-style" aria-labelledby="vs-mode">
               <h2 id="vs-mode">Estilo del video</h2>
               <div className="vs-modes" role="radiogroup" aria-labelledby="vs-mode">
-                {(["classic", "balanced", "cinematic"] as VideoMode[]).map((m) => {
-                  const live = m === "classic";
+                {(["classic", "clip", "cinematic", "balanced"] as VideoMode[]).map((m) => {
+                  const live = m === "classic" || (ai && isAiMode(m));
                   return (
                     <button
                       key={m}
@@ -826,13 +978,15 @@ function Studio({
                       }}
                     >
                       <span className="vs-mode-icon" aria-hidden="true">
-                        {live ? <Film size={18} /> : <Sparkles size={18} />}
+                        {m === "classic" ? <Film size={18} /> : <Sparkles size={18} />}
                       </span>
                       <span className="vs-mode-text">
                         <strong>{MODE_INFO[m].name}</strong>
-                        <small>{live ? "Tus fotos con movimiento suave de cámara y transiciones." : MODE_INFO[m].text}</small>
+                        <small>{m === "classic" ? "Tus fotos con movimiento suave de cámara y transiciones." : MODE_INFO[m].text}</small>
                       </span>
-                      <span className={`vs-tag ${live ? "is-free" : ""}`}>{live ? "Sin créditos" : "No disponible"}</span>
+                      <span className={`vs-tag ${live && !VIDEO_CREDITS[m] ? "is-free" : ""}`}>
+                        {!live ? "No disponible" : VIDEO_CREDITS[m] ? `${VIDEO_CREDITS[m]} créditos` : "Sin créditos"}
+                      </span>
                       {mode === m && (
                         <span className="vs-tick" aria-hidden="true">
                           <Check size={13} strokeWidth={3} />
@@ -942,12 +1096,17 @@ function Studio({
                   <div>
                     <dt>Créditos</dt>
                     <dd>
-                      <strong>Sin créditos</strong>
+                      <strong>{creditsText}</strong>
                     </dd>
                   </div>
                 </dl>
               ) : (
-                <p>Elegí al menos una foto.</p>
+                <p>{countProblem ?? "Elegí al menos una foto."}</p>
+              )}
+              {plan && aiMode && (
+                <p className="vs-hint">
+                  La IA anima {chosen.length === 1 ? "la foto" : `las ${chosen.length} fotos`} con un movimiento de cámara, sin agregar ni cambiar nada (tarda uno o dos minutos). Si la animación falla, te devolvemos los créditos.
+                </p>
               )}
               {busy ? (
                 <div className="vs-progress" role="status" aria-live="polite">
@@ -956,10 +1115,28 @@ function Studio({
                   <button type="button" className="text-link" onClick={() => abort.current?.abort()}>
                     Cancelar
                   </button>
-                  <small className="vs-hint">Se crea en este navegador: no cierres la pestaña hasta que termine.</small>
+                  <small className="vs-hint">{aiMode && busy.progress < 0.03 ? "Enviando las fotos: no cierres la pestaña todavía." : "Se crea en este navegador: no cierres la pestaña hasta que termine."}</small>
                 </div>
               ) : (
                 generateButton()
+              )}
+              {pendingAi && !busy && (
+                <div className="vs-progress" role="status" aria-live="polite">
+                  {pendingAi.ai?.stage === "joining" ? (
+                    <>
+                      <Check size={18} aria-hidden="true" /> Los clips con IA están listos.
+                      <button type="button" className="button button-small button-primary" onClick={() => void join(pendingAi)}>
+                        <Film size={15} aria-hidden="true" /> Terminar video
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <Loader2 size={18} className="spin" aria-hidden="true" /> La IA está animando las fotos: {pendingAi.ai?.done ?? 0} de {pendingAi.ai?.total ?? pendingAi.photoCount} listas.
+                      <progress max={1} value={pendingAi.ai ? (pendingAi.ai.done + 0.3) / Math.max(1, pendingAi.ai.total) : 0.1} aria-label="Avance de la animación" />
+                      <small className="vs-hint">Podés cerrar esta página: el video te espera en el historial para terminarlo.</small>
+                    </>
+                  )}
+                </div>
               )}
               {error && (
                 <div className="vs-error" role="alert">
@@ -1237,7 +1414,15 @@ function Studio({
                 />
               ) : (
                 <div className={`vs-video ${v.format === "16:9" ? "is-h" : "is-v"} vs-video-empty`} style={{ aspectRatio: formatRatio(v.format) }}>
-                  {v.status === "failed" ? "No se pudo crear" : v.status === "cancelled" ? "Cancelado" : "Creando…"}
+                  {v.status === "failed"
+                    ? "No se pudo crear"
+                    : v.status === "cancelled"
+                      ? "Cancelado"
+                      : v.ai?.stage === "animating"
+                        ? `Animando con IA… ${v.ai.done} de ${v.ai.total}`
+                        : v.ai?.stage === "joining"
+                          ? "Clips listos"
+                          : "Creando…"}
                 </div>
               )}
               <div className="vs-video-meta">
@@ -1250,6 +1435,14 @@ function Studio({
                 </small>
                 {v.status === "completed" && !group && done[0]?.id === v.id && placement !== "hidden" && <small className="vs-tag is-free">El que muestra la demostración</small>}
                 {v.status === "failed" && v.error && <small className="ap-error-text">{v.error}</small>}
+                {v.status === "processing" && v.ai?.stage === "joining" && canEdit && (
+                  <span className="vs-video-actions">
+                    <button type="button" className="button button-small" disabled={Boolean(busy)} onClick={() => void join(v)}>
+                      <Film size={15} aria-hidden="true" /> Terminar video
+                    </button>
+                  </span>
+                )}
+                {v.credits > 0 && <small>{v.credits} créditos</small>}
                 {v.status === "completed" && (
                   <span className="vs-video-actions">
                     {v.downloadUrl && (

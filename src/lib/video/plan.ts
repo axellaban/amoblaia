@@ -1,8 +1,9 @@
-// The "Clásico" video, planned: an optional opening card with the property's
-// real data, one scene per photo with a slow camera move (Ken Burns),
-// crossfades, and an optional closing card with the agency's contact. Pure
-// and deterministic, so the preview, the render and the tests agree. No AI
-// and nothing invented: without information, the video is only the photos.
+// The video, planned: an optional opening card with the property's real
+// data, one scene per photo (in the «Clásico», a slow camera move over the
+// photo; in the AI modes, the photo's animated clip), crossfades, and an
+// optional closing card with the agency's contact. Pure and deterministic,
+// so the preview, the render and the tests agree. Nothing invented: without
+// information, the video is only the photos.
 
 export const VIDEO_MODES = ["classic", "balanced", "cinematic", "clip"] as const;
 export type VideoMode = (typeof VIDEO_MODES)[number];
@@ -48,12 +49,56 @@ export const MAX_VIDEO_PHOTOS = 12;
 export const MODE_INFO: Record<VideoMode, { name: string; text: string }> = {
   classic: { name: "Clásico", text: "Tus fotos con movimiento suave, transiciones y los datos de la propiedad. Sin IA." },
   balanced: { name: "Equilibrado", text: "Anima con IA las 2 mejores fotos y las combina con el resto." },
-  cinematic: { name: "Cinematográfico", text: "Anima con IA todas las fotos elegidas." },
-  clip: { name: "Video IA de una foto", text: "Unos segundos de movimiento a partir de una foto." },
+  cinematic: { name: "Recorrido cinematográfico", text: "La IA anima cada foto elegida y las une en un recorrido." },
+  clip: { name: "Foto en movimiento", text: "La IA le da unos segundos de movimiento de cámara a una foto." },
 };
+
+/**
+ * The AI modes (Fase 5C/5D): a provider animates each photo into a short
+ * clip (fal.ai), and the agency's browser joins the clips into the MP4 with
+ * the same cards and AI label as the «Clásico». Each one costs credits,
+ * charged when it starts and given back if the animation fails.
+ */
+export const AI_MODES = ["clip", "cinematic"] as const satisfies readonly VideoMode[];
+export type AiMode = (typeof AI_MODES)[number];
+export const isAiMode = (m: unknown): m is AiMode => AI_MODES.includes(m as AiMode);
+export const VIDEO_CREDITS: Record<VideoMode, number> = { classic: 0, balanced: 0, cinematic: 10, clip: 3 };
+/** How many photos each AI mode animates: one for «Foto en movimiento», a short tour for the cinematic one. */
+export const AI_PHOTOS: Record<AiMode, { min: number; max: number }> = { clip: { min: 1, max: 1 }, cinematic: { min: 2, max: 6 } };
+/** Whether a number of photos fits a mode; null when it does, otherwise what to tell the person. */
+export function photoCountProblem(mode: VideoMode, count: number): string | null {
+  if (!isAiMode(mode)) return count >= 1 && count <= MAX_VIDEO_PHOTOS ? null : `Elegí entre 1 y ${MAX_VIDEO_PHOTOS} fotos.`;
+  const { min, max } = AI_PHOTOS[mode];
+  if (count >= min && count <= max) return null;
+  return min === max ? `${MODE_INFO[mode].name} usa ${min === 1 ? "una sola foto" : `${min} fotos`}.` : `${MODE_INFO[mode].name} usa entre ${min} y ${max} fotos.`;
+}
 
 export type Timing = { intro: number; photo: number; outro: number; fade: number };
 export const DEFAULT_TIMING: Timing = { intro: 2400, photo: 3200, outro: 3000, fade: 700 };
+/** Each animated clip lasts 6 s; its scene uses a little less so the crossfade never runs past its end. */
+export const CLIP_SECONDS = 6;
+export const AI_TIMING: Timing = { intro: 2400, photo: 5600, outro: 3000, fade: 700 };
+export const timingOf = (mode: VideoMode): Timing => (isAiMode(mode) ? AI_TIMING : DEFAULT_TIMING);
+
+/**
+ * What the animation model is asked for: only a camera move through the room
+ * as it is. Nothing is added, removed or changed (a property is sold on what
+ * it really has); the moves alternate along the tour.
+ */
+const CAMERA_MOVES = [
+  "a slow, smooth dolly-in toward the center of the room",
+  "a slow, smooth pan from left to right",
+  "a slow, smooth push-in with a slight rise",
+  "a slow, smooth pan from right to left",
+];
+export function clipPrompt(position: number) {
+  const move = CAMERA_MOVES[Math.abs(Math.trunc(position)) % CAMERA_MOVES.length];
+  return (
+    `Real estate walkthrough video: ${move}, steady like a gimbal. ` +
+    "The room stays exactly as in the photo: same furniture, walls, floor, windows, light and colors. " +
+    "Do not add, remove or change any object. No people, no animals, no text, no logos. Natural daylight, realistic, sharp."
+  );
+}
 
 export type Scene =
   | { kind: "intro"; start: number; duration: number }

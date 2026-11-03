@@ -1,13 +1,18 @@
-// Renders the "Clásico" video in the browser: canvas frames → WebCodecs H.264
-// → MP4 (mp4-muxer). No server time and no provider cost; the MP4 is then
-// uploaded straight to Habita's storage. Browser only.
+// Renders the video in the browser: canvas frames → WebCodecs H.264 → MP4
+// (mp4-muxer). The «Clásico» draws the photos; the AI modes draw each
+// photo's animated clip (made by the provider, kept in Habita's storage).
+// No server time; the MP4 is uploaded straight to Habita's storage. Browser only.
 import { ArrayBufferTarget, Muxer } from "mp4-muxer";
 import { cameraAt, coverCrop, sceneAt, type VideoCards, type VideoPlan } from "./plan";
 
 /** What the cards say: only the information the agency chose (spec: optional). */
 export type VideoInfo = VideoCards;
 
-export type VideoAsset = { image: ImageBitmap; staged: boolean };
+/**
+ * One photo of the video: a still (the «Clásico», and every preview) or,
+ * in the AI modes, the photo's animated clip, drawn at the scene's moment.
+ */
+export type VideoAsset = { image: ImageBitmap; staged: boolean; clip?: undefined } | { clip: HTMLVideoElement; staged: boolean; image?: undefined };
 
 const CODEC = "avc1.640028"; // H.264 High 4.0: up to 1920×1080 / 1080×1920 at 30 fps, plays on iPhone and WhatsApp.
 
@@ -26,6 +31,57 @@ export async function loadAsset(url: string, staged: boolean): Promise<VideoAsse
   const res = await fetch(url, { credentials: "same-origin" });
   if (!res.ok) throw new Error("PHOTO_LOAD_FAILED");
   return { image: await createImageBitmap(await res.blob()), staged };
+}
+
+/** An animated clip, ready to be drawn frame by frame (muted, never played: each frame is sought). */
+export async function loadClip(url: string, staged: boolean): Promise<VideoAsset> {
+  const video = document.createElement("video");
+  video.crossOrigin = "anonymous"; // Signed storage links: the canvas stays readable for the encoder.
+  video.muted = true;
+  video.playsInline = true;
+  video.preload = "auto";
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("CLIP_LOAD_FAILED")), 30_000);
+    video.addEventListener("loadeddata", () => (clearTimeout(timer), resolve()), { once: true });
+    video.addEventListener("error", () => (clearTimeout(timer), reject(new Error("CLIP_LOAD_FAILED"))), { once: true });
+    video.src = url;
+    video.load();
+  });
+  return { clip: video, staged };
+}
+
+function seek(video: HTMLVideoElement, t: number) {
+  if (Math.abs(video.currentTime - t) < 0.002 && video.readyState >= 2) return Promise.resolve();
+  return new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => (cleanup(), reject(new Error("CLIP_SEEK_FAILED"))), 10_000);
+    const done = () => (cleanup(), resolve());
+    const fail = () => (cleanup(), reject(new Error("CLIP_SEEK_FAILED")));
+    const cleanup = () => {
+      clearTimeout(timer);
+      video.removeEventListener("seeked", done);
+      video.removeEventListener("error", fail);
+    };
+    video.addEventListener("seeked", done);
+    video.addEventListener("error", fail);
+    video.currentTime = t;
+  });
+}
+
+/** Where a clip is at `ms` of its scene: from its start, never past its last frame. */
+export function clipTime(scene: { start: number }, ms: number, clipSeconds: number) {
+  return Math.min(Math.max(0, (ms - scene.start) / 1000), Math.max(0, clipSeconds - 0.05));
+}
+
+/** Puts the clips on screen at `ms` (the scene and the one fading in) at their exact frame. */
+export async function seekClips(plan: VideoPlan, assets: VideoAsset[], ms: number) {
+  const { scene, next } = sceneAt(plan, ms);
+  await Promise.all(
+    [scene, next].map((s) => {
+      if (!s || s.kind !== "photo") return null;
+      const clip = assets[s.photo]?.clip;
+      return clip ? seek(clip, clipTime(s, ms, clip.duration || 0)) : null;
+    }),
+  );
 }
 
 function wrap(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, maxLines: number) {
@@ -109,15 +165,29 @@ function card(ctx: CanvasRenderingContext2D, plan: VideoPlan, info: VideoInfo, k
   }
 }
 
+/** The label of an AI-made scene, or null for an untouched photo. */
+export function aiLabel(asset: { staged: boolean; clip?: unknown }) {
+  if (asset.clip) return asset.staged ? "Ambientación y movimiento con IA" : "Movimiento generado con IA";
+  return asset.staged ? "Ambientación virtual con IA" : null;
+}
+
 function photoScene(ctx: CanvasRenderingContext2D, plan: VideoPlan, asset: VideoAsset, scene: Extract<VideoPlan["scenes"][number], { kind: "photo" }>, progress: number) {
   const { width: W, height: H } = plan;
-  const cam = cameraAt(scene, progress);
-  const c = coverCrop(asset.image, { width: W, height: H }, cam.zoom, cam.panX, cam.panY);
-  ctx.drawImage(asset.image, c.sx, c.sy, c.sw, c.sh, 0, 0, W, H);
-  if (asset.staged) {
-    // AI images are labelled as such (spec §6.2).
+  if (asset.clip) {
+    // The clip already moves: drawn whole («cover»), at the frame seekClips put on screen.
+    const v = asset.clip;
+    const c = coverCrop({ width: v.videoWidth || W, height: v.videoHeight || H }, { width: W, height: H }, 1, 0, 0);
+    ctx.drawImage(v, c.sx, c.sy, c.sw, c.sh, 0, 0, W, H);
+  } else if (asset.image) {
+    const cam = cameraAt(scene, progress);
+    const c = coverCrop(asset.image, { width: W, height: H }, cam.zoom, cam.panX, cam.panY);
+    ctx.drawImage(asset.image, c.sx, c.sy, c.sw, c.sh, 0, 0, W, H);
+  }
+  const label = aiLabel(asset);
+  if (label) {
+    // AI images and AI motion are labelled as such (spec §6.2).
     const s = Math.min(W, H) / 1080;
-    const text = "Ambientación virtual con IA";
+    const text = label;
     ctx.font = `600 ${26 * s}px Arial, sans-serif`;
     const tw = ctx.measureText(text).width;
     const pad = 16 * s;
@@ -163,7 +233,9 @@ export async function renderMp4(plan: VideoPlan, info: VideoInfo, assets: VideoA
       throw new DOMException("Cancelado", "AbortError");
     }
     if (failure) throw failure;
-    drawFrame(ctx, plan, info, assets, logo, (i * 1000) / plan.fps);
+    const ms = (i * 1000) / plan.fps;
+    if (assets.some((a) => a.clip)) await seekClips(plan, assets, ms);
+    drawFrame(ctx, plan, info, assets, logo, ms);
     const frame = new VideoFrame(canvas, { timestamp: Math.round(i * frameUs), duration: Math.round(frameUs) });
     encoder.encode(frame, { keyFrame: i % (plan.fps * 2) === 0 });
     frame.close();

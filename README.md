@@ -31,6 +31,8 @@ Virtual staging para Latinoamérica. MVP en español inspirado en la experiencia
 | `OPENAI_IMAGE_MODEL`      | `gpt-image-2.5-sunburst` (también es el valor predeterminado si se omite).                                                                        |
 | `STUDIO_ACCESS_PASSWORD`  | Una contraseña aleatoria de al menos 16 caracteres para compartir con los participantes del piloto.                                               |
 | `NEXT_PUBLIC_CONTACT_URL` | Opcional: enlace HTTPS comercial, por ejemplo a tu formulario de contacto o WhatsApp.                                                             |
+| `FAL_KEY`                 | Opcional: clave de fal.ai para los videos con animación IA («Foto en movimiento» y «Recorrido cinematográfico»). Sin ella esos modos aparecen como no disponibles. |
+| `FAL_VIDEO_MODEL`         | Opcional: otro modelo imagen→video de fal. Predeterminado: `fal-ai/ltx-2/image-to-video/fast`.                                                    |
 
 5. Confirmá que **Fluid compute** esté habilitado. La ruta de generación declara `maxDuration = 300`, con timeout del proveedor a los 270 segundos. Los archivos se optimizan para quedar debajo del límite de 4.5 MB de Vercel Functions.
 6. Desplegá o hacé **Redeploy** después de agregar o cambiar variables. Las variables privadas se leen en el servidor; el enlace público de contacto se incorpora al build.

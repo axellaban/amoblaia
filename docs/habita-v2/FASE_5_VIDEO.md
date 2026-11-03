@@ -1,6 +1,6 @@
 # Habita V2 — Fase 5: Video
 
-**Estado:** 5A (benchmark) y 5B (video «Clásico» real) hechos. 5C/5D (animación con IA) **esperan aprobación de proveedor y costo**. Los criterios de aceptación de la Fase 5 completa (tres modos utilizables) **no** están cumplidos todavía.
+**Estado:** 5A (benchmark), 5B (video «Clásico» real) y 5C/5D (animación con IA por fal.ai: «Foto en movimiento» y «Recorrido cinematográfico») hechos en código. Para usar la animación falta cargar `FAL_KEY` en Vercel y aplicar la migración `202611210001_video_ai.sql`; antes de abrirla a todas las inmobiliarias, la prueba de calidad con fotos reales. «Equilibrado» sigue como «No disponible».
 
 ## 5A — Benchmark y decisiones
 
@@ -38,6 +38,41 @@ format|duration=14.700000|size=8195610
 ### Eventos PostHog
 
 `video_section_viewed`, `video_property_selected`, `video_photos_selected`, `video_mode_selected`, `video_format_selected`, `video_generate_clicked`, `video_generation_started`, `video_generation_completed` (`duration_ms`, `video_ms`, `size_kb`, `credits_charged: 0`, `provider: browser`), `video_generation_failed` (`error_code`: `unsupported_browser`, `cancelled`, `api_<status>`, `render`), `video_preview_played`, `video_downloaded`, `video_shared`.
+
+## 5C/5D — Animación con IA (fal.ai)
+
+Decisión (03/11/2026): **fal.ai** con **LTX-2 Fast** (`fal-ai/ltx-2/image-to-video/fast`, USD 0,04 por segundo a 1080p; un clip de 6 s ≈ USD 0,24). Es la opción económica para empezar; el modelo se cambia con `FAL_VIDEO_MODEL` sin tocar el resto (Kling 2.6 Pro ≈ USD 0,35 por clip de 5 s como opción de mayor calidad, a probar). Sora quedó descartado: OpenAI cerró su API de video el 24/09/2026.
+
+| Modo | Fotos | Créditos | Costo de proveedor estimado |
+| --- | --- | --- | --- |
+| Foto en movimiento | 1 (la primera del orden) | **3** | ≈ USD 0,24 (+ un reintento si falla) |
+| Recorrido cinematográfico | 2 a 6 | **10** | ≈ USD 0,48–1,44 |
+
+**Cómo funciona**
+
+1. El estudio muestra el costo en créditos y pide confirmación. El servidor crea el video, **cobra los créditos antes de cualquier costo de proveedor** (`habita_video_charge`: primero los créditos que vencen antes, una fila de `credit_ledger` por bolsa usada, nunca dos veces el mismo video; nunca usa la prueba gratis) y manda cada foto a fal (la misma imagen que muestra el estudio, con su ambientación si se eligió, recortada a 16:9 y enviada como data URI: nada queda público; `X-Fal-Store-IO: 0`).
+2. La consigna pide solo un movimiento de cámara y prohíbe agregar, sacar o cambiar objetos, personas o textos (`clipPrompt`).
+3. Cada lectura del historial (el estudio la repite cada 6 s mientras anima) avanza los videos: consulta la cola de fal, copia cada clip terminado al bucket privado `property-videos` (`<inmobiliaria>/<propiedad>/<video>/clip-N.mp4`) y, si una foto falla, la reenvía **una vez**. El cron diario hace lo mismo con los videos que nadie volvió a mirar.
+4. Con todos los clips guardados, **el navegador arma el MP4** con el mismo motor del Clásico (placas opcionales, fundidos, cualquiera de los 4 formatos), dibujando cada clip cuadro a cuadro, con la leyenda «Movimiento generado con IA» (o «Ambientación y movimiento con IA»). Si se cierra la página, el historial muestra «Clips listos» y «Terminar video»; un armado fallido se puede reintentar sin volver a pagar.
+5. **Reintegro:** si fal no acepta las fotos, si una foto falla dos veces o si la animación pasa de 40 minutos, el video queda fallido y los créditos vuelven a las mismas bolsas, una sola vez (`habita_video_refund`). Un video fallido que todavía tenga créditos se reintegra en la lectura siguiente.
+
+| Pieza | Archivo |
+| --- | --- |
+| Modos, créditos, fotos por modo, tiempos, consigna | `src/lib/video/plan.ts` |
+| Cola de fal (enviar, estado, resultado, descarga; solo direcciones de fal) | `src/lib/video/fal.ts` |
+| Inicio con cobro, avance, reintentos, reintegro, subida del armado | `src/lib/video/ai.ts` |
+| Historial con avance de la IA y links a los clips | `src/lib/video/server.ts` |
+| API: POST (modo IA), GET (avanza), PUT (dónde subir el armado), PATCH | `src/app/api/panel/videos/route.ts` |
+| Armado con clips en el navegador | `src/lib/video/render.ts` (`loadClip`, `seekClips`) |
+| Estudio: modos con costo, confirmación, progreso, «Terminar video» | `src/components/video-studio.tsx` |
+| Migración: `property_video_clips`, `credit_ledger.video_id`, `payer_id`, `clips_ready_at`, funciones de cobro y reintegro | [`202611210001_video_ai.sql`](https://github.com/axellaban/amoblaia/blob/claude/video-ia-fal/supabase/migrations/202611210001_video_ai.sql) |
+| Tests | `tests/video-ai.test.ts` |
+
+**Quién paga:** la cuenta de la inmobiliaria (su dueño), como las ambientaciones. Desde la edición administrativa del equipo, una inmobiliaria con cuenta no se cobra (403, igual que las ambientaciones); el equipo puede usar «Entrar como la inmobiliaria».
+
+**Activación:** `FAL_KEY` en Vercel (Production y Preview) y la migración aplicada. Sin `FAL_KEY` los modos IA siguen como «No disponible».
+
+**Eventos PostHog:** los mismos de video, con `provider: fal`, `credits_quoted`, `credits_charged`, `animated_photo_count`; errores nuevos `provider_submit` y `join_<paso>`.
 
 ## Crear video — versión definitiva (V1A)
 
@@ -82,7 +117,8 @@ Los cinco se decodifican completos con `ffmpeg -f null`. Cuadros: `mp4-cuadros-*
 | Ítem | Necesita |
 | --- | --- |
 | Probar el Clásico en el preview con una propiedad real: render, subida a Supabase y reproducción en **iPhone Safari** y desktop | Acceso al preview |
-| 5C: clip IA por foto («Video IA» / «Ver en movimiento» en la demo) y Equilibrado | **Aprobación de proveedor y costo** (propuesta: fal.ai con Kling 2.6 Pro ~USD 0,35 o Veo 3.1 Fast ~USD 0,50 por clip de 5 s, a confirmar), `FAL_KEY`, prueba de calidad con fotos reales, precio en créditos |
-| 5D: Cinematográfico | 5C validado |
+| Activar la animación con IA | `FAL_KEY` en Vercel y aplicar `202611210001_video_ai.sql` |
+| Prueba de calidad: 10 fotos reales de inmobiliarias con LTX-2 Fast (y Kling 2.6 Pro para comparar) | `FAL_KEY` y fotos |
+| «Ver en movimiento» dentro de la demo pública y modo Equilibrado | Resultado de la prueba de calidad |
 | Música con licencia | Pistas con licencia comercial documentada |
 | Navegadores sin WebCodecs (iOS < 17) | Hoy: mensaje claro y sugerencia de desktop |
