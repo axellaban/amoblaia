@@ -3,7 +3,7 @@ import { readJson } from "@/lib/demos/input";
 import { generateTrack, libraryStatus } from "@/lib/video/media-server";
 export const runtime = "nodejs";
 // One track per call: fal's music model answers in under a minute or two.
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 const PRIVATE = { "Cache-Control": "private, no-store" };
 

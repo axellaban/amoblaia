@@ -22,6 +22,12 @@ import {
 /** Google's Lyria 2 on fal: 30 s of instrumental music at 48 kHz (WAV), a few cents each. Replaceable by configuration. */
 export const DEFAULT_MUSIC_MODEL = "fal-ai/lyria2";
 export const musicModel = () => (process.env.FAL_MUSIC_MODEL || DEFAULT_MUSIC_MODEL).trim();
+/**
+ * Tried in order when a model refuses the account (403: not enabled for it,
+ * terms not accepted…) or no longer exists: the configured one, then Stable
+ * Audio 2.5 and CassetteAI's music generator. Each one's answer is read leniently.
+ */
+export const musicModels = () => [...new Set([musicModel(), DEFAULT_MUSIC_MODEL, "fal-ai/stable-audio-25/text-to-audio", "cassetteai/music-generator"])];
 const RUN = "https://fal.run/";
 const MISSING_BUCKET = "Falta aplicar la migración 202611220001_video_media.sql en Supabase.";
 
@@ -61,6 +67,13 @@ export async function libraryStatus() {
   return { model: musicModel(), enabled: falEnabled(), tracks: MUSIC_TRACKS.map((t) => ({ id: t.id, genre: t.genre, name: t.name, ready: files.has(t.id) })) };
 }
 
+/** fal's own reason for an error, short: { detail: "…" } or { detail: [{ msg }] }. */
+export function falDetail(body: unknown): string {
+  const d = (body as { detail?: unknown } | null)?.detail;
+  const text = typeof d === "string" ? d : Array.isArray(d) ? d.map((x) => (x as { msg?: unknown })?.msg).filter((m) => typeof m === "string").join("; ") : "";
+  return text.slice(0, 160);
+}
+
 /** The audio of fal's answer, read leniently: { audio: { url, content_type } } (or audio_file). */
 export function readAudio(body: unknown): { url: string; type: string } | null {
   const b = body as { audio?: { url?: unknown; content_type?: unknown }; audio_file?: { url?: unknown; content_type?: unknown } } | null;
@@ -75,18 +88,31 @@ export async function generateTrack(id: unknown) {
   if (!track) throw new HttpError(400, "Pista desconocida.");
   const key = process.env.FAL_KEY?.trim();
   if (!key) throw new HttpError(409, "Falta cargar FAL_KEY en Vercel.");
-  const model = musicModel();
-  if (!/^[a-z0-9-]+\/[a-z0-9./-]+$/i.test(model) || model.includes("..")) throw new FalError("FAL_MODEL_INVALID");
-  const res = await fetch(`${RUN}${model}`, {
-    method: "POST",
-    headers: { Authorization: `Key ${key}`, "Content-Type": "application/json", Accept: "application/json", "X-Fal-Store-IO": "0" },
-    body: JSON.stringify({ prompt: track.prompt, negative_prompt: "vocals, singing, lyrics, speech, harsh noise, distortion, low quality" }),
-    signal: AbortSignal.timeout(110_000),
-  });
-  const body = await res.json().catch(() => null);
-  if (!res.ok) throw new HttpError(502, `fal respondió ${res.status} al generar «${track.name}».`);
-  const audio = readAudio(body);
-  if (!audio) throw new HttpError(502, `fal no devolvió audio para «${track.name}».`);
+  let audio: { url: string; type: string } | null = null;
+  const refused: string[] = [];
+  for (const model of musicModels()) {
+    if (!/^[a-z0-9-]+\/[a-z0-9./-]+$/i.test(model) || model.includes("..")) throw new FalError("FAL_MODEL_INVALID");
+    const res = await fetch(`${RUN}${model}`, {
+      method: "POST",
+      headers: { Authorization: `Key ${key}`, "Content-Type": "application/json", Accept: "application/json", "X-Fal-Store-IO": "0" },
+      // The fields each model knows: prompt (all), negative_prompt (Lyria), seconds_total (Stable Audio), duration (CassetteAI).
+      body: JSON.stringify({ prompt: track.prompt, negative_prompt: "vocals, singing, lyrics, speech, harsh noise, distortion, low quality", seconds_total: 30, duration: 30 }),
+      signal: AbortSignal.timeout(100_000),
+    });
+    const body = await res.json().catch(() => null);
+    if (res.status === 401) throw new HttpError(502, "fal rechazó la FAL_KEY (401). Revisá la clave cargada en Vercel.");
+    if (!res.ok) {
+      refused.push(`${model}: ${res.status}${falDetail(body) ? ` (${falDetail(body)})` : ""}`);
+      console.error("video_music_refused", model, res.status, falDetail(body));
+      // A model that refuses this account or does not exist: the next one. Anything else is reported now.
+      if ([403, 404, 405, 410, 422].includes(res.status)) continue;
+      break;
+    }
+    audio = readAudio(body);
+    if (audio) break;
+    refused.push(`${model}: sin audio en la respuesta`);
+  }
+  if (!audio) throw new HttpError(502, `fal no pudo generar «${track.name}». ${refused.join(" · ")}`.slice(0, 600));
   const file = await fetch(audio.url, { signal: AbortSignal.timeout(60_000) });
   if (!file.ok) throw new HttpError(502, "No pudimos descargar la pista de fal.");
   const bytes = Buffer.from(await file.arrayBuffer());
