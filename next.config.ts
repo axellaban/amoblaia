@@ -2,6 +2,9 @@ import type { NextConfig } from "next";
 const posthogHost =
   process.env.NEXT_PUBLIC_POSTHOG_HOST || "https://us.i.posthog.com";
 const posthogAssets = posthogHost.replace(".i.posthog.com", "-assets.i.posthog.com");
+/** The panel's property preview, framed by the panel itself (see headers()). */
+const FRAMED_PREVIEW = "panel/propiedades/[^/]+/vista-previa";
+
 const config: NextConfig = {
   poweredByHeader: false,
   // Required by the PostHog reverse proxy: its API paths end with a slash.
@@ -50,12 +53,24 @@ const config: NextConfig = {
         source: "/:path*",
         headers: [
           { key: "X-Content-Type-Options", value: "nosniff" },
-          { key: "X-Frame-Options", value: "DENY" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           {
             key: "Permissions-Policy",
             value: "camera=(), microphone=(), geolocation=()",
           },
+        ],
+      },
+      // No page can be framed by any site, ours included...
+      {
+        source: `/:path((?!${FRAMED_PREVIEW}$).*)`,
+        headers: [{ key: "X-Frame-Options", value: "DENY" }],
+      },
+      // ...except a property's «Vista previa», which the panel shows in its own frame (same origin only).
+      {
+        source: "/panel/propiedades/:id/vista-previa",
+        headers: [
+          { key: "X-Frame-Options", value: "SAMEORIGIN" },
+          { key: "Content-Security-Policy", value: "frame-ancestors 'self'" },
         ],
       },
     ];
