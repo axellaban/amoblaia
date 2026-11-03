@@ -29,12 +29,20 @@ export const MaskBrush = forwardRef<BrushHandle, { image: HTMLImageElement; size
       if (!parent) return;
       const ir = image.getBoundingClientRect();
       const pr = parent.getBoundingClientRect();
-      setBox({ left: ir.left - pr.left, top: ir.top - pr.top, width: ir.width, height: ir.height });
+      // The photo is fitted (object-fit: contain) in a fixed stage: cover the picture, not its bands.
+      const fit = image.naturalWidth && image.naturalHeight ? Math.min(ir.width / image.naturalWidth, ir.height / image.naturalHeight) : 0;
+      const width = fit ? image.naturalWidth * fit : ir.width;
+      const height = fit ? image.naturalHeight * fit : ir.height;
+      setBox({ left: ir.left - pr.left + (ir.width - width) / 2, top: ir.top - pr.top + (ir.height - height) / 2, width, height });
     };
     place();
     const observer = new ResizeObserver(place);
     observer.observe(image);
-    return () => observer.disconnect();
+    image.addEventListener("load", place);
+    return () => {
+      observer.disconnect();
+      image.removeEventListener("load", place);
+    };
   }, [image]);
 
   // The canvas keeps the photo's natural size; a new photo starts with nothing painted.

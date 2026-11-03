@@ -1171,13 +1171,21 @@ function Gallery({
   // demo's configured order (its region's for new demos), else the catalog's.
   const sequence = demo.styleOrder ?? [];
   const rank = (id: string) => (sequence.includes(id) ? sequence.indexOf(id) : sequence.length);
-  // The agency sees every style in that order, the main one first, each ready or with «Generar».
+  // The agency sees every style in that order, the main one first, each ready or with «Generar»:
+  // the ones already made together first, then the ones still to generate (never mixed).
   const mainStyle = demo.styles[0]?.id ?? null;
+  const made = (id: string) => photo.versions.some((v) => v.style === id);
   const rows = owner
     ? [
         ...DEMO_STYLES[demo.propertyType]
           .map((c, i) => ({ c, i }))
-          .sort((a, b) => Number(b.c.id === mainStyle) - Number(a.c.id === mainStyle) || rank(a.c.id) - rank(b.c.id) || a.i - b.i)
+          .sort(
+            (a, b) =>
+              Number(made(b.c.id)) - Number(made(a.c.id)) ||
+              Number(b.c.id === mainStyle) - Number(a.c.id === mainStyle) ||
+              rank(a.c.id) - rank(b.c.id) ||
+              a.i - b.i,
+          )
           .map(({ c }) => ({ style: c.id, version: (photo.versions.find((v) => v.style === c.id) ?? null) as PhotoVersion | null })),
         // A retouch (not a catalog style) stays last, as before.
         ...photo.versions

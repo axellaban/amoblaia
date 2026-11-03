@@ -440,9 +440,12 @@ export function PhotoWorkspace({
         <div className="pw-main">
           <section className="pw-stage" aria-label="Foto activa">
             <header className="pw-stage-head">
+              {/* The studio steps from its title; the property editor, from arrows over the photo (as in the ficha). */}
+              {flat && (
               <button type="button" className="icon-button" aria-label="Foto anterior" disabled={ordered.length < 2} onClick={() => step(-1)}>
                 <ChevronLeft size={18} />
               </button>
+              )}
               {flat ? (
                 <div className="pw-stage-title" aria-live="polite">
                   <h3>
@@ -460,9 +463,11 @@ export function PhotoWorkspace({
                 </small>
               </div>
               )}
+              {flat && (
               <button type="button" className="icon-button" aria-label="Foto siguiente" disabled={ordered.length < 2} onClick={() => step(1)}>
                 <ChevronRight size={18} />
               </button>
+              )}
               {!flat && (
               <span className="pw-badges">
                 {hasView && (
@@ -497,6 +502,16 @@ export function PhotoWorkspace({
                 />
               )}
               {brushing && photoEl && <MaskBrush ref={brush} image={photoEl} size={toolSize} onChange={setPainted} />}
+              {!flat && !brushing && ordered.length > 1 && (
+                <>
+                  <button type="button" className="pw-nav pw-nav-prev" aria-label="Foto anterior" onClick={() => step(-1)}>
+                    <ChevronLeft size={22} aria-hidden="true" />
+                  </button>
+                  <button type="button" className="pw-nav pw-nav-next" aria-label="Foto siguiente" onClick={() => step(1)}>
+                    <ChevronRight size={22} aria-hidden="true" />
+                  </button>
+                </>
+              )}
               {effectiveMode !== "compare" && (
                 <figcaption className="pw-caption" aria-live="polite" data-testid="view-label">
                   {label}

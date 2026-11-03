@@ -122,11 +122,11 @@ describe("the agency's own demo, under its panel header", () => {
     expect(html).toContain("Galería de la propiedad (2)");
   });
 
-  it("lists every style in the demo's order, the main one first and «Costero» right after it in Mar del Plata", () => {
+  it("lists the styles already made together first (main one first), then the rest in the demo's order: «Costero» first among them in Mar del Plata", () => {
     const mdp = { ...demo, styleOrder: ["modern", "coastal", "scandinavian", "minimalist", "midcentury", "luxury", "industrial", "farmhouse", "classic"], photos: [{ id: "p1", label: "", versions: [v("modern"), v("scandinavian")] }] };
     const out = renderToStaticMarkup(<DemoView demo={mdp} source={{ kind: "public", token: "tok" }} presentation owner={owner} />);
     const names = [...out.matchAll(/<span class="dv2-style-name"[^>]*>([^<]+)<\/span>/g)].map((m) => m[1]);
-    expect(names).toEqual(["Moderno", "Costero", "Nórdico", "Minimalista", "Mid-century", "Lujo"]);
+    expect(names).toEqual(["Moderno", "Nórdico", "Costero", "Minimalista", "Mid-century", "Lujo"]);
   });
 
   it("asks for another listing before the invitation's sign-up, without sending it anywhere else", () => {
