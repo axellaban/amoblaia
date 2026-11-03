@@ -3,9 +3,12 @@ import { requireDemoAccess, requireDemoRead } from "@/lib/agency/server";
 import { readJson } from "@/lib/demos/input";
 import { isUuid } from "@/lib/demos/shared";
 import { adminClient } from "@/lib/supabase/server";
-import { formatOf, videoFileName } from "@/lib/video/plan";
+import { advanceAiVideos, aiUploadTarget, startAiVideo } from "@/lib/video/ai";
+import { formatOf, isAiMode, videoFileName } from "@/lib/video/plan";
 import { createVideo, finishVideo, listVideos, type VideoRow } from "@/lib/video/server";
 export const runtime = "nodejs";
+// Starting an AI video sends up to six photos to the provider; reading moves running ones forward.
+export const maxDuration = 60;
 
 const PRIVATE = { "Cache-Control": "private, no-store" };
 async function titleOf(propertyId: string) {
@@ -13,12 +16,13 @@ async function titleOf(propertyId: string) {
   return (data as { title: string } | null)?.title ?? "propiedad";
 }
 
-/** ?demo=<id>: the property's videos, with links that expire in an hour. Viewers too. */
+/** ?demo=<id>: the property's videos, with links that expire in an hour. Running AI videos move forward first. Viewers too. */
 export async function GET(request: Request) {
   try {
     const demoId = new URL(request.url).searchParams.get("demo");
     if (!isUuid(demoId)) throw new HttpError(400, "Propiedad inválida.");
     const access = await requireDemoRead(demoId);
+    await advanceAiVideos({ demoId: access.demo.id }, Date.now() + 20_000).catch((e) => console.error("video_ai_advance", e instanceof Error ? e.message : e));
     const title = await titleOf(access.demo.property_id);
     const videos = await listVideos(access.demo.id, (r: VideoRow) => videoFileName(title, formatOf(r.format)));
     return Response.json({ videos }, { headers: PRIVATE });
@@ -27,12 +31,32 @@ export async function GET(request: Request) {
   }
 }
 
-/** { demoId, key, mode, format, photoCount, options }: a new video and where its MP4 is uploaded. Editors only (requireDemoAccess on POST). */
+/**
+ * { demoId, key, mode, format, photoCount, options }: a new video. The
+ * «Clásico» answers where its MP4 is uploaded; an AI mode charges its credits
+ * (the agency's, or the team's own account for an agency without one) and
+ * starts the animation. Editors only (requireDemoAccess on POST).
+ */
 export async function POST(request: Request) {
   try {
     const body = await readJson(request, 4096);
     if (!isUuid(body.demoId)) throw new HttpError(400, "Propiedad inválida.");
     const access = await requireDemoAccess(request, body.demoId);
+    if (isAiMode(body.mode)) {
+      // Like stagings: an agency with its own account pays from its panel, never from the team's edit.
+      if (access.admin && access.billingUser) throw new HttpError(403, "Esta inmobiliaria ya tiene su cuenta: los videos con IA se crean desde su panel, con sus créditos.");
+      const started = await startAiVideo({
+        agencyId: access.demo.agency_id,
+        demoId: access.demo.id,
+        actorId: access.actor.id,
+        payerId: access.billingUser ?? access.actor.id,
+        key: body.key,
+        mode: body.mode,
+        format: body.format,
+        options: body.options,
+      });
+      return Response.json(started, { status: 201, headers: PRIVATE });
+    }
     const created = await createVideo({
       agencyId: access.demo.agency_id,
       demoId: access.demo.id,
@@ -44,6 +68,18 @@ export async function POST(request: Request) {
       options: body.options,
     });
     return Response.json(created, { status: 201, headers: PRIVATE });
+  } catch (e) {
+    return failure(e);
+  }
+}
+
+/** { demoId, id }: an AI video whose clips are ready, and where its joined MP4 is uploaded. Editors only. */
+export async function PUT(request: Request) {
+  try {
+    const body = await readJson(request, 1024);
+    if (!isUuid(body.demoId)) throw new HttpError(400, "Propiedad inválida.");
+    const access = await requireDemoAccess(request, body.demoId);
+    return Response.json(await aiUploadTarget(access.demo.id, body.id), { headers: PRIVATE });
   } catch (e) {
     return failure(e);
   }
