@@ -14,6 +14,7 @@ import {
   House,
   Images,
   LayoutGrid,
+  Lightbulb,
   Menu,
   PlayCircle,
   Rotate3d,
@@ -96,6 +97,24 @@ function NavList({ section, role, onNavigate }: { section: PanelSection; role?: 
                 </Link>
               </li>
             ))}
+          {/* Under the first group (after «Sitio web»): the guide at the bottom of the home, for every role. */}
+          {i === 0 && (
+            <li>
+              <Link
+                href="/panel#como-usar"
+                className="ap-side-guide"
+                {...cta("panel_nav_guide", "panel_sidebar", "panel_home_guide", "navigation")}
+                onClick={() => {
+                  onNavigate?.();
+                  // Already on the home: the hash alone may not scroll again.
+                  if (window.location.pathname === "/panel") document.getElementById("como-usar")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                }}
+              >
+                <Lightbulb size={19} aria-hidden="true" />
+                <span>¿Cómo uso Habita en mi negocio?</span>
+              </Link>
+            </li>
+          )}
         </ul>
       ))}
       <ul className="ap-side-group ap-side-bottom">

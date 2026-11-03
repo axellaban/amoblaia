@@ -6,6 +6,7 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { PanelGuide } from "@/components/panel-guide";
 import {
   ArrowRight,
   Check,
@@ -350,6 +351,7 @@ function PanelHome({ data, reload }: { data: PanelSummary; reload: () => Promise
           </p>
         )}
       </section>
+      <PanelGuide creator={creator} />
     </>
   );
 }
