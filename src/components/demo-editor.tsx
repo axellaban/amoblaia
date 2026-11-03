@@ -1558,7 +1558,7 @@ export function DemoEditor({
                         <p>{team ? "La ficha ya está online." : "Tu propiedad ya está online y lista para compartir."}</p>
                         {team && (
                           <p className="dm-help">
-                            Para mandársela a la inmobiliaria con su invitación, usá «Enviar» en <Link href="/admin/demos">Demos</Link>.
+                            Para mandársela a la inmobiliaria con su invitación, usá «Enviar demo» en su ficha de <Link href="/admin/inmobiliarias">Inmobiliarias</Link>.
                           </p>
                         )}
                       </div>
