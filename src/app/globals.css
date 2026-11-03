@@ -22531,3 +22531,76 @@ body:has(.pv-root) .pb-root {
     margin-top: 0;
   }
 }
+
+/* ===================== Crear video: AI modes (confirmation, progress per photo) ===================== */
+.vs-confirm .vs-facts {
+  margin: 0 0 14px;
+}
+.vs-confirm-what {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.vs-confirm-what img {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 12px;
+  flex: none;
+}
+.vs-confirm-what p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.vs-confirm-list {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 18px;
+  padding: 0;
+  list-style: none;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.vs-confirm-list li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.vs-confirm-list svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--forest);
+}
+.vs-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+.vs-clips {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 8px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.vs-clips li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.vs-clips img {
+  width: 44px;
+  height: 44px;
+  object-fit: cover;
+  border-radius: 8px;
+  flex: none;
+}
+.vs-clips strong {
+  flex: 1;
+  font-size: 14px;
+}
