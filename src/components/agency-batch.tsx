@@ -5,6 +5,7 @@
 // one at a time with the same routes, keys and limits the editor uses. The
 // queue of versions not sent yet lives in this tab, and the page says so.
 import Link from "next/link";
+import { cta, uiId } from "@/lib/interaction-tracking";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { ApiError, api } from "./admin-demos";
@@ -295,7 +296,7 @@ export function PhotoBatch({ initialGroup }: { initialGroup?: string }) {
       <div className="ap-entry">
         <h2>Todavía no importaste fotos</h2>
         <p className="ap-entry-sub">Traé fotos desde un enlace o desde tu dispositivo para ambientarlas.</p>
-        <Link href="/panel/imagenes" className="button button-primary">
+        <Link {...cta("batch_go_images", "batch_empty", "panel_images", "navigation")} href="/panel/imagenes" className="button button-primary">
           Importar imágenes
         </Link>
       </div>
@@ -351,7 +352,7 @@ export function PhotoBatch({ initialGroup }: { initialGroup?: string }) {
             <ul>
               {groups.map((g) => (
                 <li key={g.id}>
-                  <button type="button" className={g.id === active ? "is-on" : ""} aria-current={g.id === active ? "true" : undefined} onClick={() => setActive(g.id)}>
+                  <button {...uiId("batch_group_tab")} type="button" className={g.id === active ? "is-on" : ""} aria-current={g.id === active ? "true" : undefined} onClick={() => setActive(g.id)}>
                     <span>{g.title}</span>
                     <small>
                       {(picks[g.id] ?? []).length ? `${(picks[g.id] ?? []).length} de ` : ""}
@@ -368,7 +369,7 @@ export function PhotoBatch({ initialGroup }: { initialGroup?: string }) {
               <h2 id="ap-lote-photos-title">Elegí las fotos que querés ambientar</h2>
               {group && (
                 <span className="ap-img-row">
-                  <label className="button button-small button-outline ap-lote-add">
+                  <label {...cta("batch_add_photos", "batch_prepare", "photo_upload", "product_action")} className="button button-small button-outline ap-lote-add">
                     {adding || "+ Sumar fotos"}
                     <input
                       type="file"
@@ -424,7 +425,7 @@ export function PhotoBatch({ initialGroup }: { initialGroup?: string }) {
                       {isLive(p) ? "Creando una versión…" : ready ? plural(ready, "versión lista", "versiones listas") : "Sin versiones"}
                       {!p.visible && " · oculta en la ficha"}
                     </small>
-                    <Link href={editorPath(group.id)} className="text-link ap-lote-adjust" onClick={rememberScroll}>
+                    <Link {...cta("batch_adjust_in_editor", "batch_prepare", "property_editor", "navigation")} href={editorPath(group.id)} className="text-link ap-lote-adjust" onClick={rememberScroll}>
                       Ajustar en el editor
                     </Link>
                   </li>
@@ -497,7 +498,7 @@ export function PhotoBatch({ initialGroup }: { initialGroup?: string }) {
               </p>
             )}
             <p className="dm-help">Elegir para ambientar no cambia qué fotos muestra la ficha, ni su portada, ni la versión elegida.</p>
-            <button
+            <button {...cta("batch_review", "batch_apply", "ai_generation_quote", "product_action")}
               type="button"
               className="button button-primary"
               disabled={!plan.tasks.length || plan.missingRoom.length > 0 || quoting}
@@ -515,7 +516,7 @@ export function PhotoBatch({ initialGroup }: { initialGroup?: string }) {
               <a href="#ap-lote-apply" className="button button-small button-outline">
                 Acción y estilo
               </a>
-              <button
+              <button {...cta("batch_review", "batch_mobile_bar", "ai_generation_quote", "product_action")}
                 type="button"
                 className="button button-small button-primary"
                 disabled={!plan.tasks.length || plan.missingRoom.length > 0 || quoting}
@@ -597,7 +598,7 @@ export function PhotoBatch({ initialGroup }: { initialGroup?: string }) {
               </p>
               <p>
                 Podés seguir organizando las fotos o descargar las versiones que ya están listas desde el editor.{" "}
-                {total.payer === "agency" && <Link href="/panel/creditos">Ver créditos</Link>}
+                {total.payer === "agency" && <Link {...cta("batch_see_credits", "batch_confirm", "panel_credits")} href="/panel/creditos">Ver créditos</Link>}
               </p>
             </div>
           )}
@@ -606,10 +607,10 @@ export function PhotoBatch({ initialGroup }: { initialGroup?: string }) {
             <li>Mantené esta pestaña abierta hasta que se envíen todas: las que todavía no se enviaron no siguen si la cerrás.</li>
           </ul>
           <div className="ap-img-row">
-            <button type="button" className="button button-outline" onClick={() => setStep("preparar")}>
+            <button {...uiId("batch_back_to_prepare")} type="button" className="button button-outline" onClick={() => setStep("preparar")}>
               Volver a ajustar
             </button>
-            <button type="button" className="button button-primary" disabled={Boolean(total.blocked)} onClick={generate}>
+            <button {...cta("batch_generate", "batch_confirm", "ai_generation", "product_action")} type="button" className="button button-primary" disabled={Boolean(total.blocked)} onClick={generate}>
               Generar {plural(plan.tasks.length, "versión", "versiones")}
             </button>
           </div>
@@ -658,12 +659,12 @@ export function PhotoBatch({ initialGroup }: { initialGroup?: string }) {
                 </span>
                 <span className="ap-img-actions">
                   {retryable(r.state) && (
-                    <button type="button" className="button button-small button-outline" disabled={running} onClick={() => void send([i])}>
+                    <button {...cta("batch_retry", "batch_results", "ai_generation", "product_action")} type="button" className="button button-small button-outline" disabled={running} onClick={() => void send([i])}>
                       Reintentar
                     </button>
                   )}
                   {(r.state === "ready" || r.state === "review" || r.state === "lost") && (
-                    <Link href={editorPath(r.demoId)} className="button button-small" onClick={rememberScroll}>
+                    <Link {...cta("batch_open_result", "batch_results", "property_editor", "navigation")} href={editorPath(r.demoId)} className="button button-small" onClick={rememberScroll}>
                       Revisar
                     </Link>
                   )}
@@ -683,7 +684,7 @@ export function PhotoBatch({ initialGroup }: { initialGroup?: string }) {
               Volver al lote
             </button>
             {firstReady && (
-              <Link href={editorPath(firstReady.demoId)} className="button button-primary" onClick={rememberScroll}>
+              <Link {...cta("batch_open_first_ready", "batch_results", "property_editor", "navigation")} href={editorPath(firstReady.demoId)} className="button button-primary" onClick={rememberScroll}>
                 Revisar resultado listo →
               </Link>
             )}

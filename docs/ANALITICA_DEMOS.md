@@ -14,6 +14,16 @@ Código:
 - `src/lib/interaction-tracking.ts`: clics en CTAs (atributos `data-cta`),
   marca de tráfico interno, resumen del slider, tiempo por estilo y tiempo activo.
 - `src/lib/signup-tracking.ts`: pasos de los formularios de registro.
+- `src/lib/tracking-routes.ts`: `surfaceOf` y `routeOf` (la pantalla como plantilla).
+- `src/lib/analytics-setup.ts` + `scripts/posthog-setup.ts`: los tableros, embudos y
+  acciones de PostHog como código (ver §5).
+
+> **Versión 3 (noviembre 2026).** Además de los CTAs con id, ahora se mide **todo clic**
+> en botones y enlaces de demos, panel, registro y sitio (`ui_clicked`), los formularios
+> enviados (`form_submitted`), hasta qué sección llega cada visita (`section_viewed`),
+> mapas de calor y clics sin respuesta de PostHog, y cada evento lleva la pantalla
+> (`route`). El panel tiene ids estables en todas sus acciones principales (§3.1).
+> `tracking_version` pasa a `3`; los filtros de antes usan `tracking_version >= 2`.
 
 ## 1. Los tres eventos que ya existían, exactamente
 
@@ -40,7 +50,15 @@ Super propiedades (viajan en todos los eventos siguientes del navegador):
 | `agency_id` | al crear/reclamar la inmobiliaria y cada vez que carga el panel | vincular todo lo posterior a la cuenta B2B |
 | `app_env` | siempre | `production`, `preview` o `local` |
 | `is_internal` | dispositivos del equipo | excluir tráfico interno |
-| `tracking_version` | siempre (`2`) | distinguir datos anteriores a esta instrumentación |
+| `tracking_version` | siempre (`3` desde noviembre 2026; `2` desde el 30/10/2026) | distinguir datos anteriores a cada instrumentación |
+| `product` | siempre (`habita`) | el proyecto de PostHog era «amoblaia»: separa estos eventos si conviven con otros |
+
+Además, `before_send` agrega a **todo** evento (también `$pageview`, `$autocapture`):
+
+| Propiedad | Valor |
+| --- | --- |
+| `route` | la pantalla como plantilla, sin ids ni códigos: `/demo/:token/presentacion/:code/precios`, `/panel/propiedades/:id`, `/inmobiliaria/:slug/:token`, `/panel/imagenes/lote`… |
+| `surface` | si el evento no la trae: `demo`, `agency_site_property`, `agency_site`, `signup`, `panel`, `pricing`, `auth`, `home`, `short_link`, `admin`, `other` |
 
 Propiedades de persona (`$set_once`): `first_demo_*` (solo para enlaces de
 presentación, no para compradores, para no crear perfiles de cada visitante),
@@ -85,7 +103,7 @@ fase de captura, antes de navegar; por beacon si el enlace sale de la página.
 | `cta_id` | identificador estable del botón |
 | `cta_location` | zona: `owner_bar`, `owner_bar_mobile`, `credits_menu`, `styles_panel`, `pricing_drawer`, `header`, `gallery_side`, `contact_card`, `closing`, `sticky_bar`, `footer`, `habita_section`, `invite_lateral`, `invite_final`, `panel_home`, `panel_nav`, … |
 | `cta_destination` | destino lógico: `signup_invitation`, `agency_signup`, `credits_menu`, `pricing_drawer`, `checkout`, `file_download`, `ai_generation`, `whatsapp`, `listing`, `panel_home`, … |
-| `cta_kind` | `habita_b2b` (acción comercial de habita), `buyer_contact` (un comprador contactando a la inmobiliaria), `navigation`, `content` |
+| `cta_kind` | `habita_b2b` (acción comercial de habita), `buyer_contact` (un comprador contactando a la inmobiliaria), `navigation`, `content`, `product_action` (una acción de trabajo dentro del panel: importar, generar, publicar, compartir, descargar) |
 | `cta_intent` | solo en la barra de la inmobiliaria: qué quería abrir |
 | `photo_id`, `style_id`, `plan` | cuando aplica |
 | `surface` | `demo`, `agency_site_property`, `signup`, `panel`, `pricing`, `auth`, … |
@@ -112,6 +130,81 @@ CTAs instrumentados:
 | `nav_property`, `nav_location`, `nav_contact` | Navegación de secciones | sección |
 | `signup_create_account`, `signup_have_account`, `go_to_panel`, `invitation_google`, `invitation_back_to_demo`, `google_signin` | Alta y acceso | `auth_signup`, `auth_login`, `panel_home`, `google_oauth`, `demo` |
 | `panel_nav_*`, `panel_next_step`, `panel_credits`, `buy_credits`, `import_images_*`, `imported_images`, `import_many_urls` | Panel de la inmobiliaria | sección / importación / precios |
+
+### 3.1 Panel: ids de cada acción (v3)
+
+| Zona (`cta_location`) | `cta_id` |
+| --- | --- |
+| Inicio, propiedades recientes (`panel_home_recent`) | `property_open`, `property_share`, `property_copy_link`, `property_edit`, `property_preview`; `panel_see_all_properties`, `site_open_public`, `site_open_preview` |
+| Mis demostraciones (`panel_properties`, `property_card`, `property_table`) | `properties_add` (`cta_intent` `open`/`close`), `property_open`, `property_open_photo`, `property_quick_<acción>` (`share`, `buyer`, `stage`, `edit`, `video`, `photos`, `progress`, `publish`, `data`; `cta_intent` `primary`/`secondary`) |
+| Menú «Más» (`property_more_menu`) | `property_more_photos`, `_edit_images`, `_download`, `_video`, `_data`, `_view_live`, `_preview`, `property_publish`, `property_unpublish`, `property_delete` |
+| Importar (`import_form`, `import_preview`, `import_many`, `import_issues`) | `import_read`, `import_reread`, `import_confirm`, `import_many_urls`, `import_many_read`, `import_many_confirm`, `import_issue_open`, `import_issue_complete`, `import_issue_retry`, `import_issue_retry_photos` |
+| Editor de la propiedad (`editor_header`, `editor_publication`, `editor_published`, `editor_review`, `editor_share`, `editor_video`, `editor_data`, `editor_invited_next`) | `editor_back`, `editor_preview`, `editor_publish`, `editor_unpublish`, `editor_share`, `editor_copy_link`, `editor_share_whatsapp`, `editor_view_live`, `editor_rotate_link`, `editor_reread_listing`, `editor_mark_reviewed`, `editor_main_style` (`style_id`), `editor_video_open`, `editor_create_listing_from_photos`, `editor_next_property` |
+| Estudio de fotos (`studio_stage`, `studio_versions`, `studio_result`, `studio_create`, `generate_dialog`, `studio_edit`, `studio_batch_bar`, `studio_upload`) | `photos_upload`, `studio_new_version`, `generate_review`, `generate_confirm`, `credits_blocked_buy`, `studio_download`, `studio_use_in_demo`, `studio_show_in_listing`, `studio_show_retouch_in_listing`, `studio_set_cover`, `studio_unset_cover`, `studio_batch_toggle`, `retouch_save` |
+| Revisión de una versión (`version_review`) | `review_download`, `review_show_in_listing`, `review_discard`, `review_regenerate` |
+| Imágenes (`images_*`) | `images_search_link`, `images_read_listing`, `images_continue`, `images_import`, `images_import_more`, `images_retry_import`, `images_make_listing`, `images_group_make_listing`, `images_group_stage`, `images_group_open`, `images_open_studio`, `images_open_property`, `images_stage_batch`, `images_open_duplicate` |
+| Tanda (`batch_*`) | `batch_add_photos`, `batch_review`, `batch_generate`, `batch_retry`, `batch_see_credits`, `batch_adjust_in_editor`, `batch_open_result`, `batch_open_first_ready`, `batch_go_images` |
+| Estudio de imágenes (`studio_menu`, `studio_empty`) | `studio_menu_help`, `studio_menu_make_listing`, `studio_menu_open_property`, `studio_empty_from_url` |
+| Usuarios (`panel_team`, `team_invite_link`, `team_user_form`, `team_join`) | `team_new_user`, `team_edit_user`, `team_save_user`, `team_remove_user`, `team_renew_link`, `team_copy_invite`, `team_share_whatsapp`, `team_join_one_click`, `team_join_submit` |
+| Mi sitio (`panel_site`) | `site_publish`, `site_unpublish`, `site_save`, `site_see_drafts` |
+| Créditos (`panel_credits`) | `buy_credits`, `credits_account_history` |
+| Alta (`agency_create`, `agency_claim`) | `agency_create_submit`, `claim_demos` |
+
+Eventos de producto nuevos del panel: `credits_limit_viewed` (`where`: se mostró la
+pared de «sin créditos» en el estudio o en el diálogo de generar), `property_deleted`,
+`property_delete_cancelled`, `site_published`, `site_unpublished`.
+
+### 3.2 Todo clic: `ui_clicked` (v3)
+
+Cualquier clic en `a[href]`, `button`, `summary`, `[role=button|tab|menuitem|option|switch|link]`,
+checkbox, radio, archivo o range que **no** sea un CTA con `data-cta` (esos siguen como
+`cta_clicked`, para no romper los embudos). Nada en `/admin`. Un clic en un `<label>` que
+pasa a su input cuenta una sola vez.
+
+| Propiedad | Valor |
+| --- | --- |
+| `ui_element` | `button`, `link`, `tab`, `menuitem`, `checkbox`, `radio`, `file`, `summary`, … |
+| `ui_id` | nombre estable si el elemento tiene `uiId("…")` (`data-track`): pestañas del editor (`editor_tab_fotos/datos/publicacion`), vistas (`properties_view_cards/table`), paginación, modos (`create_mode_furnish/redesign`), galería de la demo (`demo_gallery_prev/next`, `demo_style_pick`, `demo_tab_*`, `demo_video_*`), … |
+| `ui_label` | el texto visible o `aria-label`, recortado a 60 caracteres, con emails, teléfonos y enlaces reemplazados por `[email]`, `[número]`, `[enlace]`. No se envía dentro de `[data-track-private]` o `.ph-no-capture` |
+| `ui_area` | la zona: el `area("…")` más cercano (`data-track-area`) o el landmark (`header`, `nav`, `aside`, `footer`, `form`, `dialog`, `main`) |
+| `href_kind`, `ui_destination` | en enlaces: `internal` (con la `route` de destino), `external` (solo el dominio), `whatsapp`, `email`, `phone`, `anchor` |
+| `new_tab`, `checked`, `in_dialog` | cuando aplica |
+
+### 3.3 Formularios: `form_submitted` (v3)
+
+Un evento por envío, con `form_id` (`formId("…")`, si no su `aria-label` o la zona),
+`ui_area` y `fields` (cantidad de campos). **Nunca** lo escrito.
+
+### 3.4 Hasta dónde llegan: `section_viewed` (v3)
+
+Una vez por sección y página, cuando se ve un tercio de la sección (o media pantalla
+si es muy alta). Propiedad `section`. En la demo: `demo_prices`, `demo_heading`,
+`demo_about`, `demo_description`, `demo_gallery`, `demo_styles_panel`,
+`demo_video_card`, `demo_video_aside`, `demo_amenities`, `demo_contact_card`,
+`demo_location`, `demo_conditions`, `demo_habita`, `demo_value`, `demo_save_demo`,
+`demo_invite_lateral`, `demo_invite_final`, `demo_another_property`, `demo_closing`.
+(`demo_hero`, `demo_header_buyer` y `demo_owner_bar` solo nombran la zona de sus clics.)
+
+### 3.5 Mapas de calor y frustración (v3)
+
+`enable_heatmaps` y `capture_dead_clicks` en `instrumentation-client.ts`: PostHog →
+Heatmaps muestra dónde cliquean y hasta dónde bajan en cada página (filtrar por URL con
+comodín, p. ej. `*/demo/*/presentacion/*`), `$dead_click` marca clics que no producen
+nada y `$rageclick` clics repetidos. Las grabaciones de sesión siguen igual.
+
+### Cómo instrumentar un botón nuevo
+
+```tsx
+import { area, cta, formId, uiId } from "@/lib/interaction-tracking";
+
+<button {...cta("property_share", "panel_home_recent", "share_sheet", "product_action")}>…</button> // paso de un embudo
+<button {...uiId("properties_view_table")}>…</button>   // nombre estable, sin evento propio
+<section {...area("demo_gallery", true)}>…</section>    // zona de los clics + section_viewed
+<form {...formId("team_user")}>…</form>                  // nombre de form_submitted
+```
+
+Sin nada, el clic igual llega como `ui_clicked` con su etiqueta: los ids son para que
+los embudos no dependan del texto del botón.
 
 ### Comparador antes/después: `comparison_slider_used`
 
@@ -209,45 +302,68 @@ Las propiedades de contexto (`origin`, `has_invite`, `demo_id`, `from_plan`,
   `instrumentation-client.ts`); un solo listener de clic delegado; el tiempo activo
   usa un intervalo de 5 s y listeners pasivos.
 
-## 5. Dashboards propuestos
+## 5. Tableros, embudos y acciones (como código)
 
-Filtro global en los tres: `is_internal` ≠ `true`, `app_env` = `production`,
-`tracking_version` = `2` para los gráficos que usan eventos nuevos.
+Definidos en `src/lib/analytics-setup.ts`; `tests/analytics-setup.test.ts` falla si un
+tablero lee un evento que el código ya no envía. Para crearlos o actualizarlos en el
+proyecto de PostHog (busca por nombre y la etiqueta `habita-setup`, no duplica):
 
-### Adquisición B2B (funnel, conversión por persona, ventana 30 días)
+```bash
+POSTHOG_PROJECT_ID=… POSTHOG_PERSONAL_API_KEY=… node --experimental-strip-types scripts/posthog-setup.ts
+```
 
-1. `demo_vista` con `demo_link_type` en (`owner_invitation`, `presentation_invitation`, `presentation`)
-2. `cta_clicked` con `cta_kind` = `habita_b2b` y `cta_destination` en (`signup_invitation`, `agency_signup`)
-3. `signup_form_viewed`
-4. `signup_form_started`
-5. `account_created` (o `agency_claimed`, para quien ya tenía cuenta)
-6. `first_import_completed`
+```bash
+POSTHOG_PROJECT_ID=… POSTHOG_PERSONAL_API_KEY=… node --experimental-strip-types scripts/posthog-setup.ts --apply --rename-project="habita"
+```
 
-Desgloses: `first_demo_link_type`, `$device_type`, `cta_id` del paso 2.
-Complementos: tendencia semanal de `agency_created` + `agency_claimed`;
-tabla de `signup_form_error` por `flow` y `error_kind`.
+Sin `--apply` solo muestra lo que haría. `--rename-project` cambia el nombre del proyecto
+(antes «amoblaia»). La clave personal necesita `action:write`, `dashboard:write`,
+`insight:write` y, para renombrar, `project:write`. Todos los gráficos filtran
+`app_env = production`, sin `is_internal` y con el filtro de cuentas de prueba del proyecto.
 
-### Engagement de demos
+**Acciones** (un paso del embudo que acepta varios eventos): «Inmobiliaria creada o
+reclamada», «Clic en cualquier elemento» (`cta_clicked` + `ui_clicked`), «Propiedad
+compartida», «Generación con IA completada», «Quiso comprar créditos».
 
-- Visitantes únicos de `demo_vista` por `demo_id` / `demo_inmobiliaria` / `$device_type`.
-- % de visitantes con `comparison_slider_used`; mediana de `duration_ms` y `travel`; desglose por `input`.
-- `demo_estilo` por `style_id`; `selection_order` = 1 por `style_id` (estilo elegido primero); suma de `demo_style_viewed.duration_ms` por `style_id`.
-- `demo_photo_changed` por `method`; `photos_seen` máximo por sesión; `demo_fullscreen_toggled` (`open`).
-- `cta_clicked` por `cta_id` (separando `habita_b2b` de `buyer_contact`).
-- Tiempo activo: suma de `demo_active_time.active_ms` por sesión (mediana), por `demo_id`.
-- Conversión: funnel `demo_vista` → `cta_clicked (habita_b2b)` desglosado por `demo_id` y `$device_type`.
+**habita · Embudo comercial**
+
+- *Demo → cliente (30 días)*: `demo_vista` (presentación) → `cta_clicked` hacia el alta →
+  `signup_form_viewed` → `signup_form_started` → `account_created` → inmobiliaria creada o
+  reclamada → `first_import_completed` → `first_generation_completed` → `checkout_creado` →
+  `compra_confirmada`.
+- *Demo → registro, por CTA* (desglose `cta_id`) y *por dispositivo* (`$device_type`).
+- *Registro: dónde abandonan* (desglose `flow`), *Errores del registro* (`error_kind`),
+  *Inmobiliarias nuevas por semana*.
+
+**habita · Demos: qué hacen las inmobiliarias**
+
+- *Profundidad de la demo*: abrió → movió el comparador → cambió de estilo → pasó de foto →
+  clic en un CTA de habita.
+- *CTAs más cliqueados*, *Otros clics* (`ui_label`), *Hasta dónde llegan* (`section_viewed`
+  por `section`, visitantes únicos), *Estilos elegidos*, *Demos vistas por inmobiliaria*,
+  *Tiempo activo por demo* (SQL: visitas, mediana y total por demo).
+
+**habita · Panel: activación y uso**
+
+- *Activación del panel (14 días)*: inmobiliaria lista → empezó una importación → importó →
+  pidió una generación → generación lista → publicó → compartió.
+- *Créditos: del límite a la compra*: `credits_limit_viewed` → clic para comprar →
+  `checkout_creado` → `compra_confirmada`.
+- *Importación: lectura → propiedad* (desglose por portal, `source`).
+- *CTAs más cliqueados en el panel*, *Clics por pantalla* (`route`), *Otros clics en el panel*,
+  *Pantallas más vistas*, *Formularios enviados*, *Frustración* (`$dead_click`, `$rageclick`).
 
 ### Journey individual
 
 - Tabla SQL por persona/sesión con eventos en orden:
 
   ```sql
-  SELECT timestamp, distinct_id, `$session_id`, event,
-         properties.demo_id, properties.cta_id, properties.photo_id, properties.style_id,
-         properties.`$device_type`
+  SELECT timestamp, distinct_id, `$session_id`, event, properties.route,
+         properties.demo_id, properties.cta_id, properties.ui_id, properties.ui_label,
+         properties.section, properties.photo_id, properties.style_id, properties.`$device_type`
   FROM events
-  WHERE properties.tracking_version = 2
-    AND coalesce(properties.is_internal, false) = false
+  WHERE properties.tracking_version >= 2
+    AND coalesce(toString(properties.is_internal), '') != 'true'
     AND timestamp > now() - INTERVAL 30 DAY
     AND (properties.demo_id IS NOT NULL OR properties.agency_id IS NOT NULL)
   ORDER BY distinct_id, timestamp
@@ -284,5 +400,8 @@ Para validar en Habita, con un dispositivo marcado con `?habita_interno=1`
 5. Recorrido D: importar una publicación, generar **una** versión (usa un crédito
    de regalo) y descargarla. Esperar `first_import_*`, `first_generation_*` y
    `property_version_downloaded`.
-6. Comprobar que ningún evento tenga emails, contraseñas ni el código (buscar
+6. Recorrido E (v3): en el panel, tocar pestañas del editor, el menú «Más», importar y
+   compartir. Esperar `cta_clicked` con los ids de §3.1, `ui_clicked` con `route` y
+   `ui_area`, `form_submitted` y, en la demo, `section_viewed` al bajar.
+7. Comprobar que ningún evento tenga emails, contraseñas ni el código (buscar
    el código en Activity) y que `$current_url` muestre `codigo=[oculto]`.

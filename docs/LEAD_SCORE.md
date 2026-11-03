@@ -165,7 +165,7 @@ veces.
 
 **Calidad:**
 
-- `complete`: eventos con `tracking_version = 2` (desde el 30/10/2026, 12:44 UTC).
+- `complete`: eventos con `tracking_version` ≥ 2 (desde el 30/10/2026, 12:44 UTC).
 - `partial`: incluye eventos anteriores, cuando no existían fotos, slider ni tiempo activo.
 
 ### Simulación con datos reales (30/10/2026, hasta 20:57 UTC)

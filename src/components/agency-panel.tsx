@@ -40,7 +40,7 @@ import {
 import { ApiError, api } from "./admin-demos";
 import { ImportPreview, MapReview, exceptions, initialMapChoice, mapOverride, syncPhotos, type MapChoice } from "./demo-import";
 import { track, trackMilestone } from "@/lib/analytics";
-import { cta } from "@/lib/interaction-tracking";
+import { cta, uiId } from "@/lib/interaction-tracking";
 import { registerAgency, useSignupTracking } from "@/lib/signup-tracking";
 import { copyLink, shareLink } from "@/lib/agency/share";
 import {
@@ -272,7 +272,9 @@ function HomeProperty({ p, agency, reload, canWork }: { p: PanelProperty; agency
         </Link>
         <div className="ap-recent-body">
           <h3>
-            <Link href={edit}>{p.title}</Link>
+            <Link href={edit} {...cta("property_open", "panel_home_recent", "property_editor", "navigation")}>
+              {p.title}
+            </Link>
           </h3>
           {p.location && <p className="ap-recent-location">{p.location}</p>}
           <span className={`ap-state ${actions.live ? "is-live" : "is-draft"}`}>
@@ -284,18 +286,18 @@ function HomeProperty({ p, agency, reload, canWork }: { p: PanelProperty; agency
       {!actions.live && <p className="ap-recent-hint">Publicala para compartir su link.</p>}
       <ActionNote note={actions.note} />
       <div className="ap-recent-actions" role="group" aria-label={`Acciones de ${p.title}`}>
-        <button type="button" className="is-main" disabled={!actions.live} onClick={() => void actions.share()}>
+        <button type="button" className="is-main" disabled={!actions.live} onClick={() => void actions.share()} {...cta("property_share", "panel_home_recent", "share_sheet", "product_action")}>
           <Share2 size={18} aria-hidden="true" /> Compartir
         </button>
-        <button type="button" disabled={!actions.live} onClick={() => void actions.copy()}>
+        <button type="button" disabled={!actions.live} onClick={() => void actions.copy()} {...cta("property_copy_link", "panel_home_recent", "clipboard", "product_action")}>
           <Link2 size={18} aria-hidden="true" /> Copiar link
         </button>
         {canWork && (
-          <Link href={edit}>
+          <Link href={edit} {...cta("property_edit", "panel_home_recent", "property_editor", "navigation")}>
             <Pencil size={18} aria-hidden="true" /> Editar
           </Link>
         )}
-        <Link href={previewLink(p.id, "/panel")}>
+        <Link href={previewLink(p.id, "/panel")} {...cta("property_preview", "panel_home_recent", "property_preview", "navigation")}>
           <Eye size={18} aria-hidden="true" /> Vista previa
         </Link>
       </div>
@@ -357,7 +359,7 @@ function PanelHome({ data, reload }: { data: PanelSummary; reload: () => Promise
         <div className="ap-section-head">
           <h2 id="ap-props-title">Mis demostraciones recientes</h2>
           {data.counts.total > 0 && (
-            <Link href="/panel/propiedades" className="text-link ap-see-all">
+            <Link href="/panel/propiedades" className="text-link ap-see-all" {...cta("panel_see_all_properties", "panel_home", "panel_properties", "navigation")}>
               Ver todas <ArrowRight size={16} aria-hidden="true" />
             </Link>
           )}
@@ -383,11 +385,11 @@ function PanelHome({ data, reload }: { data: PanelSummary; reload: () => Promise
 function SiteLink({ agency }: { agency: PanelSummary["agency"] }) {
   if (!agency.slug) return null;
   return agency.sitePublished ? (
-    <Link href={agencySitePath(agency.slug)} className="button button-outline" target="_blank">
+    <Link href={agencySitePath(agency.slug)} className="button button-outline" target="_blank" {...cta("site_open_public", "panel_home", "agency_site", "navigation")}>
       <Globe size={17} aria-hidden="true" /> Ver mi sitio
     </Link>
   ) : (
-    <Link href="/panel/sitio/vista-previa" className="button button-outline" title="Tu catálogo todavía no es público">
+    <Link href="/panel/sitio/vista-previa" className="button button-outline" title="Tu catálogo todavía no es público" {...cta("site_open_preview", "panel_home", "agency_site_preview", "navigation")}>
       <Globe size={17} aria-hidden="true" /> Vista previa de mi sitio
     </Link>
   );
@@ -434,17 +436,21 @@ function ImportIssue({ item, onDone }: { item: PanelImport; onDone: () => Promis
       </span>
       <span className="ap-issue-actions">
         {item.propertyId && (
-          <Link href={`/panel/propiedades/${item.propertyId}${item.settingsSaved ? "" : "?completar=1"}`} className="button button-small button-outline">
+          <Link
+            href={`/panel/propiedades/${item.propertyId}${item.settingsSaved ? "" : "?completar=1"}`}
+            className="button button-small button-outline"
+            {...cta(item.settingsSaved ? "import_issue_open" : "import_issue_complete", "import_issues", "property_editor", "navigation")}
+          >
             {item.settingsSaved ? "Abrir propiedad" : "Completar datos"}
           </Link>
         )}
         {item.status === "partial" && item.pendingImages.length > 0 && (
-          <button type="button" className="button button-small" disabled={Boolean(status)} onClick={() => void retryPhotos()}>
+          <button type="button" className="button button-small" disabled={Boolean(status)} onClick={() => void retryPhotos()} {...cta("import_issue_retry_photos", "import_issues", "property_import", "product_action")}>
             Reintentar {item.pendingImages.length} {item.pendingImages.length === 1 ? "foto" : "fotos"}
           </button>
         )}
         {item.status === "failed" && !item.propertyId && !retryUrl && (
-          <button type="button" className="button button-small button-outline" onClick={() => setRetryUrl(true)}>
+          <button type="button" className="button button-small button-outline" onClick={() => setRetryUrl(true)} {...cta("import_issue_retry", "import_issues", "property_import", "product_action")}>
             Reintentar
           </button>
         )}
@@ -555,7 +561,13 @@ function PropertiesSection({ data, reload }: { data: PanelSummary; reload: () =>
           <h1>Mis demostraciones</h1>
         </div>
         {canCreate(data) && (
-          <button type="button" className="button button-primary" aria-expanded={adding} onClick={() => setAdding((a) => !a)}>
+          <button
+            type="button"
+            className="button button-primary"
+            aria-expanded={adding}
+            onClick={() => setAdding((a) => !a)}
+            {...cta("properties_add", "panel_properties", "property_import", "product_action", { intent: adding ? "close" : "open" })}
+          >
             + Agregar propiedad
           </button>
         )}
@@ -584,11 +596,11 @@ function PropertiesSection({ data, reload }: { data: PanelSummary; reload: () =>
           </select>
         )}
         <div className="ap-view" role="group" aria-label="Vista">
-          <button type="button" aria-pressed={view === "tarjetas"} onClick={() => setParams({ vista: "tarjetas" })} title="Tarjetas">
+          <button type="button" aria-pressed={view === "tarjetas"} onClick={() => setParams({ vista: "tarjetas" })} title="Tarjetas" {...uiId("properties_view_cards")}>
             <LayoutGrid size={16} aria-hidden="true" />
             <span className="dv2-sr">Tarjetas</span>
           </button>
-          <button type="button" aria-pressed={view === "tabla"} onClick={() => setParams({ vista: "tabla" })} title="Tabla">
+          <button type="button" aria-pressed={view === "tabla"} onClick={() => setParams({ vista: "tabla" })} title="Tabla" {...uiId("properties_view_table")}>
             <LayoutList size={16} aria-hidden="true" />
             <span className="dv2-sr">Tabla</span>
           </button>
@@ -614,13 +626,13 @@ function PropertiesSection({ data, reload }: { data: PanelSummary; reload: () =>
           )}
           {pages > 1 && (
             <nav className="ap-pages" aria-label="Páginas">
-              <button type="button" className="button button-small button-outline" disabled={page <= 1} onClick={() => setParams({ pagina: String(page - 1) })}>
+              <button type="button" className="button button-small button-outline" disabled={page <= 1} onClick={() => setParams({ pagina: String(page - 1) })} {...uiId("properties_page_prev")}>
                 Anterior
               </button>
               <span>
                 Página {page} de {pages}
               </span>
-              <button type="button" className="button button-small button-outline" disabled={page >= pages} onClick={() => setParams({ pagina: String(page + 1) })}>
+              <button type="button" className="button button-small button-outline" disabled={page >= pages} onClick={() => setParams({ pagina: String(page + 1) })} {...uiId("properties_page_next")}>
                 Siguiente
               </button>
             </nav>
@@ -668,11 +680,25 @@ function quickActions(p: PanelProperty, actions: ReturnType<typeof usePropertyAc
   return [stage, ...(video ? [video] : []), { id: "data", label: "Editar ficha", icon: FileText, href: editorLink(p.id, "datos", backTo) }];
 }
 
-function QuickActions({ list, first = "button-primary" }: { list: Quick[]; first?: string }) {
+/** Where each quick action of a property leads, for `cta_destination`. */
+const QUICK_DESTINATION: Record<string, string> = {
+  share: "share_sheet",
+  buyer: "property_buyer_view",
+  stage: "photo_staging",
+  edit: "photo_editing",
+  video: "video_section",
+  photos: "photo_upload",
+  progress: "photo_progress",
+  publish: "property_publish",
+  data: "property_data",
+};
+
+function QuickActions({ list, first = "button-primary", where = "property_card" }: { list: Quick[]; first?: string; where?: string }) {
   return (
     <>
       {list.map(({ id, label, icon: Icon, href, external, onClick }, i) => {
         const cls = `button button-small ${i === 0 ? first : "button-outline"} ap-quick-action`;
+        const tracked = cta(`property_quick_${id}`, where, QUICK_DESTINATION[id] ?? id, id === "share" ? "product_action" : "navigation", { intent: i === 0 ? "primary" : "secondary" });
         const body = (
           <>
             <Icon size={14} aria-hidden="true" /> {label}
@@ -680,16 +706,16 @@ function QuickActions({ list, first = "button-primary" }: { list: Quick[]; first
         );
         return href ? (
           external ? (
-            <a key={id} href={href} target="_blank" rel="noopener noreferrer" className={cls}>
+            <a key={id} href={href} target="_blank" rel="noopener noreferrer" className={cls} {...tracked}>
               {body}
             </a>
           ) : (
-            <Link key={id} href={href} className={cls}>
+            <Link key={id} href={href} className={cls} {...tracked}>
               {body}
             </Link>
           )
         ) : (
-          <button key={id} type="button" className={cls} onClick={onClick}>
+          <button key={id} type="button" className={cls} onClick={onClick} {...tracked}>
             {body}
           </button>
         );
@@ -744,10 +770,14 @@ function usePropertyActions(p: PanelProperty, agency: PanelSummary["agency"], re
     setNote(outcome === "copied" ? { text: "Link copiado." } : { text: "No pudimos copiar el link. Copialo desde acá:", link, error: true });
   }
   async function remove() {
-    if (!window.confirm(`¿Eliminar "${p.title}"? Se borran sus fotos y sus imágenes con IA, y su enlace deja de funcionar. No se puede deshacer.`)) return;
+    if (!window.confirm(`¿Eliminar "${p.title}"? Se borran sus fotos y sus imágenes con IA, y su enlace deja de funcionar. No se puede deshacer.`)) {
+      track("property_delete_cancelled", { property_id: p.id });
+      return;
+    }
     setBusy(true);
     try {
       await api(`/api/admin/demos/${p.id}`, { method: "DELETE" });
+      track("property_deleted", { property_id: p.id, photos: p.photos, staged: p.staged, was_live: live });
       await reload();
     } catch (e) {
       setNote({ text: message(e, "No pudimos eliminarla."), error: true });
@@ -783,45 +813,54 @@ function MoreMenu({
 }) {
   return (
     <details className="ap-menu">
-      <summary aria-label={`Más acciones de ${p.title}`}>
+      <summary aria-label={`Más acciones de ${p.title}`} {...uiId("property_more_menu")}>
         <MoreHorizontal size={16} aria-hidden="true" /> Más
       </summary>
       <div className="ap-menu-list">
-        <Link href={editorLink(p.id, "fotos", backTo)}>
+        <Link href={editorLink(p.id, "fotos", backTo)} {...cta("property_more_photos", "property_more_menu", "photo_staging", "navigation")}>
           <Sparkles size={14} aria-hidden="true" /> Fotos y espacios
         </Link>
         {canPublish && p.photos > 0 && (
-          <Link href={editorLink(p.id, "fotos", backTo, "editar")}>
+          <Link href={editorLink(p.id, "fotos", backTo, "editar")} {...cta("property_more_edit_images", "property_more_menu", "photo_editing", "navigation")}>
             <Wand2 size={14} aria-hidden="true" /> Editar imágenes
           </Link>
         )}
         {p.staged > 0 && (
-          <Link href={editorLink(p.id, "fotos", backTo)}>
+          <Link href={editorLink(p.id, "fotos", backTo)} {...cta("property_more_download", "property_more_menu", "photo_download", "navigation")}>
             <Download size={14} aria-hidden="true" /> Descargar imágenes
           </Link>
         )}
         {canPublish && videoEnabled() && p.photos > 0 && (
-          <Link href={toolPath("video", p.id)}>
+          <Link href={toolPath("video", p.id)} {...cta("property_more_video", "property_more_menu", "video_section", "navigation")}>
             <PlayCircle size={14} aria-hidden="true" /> Videos
           </Link>
         )}
-        {canPublish && <Link href={editorLink(p.id, "datos", backTo)}>Editar datos</Link>}
+        {canPublish && (
+          <Link href={editorLink(p.id, "datos", backTo)} {...cta("property_more_data", "property_more_menu", "property_data", "navigation")}>
+            Editar datos
+          </Link>
+        )}
         {actions.live ? (
-          <a href={actions.link} target="_blank" rel="noopener noreferrer">
+          <a href={actions.link} target="_blank" rel="noopener noreferrer" {...cta("property_more_view_live", "property_more_menu", "property_buyer_view", "navigation")}>
             <ExternalLink size={14} aria-hidden="true" /> Ver ficha
           </a>
         ) : (
-          <Link href={previewLink(p.id, backTo)}>
+          <Link href={previewLink(p.id, backTo)} {...cta("property_more_preview", "property_more_menu", "property_preview", "navigation")}>
             <ExternalLink size={14} aria-hidden="true" /> Vista previa
           </Link>
         )}
         {canPublish && (
-          <button type="button" disabled={actions.busy} onClick={() => void actions.publish()}>
+          <button
+            type="button"
+            disabled={actions.busy}
+            onClick={() => void actions.publish()}
+            {...cta(actions.live ? "property_unpublish" : "property_publish", "property_more_menu", "property_publish", "product_action")}
+          >
             {actions.live ? "Despublicar ficha" : "Publicar ficha"}
           </button>
         )}
         {canDelete && (
-          <button type="button" className="ap-danger" disabled={actions.busy} onClick={() => void actions.remove()}>
+          <button type="button" className="ap-danger" disabled={actions.busy} onClick={() => void actions.remove()} {...cta("property_delete", "property_more_menu", "property_delete", "product_action")}>
             Eliminar
           </button>
         )}
@@ -848,13 +887,15 @@ function PropertyCard({
   const actions = usePropertyActions(p, agency, reload);
   return (
     <article className="ap-card">
-      <Link href={editorLink(p.id, "fotos", backTo)} className="ap-card-photo" aria-label={`Fotos y espacios de ${p.title}`}>
+      <Link href={editorLink(p.id, "fotos", backTo)} className="ap-card-photo" aria-label={`Fotos y espacios de ${p.title}`} {...cta("property_open_photo", "property_card", "property_editor", "navigation")}>
         {p.coverPhotoId ? <img src={adminPhotoUrl(p.coverPhotoId, null, 480)} alt="" loading="lazy" /> : <span>Sin fotos</span>}
         <span className={`ap-badge ${actions.live ? "is-live" : ""}`}>{actions.live ? "Publicada" : "Borrador"}</span>
       </Link>
       <div className="ap-card-body">
         <h3>
-          <Link href={editorLink(p.id, "fotos", backTo)}>{p.title}</Link>
+          <Link href={editorLink(p.id, "fotos", backTo)} {...cta("property_open", "property_card", "property_editor", "navigation")}>
+            {p.title}
+          </Link>
         </h3>
         {(p.location || p.reference) && (
           <p className="ap-card-location">
@@ -942,7 +983,9 @@ function PropertyRow({
         {p.coverPhotoId ? <img src={adminPhotoUrl(p.coverPhotoId, null, 480)} alt="" loading="lazy" /> : <span>—</span>}
       </td>
       <th scope="row">
-        <Link href={editorLink(p.id, "fotos", backTo)}>{p.title}</Link>
+        <Link href={editorLink(p.id, "fotos", backTo)} {...cta("property_open", "property_table", "property_editor", "navigation")}>
+          {p.title}
+        </Link>
         <small>
           {[p.location, p.reference ? `Ref. ${p.reference}` : null, p.operation, p.price].filter(Boolean).join(" · ") || "Sin datos"}
         </small>
@@ -955,7 +998,7 @@ function PropertyRow({
         <span className={`ap-badge ${actions.live ? "is-live" : ""}`}>{actions.live ? "Publicada" : "Borrador"}</span>
       </td>
       <td className="ap-table-actions">
-        <QuickActions list={quickActions(p, actions, backTo, canPublish).slice(0, 2)} first="" />
+        <QuickActions list={quickActions(p, actions, backTo, canPublish).slice(0, 2)} first="" where="property_table" />
         <MoreMenu p={p} actions={actions} canDelete={canDelete} canPublish={canPublish} backTo={backTo} />
       </td>
     </tr>
@@ -1206,7 +1249,7 @@ export function ImportProperty({
               setPreview(null);
             }}
           />
-          <button className="button button-primary" disabled={busy || !url.trim()}>
+          <button className="button button-primary" disabled={busy || !url.trim()} {...cta(preview ? "import_reread" : "import_read", "import_form", "property_import_preview", "product_action")}>
             {status && !preview ? "Leyendo…" : preview ? "Volver a leer" : bar ? "Importar" : "Importar propiedad"}
           </button>
         </div>
@@ -1304,7 +1347,7 @@ export function ImportProperty({
             <fieldset className="ap-photos">
               <legend>
                 Fotos ({keep.size} de {preview.images.length}){" "}
-                <button type="button" className="text-link" onClick={() => setKeep(keep.size ? new Set() : new Set(preview.images))}>
+                <button type="button" className="text-link" onClick={() => setKeep(keep.size ? new Set() : new Set(preview.images))} {...uiId(keep.size ? "import_photos_none" : "import_photos_all")}>
                   {keep.size ? "Quitar todas" : "Elegir todas"}
                 </button>
               </legend>
@@ -1333,6 +1376,7 @@ export function ImportProperty({
             className="button button-primary"
             disabled={busy || Boolean(preview.duplicateOf) || !fields.title.trim()}
             onClick={() => void create()}
+            {...cta("import_confirm", "import_preview", "property_import", "product_action")}
           >
             {busy ? "Importando…" : `Importar con ${keep.size} ${keep.size === 1 ? "foto" : "fotos"}`}
           </button>
@@ -1429,10 +1473,10 @@ function ImportMany({ onDone, onSingle }: { onDone?: () => Promise<unknown>; onS
       <textarea id="ap-many" rows={5} value={text} disabled={running} onChange={(e) => setText(e.target.value)} placeholder="https://inmobiliaria.com/propiedad/..." />
       {urls.length > MAX_BATCH && <p className="dm-help">Se leen las primeras {MAX_BATCH}.</p>}
       <div className="ap-import-inputs">
-        <button type="button" className="button button-primary" disabled={running || !urls.length} onClick={() => void readAll()}>
+        <button type="button" className="button button-primary" disabled={running || !urls.length} onClick={() => void readAll()} {...cta("import_many_read", "import_many", "property_import_preview", "product_action")}>
           Leer {Math.min(urls.length, MAX_BATCH) || ""} {urls.length === 1 ? "propiedad" : "propiedades"}
         </button>
-        <button type="button" className="text-link" onClick={onSingle} disabled={running}>
+        <button type="button" className="text-link" onClick={onSingle} disabled={running} {...uiId("import_many_back_single")}>
           Volver a una sola URL
         </button>
       </div>
@@ -1472,6 +1516,7 @@ function ImportMany({ onDone, onSingle }: { onDone?: () => Promise<unknown>; onS
               className="button button-primary"
               disabled={running || !rows.some((r) => r.pick && r.state === "ready")}
               onClick={() => void importPicked()}
+              {...cta("import_many_confirm", "import_many", "property_import", "product_action")}
             >
               Importar {rows.filter((r) => r.pick && r.state === "ready").length} como borradores
             </button>
@@ -1579,7 +1624,7 @@ function CreditsSection() {
               ))}
             </ul>
           )}
-          <Link href="/cuenta" className="text-link">
+          <Link href="/cuenta" className="text-link" {...cta("credits_account_history", "panel_credits", "account", "navigation")}>
             Ver pagos y suscripciones
           </Link>
         </section>
@@ -1700,7 +1745,12 @@ function SiteSection({ data, setData, reload }: { data: PanelSummary; setData: (
           type="button"
           className={`button ${a.sitePublished ? "button-outline" : "button-primary"}`}
           disabled={!owner || !a.slug || saving}
-          onClick={() => void save({ sitePublished: !a.sitePublished }, a.sitePublished ? "Catálogo despublicado." : "Catálogo publicado.")}
+          onClick={() =>
+            void save({ sitePublished: !a.sitePublished }, a.sitePublished ? "Catálogo despublicado." : "Catálogo publicado.").then(
+              (next) => next && track(a.sitePublished ? "site_unpublished" : "site_published", { agency_id: next.agency.id }),
+            )
+          }
+          {...cta(a.sitePublished ? "site_unpublish" : "site_publish", "panel_site", "site_publish", "product_action")}
         >
           {a.sitePublished ? "Despublicar catálogo" : "Publicar catálogo"}
         </button>
@@ -1769,7 +1819,7 @@ function SiteSection({ data, setData, reload }: { data: PanelSummary; setData: (
           </label>
         </div>
         <div className="ap-save-row">
-          <button className="button button-primary" disabled={!owner || !dirty || saving}>
+          <button className="button button-primary" disabled={!owner || !dirty || saving} {...cta("site_save", "panel_site", "site_settings", "product_action")}>
             {saving ? "Guardando…" : "Guardar cambios"}
           </button>
           <span className="dm-help" role="status">
@@ -1828,7 +1878,7 @@ function SiteSection({ data, setData, reload }: { data: PanelSummary; setData: (
         <p>
           Publicá o despublicá cada ficha desde «Mis demostraciones». Hoy hay {published} {published === 1 ? "ficha publicada" : "fichas publicadas"} de {data.counts.total}.
         </p>
-        <Link href="/panel/propiedades?estado=draft" className="text-link">
+        <Link href="/panel/propiedades?estado=draft" className="text-link" {...cta("site_see_drafts", "panel_site", "panel_properties", "navigation")}>
           Ver borradores
         </Link>
       </section>
@@ -2022,7 +2072,7 @@ export function AgencyOnboarding({
             El equipo de habita te envió este enlace para que tus demos, con sus fotos y ambientaciones, pasen a tu cuenta. Tu cuenta va a ser la
             dueña de la inmobiliaria y sus créditos pagarán las ambientaciones nuevas.
           </p>
-          <button className="button button-primary" disabled={busy}>
+          <button className="button button-primary" disabled={busy} {...cta("claim_demos", "agency_claim", "agency_claim", "habita_b2b")}>
             {busy ? "Un momento…" : "Pasar las demos a mi cuenta"}
           </button>
         </form>
@@ -2039,7 +2089,7 @@ export function AgencyOnboarding({
             Nombre de tu inmobiliaria
             <input required maxLength={120} value={name} onChange={(e) => setName(e.target.value)} autoFocus />
           </label>
-          <button className="button button-primary button-large" disabled={busy || !name.trim()}>
+          <button className="button button-primary button-large" disabled={busy || !name.trim()} {...cta("agency_create_submit", "agency_create", "agency_created", "habita_b2b")}>
             {busy ? "Creando…" : "Crear mi inmobiliaria"}
           </button>
           <p className="dm-help">Sin tarjeta de crédito. Podés cambiar el nombre después.</p>

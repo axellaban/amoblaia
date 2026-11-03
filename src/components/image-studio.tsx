@@ -14,6 +14,7 @@ import { track } from "@/lib/analytics";
 import { OPEN_ASSISTANT_EVENT } from "@/lib/assistant/shared";
 import { safeReturn, type PanelProperty } from "@/lib/agency/shared";
 import { adminPhotoUrl } from "@/lib/demos/shared";
+import { cta, uiId } from "@/lib/interaction-tracking";
 
 type Item = PanelProperty & { group: boolean };
 
@@ -131,7 +132,7 @@ export function ImageStudio({ initialTab, initialMethod, initialId }: { initialT
   return (
     <div className="st">
       {backTo && (
-        <button type="button" className="text-link st-back" onClick={goBack}>
+        <button {...uiId("studio_back")} type="button" className="text-link st-back" onClick={goBack}>
           <ArrowLeft size={16} aria-hidden="true" /> Volver a la demostración
         </button>
       )}
@@ -147,16 +148,16 @@ export function ImageStudio({ initialTab, initialMethod, initialId }: { initialT
               <MoreVertical size={20} aria-hidden="true" />
             </summary>
             <div role="menu">
-              <button type="button" role="menuitem" onClick={() => window.dispatchEvent(new Event(OPEN_ASSISTANT_EVENT))}>
+              <button {...cta("studio_menu_help", "studio_menu", "assistant_open", "navigation")} type="button" role="menuitem" onClick={() => window.dispatchEvent(new Event(OPEN_ASSISTANT_EVENT))}>
                 <CircleHelp size={16} aria-hidden="true" /> Cómo funciona
               </button>
               {tab === "fotos" && current &&
                 (current.group ? (
-                  <button type="button" role="menuitem" disabled={busy} onClick={() => void createFicha(`/panel/propiedades/${current.id}?seccion=datos`)}>
+                  <button {...cta("studio_menu_make_listing", "studio_menu", "property_data", "product_action")} type="button" role="menuitem" disabled={busy} onClick={() => void createFicha(`/panel/propiedades/${current.id}?seccion=datos`)}>
                     <FileText size={16} aria-hidden="true" /> {busy ? "Creando…" : "Crear ficha con estas fotos"}
                   </button>
                 ) : (
-                  <a role="menuitem" href={`/panel/propiedades/${current.id}`}>
+                  <a {...cta("studio_menu_open_property", "studio_menu", "property_editor", "navigation")} role="menuitem" href={`/panel/propiedades/${current.id}`}>
                     <FileText size={16} aria-hidden="true" /> Abrir la ficha
                   </a>
                 ))}
@@ -166,10 +167,10 @@ export function ImageStudio({ initialTab, initialMethod, initialId }: { initialT
       </header>
       <div className="st-bar">
         <div className="st-tabs" role="tablist" aria-label="Estudio de imágenes">
-          <button type="button" role="tab" aria-selected={tab === "fotos"} onClick={() => setTab("fotos")}>
+          <button {...uiId("studio_tab_photos")} type="button" role="tab" aria-selected={tab === "fotos"} onClick={() => setTab("fotos")}>
             <Images size={17} aria-hidden="true" /> Mis fotos
           </button>
-          <button type="button" role="tab" aria-selected={tab === "url"} onClick={() => setTab("url")}>
+          <button {...uiId("studio_tab_url")} type="button" role="tab" aria-selected={tab === "url"} onClick={() => setTab("url")}>
             <Link2 size={17} aria-hidden="true" /> Desde una URL
           </button>
         </div>
@@ -187,7 +188,7 @@ export function ImageStudio({ initialTab, initialMethod, initialId }: { initialT
         ) : (
           <div className="st-empty">
             <p>Todavía no tenés fotos para trabajar.</p>
-            <button type="button" className="button button-primary" onClick={() => setTab("url")}>
+            <button {...cta("studio_empty_from_url", "studio_empty", "photo_import_preview", "product_action")} type="button" className="button button-primary" onClick={() => setTab("url")}>
               Traer fotos desde una URL
             </button>
           </div>
@@ -223,7 +224,7 @@ function SourcePicker({ items, current, onPick }: { items: Item[]; current: Item
   const shown = q ? items.filter((i) => `${i.title} ${i.location ?? ""}`.toLowerCase().includes(q)) : items;
   return (
     <div className="st-source" ref={box}>
-      <button type="button" className="st-source-button" aria-haspopup="listbox" aria-expanded={open} aria-controls={`${uid}-list`} onClick={() => setOpen((v) => !v)}>
+      <button {...uiId("studio_source_picker")} type="button" className="st-source-button" aria-haspopup="listbox" aria-expanded={open} aria-controls={`${uid}-list`} onClick={() => setOpen((v) => !v)}>
         <Thumb item={current} />
         <span className="st-source-text">
           <strong>{current.title}</strong>

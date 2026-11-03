@@ -34,6 +34,7 @@ import { type HideableField, type VideoPlacement } from "@/lib/demos/branding";
 import { ImportPreview, ImportReport, exceptions, foreignPhotos, syncPhotos } from "./demo-import";
 import type { ImportChange, ImportField, ImportedDemo } from "@/lib/demos/import";
 import { track } from "@/lib/analytics";
+import { cta, uiId } from "@/lib/interaction-tracking";
 import { safeReturn } from "@/lib/agency/shared";
 import { payerNote } from "@/lib/agency/edit-scope";
 import { shareLink, whatsappOpened } from "@/lib/agency/share";
@@ -143,7 +144,7 @@ function Fold({
   return (
     <section className={`account-panel ed-fold ${open ? "is-open" : ""}`} id={id} aria-labelledby={`${id}-title`}>
       <h2 id={`${id}-title`} className="ed-fold-title">
-        <button type="button" aria-expanded={open} aria-controls={`${id}-body`} onClick={onToggle}>
+        <button type="button" aria-expanded={open} aria-controls={`${id}-body`} onClick={onToggle} {...uiId(`editor_fold_${id}`)}>
           <ChevronDown size={18} aria-hidden="true" className="ed-chevron" />
           <span className="ed-fold-name">{title}</span>
           <span className="ed-fold-summary">
@@ -935,6 +936,7 @@ export function DemoEditor({
                 className="button button-small button-outline"
                 disabled={busy || !detail.property.listing_url}
                 onClick={() => run(async () => setReread(await api<Reread>(`${base}/publicacion`)), undefined, "publicacion")}
+                {...cta("editor_reread_listing", "editor_review", "listing_sync", "product_action")}
               >
                 Completar desde la publicación
               </button>
@@ -943,6 +945,7 @@ export function DemoEditor({
                 className="button button-small"
                 disabled={busy || !detail.settingsReady}
                 onClick={() => demoAction({ action: "settings", settings: { reviewedAt: "now" } }, "Marcada como revisada hoy.", "publicacion")}
+                {...cta("editor_mark_reviewed", "editor_review", "property_review", "product_action")}
               >
                 Marcar como revisada
               </button>
@@ -986,6 +989,7 @@ export function DemoEditor({
                       aria-pressed={st === detail.mainStyle}
                       disabled={busy || st === detail.mainStyle}
                       onClick={() => demoAction({ action: "main-style", style: st }, `${styleName(st)} es ahora el estilo principal.`, "publicacion")}
+                      {...cta("editor_main_style", "editor_buyer_styles", "property_styles", "product_action", { style: st })}
                     >
                       <Star size={13} /> {st === detail.mainStyle ? "Principal" : "Hacer principal"}
                     </button>
@@ -1156,6 +1160,7 @@ export function DemoEditor({
                   window.confirm("El enlace actual dejará de funcionar y vas a tener que enviar el nuevo. ¿Continuar?") &&
                   demoAction({ action: "token" }, "Enlace nuevo generado; el anterior ya no funciona.", "publicacion")
                 }
+                {...cta("editor_rotate_link", "editor_share", "property_link", "product_action")}
               >
                 <RefreshCw size={14} /> Generar un enlace nuevo
               </button>
@@ -1246,6 +1251,7 @@ export function DemoEditor({
                 href={videoHref}
                 className="button button-primary dx-video-go"
                 onClick={() => agencyTrack("demo_editor_video_opened", { property_id: id, has_video: Boolean(video) })}
+                {...cta("editor_video_open", "editor_video", "video_section", "navigation")}
               >
                 <PlayCircle size={17} aria-hidden="true" /> Generar video
               </Link>
@@ -1273,7 +1279,12 @@ export function DemoEditor({
       <div className="account-page container dm-page ed-page dx-page">
         {banner}
         <header className="dx-head">
-          <Link href={backTo} className="icon-button dx-back" aria-label={backTo.startsWith("/panel/propiedades") ? "Volver a Mis demostraciones" : "Volver"}>
+          <Link
+            href={backTo}
+            className="icon-button dx-back"
+            aria-label={backTo.startsWith("/panel/propiedades") ? "Volver a Mis demostraciones" : "Volver"}
+            {...cta("editor_back", "editor_header", "panel_properties", "navigation")}
+          >
             ←
           </Link>
           <div className="dx-head-title">
@@ -1299,12 +1310,13 @@ export function DemoEditor({
                     "datos",
                   )
                 }
+                {...cta("editor_create_listing_from_photos", "editor_header", "property_data", "product_action")}
               >
                 Crear ficha con estas fotos
               </button>
             )
           ) : (
-            <Link href={previewHref} className="button button-outline dx-preview">
+            <Link href={previewHref} className="button button-outline dx-preview" {...cta("editor_preview", "editor_header", "property_preview", "navigation")}>
               <Eye size={17} aria-hidden="true" /> Vista previa
             </Link>
           )}
@@ -1334,6 +1346,7 @@ export function DemoEditor({
                 aria-controls={`dx-panel-${t}`}
                 className={tab === t ? "is-on" : ""}
                 onClick={() => pickTab(t)}
+                {...uiId(`editor_tab_${t}`)}
               >
                 {label}
                 {t === "datos" && (dirtyParts.size > 0 || (formsDirty && (formsDirty.property || formsDirty.title))) && <span className="dx-dot" aria-label="(cambios sin guardar)" />}
@@ -1419,7 +1432,12 @@ export function DemoEditor({
                 <h2 id="ed-next-title">¿Querés probar con otra propiedad?</h2>
                 <p>Pegá una publicación y traé sus datos y fotos.</p>
               </div>
-              <Link href="/panel" className="button button-outline" onClick={() => agencyTrack("invited_next_property_clicked", { property_id: demo.id })}>
+              <Link
+                href="/panel"
+                className="button button-outline"
+                onClick={() => agencyTrack("invited_next_property_clicked", { property_id: demo.id })}
+                {...cta("editor_next_property", "editor_invited_next", "property_import", "habita_b2b")}
+              >
                 <Plus size={16} aria-hidden="true" /> Agregar otra propiedad
               </Link>
             </section>
@@ -1475,6 +1493,7 @@ export function DemoEditor({
                   className="button button-small button-outline"
                   disabled={busy || !detail.property.listing_url || !canWork}
                   onClick={() => run(async () => setReread(await api<Reread>(`${base}/publicacion`)), undefined, "datos")}
+                  {...cta("editor_reread_listing", "editor_data", "listing_sync", "product_action")}
                 >
                   Completar desde la publicación
                 </button>
@@ -1548,14 +1567,17 @@ export function DemoEditor({
                   <figure className="dx-config-preview">{coverArt(false)}</figure>
                 </div>
                 {!live && canWork && (
-                  <button type="button" className="button button-primary dx-publish" disabled={busy} onClick={() => void publish()}>
+                  <button type="button" className="button button-primary dx-publish" disabled={busy} onClick={() => void publish()} {...cta("editor_publish", "editor_publication", "property_publish", "product_action")}>
                     <Link2 size={18} aria-hidden="true" /> Publicar y obtener enlace
                   </button>
                 )}
                 {!live && (
                   <p className="dm-help">
                     Publicar no usa créditos y no necesita ambientaciones: podés publicar con las fotos originales. Antes, revisala en{" "}
-                    <Link href={previewHref}>Vista previa</Link>.
+                    <Link href={previewHref} {...cta("editor_preview", "editor_publication", "property_preview", "navigation")}>
+                      Vista previa
+                    </Link>
+                    .
                   </p>
                 )}
               </section>
@@ -1590,6 +1612,7 @@ export function DemoEditor({
                         type="button"
                         className="icon-button"
                         aria-label="Copiar enlace"
+                        {...cta("editor_copy_link", "editor_published", "clipboard", "product_action")}
                         onClick={async () => {
                           try {
                             await navigator.clipboard.writeText(link);
@@ -1603,16 +1626,24 @@ export function DemoEditor({
                         <Copy size={17} />
                       </button>
                     </div>
-                    <a className="button button-primary dx-wa" href={whatsappShareUrl(link)} target="_blank" rel="noopener noreferrer" onClick={() => agencyMode && whatsappOpened(demo.id)}>
+                    <a
+                      className="button button-primary dx-wa"
+                      href={whatsappShareUrl(link)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => agencyMode && whatsappOpened(demo.id)}
+                      {...cta("editor_share_whatsapp", "editor_published", "whatsapp", "product_action")}
+                    >
                       <MessageCircle size={18} aria-hidden="true" /> Compartir por WhatsApp
                     </a>
-                    <a className="button button-outline dx-view" href={link} target="_blank" rel="noopener noreferrer">
+                    <a className="button button-outline dx-view" href={link} target="_blank" rel="noopener noreferrer" {...cta("editor_view_live", "editor_published", "property_buyer_view", "navigation")}>
                       <ExternalLink size={17} aria-hidden="true" /> Ver demostración
                     </a>
                     {canWork && (
                       <button
                         type="button"
                         className="text-link dx-unpublish"
+                        {...cta("editor_unpublish", "editor_published", "property_publish", "product_action")}
                         disabled={busy}
                         onClick={() =>
                           window.confirm(
@@ -1737,12 +1768,13 @@ export function DemoEditor({
                   if (outcome === "copied") setMessage({ tone: "notice", text: "Enlace copiado." });
                   else if (outcome === "failed") say({ tone: "error", text: "No pudimos copiar el enlace: copialo desde «Publicación y compartir».", section: "publicacion" });
                 }}
+                {...cta("editor_share", "editor_header", "share_sheet", "product_action")}
               >
                 <Share2 size={17} aria-hidden="true" /> Compartir
               </button>
             )}
             {live && agencyMode ? (
-              <a href={publicLink(demo.token)} target="_blank" rel="noopener noreferrer" className="button button-outline">
+              <a href={publicLink(demo.token)} target="_blank" rel="noopener noreferrer" className="button button-outline" {...cta("editor_view_live", "editor_header", "property_buyer_view", "navigation")}>
                 <Eye size={17} /> Vista para comprador
               </a>
             ) : (
@@ -1754,6 +1786,7 @@ export function DemoEditor({
               type="button"
               className={`button ${live ? "button-outline" : "button-primary"}`}
               disabled={busy}
+              {...cta(live ? "editor_unpublish" : "editor_publish", "editor_header", "property_publish", "product_action")}
               onClick={() =>
                 window.confirm(
                   live
@@ -1851,7 +1884,7 @@ export function DemoEditor({
             <h2 id="ed-next-title">¿Querés probar con otra propiedad?</h2>
             <p>Pegá una publicación y traé sus datos y fotos.</p>
           </div>
-          <Link href="/panel" className="button button-outline" onClick={() => track("invited_next_property_clicked", { property_id: demo.id })}>
+          <Link href="/panel" className="button button-outline" onClick={() => track("invited_next_property_clicked", { property_id: demo.id })} {...cta("editor_next_property", "editor_invited_next", "property_import", "habita_b2b")}>
             <Plus size={16} aria-hidden="true" /> Agregar otra propiedad
           </Link>
         </section>
@@ -2127,23 +2160,23 @@ function Review({
           tiene. La descarga es un JPEG de hasta 2048 px.
         </p>
         <div className="dm-modal-actions">
-          <button type="button" className="button button-outline" disabled={downloading} onClick={onDownload}>
+          <button type="button" className="button button-outline" disabled={downloading} onClick={onDownload} {...cta("review_download", "version_review", "file_download", "product_action")}>
             {downloading ? <Loader2 size={16} className="spin" /> : null} Descargar
           </button>
           {!shown && !discarded && (
-            <button type="button" className="button button-outline" disabled={saving} onClick={() => act(onShow)}>
+            <button type="button" className="button button-outline" disabled={saving} onClick={() => act(onShow)} {...cta("review_show_in_listing", "version_review", "property_styles", "product_action")}>
               <Check size={16} /> Mostrar esta en la ficha
             </button>
           )}
           {!discarded && (
-            <button type="button" className="button button-outline" disabled={saving} onClick={() => act(onDiscard)}>
+            <button type="button" className="button button-outline" disabled={saving} onClick={() => act(onDiscard)} {...cta("review_discard", "version_review", "version_discard", "product_action")}>
               <Trash2 size={16} /> Descartar
             </button>
           )}
-          <button type="button" className="button button-outline" disabled={saving || Boolean(blocked)} title={blocked ?? undefined} onClick={onRegenerate}>
+          <button type="button" className="button button-outline" disabled={saving || Boolean(blocked)} title={blocked ?? undefined} onClick={onRegenerate} {...cta("review_regenerate", "version_review", "ai_generation", "product_action")}>
             <RefreshCw size={16} /> Crear otra versión
           </button>
-          <button type="button" className="button button-primary" onClick={onClose}>
+          <button type="button" className="button button-primary" onClick={onClose} {...uiId("review_close")}>
             Cerrar
           </button>
         </div>

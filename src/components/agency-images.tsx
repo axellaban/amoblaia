@@ -5,6 +5,7 @@
 // one failed link never blocks the others, and a retry never duplicates what
 // was already saved.
 import Link from "next/link";
+import { cta, formId, uiId } from "@/lib/interaction-tracking";
 import { useEffect, useRef, useState } from "react";
 import { ImagePlus, Upload } from "lucide-react";
 import { ApiError, api } from "./admin-demos";
@@ -353,7 +354,7 @@ export function ImportImages({ initialMethod = "url", studioPath }: { initialMet
 
           <div className="ap-img-panel" id="ap-img-panel" role="tabpanel" aria-labelledby={`ap-img-tab-${method}`}>
             {method === "url" && (
-              <form
+              <form {...formId("images_read_link")}
                 className="ap-img-form"
                 onSubmit={(e) => {
                   e.preventDefault();
@@ -363,7 +364,7 @@ export function ImportImages({ initialMethod = "url", studioPath }: { initialMet
                 <label htmlFor="ap-img-url">Enlace de la publicación</label>
                 <div className="ap-img-row">
                   <input id="ap-img-url" type="url" inputMode="url" maxLength={500} placeholder="https://inmobiliaria.com/propiedad/..." value={url} onChange={(e) => setUrl(e.target.value)} />
-                  <button className="button button-primary" disabled={!url.trim()}>
+                  <button {...cta("images_search_link", "images_source", "photo_import_preview", "product_action")} className="button button-primary" disabled={!url.trim()}>
                     <ImagePlus size={17} aria-hidden="true" /> Buscar fotos
                   </button>
                 </div>
@@ -462,12 +463,12 @@ export function ImportImages({ initialMethod = "url", studioPath }: { initialMet
                     </span>
                     <span className="ap-img-actions">
                       {l.state === "duplicate" && l.duplicateOf && (
-                        <Link href={`/panel/propiedades/${l.duplicateOf}`} className="button button-small button-outline">
+                        <Link {...cta("images_open_duplicate", "images_sources", "property_editor", "navigation")} href={`/panel/propiedades/${l.duplicateOf}`} className="button button-small button-outline">
                           Abrir la existente
                         </Link>
                       )}
                       {l.state === "error" && (
-                        <button type="button" className="button button-small button-outline" disabled={Boolean(busy)} onClick={() => void readListing(l)}>
+                        <button {...cta("images_read_listing", "images_sources", "photo_import_preview", "product_action")} type="button" className="button button-small button-outline" disabled={Boolean(busy)} onClick={() => void readListing(l)}>
                           Reintentar
                         </button>
                       )}
@@ -480,7 +481,7 @@ export function ImportImages({ initialMethod = "url", studioPath }: { initialMet
 
           <div className="ap-img-footer">
             <p className="dm-help">Podés continuar con las listas y resolver el resto después.</p>
-            <button type="button" className="button button-primary" disabled={!sources || Boolean(busy)} onClick={() => setStep("elegir")}>
+            <button {...cta("images_continue", "images_sources", "photo_pick", "product_action")} type="button" className="button button-primary" disabled={!sources || Boolean(busy)} onClick={() => setStep("elegir")}>
               Continuar con {plural(sources, "origen listo", "orígenes listos")} →
             </button>
           </div>
@@ -500,13 +501,13 @@ export function ImportImages({ initialMethod = "url", studioPath }: { initialMet
                       </small>
                     </span>
                     <span className="ap-img-actions">
-                      <Link href={`/panel/imagenes/lote?grupo=${g.id}`} className="button button-small button-primary">
+                      <Link {...cta("images_group_stage", "images_groups", "photo_batch", "product_action")} href={`/panel/imagenes/lote?grupo=${g.id}`} className="button button-small button-primary">
                         Ambientar
                       </Link>
-                      <Link href={`/panel/propiedades/${g.id}?volver=${encodeURIComponent("/panel/imagenes")}`} className="button button-small button-outline">
+                      <Link {...cta("images_group_open", "images_groups", "property_editor", "navigation")} href={`/panel/propiedades/${g.id}?volver=${encodeURIComponent("/panel/imagenes")}`} className="button button-small button-outline">
                         Abrir en el editor
                       </Link>
-                      <button type="button" className="button button-small button-outline" onClick={() => void makeGroupFicha(g.id)}>
+                      <button {...cta("images_group_make_listing", "images_groups", "property_data", "product_action")} type="button" className="button button-small button-outline" onClick={() => void makeGroupFicha(g.id)}>
                         Crear ficha con estas fotos
                       </button>
                     </span>
@@ -616,10 +617,10 @@ export function ImportImages({ initialMethod = "url", studioPath }: { initialMet
               <small>Las fotos quedan agrupadas por origen. No se publica ninguna ficha.</small>
             </p>
             <div className="ap-img-row">
-              <button type="button" className="button button-outline" onClick={() => setStep("buscar")}>
+              <button {...uiId("images_back_to_search")} type="button" className="button button-outline" onClick={() => setStep("buscar")}>
                 Volver
               </button>
-              <button type="button" className="button button-primary" disabled={!selection.photos || Boolean(busy)} onClick={() => void importSelected()}>
+              <button {...cta("images_import", "images_pick", "photo_import", "product_action")} type="button" className="button button-primary" disabled={!selection.photos || Boolean(busy)} onClick={() => void importSelected()}>
                 {busy ? "Importando…" : `Importar ${selection.photos} ${selection.photos === 1 ? "foto" : "fotos"}`}
               </button>
             </div>
@@ -652,22 +653,22 @@ export function ImportImages({ initialMethod = "url", studioPath }: { initialMet
                 </span>
                 <span className="ap-img-actions">
                   {item.demoId && item.done > 0 && studioPath && (
-                    <a href={studioPath(item.demoId)} className="button button-small button-primary">
+                    <a {...cta("images_open_studio", "images_imported", "image_studio", "navigation")} href={studioPath(item.demoId)} className="button button-small button-primary">
                       Abrir en el Estudio
                     </a>
                   )}
                   {item.demoId && (
-                    <Link href={`/panel/propiedades/${item.demoId}?volver=${encodeURIComponent("/panel/imagenes")}`} className="button button-small button-outline">
+                    <Link {...cta("images_open_property", "images_imported", "property_editor", "navigation")} href={`/panel/propiedades/${item.demoId}?volver=${encodeURIComponent("/panel/imagenes")}`} className="button button-small button-outline">
                       Abrir en el editor
                     </Link>
                   )}
                   {item.demoId && !item.ficha && (
-                    <button type="button" className="button button-small button-outline" disabled={Boolean(busy)} onClick={() => void makeFicha(item)}>
+                    <button {...cta("images_make_listing", "images_imported", "property_data", "product_action")} type="button" className="button button-small button-outline" disabled={Boolean(busy)} onClick={() => void makeFicha(item)}>
                       Crear ficha con estas fotos
                     </button>
                   )}
                   {(item.pending.length > 0 || item.files.length > 0) && (
-                    <button type="button" className="button button-small" disabled={Boolean(busy)} onClick={() => void retryImport(item)}>
+                    <button {...cta("images_retry_import", "images_imported", "photo_import", "product_action")} type="button" className="button button-small" disabled={Boolean(busy)} onClick={() => void retryImport(item)}>
                       Reintentar {item.files.length || item.pending.length} {item.files.length || item.pending.length === 1 ? "foto" : "fotos"}
                     </button>
                   )}
@@ -678,16 +679,16 @@ export function ImportImages({ initialMethod = "url", studioPath }: { initialMet
           <div className="ap-img-footer">
             <p className="dm-help">Las listas con error no bloquearon a las demás: podés reintentarlas.</p>
             <span className="ap-img-row">
-              <button type="button" className="button button-outline" onClick={startOver}>
+              <button {...cta("images_import_more", "images_done", "photo_import", "product_action")} type="button" className="button button-outline" onClick={startOver}>
                 Importar más
               </button>
               {imported.some((i) => i.demoId && i.done > 0) && (
-                <Link href={`/panel/imagenes/lote?grupo=${imported.find((i) => i.demoId && i.done > 0)?.demoId}`} className={`button ${studioPath ? "button-outline" : "button-primary"}`}>
+                <Link {...cta("images_stage_batch", "images_done", "photo_batch", "product_action")} href={`/panel/imagenes/lote?grupo=${imported.find((i) => i.demoId && i.done > 0)?.demoId}`} className={`button ${studioPath ? "button-outline" : "button-primary"}`}>
                   Ambientar estas fotos →
                 </Link>
               )}
               {studioPath && imported.some((i) => i.demoId && i.done > 0) && (
-                <a href={studioPath(imported.find((i) => i.demoId && i.done > 0)!.demoId!)} className="button button-primary">
+                <a {...cta("images_open_studio", "images_done", "image_studio", "navigation")} href={studioPath(imported.find((i) => i.demoId && i.done > 0)!.demoId!)} className="button button-primary">
                   Abrir en el Estudio →
                 </a>
               )}

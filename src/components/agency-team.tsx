@@ -4,6 +4,7 @@
 // right away (copy or WhatsApp); the employee opens it, chooses a password
 // and lands in the panel (JoinAgency).
 import Link from "next/link";
+import { cta, formId } from "@/lib/interaction-tracking";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Check, Copy, Eye, EyeOff, MessageCircle, Search, UserPlus } from "lucide-react";
 import { api, ApiError } from "./admin-demos";
@@ -133,7 +134,7 @@ export function AgencyTeam({ readOnly = false }: { readOnly?: boolean }) {
           <h1>Usuarios</h1>
         </div>
         {!draft && !readOnly && (
-          <button type="button" className="button button-primary" onClick={() => (setShared(null), setNote(null), setDraft(blank()))}>
+          <button {...cta("team_new_user", "panel_team", "team_user_form", "product_action")} type="button" className="button button-primary" onClick={() => (setShared(null), setNote(null), setDraft(blank()))}>
             <UserPlus size={16} aria-hidden="true" /> Crear usuario
           </button>
         )}
@@ -187,14 +188,14 @@ export function AgencyTeam({ readOnly = false }: { readOnly?: boolean }) {
                 {!locked && (
                   <span className="at-actions">
                     {m.kind === "pending" && (
-                      <button type="button" className="button button-small" disabled={busy === m.id} onClick={() => void renew(m)}>
+                      <button {...cta("team_renew_link", "panel_team", "team_invite_link", "product_action")} type="button" className="button button-small" disabled={busy === m.id} onClick={() => void renew(m)}>
                         Enlace para compartir
                       </button>
                     )}
-                    <button type="button" className="button button-small button-outline" disabled={busy === m.id} onClick={() => edit(m)}>
+                    <button {...cta("team_edit_user", "panel_team", "team_user_form", "product_action")} type="button" className="button button-small button-outline" disabled={busy === m.id} onClick={() => edit(m)}>
                       Editar
                     </button>
-                    <button type="button" className="button button-small button-outline ap-danger" disabled={busy === m.id} onClick={() => void remove(m)}>
+                    <button {...cta("team_remove_user", "panel_team", "team_remove", "product_action")} type="button" className="button button-small button-outline ap-danger" disabled={busy === m.id} onClick={() => void remove(m)}>
                       {m.kind === "pending" ? "Eliminar" : "Quitar acceso"}
                     </button>
                   </span>
@@ -259,10 +260,10 @@ function ShareCard({ shared, onClose }: { shared: Shared; onClose: () => void })
       </p>
       <input className="dm-link" readOnly value={shared.link} onFocus={(e) => e.target.select()} aria-label="Enlace de ingreso" />
       <div className="dm-share">
-        <button type="button" className="button button-primary" onClick={() => void copy()}>
+        <button {...cta("team_copy_invite", "team_invite_link", "clipboard", "product_action")} type="button" className="button button-primary" onClick={() => void copy()}>
           <Copy size={16} aria-hidden="true" /> {copied ? "Enlace copiado" : "Copiar enlace"}
         </button>
-        <a className="button button-outline" href={`https://wa.me/?text=${encodeURIComponent(text)}`} target="_blank" rel="noopener noreferrer">
+        <a {...cta("team_share_whatsapp", "team_invite_link", "whatsapp", "product_action")} className="button button-outline" href={`https://wa.me/?text=${encodeURIComponent(text)}`} target="_blank" rel="noopener noreferrer">
           <MessageCircle size={16} aria-hidden="true" /> Enviar por WhatsApp
         </a>
         <button type="button" className="button button-outline" onClick={onClose}>
@@ -301,7 +302,7 @@ function UserForm({
   const canLimit = scopable(draft.role);
   const missing = canLimit && draft.limited && !draft.properties.length;
   return (
-    <form className="account-panel at-form" onSubmit={onSubmit}>
+    <form {...formId("team_user")} className="account-panel at-form" onSubmit={onSubmit}>
       <h2>{editing ? `Acceso de ${draft.target!.name || draft.target!.email}` : "Nuevo usuario"}</h2>
       {!editing && (
         <div className="at-fields">
@@ -384,7 +385,7 @@ function UserForm({
         <p className="dm-help">Los administradores ven y gestionan todas las propiedades.</p>
       )}
       <div className="dm-share">
-        <button className="button button-primary" disabled={busy || missing}>
+        <button {...cta("team_save_user", "team_user_form", "team_user_saved", "product_action")} className="button button-primary" disabled={busy || missing}>
           {busy ? "Guardando…" : editing ? "Guardar cambios" : "Crear usuario y obtener enlace"}
         </button>
         <button type="button" className="button button-outline" onClick={onCancel}>
@@ -522,7 +523,7 @@ export function JoinAgency({
           ) : (
             <>
               <p>Ya entraste como {signedInEmail}.</p>
-              <button type="button" className="button button-primary button-large" disabled={busy} onClick={() => void oneClick()}>
+              <button {...cta("team_join_one_click", "team_join", "panel_home", "habita_b2b")} type="button" className="button button-primary button-large" disabled={busy} onClick={() => void oneClick()}>
                 {busy ? "Un momento…" : `Entrar a ${invite.agencyName}`}
               </button>
             </>
@@ -534,7 +535,7 @@ export function JoinAgency({
           )}
         </div>
       ) : (
-        <form className="account-panel ap-start-form" onSubmit={submit}>
+        <form {...formId("team_join")} className="account-panel ap-start-form" onSubmit={submit}>
           <label>
             Email
             <input type="email" value={invite.email} readOnly autoComplete="username" />
@@ -564,7 +565,7 @@ export function JoinAgency({
               {error}
             </p>
           )}
-          <button className="button button-primary button-large" disabled={busy}>
+          <button {...cta("team_join_submit", "team_join", "panel_home", "habita_b2b")} className="button button-primary button-large" disabled={busy}>
             {busy ? "Un momento…" : "Entrar al panel"}
           </button>
           <p className="dm-help">

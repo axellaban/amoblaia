@@ -48,7 +48,7 @@ import {
 import { Comparison } from "./comparison";
 import { PENDING_IMPORT_KEY, withIntent, type DemoIntent, type DemoInvite } from "@/lib/agency/demo-invite";
 import { registerSuperProperties, registerSuperPropertiesOnce, track, type EventProperties } from "@/lib/analytics";
-import { cta, startDemoEngagement, ViewTimer } from "@/lib/interaction-tracking";
+import { area, cta, startDemoEngagement, uiId, ViewTimer } from "@/lib/interaction-tracking";
 import { reportDemoActivity } from "@/lib/demos/activity-client";
 import { flushLeads, leadActiveTime, leadEvent, startLeadTracking } from "@/lib/leads/client";
 import { usePathname } from "next/navigation";
@@ -410,7 +410,7 @@ export function DemoView({
         </a>
       )}
       {owner && pricesOn && (
-        <section className="dv2-prices" aria-label="Planes y créditos">
+        <section {...area("demo_prices", true)} className="dv2-prices" aria-label="Planes y créditos">
           <div className="container dv2-prices-head">
             <button type="button" className="dv2-prices-back" {...cta("prices_back", "pricing_section", "demo", "navigation")} onClick={() => showDemo("button")}>
               ← Volver a la propiedad
@@ -428,7 +428,7 @@ export function DemoView({
         </div>
       )}
       {!owner && (
-        <header className="dv2-header is-buyer">
+        <header {...area("demo_header_buyer")} className="dv2-header is-buyer">
           <div className="container">
             <span className="dv2-owner-habita dv2-habita-mark" aria-label="Habita">
               <House size={20} aria-hidden="true" />
@@ -450,7 +450,7 @@ export function DemoView({
 
       <div className="container dv2-main" hidden={pricesOn}>
         {owner ? (
-          <section id="propiedad" className="dv2-hero is-compact" aria-labelledby="dv2-hero-title">
+          <section {...area("demo_hero")} id="propiedad" className="dv2-hero is-compact" aria-labelledby="dv2-hero-title">
             <h1 id="dv2-hero-title" className="dv2-sr">
               Demo de {demo.title} para {agency.name}
             </h1>
@@ -460,7 +460,7 @@ export function DemoView({
             </a>
           </section>
         ) : (
-        <section id="propiedad" className="dv2-heading is-buyer" aria-labelledby="dv2-title">
+        <section {...area("demo_heading", true)} id="propiedad" className="dv2-heading is-buyer" aria-labelledby="dv2-title">
           <div>
             {demo.reference && <p className="dv2-ref">Ref. {demo.reference}</p>}
             <h1 id="dv2-title">{demo.title}</h1>
@@ -516,22 +516,22 @@ export function DemoView({
         {demo.photos.some((p) => p.versions.length) && <p className="dv2-illustrative">{TEXT.illustrative}</p>}
         {!owner && (
           <nav className="dv2-tabs" aria-label="La ficha de la propiedad">
-            <a href="#sobre">Sobre la propiedad</a>
-            <a href="#propiedad">Galería</a>
-            {(demo.map || demo.location) && <a href="#ubicacion">Ubicación</a>}
-            <a href="#contacto">Contactar</a>
+            <a {...uiId("demo_tab_about")} href="#sobre">Sobre la propiedad</a>
+            <a {...uiId("demo_tab_gallery")} href="#propiedad">Galería</a>
+            {(demo.map || demo.location) && <a {...uiId("demo_tab_location")} href="#ubicacion">Ubicación</a>}
+            <a {...uiId("demo_tab_contact")} href="#contacto">Contactar</a>
           </nav>
         )}
         {owner && source.kind === "public" && (
           <>
             <AnotherProperty owner={owner} log={log} />
             <nav className="dv2-tabs" aria-label="La ficha de la propiedad">
-              <a href="#sobre">Sobre la propiedad</a>
-              <a href="#propiedad">Galería</a>
-              {(demo.map || demo.location) && <a href="#ubicacion">Ubicación</a>}
-              <a href="#contacto">Contactar</a>
+              <a {...uiId("demo_tab_about")} href="#sobre">Sobre la propiedad</a>
+              <a {...uiId("demo_tab_gallery")} href="#propiedad">Galería</a>
+              {(demo.map || demo.location) && <a {...uiId("demo_tab_location")} href="#ubicacion">Ubicación</a>}
+              <a {...uiId("demo_tab_contact")} href="#contacto">Contactar</a>
             </nav>
-            <section id="sobre" className="dv2-heading is-ficha" aria-labelledby="dv2-title">
+            <section {...area("demo_about", true)} id="sobre" className="dv2-heading is-ficha" aria-labelledby="dv2-title">
           <div>
             {demo.reference && <p className="dv2-ref">Ref. {demo.reference}</p>}
             <h2 id="dv2-title">{demo.title}</h2>
@@ -574,7 +574,7 @@ export function DemoView({
           <div className="dv2-body-main">
             {demo.description && <Description text={demo.description} />}
             {demo.amenities.length > 0 && (
-              <section className="dv2-section" aria-labelledby="dv2-amenities">
+              <section {...area("demo_amenities", true)} className="dv2-section" aria-labelledby="dv2-amenities">
                 <h2 id="dv2-amenities">Características y servicios</h2>
                 <div className="dv2-amenities">
                   {demo.amenities.map((g, i) => (
@@ -584,7 +584,7 @@ export function DemoView({
               </section>
             )}
           </div>
-          <aside id="contacto" className="dv2-contact-card" aria-label={`Contacto con ${agency.name}`}>
+          <aside {...area("demo_contact_card", true)} id="contacto" className="dv2-contact-card" aria-label={`Contacto con ${agency.name}`}>
             <Brand agency={agency} small place="contact_card" />
             {demo.agent && (
               <div className="dv2-agent">
@@ -629,7 +629,7 @@ export function DemoView({
         </div>
 
         {(demo.map || demo.location) && (
-          <section id="ubicacion" className="dv2-section" aria-labelledby="dv2-location">
+          <section {...area("demo_location", true)} id="ubicacion" className="dv2-section" aria-labelledby="dv2-location">
             <h2 id="dv2-location">Ubicación</h2>
             {demo.location && <p className="dv2-location-text">{demo.location}</p>}
             {demo.map && <LazyMap map={demo.map} title={demo.title} />}
@@ -637,7 +637,7 @@ export function DemoView({
         )}
 
         {showConditions && (
-          <section className="dv2-conditions" aria-labelledby="dv2-conditions">
+          <section {...area("demo_conditions", true)} className="dv2-conditions" aria-labelledby="dv2-conditions">
             <FileText size={28} aria-hidden="true" />
             <div>
               <h2 id="dv2-conditions">
@@ -665,7 +665,7 @@ export function DemoView({
         {/* Only on the team's presentation link of an agency without an account: buyers never see it. */}
         {!owner && !backToDemo && presentation && demo.prospect && invite && <PanelInvite invite={invite} place="final" log={log} />}
         {!owner && presentation && demo.prospect && !invite && (
-          <section className="dv2-habita" aria-labelledby="dv2-habita">
+          <section {...area("demo_habita", true)} className="dv2-habita" aria-labelledby="dv2-habita">
             <div>
               <h2 id="dv2-habita">¿Te imaginás todas tus propiedades así?</h2>
               <p>
@@ -687,7 +687,7 @@ export function DemoView({
           </section>
         )}
 
-        <section className="dv2-closing" aria-labelledby="dv2-closing">
+        <section {...area("demo_closing", true)} className="dv2-closing" aria-labelledby="dv2-closing">
           <div>
             <h2 id="dv2-closing">{demo.closingTitle}</h2>
             <p>{demo.closingText ?? `Contactá a ${agency.name} para conocer ${noun}.`}</p>
@@ -793,7 +793,7 @@ function Description({ text }: { text: string }) {
   const long = text.length > 600 || blocks.length > 4;
   const shown = long && !open ? blocks.slice(0, 3) : blocks;
   return (
-    <section className="dv2-section" aria-labelledby="dv2-description">
+    <section {...area("demo_description", true)} className="dv2-section" aria-labelledby="dv2-description">
       <h2 id="dv2-description">Descripción</h2>
       <div className={`dv2-description ${long && !open ? "is-clipped" : ""}`} id="dv2-description-text">
         {shown.map((b, i) =>
@@ -1211,13 +1211,13 @@ function Gallery({
   const cards = allStyles ? rows : rows.filter((r, i) => i < visibleCount || (r.version && r.style === state.style));
   // «Mostrar selector de estilos» off: buyers see the opening style only (the agency's own view keeps its picker).
   const stylesCard = rows.length > 0 && (owner || demo.styleSelector !== false) && (
-    <section className={`dv2-styles ${owner ? "is-owner" : "is-buyer"}`} aria-labelledby="dv2-panel-title" id="dv2-estilos">
+    <section {...area("demo_styles_panel", true)} className={`dv2-styles ${owner ? "is-owner" : "is-buyer"}`} aria-labelledby="dv2-panel-title" id="dv2-estilos">
       <div className="dv2-styles-head">
         <h2 id="dv2-panel-title">
           <Sparkles size={18} aria-hidden="true" /> Estilos
         </h2>
         {rows.length > visibleCount && (
-          <button type="button" className="dv2-styles-all" aria-expanded={allStyles} onClick={toggleStyles}>
+          <button type="button" className="dv2-styles-all" aria-expanded={allStyles} onClick={toggleStyles} {...uiId("demo_styles_all")}>
             {allStyles ? "Ver menos" : "Ver todos"} {allStyles ? <ChevronUp size={15} aria-hidden="true" /> : <ChevronRight size={15} aria-hidden="true" />}
           </button>
         )}
@@ -1230,7 +1230,7 @@ function Gallery({
           if (r.version)
             return (
               <li key={r.style} className={`dv2-style-card ${on ? "is-on" : ""}`}>
-                <button type="button" className="dv2-style-pick" aria-pressed={on} onClick={() => choose(r.style)}>
+                <button type="button" className="dv2-style-pick" aria-pressed={on} onClick={() => choose(r.style)} {...uiId(`demo_style_pick`)}>
                   <img src={urlFor(source, photo.id, r.version, 480)} alt="" loading="lazy" />
                   <span className="dv2-style-name" title={name(r.style)}>
                     {name(r.style)}
@@ -1290,13 +1290,13 @@ function Gallery({
     <OwnerVideoCard key={video.id} src={videoSrc} cover={posterThumb} durationMs={video.durationMs} onOpen={openVideo} />
   );
   const videoCard = !owner && (video?.placement === "below" || buyerTabs) && (
-    <section
+    <section {...area("demo_video_aside", true)}
       className={`dv2-video-card ${video?.placement === "below" ? "" : "is-tab-only"}`}
       aria-labelledby="dv2-video-title"
       id="dv2-aside-video"
       {...(buyerTabs ? { role: "tabpanel" } : {})}
     >
-      <button type="button" className="dv2-video-cover" aria-label="Ver el video" onClick={() => openVideo("card_cover")}>
+      <button type="button" className="dv2-video-cover" aria-label="Ver el video" onClick={() => openVideo("card_cover")} {...uiId("demo_video_cover")}>
         <img src={posterThumb} alt="" loading="lazy" />
         <span className="dv2-play" aria-hidden="true">
           <Play size={20} fill="currentColor" />
@@ -1305,7 +1305,7 @@ function Gallery({
       <div>
         <h2 id="dv2-video-title">Recorré la transformación</h2>
         <p>Mirá el antes y después de {demo.propertyType === "office" ? "esta oficina" : "esta propiedad"}.</p>
-        <button type="button" className="dv2-video-cta" onClick={() => openVideo("card_button")}>
+        <button type="button" className="dv2-video-cta" onClick={() => openVideo("card_button")} {...uiId("demo_video_button")}>
           {owner ? (
             <>
               Ver video <ArrowRight size={16} aria-hidden="true" />
@@ -1329,7 +1329,7 @@ function Gallery({
   const pendingLink = pending ? intentLink({ kind: "stage", photo: photo.id }, "owner_stage_photo", "gallery_stage") : null;
 
   return (
-    <div className="dv2-gallery has-panel">
+    <div className="dv2-gallery has-panel" {...area("demo_gallery", true)}>
       <div className="dv2-media">
         <div
           ref={stageRef}
@@ -1462,10 +1462,10 @@ function Gallery({
           )}
           {entries.length > 1 && (
             <>
-              <button type="button" className="dv2-nav dv2-prev" aria-label="Anterior" onClick={() => go(-1)}>
+              <button type="button" className="dv2-nav dv2-prev" aria-label="Anterior" onClick={() => go(-1)} {...uiId("demo_gallery_prev")}>
                 <ChevronLeft size={24} />
               </button>
-              <button type="button" className="dv2-nav dv2-next" aria-label="Siguiente" onClick={() => go(1)}>
+              <button type="button" className="dv2-nav dv2-next" aria-label="Siguiente" onClick={() => go(1)} {...uiId("demo_gallery_next")}>
                 <ChevronRight size={24} />
               </button>
             </>
@@ -1609,8 +1609,8 @@ function OwnerVideoCard({
   const [measured, setMeasured] = useState<number | null>(null);
   const ms = durationMs ?? measured;
   return (
-    <section className="dv2-video-card is-owner" aria-labelledby="dv2-video-title">
-      <button type="button" className="dv2-video-open" onClick={() => onOpen("card")} aria-describedby="dv2-video-sub">
+    <section {...area("demo_video_card", true)} className="dv2-video-card is-owner" aria-labelledby="dv2-video-title">
+      <button type="button" className="dv2-video-open" onClick={() => onOpen("card")} aria-describedby="dv2-video-sub" {...uiId("demo_video_open")}>
         <span className="dv2-video-cover">
           <img src={cover} alt="" loading="lazy" />
           {/* Only the metadata and the first frame; muted and never played here. */}
@@ -1659,7 +1659,7 @@ function PageDots({ count, at }: { count: number; at: number }) {
 /** «¿Te imaginás esto con todas tus propiedades?»: the agency keeps this demo in its own panel (the invitation's sign-up). */
 function OwnerSaveDemo({ owner, log }: { owner: OwnerMode; log: (event: string, extra?: EventProperties, beacon?: boolean) => unknown }) {
   return (
-    <section className="dv2-save-demo" aria-labelledby="dv2-save-demo-title">
+    <section {...area("demo_save_demo", true)} className="dv2-save-demo" aria-labelledby="dv2-save-demo-title">
       <h2 id="dv2-save-demo-title">
         <Sparkles size={20} aria-hidden="true" /> ¿Te imaginás esto con todas tus propiedades?
       </h2>
@@ -1692,14 +1692,14 @@ function PanelInvite({
   const id = `dv2-invite-${place}`;
   if ("unavailable" in invite)
     return (
-      <section className={`dv2-invite is-${place}`} aria-labelledby={id}>
+      <section {...area(`demo_invite_${place}`, true)} className={`dv2-invite is-${place}`} aria-labelledby={id}>
         <p className="dv2-invite-eyebrow">Para tu inmobiliaria</p>
         <h2 id={id}>Esta invitación ya no está disponible</h2>
         <p>El enlace venció o ya se usó. Pedile uno nuevo al equipo de habita para trabajar esta propiedad en tu panel.</p>
       </section>
     );
   return (
-    <section className={`dv2-invite is-${place}`} aria-labelledby={id}>
+    <section {...area(`demo_invite_${place}`, true)} className={`dv2-invite is-${place}`} aria-labelledby={id}>
       <p className="dv2-invite-eyebrow">Para tu inmobiliaria</p>
       <h2 id={id}>Probá con esta misma propiedad</h2>
       <p>Preparamos esta demostración para tu inmobiliaria. Entrá a tu panel para trabajar sus fotos y sumar otras propiedades.</p>
@@ -1763,7 +1763,7 @@ function OwnerHeader({
   });
   const versions = demo.photos.reduce((n, p) => n + p.versions.length, 0);
   return (
-    <header className="dv2-owner">
+    <header {...area("demo_owner_bar")} className="dv2-owner">
       <div className="dv2-owner-bar">
         <div className="dv2-owner-brand">
           <span className="dv2-owner-habita" aria-label="Habita">
@@ -1797,7 +1797,7 @@ function OwnerHeader({
           <a className="dv2-owner-save" {...go("guardar")}>
             Guardar mi panel
           </a>
-          <button type="button" className="dv2-owner-menu-button" aria-label="Abrir el menú" aria-expanded={open} onClick={() => setOpen(true)}>
+          <button type="button" className="dv2-owner-menu-button" aria-label="Abrir el menú" aria-expanded={open} onClick={() => setOpen(true)} {...uiId("owner_menu_open")}>
             <Menu size={22} aria-hidden="true" />
           </button>
         </div>
@@ -1896,7 +1896,7 @@ function OwnerValue({ demo, token, log }: { demo: PublicDemo; token: string; log
     }
   }
   return (
-    <section className="dv2-value" aria-label="Llevate el material">
+    <section {...area("demo_value", true)} className="dv2-value" aria-label="Llevate el material">
       <details className="dv2-value-download" onToggle={(e) => e.currentTarget.open && log("demo_owner_download_list", { versions: ready.length })}>
         <summary {...cta("owner_download_all", "value_actions", "file_download", "habita_b2b")}>
           <Download size={22} aria-hidden="true" />
@@ -1952,7 +1952,7 @@ function AnotherProperty({ owner, log }: { owner: OwnerMode; log: (event: string
   const [url, setUrl] = useState("");
   const [error, setError] = useState("");
   return (
-    <section id="otra-propiedad" className="dv2-another" aria-labelledby="dv2-another-title">
+    <section {...area("demo_another_property", true)} id="otra-propiedad" className="dv2-another" aria-labelledby="dv2-another-title">
       <h2 id="dv2-another-title">
         <Link2Icon size={20} aria-hidden="true" /> ¿Querés probarlo con otra propiedad?
       </h2>

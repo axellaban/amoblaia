@@ -82,6 +82,7 @@ import { NO_ADJUST, adjustFilter, sameAdjust, type Adjust } from "@/lib/demos/re
 import type { Tool } from "@/lib/demos/tools";
 import { MaskBrush, type BrushHandle } from "./mask-brush";
 import { track } from "@/lib/analytics";
+import { cta, formId, uiId } from "@/lib/interaction-tracking";
 import { RetouchControls, type ToolsState } from "./retouch-controls";
 
 /** A state of one style of one photo, in words: created, in the queue, failed, uncertain… */
@@ -563,7 +564,12 @@ export function PhotoWorkspace({
             {!flat && (
             <div className="pw-actions">
               {viewGen && !shownHere && (
-                <button type="button" className="button button-small button-primary" onClick={() => void actions.patchPhoto(photo.id, { approve: viewGen.id })}>
+                <button
+                  type="button"
+                  className="button button-small button-primary"
+                  onClick={() => void actions.patchPhoto(photo.id, { approve: viewGen.id })}
+                  {...cta("studio_show_in_listing", "studio_stage", "property_styles", "product_action")}
+                >
                   <Check size={14} /> Mostrar esta en la ficha
                 </button>
               )}
@@ -572,6 +578,7 @@ export function PhotoWorkspace({
                   type="button"
                   className="button button-small button-primary"
                   onClick={() => void actions.patchPhoto(photo.id, { approveRetouch: viewRetouch.id })}
+                  {...cta("studio_show_retouch_in_listing", "studio_stage", "property_styles", "product_action")}
                 >
                   <Check size={14} /> Mostrar esta en la ficha
                 </button>
@@ -583,6 +590,7 @@ export function PhotoWorkspace({
                   aria-pressed={isCover}
                   title={isCover ? "Es la portada: abre la ficha y la vista previa del enlace" : "Usar como portada"}
                   onClick={() => actions.cover(isCover ? null : photo.id)}
+                  {...cta(isCover ? "studio_unset_cover" : "studio_set_cover", "studio_stage", "property_cover", "product_action")}
                 >
                   <Star size={14} /> {isCover ? "Portada" : "Usar de portada"}
                 </button>
@@ -694,7 +702,7 @@ export function PhotoWorkspace({
                 </li>
               ))}
               <li>
-                <button type="button" className="pw-version pw-version-new" onClick={openCreate}>
+                <button type="button" className="pw-version pw-version-new" onClick={openCreate} {...cta("studio_new_version", "studio_versions", "ai_generation", "product_action")}>
                   <span className="pw-version-new-art" aria-hidden="true">
                     <Plus size={20} />
                   </span>
@@ -942,7 +950,14 @@ export function PhotoWorkspace({
           <strong>¿Querés trabajar varias fotos?</strong>
           <small>La edición de a una foto queda siempre disponible.</small>
         </span>
-        <button type="button" className="button button-small button-outline" aria-expanded={batch} aria-controls="pw-batch" onClick={() => setBatch((v) => !v)}>
+        <button
+          type="button"
+          className="button button-small button-outline"
+          aria-expanded={batch}
+          aria-controls="pw-batch"
+          onClick={() => setBatch((v) => !v)}
+          {...cta("studio_batch_toggle", "studio_batch_bar", "photo_batch", "product_action", { intent: batch ? "close" : "open" })}
+        >
           {batch ? "Cerrar trabajo por tandas" : "Seleccionar fotos para una tanda"}
         </button>
       </div>
@@ -1151,11 +1166,18 @@ function ResultActions({
           En pantalla: <strong>{viewName}</strong>
         </p>
       )}
-      <button type="button" className="button button-outline pw-result-button" disabled={downloading} onClick={onDownload} data-testid="download-active">
+      <button
+        type="button"
+        className="button button-outline pw-result-button"
+        disabled={downloading}
+        onClick={onDownload}
+        data-testid="download-active"
+        {...cta("studio_download", "studio_result", "file_download", "product_action")}
+      >
         {downloading ? <Loader2 size={16} className="spin" aria-hidden="true" /> : <Download size={16} aria-hidden="true" />} Descargar imagen
       </button>
       {onUseInDemo && (
-        <button type="button" className="button button-outline pw-result-button" onClick={onUseInDemo}>
+        <button type="button" className="button button-outline pw-result-button" onClick={onUseInDemo} {...cta("studio_use_in_demo", "studio_result", "property_editor", "product_action")}>
           <Link2 size={16} aria-hidden="true" /> Usar en una demostración
         </button>
       )}
@@ -1168,9 +1190,20 @@ function ResultActions({
   );
 }
 
+/**
+ * The panel ran out of credits for what was asked: the wall that sells a plan,
+ * once per time it shows (the step before `credits_blocked_buy` and the checkout).
+ */
+function LimitSeen({ where }: { where: string }) {
+  useEffect(() => {
+    track("credits_limit_viewed", { where });
+  }, [where]);
+  return null;
+}
+
 function UploadButton({ label, onFiles, primary = false }: { label: string; onFiles: (files: FileList) => void; primary?: boolean }) {
   return (
-    <label className={primary ? "button button-primary" : "button button-small button-outline pw-add"}>
+    <label className={primary ? "button button-primary" : "button button-small button-outline pw-add"} {...cta("photos_upload", "studio_upload", "photo_upload", "product_action")}>
       <ImagePlus size={primary ? 16 : 15} aria-hidden="true" /> {label}
       <input
         type="file"
@@ -1429,10 +1462,10 @@ function EditPanel({
       <RetouchControls id={photo.id} adjust={adjust} onAdjust={onAdjust} tools={tools} layout={compact ? "tiles" : "list"} />
 
       <div className="pw-edit-actions">
-        <button type="button" className="button button-outline button-small" disabled={!dirty} onClick={() => onAdjust(NO_ADJUST)}>
+        <button type="button" className="button button-outline button-small" disabled={!dirty} onClick={() => onAdjust(NO_ADJUST)} {...uiId("retouch_discard")}>
           Descartar
         </button>
-        <button type="button" className="button button-primary button-small" disabled={!dirty || saving} onClick={onSave}>
+        <button type="button" className="button button-primary button-small" disabled={!dirty || saving} onClick={onSave} {...cta("retouch_save", "studio_edit", "version_saved", "product_action")}>
           {saving ? <Loader2 size={14} className="spin" /> : compact ? <Check size={15} aria-hidden="true" /> : null}{" "}
           {saving ? "Guardando…" : compact ? "Guardar versión" : "Guardar como versión"}
         </button>
@@ -1644,10 +1677,10 @@ function CreatePanel({
       <div className="pw-field">
         <span id={`${uid}-mode`}>Qué querés hacer</span>
         <div className="pw-seg" role="group" aria-labelledby={`${uid}-mode`}>
-          <button type="button" aria-pressed={value.mode === "furnish"} onClick={() => set({ mode: "furnish" })}>
+          <button type="button" aria-pressed={value.mode === "furnish"} onClick={() => set({ mode: "furnish" })} {...uiId("create_mode_furnish")}>
             Amoblar
           </button>
-          <button type="button" aria-pressed={value.mode === "redesign"} onClick={() => set({ mode: "redesign" })}>
+          <button type="button" aria-pressed={value.mode === "redesign"} onClick={() => set({ mode: "redesign" })} {...uiId("create_mode_redesign")}>
             Rediseñar
           </button>
         </div>
@@ -1720,6 +1753,7 @@ function CreatePanel({
     <form
       className="pw-create"
       aria-label="Crear una versión con IA"
+      {...formId("studio_create_version")}
       onSubmit={(e) => {
         e.preventDefault();
         if (step === "choose") void review();
@@ -1781,7 +1815,12 @@ function CreatePanel({
             <span className="inline-error">
               {quote.blocked}{" "}
               {/* In the agency's own panel, the way to top up; the team adds credits from its own pages. */}
-              {typeof window !== "undefined" && window.location.pathname.startsWith("/panel/") && <a href="/panel/creditos">Comprar créditos</a>}
+              {typeof window !== "undefined" && window.location.pathname.startsWith("/panel/") && (
+                <a href="/panel/creditos" {...cta("credits_blocked_buy", "studio_create", "panel_credits")}>
+                  Comprar créditos
+                </a>
+              )}
+              <LimitSeen where="studio_create" />
             </span>
           ) : (
             <span>
@@ -1802,7 +1841,7 @@ function CreatePanel({
       )}
       <div className="pw-create-actions">
         {step === "choose" ? (
-          <button className="button button-primary" disabled={Boolean(why) || working}>
+          <button className="button button-primary" disabled={Boolean(why) || working} {...cta("generate_review", "studio_create", "ai_generation_quote", "product_action")}>
             {working ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />} Generar versión
             {compact && estimate && !estimate.blocked
               ? estimate.newPhotos
@@ -1812,10 +1851,15 @@ function CreatePanel({
           </button>
         ) : (
           <>
-            <button type="button" className="button button-outline" disabled={working} onClick={() => setStep("choose")}>
+            <button type="button" className="button button-outline" disabled={working} onClick={() => setStep("choose")} {...uiId("generate_change")}>
               Cambiar
             </button>
-            <button className="button button-primary" disabled={Boolean(why) || Boolean(quote?.blocked) || working} data-testid="confirm-version">
+            <button
+              className="button button-primary"
+              disabled={Boolean(why) || Boolean(quote?.blocked) || working}
+              data-testid="confirm-version"
+              {...cta("generate_confirm", "studio_create", "ai_generation", "product_action")}
+            >
               {working ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />} Confirmar y generar
             </button>
           </>
@@ -2436,6 +2480,7 @@ function GenerateDialog({
       </div>
       <form
         className="dx-generate"
+        {...formId("generate_dialog")}
         onSubmit={(e) => {
           e.preventDefault();
           void confirm();
@@ -2462,10 +2507,10 @@ function GenerateDialog({
             <div className="pw-field">
               <span id={`${uid}-mode`}>Qué querés hacer</span>
               <div className="pw-seg" role="group" aria-labelledby={`${uid}-mode`}>
-                <button type="button" aria-pressed={mode === "furnish"} onClick={() => setMode("furnish")}>
+                <button type="button" aria-pressed={mode === "furnish"} onClick={() => setMode("furnish")} {...uiId("generate_mode_furnish")}>
                   Amoblar
                 </button>
-                <button type="button" aria-pressed={mode === "redesign"} onClick={() => setMode("redesign")}>
+                <button type="button" aria-pressed={mode === "redesign"} onClick={() => setMode("redesign")} {...uiId("generate_mode_redesign")}>
                   Rediseñar
                 </button>
               </div>
@@ -2488,7 +2533,14 @@ function GenerateDialog({
           {why && (
             <p className="inline-error" role="alert">
               {why}{" "}
-              {quote?.blocked && typeof window !== "undefined" && window.location.pathname.startsWith("/panel/") && <a href="/panel/creditos">Comprar créditos</a>}
+              {quote?.blocked && typeof window !== "undefined" && window.location.pathname.startsWith("/panel/") && (
+                <>
+                  <a href="/panel/creditos" {...cta("credits_blocked_buy", "generate_dialog", "panel_credits")}>
+                    Comprar créditos
+                  </a>
+                  <LimitSeen where="generate_dialog" />
+                </>
+              )}
             </p>
           )}
           {error && (
@@ -2498,10 +2550,15 @@ function GenerateDialog({
           )}
         </div>
         <div className="dx-dialog-actions">
-          <button type="button" className="button button-outline" disabled={working} onClick={() => ref.current?.close()}>
+          <button type="button" className="button button-outline" disabled={working} onClick={() => ref.current?.close()} {...uiId("generate_dialog_cancel")}>
             Cancelar
           </button>
-          <button className="button button-primary" disabled={Boolean(why) || !quote || working} data-testid="confirm-version">
+          <button
+            className="button button-primary"
+            disabled={Boolean(why) || !quote || working}
+            data-testid="confirm-version"
+            {...cta("generate_confirm", "generate_dialog", "ai_generation", "product_action")}
+          >
             {working ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />} Generar con IA
           </button>
         </div>

@@ -148,8 +148,8 @@ export function mapPostHogEvent(row: PostHogRow, ctx: BackfillContext): Mapped {
       is_internal: Boolean(reason),
       internal_reason: reason,
       identity: linkType && AGENCY_LINKS.includes(linkType) ? "linked" : "anonymous",
-      // Before tracking_version 2 there were no photo, slider or active-time events: the history is partial.
-      quality: Number(p.tracking_version) === 2 ? "complete" : "partial",
+      // Before tracking_version 2 there were no photo, slider or active-time events: the history is partial (3 only adds clicks and sections).
+      quality: Number(p.tracking_version) >= 2 ? "complete" : "partial",
       link_type: linkType,
     },
   };

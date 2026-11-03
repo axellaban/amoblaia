@@ -78,7 +78,7 @@ describe("calls to action", () => {
       "panel",
       "pricing",
       "auth",
-      "other",
+      "home",
     ]);
   });
 });

@@ -1,6 +1,7 @@
 import posthog from "posthog-js";
-import { registerSuperProperties, track, type EventProperties } from "@/lib/analytics";
+import { registerSuperProperties, track as sendTrack, type EventProperties } from "@/lib/analytics";
 import { leadEvent } from "@/lib/leads/client";
+import { routeOf, surfaceOf } from "@/lib/tracking-routes";
 
 /**
  * Behavior telemetry on top of the product events of analytics.ts, for the
@@ -14,19 +15,9 @@ import { leadEvent } from "@/lib/leads/client";
  * properties registered by the demo page.
  */
 
-/** Where the click was: one value per area of the product, for every event of this module. */
-export function surfaceOf(pathname: string) {
-  if (pathname.startsWith("/demo/")) return "demo";
-  if (/^\/inmobiliaria\/[^/]+\/[^/]+/.test(pathname)) return "agency_site_property";
-  if (pathname.startsWith("/inmobiliaria/")) return "agency_site";
-  if (pathname.startsWith("/panel/empezar")) return "signup";
-  if (pathname.startsWith("/panel")) return "panel";
-  if (pathname.startsWith("/precios")) return "pricing";
-  if (pathname.startsWith("/acceso")) return "auth";
-  return "other";
-}
+export { routeOf, surfaceOf } from "@/lib/tracking-routes";
 
-export type CtaKind = "habita_b2b" | "buyer_contact" | "navigation" | "content";
+export type CtaKind = "habita_b2b" | "buyer_contact" | "navigation" | "content" | "product_action";
 type CtaExtra = { photo?: string; style?: string; plan?: string; intent?: string };
 
 /**
@@ -122,6 +113,143 @@ function applyInternal() {
   if (flagged) markInternal(flagged);
 }
 
+/** Not sent at all: the team's own admin. */
+const UNTRACKED_SURFACES = new Set(["admin"]);
+
+/** Interactive elements whose clicks count, when they are not a `cta`. */
+const CLICKABLE =
+  "a[href],button,summary,[role=button],[role=tab],[role=menuitem],[role=menuitemradio],[role=option],[role=switch],[role=link],input[type=checkbox],input[type=radio],input[type=file],input[type=submit],input[type=range]";
+
+/** Texts that may be personal (an e-mail, a phone, an address number) never leave the browser. */
+export function cleanLabel(text: string | null | undefined): string | undefined {
+  if (!text) return undefined;
+  const t = text
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[^\s@]+@[^\s@]+/g, "[email]")
+    .replace(/\+?\d[\d\s().-]{5,}\d/g, "[número]")
+    .replace(/https?:\/\/\S+/g, "[enlace]");
+  return t ? t.slice(0, 60) : undefined;
+}
+
+function elementKind(el: HTMLElement): string {
+  const role = el.getAttribute("role");
+  if (role) return role;
+  if (el instanceof HTMLAnchorElement) return "link";
+  if (el instanceof HTMLInputElement) return el.type;
+  return el.tagName.toLowerCase();
+}
+
+/** The named area of the screen a click happened in: `area()` first, then the landmark around it. */
+function areaOf(el: Element): string {
+  const named = el.closest<HTMLElement>("[data-track-area]");
+  if (named?.dataset.trackArea) return named.dataset.trackArea.slice(0, 60);
+  const landmark = el.closest("dialog,[role=dialog],header,nav,aside,footer,form,main");
+  if (!landmark) return "page";
+  return landmark.getAttribute("role") === "dialog" ? "dialog" : landmark.tagName.toLowerCase();
+}
+
+/** Where a link goes, as a kind and, for pages of the app, its route template. */
+export function linkTarget(href: string, base: string): { href_kind: string; ui_destination?: string } {
+  if (href.startsWith("#")) return { href_kind: "anchor", ui_destination: href.slice(0, 40) };
+  if (/^mailto:/i.test(href)) return { href_kind: "email" };
+  if (/^tel:/i.test(href)) return { href_kind: "phone" };
+  try {
+    const url = new URL(href, base);
+    if (/(^|\.)(wa\.me|whatsapp\.com)$/i.test(url.hostname)) return { href_kind: "whatsapp" };
+    if (url.origin === new URL(base).origin) return { href_kind: "internal", ui_destination: routeOf(url.pathname) };
+    return { href_kind: "external", ui_destination: url.hostname.slice(0, 60) };
+  } catch {
+    return { href_kind: "unknown" };
+  }
+}
+
+/**
+ * One click on anything interactive that is not a `cta`: what it was
+ * (`ui_element`), its stable name when it has one (`uiId()`), its visible
+ * label cleaned of anything personal, the area of the screen and, for a
+ * link, where it goes. Together with `cta_clicked` it answers «where do they
+ * click» on every screen; elements inside `[data-track-private]` or
+ * `.ph-no-capture` send no label.
+ */
+export function uiClickProperties(el: HTMLElement, pathname: string, base = "https://habita.local/"): EventProperties {
+  const props: EventProperties = {
+    ui_element: elementKind(el),
+    ui_area: areaOf(el),
+    surface: surfaceOf(pathname),
+  };
+  const name = el.dataset.track;
+  if (name) props.ui_id = name.slice(0, 80);
+  const privateLabel = el.closest("[data-track-private],.ph-no-capture,input[type=password]");
+  if (!privateLabel) {
+    // An input has no text of its own: its <label> says what it is.
+    const text = el instanceof HTMLInputElement ? el.labels?.[0]?.textContent : el.textContent;
+    const label = cleanLabel(el.getAttribute("aria-label") || el.getAttribute("title") || text);
+    if (label) props.ui_label = label;
+  }
+  if (el instanceof HTMLAnchorElement) {
+    const href = el.getAttribute("href");
+    if (href) Object.assign(props, linkTarget(href, base));
+    if (el.target === "_blank") props.new_tab = true;
+  }
+  if (el instanceof HTMLInputElement && (el.type === "checkbox" || el.type === "radio")) props.checked = el.checked;
+  if (el.closest("dialog,[role=dialog]")) props.in_dialog = true;
+  return props;
+}
+
+/** A stable name for an element that is not a `cta` (a filter, a tab, a menu item): sent as `ui_id`. */
+export const uiId = (id: string) => ({ "data-track": id });
+
+/**
+ * A named area of a screen (`ui_area` on every click inside it). With
+ * `viewed`, it also sends `section_viewed` the first time a third of it
+ * (or half the screen) shows in this page load: how far down a demo people get.
+ */
+export function area(name: string, viewed = false) {
+  return {
+    "data-track-area": name,
+    ...(viewed ? { ref: sectionRef(name) } : {}),
+  };
+}
+
+const seenSections = new Set<string>();
+const sectionRefs = new Map<string, (el: HTMLElement | null) => (() => void) | undefined>();
+/** One ref per section name, so a re-render does not observe it again. */
+function sectionRef(name: string) {
+  const known = sectionRefs.get(name);
+  if (known) return known;
+  const ref = (el: HTMLElement | null) => {
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const key = () => `${window.location.pathname}|${name}`;
+    if (seenSections.has(key())) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        // A third of it, or half the screen for a section taller than three screens.
+        if (!entries.some((e) => e.isIntersecting && (e.intersectionRatio >= 0.33 || e.intersectionRect.height >= window.innerHeight * 0.5))) return;
+        observer.disconnect();
+        if (seenSections.has(key())) return;
+        seenSections.add(key());
+        sendTrack("section_viewed", { section: name, surface: surfaceOf(window.location.pathname) });
+      },
+      { threshold: [0, 0.1, 0.2, 0.33] },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  };
+  sectionRefs.set(name, ref);
+  return ref;
+}
+
+/** A stable name for a form, sent as `form_id` of `form_submitted`. */
+export const formId = (id: string) => ({ "data-track-form": id });
+
+/** The name of a form for `form_submitted`: `formId()`, its aria-label or the area it sits in. */
+function formName(form: HTMLFormElement) {
+  return (form.dataset.trackForm || form.getAttribute("aria-label") || form.getAttribute("name") || areaOf(form)).slice(0, 60);
+}
+
+const lastClick: { node: Element | null; at: number } = { node: null, at: 0 };
+
 /** Installed once, from instrumentation-client.ts, after PostHog starts. */
 export function installInteractionTracking(): void {
   if (typeof window === "undefined") return;
@@ -130,7 +258,8 @@ export function installInteractionTracking(): void {
   w.__habitaTracking = true;
   registerSuperProperties({
     app_env: process.env.NEXT_PUBLIC_VERCEL_ENV || "local",
-    tracking_version: 2,
+    tracking_version: 3,
+    product: "habita",
   });
   applyInternal();
   // Capture phase: runs before the element's own handler and before a navigation starts.
@@ -139,11 +268,39 @@ export function installInteractionTracking(): void {
     (event) => {
       const target = event.target;
       if (!(target instanceof Element)) return;
-      const el = target.closest<HTMLElement>("[data-cta]");
+      const pathname = window.location.pathname;
+      if (UNTRACKED_SURFACES.has(surfaceOf(pathname))) return;
+      const el = target.closest<HTMLElement>(`[data-cta],${CLICKABLE}`);
       if (!el || el.matches(":disabled,[aria-disabled='true']")) return;
-      const leaving = leavesPage(el);
-      track("cta_clicked", ctaProperties(el, window.location.pathname), leaving);
+      // A cta keeps its own event (the funnels use it); anything else is a ui_clicked.
+      const ctaEl = el.closest<HTMLElement>("[data-cta]");
+      // A <label> passes its click on to its input: one click, counted once.
+      const node = ctaEl ?? el;
+      const now = Date.now();
+      if (node === lastClick.node && now - lastClick.at < 300) return;
+      lastClick.node = node;
+      lastClick.at = now;
+      const leaving = leavesPage(node);
+      if (ctaEl) sendTrack("cta_clicked", ctaProperties(ctaEl, pathname), leaving);
+      else sendTrack("ui_clicked", uiClickProperties(el, pathname, window.location.href), leaving);
       if (leaving) window.dispatchEvent(new Event(LEAVING));
+    },
+    { capture: true },
+  );
+  // Which forms are sent, by name, never with what was written in them.
+  document.addEventListener(
+    "submit",
+    (event) => {
+      const form = event.target;
+      if (!(form instanceof HTMLFormElement)) return;
+      const pathname = window.location.pathname;
+      if (UNTRACKED_SURFACES.has(surfaceOf(pathname))) return;
+      sendTrack("form_submitted", {
+        form_id: formName(form),
+        ui_area: areaOf(form),
+        fields: form.querySelectorAll("input:not([type=hidden]),select,textarea").length,
+        surface: surfaceOf(pathname),
+      });
     },
     { capture: true },
   );
@@ -204,7 +361,7 @@ export function reportSlider(summary: EventProperties, context: EventProperties)
     ...(typeof context.photo_id === "string" ? { photo: context.photo_id } : {}),
     ...(typeof context.style_id === "string" ? { style: context.style_id } : {}),
   });
-  track("comparison_slider_used", { ...context, ...summary, interaction_index: sliderUses, surface: surfaceOf(window.location.pathname) });
+  sendTrack("comparison_slider_used", { ...context, ...summary, interaction_index: sliderUses, surface: surfaceOf(window.location.pathname) });
 }
 
 /**
@@ -243,7 +400,7 @@ export class ViewTimer {
   private flush(reason: string, beacon = false, keep = false) {
     if (!this.key) return;
     const total = this.visibleMs + (this.since === null ? 0 : Date.now() - this.since);
-    if (total >= this.minMs) track(this.event, { ...this.props, duration_ms: Math.min(total, 3600000), end_reason: reason }, beacon);
+    if (total >= this.minMs) sendTrack(this.event, { ...this.props, duration_ms: Math.min(total, 3600000), end_reason: reason }, beacon);
     this.visibleMs = 0;
     this.since = null;
     if (!keep) this.key = "";
@@ -301,7 +458,7 @@ export function startDemoEngagement(context: EventProperties, onActive?: (active
     // The lead score adds up the same active time, piece by piece.
     if (activeMs > 0) onActive?.(Math.min(activeMs, 3600000));
     if (visibleMs >= 1000)
-      track(
+      sendTrack(
         "demo_active_time",
         { ...context, active_ms: Math.min(activeMs, 3600000), visible_ms: Math.min(visibleMs, 3600000), max_scroll_pct: maxScroll, end_reason: reason },
         true,
