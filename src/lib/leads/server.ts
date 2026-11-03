@@ -143,7 +143,7 @@ async function demoInfos() {
   return rows.map((d) => ({ ...d, title: d.title || title.get(d.property_id) || "Demo" }));
 }
 
-async function allScoreRows() {
+export async function allScoreRows() {
   const out: ScoreRow[] = [];
   for (let from = 0; ; from += 1000) {
     const page = check(

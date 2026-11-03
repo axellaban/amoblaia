@@ -2,7 +2,7 @@
 
 Herramienta interna para preparar, con fotos reales de una inmobiliaria, una galería ambientada con IA y compartirla por WhatsApp con un enlace único.
 
-- Panel privado: `/admin/demos` (también enlazado desde `/administracion`).
+- Panel privado: cada inmobiliaria en `/admin/inmobiliarias/[id]`, pestaña «Propiedades y demos» (`/admin/demos` redirige a `/admin/inmobiliarias`; el editor sigue en `/admin/demos/[id]`). Ver `docs/PANEL_INMOBILIARIAS.md`.
 - Página pública: `/demo/<token>`, sin registro. Los links compartidos son solo rutas (sin `?` ni `&`); los links viejos `?presentacion=1` redirigen a la ruta nueva.
 
 ## Puesta en marcha

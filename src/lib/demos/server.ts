@@ -360,16 +360,12 @@ async function creditsOf(agencyIds: string[]) {
   return out;
 }
 
-export async function listDemos() {
+/** The team's demos, newest first; with agencyId, only that agency's (its «Propiedades y demos» tab). */
+export async function listDemos(agencyId: string | null = null) {
   const db = adminClient();
-  const demos = check(
-    await db
-      .from("demos")
-      .select(DEMO_FIELDS)
-      .order("created_at", { ascending: false })
-      .limit(300),
-    "DEMO_LIST_FAILED",
-  ) as DemoRow[];
+  let query = db.from("demos").select(DEMO_FIELDS).order("created_at", { ascending: false }).limit(300);
+  if (agencyId) query = query.eq("agency_id", agencyId);
+  const demos = check(await query, "DEMO_LIST_FAILED") as DemoRow[];
   const agencyIds = [...new Set(demos.map((d) => d.agency_id))];
   const propertyIds = demos.map((d) => d.property_id);
   const [agencies, owners, properties, photos, allAgencies] = await Promise.all([

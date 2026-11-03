@@ -290,7 +290,8 @@ function Dimensions({ v }: { v: Visitor }) {
   );
 }
 
-function AgencyView({ id, onClose, onChanged }: { id: string; onClose: () => void; onChanged: () => Promise<void> }) {
+/** One agency's visitors, scores and timeline. Also embedded in the agency's «Actividad» tab (without «Cerrar»). */
+export function AgencyView({ id, onClose, onChanged }: { id: string; onClose?: () => void; onChanged: () => Promise<void> }) {
   const [d, setD] = useState<AgencyDetail | null>(null);
   const [error, setError] = useState("");
   const [demo, setDemo] = useState("all");
@@ -342,9 +343,11 @@ function AgencyView({ id, onClose, onChanged }: { id: string; onClose: () => voi
           <span className="pr-label">Detalle de inmobiliaria</span>
           <h2 id="ld-detail-title">{d.agency.name}</h2>
         </div>
-        <button type="button" className="pr-link" onClick={onClose}>
-          Cerrar
-        </button>
+        {onClose && (
+          <button type="button" className="pr-link" onClick={onClose}>
+            Cerrar
+          </button>
+        )}
       </div>
 
       <div className="ld-summary">

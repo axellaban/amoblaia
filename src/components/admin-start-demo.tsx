@@ -84,8 +84,8 @@ export function DemoAgencyChooser() {
     : null;
   return (
     <div className="account-page container dm-page dm-narrow">
-      <Link href="/admin/demos" className="text-link">
-        ← Demos
+      <Link href="/admin/inmobiliarias" className="text-link">
+        ← Inmobiliarias
       </Link>
       <h1>
         Nueva demo<span className="accent">.</span>
