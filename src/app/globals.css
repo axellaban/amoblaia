@@ -22058,7 +22058,7 @@ body:has(.pv-root) .pb-root {
 /* ===================== Demo comercial: ajustes finales ===================== */
 
 /* Comparador: un control central claramente arrastrable y la indicación de la primera visita. */
-.dv2-page:has(.dv2-owner) .dv2-frame .comparison-line > span {
+.dv2-page .dv2-frame .comparison-line > span {
   width: 46px;
   height: 46px;
   border: 2px solid rgba(36, 56, 46, 0.12);
@@ -22103,19 +22103,19 @@ body:has(.pv-root) .pb-root {
 }
 
 /* Vertical photos are narrow frames: smaller Antes / Después labels so they never overlap. */
-.dv2-page:has(.dv2-owner) .dv2-frame {
+.dv2-page .dv2-frame {
   container-type: inline-size;
 }
 @container (max-width: 300px) {
-  .dv2-page:has(.dv2-owner) .dv2-frame .comparison-label {
+  .dv2-page .dv2-frame .comparison-label {
     bottom: 10px;
     padding: 4px 8px;
     font-size: 11.5px;
   }
-  .dv2-page:has(.dv2-owner) .dv2-frame .before-label {
+  .dv2-page .dv2-frame .before-label {
     left: 8px;
   }
-  .dv2-page:has(.dv2-owner) .dv2-frame .after-label {
+  .dv2-page .dv2-frame .after-label {
     right: 8px;
   }
   .comparison-hint {
@@ -22401,8 +22401,8 @@ body:has(.pv-root) .pb-root {
   }
 }
 
-/* Foto principal de la demo comercial: el recuadro toma las proporciones de la foto (sin franjas); las verticales, con fondo desenfocado a los lados. */
-.dv2-page:has(.dv2-owner) .dv2-stage:not(.is-full) {
+/* Foto principal (demo comercial y comprador): el recuadro toma las proporciones de la foto (sin franjas); las verticales, con fondo desenfocado a los lados. */
+.dv2-page .dv2-stage:not(.is-full) {
   /* The width is the column's: the height follows the photo, never the other way round. */
   width: 100%;
   height: auto;
@@ -22411,7 +22411,7 @@ body:has(.pv-root) .pb-root {
   max-height: min(70vh, 640px);
 }
 @media (max-width: 900px) {
-  .dv2-page:has(.dv2-owner) .dv2-stage:not(.is-full) {
+  .dv2-page .dv2-stage:not(.is-full) {
     max-height: 62vh;
   }
 }
@@ -22539,23 +22539,23 @@ body:has(.pv-root) .pb-root {
 }
 
 /* ===================== Demo comercial en mobile: igual al diseño ===================== */
-/* Las flechas de la foto: círculos blancos chicos (mobile y desktop). */
-.dv2-page:has(.dv2-owner) .dv2-nav {
+/* Las flechas de la foto: círculos blancos chicos (demo comercial y comprador, mobile y desktop). */
+.dv2-page .dv2-nav {
   width: 34px;
   height: 34px;
   background: rgba(255, 255, 255, 0.92);
   color: var(--ink);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
 }
-.dv2-page:has(.dv2-owner) .dv2-nav:hover {
+.dv2-page .dv2-nav:hover {
   background: #fff;
 }
-.dv2-page:has(.dv2-owner) .dv2-nav svg {
+.dv2-page .dv2-nav svg {
   width: 20px;
   height: 20px;
 }
 /* A larger touch target than the visible circle. */
-.dv2-page:has(.dv2-owner) .dv2-nav::after {
+.dv2-page .dv2-nav::after {
   content: "";
   position: absolute;
   inset: -6px;

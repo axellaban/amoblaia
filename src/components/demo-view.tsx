@@ -1383,7 +1383,7 @@ function Gallery({
                 beforeLabel="Antes"
                 afterLabel="Después"
                 initial={state.position}
-                teach={Boolean(owner)}
+                teach
                 analytics={source.kind === "public" ? { ...base, photo_id: photo.id, photo_index: index, style_id: showing.style } : undefined}
                 onPositionChange={(position) => {
                   lastPosition.current = position;
