@@ -151,6 +151,10 @@ export type CommercialRow = {
   score: number | null;
   lastActivity: ActivityFact | null;
   createdAt: string;
+  /** A test agency (QA): out of the demos funnel. */
+  test: boolean;
+  /** Its demos: when each was created and the funnel step it reached (demo-funnel.ts). */
+  demos: { createdAt: string; step: number }[];
 };
 
 export type ListFilters = {

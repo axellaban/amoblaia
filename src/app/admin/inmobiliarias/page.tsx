@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRight, Building2, CreditCard, Filter, Flame, Plus, Search, Users } from "lucide-react";
+import { ArrowRight, Filter, Plus, Search } from "lucide-react";
 import { claimsToReview } from "@/lib/agency/admin";
 import { CLAIM_REVIEW_LABEL } from "@/lib/agency/claim-review";
 import {
@@ -16,6 +16,7 @@ import {
   type ListFilters,
 } from "@/lib/agency/commercial";
 import { commercialRows } from "@/lib/agency/commercial-server";
+import { FUNNEL_STEPS, PERIODS, STEP_LABEL, demosInPeriod, funnelCounts, inPeriod, parsePeriod, shortDay, type Period } from "@/lib/agency/demo-funnel";
 import { AccountPill, AgencyThumb, MoreMenu, RecalcScores, ScorePill, StagePill } from "@/components/admin-agency-hub";
 import { SupportViewButton } from "@/components/admin-agencies";
 import { requireAdminPage } from "@/lib/demos/admin-page";
@@ -45,6 +46,11 @@ export default async function AgenciesPage({ searchParams }: Props) {
     minScore: [20, 40, 60, 80].includes(Number(one(sp.score))) ? Number(one(sp.score)) : null,
     days: [7, 30, 90].includes(Number(one(sp.actividad))) ? Number(one(sp.actividad)) : null,
   };
+  const period = parsePeriod({ periodo: one(sp.periodo), desde: one(sp.desde), hasta: one(sp.hasta) });
+  // «Con demo creada» is a tab of its own (not a commercial stage); «paso» is a step of the demos funnel.
+  const withDemo = one(sp.etapa) === "con-demo";
+  const stepRaw = Number(one(sp.paso));
+  const step = one(sp.paso) !== "" && Number.isInteger(stepRaw) && stepRaw >= 0 && stepRaw < FUNNEL_STEPS.length ? stepRaw : null;
   const page = Math.max(1, Number(one(sp.pagina)) || 1);
   const [rows, toReview] = await Promise.all([commercialRows().catch(() => null), claimsToReview().catch(() => [])]);
   const filtering = Boolean(filters.account || filters.minScore !== null || filters.days);
@@ -53,7 +59,11 @@ export default async function AgenciesPage({ searchParams }: Props) {
   const href = (change: Record<string, string | null>) => {
     const next = new URLSearchParams();
     const current: Record<string, string> = {
-      etapa: filters.stage ? STAGE_PARAM[filters.stage] : "",
+      etapa: withDemo ? "con-demo" : filters.stage ? STAGE_PARAM[filters.stage] : "",
+      paso: step !== null ? String(step) : "",
+      periodo: period.key === "todo" || period.key === "rango" ? "" : period.key,
+      desde: period.key === "rango" && period.from ? period.from : "",
+      hasta: period.key === "rango" && period.to ? period.to : "",
       q: filters.q,
       cuenta: filters.account ? ACCOUNT_PARAM[filters.account] : "",
       score: filters.minScore !== null ? String(filters.minScore) : "",
@@ -85,7 +95,7 @@ export default async function AgenciesPage({ searchParams }: Props) {
           </Link>
         </div>
       ) : (
-        <AgencyList rows={rows} filters={filters} filtering={filtering} page={page} href={href} toReview={toReview} />
+        <AgencyList rows={rows} filters={filters} filtering={filtering} page={page} href={href} toReview={toReview} period={period} withDemo={withDemo} step={step} />
       )}
     </div>
   );
@@ -98,8 +108,14 @@ function AgencyList({
   page,
   href,
   toReview,
+  period,
+  withDemo,
+  step,
 }: {
   rows: NonNullable<Awaited<ReturnType<typeof commercialRows>>>;
+  period: Period;
+  withDemo: boolean;
+  step: number | null;
   filters: ListFilters;
   filtering: boolean;
   page: number;
@@ -107,7 +123,15 @@ function AgencyList({
   toReview: Awaited<ReturnType<typeof claimsToReview>>;
 }) {
   const totals = listTotals(rows);
-  const shown = filterRows(rows, filters);
+  const funnel = funnelCounts(rows.filter((r) => !r.test).flatMap((r) => r.demos.filter((d) => inPeriod(d.createdAt, period)).map((d) => d.step)));
+  const view = new Map(rows.map((r) => [r.id, demosInPeriod(r.demos, period)]));
+  const withDemos = rows.filter((r) => view.get(r.id)!.count > 0).length;
+  const shown = filterRows(rows, filters).filter((r) => {
+    const v = view.get(r.id)!;
+    if (withDemo && !v.count) return false;
+    // A funnel step: agencies with a demo of the period that reached it (test agencies too, marked as such).
+    return step === null || (v.step !== null && v.step >= step);
+  });
   const pages = Math.max(1, Math.ceil(shown.length / PER_PAGE));
   const current = Math.min(page, pages);
   const items = shown.slice((current - 1) * PER_PAGE, current * PER_PAGE);
@@ -115,32 +139,63 @@ function AgencyList({
     const base = href({});
     return p > 1 ? `${base}${base.includes("?") ? "&" : "?"}pagina=${p}` : base;
   };
-  const cards = [
-    { icon: Building2, value: totals.total, label: "Inmobiliarias totales", link: href({ etapa: null, cuenta: null, score: null, actividad: null, q: null }) },
-    { icon: Flame, value: totals.hot, label: "Leads calientes", sub: "(score ≥ 60)", link: href({ score: "60" }), hot: true },
-    { icon: Users, value: totals.withAccount, label: "Con cuenta", sub: "(registradas)", link: href({ etapa: "con-panel" }) },
-    { icon: CreditCard, value: totals.paying, label: "Clientes pagos", sub: "(suscripción activa)", link: href({ etapa: "clientes" }) },
-  ];
+  const presetHref = (key: string) => href({ periodo: key === "todo" ? null : key, desde: null, hasta: null });
   return (
     <>
-      <section className="ah-cards" aria-label="Resumen">
-        {cards.map(({ icon: Icon, value, label, sub, link, hot }) => (
-          <Link key={label} href={link} className="ah-card">
-            <Icon size={30} aria-hidden="true" className={hot ? "is-hot" : undefined} />
-            <span>
-              <strong>{value}</strong>
-              <small>
-                {label}
-                {sub && (
-                  <>
-                    <br />
-                    {sub}
-                  </>
-                )}
-              </small>
-            </span>
-          </Link>
-        ))}
+      <section className="ah-funnel" aria-labelledby="ah-funnel-title">
+        <div className="ah-funnel-head">
+          <div>
+            <h2 id="ah-funnel-title">Funnel de demos</h2>
+            <p>Cada paso cuenta las demos que llegaron hasta ahí. El % compara con el paso anterior.</p>
+          </div>
+          <div className="ah-period">
+            <span>Demo creada:</span>
+            <nav className="ah-period-presets" aria-label="Período">
+              {PERIODS.map((p) => (
+                <Link key={p.key} href={presetHref(p.key)} className={period.key === p.key ? "is-on" : undefined} aria-current={period.key === p.key ? "true" : undefined}>
+                  {p.label}
+                </Link>
+              ))}
+            </nav>
+            <form action="/admin/inmobiliarias" className="ah-period-range">
+              {withDemo && <input type="hidden" name="etapa" value="con-demo" />}
+              {!withDemo && filters.stage && <input type="hidden" name="etapa" value={STAGE_PARAM[filters.stage]} />}
+              {step !== null && <input type="hidden" name="paso" value={step} />}
+              {filters.q && <input type="hidden" name="q" value={filters.q} />}
+              <label>
+                Desde <input type="date" name="desde" defaultValue={period.from ?? ""} />
+              </label>
+              <label>
+                Hasta <input type="date" name="hasta" defaultValue={period.to ?? ""} />
+              </label>
+              <button className="button button-small button-outline">Aplicar</button>
+            </form>
+          </div>
+        </div>
+        <ol className="ah-funnel-steps">
+          {funnel.map((f, i) => (
+            <li key={f.label}>
+              <Link
+                href={href({ paso: step === i ? null : String(i) })}
+                className={step === i ? "is-on" : undefined}
+                aria-current={step === i ? "true" : undefined}
+              >
+                <span className="ah-funnel-label">
+                  {i + 1}. {f.label}
+                </span>
+                <strong>{f.count}</strong>
+                <span className="ah-funnel-bar" aria-hidden="true">
+                  <span style={{ width: `${Math.max(f.ofFirst * 100, f.count ? 2 : 0)}%` }} />
+                </span>
+                <small>{i === 0 ? "Base del período" : f.ofPrevious === null ? "—" : `${f.ofPrevious}% de ${FUNNEL_STEPS[i - 1].toLowerCase()}`}</small>
+              </Link>
+            </li>
+          ))}
+        </ol>
+        <p className="ah-funnel-note">
+          Tocá un paso para ver sus inmobiliarias. «Con interacción» incluye descargas e imágenes generadas en la demo; «Cuenta con interacción»: la
+          cuenta subió o importó una propiedad, o generó una imagen. Las inmobiliarias de prueba (QA) no cuentan.
+        </p>
       </section>
 
       {toReview.length > 0 && (
@@ -161,22 +216,30 @@ function AgencyList({
 
       <div className="ah-toolbar">
         <nav className="ah-tabs" aria-label="Etapa comercial">
-          <Link href={href({ etapa: null })} className={!filters.stage ? "is-on" : undefined} aria-current={!filters.stage ? "page" : undefined}>
+          <Link href={href({ etapa: null })} className={!filters.stage && !withDemo ? "is-on" : undefined} aria-current={!filters.stage && !withDemo ? "page" : undefined}>
             Todas ({totals.total})
+          </Link>
+          <Link href={href({ etapa: "con-demo" })} className={withDemo ? "is-on" : undefined} aria-current={withDemo ? "page" : undefined}>
+            Con demo creada ({withDemos})
           </Link>
           {COMMERCIAL_STAGES.map((s) => (
             <Link
               key={s}
               href={href({ etapa: STAGE_PARAM[s] })}
-              className={filters.stage === s ? "is-on" : undefined}
-              aria-current={filters.stage === s ? "page" : undefined}
+              className={!withDemo && filters.stage === s ? "is-on" : undefined}
+              aria-current={!withDemo && filters.stage === s ? "page" : undefined}
             >
               {STAGE_TAB[s]} ({totals.byStage[s]})
             </Link>
           ))}
         </nav>
         <form className="ah-search" action="/admin/inmobiliarias" role="search">
-          {filters.stage && <input type="hidden" name="etapa" value={STAGE_PARAM[filters.stage]} />}
+          {withDemo && <input type="hidden" name="etapa" value="con-demo" />}
+          {!withDemo && filters.stage && <input type="hidden" name="etapa" value={STAGE_PARAM[filters.stage]} />}
+          {step !== null && <input type="hidden" name="paso" value={step} />}
+          {period.key !== "todo" && period.key !== "rango" && <input type="hidden" name="periodo" value={period.key} />}
+          {period.key === "rango" && period.from && <input type="hidden" name="desde" value={period.from} />}
+          {period.key === "rango" && period.to && <input type="hidden" name="hasta" value={period.to} />}
           {filters.account && <input type="hidden" name="cuenta" value={ACCOUNT_PARAM[filters.account]} />}
           {filters.minScore !== null && <input type="hidden" name="score" value={filters.minScore} />}
           {filters.days && <input type="hidden" name="actividad" value={filters.days} />}
@@ -188,7 +251,12 @@ function AgencyList({
             <Filter size={16} aria-hidden="true" /> Filtrar{filtering ? " ·" : ""}
           </summary>
           <form action="/admin/inmobiliarias" className="ah-filter-form">
-            {filters.stage && <input type="hidden" name="etapa" value={STAGE_PARAM[filters.stage]} />}
+            {withDemo && <input type="hidden" name="etapa" value="con-demo" />}
+            {!withDemo && filters.stage && <input type="hidden" name="etapa" value={STAGE_PARAM[filters.stage]} />}
+            {step !== null && <input type="hidden" name="paso" value={step} />}
+            {period.key !== "todo" && period.key !== "rango" && <input type="hidden" name="periodo" value={period.key} />}
+            {period.key === "rango" && period.from && <input type="hidden" name="desde" value={period.from} />}
+            {period.key === "rango" && period.to && <input type="hidden" name="hasta" value={period.to} />}
             {filters.q && <input type="hidden" name="q" value={filters.q} />}
             <label>
               Cuenta habita
@@ -251,6 +319,9 @@ function AgencyList({
                 <th scope="col">
                   <span title="Prospecto → Contactada → Demo enviada → Interactuó → Con panel → Cliente. Surge de los hechos registrados.">Estado comercial ⓘ</span>
                 </th>
+                <th scope="col">
+                  <span title="La última demo creada en el período y el paso más alto del funnel que alcanzaron sus demos.">Demo ⓘ</span>
+                </th>
                 <th scope="col">Cuenta habita</th>
                 <th scope="col" className="is-num">
                   Propiedades
@@ -277,6 +348,23 @@ function AgencyList({
                     </td>
                     <td>
                       <StagePill stage={r.stage} />
+                    </td>
+                    <td>
+                      {(() => {
+                        const v = view.get(r.id)!;
+                        return v.latest && v.step !== null ? (
+                          <span className="ah-demo">
+                            <span className={`ah-demo-step is-step-${v.step}`}>{STEP_LABEL[v.step]}</span>
+                            <small>
+                              {shortDay(v.latest)}
+                              {v.count > 1 ? ` · ${v.count} demos` : ""}
+                              {r.test ? " · prueba" : ""}
+                            </small>
+                          </span>
+                        ) : (
+                          "—"
+                        );
+                      })()}
                     </td>
                     <td>
                       <AccountPill state={accountState(r)} />

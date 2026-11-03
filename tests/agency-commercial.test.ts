@@ -78,6 +78,8 @@ const row = (over: Partial<CommercialRow>): CommercialRow => ({
   score: null,
   lastActivity: null,
   createdAt: "2026-10-01T00:00:00Z",
+  test: false,
+  demos: [],
   ...over,
 });
 
