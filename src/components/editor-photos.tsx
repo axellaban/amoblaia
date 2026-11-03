@@ -311,6 +311,22 @@ export function PhotoWorkspace({
     if (activeId === p.id) choose(p.id, made.id);
     setReady({ photoId: p.id, versionId: made.id });
   }, [photos, awaitingTool, activeId]);
+  // ← / → step through the photos, as the arrows over it do; never while typing, sliding the
+  // comparison, painting a mask or with a window open (each of those keeps its own arrows).
+  const stepKey = useRef<((n: number) => void) | null>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.key !== "ArrowLeft" && e.key !== "ArrowRight") || e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      const target = e.target as HTMLElement | null;
+      if (target?.closest("input, textarea, select, [contenteditable=''], [contenteditable='true'], [role='slider'], [role='radiogroup'], [role='tablist'], dialog")) return;
+      if (document.querySelector("dialog[open]")) return;
+      if (!stepKey.current) return;
+      e.preventDefault();
+      stepKey.current(e.key === "ArrowLeft" ? -1 : 1);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   if (!photos.length)
     return (
@@ -332,6 +348,7 @@ export function PhotoWorkspace({
     if (flat) track("studio_photo_selected", { property_id: detail.demo.id, photo_id: photoId, how });
   };
   const step = (n: number) => pick(ordered[(at + n + ordered.length) % ordered.length].id, "arrow");
+  stepKey.current = ordered.length > 1 && !(tab === "edit" && tool === "remove") ? step : null;
   const shownHere = Boolean(viewGen && shownIds.has(viewGen.id));
   const retouchShown = Boolean(viewRetouch && photo.shownRetouch === viewRetouch.id);
   // A version still being made: the clock turns over the photo until it is ready.
@@ -502,6 +519,11 @@ export function PhotoWorkspace({
                 />
               )}
               {brushing && photoEl && <MaskBrush ref={brush} image={photoEl} size={toolSize} onChange={setPainted} />}
+              {demoUi && !flat && ordered.length > 1 && (
+                <span className="pw-counter" aria-hidden="true">
+                  {at + 1} / {ordered.length}
+                </span>
+              )}
               {!flat && !brushing && ordered.length > 1 && (
                 <>
                   <button type="button" className="pw-nav pw-nav-prev" aria-label="Foto anterior" onClick={() => step(-1)}>
@@ -2213,8 +2235,19 @@ function SpaceStrip({
   onPick: (id: string) => void;
   actions: WorkspaceActions;
 }) {
+  // The photo on screen stays in view in the strip, however many the space has (arrows, keys).
+  const strip = useRef<HTMLUListElement>(null);
+  useEffect(() => {
+    const list = strip.current;
+    const on = list?.querySelector<HTMLElement>('[aria-pressed="true"]');
+    if (!list || !on) return;
+    const box = list.getBoundingClientRect();
+    const item = on.getBoundingClientRect();
+    if (item.left < box.left || item.right > box.right)
+      list.scrollBy?.({ left: item.left - box.left - (box.width - item.width) / 2, behavior: "smooth" });
+  }, [activeId]);
   return (
-    <ul className="dx-strip" aria-label={`Fotos de ${spaceName}`}>
+    <ul className="dx-strip" ref={strip} aria-label={`Fotos de ${spaceName}`}>
       {photos.map((p, i) => (
         <li key={p.id}>
           <button

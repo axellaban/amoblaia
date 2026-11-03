@@ -12390,6 +12390,20 @@ a.dm-agency:hover {
   outline: 2px solid var(--forest);
   outline-offset: 2px;
 }
+.pw-counter {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 3;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(36, 56, 46, 0.92);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
 .pw-nav-prev {
   left: 12px;
 }
