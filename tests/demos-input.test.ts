@@ -145,6 +145,12 @@ describe("Sharing", () => {
       "coastal",
     ]);
   });
+  it("orders styles by a demo's own sequence, the main one still first", () => {
+    const sequence = ["modern", "coastal", "scandinavian", "industrial"];
+    expect(orderStyles(["industrial", "scandinavian", "coastal", "modern"], "modern", sequence)).toEqual(["modern", "coastal", "scandinavian", "industrial"]);
+    // A property already staged with another main style keeps it first.
+    expect(orderStyles(["industrial", "coastal", "modern"], "industrial", sequence)).toEqual(["industrial", "modern", "coastal"]);
+  });
   it("chooses the cover among visible photos, preferring one staged in the main style", () => {
     const photos = [
       { id: "a", visible: true, versions: [] },

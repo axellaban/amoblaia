@@ -14,6 +14,7 @@ import {
   VIDEO_PLACEMENTS,
   color,
   readSettings,
+  readStyleOrder,
   whatsappNumber,
   type FactIcon,
   type HideableField,
@@ -232,6 +233,12 @@ export function settingsInput(raw: unknown, current: DemoSettings): DemoSettings
   if ("videoPlacement" in v) {
     if (!VIDEO_PLACEMENTS.includes(v.videoPlacement as VideoPlacement)) throw new HttpError(400, "Ubicación del video inválida.");
     out.videoPlacement = v.videoPlacement;
+  }
+  // The style order: "auto" (by the property's region), "catalog", or a list of known styles.
+  if ("styleOrder" in v) {
+    const valid = v.styleOrder === "auto" || v.styleOrder === "catalog" || (Array.isArray(v.styleOrder) && v.styleOrder.length > 0 && v.styleOrder.every(isDemoStyle));
+    if (!valid) throw new HttpError(400, "Orden de estilos inválido.");
+    out.styleOrder = readStyleOrder(v.styleOrder);
   }
   if ("reviewedAt" in v) out.reviewedAt = v.reviewedAt === null ? null : new Date().toISOString();
   return readSettings(out);

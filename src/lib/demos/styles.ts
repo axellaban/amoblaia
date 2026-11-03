@@ -41,6 +41,38 @@ export const demoStyleName = (id: string) => ALL.find((s) => s.id === id)?.name 
 export const demoStyleOrder = ALL.map((s) => s.id);
 
 /**
+ * The order a new demo offers its styles in, by where the property is. A
+ * configuration, not a rule for one city: each entry matches the property's
+ * location and lists the styles that go first; every other style follows in
+ * catalog order. Add a region here to give it its own order.
+ */
+export const REGIONAL_STYLE_ORDERS: { region: string; match: RegExp; order: string[] }[] = [
+  {
+    region: "Mar del Plata",
+    match: /mar\s+del\s+plata/i,
+    order: ["modern", "coastal", "scandinavian", "minimalist", "midcentury", "luxury", "industrial"],
+  },
+];
+
+/**
+ * A demo's saved style order (settings.styleOrder): "catalog" for demos made
+ * before this existed (they keep the order they always had), "auto" for new
+ * ones (resolved by the property's location), or an explicit list.
+ */
+export type StyleOrderSetting = "catalog" | "auto" | string[];
+
+/** The full sequence of style ids for a demo: the preferred ones first, then the rest of the catalog. */
+export function styleSequence(setting: StyleOrderSetting | null | undefined, location: string | null | undefined): string[] {
+  const preferred = Array.isArray(setting)
+    ? setting
+    : setting === "auto"
+      ? (REGIONAL_STYLE_ORDERS.find((r) => location && r.match.test(location))?.order ?? [])
+      : [];
+  const first = [...new Set(preferred.filter((id) => demoStyleOrder.includes(id)))];
+  return [...first, ...demoStyleOrder.filter((id) => !first.includes(id))];
+}
+
+/**
  * The generation prompt. Homes use the studio's prompt; offices keep the
  * same strict architectural constraints with work furniture.
  */
