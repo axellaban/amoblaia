@@ -9638,12 +9638,14 @@ h2 .accent {
   display: grid;
   grid-template-rows: auto 1fr;
   border-radius: 16px;
-  overflow: hidden;
+  /* No overflow: hidden: it clipped the «Más» menu, which opens below the card. */
   background: #fff;
   border: 1px solid var(--line);
 }
 .ap-card-photo {
   position: relative;
+  overflow: hidden;
+  border-radius: 15px 15px 0 0;
   display: grid;
   place-items: center;
   aspect-ratio: 3 / 2;

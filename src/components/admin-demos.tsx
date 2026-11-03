@@ -247,7 +247,11 @@ export function ViewLink({
     try {
       const url =
         which === "agency"
-          ? await agencyLink(demo)
+          ? // With its account, agencyLink is its panel (what it gets sent); the team
+            // still wants to see the demo the agency sees, not land in a panel.
+            demo.agencyClaimed === true
+            ? publicLink(demo.token, true)
+            : await agencyLink(demo)
           : which === "prices"
             ? await agencyPricesLink(demo)
           : which === "panel"
