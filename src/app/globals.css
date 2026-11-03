@@ -19504,12 +19504,38 @@ main:has(.ap-sidebar) {
 }
 
 /* The video in the big frame: its own proportions (vertical or horizontal), never stretched. */
+/* The frame already has the video's proportions: «cover» crops nothing of the video and lets the cover photo (poster) fill it, without black bars. */
 .dv2-video {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  object-fit: cover;
   background: #0d0f14;
+}
+.dv2-video:fullscreen {
+  object-fit: contain;
+}
+.dv2-unmute {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(13, 15, 20, 0.72);
+  color: #fff;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.dv2-unmute:hover {
+  background: rgba(13, 15, 20, 0.88);
 }
 .dv2-stage.is-video .dv2-backdrop {
   filter: blur(30px) brightness(0.55);
