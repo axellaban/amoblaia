@@ -143,8 +143,9 @@ export function StatusChip({ status }: { status: DemoSummary["status"] }) {
  * claimed, the plain presentation link does.
  */
 async function agencyLink(demo: Pick<DemoSummary, "id" | "token" | "agencyClaimed">) {
-  // With its account, the agency sees the demo inside its own panel.
-  if (demo.agencyClaimed === true) return `${window.location.origin}/panel/propiedades/${demo.id}`;
+  // With its account it still gets the demo as it sees it (no invitation code):
+  // its panel has its own link, «Acceso al panel».
+  if (demo.agencyClaimed === true) return publicLink(demo.token, true);
   const claim = await api<{ presentationUrl: string | null }>(`/api/admin/demos/${demo.id}/reclamo`, { method: "POST" });
   return claim.presentationUrl ?? publicLink(demo.token, true);
 }
@@ -247,11 +248,7 @@ export function ViewLink({
     try {
       const url =
         which === "agency"
-          ? // With its account, agencyLink is its panel (what it gets sent); the team
-            // still wants to see the demo the agency sees, not land in a panel.
-            demo.agencyClaimed === true
-            ? publicLink(demo.token, true)
-            : await agencyLink(demo)
+          ? await agencyLink(demo)
           : which === "prices"
             ? await agencyPricesLink(demo)
           : which === "panel"
