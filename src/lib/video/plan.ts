@@ -75,9 +75,9 @@ export function photoCountProblem(mode: VideoMode, count: number): string | null
 
 export type Timing = { intro: number; photo: number; outro: number; fade: number };
 export const DEFAULT_TIMING: Timing = { intro: 2400, photo: 3200, outro: 3000, fade: 700 };
-/** Each animated clip lasts 6 s; its scene uses a little less so the crossfade never runs past its end. */
+/** LTX clips last 6 s and Kling's 5 s; each scene uses 5 s so the crossfade never runs past a clip's end. */
 export const CLIP_SECONDS = 6;
-export const AI_TIMING: Timing = { intro: 2400, photo: 5600, outro: 3000, fade: 700 };
+export const AI_TIMING: Timing = { intro: 2400, photo: 5000, outro: 3000, fade: 700 };
 export const timingOf = (mode: VideoMode): Timing => (isAiMode(mode) ? AI_TIMING : DEFAULT_TIMING);
 
 /**

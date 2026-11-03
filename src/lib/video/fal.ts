@@ -6,8 +6,16 @@
 import "server-only";
 import { CLIP_SECONDS } from "./plan";
 
-/** LTX-2 Fast: USD 0.04 per second at 1080p (6 s ≈ USD 0.24), 16:9, without sound. */
-export const DEFAULT_MODEL = "fal-ai/ltx-2/image-to-video/fast";
+/**
+ * Kling 2.6 Pro: USD 0.07 per second without sound (5 s ≈ USD 0.35). Chosen
+ * after the quality test of 03/11/2026 with real photos: it keeps the room as
+ * it is, while LTX-2.3 Fast (USD 0.04/s) invented spaces and changed the light.
+ * Its clip keeps the shape of the photo, which is cropped to the clip's first.
+ */
+export const DEFAULT_MODEL = "fal-ai/kling-video/v2.6/pro/image-to-video";
+/** The clip's shape: vertical for the vertical formats, horizontal otherwise. */
+export type ClipAspect = "16:9" | "9:16";
+export const clipAspect = (format: string): ClipAspect => (format === "9:16" || format === "4:5" ? "9:16" : "16:9");
 export const falModel = () => (process.env.FAL_VIDEO_MODEL || DEFAULT_MODEL).trim();
 export const falEnabled = () => Boolean(process.env.FAL_KEY?.trim());
 /**
@@ -44,21 +52,26 @@ function headers() {
 }
 
 /** What the model receives: the photo (a JPEG as a data URI, never a public link) and the camera move. */
-export function clipInput(model: string, jpeg: Buffer, prompt: string) {
-  const input: Record<string, unknown> = { image_url: `data:image/jpeg;base64,${jpeg.toString("base64")}`, prompt };
-  if (model.includes("ltx-2")) Object.assign(input, { duration: CLIP_SECONDS, resolution: "1080p", aspect_ratio: "16:9", fps: 25, generate_audio: false });
-  // Other image-to-video models (Kling, Wan…) take a 5-second string; the scene holds its last frame.
+export function clipInput(model: string, jpeg: Buffer, prompt: string, aspect: ClipAspect = "16:9") {
+  const image = `data:image/jpeg;base64,${jpeg.toString("base64")}`;
+  // Kling takes the photo as start_image_url and keeps its shape (the photo is already cropped to the clip's).
+  if (model.includes("kling-video"))
+    return { start_image_url: image, prompt, duration: "5", negative_prompt: "blur, distort, low quality, new objects, people, text", generate_audio: false };
+  const input: Record<string, unknown> = { image_url: image, prompt };
+  if (model.includes("ltx-2.3")) Object.assign(input, { duration: CLIP_SECONDS, resolution: "1080p", aspect_ratio: aspect, fps: 25, generate_audio: false });
+  else if (model.includes("ltx-2")) Object.assign(input, { duration: CLIP_SECONDS, resolution: "1080p", aspect_ratio: "16:9", fps: 25, generate_audio: false });
+  // Other image-to-video models (Wan…) take a 5-second string.
   else Object.assign(input, { duration: "5" });
   return input;
 }
 
 /** Sends one photo to the queue. fal keeps neither the request's data nor, after a day, the clip. */
-export async function submitClip(jpeg: Buffer, prompt: string, model = falModel()): Promise<FalRequest> {
+export async function submitClip(jpeg: Buffer, prompt: string, model = falModel(), aspect: ClipAspect = "16:9"): Promise<FalRequest> {
   if (!/^[a-z0-9-]+\/[a-z0-9./-]+$/i.test(model) || model.includes("..")) throw new FalError("FAL_MODEL_INVALID");
   const res = await fetch(`${QUEUE}${model}`, {
     method: "POST",
     headers: { ...headers(), "X-Fal-Store-IO": "0", "X-Fal-Object-Lifecycle-Preference": JSON.stringify({ expiration_duration_seconds: 86400 }) },
-    body: JSON.stringify(clipInput(model, jpeg, prompt)),
+    body: JSON.stringify(clipInput(model, jpeg, prompt, aspect)),
     signal: AbortSignal.timeout(30_000),
   });
   const body = (await res.json().catch(() => null)) as Record<string, unknown> | null;

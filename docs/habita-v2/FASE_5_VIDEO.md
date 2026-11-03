@@ -41,16 +41,16 @@ format|duration=14.700000|size=8195610
 
 ## 5C/5D — Animación con IA (fal.ai)
 
-Decisión (03/11/2026): **fal.ai** con **LTX-2 Fast** (`fal-ai/ltx-2/image-to-video/fast`, USD 0,04 por segundo a 1080p; un clip de 6 s ≈ USD 0,24). Es la opción económica para empezar; el modelo se cambia con `FAL_VIDEO_MODEL` sin tocar el resto (Kling 2.6 Pro ≈ USD 0,35 por clip de 5 s como opción de mayor calidad, a probar). Sora quedó descartado: OpenAI cerró su API de video el 24/09/2026.
+Decisión (03/11/2026, después de la prueba de calidad): **fal.ai** con **Kling 2.6 Pro** (`fal-ai/kling-video/v2.6/pro/image-to-video`, sin audio, USD 0,07 por segundo; un clip de 5 s ≈ USD 0,35). En la prueba con «Departamento en La Perla» (Russillo), Kling mantuvo muebles, luz y ventanas tal como en la foto; **LTX-2.3 Fast** (USD 0,04/s, la opción más barata) inventó un cuarto que no existe a partir de la foto del balcón y cambió la luz del living. LTX-2 Fast ya no está en fal. El modelo se cambia con `FAL_VIDEO_MODEL` sin tocar el resto; con LTX-2.3 los formatos verticales se animan en 9:16. Con Kling, la foto se recorta antes a la forma del clip (falta confirmar en vertical que Kling conserve esa forma). Sora quedó descartado: OpenAI cerró su API de video el 24/09/2026.
 
 | Modo | Fotos | Créditos | Costo de proveedor estimado |
 | --- | --- | --- | --- |
-| Foto en movimiento | 1 (la primera del orden) | **3** | ≈ USD 0,24 (+ un reintento si falla) |
-| Recorrido cinematográfico | 2 a 6 | **10** | ≈ USD 0,48–1,44 |
+| Foto en movimiento | 1 (la primera del orden) | **3** | ≈ USD 0,35 (+ un reintento si falla) |
+| Recorrido cinematográfico | 2 a 6 | **10** | ≈ USD 0,70–2,10 |
 
 **Cómo funciona**
 
-1. El estudio muestra el costo en créditos y pide confirmación. El servidor crea el video, **cobra los créditos antes de cualquier costo de proveedor** (`habita_video_charge`: primero los créditos que vencen antes, una fila de `credit_ledger` por bolsa usada, nunca dos veces el mismo video; nunca usa la prueba gratis) y manda cada foto a fal (la misma imagen que muestra el estudio, con su ambientación si se eligió, recortada a 16:9 y enviada como data URI: nada queda público; `X-Fal-Store-IO: 0`).
+1. El estudio muestra el costo en créditos y pide confirmación. El servidor crea el video, **cobra los créditos antes de cualquier costo de proveedor** (`habita_video_charge`: primero los créditos que vencen antes, una fila de `credit_ledger` por bolsa usada, nunca dos veces el mismo video; nunca usa la prueba gratis) y manda cada foto a fal (la misma imagen que muestra el estudio, con su ambientación si se eligió, recortada a la forma del clip (16:9 o 9:16) y enviada como data URI: nada queda público; `X-Fal-Store-IO: 0`).
 2. La consigna pide solo un movimiento de cámara y prohíbe agregar, sacar o cambiar objetos, personas o textos (`clipPrompt`).
 3. Cada lectura del historial (el estudio la repite cada 6 s mientras anima) avanza los videos: consulta la cola de fal, copia cada clip terminado al bucket privado `property-videos` (`<inmobiliaria>/<propiedad>/<video>/clip-N.mp4`) y, si una foto falla, la reenvía **una vez**. El cron diario hace lo mismo con los videos que nadie volvió a mirar.
 4. Con todos los clips guardados, **el navegador arma el MP4** con el mismo motor del Clásico (placas opcionales, fundidos, cualquiera de los 4 formatos), dibujando cada clip cuadro a cuadro, con la leyenda «Movimiento generado con IA» (o «Ambientación y movimiento con IA»). Si se cierra la página, el historial muestra «Clips listos» y «Terminar video»; un armado fallido se puede reintentar sin volver a pagar.
@@ -120,7 +120,7 @@ Los cinco se decodifican completos con `ffmpeg -f null`. Cuadros: `mp4-cuadros-*
 | --- | --- |
 | Probar el Clásico en el preview con una propiedad real: render, subida a Supabase y reproducción en **iPhone Safari** y desktop | Acceso al preview |
 | Activar la animación con IA | Prueba de calidad aprobada, `202611210001_video_ai.sql` aplicada, `FAL_KEY` y `HABITA_VIDEO_AI=1` en Vercel |
-| Prueba de calidad: 10 fotos reales de inmobiliarias con LTX-2 Fast (y Kling 2.6 Pro para comparar) | `FAL_KEY` y fotos |
+| Prueba de Kling 2.6 Pro en vertical (9:16, foto recortada antes) y de un recorrido completo en Preview | `HABITA_VIDEO_AI=1` solo en Preview |
 | «Ver en movimiento» dentro de la demo pública y modo Equilibrado | Resultado de la prueba de calidad |
 | Música con licencia | Pistas con licencia comercial documentada |
 | Navegadores sin WebCodecs (iOS < 17) | Hoy: mensaje claro y sugerencia de desktop |
