@@ -2,6 +2,7 @@ import { failure, HttpError, requireUser } from "@/lib/commerce/http";
 import { createAgency, panelSummary } from "@/lib/agency/panel";
 import { membershipFor, membershipOf, requireAgency } from "@/lib/agency/server";
 import { READ_ONLY } from "@/lib/agency/support";
+import { visitorMembership } from "@/lib/agency/visit";
 import { validSlug } from "@/lib/agency/shared";
 import { brandingOf, saveJson } from "@/lib/demos/server";
 import { brandingInput, readJson } from "@/lib/demos/input";
@@ -14,10 +15,17 @@ const PRIVATE = { "Cache-Control": "private, no-store" };
 /** The agency of this account and its panel's home, or { agency: null } before creating it. */
 export async function GET() {
   try {
-    const user = await requireUser();
-    const membership = await membershipFor(user);
+    const user = await requireUser().catch(async (e) => {
+      // The agency's visit before its account: its panel, read only.
+      if (e instanceof HttpError && e.status === 401 && (await visitorMembership())) return null;
+      throw e;
+    });
+    const membership = (user ? await membershipFor(user) : null) ?? (await visitorMembership());
     if (!membership) return Response.json({ agency: null }, { headers: PRIVATE });
-    return Response.json({ ...(await panelSummary(membership)), support: Boolean(membership.support) }, { headers: PRIVATE });
+    return Response.json(
+      { ...(await panelSummary(membership)), support: Boolean(membership.support), ...(membership.visitor ? { visitor: true } : {}) },
+      { headers: PRIVATE },
+    );
   } catch (e) {
     return failure(e);
   }
@@ -47,8 +55,7 @@ export async function POST(request: Request) {
  */
 export async function PATCH(request: Request) {
   try {
-    const { user, agency, role } = await requireAgency(request);
-    if (role !== "owner") throw new HttpError(403, "Solo el dueño de la inmobiliaria puede cambiar su sitio.");
+    const { user, agency } = await requireAgency(request, "manage");
     const body = await readJson(request, 4096);
     const db = adminClient();
     // Everything is validated first: a wrong field never leaves a half-saved change.
@@ -85,7 +92,8 @@ export async function PATCH(request: Request) {
       if (error) throw new Error("AGENCY_UPDATE_FAILED");
     }
     if (branding) await saveJson("agencies", "branding", agency.id, branding);
-    const membership = await membershipOf(user.id);
+    // The team acting as the agency gets the panel it is in, not an agency of its own.
+    const membership = await membershipFor(user);
     if (!membership) throw new Error("MEMBERSHIP_LOST");
     return Response.json(await panelSummary(membership), { headers: PRIVATE });
   } catch (e) {

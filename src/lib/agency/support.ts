@@ -2,20 +2,23 @@ import "server-only";
 import { cookies } from "next/headers";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { User } from "@supabase/supabase-js";
-import { HttpError, isAdmin } from "@/lib/commerce/http";
+import { HttpError, isAdmin, rpc } from "@/lib/commerce/http";
 import { isUuid } from "@/lib/demos/shared";
 import { adminClient } from "@/lib/supabase/server";
 import type { AgencyAccount } from "./server";
 
 /**
- * Support view: a team member sees an agency's panel as its owner would,
- * read only. It never signs in as the agency's user (no session changes
- * hands): a signed cookie names the team member and the agency, lasts one
- * hour, and every write from the panel is refused while it is active.
- * Starting and leaving it are audited.
+ * Support view: a team member sees an agency's panel as its owner would. It
+ * never signs in as the agency's user (no session changes hands): a signed
+ * cookie names the team member, the agency and the mode, and lasts one hour.
+ * "view" (Ver como cliente) refuses every write from the panel; "act"
+ * (Entrar como la inmobiliaria) works with the owner's permissions, its
+ * changes are real and its stagings use the agency's credits. Starting and
+ * leaving it are audited.
  */
 export const SUPPORT_COOKIE = "habita_soporte";
 export const SUPPORT_SECONDS = 60 * 60;
+export type SupportMode = "view" | "act";
 export const READ_ONLY = "Vista de soporte: solo lectura. Salí de la vista de soporte para hacer cambios desde administración.";
 
 function secret() {
@@ -25,39 +28,66 @@ function secret() {
 }
 const sign = (payload: string) => createHmac("sha256", secret()).update(`habita-support:${payload}`).digest("hex");
 
-export function supportToken(agencyId: string, userId: string, now = Date.now()) {
-  const payload = `${agencyId}.${userId}.${Math.floor(now / 1000) + SUPPORT_SECONDS}`;
+/** The mode is signed with the rest: a "view" token can never be turned into "act". */
+export function supportToken(agencyId: string, userId: string, now = Date.now(), mode: SupportMode = "view") {
+  const payload = `${agencyId}.${userId}.${Math.floor(now / 1000) + SUPPORT_SECONDS}${mode === "act" ? ".act" : ""}`;
   return `${payload}.${sign(payload)}`;
 }
 
-/** The agency the token opens, if it is valid, unexpired and for this team member. */
-export function readSupportToken(token: string | undefined, userId: string, now = Date.now()) {
+/** The agency and mode the token opens, if it is valid, unexpired and for this team member. */
+export function readSupport(token: string | undefined, userId: string, now = Date.now()): { agencyId: string; mode: SupportMode } | null {
   if (!token) return null;
   const parts = token.split(".");
-  if (parts.length !== 4) return null;
-  const [agencyId, owner, exp, mac] = parts;
+  if (parts.length !== 4 && !(parts.length === 5 && parts[3] === "act")) return null;
+  const [agencyId, owner, exp] = parts;
+  const mac = parts[parts.length - 1];
   if (!isUuid(agencyId) || owner !== userId || !/^\d+$/.test(exp) || Number(exp) * 1000 <= now) return null;
-  const expected = Buffer.from(sign(`${agencyId}.${owner}.${exp}`));
+  const expected = Buffer.from(sign(parts.slice(0, -1).join(".")));
   const given = Buffer.from(mac);
   if (expected.length !== given.length || !timingSafeEqual(expected, given)) return null;
-  return agencyId;
+  return { agencyId, mode: parts.length === 5 ? "act" : "view" };
 }
 
-/** For a team member with an active support view: the agency they are looking at. */
-export async function supportAgency(user: Pick<User, "id" | "email">): Promise<AgencyAccount | null> {
+/** The agency the token opens (either mode). */
+export const readSupportToken = (token: string | undefined, userId: string, now = Date.now()) => readSupport(token, userId, now)?.agencyId ?? null;
+
+export type SupportAgency = AgencyAccount & { supportMode: SupportMode };
+
+/** For a team member with an active support view: the agency they are looking at, and how. */
+export async function supportAgency(user: Pick<User, "id" | "email">): Promise<SupportAgency | null> {
   if (!isAdmin(user.email)) return null;
-  const agencyId = readSupportToken((await cookies()).get(SUPPORT_COOKIE)?.value, user.id);
-  if (!agencyId) return null;
+  const support = readSupport((await cookies()).get(SUPPORT_COOKIE)?.value, user.id);
+  if (!support) return null;
+  const { agencyId } = support;
   const { data, error } = await adminClient()
     .from("agencies")
     .select("id,name,website,slug,owner_id,site_published")
     .eq("id", agencyId)
     .maybeSingle();
   if (error) throw new Error("SUPPORT_AGENCY_LOOKUP_FAILED");
-  return (data as AgencyAccount | null) ?? null;
+  return data ? { ...(data as AgencyAccount), supportMode: support.mode } : null;
 }
 
 /** Writes are refused in the support view; reads (GET) go through. */
 export function assertReadable(request?: Request) {
   if (request && request.method !== "GET" && request.method !== "HEAD") throw new HttpError(403, READ_ONLY);
+}
+
+/** Records a support view starting or ending; a view that cannot be recorded does not start. */
+export async function auditSupport(actorId: string, action: string, agencyId: string) {
+  await rpc("amobla_account", { p_user: actorId, p_trial: false });
+  const { error } = await adminClient().from("admin_audit").insert({ actor_id: actorId, action, subject_id: agencyId, details: {} });
+  if (error) throw new Error("SUPPORT_AUDIT_FAILED");
+}
+
+/** Opens the agency's panel for this team member, for one hour (audited first). */
+export async function startSupport(actorId: string, agencyId: string, mode: SupportMode) {
+  await auditSupport(actorId, mode === "act" ? "agency_support_act" : "agency_support_view", agencyId);
+  (await cookies()).set(SUPPORT_COOKIE, supportToken(agencyId, actorId, Date.now(), mode), {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: SUPPORT_SECONDS,
+  });
 }

@@ -227,16 +227,17 @@ describe("Free credits for an agency", () => {
   it("waits for an agency without an account and moves to its owner when claimed", async () => {
     const admin = await account();
     const { agency } = await prospect(admin);
-    expect((await give(admin, agency, 5))!.r).toEqual({ applied: "pending", pending: 5 });
-    expect((await give(admin, agency, 3))!.r).toEqual({ applied: "pending", pending: 8 });
+    // A new agency already carries its 10 welcome credits.
+    expect((await give(admin, agency, 5))!.r).toEqual({ applied: "pending", pending: 15 });
+    expect((await give(admin, agency, 3))!.r).toEqual({ applied: "pending", pending: 18 });
     const owner = await account();
     const before = await credits(owner);
     await claim(owner, await claimCode(agency, admin), `free-${id().slice(-6)}`);
-    expect((await one<{ n: number }>("select habita_apply_agency_credits($1) as n", [agency]))!.n).toBe(8);
-    expect(await credits(owner)).toBe(before + 8);
+    expect((await one<{ n: number }>("select habita_apply_agency_credits($1) as n", [agency]))!.n).toBe(18);
+    expect(await credits(owner)).toBe(before + 18);
     // Applied once: calling again moves nothing.
     expect((await one<{ n: number }>("select habita_apply_agency_credits($1) as n", [agency]))!.n).toBe(0);
-    expect(await credits(owner)).toBe(before + 8);
+    expect(await credits(owner)).toBe(before + 18);
   });
 
   it("goes to the owner at once when the agency has an account, and is audited", async () => {
@@ -248,6 +249,17 @@ describe("Free credits for an agency", () => {
     expect(await credits(owner)).toBe(before + 4);
     const audit = await one<{ n: number }>("select count(*)::int as n from admin_audit where action='agency_credit' and subject_id=$1", [agency]);
     expect(audit!.n).toBe(1);
+  });
+
+  it("gives every new agency 10 welcome credits: reserved until claimed, or to its owner at once", async () => {
+    const admin = await account();
+    const { agency } = await prospect(admin);
+    expect((await one<{ n: number }>("select free_credits_pending as n from agencies where id=$1", [agency]))!.n).toBe(10);
+    const owner = await account();
+    const before = await credits(owner);
+    const own = await createAgency(owner, "Recién Creada", `recien-${id().slice(-6)}`);
+    expect(await credits(owner)).toBe(before + 10);
+    expect((await one<{ n: number }>("select free_credits_pending as n from agencies where id=$1", [own]))!.n).toBe(0);
   });
 
   it("refuses invalid amounts, missing reasons and unknown agencies", async () => {
@@ -325,7 +337,7 @@ describe("Idempotent free credits and balances for the team", () => {
       [[prospectAgency, owned]],
     )).rows;
     const by = Object.fromEntries(rows.map((r) => [r.agency_id, r]));
-    expect(by[prospectAgency]).toMatchObject({ available: null, reserved: 2 });
+    expect(by[prospectAgency]).toMatchObject({ available: null, reserved: 12 });
     expect(by[owned].available).toBe(await credits(owner));
     expect(by[owned].reserved).toBe(0);
   });
@@ -436,5 +448,92 @@ describe("Administrative editing (202611030001)", () => {
 
   it("can be applied again without errors", async () => {
     await expect(db.exec(readFileSync("supabase/migrations/202611030001_admin_editing.sql", "utf8"))).resolves.toBeTruthy();
+  });
+});
+
+describe("Photo groups without a ficha (202611040001)", () => {
+  it("counts only fichas: a group is neither a property nor published", async () => {
+    // Earlier tests re-apply older migrations, which redefine the counts: apply this one again first.
+    await db.exec(readFileSync("supabase/migrations/202611040001_photo_groups.sql", "utf8"));
+    const admin = await account();
+    const agency = await createAgency(admin, "Grupos Sur", "grupos-sur");
+    const ficha = (await one<{ id: string }>("insert into demo_properties(agency_id,title) values($1,'Casa') returning id", [agency]))!.id;
+    const group = (await one<{ id: string }>("insert into demo_properties(agency_id,title) values($1,'Fotos') returning id", [agency]))!.id;
+    await db.query("insert into demos(agency_id,property_id,token,status,kind) values($1,$2,$3,'draft','ficha')", [agency, ficha, `tok_${id().replace(/-/g, "")}`]);
+    await db.query("insert into demos(agency_id,property_id,token,status,kind) values($1,$2,$3,'draft','fotos')", [agency, group, `tok_${id().replace(/-/g, "")}`]);
+    const counts = (await one<{ c: { total: number; published: number } }>("select habita_agency_counts($1) as c", [agency]))!.c;
+    expect(counts).toMatchObject({ total: 1, published: 0 });
+  });
+
+  it("defaults existing and new demos to fichas, and refuses any other kind", async () => {
+    const admin = await account();
+    const agency = await createAgency(admin, "Tipos Sur", "tipos-sur");
+    const property = (await one<{ id: string }>("insert into demo_properties(agency_id,title) values($1,'Casa') returning id", [agency]))!.id;
+    await db.query("insert into demos(agency_id,property_id,token,status) values($1,$2,$3,'draft')", [agency, property, `tok_${id().replace(/-/g, "")}`]);
+    const kinds = await db.query<{ kind: string }>("select kind from demos where agency_id=$1", [agency]);
+    expect(kinds.rows.map((r) => r.kind)).toEqual(["ficha"]);
+    const other = (await one<{ id: string }>("insert into demo_properties(agency_id,title) values($1,'Otra') returning id", [agency]))!.id;
+    await expect(
+      db.query("insert into demos(agency_id,property_id,token,status,kind) values($1,$2,$3,'draft','otro')", [agency, other, `tok_${id().replace(/-/g, "")}`]),
+    ).rejects.toThrow();
+  });
+
+  it("can be applied again without errors", async () => {
+    await expect(db.exec(readFileSync("supabase/migrations/202611040001_photo_groups.sql", "utf8"))).resolves.toBeTruthy();
+  });
+});
+
+describe("Users of an agency (202611110001)", () => {
+  const TEAM = "supabase/migrations/202611110001_agency_team.sql";
+  async function invite(agency: string, owner: string, email: string, role: string, props: string[] | null = null, expires = "now()+interval '14 days'") {
+    const hash = createHash("sha256").update(`join-${id()}`).digest("hex");
+    await db.query(
+      `insert into agency_invites(agency_id,email,role,property_ids,code_hash,created_by,expires_at) values($1,$2,$3,$4,$5,$6,${expires})`,
+      [agency, email, role, props, hash, owner],
+    );
+    return hash;
+  }
+  const join = (user: string, email: string, hash: string) => db.query("select habita_join_agency($1,$2,$3) as id", [user, email, hash]);
+
+  it("joins the invited e-mail once, with its role and only the agency's own properties", async () => {
+    const owner = await account();
+    const agency = await createAgency(owner, "Equipo Norte", "equipo-norte");
+    const other = await createAgency(await account(), "Otra", "otra-inmo");
+    const mine = (await one<{ id: string }>("insert into demo_properties(agency_id,title) values($1,'Casa') returning id", [agency]))!.id;
+    const theirs = (await one<{ id: string }>("insert into demo_properties(agency_id,title) values($1,'Ajena') returning id", [other]))!.id;
+    const hash = await invite(agency, owner, "laura@norte.test", "viewer", [mine, theirs]);
+    const employee = await account();
+    await expect(join(employee, "otra@norte.test", hash)).rejects.toThrow(/INVITE_EMAIL/);
+    await join(employee, "Laura@Norte.test", hash);
+    expect(await one("select role,property_ids from agency_members where user_id=$1", [employee])).toEqual({ role: "viewer", property_ids: [mine] });
+    await expect(join(await account(), "laura@norte.test", hash)).rejects.toThrow(/INVITE_INVALID/);
+  });
+
+  it("refuses expired links, accounts of another agency and limits for administrators", async () => {
+    const owner = await account();
+    const agency = await createAgency(owner, "Equipo Sur", "equipo-sur");
+    const expired = await invite(agency, owner, "a@sur.test", "editor", null, "now()-interval '1 minute'");
+    await expect(join(await account(), "a@sur.test", expired)).rejects.toThrow(/INVITE_INVALID/);
+    const busy = await invite(agency, owner, "b@sur.test", "editor");
+    await expect(join(owner, "b@sur.test", busy)).rejects.toThrow(/INVITE_EMAIL|AGENCY_EXISTS/);
+    const outsider = await account();
+    await createAgency(outsider, "Propia", "propia-inmo");
+    await expect(join(outsider, "b@sur.test", busy)).rejects.toThrow(/AGENCY_EXISTS/);
+    await expect(invite(agency, owner, "c@sur.test", "admin", [id()])).rejects.toThrow();
+    await expect(invite(agency, owner, "d@sur.test", "owner")).rejects.toThrow();
+  });
+
+  it("keeps one open access per e-mail and agency, and the RPC for the server only", async () => {
+    const owner = await account();
+    const agency = await createAgency(owner, "Equipo Oeste", "equipo-oeste");
+    await invite(agency, owner, "e@oeste.test", "editor");
+    await expect(invite(agency, owner, "e@oeste.test", "viewer")).rejects.toThrow();
+    const grants = await one<{ ok: boolean }>("select has_function_privilege('authenticated','public.habita_join_agency(uuid,text,text)','execute') as ok");
+    expect(grants!.ok).toBe(false);
+  });
+
+  it("turns old collaborators into editors and can be applied again", async () => {
+    await db.exec(readFileSync(TEAM, "utf8"));
+    await expect(db.query("insert into agency_members(agency_id,user_id,role) values($1,$2,'collaborator')", [await createAgency(await account(), "X", "equipo-x"), await account()])).rejects.toThrow();
   });
 });

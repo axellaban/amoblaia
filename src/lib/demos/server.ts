@@ -1,9 +1,10 @@
 import "server-only";
+import { formatOf } from "@/lib/video/plan";
 import { createHash, randomBytes } from "node:crypto";
 import sharp from "sharp";
 import { adminClient } from "@/lib/supabase/server";
 import { BUCKET } from "@/lib/commerce/jobs";
-import { HttpError } from "@/lib/commerce/http";
+import { HttpError, rpc } from "@/lib/commerce/http";
 import { normalizePhoto } from "@/lib/commerce/images";
 import {
   DEFAULT_ACCENT,
@@ -14,10 +15,14 @@ import {
   type AgencyBranding,
   type DemoSettings,
 } from "./branding";
-import { styleFits } from "./styles";
+import { demoStyleName, demoStyleOrder, styleFits, styleSequence } from "./styles";
+import { retouchOps, type Adjust } from "./retouch";
+import { TOOL_NAMES, validTool } from "./tools";
+import { activityOf } from "./activity";
 import { fetchPublic } from "./listing";
 import type { ImportedDemo } from "./import";
 import { OG_LABEL_ORIGINAL, OG_LABEL_STAGED } from "./og-labels";
+import { applyVisibility } from "./visibility";
 import {
   TOKEN_PATTERN,
   coverVersion,
@@ -30,12 +35,19 @@ import {
   type DemoDetail,
   type DemoMode,
   type DemoSummary,
+  NO_ACTIVITY,
+  NO_CREDITS,
+  type DemoCredits,
+  type DemoSendEvent,
   type EditorPhoto,
   type GenerationRow,
   type PhotoVersion,
   type PublicDemo,
   type PublicPhoto,
   type PropertySpace,
+  type RetouchRow,
+  type RetouchSource,
+  RETOUCH_STYLE,
 } from "./shared";
 
 /** 18 random bytes: 24 URL-safe characters, unguessable and stable across publish/unpublish. */
@@ -43,12 +55,16 @@ export const newToken = () => randomBytes(18).toString("base64url");
 export const MAX_PHOTOS_PER_DEMO = 40;
 
 type DemoRow = {
+  sent_at: string | null;
+  message_template: string | null;
   id: string;
   agency_id: string;
   property_id: string;
   title: string | null;
   token: string;
   status: "draft" | "published";
+  /** "fotos": a photo group that is not a ficha yet, so it cannot be published. */
+  kind: "ficha" | "fotos";
   cover_photo_id: string | null;
   published_at: string | null;
   created_at: string;
@@ -64,12 +80,13 @@ type PhotoRow = {
   style: string;
   mode: DemoMode;
   approved_generation_id: string | null;
+  shown_retouch_id: string | null;
   discarded: string[] | null;
 };
 const DEMO_FIELDS =
-  "id,agency_id,property_id,title,token,status,cover_photo_id,published_at,created_at";
+  "id,agency_id,property_id,title,token,status,kind,cover_photo_id,published_at,created_at,sent_at,message_template";
 const PHOTO_FIELDS =
-  "id,property_id,project_id,position,visible,room,label,style,mode,approved_generation_id,discarded";
+  "id,property_id,project_id,position,visible,room,label,style,mode,approved_generation_id,shown_retouch_id,discarded";
 
 function check<T>(result: { data: T | null; error: unknown }, code: string) {
   if (result.error) throw new Error(code);
@@ -97,6 +114,8 @@ async function stagedOf(projectIds: string[]) {
           .in("project_id", ids.slice(i, i + 100))
           .eq("status", "succeeded")
           .eq("is_free", false)
+          // A tool's result is a version of its own (retouches), never a style.
+          .is("tool", null)
           .order("created_at", { ascending: false })
           .limit(5000),
         "DEMO_GENERATIONS_LOOKUP_FAILED",
@@ -119,8 +138,19 @@ async function shownOf<P extends ShownSource>(photos: P[]) {
     ]),
   );
 }
-/** The demo's main style: kept on every photo (the editor sets them together). */
-const mainOf = (photos: Pick<PhotoRow, "style">[]) => photos[0]?.style ?? "modern";
+/**
+ * The demo's main style: kept on every photo (the editor sets them together).
+ * It defaults to "modern", so while no photo has a version in it, the style
+ * that most photos have takes its place: an agency that stages everything in
+ * another style gets a ficha that opens staged, not with the originals.
+ */
+export function mainOf(photos: Pick<PhotoRow, "id" | "style">[], shown: Map<string, Map<string, unknown>>) {
+  const saved = photos[0]?.style ?? "modern";
+  const counts = new Map<string, number>();
+  for (const p of photos) for (const style of shown.get(p.id)?.keys() ?? []) counts.set(style, (counts.get(style) ?? 0) + 1);
+  if (!counts.size || counts.has(saved)) return saved;
+  return [...counts].sort((a, b) => b[1] - a[1] || demoStyleOrder.indexOf(a[0]) - demoStyleOrder.indexOf(b[0]))[0][0];
+}
 const versionList = (shown: Map<string, StagedRow> | undefined, order: string[]): PhotoVersion[] =>
   order.flatMap((style) => {
     const g = shown?.get(style);
@@ -211,16 +241,131 @@ export async function completeAgency(agencyId: string, imp: ImportedDemo, contac
   return done;
 }
 
-export async function listDemos() {
+type WaContact = { id: string; account_id: string; address: string | null; needs_review: boolean; verified_at: string | null; invalid_at: string | null; is_primary: boolean };
+type WaBlock = { account_id: string; scope: string; channel: string | null; contact_id: string | null };
+
+/**
+ * The agency's WhatsApp to send its demo to, as wa.me digits (team only).
+ * First the one the team loaded (agencies.contact_whatsapp), then its prospecting contact: verified first, then reviewed, then primary;
+ * never an invalid one or one under a suppression. Else the public WhatsApp
+ * of its branding. A lookup that fails (or a missing table before the
+ * migrations) leaves the agency without a number: WhatsApp then lets the
+ * team pick the chat, as before.
+ */
+export async function whatsappOf(agencyIds: string[]) {
+  const out = new Map<string, string>();
+  if (!agencyIds.length) return out;
   const db = adminClient();
-  const demos = check(
-    await db
-      .from("demos")
-      .select(DEMO_FIELDS)
+  // The number the team loaded or corrected wins (missing before 202611130001).
+  const own = await db.from("agencies").select("id,contact_whatsapp").in("id", agencyIds);
+  if (!own.error)
+    for (const a of (own.data ?? []) as { id: string; contact_whatsapp: string | null }[]) {
+      const n = a.contact_whatsapp ? whatsappNumber(a.contact_whatsapp) : null;
+      if (n) out.set(a.id, n);
+    }
+  const pending = agencyIds.filter((id) => !out.has(id));
+  const accounts = pending.length
+    ? await db.from("prospect_accounts").select("id,agency_id").in("agency_id", pending)
+    : { data: [], error: null };
+  if (!accounts.error && accounts.data?.length) {
+    const agencyOf = new Map((accounts.data as { id: string; agency_id: string }[]).map((a) => [a.id, a.agency_id]));
+    const ids = [...agencyOf.keys()];
+    const [contacts, blocks] = await Promise.all([
+      db
+        .from("prospect_contacts")
+        .select("id,account_id,address,needs_review,verified_at,invalid_at,is_primary")
+        .in("account_id", ids)
+        .eq("channel", "whatsapp"),
+      db.from("prospect_suppressions").select("account_id,scope,channel,contact_id").in("account_id", ids).is("lifted_at", null),
+    ]);
+    if (!contacts.error && !blocks.error) {
+      const active = (blocks.data ?? []) as WaBlock[];
+      const blocked = (c: WaContact) =>
+        active.some(
+          (s) =>
+            s.account_id === c.account_id &&
+            (s.scope === "account" || (s.scope === "channel" && s.channel === "whatsapp") || (s.scope === "contact" && s.contact_id === c.id)),
+        );
+      const rank = (c: WaContact) => (c.verified_at ? 4 : 0) + (c.needs_review ? 0 : 2) + (c.is_primary ? 1 : 0);
+      const usable = ((contacts.data ?? []) as WaContact[])
+        .filter((c) => c.address && !c.invalid_at && !blocked(c) && whatsappNumber(c.address))
+        .sort((a, b) => rank(b) - rank(a));
+      for (const c of usable) {
+        const agency = agencyOf.get(c.account_id);
+        if (agency && !out.has(agency)) out.set(agency, whatsappNumber(c.address!)!);
+      }
+    }
+  }
+  const missing = agencyIds.filter((id) => !out.has(id));
+  if (missing.length) {
+    const rows = await db.from("agencies").select("id,branding").in("id", missing);
+    if (!rows.error)
+      for (const r of (rows.data ?? []) as { id: string; branding: unknown }[]) {
+        const b = readBranding(r.branding);
+        const n = b.contactKind === "whatsapp" && b.contactValue ? whatsappNumber(b.contactValue) : null;
+        if (n) out.set(r.id, n);
+      }
+  }
+  return out;
+}
+
+/**
+ * Saves the agency's WhatsApp (already normalized; null clears it). With
+ * onlyIfEmpty it never replaces one the team loaded: an imported number only fills a gap.
+ */
+export async function saveAgencyWhatsapp(agencyId: string, number: string | null, onlyIfEmpty = false) {
+  let query = adminClient().from("agencies").update({ contact_whatsapp: number }).eq("id", agencyId);
+  if (onlyIfEmpty) query = query.is("contact_whatsapp", null);
+  const { error } = await query;
+  if (error) throw new HttpError(409, "Para guardar el WhatsApp de la inmobiliaria falta aplicar la migración 202611130001_demo_sent_stage.sql en Supabase.");
+}
+
+/** When the demo was sent or marked unsent, newest first (team only; from the audit log). */
+export async function sendLogOf(demoId: string): Promise<DemoSendEvent[]> {
+  // The history is a help: a failed read leaves it empty, never the demo.
+  let rows: unknown[] | null = null;
+  try {
+    const { data, error } = await adminClient()
+      .from("admin_audit")
+      .select("action,details,created_at")
+      .eq("subject_id", demoId)
+      .in("action", ["demo_sent", "demo_unsent"])
       .order("created_at", { ascending: false })
-      .limit(300),
-    "DEMO_LIST_FAILED",
-  ) as DemoRow[];
+      .limit(20);
+    if (!error) rows = data;
+  } catch {
+    rows = null;
+  }
+  return ((rows ?? []) as { action: string; details: { by?: string } | null; created_at: string }[]).map((r) => ({
+    at: r.created_at,
+    kind: r.action === "demo_unsent" ? "unsent" : r.details?.by === "whatsapp" ? "whatsapp" : "manual",
+  }));
+}
+
+/**
+ * Available (the owner's balance) and reserved credits per agency, for the team's lists.
+ * Unknown stays null, never 0: before the migration, or when the lookup fails.
+ */
+async function creditsOf(agencyIds: string[]) {
+  const out = new Map<string, DemoCredits>();
+  if (!agencyIds.length) return out;
+  try {
+    const rows = await rpc<{ agency_id: string; available: number | null; reserved: number | null }[]>("habita_admin_agency_balances", {
+      p_agencies: agencyIds,
+    });
+    for (const r of rows ?? []) out.set(r.agency_id, { available: r.available, reserved: r.reserved });
+  } catch {
+    // Unknown: the list keeps working without the numbers.
+  }
+  return out;
+}
+
+/** The team's demos, newest first; with agencyId, only that agency's (its «Propiedades y demos» tab). */
+export async function listDemos(agencyId: string | null = null) {
+  const db = adminClient();
+  let query = db.from("demos").select(DEMO_FIELDS).order("created_at", { ascending: false }).limit(300);
+  if (agencyId) query = query.eq("agency_id", agencyId);
+  const demos = check(await query, "DEMO_LIST_FAILED") as DemoRow[];
   const agencyIds = [...new Set(demos.map((d) => d.agency_id))];
   const propertyIds = demos.map((d) => d.property_id);
   const [agencies, owners, properties, photos, allAgencies] = await Promise.all([
@@ -232,7 +377,7 @@ export async function listDemos() {
       ? db.from("agencies").select("id,owner_id").in("id", agencyIds)
       : Promise.resolve({ data: [], error: null }),
     propertyIds.length
-      ? db.from("demo_properties").select("id,title").in("id", propertyIds)
+      ? db.from("demo_properties").select("id,title,location").in("id", propertyIds)
       : Promise.resolve({ data: [], error: null }),
     propertyIds.length
       ? db
@@ -247,6 +392,9 @@ export async function listDemos() {
       .order("name")
       .limit(500),
   ]);
+  const contactOf = new Map(
+    ((allAgencies.data ?? []) as { id: string; contact_name: string | null }[]).map((a) => [a.id, a.contact_name]),
+  );
   const agencyName = new Map(
     (check(agencies, "DEMO_LIST_FAILED") as { id: string; name: string }[]).map(
       (a) => [a.id, a.name],
@@ -255,20 +403,21 @@ export async function listDemos() {
   const claimed = new Map(
     owners.error ? [] : ((owners.data ?? []) as { id: string; owner_id: string | null }[]).map((a) => [a.id, Boolean(a.owner_id)]),
   );
-  const propertyTitle = new Map(
-    (check(properties, "DEMO_LIST_FAILED") as { id: string; title: string }[]).map(
-      (p) => [p.id, p.title],
-    ),
-  );
+  const propertyRows = check(properties, "DEMO_LIST_FAILED") as { id: string; title: string; location: string | null }[];
+  const propertyTitle = new Map(propertyRows.map((p) => [p.id, p.title]));
+  const propertyLocation = new Map(propertyRows.map((p) => [p.id, p.location]));
   const photoRows = check(photos, "DEMO_LIST_FAILED") as (ShownSource & {
     property_id: string;
     visible: boolean;
     style: string;
   })[];
   const shown = await shownOf(photoRows);
+  const activity = await activityOf(demos.map((d) => d.id));
+  const credits = await creditsOf(agencyIds);
+  const whatsapp = await whatsappOf(agencyIds);
   const summaries: DemoSummary[] = demos.map((d) => {
     const own = photoRows.filter((p) => p.property_id === d.property_id);
-    const main = mainOf(own);
+    const main = mainOf(own, shown);
     const order = orderStyles(own.flatMap((p) => [...(shown.get(p.id)?.keys() ?? [])]), main);
     const withVersions = own.map((p) => ({ ...p, versions: versionList(shown.get(p.id), order) }));
     const cover = pickCover(withVersions, d.cover_photo_id, main);
@@ -280,18 +429,28 @@ export async function listDemos() {
       agencyId: d.agency_id,
       agencyName: agencyName.get(d.agency_id) || "",
       agencyClaimed: claimed.get(d.agency_id) ?? null,
+      agencyWhatsapp: whatsapp.get(d.agency_id) ?? null,
       propertyTitle: propertyTitle.get(d.property_id) || "",
+      propertyLocation: propertyLocation.get(d.property_id) ?? null,
       photos: own.length,
       staged: withVersions.filter((p) => p.versions.length).length,
       coverPhotoId: d.cover_photo_id,
       cover: cover ? { id: cover.id, version: coverVersion(cover, main) } : null,
       createdAt: d.created_at,
       publishedAt: d.published_at,
+      sentAt: d.sent_at,
+      messageTemplate: d.message_template,
+      agencyContact: contactOf.get(d.agency_id) ?? null,
+      activity: activity.get(d.id) ?? NO_ACTIVITY,
+      credits: credits.get(d.agency_id) ?? NO_CREDITS,
     };
   });
+  const agencyRows = check(allAgencies, "AGENCY_LIST_FAILED") as AgencyRow[];
+  // Whether each agency has a WhatsApp: the new-demo form asks for it only when missing.
+  const known = await whatsappOf(agencyRows.map((a) => a.id));
   return {
     demos: summaries,
-    agencies: check(allAgencies, "AGENCY_LIST_FAILED") as AgencyRow[],
+    agencies: agencyRows.map((a) => ({ ...a, whatsapp: known.get(a.id) ?? null })),
   };
 }
 
@@ -357,13 +516,19 @@ export async function demoDetail(id: string): Promise<DemoDetail> {
       ) as (GenerationRow & { project_id: string })[])
     : [];
   const prop = check(property, "DEMO_PROPERTY_LOOKUP_FAILED") as DemoDetail["property"];
+  const generationStyle = new Map(generations.map((g) => [g.id, demoStyleName(g.style)]));
+  const retouches = await retouchesOf(photos.map((p) => p.id), generationStyle);
   const [shown, branding, saved] = await Promise.all([
     shownOf(photos),
     brandingOf(demo.agency_id),
     settingsOf(demo.id),
   ]);
-  const main = mainOf(photos);
-  const order = orderStyles(photos.flatMap((p) => [...(shown.get(p.id)?.keys() ?? [])]), main);
+  const main = mainOf(photos, shown);
+  const order = orderStyles(
+    photos.flatMap((p) => [...(shown.get(p.id)?.keys() ?? [])]),
+    main,
+    styleSequence(saved.settings.styleOrder, prop.location),
+  );
   const photoList: EditorPhoto[] = photos.map((p) => ({
     id: p.id,
     spaceId: spaces.photoSpace.get(p.id) ?? null,
@@ -380,9 +545,11 @@ export async function demoDetail(id: string): Promise<DemoDetail> {
         !/^(trial|demo):/.test(projectInfo.get(p.project_id)?.credit_grants?.source_key ?? ""),
     ),
     shown: Object.fromEntries([...(shown.get(p.id) ?? new Map<string, StagedRow>())].map(([k, g]) => [k, g.id])),
+    shownRetouch: p.shown_retouch_id ?? null,
     generations: generations
       .filter((g) => g.project_id === p.project_id)
       .map(({ project_id: _ignored, ...g }) => g),
+    retouches: retouches.get(p.id) ?? [],
   }));
   const withVersions = photos.map((p) => ({ ...p, versions: versionList(shown.get(p.id), order) }));
   const cover = pickCover(withVersions, demo.cover_photo_id, main);
@@ -394,25 +561,35 @@ export async function demoDetail(id: string): Promise<DemoDetail> {
       title: demo.title || prop.title,
       agencyId: demo.agency_id,
       agencyName: (check(agency, "DEMO_AGENCY_LOOKUP_FAILED") as AgencyRow).name,
-      agencyClaimed: null,
+      // Whether the agency already has its account: the team's invitation is only for agencies without one.
+      agencyClaimed: Boolean((await adminClient().from("agencies").select("owner_id").eq("id", demo.agency_id).maybeSingle()).data?.owner_id),
+      activity: (await activityOf([demo.id])).get(demo.id) ?? NO_ACTIVITY,
+      credits: (await creditsOf([demo.agency_id])).get(demo.agency_id) ?? NO_CREDITS,
+      agencyWhatsapp: (await whatsappOf([demo.agency_id])).get(demo.agency_id) ?? null,
       propertyTitle: prop.title,
+      propertyLocation: prop.location,
+      kind: demo.kind === "fotos" ? "fotos" : "ficha",
       photos: photos.length,
       staged: withVersions.filter((p) => p.versions.length).length,
       coverPhotoId: demo.cover_photo_id,
       cover: cover ? { id: cover.id, version: coverVersion(cover, main) } : null,
       createdAt: demo.created_at,
       publishedAt: demo.published_at,
+      sentAt: demo.sent_at,
+      messageTemplate: demo.message_template,
+      agencyContact: (check(agency, "DEMO_AGENCY_LOOKUP_FAILED") as AgencyRow).contact_name,
     },
     agency: check(agency, "DEMO_AGENCY_LOOKUP_FAILED") as AgencyRow,
     property: prop,
+    sendLog: await sendLogOf(demo.id),
     photos: photoList,
     styles: order,
     mainStyle: main,
     branding: { ...branding, logo: logoVersion(branding) ? `/api/admin/demos/${demo.id}/logo?v=${logoVersion(branding)}` : null },
-    settings: saved.settings,
+    settings: openingOf(saved.settings, main),
     settingsReady: saved.ready,
     warnings: reviewWarnings({
-      settings: saved.settings,
+      settings: openingOf(saved.settings, main),
       branding,
       listingUrl: prop.listing_url,
       photos: photoList,
@@ -446,6 +623,9 @@ export async function spacesOf(propertyId: string) {
     ),
   };
 }
+
+/** The settings with the style the ficha opens with: the one chosen, else the demo's main style. */
+const openingOf = (settings: DemoSettings, main: string): DemoSettings => ({ ...settings, openStyle: settings.openStyle ?? main });
 
 /** What the admin should check or complete before sharing. Never shown to buyers. */
 export function reviewWarnings(input: {
@@ -489,9 +669,9 @@ export function reviewWarnings(input: {
 }
 
 /** Builds the minimal public payload. Only visible photos; a staged version only when it can be delivered. */
-async function publicPayload(demo: DemoRow, logoUrl: (v: string) => string): Promise<PublicDemo> {
+async function publicPayload(demo: DemoRow, logoUrl: (v: string) => string, raw = false): Promise<PublicDemo> {
   const db = adminClient();
-  const [agency, prospect, property, photos, branding, { settings }] = await Promise.all([
+  const [agency, prospect, property, photos, branding, { settings }, video] = await Promise.all([
     db.from("agencies").select("name,website").eq("id", demo.agency_id).single(),
     // Before 202610280001_agency_accounts.sql every agency is a prospect.
     db
@@ -508,20 +688,29 @@ async function publicPayload(demo: DemoRow, logoUrl: (v: string) => string): Pro
     photosOf(demo.property_id),
     brandingOf(demo.agency_id),
     settingsOf(demo.id),
+    latestVideo(demo.id),
   ]);
   const visible = photos.filter((p) => p.visible);
   const shown = await shownOf(visible);
-  const main = mainOf(photos);
+  const main = mainOf(visible.length ? visible : photos, shown);
   // Only styles that fit the property: an office never shows a living room.
+  // The demo's own order (its region's for new demos), the main style always first.
+  const location = (property.data as { location?: string | null } | null)?.location ?? null;
+  const sequence = styleSequence(settings.styleOrder, location).filter((style) => styleFits(style, settings.propertyType));
   const order = orderStyles(
     visible.flatMap((p) => [...(shown.get(p.id)?.keys() ?? [])]),
     main,
+    sequence,
   ).filter((style) => styleFits(style, settings.propertyType));
   const list: PublicPhoto[] = visible.map((p) => ({
     id: p.id,
     // Only a label the admin wrote: room names ("Living") can be wrong for the property.
     label: p.label?.trim() || "",
-    versions: versionList(shown.get(p.id), order),
+    // The retouch the listing shows goes last, as one more option (never editable on the listing).
+    versions: [
+      ...versionList(shown.get(p.id), order),
+      ...(p.shown_retouch_id ? [{ style: RETOUCH_STYLE, v: p.shown_retouch_id }] : []),
+    ],
   }));
   const prop = check(property, "DEMO_PROPERTY_LOOKUP_FAILED") as {
     title: string;
@@ -535,15 +724,12 @@ async function publicPayload(demo: DemoRow, logoUrl: (v: string) => string): Pro
     demo.cover_photo_id,
     main,
   );
-  // Opening mode B: the configured style, while some visible photo has it (each photo with stagings opens compared).
-  const openStyle =
-    settings.openMode === "styled" &&
-    settings.openStyle &&
-    list.some((p) => p.versions.some((v) => v.style === settings.openStyle))
-      ? settings.openStyle
-      : null;
+  // Opening mode B: the chosen style, else the main one, while some visible photo has it (each photo with stagings opens compared).
+  const opening = settings.openStyle ?? main;
+  const openStyle = settings.openMode === "styled" && list.some((p) => p.versions.some((v) => v.style === opening)) ? opening : null;
   const version = logoVersion(branding);
-  return {
+  // The agency's switches are applied here: a hidden value never reaches the page (it stays saved).
+  const page: PublicDemo = {
     id: demo.id,
     agencyId: demo.agency_id,
     agencyName: ag.name,
@@ -567,13 +753,65 @@ async function publicPayload(demo: DemoRow, logoUrl: (v: string) => string): Pro
     ...listingFields(settings, branding),
     styles: order.map((id) => ({ id, name: styleName(id) })),
     cover: cover ? list.find((p) => p.id === cover.id)! : null,
-    // The cover the agency chose opens the gallery; the rest keep their order.
-    photos: demo.cover_photo_id && cover?.id === demo.cover_photo_id ? [...list.filter((p) => p.id === cover.id), ...list.filter((p) => p.id !== cover.id)] : list,
+    // The cover opens the gallery: the one the agency chose or, without a choice, a staged photo
+    // (pickCover), so buyers do not land on an empty original while the property has AI versions.
+    photos: cover ? [...list.filter((p) => p.id === cover.id), ...list.filter((p) => p.id !== cover.id)] : list,
     openStyle,
     banner: settings.banner,
     share: { title: settings.shareTitle, description: settings.shareDescription },
     prospect,
+    styleSelector: settings.showStyles,
+    video: video && settings.videoPlacement !== "hidden" ? { ...video, placement: settings.videoPlacement } : null,
+    styleOrder: sequence,
   };
+  return raw ? page : applyVisibility(page, settings);
+}
+
+/**
+ * The property's newest finished video (its file really stored), or null.
+ * Never breaks the page: without the videos table (202611190001_property_videos.sql)
+ * or on a failed read, the demo simply shows no video.
+ */
+async function latestVideo(demoId: string): Promise<Omit<NonNullable<PublicDemo["video"]>, "placement"> | null> {
+  try {
+    const { data, error } = await adminClient()
+      .from("property_videos")
+      .select("id,format,duration_ms")
+      .eq("demo_id", demoId)
+      .eq("status", "completed")
+      .not("storage_path", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error || !data) return null;
+    const row = data as { id: string; format: string; duration_ms: number | null };
+    return { id: row.id, format: formatOf(row.format), durationMs: row.duration_ms };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A short-lived link to a published demo's video: only its newest finished
+ * one, only while the agency shows it. The bucket stays private.
+ */
+export async function publicVideoLink(token: string, videoId: string) {
+  if (!TOKEN_PATTERN.test(token) || !isUuid(videoId)) return null;
+  const db = adminClient();
+  const demo = check(
+    await db.from("demos").select("id").eq("token", token).eq("status", "published").maybeSingle(),
+    "DEMO_LOOKUP_FAILED",
+  ) as { id: string } | null;
+  if (!demo) return null;
+  const [{ settings }, video] = await Promise.all([settingsOf(demo.id), latestVideo(demo.id)]);
+  if (!video || video.id !== videoId || settings.videoPlacement === "hidden") return null;
+  const row = check(
+    await db.from("property_videos").select("storage_path").eq("id", videoId).eq("demo_id", demo.id).maybeSingle(),
+    "DEMO_VIDEO_LOOKUP_FAILED",
+  ) as { storage_path: string | null } | null;
+  if (!row?.storage_path) return null;
+  const signed = await db.storage.from("property-videos").createSignedUrl(row.storage_path, 3600);
+  return signed.data?.signedUrl ?? null;
 }
 
 /** The property's data as the page shows it: only confirmed prices, a map never more precise than published. */
@@ -660,10 +898,14 @@ export async function publishedDemo(token: string) {
   ) as DemoRow | null;
   return demo ? publicPayload(demo, (v) => `/demo/${token}/logo?v=${v}`) : null;
 }
-/** The same payload for an admin preview, whatever the state. */
-export async function previewDemo(id: string) {
+/**
+ * The same payload for an admin preview, whatever the state. raw: every saved
+ * field, ignoring «Mostrar en demostración» (Video Studio works with the
+ * property's real data, as before those switches).
+ */
+export async function previewDemo(id: string, opts: { raw?: boolean } = {}) {
   const demo = await demoRow(id);
-  return publicPayload(demo, (v) => `/api/admin/demos/${demo.id}/logo?v=${v}`);
+  return publicPayload(demo, (v) => `/api/admin/demos/${demo.id}/logo?v=${v}`, opts.raw);
 }
 
 /** Storage path of a photo: the original, or the version it shows in a style. */
@@ -682,6 +924,92 @@ async function photoPath(photo: PhotoRow, style: string | null) {
 }
 
 /** A public image, only of a visible photo of a published demo. */
+/** A retouch the listing shows: only that one, of a visible photo of a published demo. */
+export async function publicRetouchPaths(token: string, photoId: string, retouchId: string) {
+  if (!TOKEN_PATTERN.test(token) || !isUuid(photoId) || !isUuid(retouchId)) return null;
+  const db = adminClient();
+  const demo = check(
+    await db.from("demos").select("property_id").eq("token", token).eq("status", "published").maybeSingle(),
+    "DEMO_LOOKUP_FAILED",
+  ) as { property_id: string } | null;
+  if (!demo) return null;
+  const photo = check(
+    await db
+      .from("demo_photos")
+      .select("id")
+      .eq("id", photoId)
+      .eq("property_id", demo.property_id)
+      .eq("visible", true)
+      .eq("shown_retouch_id", retouchId)
+      .maybeSingle(),
+    "DEMO_PHOTO_LOOKUP_FAILED",
+  );
+  if (!photo) return null;
+  const r = check(
+    await db.from("photo_retouches").select("result_path").eq("id", retouchId).maybeSingle(),
+    "DEMO_RETOUCH_LOOKUP_FAILED",
+  ) as { result_path: string } | null;
+  return r ? { original: r.result_path, staged: null } : null;
+}
+
+/** Where a tool starts from: the photo's original, or a version of it that exists (an AI version or a retouch). */
+export async function toolSource(photo: PhotoRow, source: unknown): Promise<{ path: string; ref: string }> {
+  const from = source as { kind?: unknown; id?: unknown } | null;
+  if (from?.kind === "original") {
+    const path = await photoPath(photo, null);
+    if (!path) throw new HttpError(404, "No encontramos la foto.");
+    return { path, ref: "original" };
+  }
+  if (from?.kind === "generation" && isUuid(from.id)) {
+    const g = check(
+      await adminClient()
+        .from("generations")
+        .select("result_path")
+        .eq("id", from.id)
+        .eq("project_id", photo.project_id)
+        .eq("status", "succeeded")
+        .maybeSingle(),
+      "DEMO_GENERATION_LOOKUP_FAILED",
+    ) as { result_path: string | null } | null;
+    if (!g?.result_path) throw new HttpError(404, "No encontramos esa versión.");
+    return { path: g.result_path, ref: `generation:${from.id}` };
+  }
+  if (from?.kind === "retouch" && isUuid(from.id)) {
+    const r = check(
+      await adminClient().from("photo_retouches").select("result_path").eq("id", from.id).eq("photo_id", photo.id).maybeSingle(),
+      "DEMO_RETOUCH_LOOKUP_FAILED",
+    ) as { result_path: string } | null;
+    if (!r) throw new HttpError(404, "No encontramos esa versión.");
+    return { path: r.result_path, ref: `retouch:${from.id}` };
+  }
+  throw new HttpError(400, "Elegí qué versión editar.");
+}
+
+/**
+ * The mask painted on the editor, at the size of the source photo: transparent
+ * where the photo may change (what the model edits), opaque elsewhere. Stored
+ * in the bucket for the job.
+ */
+export async function storeMask(projectId: string, key: string, painted: Buffer, sourcePath: string) {
+  const db = adminClient();
+  const source = await download(sourcePath);
+  if (!source) throw new HttpError(404, "No encontramos la foto.");
+  const { width, height } = await sharp(source, { limitInputPixels: 40_000_000 }).metadata();
+  if (!width || !height) throw new HttpError(400, "No pudimos leer la foto.");
+  // Stored as a grey JPEG (the bucket takes only JPEG): black where to remove, white elsewhere.
+  // The job turns it back into the PNG with transparency that the model needs.
+  const mask = await sharp(painted, { limitInputPixels: 40_000_000 })
+    .resize({ width, height, fit: "fill" })
+    .ensureAlpha()
+    .extractChannel(3)
+    .jpeg({ quality: 92 })
+    .toBuffer();
+  const path = `${projectId}/masks/${key}.jpg`;
+  const upload = await db.storage.from(BUCKET).upload(path, mask, { contentType: "image/jpeg", upsert: true });
+  if (upload.error) throw new HttpError(503, "No pudimos guardar la máscara. Revisá el almacenamiento disponible.");
+  return path;
+}
+
 export async function publicImagePaths(token: string, photoId: string, style: string | null) {
   if (!TOKEN_PATTERN.test(token) || !isUuid(photoId)) return null;
   const db = adminClient();
@@ -721,8 +1049,17 @@ export async function adminImagePaths(params: {
   photoId?: string | null;
   style?: string | null;
   generationId?: string | null;
+  retouchId?: string | null;
 }) {
   const db = adminClient();
+  if (params.retouchId) {
+    if (!isUuid(params.retouchId)) return null;
+    const r = check(
+      await db.from("photo_retouches").select("result_path").eq("id", params.retouchId).maybeSingle(),
+      "DEMO_RETOUCH_LOOKUP_FAILED",
+    ) as { result_path: string } | null;
+    return r ? { original: r.result_path, staged: null } : null;
+  }
   if (params.generationId) {
     if (!isUuid(params.generationId)) return null;
     const g = check(
@@ -800,6 +1137,133 @@ export async function renderImage(path: string, width: number) {
     .toBuffer();
 }
 
+export type { RetouchSource } from "./shared";
+
+/**
+ * Saves a retouch as a new version of the photo: the source at most 2048 px,
+ * the adjustments applied, a JPEG in storage. Free: no credits, no AI, and it
+ * does not count toward the photo's versions.
+ */
+export async function saveRetouch(params: {
+  photoId: string;
+  projectId: string;
+  source: RetouchSource;
+  adjust: Adjust;
+  /** Null when the agency saves from its invitation, which has no account. */
+  actorId: string | null;
+  /** Also show it in the listing (the demo's owner saves and shows at once). */
+  show?: boolean;
+}) {
+  const db = adminClient();
+  let sourcePath: string | null;
+  let generationId: string | null = null;
+  let retouchId: string | null = null;
+  if (params.source.kind === "style") {
+    // What the listing shows for that style: the photo's staged version of it.
+    const photo = { id: params.photoId, project_id: params.projectId } as PhotoRow;
+    sourcePath = await photoPath(photo, params.source.style);
+  } else if (params.source.kind === "original") {
+    sourcePath = (await adminImagePaths({ photoId: params.photoId, style: null }))?.original ?? null;
+  } else if (params.source.kind === "generation") {
+    // An AI version of this photo, not of another one.
+    const g = check(
+      await db.from("generations").select("id").eq("id", params.source.id).eq("project_id", params.projectId).eq("status", "succeeded").maybeSingle(),
+      "DEMO_GENERATION_LOOKUP_FAILED",
+    );
+    if (!g) throw new HttpError(404, "No encontramos esa versión.");
+    generationId = params.source.id;
+    sourcePath = (await adminImagePaths({ generationId: params.source.id }))?.original ?? null;
+  } else {
+    const r = check(
+      await db.from("photo_retouches").select("id").eq("id", params.source.id).eq("photo_id", params.photoId).maybeSingle(),
+      "DEMO_RETOUCH_LOOKUP_FAILED",
+    );
+    if (!r) throw new HttpError(404, "No encontramos esa versión.");
+    retouchId = params.source.id;
+    sourcePath = (await adminImagePaths({ retouchId: params.source.id }))?.original ?? null;
+  }
+  const bytes = sourcePath ? await download(sourcePath) : null;
+  if (!bytes) throw new HttpError(404, "No encontramos la foto para retocar.");
+  const ops = retouchOps(params.adjust);
+  const image = await sharp(bytes, { limitInputPixels: 40_000_000 })
+    .rotate()
+    .resize({ width: 2048, height: 2048, fit: "inside", withoutEnlargement: true })
+    .modulate({ brightness: ops.brightness })
+    .linear(ops.linear.a, ops.linear.b)
+    .recomb(ops.tint)
+    .jpeg({ quality: 90, progressive: true })
+    .toBuffer();
+  const path = `retouches/${params.photoId}/${randomBytes(12).toString("hex")}.jpg`;
+  const upload = await db.storage.from(BUCKET).upload(path, image, { contentType: "image/jpeg", upsert: false });
+  if (upload.error) throw new HttpError(503, "No pudimos guardar la versión. Revisá el almacenamiento disponible.");
+  const row = check(
+    await db
+      .from("photo_retouches")
+      .insert({
+        photo_id: params.photoId,
+        source_generation_id: generationId,
+        source_retouch_id: retouchId,
+        adjust: params.adjust,
+        result_path: path,
+        result_bytes: image.length,
+        created_by: params.actorId,
+      })
+      .select("id")
+      .single(),
+    "DEMO_RETOUCH_INSERT_FAILED",
+  ) as { id: string };
+  if (params.show) {
+    const shown = await db.from("demo_photos").update({ shown_retouch_id: row.id }).eq("id", params.photoId);
+    if (shown.error) throw new Error("DEMO_PHOTO_UPDATE_FAILED");
+  }
+  return row.id;
+}
+
+/**
+ * The retouches of each photo, named "<style> · Retoque n" after what they
+ * start from ("Original" for the photo itself); oldest first.
+ */
+export async function retouchesOf(photoIds: string[], generationStyle: Map<string, string>) {
+  const out = new Map<string, RetouchRow[]>();
+  if (!photoIds.length) return out;
+  const rows = check(
+    await adminClient()
+      .from("photo_retouches")
+      .select("id,photo_id,source_generation_id,source_retouch_id,adjust,tool,created_at")
+      .in("photo_id", photoIds)
+      .order("created_at"),
+    "DEMO_RETOUCHES_LOOKUP_FAILED",
+  ) as {
+    id: string;
+    photo_id: string;
+    source_generation_id: string | null;
+    source_retouch_id: string | null;
+    adjust: Adjust;
+    tool: string | null;
+    created_at: string;
+  }[];
+  const base = new Map<string, string>();
+  const counts = new Map<string, number>();
+  for (const r of rows) {
+    const from = r.source_retouch_id ? base.get(r.source_retouch_id) : null;
+    const name = from ?? (r.source_generation_id ? (generationStyle.get(r.source_generation_id) ?? "Versión") : "Original");
+    base.set(r.id, name);
+    const key = `${r.photo_id}:${name}`;
+    const n = (counts.get(key) ?? 0) + 1;
+    counts.set(key, n);
+    const list = out.get(r.photo_id) ?? [];
+    const tool = validTool(r.tool) ? TOOL_NAMES[r.tool] : null;
+    list.push({
+      id: r.id,
+      label: tool ? `${name} · ${tool}` : `${name} · Retoque${n > 1 ? ` ${n}` : ""}`,
+      adjust: r.adjust,
+      created_at: r.created_at,
+    });
+    out.set(r.photo_id, list);
+  }
+  return out;
+}
+
 export type AgencyInput = {
   name: string;
   website: string | null;
@@ -819,6 +1283,8 @@ export async function createDemo(input: {
   agency: AgencyInput | null;
   /** origin: who added it ("agency" from its own panel; the team's by default). */
   property: PropertyInput & { origin?: "admin" | "agency" };
+  /** "fotos": a photo group, not a ficha yet (see 202611040001_photo_groups.sql). */
+  kind?: "ficha" | "fotos";
 }) {
   const db = adminClient();
   let agencyId = input.agencyId;
@@ -862,6 +1328,10 @@ export async function createDemo(input: {
         property_id: property.data.id,
         token: newToken(),
         created_by: input.actorId,
+        kind: input.kind ?? "ficha",
+        // New demos show their video under the gallery until the agency chooses otherwise (older ones keep theirs).
+        // …and offer their styles in the order of the property's region (styleSequence).
+        settings: { videoPlacement: "below", styleOrder: "auto" },
       })
       .select("id")
       .single();
@@ -902,11 +1372,16 @@ export async function addPhoto(
   if (existing.length >= MAX_PHOTOS_PER_DEMO)
     throw new HttpError(409, `Una demo admite hasta ${MAX_PHOTOS_PER_DEMO} fotos.`);
   const lookup = async () => {
-    let query = db.from("projects").select("id").eq("original_hash", originalHash).is("deleted_at", null);
+    let query = db.from("projects").select("id,user_id").eq("original_hash", originalHash).is("deleted_at", null);
     if (opts.ownOnly) query = query.eq("user_id", actorId);
-    return check(await query.order("created_at").limit(1).maybeSingle(), "PROJECT_LOOKUP_FAILED") as {
-      id: string;
-    } | null;
+    const found = check(await query.order("created_at").limit(20), "PROJECT_LOOKUP_FAILED") as { id: string; user_id: string }[];
+    if (opts.ownOnly || !found.length) return found[0] ?? null;
+    // The team shares its copies, never an agency account's: those are its private photos and stagings.
+    const members = check(
+      await db.from("agency_members").select("user_id").in("user_id", [...new Set(found.map((p) => p.user_id))]),
+      "PROJECT_LOOKUP_FAILED",
+    ) as { user_id: string }[];
+    return found.find((p) => p.user_id === actorId || !members.some((m) => m.user_id === p.user_id)) ?? null;
   };
   let project = await lookup();
   if (!project) {
@@ -929,7 +1404,7 @@ export async function addPhoto(
         original_bytes: image.length,
         name: name.slice(0, 100) || "Foto de la demo",
       })
-      .select("id")
+      .select("id,user_id")
       .single();
     if (made.error?.code === "23505") project = await lookup();
     else if (made.error || !made.data) throw new Error("PROJECT_CREATE_FAILED");

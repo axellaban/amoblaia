@@ -7,3 +7,10 @@ This version has breaking changes — APIs, conventions, and file structure may 
 This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
 
 <!-- END:nextjs-agent-rules -->
+
+## Migraciones de Supabase
+
+Cuando un cambio incluye una migración para aplicar, dar siempre el enlace de GitHub al archivo, sin que haga falta pedirlo, para abrirlo y copiar el SQL en el SQL Editor de Supabase:
+
+- Antes del merge: `https://github.com/axellaban/amoblaia/blob/<rama>/supabase/migrations/<archivo>.sql`
+- Después del merge: `https://github.com/axellaban/amoblaia/blob/main/supabase/migrations/<archivo>.sql`

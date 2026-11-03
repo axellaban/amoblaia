@@ -25,6 +25,9 @@ export type ProspectContact = {
   blocked: "account" | "channel" | "contact" | null;
 };
 
+/** Demo steps of an agency: created, sent (published link), and the highest visitor step (1 visit, 2 interaction, 3 generated image, 4 own panel, 5 subscribed). */
+export type DemoProgress = { created: boolean; sent: boolean; level: 0 | 1 | 2 | 3 | 4 | 5 };
+
 export type ProspectAccount = {
   id: string;
   agency_id: string;
@@ -50,6 +53,8 @@ export type ProspectAccount = {
   created_at: string;
   imported: boolean;
   demos: number;
+  /** Activity of the agency's demos: the highest step reached by any of them. Filled by the server, not by the database function. */
+  demo?: DemoProgress;
   suppressed: boolean;
   contacts: ProspectContact[];
 };

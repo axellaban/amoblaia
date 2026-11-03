@@ -8,7 +8,7 @@ const user = "00000000-0000-4000-8000-000000000071",
 const one = async <T>(sql: string, params: unknown[] = []) =>
   (await db.query<T>(sql, params)).rows[0];
 const apply = (id: string, status: string, order = sub, s = "sub-r") =>
-  db.query("select amobla_apply_payment($1,$2,$3,3890000,now(),$4)", [
+  db.query("select amobla_apply_payment($1,$2,$3,2590000,now(),$4)", [
     id,
     order,
     status,
@@ -82,7 +82,7 @@ it("still revokes and blocks on a chargeback, for good", async () => {
 
 it("records a second payment on the same pack instead of losing it", async () => {
   await db.exec(
-    `update profiles set blocked=false where id='${user}'; update products set active=true,price_cents=3890000 where sku='pack-10'`,
+    `update profiles set blocked=false where id='${user}'; update products set active=true,price_cents=2590000 where sku='pack-10'`,
   );
   await db.query("select amobla_create_order($1,$2,'pack-10')", [user, pack]);
   await apply("pay-p1", "approved", pack, null as unknown as string);

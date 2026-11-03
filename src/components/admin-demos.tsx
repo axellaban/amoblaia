@@ -1,29 +1,44 @@
 "use client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   Copy,
-  Eye,
   ImageIcon,
   MessageCircle,
-  Pencil,
   Plus,
   Search,
-  Trash2,
-  UserPlus,
 } from "lucide-react";
 import { ImportFromListing } from "./demo-import";
+import { LeadBadge } from "./lead-score";
+import { CreditsDialog, type CreditTarget } from "./admin-agencies";
 import { EDIT_HEADER } from "@/lib/agency/edit-scope";
+import type { LeadClassKey } from "@/lib/leads/config";
+import { ShowSwitch, type Visibility } from "./demo-listing-form";
+import type { HideableField } from "@/lib/demos/branding";
+
+type DemoLeadScore = { score: number | null; classification: LeadClassKey | null; external: number; internal: number; quality: string | null };
 import {
   adminPhotoUrl,
   demoUrl,
-  invitationWhatsappUrl,
   whatsappShareUrl,
   type AgencyRow,
+  type DemoActivity,
+  type DemoSendEvent,
   type DemoSummary,
 } from "@/lib/demos/shared";
+import {
+  DEFAULT_MESSAGE_TEMPLATE,
+  MESSAGE_VARIABLES,
+  STAGES,
+  normalizeArNumber,
+  notSent,
+  renderMessage,
+  stageLabel,
+  stageOf,
+  whatsappWebUrl,
+} from "@/lib/demos/send";
 
 /**
  * The edit context of this tab ("Editar inmobiliaria"), sent with every
@@ -35,6 +50,17 @@ export function setEditContext(token: string | null) {
   editContext = token;
 }
 export const EDIT_EXPIRED_EVENT = "habita:edicion-vencida";
+
+/**
+ * The agency looking around its panel before creating its account (set by
+ * the visit's banner): a change it tries opens "Creá tu cuenta" instead of
+ * sending it to sign in.
+ */
+let visiting = false;
+export function setVisiting(on: boolean) {
+  visiting = on;
+}
+export const VISIT_ACCOUNT_EVENT = "habita:visita-cuenta";
 
 /** fetch for the admin API: JSON in and out, the server's message on errors. */
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -48,6 +74,11 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     headers,
   });
   const payload = await r.json().catch(() => ({}));
+  // The agency's visit to its panel (no account yet): a change asks it to create the account, here.
+  if ((r.status === 401 && visiting) || (r.status === 403 && payload.code === "visita")) {
+    window.dispatchEvent(new Event(VISIT_ACCOUNT_EVENT));
+    throw new ApiError(payload.error || "Creá tu cuenta gratis para guardar cambios.", r.status, payload);
+  }
   if (r.status === 401) {
     window.location.assign(`/acceso?next=${encodeURIComponent(window.location.pathname)}`);
     throw new Error("Tu sesión venció. Volvé a ingresar.");
@@ -82,6 +113,22 @@ export async function copyText(text: string) {
   }
 }
 
+/**
+ * Copies a link that is still being prepared (the agency's needs a server call). The
+ * clipboard write starts with the click, so browsers accept it; the same request is
+ * reused if the browser refuses, so no second one-time link is created.
+ */
+export async function copyLinkWhenReady(getLink: () => Promise<string>) {
+  const link = getLink();
+  try {
+    const text = link.then((t) => new Blob([t], { type: "text/plain" }));
+    await navigator.clipboard.write([new ClipboardItem({ "text/plain": text })]);
+    return true;
+  } catch {
+    return copyText(await link);
+  }
+}
+
 export function StatusChip({ status }: { status: DemoSummary["status"] }) {
   return (
     <span className={`dm-status ${status === "published" ? "is-live" : ""}`}>
@@ -90,122 +137,850 @@ export function StatusChip({ status }: { status: DemoSummary["status"] }) {
   );
 }
 
-export function ShareButtons({
-  demo,
-  compact = false,
-}: {
-  demo: Pick<DemoSummary, "token" | "status" | "agencyName" | "title">;
-  compact?: boolean;
-}) {
+/**
+ * The agency's link to its demo. While the agency has no account, the link
+ * carries a fresh one-time code, so the demo opens its panel for it; once
+ * claimed, the plain presentation link does.
+ */
+async function agencyLink(demo: Pick<DemoSummary, "id" | "token" | "agencyClaimed">) {
+  // With its account, the agency sees the demo inside its own panel.
+  if (demo.agencyClaimed === true) return `${window.location.origin}/panel/propiedades/${demo.id}`;
+  const claim = await api<{ presentationUrl: string | null }>(`/api/admin/demos/${demo.id}/reclamo`, { method: "POST" });
+  return claim.presentationUrl ?? publicLink(demo.token, true);
+}
+
+/**
+ * For an agency that asks about prices: its same demo opened on the plans, under its
+ * own bar. Also a fresh one-time code; with an account, the plans as anyone sees them.
+ */
+async function agencyPricesLink(demo: Pick<DemoSummary, "id" | "token" | "agencyClaimed">) {
+  if (demo.agencyClaimed === true) return `${window.location.origin}/precios`;
+  const claim = await api<{ pricesUrl: string | null }>(`/api/admin/demos/${demo.id}/reclamo`, { method: "POST" });
+  return claim.pricesUrl ?? publicLink(demo.token, true);
+}
+
+/**
+ * "Ingresar al panel", the next step after the demo: the agency's own panel,
+ * opened on its home without creating its account first (it only reads; the
+ * account is asked for when it wants to change something). A fresh one-time
+ * code too; with its account, the panel itself (it signs in).
+ */
+async function agencyPanelLink(demo: Pick<DemoSummary, "id" | "token" | "agencyClaimed">) {
+  if (demo.agencyClaimed === true) return `${window.location.origin}/panel`;
+  const claim = await api<{ panelUrl?: string | null }>(`/api/admin/demos/${demo.id}/reclamo`, { method: "POST" });
+  if (!claim.panelUrl) throw new Error("No pudimos crear el enlace al panel.");
+  return claim.panelUrl;
+}
+
+/** The link of each "which": the agency's demo, its prices, its panel or the buyers' page. */
+const linkOf = (demo: Pick<DemoSummary, "id" | "token" | "agencyClaimed">, which: "agency" | "prices" | "panel" | "buyer") =>
+  which === "agency"
+    ? agencyLink(demo)
+    : which === "prices"
+      ? agencyPricesLink(demo)
+      : which === "panel"
+        ? agencyPanelLink(demo)
+        : Promise.resolve(publicLink(demo.token));
+
+/** A text action that copies one of the demo's links (the agency's, its prices, its panel or the buyers'). */
+export function LinkCopy({ demo, which }: { demo: Pick<DemoSummary, "id" | "token" | "status" | "agencyClaimed">; which: "agency" | "prices" | "panel" | "buyer" }) {
   const [copied, setCopied] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   const live = demo.status === "published";
+  async function copy() {
+    setBusy(true);
+    setError("");
+    try {
+      const ok = await copyLinkWhenReady(() => linkOf(demo, which));
+      if (ok) {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No pudimos crear el enlace.");
+    } finally {
+      setBusy(false);
+    }
+  }
   return (
     <>
       <button
         type="button"
-        className="button button-small button-outline"
-        disabled={!live}
+        className="dm-text"
+        disabled={!live || busy}
         title={live ? undefined : "Publicá la demo para compartirla"}
-        onClick={async () => {
-          if (await copyText(publicLink(demo.token, true))) {
-            setCopied(true);
-            setTimeout(() => setCopied(false), 2000);
-          }
-        }}
+        data-link={which}
+        onClick={copy}
       >
-        {copied ? <Check size={15} /> : <Copy size={15} />}
-        {compact ? (copied ? "Copiado" : "Copiar") : copied ? "Enlace copiado" : "Copiar enlace de presentación"}
+        {copied ? "Copiado" : "Copiar link"}
       </button>
-      {live ? (
-        <a
-          className="button button-small dm-whatsapp"
-          href={whatsappShareUrl(publicLink(demo.token, true), publicLink(demo.token), demo.agencyName, demo.title)}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <MessageCircle size={15} /> {compact ? "WhatsApp" : "Compartir por WhatsApp"}
-        </a>
-      ) : (
-        <button type="button" className="button button-small" disabled>
-          <MessageCircle size={15} /> {compact ? "WhatsApp" : "Compartir por WhatsApp"}
-        </button>
+      {error && (
+        <span className="inline-error" role="alert">
+          {error}
+        </span>
       )}
     </>
   );
 }
 
 /**
- * Invites the agency of a demo to its own panel: creates a one-time link
- * (only an e-mail and a password to enter) and opens WhatsApp with it.
- * The link is created on click, so each one is fresh and can be revoked
- * from the agency's page.
+ * "Ver": the agency's view (the same link as Copiar link), the buyers' page
+ * or the agency's panel. A draft has no public page yet, so the buyers' view
+ * opens the team's preview. The panel opens in the support view (read only,
+ * one hour, audited): the team sees it as the agency will, without using its code.
  */
-export function InviteAgency({ demo }: { demo: Pick<DemoSummary, "id" | "agencyName" | "title"> }) {
-  const [state, setState] = useState<{ url: string; whatsapp: string } | null>(null);
+export function ViewLink({
+  demo,
+  which,
+}: {
+  demo: Pick<DemoSummary, "id" | "token" | "status" | "agencyClaimed"> & { agencyId?: string };
+  which: "agency" | "panel" | "buyer" | "prices";
+}) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [copied, setCopied] = useState(false);
-  async function create() {
+  async function open() {
     setBusy(true);
     setError("");
     // Opened now, while the click still counts, so the browser does not block it.
     const tab = window.open("about:blank", "_blank");
     try {
-      const { url } = await api<{ url: string }>(`/api/admin/demos/${demo.id}/reclamo`, { method: "POST" });
-      const whatsapp = invitationWhatsappUrl(url, demo.agencyName, demo.title);
-      setState({ url, whatsapp });
+      const url =
+        which === "agency"
+          ? await agencyLink(demo)
+          : which === "prices"
+            ? await agencyPricesLink(demo)
+          : which === "panel"
+            ? await supportPanel(demo.agencyId)
+          : demo.status === "published"
+            ? publicLink(demo.token)
+            : `${window.location.origin}/admin/demos/${demo.id}/vista-previa`;
       if (tab) {
         tab.opener = null;
-        tab.location.href = whatsapp;
-      }
+        tab.location.href = url;
+      } else window.open(url, "_blank", "noopener");
     } catch (e) {
       tab?.close();
-      setError(e instanceof Error ? e.message : "No pudimos crear la invitación.");
+      setError(e instanceof Error ? e.message : "No pudimos abrir la vista.");
     } finally {
       setBusy(false);
     }
   }
   return (
-    <span className="dm-invite">
+    <>
       <button
         type="button"
-        className="button button-small dm-whatsapp"
+        className="dm-text"
         disabled={busy}
-        onClick={create}
-        title="Crea un enlace personal para que la inmobiliaria entre a su panel con email y contraseña"
+        data-view={which}
+        title={which === "panel" ? "Abre su panel como lo ve la inmobiliaria: solo lectura, por una hora. Queda registrado." : undefined}
+        onClick={open}
       >
-        <UserPlus size={15} /> {busy ? "Creando…" : "Invitar a su panel"}
+        Ver
       </button>
       {error && (
-        <span className="inline-error dm-invite-note" role="alert">
+        <span className="inline-error" role="alert">
           {error}
         </span>
       )}
-      {state && (
-        <span className="dm-invite-note" role="status">
-          Invitación creada (vence en 30 días).{" "}
-          <a href={state.whatsapp} target="_blank" rel="noopener noreferrer" className="text-link">
-            Abrir WhatsApp
-          </a>{" "}
-          ·{" "}
-          <button
-            type="button"
-            className="text-link"
-            onClick={async () => {
-              if (await copyText(state.url)) setCopied(true);
-            }}
-          >
-            {copied ? "Enlace copiado" : "Copiar enlace"}
-          </button>
+    </>
+  );
+}
+
+/** The agency's panel in the team's support view (read only): its address once the view is open. */
+async function supportPanel(agencyId: string | undefined) {
+  if (!agencyId) throw new Error("No encontramos la inmobiliaria.");
+  const { url } = await api<{ url: string }>(`/api/admin/inmobiliarias/${agencyId}/soporte`, { method: "POST", body: JSON.stringify({ mode: "view" }) });
+  return `${window.location.origin}${url}`;
+}
+
+/** WhatsApp with only the agency's link: no text of ours. Opens the agency's chat when its number is known. */
+export function WhatsappText({ demo }: { demo: Pick<DemoSummary, "id" | "token" | "agencyClaimed" | "agencyWhatsapp"> }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  async function send() {
+    setBusy(true);
+    setError("");
+    // Opened now, while the click still counts, so the browser does not block it.
+    const tab = window.open("about:blank", "_blank");
+    try {
+      const url = whatsappShareUrl(await agencyLink(demo), demo.agencyWhatsapp);
+      if (tab) {
+        tab.opener = null;
+        tab.location.href = url;
+      } else window.location.href = url;
+    } catch (e) {
+      tab?.close();
+      setError(e instanceof Error ? e.message : "No pudimos crear el enlace.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <>
+      <button
+        type="button"
+        className="dm-text dm-text-wa"
+        disabled={busy}
+        onClick={send}
+        title={demo.agencyWhatsapp ? `Enviar a +${demo.agencyWhatsapp}` : "Sin WhatsApp de la inmobiliaria: elegís el chat al enviar"}
+      >
+        WhatsApp
+      </button>
+      {error && (
+        <span className="inline-error" role="alert">
+          {error}
         </span>
       )}
-    </span>
+    </>
+  );
+}
+
+/** One way to share a demo: the same view every time, copied or sent on WhatsApp. */
+function ShareCard({
+  title,
+  hint,
+  shown,
+  live,
+  resolve,
+  to,
+}: {
+  title: string;
+  hint: string;
+  shown: string;
+  live: boolean;
+  resolve: () => Promise<string>;
+  /** The recipient's WhatsApp (wa.me digits); without one, WhatsApp asks who to send it to. */
+  to?: string | null;
+}) {
+  const [copied, setCopied] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  async function copy() {
+    setBusy(true);
+    setError("");
+    try {
+      if (await copyLinkWhenReady(resolve)) {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No pudimos crear el enlace.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function whatsapp() {
+    setBusy(true);
+    setError("");
+    // Opened now, while the click still counts, so the browser does not block it.
+    const tab = window.open("about:blank", "_blank");
+    try {
+      const url = whatsappShareUrl(await resolve(), to);
+      if (tab) {
+        tab.opener = null;
+        tab.location.href = url;
+      } else window.location.href = url;
+    } catch (e) {
+      tab?.close();
+      setError(e instanceof Error ? e.message : "No pudimos crear el enlace.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="dm-share-card">
+      <strong>{title}</strong>
+      <span className="dm-help">{hint}</span>
+      <code className="dm-share-url">{live ? shown : "Se activa al publicar la demo"}</code>
+      <div className="dm-share-buttons">
+        <button type="button" className="button button-small button-outline" disabled={!live || busy} onClick={copy}>
+          {copied ? <Check size={15} /> : <Copy size={15} />}
+          {copied ? "Enlace copiado" : "Copiar enlace"}
+        </button>
+        <button type="button" className="button button-small dm-whatsapp" disabled={!live || busy} onClick={whatsapp}>
+          <MessageCircle size={15} /> WhatsApp
+        </button>
+      </div>
+      {to !== undefined && (
+        <span className="dm-help">{to ? `WhatsApp abre el chat de +${to}.` : "Sin WhatsApp de la inmobiliaria: elegís el chat al enviar."}</span>
+      )}
+      {error && (
+        <span className="inline-error" role="alert">
+          {error}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The two ways to share a demo, always the same: to the agency (its
+ * presentation, as from its panel) and to the buyers (the clean ficha).
+ * No step to create a link first.
+ */
+export function ShareCards({ demo }: { demo: Pick<DemoSummary, "id" | "token" | "status" | "agencyClaimed" | "agencyWhatsapp"> }) {
+  const live = demo.status === "published";
+  return (
+    <div className="dm-share-cards">
+      <ShareCard
+        title="Enviar a la inmobiliaria"
+        hint="Siempre entra a la vista de presentación, como desde su panel."
+        shown={publicLink(demo.token, true)}
+        live={live}
+        resolve={() => agencyLink(demo)}
+        to={demo.agencyWhatsapp ?? null}
+      />
+      <ShareCard
+        title="Precios para la inmobiliaria"
+        hint="Su misma demo, abierta en los planes y sin salir de su entorno."
+        shown={`${publicLink(demo.token, true)}/…/precios`}
+        live={live}
+        resolve={() => agencyPricesLink(demo)}
+        to={demo.agencyWhatsapp ?? null}
+      />
+      <ShareCard
+        title="Ingreso al panel"
+        hint="El próximo paso después de la demo: entra al inicio de su panel sin crear la cuenta; la crea cuando quiera guardar o ambientar."
+        shown={demo.agencyClaimed ? `${window.location.origin}/panel` : `${publicLink(demo.token, true)}/…/panel`}
+        live={live}
+        resolve={() => agencyPanelLink(demo)}
+        to={demo.agencyWhatsapp ?? null}
+      />
+      <ShareCard
+        title="Enviar al comprador"
+        hint="Siempre la ficha limpia, sin franja ni acceso al panel."
+        shown={publicLink(demo.token)}
+        live={live}
+        resolve={async () => publicLink(demo.token)}
+      />
+    </div>
+  );
+}
+
+/**
+ * The agency's credits in the demo's row: its available balance and the ones
+ * reserved until it accepts the invitation. The same dialog as Inmobiliarias.
+ */
+export function DemoCredits({ demo, onDone }: { demo: DemoSummary; onDone: (text: string) => void }) {
+  const [target, setTarget] = useState<CreditTarget | null>(null);
+  const show = (n: number | null) => (n === null ? "—" : String(n));
+  // With an account: its balance. Without one: what waits for it.
+  const shown = demo.agencyClaimed ? show(demo.credits.available) : show(demo.credits.reserved);
+  return (
+    <div className="dm-credits">
+      <span className="dm-credits-label">{demo.agencyClaimed ? "Créditos" : "Créditos reservados"}</span>
+      <div className="dm-credits-nums">
+        <b>{shown}</b>
+        <button
+          type="button"
+          className="dm-text"
+          onClick={() =>
+            setTarget({
+              id: demo.agencyId,
+              name: demo.agencyName,
+              hasOwner: demo.agencyClaimed === true,
+              available: demo.credits.available,
+              reserved: demo.credits.reserved,
+            })
+          }
+        >
+          Cargar
+        </button>
+      </div>
+      <CreditsDialog
+        target={target}
+        onClose={() => setTarget(null)}
+        onDone={(text) => {
+          setTarget(null);
+          onDone(text);
+        }}
+      />
+    </div>
+  );
+}
+
+/** How long ago something happened, for the team's list. */
+function agoText(iso: string) {
+  const minutes = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (minutes < 1) return "recién";
+  if (minutes < 60) return `hace ${minutes} min`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `hace ${hours} h`;
+  return `hace ${Math.round(hours / 24)} d`;
+}
+
+/**
+ * The follow-up bar: Sin enviar → Enviada → Ingresó → … → Suscribió. Gray
+ * until sent; "Enviada" in the brand green; from "Ingresó" on, the steps
+ * reached are green and the rest gray.
+ */
+export function StageBar({ stage }: { stage: number }) {
+  return (
+    <ol className="dm-stage" aria-label={`Seguimiento: ${stageLabel(stage)}`}>
+      {STAGES.slice(1).map((name, i) => {
+        const step = i + 1;
+        const cls = step > stage ? "" : step === 1 ? "is-sent" : "on";
+        return <li key={name} className={cls} title={name} />;
+      })}
+    </ol>
+  );
+}
+
+/**
+ * The demo's follow-up and what visitors did, at a glance: the stage bar,
+ * when it was sent, how many people came and when last. Team only.
+ */
+export function ActivityStatus({ activity, sentAt }: { activity: DemoActivity; sentAt?: string | null }) {
+  const stage = stageOf(sentAt ?? null, activity.level);
+  const people = `${activity.visitors} ${activity.visitors === 1 ? "persona" : "personas"}`;
+  const sentText = sentAt ? `Enviada ${agoText(sentAt)}` : "";
+  const visitText = activity.at ? `${people} · última visita ${agoText(activity.at)}` : "Sin visitas todavía";
+  return (
+    <div className="dm-activity" aria-label={`Seguimiento: ${stageLabel(stage)}`}>
+      <span className="dm-activity-label">Seguimiento</span>
+      <strong>{stageLabel(stage)}</strong>
+      <StageBar stage={stage} />
+      <span className="dm-activity-foot">{[sentText, visitText].filter(Boolean).join(" · ")}</span>
+    </div>
+  );
+}
+
+/** A small modal: a title, the content and a close button. Keyboard: Escape closes. */
+export function Dialog({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <div className="dm-dialog-backdrop" onMouseDown={onClose}>
+      <div className="dm-dialog" role="dialog" aria-modal="true" aria-label={title} onMouseDown={(e) => e.stopPropagation()}>
+        <header>
+          <strong>{title}</strong>
+          <button type="button" className="dm-text" onClick={onClose} aria-label="Cerrar">
+            Cerrar
+          </button>
+        </header>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/** The global message template, edited once for every demo. Each demo can override it. */
+export function MessageTemplateDialog({ onClose, onSaved }: { onClose: () => void; onSaved: (text: string) => void }) {
+  const [template, setTemplate] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    api<{ template: string }>("/api/admin/demos/plantilla")
+      .then((d) => setTemplate(d.template))
+      .catch((e) => setError(e.message));
+  }, []);
+  async function save() {
+    setBusy(true);
+    setError("");
+    try {
+      const saved = await api<{ template: string }>("/api/admin/demos/plantilla", { method: "PUT", body: JSON.stringify({ template }) });
+      onSaved("Mensaje de WhatsApp guardado.");
+      setTemplate(saved.template);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No pudimos guardar.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Dialog title="Mensaje de WhatsApp" onClose={onClose}>
+      <div className="dm-dialog-body">
+        <p className="dm-help">
+          Variables: {MESSAGE_VARIABLES.map((v) => `{${v}}`).join(" ")}. {"{nombre}"} es el contacto de la inmobiliaria o, si no hay, su nombre. {"{ubicacion}"} es el barrio de la propiedad.
+        </p>
+        <textarea
+          rows={6}
+          maxLength={1000}
+          aria-label="Plantilla del mensaje"
+          value={template ?? ""}
+          disabled={template === null || busy}
+          onChange={(e) => setTemplate(e.target.value)}
+        />
+        {error && (
+          <p className="inline-error" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="dm-dialog-actions">
+          <button type="button" className="text-link" disabled={busy || template === null} onClick={() => setTemplate(DEFAULT_MESSAGE_TEMPLATE)}>
+            Volver al predeterminado
+          </button>
+          <button type="button" className="button button-small" disabled={busy || !template?.trim()} onClick={save}>
+            Guardar
+          </button>
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
+/**
+ * "Enviar por WhatsApp": opens WhatsApp Web in this same tab with the chat of
+ * the agency and the message (the link included) already written. Shows the
+ * final text first; sending marks the demo as "Enviada". Team only.
+ */
+export function SendWhatsapp({
+  demo,
+  fixHere = false,
+  label = "Enviar por WhatsApp",
+  autoOpen = false,
+  onClosed,
+}: {
+  demo: DemoSummary;
+  fixHere?: boolean;
+  /** The button's text («Enviar demo» in the agency's header). */
+  label?: string;
+  /** Opens the dialog at once (the demo was just chosen from a list). */
+  autoOpen?: boolean;
+  /** Called when the dialog closes without sending. */
+  onClosed?: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [template, setTemplate] = useState(DEFAULT_MESSAGE_TEMPLATE);
+  const [globalTemplate, setGlobalTemplate] = useState(DEFAULT_MESSAGE_TEMPLATE);
+  const [ownTemplate, setOwnTemplate] = useState(demo.messageTemplate != null);
+  const [savedForAll, setSavedForAll] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const phone = normalizeArNumber(demo.agencyWhatsapp);
+  const published = demo.status === "published";
+  const missing = !published
+    ? "Publicá la demo para enviarla."
+    : !phone
+      ? `Falta el WhatsApp de la inmobiliaria: ${fixHere ? "cargalo acá abajo" : "cargalo en la demo"}.`
+      : null;
+  const preview = renderMessage(template, {
+    nombre: demo.agencyContact ?? null,
+    inmobiliaria: demo.agencyName,
+    ubicacion: demo.propertyLocation ?? null,
+    propiedad: demo.propertyTitle,
+    link: publicLink(demo.token, true),
+    creditos: demo.credits.reserved,
+  });
+
+  async function openDialog() {
+    setError("");
+    setSavedForAll(false);
+    setOpen(true);
+    try {
+      const { template: general } = await api<{ template: string }>("/api/admin/demos/plantilla");
+      setGlobalTemplate(general);
+      setOwnTemplate(demo.messageTemplate != null);
+      setTemplate(demo.messageTemplate ?? general);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No pudimos leer el mensaje.");
+    }
+  }
+
+  // The text becomes the general message, and this demo goes back to using it.
+  async function saveForAll() {
+    setBusy(true);
+    setError("");
+    try {
+      const saved = await api<{ template: string }>("/api/admin/demos/plantilla", { method: "PUT", body: JSON.stringify({ template }) });
+      if (demo.messageTemplate != null)
+        await api(`/api/admin/demos/${demo.id}`, { method: "PATCH", body: JSON.stringify({ action: "message", message: null }) });
+      setGlobalTemplate(saved.template);
+      setTemplate(saved.template);
+      setOwnTemplate(false);
+      setSavedForAll(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No pudimos guardar el mensaje general.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function send() {
+    if (!phone) return;
+    setBusy(true);
+    setError("");
+    try {
+      // The real link: an agency without account gets its one-time code here, as the copy buttons do.
+      const link = await agencyLink(demo);
+      const text = renderMessage(template, {
+        nombre: demo.agencyContact ?? null,
+        inmobiliaria: demo.agencyName,
+        ubicacion: demo.propertyLocation ?? null,
+        propiedad: demo.propertyTitle,
+        link,
+        creditos: demo.credits.reserved,
+      });
+      // This demo's own message is kept only when it differs from the general one.
+      const wanted = ownTemplate && template !== globalTemplate ? template : null;
+      if (wanted !== demo.messageTemplate)
+        await api(`/api/admin/demos/${demo.id}`, { method: "PATCH", body: JSON.stringify({ action: "message", message: wanted }) });
+      // Marked as sent before leaving (a second send keeps the first date and goes to the history).
+      await api(`/api/admin/demos/${demo.id}`, { method: "PATCH", body: JSON.stringify({ action: "sent", sent: true, via: "whatsapp" }) });
+      window.location.href = whatsappWebUrl(phone, text);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No pudimos preparar el envío.");
+      setBusy(false);
+    }
+  }
+
+  // Chosen from a list: straight to the dialog (once).
+  const opened = useRef(false);
+  useEffect(() => {
+    if (!autoOpen || opened.current || missing) return;
+    opened.current = true;
+    void openDialog();
+  }, [autoOpen, missing]);
+  const close = () => {
+    if (busy) return;
+    setOpen(false);
+    onClosed?.();
+  };
+
+  return (
+    <div className="dm-send">
+      <button
+        type="button"
+        className="button button-small dm-whatsapp"
+        data-testid="send-demo-whatsapp"
+        disabled={Boolean(missing) || busy}
+        onClick={openDialog}
+      >
+        <MessageCircle size={15} /> {label}
+      </button>
+      {missing && <span className="dm-help">{missing}</span>}
+      {open && (
+        <Dialog title={`Enviar «${demo.title}» a ${demo.agencyName}`} onClose={close}>
+          <div className="dm-dialog-body">
+            <p className="dm-help">
+              Se abre WhatsApp Web con el chat de +{phone} y el mensaje escrito. Lo enviás vos.
+              {demo.sentAt ? ` Ya se envió ${agoText(demo.sentAt)}: queda registrado otro envío.` : ""}
+            </p>
+            <label className="checkbox-label dm-check">
+              <input
+                type="checkbox"
+                checked={ownTemplate}
+                onChange={(e) => {
+                  setOwnTemplate(e.target.checked);
+                  // Back to the general text when the demo stops having its own.
+                  if (!e.target.checked) setTemplate(globalTemplate);
+                }}
+              />
+              Mensaje propio para esta demo
+            </label>
+            <textarea
+              rows={6}
+              maxLength={1000}
+              aria-label="Mensaje"
+              value={template}
+              disabled={!ownTemplate || busy}
+              onChange={(e) => setTemplate(e.target.value)}
+            />
+            {!ownTemplate ? (
+              <p className="dm-help">Se usa el mensaje general, el mismo para todas las demos. Para cambiarlo, marcá «Mensaje propio» y editalo.</p>
+            ) : (
+              template !== globalTemplate && (
+                <div className="dm-dialog-actions">
+                  <span className="dm-help">Por ahora este texto queda solo para esta demo.</span>
+                  <button type="button" className="button button-small button-outline" disabled={busy || !template.trim()} onClick={saveForAll}>
+                    Guardar para todas las demos
+                  </button>
+                </div>
+              )
+            )}
+            {savedForAll && (
+              <p className="inline-notice" role="status">
+                Guardado como mensaje general: queda para todas las demos que no tengan uno propio.
+              </p>
+            )}
+            <div className="dm-msg-preview" aria-label="Vista previa del mensaje">
+              <span className="dm-help">Vista previa</span>
+              <p>{preview}</p>
+              <span className="dm-help">El enlace definitivo se prepara al enviar.</span>
+            </div>
+            {demo.credits.reserved === null && (
+              <p className="inline-notice" role="status">
+                No pudimos leer los créditos reservados: revisá el texto antes de enviar.
+              </p>
+            )}
+            {error && (
+              <p className="inline-error" role="alert">
+                {error}
+              </p>
+            )}
+            <div className="dm-dialog-actions">
+              <button type="button" className="text-link" disabled={busy} onClick={close}>
+                Cancelar
+              </button>
+              <button type="button" className="button button-small dm-whatsapp" data-testid="confirm-send-demo-whatsapp" disabled={busy || !template.trim()} onClick={send}>
+                {busy ? "Preparando…" : "Abrir WhatsApp"}
+              </button>
+            </div>
+          </div>
+        </Dialog>
+      )}
+    </div>
+  );
+}
+
+/** Marks the demo as sent by hand (it went out another way), or undoes it. The team's follow-up only. */
+export function SentToggle({ demo, onDone }: { demo: DemoSummary; onDone: (text: string) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const sent = Boolean(demo.sentAt);
+  async function toggle() {
+    setBusy(true);
+    setError("");
+    try {
+      await api(`/api/admin/demos/${demo.id}`, { method: "PATCH", body: JSON.stringify({ action: "sent", sent: !sent }) });
+      onDone(sent ? "Vuelve a «Sin enviar»." : "Marcada como enviada.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No pudimos guardar.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <>
+      <button type="button" className="dm-text" disabled={busy} onClick={toggle}>
+        {sent ? "Deshacer envío" : "Marcar como enviada"}
+      </button>
+      {error && (
+        <span className="inline-error" role="alert">
+          {error}
+        </span>
+      )}
+    </>
+  );
+}
+
+/** "+549 223 633-7191"-style display of wa.me digits, for the team to check the number at a glance. */
+export function phoneText(digits: string | null | undefined) {
+  return digits ? `+${digits}` : "";
+}
+
+/**
+ * The agency's WhatsApp where a demo is created: optional but highlighted,
+ * since without it the demo cannot be sent from the panel. Shows how the
+ * number will be saved.
+ */
+export function AgencyWhatsappField({
+  value,
+  onChange,
+  note,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  note?: string;
+}) {
+  const number = normalizeArNumber(value);
+  return (
+    <div className="dm-wa-field dm-wide">
+      <label>
+        WhatsApp de la inmobiliaria <small>(opcional, para enviarle la demo)</small>
+        <input
+          type="tel"
+          inputMode="tel"
+          maxLength={40}
+          placeholder="223 633-7191"
+          data-testid="agency-whatsapp-input"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+        />
+      </label>
+      <span className="dm-help">
+        {value.trim()
+          ? number
+            ? `Se guarda como ${phoneText(number)}.`
+            : "No parece un número argentino: incluí el código de área."
+          : (note ?? "Sin él, «Enviar por WhatsApp» queda deshabilitado. Se puede cargar después en la demo.")}
+      </span>
+    </div>
+  );
+}
+
+/** The agency's WhatsApp on the demo's screen, to correct it right there. It is the agency's: it applies to all its demos. */
+export function AgencyWhatsappEditor({ demo, onDone }: { demo: DemoSummary; onDone: (text: string) => void }) {
+  const [value, setValue] = useState(phoneText(demo.agencyWhatsapp));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => setValue(phoneText(demo.agencyWhatsapp)), [demo.agencyWhatsapp]);
+  const number = normalizeArNumber(value);
+  const changed = (number ?? "") !== (demo.agencyWhatsapp ?? "") || (!number && value.trim() !== "");
+  async function save() {
+    setBusy(true);
+    setError("");
+    try {
+      await api(`/api/admin/demos/${demo.id}`, { method: "PATCH", body: JSON.stringify({ action: "whatsapp", whatsapp: value.trim() || null }) });
+      onDone(value.trim() ? "WhatsApp de la inmobiliaria guardado." : "WhatsApp de la inmobiliaria borrado.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No pudimos guardar.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="dm-wa-field">
+      <label htmlFor={`wa-${demo.id}`}>WhatsApp de la inmobiliaria</label>
+      <div className="dm-wa-row">
+        <input
+          id={`wa-${demo.id}`}
+          type="tel"
+          inputMode="tel"
+          maxLength={40}
+          placeholder="223 633-7191"
+          data-testid="agency-whatsapp-input"
+          value={value}
+          disabled={busy}
+          onChange={(e) => setValue(e.target.value)}
+        />
+        <button type="button" className="button button-small button-outline" disabled={busy || !changed || (value.trim() !== "" && !number)} onClick={save}>
+          {busy ? "Guardando…" : "Guardar"}
+        </button>
+      </div>
+      <span className="dm-help">
+        {value.trim() && !number
+          ? "No parece un número argentino: incluí el código de área."
+          : number && changed
+            ? `Se guarda como ${phoneText(number)}, para todas sus demos.`
+            : demo.agencyWhatsapp
+              ? "Es el de la inmobiliaria: vale para todas sus demos."
+              : "Cargalo para poder enviar la demo por WhatsApp."}
+      </span>
+      {error && (
+        <span className="inline-error" role="alert">
+          {error}
+        </span>
+      )}
+    </div>
+  );
+}
+
+const SEND_KIND = { whatsapp: "Enviada por WhatsApp", manual: "Marcada como enviada", unsent: "Envío deshecho" } as const;
+
+/** The demo's sending history with date and time, newest first. */
+export function SendLog({ events }: { events: DemoSendEvent[] | undefined }) {
+  if (!events?.length) return null;
+  const when = (iso: string) =>
+    new Date(iso).toLocaleString("es-AR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  return (
+    <ul className="dm-send-log" aria-label="Historial de envío">
+      {events.map((e) => (
+        <li key={`${e.at}-${e.kind}`}>
+          {SEND_KIND[e.kind]} · {when(e.at)}
+        </li>
+      ))}
+    </ul>
   );
 }
 
 /** How the link will look when pasted in WhatsApp (image, title, description, domain). */
 export function LinkPreview({ demo, location }: { demo: DemoSummary; location?: string | null }) {
-  const host = typeof window === "undefined" ? "amoblaia.vercel.app" : window.location.host;
+  const host = typeof window === "undefined" ? "www.habitaia.app" : window.location.host;
   return (
     <div className="dm-link-preview" aria-label="Previsualización del enlace">
       {demo.cover ? (
@@ -237,14 +1012,22 @@ export function DemoList() {
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState("");
   const [query, setQuery] = useState("");
-  const [status, setStatus] = useState<"all" | DemoSummary["status"]>("all");
+  const [status, setStatus] = useState<"all" | DemoSummary["status"] | "unsent">("all");
+  const [template, setTemplate] = useState(false);
   const load = useCallback(async () => {
     const data = await api<{ demos: DemoSummary[] }>("/api/admin/demos");
     setDemos(data.demos);
   }, []);
+  // The lead scores come apart and after the list, so they never slow it down.
+  const [scores, setScores] = useState<Record<string, DemoLeadScore>>({});
+  const loadScores = useCallback(() => {
+    api<Record<string, DemoLeadScore>>("/api/admin/leads/demos").then(setScores, () => undefined);
+  }, []);
   useEffect(() => {
-    void load().catch((e) => setError(e.message));
-  }, [load]);
+    void load()
+      .catch((e) => setError(e.message))
+      .finally(loadScores);
+  }, [load, loadScores]);
   async function act(demo: DemoSummary, action: "publish" | "unpublish" | "delete") {
     if (
       action === "delete" &&
@@ -281,7 +1064,8 @@ export function DemoList() {
     const q = query.trim().toLowerCase();
     return (demos || []).filter(
       (d) =>
-        (status === "all" || d.status === status) &&
+        (status === "all" ||
+          (status === "unsent" ? notSent(stageOf(d.sentAt ?? null, d.activity.level), d.status) : d.status === status)) &&
         (!q || `${d.agencyName} ${d.propertyTitle} ${d.title}`.toLowerCase().includes(q)),
     );
   }, [demos, query, status]);
@@ -312,6 +1096,15 @@ export function DemoList() {
           {notice}
         </p>
       )}
+      {template && (
+        <MessageTemplateDialog
+          onClose={() => setTemplate(false)}
+          onSaved={(text) => {
+            setTemplate(false);
+            setNotice(text);
+          }}
+        />
+      )}
       <div className="dm-filters">
         <label className="dm-search">
           <Search size={17} aria-hidden="true" />
@@ -331,7 +1124,11 @@ export function DemoList() {
           <option value="all">Todas</option>
           <option value="draft">Borradores</option>
           <option value="published">Publicadas</option>
+          <option value="unsent">Sin enviar</option>
         </select>
+        <button type="button" className="button button-small button-outline" onClick={() => setTemplate(true)}>
+          Mensaje de WhatsApp
+        </button>
       </div>
       {!demos && !error && <p>Cargando demos…</p>}
       {demos && !demos.length && (
@@ -368,35 +1165,70 @@ export function DemoList() {
               </span>
             </div>
             <StatusChip status={d.status} />
-            <div className="dm-actions">
-              <Link href={`/admin/demos/${d.id}`} className="button button-small button-outline">
-                <Pencil size={15} /> Editar
-              </Link>
-              <Link
-                href={`/admin/demos/${d.id}/vista-previa`}
-                className="button button-small button-outline"
-              >
-                <Eye size={15} /> Vista previa
-              </Link>
-              <ShareButtons demo={d} compact />
-              {d.agencyClaimed !== true && <InviteAgency demo={d} />}
-              <button
-                type="button"
-                className="button button-small"
-                disabled={busy === d.id}
-                onClick={() => act(d, d.status === "published" ? "unpublish" : "publish")}
-              >
-                {d.status === "published" ? "Despublicar" : "Publicar"}
-              </button>
-              <button
-                type="button"
-                className="icon-button dm-danger"
-                aria-label={`Eliminar ${d.title}`}
-                disabled={busy === d.id}
-                onClick={() => act(d, "delete")}
-              >
-                <Trash2 size={18} />
-              </button>
+            <div className="dm-links">
+              <span className="dm-who">Inmobiliaria</span>
+              <ViewLink demo={d} which="agency" />
+              <LinkCopy demo={d} which="agency" />
+              <span className="dm-sep">·</span>
+              <span className="dm-who">Comprador</span>
+              <ViewLink demo={d} which="buyer" />
+              <LinkCopy demo={d} which="buyer" />
+              <span className="dm-sep">·</span>
+              <span className="dm-who">Precios</span>
+              <LinkCopy demo={d} which="prices" />
+              <span className="dm-sep">·</span>
+              <span className="dm-who">Panel</span>
+              <ViewLink demo={d} which="panel" />
+              <LinkCopy demo={d} which="panel" />
+              {d.status === "published" && (
+                <>
+                  <span className="dm-sep">·</span>
+                  <WhatsappText demo={d} />
+                </>
+              )}
+            </div>
+            <div className="dm-bottom">
+              <div className="dm-facts">
+                <DemoCredits demo={d} onDone={(text) => { setNotice(text); void load(); }} />
+                <ActivityStatus activity={d.activity} sentAt={d.sentAt} />
+                {scores[d.id] && (
+                  <Link href={`/admin/inmobiliarias/${d.agencyId}?pestana=actividad`} className="dm-lead" title="Ver la actividad de la inmobiliaria">
+                    <span className="dm-activity-label">Lead score</span>
+                    <LeadBadge score={scores[d.id].score} classification={scores[d.id].classification} partial={scores[d.id].quality === "partial"} />
+                  </Link>
+                )}
+              </div>
+              <div className="dm-actions">
+                {d.status === "published" && (
+                  <>
+                    <SendWhatsapp demo={d} />
+                    <SentToggle demo={d} onDone={(text) => { setNotice(text); void load(); }} />
+                    <span className="dm-sep">·</span>
+                  </>
+                )}
+                <Link href={`/admin/demos/${d.id}`} className="dm-text">
+                  Editar
+                </Link>
+                <span className="dm-sep">·</span>
+                <button
+                  type="button"
+                  className={`dm-text ${d.status === "published" ? "" : "dm-text-primary"}`}
+                  disabled={busy === d.id}
+                  onClick={() => act(d, d.status === "published" ? "unpublish" : "publish")}
+                >
+                  {d.status === "published" ? "Despublicar" : "Publicar"}
+                </button>
+                <span className="dm-sep">·</span>
+                <button
+                  type="button"
+                  className="dm-text dm-danger"
+                  aria-label={`Eliminar ${d.title}`}
+                  disabled={busy === d.id}
+                  onClick={() => act(d, "delete")}
+                >
+                  Eliminar
+                </button>
+              </div>
             </div>
           </li>
         ))}
@@ -457,42 +1289,78 @@ export function AgencyFields({
 export function PropertyFields({
   value,
   onChange,
+  visibility,
 }: {
   value: typeof emptyProperty;
   onChange: (v: typeof emptyProperty) => void;
+  /** The demo's «Mostrar en demostración» switches. The title has none: it names the page and its link. */
+  visibility?: Visibility;
 }) {
   const set = (k: keyof typeof emptyProperty) => (e: { target: { value: string } }) =>
     onChange({ ...value, [k]: e.target.value });
+  const vis = (field: HideableField | null, name: string, el: React.ReactNode, wide = false) =>
+    visibility ? (
+      <div className={`dm-vis-row ${wide ? "dm-wide" : ""}`}>
+        {el}
+        <ShowSwitch
+          on={field ? !visibility.hidden.includes(field) : true}
+          locked={!field}
+          label={name}
+          disabled={visibility.disabled}
+          onChange={(on) => field && visibility.onToggle(field, on)}
+        />
+      </div>
+    ) : (
+      el
+    );
   return (
     <div className="dm-fields">
-      <label>
-        Título de la propiedad *
-        <input
-          required
-          maxLength={160}
-          placeholder="Departamento de 3 ambientes con balcón"
-          value={value.title}
-          onChange={set("title")}
-        />
-      </label>
-      <label>
-        Ubicación o barrio <small>(visible)</small>
-        <input maxLength={160} placeholder="Palermo, CABA" value={value.location} onChange={set("location")} />
-      </label>
-      <label className="dm-wide">
-        URL de la publicación original <small>(visible: «Ver publicación original»)</small>
-        <input
-          maxLength={500}
-          inputMode="url"
-          placeholder="https://…"
-          value={value.listing_url}
-          onChange={set("listing_url")}
-        />
-      </label>
-      <label className="dm-wide">
-        Descripción breve <small>(visible en la demo)</small>
-        <textarea rows={3} maxLength={1000} value={value.description} onChange={set("description")} />
-      </label>
+      {vis(
+        null,
+        "el título",
+        <label>
+          Título de la propiedad *
+          <input
+            required
+            maxLength={160}
+            placeholder="Departamento de 3 ambientes con balcón"
+            value={value.title}
+            onChange={set("title")}
+          />
+        </label>,
+      )}
+      {vis(
+        "location",
+        "la ubicación",
+        <label>
+          Ubicación o barrio <small>(visible)</small>
+          <input maxLength={160} placeholder="Palermo, CABA" value={value.location} onChange={set("location")} />
+        </label>,
+      )}
+      {vis(
+        "listingUrl",
+        "el enlace a la publicación original",
+        <label className={visibility ? "" : "dm-wide"}>
+          URL de la publicación original <small>(visible: «Ver publicación original»)</small>
+          <input
+            maxLength={500}
+            inputMode="url"
+            placeholder="https://…"
+            value={value.listing_url}
+            onChange={set("listing_url")}
+          />
+        </label>,
+        true,
+      )}
+      {vis(
+        "description",
+        "la descripción",
+        <label className={visibility ? "" : "dm-wide"}>
+          Descripción breve <small>(visible en la demo; la completa, si está cargada, la reemplaza)</small>
+          <textarea rows={3} maxLength={1000} value={value.description} onChange={set("description")} />
+        </label>,
+        true,
+      )}
     </div>
   );
 }
@@ -509,8 +1377,12 @@ export function NewDemoForm({ agencyId: fixedAgency = null }: { agencyId?: strin
   const [agencyId, setAgencyId] = useState(fixedAgency ?? "");
   const [agency, setAgency] = useState(emptyAgency);
   const [property, setProperty] = useState(emptyProperty);
+  const [whatsapp, setWhatsapp] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const chosen = agencies?.find((a) => a.id === agencyId) ?? null;
+  // Asked when it is a new agency, or one we have no WhatsApp for.
+  const askWhatsapp = mode === "new" || !agencies?.length || Boolean(chosen && !chosen.whatsapp);
   useEffect(() => {
     api<{ agencies: AgencyRow[] }>("/api/admin/demos")
       .then((d) => {
@@ -528,7 +1400,11 @@ export function NewDemoForm({ agencyId: fixedAgency = null }: { agencyId?: strin
       const { id } = await api<{ id: string }>("/api/admin/demos", {
         method: "POST",
         body: JSON.stringify(
-          mode === "existing" ? { agencyId, property } : { agency, property },
+          {
+            ...(mode === "existing" ? { agencyId } : { agency }),
+            property,
+            whatsapp: askWhatsapp && whatsapp.trim() ? whatsapp.trim() : undefined,
+          },
         ),
       });
       router.push(`/admin/demos/${id}`);
@@ -599,6 +1475,11 @@ export function NewDemoForm({ agencyId: fixedAgency = null }: { agencyId?: strin
             </label>
           ) : (
             <AgencyFields value={agency} onChange={setAgency} />
+          )}
+          {askWhatsapp ? (
+            <AgencyWhatsappField value={whatsapp} onChange={setWhatsapp} />
+          ) : (
+            chosen?.whatsapp && <p className="dm-help">WhatsApp para enviarle la demo: {phoneText(chosen.whatsapp)}.</p>
           )}
           <p className="dm-help">No necesita tener una cuenta en habita.</p>
         </section>

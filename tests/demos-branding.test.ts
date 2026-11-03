@@ -6,7 +6,7 @@ vi.mock("@/lib/supabase/server", () => ({
   },
   currentUser: async () => null,
 }));
-import { contactHref, readSettings, textOn, whatsappNumber } from "../src/lib/demos/branding";
+import { contactHref, DEFAULT_SETTINGS, readSettings, textOn, whatsappNumber } from "../src/lib/demos/branding";
 import { brandingInput, settingsInput } from "../src/lib/demos/input";
 
 const listing = { title: "Depto en La Perla", reference: "RAP12025427", url: "https://russillo.test/p/1" };
@@ -53,7 +53,8 @@ describe("Branding and settings input", () => {
     expect(brandingInput({ contactKind: "whatsapp", contactValue: "" }, { contactKind: "phone", contactValue: "1" })).toEqual({});
   });
   it("opens with the original photo and shows the strip unless configured otherwise", () => {
-    expect(readSettings(undefined)).toMatchObject({ openMode: "original", openStyle: null, banner: true });
+    expect(readSettings(undefined)).toMatchObject({ openMode: "styled", openStyle: null, banner: true });
+    expect(readSettings({ openMode: "original" })).toMatchObject({ openMode: "original" });
     const next = settingsInput({ openMode: "styled", openStyle: "modern", price: "  USD 265.000 " }, readSettings({}));
     expect(next).toMatchObject({ openMode: "styled", openStyle: "modern", price: "USD 265.000" });
     expect(() => settingsInput({ openMode: "zoom" }, readSettings({}))).toThrow();
@@ -64,9 +65,20 @@ describe("Branding and settings input", () => {
     expect(textOn("#f4e9c8")).toBe("#161b26");
     expect(whatsappNumber("+54 9 223 555-1234")).toBe("5492235551234");
   });
+  it("reads a local Argentine WhatsApp as wa.me needs it", () => {
+    expect(whatsappNumber("2235273341")).toBe("5492235273341");
+    expect(whatsappNumber("0223 527-3341")).toBe("5492235273341");
+    expect(whatsappNumber("0054 9 223 527 3341")).toBe("5492235273341");
+    expect(whatsappNumber("5492235273341")).toBe("5492235273341");
+    expect(whatsappNumber("0223 15 527-3341")).toBe("5492235273341");
+    expect(whatsappNumber("54 223 527 3341")).toBe("5492235273341");
+    expect(whatsappNumber("+1 415 555 0100")).toBe("14155550100");
+    expect(whatsappNumber("+44 7911 123456")).toBe("447911123456");
+    expect(whatsappNumber("123")).toBeNull();
+  });
 });
 
-import { buildDemoPrompt, styleFits } from "../src/lib/demos/styles";
+import { buildDemoPrompt, demoStyleName, demoStyleOrder, REGIONAL_STYLE_ORDERS, styleFits, styleSequence } from "../src/lib/demos/styles";
 import { moneyMentions, parseListing } from "../src/lib/demos/listing";
 import { reviewWarnings } from "../src/lib/demos/server";
 
@@ -113,7 +125,7 @@ describe("Listing data", () => {
       branding: {},
       listingUrl: "https://inmo.test/p/1",
       photos: [
-        { id: "p", spaceId: null, projectId: "x", position: 0, visible: true, room: "living", label: null, mode: "furnish", discarded: [], source: null, charged: false, shown: { modern: "g" }, generations: [] },
+        { id: "p", spaceId: null, projectId: "x", position: 0, visible: true, room: "living", label: null, mode: "furnish", discarded: [], source: null, charged: false, shown: { modern: "g" }, generations: [], retouches: [], shownRetouch: null },
       ],
     });
     expect(warnings.join("\n")).toMatch(/Sin contacto válido/);
@@ -121,5 +133,40 @@ describe("Listing data", () => {
     expect(warnings.join("\n")).toMatch(/otro tipo de inmueble \(Moderno\)/);
     expect(warnings.join("\n")).toMatch(/Sin ubicación verificada/);
     expect(warnings.join("\n")).toMatch(/revisada/);
+  });
+});
+
+describe("Video placement default", () => {
+  it("offers the styles of a new demo in its region's order; older demos keep the catalog's", () => {
+    expect(DEFAULT_SETTINGS.styleOrder).toBe("auto");
+    expect(readSettings({}).styleOrder).toBe("catalog");
+    expect(readSettings({ ...DEFAULT_SETTINGS }).styleOrder).toBe("auto");
+    const mdp = styleSequence("auto", "Playa Grande, Mar del Plata");
+    expect(mdp.slice(0, 7)).toEqual(["modern", "coastal", "scandinavian", "minimalist", "midcentury", "luxury", "industrial"]);
+    // The rest of the catalog follows, nothing lost or repeated.
+    expect([...mdp].sort()).toEqual([...demoStyleOrder].sort());
+    // Not tied to one city: elsewhere (or with no location) the catalog order stays.
+    expect(styleSequence("auto", "Palermo, CABA")).toEqual(demoStyleOrder);
+    expect(styleSequence("auto", null)).toEqual(demoStyleOrder);
+    expect(styleSequence("catalog", "Mar del Plata")).toEqual(demoStyleOrder);
+    // An explicit order, per demo.
+    expect(styleSequence(["luxury", "nope", "modern"], null).slice(0, 2)).toEqual(["luxury", "modern"]);
+    expect(REGIONAL_STYLE_ORDERS.every((r) => r.order.every((id) => demoStyleOrder.includes(id)))).toBe(true);
+  });
+  it("Costero is a real style of the catalog", () => {
+    expect(demoStyleName("coastal")).toBe("Costero");
+  });
+  it("validates a style order chosen for a demo", () => {
+    expect(settingsInput({ styleOrder: ["coastal", "modern"] }, readSettings({})).styleOrder).toEqual(["coastal", "modern"]);
+    expect(settingsInput({ styleOrder: "auto" }, readSettings({})).styleOrder).toBe("auto");
+    expect(settingsInput({ price: "USD 1" }, { ...DEFAULT_SETTINGS }).styleOrder).toBe("auto");
+    expect(() => settingsInput({ styleOrder: ["costero"] }, readSettings({}))).toThrow(/Orden de estilos/);
+    expect(() => settingsInput({ styleOrder: [] }, readSettings({}))).toThrow(/Orden de estilos/);
+  });
+  it("new demos (every importer starts from DEFAULT_SETTINGS) show the video under the gallery; older ones without a choice keep «first»", () => {
+    expect(DEFAULT_SETTINGS.videoPlacement).toBe("below");
+    expect(readSettings({ ...DEFAULT_SETTINGS }).videoPlacement).toBe("below");
+    expect(readSettings({}).videoPlacement).toBe("first");
+    expect(readSettings({ videoPlacement: "second" }).videoPlacement).toBe("second");
   });
 });

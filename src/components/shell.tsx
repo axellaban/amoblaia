@@ -209,7 +209,8 @@ export function Header() {
   );
 }
 /** /demo/<token> and an agency's site: the agency's own pages, with its brand. */
-const isDemoPage = (pathname: string) => pathname.startsWith("/demo/") || pathname.startsWith("/inmobiliaria/");
+// The demo's short link (/p/<propiedad>-<codigo>) is the same demo: its own header, not habita's.
+const isDemoPage = (pathname: string) => pathname.startsWith("/demo/") || pathname.startsWith("/p/") || pathname.startsWith("/inmobiliaria/");
 
 export function Footer() {
   const pathname = usePathname();

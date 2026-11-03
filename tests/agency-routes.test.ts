@@ -37,6 +37,7 @@ function fakeDb() {
           return { data: { user }, error: null };
         },
         deleteUser: async (id: string) => (state.deletedUsers.push(id), { error: null }),
+        getUserById: async (id: string) => ({ data: { user: state.authUsers.find((u) => u.id === id) ?? null }, error: null }),
       },
     },
     from(table: string) {
@@ -151,6 +152,10 @@ vi.mock("@/lib/commerce/http", async (original) => {
       }
       if (name === "habita_apply_agency_credits" && state.applyError) throw new Error("boom");
       if (name === "habita_apply_agency_credits") return state.pendingToApply;
+      if (name === "habita_join_agency") {
+        state.tables.agency_members.push({ user_id: args.p_user, role: "editor", agencies: AGENCY });
+        return "ag1";
+      }
       if (name === "habita_agency_counts") return { total: 2, published: 1, staged: 0, review: 0, operations: [] };
       return null;
     },
@@ -169,11 +174,19 @@ import * as invitaciones from "../src/app/api/admin/inmobiliarias/[id]/invitacio
 import * as invitacion from "../src/app/api/admin/inmobiliarias/[id]/invitaciones/[claimId]/route";
 import * as invitacionPanel from "../src/app/api/panel/invitacion/route";
 import * as soporte from "../src/app/api/admin/inmobiliarias/[id]/soporte/route";
-import { readSupportToken, supportToken } from "../src/lib/agency/support";
+import { readSupport, readSupportToken, supportToken } from "../src/lib/agency/support";
+import { requireDemoAccess, stagingRule } from "../src/lib/agency/server";
 import * as espacios from "../src/app/api/admin/demos/[id]/espacios/route";
 import * as espacio from "../src/app/api/admin/demos/[id]/espacios/[spaceId]/route";
 import * as fotoDemo from "../src/app/api/admin/demos/[id]/photos/[photoId]/route";
 import * as creditosAgencia from "../src/app/api/admin/inmobiliarias/[id]/creditos/route";
+import * as fotosGrupo from "../src/app/api/panel/imagenes/route";
+import * as grupoSubida from "../src/app/api/panel/imagenes/grupo/route";
+import * as fichaGrupo from "../src/app/api/panel/imagenes/[id]/ficha/route";
+import * as demoAgencia from "../src/app/api/admin/demos/[id]/route";
+import * as usuarios from "../src/app/api/panel/usuarios/route";
+import * as usuario from "../src/app/api/panel/usuarios/[id]/route";
+import * as unirme from "../src/app/api/panel/unirme/route";
 import { agencyStage, claimState } from "../src/lib/agency/stage";
 import { publicSite } from "../src/lib/agency/site";
 
@@ -238,8 +251,8 @@ beforeEach(() => {
     agencies: [{ ...AGENCY, notes: "Le interesa el plan Agente", contact_name: "Ana", branding: {} }],
     demo_properties: [],
     demos: [
-      { id: DEMO, agency_id: "ag1", property_id: "pr1", token: "tok_abcdefghijklmnopqrstuvwx", status: "published", settings: { price: "USD 1", priceConflict: "x" }, demo_properties: { title: "Casa", location: "Centro" } },
-      { id: "d2", agency_id: "ag1", property_id: "pr2", token: "tok_draftdraftdraftdraftdr", status: "draft", settings: {}, demo_properties: { title: "Borrador", location: null } },
+      { id: DEMO, agency_id: "ag1", kind: "ficha", property_id: "pr1", token: "tok_abcdefghijklmnopqrstuvwx", status: "published", settings: { price: "USD 1", priceConflict: "x" }, demo_properties: { title: "Casa", location: "Centro" } },
+      { id: "d2", agency_id: "ag1", kind: "ficha", property_id: "pr2", token: "tok_draftdraftdraftdraftdr", status: "draft", settings: {}, demo_properties: { title: "Borrador", location: null } },
     ],
     demo_photos: [],
     generations: [],
@@ -347,11 +360,21 @@ describe("Taking over a demo", () => {
     state.tables.agencies[0].owner_id = null;
     const r = await reclamo.POST(req(`/api/admin/demos/${DEMO}/reclamo`, "POST"), params);
     expect(r.status).toBe(201);
-    const { url } = await r.json();
+    const { url, presentationUrl, pricesUrl } = await r.json();
     const code = new URL(url).searchParams.get("codigo")!;
     const stored = state.inserts.find((i) => i.table === "agency_claims")!.row;
     expect(stored.code_hash).toBe(createHash("sha256").update(code).digest("hex"));
     expect(JSON.stringify(stored)).not.toContain(code);
+    // Made from a demo: a short code, unambiguous characters only, and the claim remembers its demo.
+    expect(code).toMatch(/^[2-9a-hjkmnp-z]{10}$/);
+    expect(stored.demo_id).toBe(DEMO);
+    // The demo as the way in: its short link, with the property's name and the same one-time code.
+    const demoLink = new URL(presentationUrl);
+    // A path only: no query string, so it can be sent without any special handling.
+    expect(demoLink.pathname).toMatch(new RegExp(`^/p/[a-z0-9-]+-${code}$`));
+    expect(demoLink.search).toBe("");
+    // The same demo opened on its plans, for an agency that asks about prices.
+    expect(new URL(pricesUrl).pathname).toBe(`${demoLink.pathname}/precios`);
   });
 });
 
@@ -441,7 +464,8 @@ describe("Credits of an agency", () => {
     state.user = { id: COLLAB, email: "colega@sur.test", email_confirmed_at: "2026-01-01" };
     state.tables.agency_members.push({ user_id: COLLAB, role: "collaborator", agencies: AGENCY });
     const body = await (await creditos.GET()).json();
-    expect(body).toEqual({ role: "collaborator", payer: { agency: "Sur Propiedades", isYou: false }, credits: 3, creditsError: false });
+    // A collaborator from before 202611110001_agency_team.sql reads as an editor.
+    expect(body).toEqual({ role: "editor", payer: { agency: "Sur Propiedades", isYou: false }, credits: 3, creditsError: false });
     expect(state.rpcs.filter((c) => c.name === "amobla_account").map((c) => c.args.p_user)).toEqual([OWNER]);
   });
 
@@ -556,6 +580,7 @@ describe("Properties list", () => {
     state.tables.demos = Array.from({ length: 321 }, (_, i) => ({
       id: `d${i}`,
       agency_id: "ag1",
+      kind: "ficha",
       property_id: `p${i}`,
       token: `tok_${String(i).padStart(24, "0")}`,
       status: i % 3 ? "draft" : "published",
@@ -949,5 +974,234 @@ describe("Support view: the team sees an agency's panel, read only", () => {
     expect(r.status).toBe(200);
     expect(state.cookies.has("habita_soporte")).toBe(false);
     expect(state.inserts.find((i) => i.table === "admin_audit")!.row).toMatchObject({ action: "agency_support_end", subject_id: AG });
+  });
+});
+
+describe("Acting as an agency: the team works in its panel with the owner's permissions", () => {
+  const TEAM = { id: "00000000-0000-4000-8000-0000000000aa", email: "equipo@amobla.test", email_confirmed_at: "2026-01-01" };
+  const AG = "00000000-0000-4000-8000-00000000a001";
+  const DEMO_AG = "00000000-0000-4000-8000-000000000d77";
+  const params = { params: Promise.resolve({ id: AG }) };
+  const panelReq = (path: string, method: string, body?: unknown) => {
+    const r = req(path, method, body);
+    r.headers.set("referer", `${origin}/panel/propiedades/${DEMO_AG}`);
+    return r;
+  };
+  beforeEach(() => {
+    vi.stubEnv("ADMIN_EMAILS", "equipo@amobla.test");
+    state.tables.agencies.push({ id: AG, name: "Russillo", website: null, slug: "russillo", owner_id: OWNER, site_published: false, branding: {} });
+    state.tables.demos.push({ id: DEMO_AG, agency_id: AG, kind: "ficha", property_id: "prx", token: "tok_russillorussillorussil", status: "draft", settings: {} });
+    state.tables.admin_audit = [];
+    state.tables.agency_members = [];
+    state.user = TEAM;
+  });
+
+  it("signs the mode with the token: a read-only view can never be turned into acting", () => {
+    const now = Date.parse("2026-10-27T12:00:00Z");
+    const view = supportToken(AG, TEAM.id, now);
+    const act = supportToken(AG, TEAM.id, now, "act");
+    expect(readSupport(act, TEAM.id, now)).toEqual({ agencyId: AG, mode: "act" });
+    expect(readSupport(view, TEAM.id, now)).toEqual({ agencyId: AG, mode: "view" });
+    const [a, u, exp, mac] = view.split(".");
+    expect(readSupport([a, u, exp, "act", mac].join("."), TEAM.id, now)).toBeNull();
+    expect(readSupport(act, OWNER, now)).toBeNull();
+  });
+
+  it("starts only for the team, audited as acting", async () => {
+    const r = await soporte.POST(req(`/api/admin/inmobiliarias/${AG}/soporte`, "POST", { mode: "act" }), params);
+    expect(r.status).toBe(201);
+    expect(state.inserts.find((i) => i.table === "admin_audit")!.row).toMatchObject({ actor_id: TEAM.id, action: "agency_support_act", subject_id: AG });
+    expect(readSupport(state.cookies.get("habita_soporte"), TEAM.id)).toMatchObject({ agencyId: AG, mode: "act" });
+    state.user = { id: OWNER, email: "duenia@sur.test", email_confirmed_at: "2026-01-01" };
+    expect((await soporte.POST(req(`/api/admin/inmobiliarias/${AG}/soporte`, "POST", { mode: "act" }), params)).status).toBe(403);
+  });
+
+  it("changes the agency's site and publishes its properties as its owner would", async () => {
+    state.cookies.set("habita_soporte", supportToken(AG, TEAM.id, Date.now(), "act"));
+    const site = await panel.PATCH(req("/api/panel", "PATCH", { name: "Russillo Propiedades" }));
+    expect(site.status).toBe(200);
+    expect(state.tables.agencies.find((a) => a.id === AG)!.name).toBe("Russillo Propiedades");
+    const access = await requireDemoAccess(panelReq(`/api/admin/demos/${DEMO_AG}`, "PATCH"), DEMO_AG);
+    expect(access).toMatchObject({ admin: false, role: "owner", acting: true, billingUser: OWNER });
+    // Its stagings are the agency's, paid with its credits, as from its own panel.
+    expect(stagingRule(access)).toEqual({ payer: "agency", blocked: null });
+  });
+
+  it("acts only on that agency: another agency's property stays the team's, as always", async () => {
+    state.cookies.set("habita_soporte", supportToken(AG, TEAM.id, Date.now(), "act"));
+    const other = await requireDemoAccess(panelReq(`/api/admin/demos/${DEMO}`, "PATCH"), DEMO);
+    expect(other).toMatchObject({ admin: true, acting: false });
+  });
+
+  it("keeps the read-only view refusing writes", async () => {
+    state.cookies.set("habita_soporte", supportToken(AG, TEAM.id));
+    expect((await panel.PATCH(req("/api/panel", "PATCH", { name: "Otro" }))).status).toBe(403);
+    await expect(requireDemoAccess(panelReq(`/api/admin/demos/${DEMO_AG}`, "PATCH"), DEMO_AG)).rejects.toThrow(/solo lectura/);
+  });
+});
+
+describe("Photos imported without a ficha", () => {
+  const GROUP = "00000000-0000-4000-8000-000000000f01";
+  const importGroup = (extra: Record<string, unknown> = {}) =>
+    fotosGrupo.POST(req("/api/panel/imagenes", "POST", { url: "https://sur.test/p/123", key: crypto.randomUUID(), ...extra }));
+  const publish = (id: string) =>
+    demoAgencia.PATCH(req(`/api/admin/demos/${id}`, "PATCH", { action: "publish" }), { params: Promise.resolve({ id }) });
+
+  it("keeps only the photos chosen as a photo group, with no ficha, no credit and no staging", async () => {
+    const r = await importGroup({ images: ["https://cdn.test/123_a.jpg", "https://cdn.test/123_b.jpg"] });
+    expect(r.status).toBe(201);
+    const made = await r.json();
+    expect(made).toMatchObject({ status: "partial", photosTotal: 2, photosDone: 0, images: ["https://cdn.test/123_a.jpg", "https://cdn.test/123_b.jpg"] });
+    const demo = state.inserts.find((i) => i.table === "demos")?.row;
+    expect(demo).toMatchObject({ agency_id: "ag1", kind: "fotos" });
+    expect(state.rpcs.filter((c) => /reserve|generation/.test(c.name))).toEqual([]);
+    expect(state.inserts.filter((i) => i.table === "generations")).toEqual([]);
+  });
+
+  it("never offers a photo the listing did not show", async () => {
+    const r = await importGroup({ images: ["https://evil.test/other.jpg"] });
+    expect(await r.json()).toMatchObject({ photosTotal: 0, images: [] });
+  });
+
+  it("refuses a listing the agency already has, and records it as a duplicate", async () => {
+    state.tables.demo_properties = [{ id: "pr1", agency_id: "ag1", listing_url: "https://sur.test/p/123", demos: { id: DEMO } }];
+    const r = await importGroup();
+    expect(r.status).toBe(409);
+    expect(await r.json()).toMatchObject({ duplicateOf: DEMO });
+    expect(state.tables.property_imports[0]).toMatchObject({ status: "duplicate", demo_id: DEMO });
+  });
+
+  it("lists photo groups apart from the agency's properties", async () => {
+    state.tables.demos.push({ id: GROUP, agency_id: "ag1", kind: "fotos", property_id: "pr9", token: "tok_grupogrupogrupogrupo", status: "draft", settings: {}, demo_properties: { title: "Fotos", location: null, listing_url: null } });
+    const groups = await (await fotosGrupo.GET()).json();
+    expect(groups.items.map((g: { id: string }) => g.id)).toEqual([GROUP]);
+    const properties = await (await propiedades.GET(req("/api/panel/propiedades"))).json();
+    expect(properties.items.map((p: { id: string }) => p.id)).not.toContain(GROUP);
+  });
+
+  it("cannot be published as a ficha: it must become one first", async () => {
+    state.tables.demos.push({ id: GROUP, agency_id: "ag1", kind: "fotos", property_id: "pr9", token: "tok_grupogrupogrupogrupo", status: "draft", settings: {}, demo_properties: { title: "Fotos", location: null, listing_url: null } });
+    const r = await publish(GROUP);
+    expect(r.status).toBe(409);
+    expect(state.tables.demos.find((d) => d.id === GROUP)?.status).toBe("draft");
+  });
+
+  it("creates the ficha from the group, keeping its photos and leaving it as a draft", async () => {
+    state.tables.demos.push({ id: GROUP, agency_id: "ag1", kind: "fotos", property_id: "pr9", token: "tok_grupogrupogrupogrupo", status: "draft", settings: {}, demo_properties: { title: "Fotos", location: null, listing_url: null } });
+    const r = await fichaGrupo.POST(req(`/api/panel/imagenes/${GROUP}/ficha`, "POST"), { params: Promise.resolve({ id: GROUP }) });
+    expect(r.status).toBe(200);
+    expect(state.tables.demos.find((d) => d.id === GROUP)).toMatchObject({ kind: "ficha", status: "draft" });
+    const again = await fichaGrupo.POST(req(`/api/panel/imagenes/${GROUP}/ficha`, "POST"), { params: Promise.resolve({ id: GROUP }) });
+    expect(again.status).toBe(409);
+  });
+
+  it("creates an empty group for uploaded files, named as the person chose", async () => {
+    const r = await grupoSubida.POST(req("/api/panel/imagenes/grupo", "POST", { name: "Casa en Zona Güemes" }));
+    expect(r.status).toBe(201);
+    expect(state.inserts.find((i) => i.table === "demo_properties")?.row).toMatchObject({ title: "Casa en Zona Güemes", listing_url: null });
+    expect(state.inserts.find((i) => i.table === "demos")?.row).toMatchObject({ kind: "fotos" });
+  });
+});
+
+describe("Users of an agency", () => {
+  const EMPLOYEE = "00000000-0000-4000-8000-0000000000e1";
+  const PR1 = "00000000-0000-4000-8000-00000000a001";
+  const as = (role: string, property_ids: string[] | null = null) => {
+    state.user = { id: EMPLOYEE, email: "laura@sur.test", email_confirmed_at: "2026-01-01" };
+    state.tables.agency_members.push({ agency_id: "ag1", user_id: EMPLOYEE, role, property_ids, agencies: AGENCY });
+  };
+  const publish = (id: string) => demoAgencia.PATCH(req(`/api/admin/demos/${id}`, "PATCH", { action: "publish" }), { params: Promise.resolve({ id }) });
+  beforeEach(() => {
+    state.tables.agency_invites = [];
+    state.tables.agency_members[0].agency_id = "ag1";
+    state.tables.demos[0].property_id = PR1;
+    state.tables.demo_properties = [{ id: PR1, agency_id: "ag1" }];
+  });
+
+  it("creates an access for an e-mail with a one-time link, stored only as its hash", async () => {
+    const r = await usuarios.POST(req("/api/panel/usuarios", "POST", { name: " Laura  Gómez ", email: "Laura@Sur.test", role: "viewer", properties: [PR1] }));
+    expect(r.status).toBe(201);
+    const { link } = await r.json();
+    const code = new URL(link, origin).searchParams.get("codigo")!;
+    expect(link).toMatch(/^\/panel\/unirme\?codigo=[A-Za-z0-9_-]{32}$/);
+    const invite = state.inserts.find((i) => i.table === "agency_invites")!.row;
+    expect(invite).toMatchObject({ agency_id: "ag1", email: "laura@sur.test", display_name: "Laura Gómez", role: "viewer", property_ids: [PR1], created_by: OWNER });
+    expect(invite.code_hash).toBe(createHash("sha256").update(code).digest("hex"));
+    expect(JSON.stringify(state.inserts)).not.toContain(code);
+  });
+
+  it("refuses properties of another agency, limits for administrators and unknown roles", async () => {
+    const post = (body: unknown) => usuarios.POST(req("/api/panel/usuarios", "POST", body));
+    expect((await post({ email: "a@sur.test", role: "editor", properties: ["00000000-0000-4000-8000-00000000a999"] })).status).toBe(400);
+    expect((await post({ email: "a@sur.test", role: "admin", properties: [PR1] })).status).toBe(400);
+    expect((await post({ email: "a@sur.test", role: "owner" })).status).toBe(400);
+    expect((await post({ email: "a@sur.test", role: "editor", properties: [] })).status).toBe(400);
+    expect(state.inserts.filter((i) => i.table === "agency_invites")).toEqual([]);
+  });
+
+  it("lets only the owner and administrators manage users", async () => {
+    as("editor");
+    expect((await usuarios.GET()).status).toBe(403);
+    expect((await usuarios.POST(req("/api/panel/usuarios", "POST", { email: "b@sur.test", role: "admin" }))).status).toBe(403);
+    state.tables.agency_members.at(-1)!.role = "admin";
+    expect((await usuarios.POST(req("/api/panel/usuarios", "POST", { email: "b@sur.test", role: "editor" }))).status).toBe(201);
+  });
+
+  it("never changes or removes the owner, nor one's own access", async () => {
+    as("admin");
+    const patch = (id: string) => usuario.PATCH(req(`/api/panel/usuarios/${id}`, "PATCH", { kind: "member", role: "viewer" }), { params: Promise.resolve({ id }) });
+    expect((await patch(OWNER)).status).toBe(403);
+    expect((await patch(EMPLOYEE)).status).toBe(400);
+    const del = await usuario.DELETE(req(`/api/panel/usuarios/${OWNER}?tipo=member`, "DELETE"), { params: Promise.resolve({ id: OWNER }) });
+    expect(del.status).toBe(403);
+    expect(state.tables.agency_members.find((m) => m.user_id === OWNER)).toBeTruthy();
+  });
+
+  it("gives a pending access a new link and the previous one stops working", async () => {
+    state.tables.agency_invites = [{ id: "00000000-0000-4000-8000-0000000001a1", agency_id: "ag1", email: "c@sur.test", role: "editor", code_hash: "x".repeat(64), used_at: null, revoked_at: null }];
+    const id = "00000000-0000-4000-8000-0000000001a1";
+    const r = await usuario.PATCH(req(`/api/panel/usuarios/${id}`, "PATCH", { kind: "pending", renew: true }), { params: Promise.resolve({ id }) });
+    expect(r.status).toBe(200);
+    const { link } = await r.json();
+    const code = new URL(link, origin).searchParams.get("codigo")!;
+    expect(state.tables.agency_invites[0].code_hash).toBe(createHash("sha256").update(code).digest("hex"));
+  });
+
+  it("keeps a viewer from changing anything: properties, imports or the site", async () => {
+    as("viewer");
+    expect((await publish(DEMO)).status).toBe(403);
+    expect((await importar.POST(req("/api/panel/importar", "POST", { url: "https://sur.test/p/1" }))).status).toBe(403);
+    expect((await panel.PATCH(req("/api/panel", "PATCH", { sitePublished: true }))).status).toBe(403);
+    expect(state.tables.demos[0].status).toBe("published");
+  });
+
+  it("shows a limited user only its properties and hides the rest", async () => {
+    as("editor", [PR1]);
+    const list = await (await propiedades.GET(req("/api/panel/propiedades"))).json();
+    expect(list.items.map((p: { id: string }) => p.id)).toEqual([DEMO]);
+    state.tables.agency_members.at(-1)!.property_ids = ["00000000-0000-4000-8000-00000000a002"];
+    expect((await publish(DEMO)).status).toBe(404);
+    expect((await importar.POST(req("/api/panel/importar", "POST", { url: "https://sur.test/p/1" }))).status).toBe(403);
+  });
+
+  it("lets an editor publish but not delete properties or change the site", async () => {
+    as("editor");
+    expect((await publish("d2")).status).not.toBe(403);
+    expect((await panel.PATCH(req("/api/panel", "PATCH", { sitePublished: true }))).status).toBe(403);
+    const del = await demoAgencia.DELETE(req(`/api/admin/demos/${DEMO}`, "DELETE"), { params: Promise.resolve({ id: DEMO }) });
+    expect(del.status).toBe(403);
+  });
+
+  it("joins with a new account for the invited e-mail only, and removes it if joining fails", async () => {
+    state.user = null;
+    const code = "a".repeat(32);
+    state.tables.agency_invites = [
+      { email: "laura@sur.test", role: "editor", property_ids: null, display_name: "Laura", code_hash: createHash("sha256").update(code).digest("hex"), expires_at: "2999-01-01T00:00:00Z", used_at: null, revoked_at: null, agencies: { name: "Sur Propiedades" } },
+    ];
+    const r = await unirme.POST(req("/api/panel/unirme", "POST", { code, password: "una-clave-segura" }));
+    expect(r.status).toBe(201);
+    expect(state.authUsers).toMatchObject([{ email: "laura@sur.test", email_confirm: true }]);
+    expect(state.rpcs.find((c) => c.name === "habita_join_agency")!.args).toMatchObject({ p_email: "laura@sur.test" });
+    expect((await unirme.POST(req("/api/panel/unirme", "POST", { code: "b".repeat(32), password: "una-clave-segura" }))).status).toBe(404);
   });
 });

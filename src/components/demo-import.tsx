@@ -4,8 +4,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { FieldStatus, ImportedDemo, ReportRow } from "@/lib/demos/import";
+import type { ImportDiagnostics } from "@/lib/listings/types";
 import type { EditorPhoto } from "@/lib/demos/shared";
-import { api } from "./admin-demos";
+import { AgencyWhatsappField, api } from "./admin-demos";
 
 const STATUS: Record<FieldStatus, string> = {
   found: "Encontrado",
@@ -50,11 +51,49 @@ export function ImportReport({ report }: { report: ReportRow[] }) {
   );
 }
 
+const STRATEGY: Record<ImportDiagnostics["strategy"], string> = {
+  direct_http: "lectura directa",
+  render_provider: "servicio de lectura",
+  fixture: "copia guardada",
+};
+const SOURCE = { platform: "plantilla del sitio", structured: "datos estructurados", generic: "lectura general" } as const;
+
+/** How the listing was read: platform, strategy, photos, what is missing and what disagreed. No secrets, no raw URL. */
+export function ImportDiagnosis({ data }: { data?: ImportDiagnostics }) {
+  if (!data) return null;
+  const seconds = data.durationMs !== null ? ` · ${(data.durationMs / 1000).toLocaleString("es-AR", { maximumFractionDigits: 1 })} s` : "";
+  return (
+    <details className="dm-diagnosis">
+      <summary>
+        Leído de <strong>{data.platformName}</strong> · {STRATEGY[data.strategy]}
+        {data.provider ? ` (${data.provider})` : ""} · {data.photosFound} {data.photosFound === 1 ? "foto" : "fotos"}
+        {seconds}
+        {data.missing.length > 0 && <> · falta: {data.missing.join(", ")}</>}
+      </summary>
+      <ul>
+        {data.priceStatus === "on_request" && <li>La publicación dice «Consultar precio»: no es un error de lectura.</li>}
+        {Object.entries(data.sources).map(([field, source]) => (
+          <li key={field}>
+            {{ title: "Título", location: "Ubicación", price: "Precio", operation: "Operación", description: "Descripción", images: "Fotos" }[field] ?? field}: {SOURCE[source]}
+          </li>
+        ))}
+        {data.conflicts.map((c) => (
+          <li key={c}>Diferencia en la página: {c} Se usó el dato de la plantilla; revisalo.</li>
+        ))}
+        {data.notes.filter((n) => !/Consultar precio/.test(n)).map((n) => (
+          <li key={n}>{n}</li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
 /** A compact look at the demo the import would create. */
 export function ImportPreview({ data }: { data: ImportedDemo }) {
   const agent = data.agent;
   return (
     <div className="dm-preview">
+      <ImportDiagnosis data={data.diagnostics} />
       {data.agency.logoUrl && (
         <img className="dm-preview-logo" src={data.agency.logoUrl} alt={data.agency.name ?? "Logo"} />
       )}
@@ -68,7 +107,7 @@ export function ImportPreview({ data }: { data: ImportedDemo }) {
         <strong>{data.title}</strong>
         {data.location && <span>{data.location}</span>}
         {data.features && <span>{data.features}</span>}
-        <b>{data.priceConflict ? "Precio a confirmar" : (data.price ?? "Sin precio publicado")}</b>
+        <b>{data.priceConflict ? "Precio a confirmar" : (data.price ?? (data.diagnostics?.priceStatus === "on_request" ? "Consultar precio" : "Sin precio publicado"))}</b>
       </div>
       {data.images.length > 0 && (
         <div className="dm-preview-photos" aria-label={`${data.images.length} fotos de la propiedad`}>
@@ -236,7 +275,7 @@ export function foreignPhotos(photos: EditorPhoto[], propertyId: string | null) 
   });
 }
 
-type Preview = ImportedDemo & { listingUrl: string; existingAgency: string | null };
+type Preview = ImportedDemo & { listingUrl: string; existingAgency: string | null; agencyWhatsapp?: string | null };
 
 /**
  * Paste the URL → the page is read → a full preview with every field and its
@@ -250,6 +289,7 @@ export function ImportFromListing({ agencyId }: { agencyId?: string | null } = {
   const [price, setPrice] = useState("");
   const [mapChoice, setMapChoice] = useState<MapChoice | null>(null);
   const [contact, setContact] = useState("");
+  const [whatsapp, setWhatsapp] = useState("");
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const busy = Boolean(status);
@@ -288,6 +328,7 @@ export function ImportFromListing({ agencyId }: { agencyId?: string | null } = {
           contact: missingContact && contact.trim() ? contact.trim() : undefined,
           map: mapChoice ? mapOverride(preview, mapChoice) : undefined,
           agencyId: agencyId ?? undefined,
+          whatsapp: !preview.agencyWhatsapp && whatsapp.trim() ? whatsapp.trim() : undefined,
         }),
       });
       await syncPhotos(`/api/admin/demos/${made.id}`, made.images, (t) => setStatus(`${made.title}. ${t}`));
@@ -344,6 +385,15 @@ export function ImportFromListing({ agencyId }: { agencyId?: string | null } = {
               Se agrega a <strong>{preview.existingAgency}</strong> (ya cargada): solo completamos su logo y
               contacto si faltan.
             </p>
+          )}
+          {preview.agencyWhatsapp ? (
+            <p className="dm-help">WhatsApp para enviarle la demo: +{preview.agencyWhatsapp}. Se puede corregir en la demo.</p>
+          ) : (
+            <AgencyWhatsappField
+              value={whatsapp}
+              onChange={setWhatsapp}
+              note="No lo encontramos en la publicación. Sin él, «Enviar por WhatsApp» queda deshabilitado; se puede cargar después en la demo."
+            />
           )}
           {pending.length > 0 ? (
             <div className="dm-exceptions" role="group" aria-label="Para revisar antes de crear">

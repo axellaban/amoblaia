@@ -1,18 +1,26 @@
 "use client";
 // Shown on every panel page while a team member is in a support view.
 import { useState } from "react";
-import { Eye } from "lucide-react";
+import { Eye, UserCog } from "lucide-react";
 import { api } from "./admin-demos";
 
-export function SupportBanner({ agencyId, agencyName }: { agencyId: string; agencyName: string }) {
+/** acting: the team member works as the agency (Entrar como la inmobiliaria), not just looking. */
+export function SupportBanner({ agencyId, agencyName, acting = false }: { agencyId: string; agencyName: string; acting?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   return (
-    <div className="support-banner" role="status">
-      <Eye size={16} aria-hidden="true" />
-      <span>
-        <strong>Vista de soporte:</strong> estás viendo el panel de {agencyName} como lo ve su dueño. Solo lectura; vence en una hora.
-      </span>
+    <div className={`support-banner ${acting ? "is-acting" : ""}`} role="status">
+      {acting ? <UserCog size={16} aria-hidden="true" /> : <Eye size={16} aria-hidden="true" />}
+      {acting ? (
+        <span>
+          <strong>Estás dentro de {agencyName} como su dueño.</strong> Los cambios son reales y las ambientaciones usan sus créditos. Queda
+          registrado; vence en una hora.
+        </span>
+      ) : (
+        <span>
+          <strong>Vista de soporte:</strong> estás viendo el panel de {agencyName} como lo ve su dueño. Solo lectura; vence en una hora.
+        </span>
+      )}
       {error && <span className="support-banner-error">{error}</span>}
       <button
         type="button"
@@ -29,7 +37,7 @@ export function SupportBanner({ agencyId, agencyName }: { agencyId: string; agen
           }
         }}
       >
-        Salir de la vista de soporte
+        {acting ? "Salir de la inmobiliaria" : "Salir de la vista de soporte"}
       </button>
     </div>
   );

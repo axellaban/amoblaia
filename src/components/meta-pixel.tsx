@@ -9,13 +9,16 @@ const PIXEL_ID =
   process.env.NEXT_PUBLIC_META_PIXEL_ID ||
   (process.env.NEXT_PUBLIC_VERCEL_ENV === "production" ? "3147699175419885" : undefined);
 
+/** A page whose URL (or the page it came from) carries a private invitation code: the pixel would send it to Meta, so it does not load there. */
+const INVITE_URL = /[?&#]codigo=/i;
+
 /** Meta Pixel base code. The inline snippet sends the first PageView; later
  * client-side navigations send their own. */
 export function MetaPixel() {
   const pathname = usePathname();
   const first = useRef(true);
   useEffect(() => {
-    if (!PIXEL_ID) return;
+    if (!PIXEL_ID || INVITE_URL.test(window.location.href) || INVITE_URL.test(document.referrer)) return;
     if (first.current) {
       first.current = false;
       return;
@@ -25,7 +28,7 @@ export function MetaPixel() {
   if (!PIXEL_ID || !/^\d+$/.test(PIXEL_ID)) return null;
   return (
     <Script id="meta-pixel" strategy="afterInteractive">
-      {`!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+      {`if(!${INVITE_URL}.test(location.href)&&!${INVITE_URL}.test(document.referrer))!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
 n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
 n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
 t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,

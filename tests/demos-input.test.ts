@@ -87,16 +87,15 @@ describe("Form input", () => {
 });
 
 describe("Sharing", () => {
-  it("builds a WhatsApp link that needs no app to open the demo", () => {
-    const url = whatsappShareUrl(
-      "https://amoblaia.vercel.app/demo/abc?presentacion=1",
-      "https://amoblaia.vercel.app/demo/abc",
-      "Sur",
-      "Depto",
-    );
-    expect(url.startsWith("https://wa.me/?text=")).toBe(true);
-    expect(decodeURIComponent(url)).toContain("https://amoblaia.vercel.app/demo/abc?presentacion=1");
-    expect(decodeURIComponent(url)).toContain("compradores (sin la franja de la demo): https://amoblaia.vercel.app/demo/abc");
+  it("sends only the link on WhatsApp: no greeting and no text of ours", () => {
+    const link = "https://amoblaia.vercel.app/demo/abc?presentacion=1";
+    expect(whatsappShareUrl(link)).toBe(`https://wa.me/?text=${encodeURIComponent(link)}`);
+  });
+  it("opens the agency's chat when its number is known, with only the link", () => {
+    const link = "https://amoblaia.vercel.app/demo/abc?presentacion=1";
+    expect(whatsappShareUrl(link, "5492230000101")).toBe(`https://wa.me/5492230000101?text=${encodeURIComponent(link)}`);
+    expect(whatsappShareUrl(link, "+54 9 223 000-0101")).toBe(`https://wa.me/5492230000101?text=${encodeURIComponent(link)}`);
+    expect(whatsappShareUrl(link, null)).toBe(`https://wa.me/?text=${encodeURIComponent(link)}`);
   });
   it("keeps the demo and the agency in the call to action for attribution", () => {
     const href = new URL(ctaHref("demo-1", "agency-1"), "https://x.test");
@@ -145,6 +144,12 @@ describe("Sharing", () => {
       "modern",
       "coastal",
     ]);
+  });
+  it("orders styles by a demo's own sequence, the main one still first", () => {
+    const sequence = ["modern", "coastal", "scandinavian", "industrial"];
+    expect(orderStyles(["industrial", "scandinavian", "coastal", "modern"], "modern", sequence)).toEqual(["modern", "coastal", "scandinavian", "industrial"]);
+    // A property already staged with another main style keeps it first.
+    expect(orderStyles(["industrial", "coastal", "modern"], "industrial", sequence)).toEqual(["industrial", "modern", "coastal"]);
   });
   it("chooses the cover among visible photos, preferring one staged in the main style", () => {
     const photos = [

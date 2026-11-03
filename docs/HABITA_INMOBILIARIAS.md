@@ -110,9 +110,16 @@ el equipo crea desde el editor y le envía a la inmobiliaria.
 
 ## 5. Analítica (PostHog)
 
+El catálogo completo (CTAs, slider, estilos, galería, registro, activación,
+atribución, tráfico interno y dashboards) está en
+[ANALITICA_DEMOS.md](ANALITICA_DEMOS.md). Ojo: `agency_signup_started` marca la
+pantalla de registro **vista**; el inicio real es `signup_form_started`.
+
 Eventos:
 
 - `agency_signup_started` y `agency_created` (con `agency_claimed` para el reclamo).
+  `agency_signup_started` sale tanto del formulario sin código como del de invitación
+  (`origin` = `demo_invitation` o `invitation`).
 - `property_import_started`, `property_import_completed` y `property_import_failed`
   (con `source` = dominio y `mode` = single o batch).
 - `property_ai_generation_started` y `property_ai_generation_completed` (con fotos,
@@ -122,7 +129,9 @@ Eventos:
 - `demo_agency_cta_clicked` y `demo_to_agency_signup_completed`.
 
 Los eventos no llevan emails, teléfonos ni URLs completas: solo IDs, dominios y
-conteos. El `demo_id` ya queda registrado como super propiedad al ver una demo.
+conteos. Los de la demo suman el título de la demo y el nombre de la inmobiliaria, que
+ya son públicos en esa página. El `demo_id`, `demo_titulo` y `demo_inmobiliaria`
+quedan registrados como super propiedades al ver una demo.
 
 Embudo: demo vista → `demo_agency_cta_clicked` → `agency_signup_started` →
 `agency_created` → `property_import_completed` → `property_ai_generation_completed`
@@ -192,7 +201,7 @@ Para importar entre 100 y 300 propiedades por inmobiliaria haría falta:
   rutas con base simulada) y con Playwright usando las APIs interceptadas.
 - Créditos de prueba para inmobiliarias nuevas. Hoy generar requiere saldo pago.
   Regalar créditos al crear la cuenta es una decisión comercial.
-- Invitar colaboradores. El rol existe en el modelo, pero falta la pantalla de invitación (no se agregó una a medias).
+- ~~Invitar colaboradores~~: hecho en la sección 15 (Usuarios del panel).
 - Que los sitios se indexen en buscadores. Hoy son `noindex`, para no competir con el
   sitio propio de la inmobiliaria. También quedan pendientes los dominios propios, el
   constructor visual y el CRM: la estructura de `agencies`/`slug`/`site_published`
@@ -342,6 +351,12 @@ En `/admin/inmobiliarias/<id>`, **Créditos de regalo**: cantidad (1 a 1000) y m
 - Sin cuenta: quedan reservados y pasan a su saldo cuando acepta la invitación.
   La invitación lo dice («Incluye N créditos de regalo»).
 - Todo queda en `credit_ledger` y en `admin_audit` con el motivo.
+- **Bienvenida:** toda inmobiliaria nueva arranca con 10 créditos. Si la prepara
+  el equipo, quedan reservados hasta que acepta la invitación; si se crea desde el
+  panel, van directo a la cuenta del dueño. Las que ya existían no cambian.
+  Migración `202611050001_welcome_agency_credits.sql` (va después de
+  `202611040001`; idempotente). Verificación:
+  `select column_default from information_schema.columns where table_name='agencies' and column_name='free_credits_pending';` → `10`.
 
 ### 10.3 Migración `202610300001_agency_free_credits.sql`
 
@@ -441,3 +456,195 @@ En `/admin/inmobiliarias`, cada inmobiliaria tiene **Ver su panel**. Abre `/pane
 - No se inicia sesión con la cuenta de la inmobiliaria. Una cookie firmada (`habita_soporte`) nombra al miembro del equipo y a la inmobiliaria y vence en una hora. Solo vale para esa persona del equipo: otra cuenta con la misma cookie ve su propio panel.
 - Es **solo lectura**: el servidor rechaza todo cambio hecho desde el panel mientras dure la vista, incluido crear versiones con IA, que además nunca usan el saldo de la inmobiliaria.
 - Entrar y salir quedan registrados en `admin_audit` (`agency_support_view`, `agency_support_end`). Si no se puede registrar, la vista no se abre.
+
+### 12.1 Entrar como la inmobiliaria (2026-10-30)
+
+Junto a **Ver como cliente** está **Entrar como la inmobiliaria** (en la lista y en la ficha de cada inmobiliaria). Pide confirmación y abre su panel con los **permisos de su dueño**, para probar todo como lo haría ella:
+
+- Los cambios son reales: sitio, marca, propiedades, publicar, importar, usuarios. Las ambientaciones se cobran con los créditos de la inmobiliaria, como desde su propio panel.
+- No compra créditos: el botón se oculta, porque una compra quedaría en la cuenta del miembro del equipo.
+- Misma cookie firmada, con el modo dentro de la firma (una vista de solo lectura no se puede convertir en este modo). Vence en una hora y vale solo para esa inmobiliaria: las propiedades de otras siguen con las reglas del equipo.
+- Banner naranja en todas las páginas del panel, con **Salir de la inmobiliaria**. Entrar y salir quedan en `admin_audit` (`agency_support_act`, `agency_support_act_end`); lo que se crea queda a nombre del miembro del equipo.
+
+## 13. Importar imágenes (grupos de fotos sin ficha, 2026-10-28)
+
+Entrada nueva en el inicio, al lado de «Crear demostraciones». Trae fotos desde
+un enlace, varios enlaces o archivos del dispositivo, las elige por origen e
+importa sin crear ni publicar una ficha. Importar no genera imágenes ni usa
+créditos.
+
+**Modelo.** Migración aditiva `202611040001_photo_groups.sql`: `demos.kind`
+(`ficha` | `fotos`, por defecto `ficha`). Un grupo de fotos es una fila de
+`demos` con `kind = 'fotos'` y su propiedad. Así las fotos, las versiones, las
+descargas y el editor (`/panel/propiedades/[id]`) siguen funcionando igual.
+Además:
+
+- No aparece en «Mis propiedades» ni cuenta en los totales del inicio
+  (`agencyProperties` filtra `kind`; `habita_agency_counts` se reemplazó para contar solo fichas).
+- No se puede publicar: `publicacion` responde 409 hasta que se crea la ficha.
+- «Crear ficha con estas fotos» solo cambia `kind` a `ficha` (queda en borrador).
+  Las fotos, las versiones y el enlace se conservan; no se publica nada.
+
+**Rutas nuevas** (todas con `requireAgency`):
+
+| Ruta | Qué hace |
+| --- | --- |
+| `GET /api/panel/imagenes` | Grupos de fotos sin ficha, con conteos reales |
+| `POST /api/panel/imagenes` | Importa las fotos elegidas de un enlace (`url`, `key`, `images`). Idempotente por `key`; un enlace ya cargado responde 409 con `duplicateOf` |
+| `POST /api/panel/imagenes/grupo` | Crea un grupo vacío para archivos subidos (`name`) |
+| `POST /api/panel/imagenes/[id]/ficha` | Convierte el grupo en ficha (borrador) |
+
+Lectura de enlaces, descarga de fotos y reporte (`PATCH /api/panel/importar`) son
+los mismos que usa la importación de propiedades: el navegador descarga, el
+servidor registra qué faltó en `property_imports`.
+
+**Pantalla.** `/panel/imagenes?metodo=url|many|files` con tres pestañas (el
+estado se conserva al cambiar), lectura por enlace con su estado real
+(en espera, leyendo, lista, duplicada, con error), selección por origen y
+«Importar N fotos». Un enlace con error se puede reintentar sin bloquear a los
+demás. Los archivos se validan con `src/lib/photo-limits.ts` (JPG, PNG o WebP,
+hasta 3 MB, el mismo límite que el servidor).
+
+**Bandeja de fotos importadas** (`/panel/imagenes/lote?grupo=<id>`, componente
+`agency-batch.tsx`, reglas en `src/lib/agency/batch-plan.ts`):
+
+- Grupos a la izquierda (selector compacto en móvil), fotos al centro con
+  «Elegir para ambientar» y su ambiente, y «Aplicar a las elegidas» a la derecha
+  (acción y estilo del catálogo). «Sumar fotos» agrega archivos a un grupo.
+- El ambiente nunca se adivina: `demo_photos.room` vale `living` por defecto, así
+  que la bandeja solo da por conocido el ambiente de la última versión creada. Si
+  no hay, muestra «Sin asignar» y no deja continuar hasta elegirlo o quitar la foto.
+- Un estilo que no corresponde al tipo de inmueble de un grupo, o un grupo que
+  esta cuenta no puede ambientar (`staging.blocked`, la regla del editor), queda
+  afuera y se dice por qué. Las versiones que existen, están en curso o en
+  revisión técnica no se vuelven a crear.
+- «Revisar y generar» pide `/costo` a cada grupo y suma los créditos contra el
+  único saldo que los paga: dos grupos que entran por separado pueden no entrar
+  juntos. Un saldo desconocido bloquea; nunca se lee como cero ni como suficiente.
+- La generación usa la misma ruta por foto, de a una versión, con su clave de
+  idempotencia. Sin respuesta: «Sin respuesta», no se reenvía sola y su reintento
+  usa la misma clave. Respuestas 401/402/403/409/429/503 detienen el resto
+  («Sin enviar»). Nunca dice que está todo listo si algo falló.
+- La selección, los ambientes y la posición se guardan en `sessionStorage`:
+  sobreviven a ir al editor y volver («Volver al lote» usa `?volver=`), pero no a
+  cerrar la pestaña. La página lo dice y avisa antes de salir con versiones sin enviar.
+
+**Editor con un grupo:** muestra «Fotos sin ficha», usa «Versión seleccionada» en
+lugar de «Se muestra en la ficha», oculta «Usar de portada», «Vista previa» y
+«Publicar», y ofrece «Crear ficha con estas fotos».
+
+**Límites conocidos:**
+
+- No se guarda una tanda para seguir después («Guardar y seguir después» quedó
+  fuera, como permite el pedido): eso requiere persistencia nueva.
+- Reintento de archivos subidos: si la respuesta se pierde después de guardar,
+  el reintento puede duplicar esa foto (la subida no deduplica por contenido).
+- En `/admin` (vista del equipo) los grupos aparecen como borradores; no se filtraron.
+- Validado con un arnés de Vite y Playwright con respuestas simuladas, no contra
+  Supabase ni generaciones reales.
+
+## 14. De la demo a probar el panel (2026-10-28)
+
+La demo pasa a ser la entrada a un panel que ya tiene esa misma propiedad
+preparada, con la invitación privada que ya existía.
+
+**Recorrido:** demo → «Probar esta propiedad en mi panel» → crear acceso o
+ingresar → editor de esa propiedad.
+
+- **El enlace.** «Crear enlace para que la inmobiliaria se quede con sus demos»
+  (editor de la demo, equipo) devuelve además `presentationUrl`:
+  `/demo/<token>?presentacion=1&codigo=<código>`, junto con un mensaje sugerido
+  para enviar. Es el mismo código de un solo uso, que vence a los 30 días.
+- **La demo.** Solo en modo presentación y para una inmobiliaria sin cuenta, el
+  servidor valida el código (`invitationOf`). Si es vigente y de esa misma
+  inmobiliaria, aparece «Probá con esta misma propiedad» debajo del selector de
+  estilos y al final, con el mismo texto y destino (`src/lib/agency/demo-invite.ts`).
+  Si venció o es de otra inmobiliaria, se dice que no está disponible. Sin código
+  queda el llamado anterior. El enlace para compradores no muestra nada de esto y
+  no da acceso.
+- **El acceso** (`/panel/empezar?codigo=…&demo=…`): «Tu propiedad está preparada»,
+  con la propiedad y su antes/después, y el formulario corto de siempre (email y
+  contraseña, o ingresar con la cuenta). No pide datos comerciales. Quien ya
+  trabaja en esa inmobiliaria entra directo al editor.
+- **La llegada:** el editor de esa propiedad con `?bienvenida=1`: «Empezá con una
+  foto» y «¿Querés probar con otra propiedad?» con el importador de siempre.
+- **Créditos de bienvenida:** no se asignan solos. El equipo los carga con
+  «Agregar créditos» y se mencionan solo cuando están asignados.
+
+**Embudo** (PostHog): vista de la demo (`demo_vista`, versión `presentacion`) →
+`demo_agency_cta_clicked` (`origen`: `demo_invitacion_lateral` o
+`demo_invitacion_final`) → `agency_claimed` (`origin`: `demo_invitation`) →
+`invited_property_opened` → `property_version_downloaded` →
+`property_ai_generation_completed` → `invited_next_property_clicked` y
+`property_import_completed`.
+
+**El código no sale a terceros.** Antes, el enlace de invitación cargaba el píxel
+de Meta y la etiqueta de Google Ads con la URL completa, código incluido. Ahora
+el píxel no carga si la URL o la página anterior tienen `codigo=`, Google recibe
+`page_location` y `page_referrer` redactados, y PostHog redacta el código en
+`before_send`.
+
+**La demo dentro del panel** (modo inmobiliaria de `src/components/demo-view.tsx`).
+Con una invitación vigente, el enlace de presentación muestra la misma ficha que
+ven los compradores, completa, con el panel de la inmobiliaria arriba en
+«modo demostración».
+
+- **Encabezado fijo verde:** el logo y el nombre de la inmobiliaria, Inicio,
+  Mis propiedades (1), Imágenes, Créditos (con los de regalo), «Crear propiedad»
+  y «Guardar mi panel». Debajo, el aviso de modo demostración y «Ver como
+  comprador». En el celular las secciones se deslizan en una fila.
+- **Estilos de cada foto:** arriba el original («Ver original»), después las
+  versiones preparadas y el resto del catálogo; se ven 4 y «Más estilos»
+  despliega los demás. Una versión preparada tiene «Descargar»; un estilo sin
+  preparar aparece grisado, nunca marcado, con «Generar».
+- **Sin cuenta:** se puede mirar, comparar y descargar el original y cada
+  versión preparada, porque las imágenes son las públicas de la demo.
+- **Lo que pide acceso:** «Generar», guardar, crear y el resto de las secciones
+  llevan a la invitación, que pide el acceso y muestra el costo antes de usar
+  créditos.
+- **Ficha de compradores:** «Ver como comprador» (`&vista=ficha`) la muestra con
+  el acceso de siempre.
+- **Datos:** solo usa los datos públicos de la demo. No hay rutas ni permisos
+  nuevos, y una demo pública sin código sigue sin mostrar nada de esto.
+
+## 15. Usuarios del panel (2026-10-30)
+
+El dueño y los administradores de una inmobiliaria crean accesos para su
+equipo en **Panel → Usuarios** (`/panel/usuarios`).
+
+**Roles** (`agency_members.role`):
+
+| Rol | Puede |
+| --- | --- |
+| Dueño (`owner`) | Todo. Es la cuenta que paga y la única que compra créditos. Uno por inmobiliaria; no se cambia ni se quita desde el panel. |
+| Administrador (`admin`) | Todo menos comprar créditos: propiedades, sitio web, marca, eliminar propiedades y usuarios. |
+| Edición (`editor`) | Cargar, importar, editar, ambientar con IA (con los créditos de la inmobiliaria) y publicar. No elimina ni toca el sitio. |
+| Solo vista (`viewer`) | Ver propiedades y compartir sus enlaces. Toda escritura responde 403. |
+
+El antiguo `collaborator` pasa a `editor`.
+
+**Limitar a algunas propiedades:** a un usuario de edición o solo vista se le
+puede asignar una lista de propiedades (`agency_members.property_ids`, ids de
+`demo_properties`). Solo ve esas en el inicio, en "Mis propiedades", en el
+editor, en las imágenes y en las fotos importadas; cualquier otra responde 404.
+Un usuario limitado no crea propiedades nuevas ni importa: las carga un
+administrador y después se le asignan.
+
+**Flujo:** Crear usuario (nombre, email, rol, propiedades) → el panel muestra
+un enlace `/panel/unirme?codigo=…` con botones de copiar y de WhatsApp. El
+enlace sirve una vez, para ese email, y vence a los 14 días; solo se guarda su
+hash (`agency_invites.code_hash`), así que no se vuelve a mostrar: desde la
+lista se genera uno nuevo y el anterior deja de funcionar. Quien lo abre elige
+una contraseña y entra directo al panel; si ese email ya tiene cuenta, entra
+con ella (o con Google) y se suma con un clic. Una cuenta trabaja con una sola
+inmobiliaria. Quitar un acceso lo corta en el siguiente pedido (la membresía se
+lee en cada request). Todo queda en `admin_audit`.
+
+**Migración** `202611110001_agency_team.sql`: roles nuevos, `property_ids`,
+`display_name`, `invited_by`, tabla `agency_invites` y RPC
+`habita_join_agency` (solo `service_role`). Aditiva e idempotente. Hasta
+aplicarla, el panel sigue funcionando y "Usuarios" avisa que falta.
+
+**Rutas:** `GET/POST /api/panel/usuarios`, `PATCH/DELETE
+/api/panel/usuarios/[id]`, `POST /api/panel/unirme`.
+

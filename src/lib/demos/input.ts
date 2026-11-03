@@ -4,15 +4,21 @@ import { rooms } from "@/lib/catalog";
 import { isDemoStyle } from "./styles";
 import { cleanText, cleanUrl, DEMO_MODES, type DemoMode } from "./shared";
 import { parseMapLink, validPair } from "./geo";
+import { normalizeArNumber } from "./send";
 import {
   CONTACT_KINDS,
   DEFAULT_SETTINGS,
   FACT_ICONS,
+  HIDEABLE_FIELDS,
   TITLE_FONTS,
+  VIDEO_PLACEMENTS,
   color,
   readSettings,
+  readStyleOrder,
   whatsappNumber,
   type FactIcon,
+  type HideableField,
+  type VideoPlacement,
   type AgencyBranding,
   type ContactKind,
   type DemoSettings,
@@ -31,6 +37,17 @@ export async function readJson(request: Request, max = 16384) {
   } catch {
     throw new HttpError(400, "Solicitud inválida.");
   }
+}
+
+/**
+ * The agency's WhatsApp to send it its demos: optional, normalized to
+ * 549 + area code + number. Empty is null; a number we cannot read is an error.
+ */
+export function whatsappInput(raw: unknown) {
+  if (raw === null || raw === undefined || (typeof raw === "string" && !raw.trim())) return null;
+  const number = typeof raw === "string" && raw.length <= 40 ? normalizeArNumber(raw) : null;
+  if (!number) throw new HttpError(400, "Revisá el WhatsApp de la inmobiliaria: con código de área, por ejemplo 223 633-7191.");
+  return number;
 }
 
 export function agencyInput(raw: unknown) {
@@ -201,6 +218,27 @@ export function settingsInput(raw: unknown, current: DemoSettings): DemoSettings
         throw new HttpError(400, "La foto del agente tiene que ser un enlace https (la de su publicación).");
       out.agent = { ...a, photoUrl: cleanText(a.photoUrl, 500) };
     }
+  }
+  if ("hidden" in v) {
+    if (!Array.isArray(v.hidden) || v.hidden.some((k) => !HIDEABLE_FIELDS.includes(k as HideableField)))
+      throw new HttpError(400, "Campo a ocultar inválido.");
+    out.hidden = v.hidden;
+  }
+  for (const key of ["showData", "showStyles", "showContact"] as const)
+    if (key in v) {
+      if (typeof v[key] !== "boolean") throw new HttpError(400, "Valor inválido.");
+      out[key] = v[key];
+    }
+  // The same choice as Panel > Video («En la ficha»): first, second, below, or hidden.
+  if ("videoPlacement" in v) {
+    if (!VIDEO_PLACEMENTS.includes(v.videoPlacement as VideoPlacement)) throw new HttpError(400, "Ubicación del video inválida.");
+    out.videoPlacement = v.videoPlacement;
+  }
+  // The style order: "auto" (by the property's region), "catalog", or a list of known styles.
+  if ("styleOrder" in v) {
+    const valid = v.styleOrder === "auto" || v.styleOrder === "catalog" || (Array.isArray(v.styleOrder) && v.styleOrder.length > 0 && v.styleOrder.every(isDemoStyle));
+    if (!valid) throw new HttpError(400, "Orden de estilos inválido.");
+    out.styleOrder = readStyleOrder(v.styleOrder);
   }
   if ("reviewedAt" in v) out.reviewedAt = v.reviewedAt === null ? null : new Date().toISOString();
   return readSettings(out);

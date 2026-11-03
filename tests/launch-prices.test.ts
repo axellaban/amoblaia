@@ -18,7 +18,7 @@ afterAll(async () => {
   await db?.close();
 });
 describe("Launch catalog", () => {
-  it("publishes every plan with a price and only the first-property pack", async () => {
+  it("publishes every plan with a price and every pack but the old 25", async () => {
     const { rows } = await db.query<{
       sku: string;
       kind: string;
@@ -26,9 +26,9 @@ describe("Launch catalog", () => {
       price_cents: string;
       active: boolean;
     }>("select sku,kind,photos,price_cents,active from products");
-    expect(rows).toHaveLength(11);
+    expect(rows).toHaveLength(19);
     for (const p of rows) {
-      expect(p.active).toBe(p.kind !== "pack" || p.sku === "pack-first");
+      expect(p.active).toBe(p.sku !== "pack-25");
       if (p.active) expect(Number(p.price_cents)).toBeGreaterThanOrEqual(100);
     }
     const price = (sku: string) =>
@@ -37,6 +37,23 @@ describe("Launch catalog", () => {
       // The annual plan must always be cheaper than twelve monthly charges.
       expect(price(`${tier}-year`)).toBeLessThan(price(`${tier}-month`) * 12);
     }
+    // Credits get cheaper with volume, reach $900 each from 250 on, and always
+    // cost more per photo than the monthly plan with the same allowance.
+    const credits = rows
+      .filter((p) => p.kind === "pack" && p.active && p.sku !== "pack-first")
+      .sort((a, b) => a.photos - b.photos);
+    const unit = (p: (typeof rows)[number]) => Number(p.price_cents) / p.photos;
+    for (let i = 1; i < credits.length; i++) {
+      expect(unit(credits[i])).toBeLessThanOrEqual(unit(credits[i - 1]));
+      expect(Number(credits[i].price_cents)).toBeGreaterThan(
+        Number(credits[i - 1].price_cents),
+      );
+    }
+    expect(unit(credits.find((p) => p.photos === 250)!)).toBe(90000);
+    for (const [tier, photos] of [["standard", 20], ["professional", 60], ["enterprise", 150]] as const)
+      expect(price(`${tier}-month`) / photos).toBeLessThan(
+        unit(credits.find((p) => p.photos === photos)!),
+      );
   });
   it("lets checkout create an order for a published plan", async () => {
     await db.query("select amobla_account($1,false)", [user]);
@@ -44,7 +61,7 @@ describe("Launch catalog", () => {
       "select amobla_create_order($1,$2,$3)",
       [user, "00000000-0000-4000-8000-0000000000aa", "standard-month"],
     );
-    expect(JSON.stringify(order.rows[0])).toContain("5390000");
+    expect(JSON.stringify(order.rows[0])).toContain("4890000");
   });
   it("grants each plan's monthly quota without stacking renewals", async () => {
     const buyer = "00000000-0000-4000-8000-000000000004";
@@ -69,7 +86,7 @@ describe("Launch catalog", () => {
       ).rows[0].amobla_account.credits;
     const pay = (id: string) =>
       db.query(
-        "select amobla_apply_payment($1,$2,'approved',12190000,now(),'sub-pro')",
+        "select amobla_apply_payment($1,$2,'approved',8690000,now(),'sub-pro')",
         [id, order],
       );
     await pay("pay-1");
@@ -102,7 +119,7 @@ describe("Launch catalog", () => {
       [order],
     );
     await db.query(
-      "select amobla_apply_payment('pay-basic',$1,'approved',3890000,now(),'sub-basic')",
+      "select amobla_apply_payment('pay-basic',$1,'approved',2590000,now(),'sub-basic')",
       [order],
     );
     await db.query(

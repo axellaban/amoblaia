@@ -70,7 +70,7 @@ export type AdminAgencyDetail = {
   /** balance: the owner's credits (null without owner or when unreadable); pending: waiting for the claim (null before the migration). */
   credits: { balance: number | null; pending: number | null };
   claims: { id: string; createdAt: string; expiresAt: string; usedAt: string | null; revokedAt: string | null; state: ClaimState }[];
-  members: { role: "owner" | "collaborator"; since: string }[];
+  members: { role: import("./shared").AgencyRole; since: string }[];
   imports: {
     id: string;
     url: string;

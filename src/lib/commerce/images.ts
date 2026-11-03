@@ -3,7 +3,8 @@ import sharp from "sharp";
 import { buildPrompt } from "@/lib/catalog";
 import { HttpError } from "./http";
 import { WATERMARK_PNG } from "./watermark";
-export const MAX_BYTES = 3 * 1024 * 1024;
+import { MAX_UPLOAD_BYTES as MAX_BYTES } from "@/lib/photo-limits";
+export { MAX_BYTES };
 /** The stored original: upright, at most 2048 px, JPEG. The bytes are decoded for real, not trusted by type. */
 export async function normalizePhoto(bytes: Buffer) {
   try {
@@ -83,11 +84,32 @@ async function watermark(image: Buffer) {
     .jpeg({ quality: 88 })
     .toBuffer();
 }
+/**
+ * The stored mask (grey: black where to remove) as the PNG the model reads:
+ * transparent where the photo may change, opaque elsewhere.
+ */
+export async function maskPng(stored: Buffer) {
+  const { data, info } = await sharp(stored, { limitInputPixels: 40000000 })
+    .greyscale()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const rgba = Buffer.alloc(info.width * info.height * 4);
+  for (let i = 0; i < info.width * info.height; i++) {
+    rgba[i * 4] = 0;
+    rgba[i * 4 + 1] = 0;
+    rgba[i * 4 + 2] = 0;
+    rgba[i * 4 + 3] = data[i] < 128 ? 0 : 255;
+  }
+  return sharp(rgba, { raw: { width: info.width, height: info.height, channels: 4 } }).png().toBuffer();
+}
+
 export async function renderPhoto(
   image: Buffer,
   prompt: string,
   free = false,
   timeoutMs = 240000,
+  /** PNG with transparent pixels where the image may change (OpenAI's mask). */
+  mask?: Buffer,
 ) {
   const model = process.env.OPENAI_IMAGE_MODEL || "gpt-image-2.5-sunburst";
   const body = new FormData();
@@ -98,6 +120,7 @@ export async function renderPhoto(
     "room.jpg",
   );
   body.set("prompt", prompt);
+  if (mask) body.set("mask", new Blob([new Uint8Array(mask)], { type: "image/png" }), "mask.png");
   body.set("n", "1");
   // Paid proposals cost about 3x more in "high". PAID_IMAGE_QUALITY=medium
   // lowers that once a visual test with real listings approves it.

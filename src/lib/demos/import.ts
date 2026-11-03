@@ -4,6 +4,7 @@
 import { DEFAULT_SETTINGS, type AmenityGroup, type DemoSettings, type Fact, type FactIcon, type MapSettings } from "./branding";
 import { placesOf, sourceName } from "./geo";
 import { norm, type ListingDetails } from "./listing-details";
+import type { ImportDiagnostics } from "@/lib/listings/types";
 
 export type FieldStatus = "found" | "missing" | "error" | "conflict";
 export type ReportRow = {
@@ -51,19 +52,22 @@ export type ImportedDemo = {
   };
   images: string[];
   report: ReportRow[];
+  /** How the page was read (platform, strategy, sources, gaps). Absent on readings made before it existed. */
+  diagnostics?: ImportDiagnostics;
 };
 
 /** Labels as sites publish them → the fact they are. First match wins. */
 const FACTS: { icon: FactIcon; labels: RegExp; label: (v: string) => string }[] = [
-  { icon: "area", labels: /^(total construido|superficie total|sup\. total|total|superficie terreno\/total|superficie total\/terreno)$/, label: () => "totales" },
-  // Century 21 calls the covered area "Superficie Construcción".
-  { icon: "area", labels: /^(superficie cubierta|cubierta|sup\. cubierta|superficie construccion|superficie construida)$/, label: () => "cubiertos" },
+  { icon: "area", labels: /^(total construido|superficie total|sup\. total|total|superficie terreno\/total|superficie total\/terreno|tamano de la propiedad|superficie|sup\. propia|m2 totales)$/, label: () => "totales" },
+  // Century 21 calls the covered area "Superficie Construcción"; Wasi "Área Construida".
+  { icon: "area", labels: /^(superficie cubierta|cubierta|sup\. cubierta|superficie construccion|superficie construida|area construida|m2 cubiertos)$/, label: () => "cubiertos" },
   { icon: "area", labels: /^(superficie semicubierta|semicubierta|sup\. semicubierta)$/, label: () => "semicubiertos" },
   { icon: "rooms", labels: /^(ambientes|cantidad de ambientes)$/, label: (v) => (v === "1" ? "ambiente" : "ambientes") },
-  { icon: "bedrooms", labels: /^(dormitorios|dormitorios totales|cantidad de dormitorios)$/, label: (v) => (v === "1" ? "dormitorio" : "dormitorios") },
-  { icon: "bathrooms", labels: /^(banos|banos completos|cantidad de banos)$/, label: (v) => (v === "1" ? "baño" : "baños") },
+  // Houzez calls the bedrooms "Habitaciones".
+  { icon: "bedrooms", labels: /^(dormitorios?|dormitorios totales|cantidad de dormitorios|habitaciones)$/, label: (v) => (v === "1" ? "dormitorio" : "dormitorios") },
+  { icon: "bathrooms", labels: /^(banos?|banos completos|cantidad de banos)$/, label: (v) => (v === "1" ? "baño" : "baños") },
   { icon: "bathrooms", labels: /^toilettes?$/, label: (v) => (v === "1" ? "toilette" : "toilettes") },
-  { icon: "parking", labels: /^(cocheras?|cantidad de cocheras)$/, label: (v) => (v === "1" ? "cochera" : "cocheras") },
+  { icon: "parking", labels: /^(cocheras?|cantidad de cocheras|garage|garaje)$/, label: (v) => (v === "1" ? "cochera" : "cocheras") },
   { icon: "floor", labels: /^(piso en que se encuentra|piso del departamento|ubicacion en el piso)$/, label: () => "piso" },
   { icon: "age", labels: /^antiguedad$/, label: () => "antigüedad" },
 ];
@@ -109,8 +113,13 @@ function mapRow(d: ListingDetails): ReportRow {
   };
 }
 
-export function toDemo(d: ListingDetails, fallback: Fallback): ImportedDemo {
-  const value = (re: RegExp) => d.pairs.find((p) => re.test(norm(p.label)) && !UNSPECIFIED.test(p.value))?.value ?? null;
+/** Counts and areas are figures: "Dormitorio: Suite" or "Cochera: Cubierta" describe, they do not count; "0" says nothing. */
+const NUMERIC = /^(?!0+(?:[.,]0+)?\b)\d+(?:[.,]\d+)?\b/;
+const COUNTED = /^(ambientes|cantidad de ambientes|dormitorios?|dormitorios totales|cantidad de dormitorios|habitaciones|banos?|banos completos|cantidad de banos|toilettes?|cocheras?|cantidad de cocheras|garage|garaje|superficie|tamano de la propiedad|sup\. propia|area construida|total)$/;
+
+export function toDemo(d: ListingDetails, fallback: Fallback, diagnostics?: ImportDiagnostics): ImportedDemo {
+  const value = (re: RegExp) =>
+    d.pairs.find((p) => re.test(norm(p.label)) && !UNSPECIFIED.test(p.value) && (!COUNTED.test(norm(p.label)) || NUMERIC.test(p.value.trim())))?.value ?? null;
   const facts: Fact[] = [];
   for (const f of FACTS) {
     const v = value(f.labels);
@@ -166,6 +175,7 @@ export function toDemo(d: ListingDetails, fallback: Fallback): ImportedDemo {
   // several are not guessed (they may be extras or other listings).
   const price = d.price?.text ?? (fallback.prices.length === 1 ? fallback.prices[0] : null);
   const priceNote = !price && fallback.prices.length > 1 ? `La página muestra ${fallback.prices.join(", ")} sin indicar cuál es el precio.` : undefined;
+  const onRequest = !price && diagnostics?.priceStatus === "on_request";
   const contact = agent?.whatsapp ?? agent?.phone ?? agent?.email ?? d.agency.whatsapp ?? d.agency.phone ?? d.agency.email;
   const report: ReportRow[] = [
     row("Título", d.shortTitle ?? fallback.title, { required: true }),
@@ -176,7 +186,9 @@ export function toDemo(d: ListingDetails, fallback: Fallback): ImportedDemo {
       ? row("Precio", price, { required: true, conflict: `Dos precios distintos en la misma publicación: ${d.priceConflict}. Elegí cuál mostrar.` })
       : priceNote
         ? { field: "Precio", status: "error", value: null, note: priceNote, required: false }
-        : row("Precio", price, { error: has(/^precio|^valor/i) }),
+        : onRequest
+          ? { field: "Precio", status: "missing", value: null, note: "La publicación dice «Consultar precio»: la ficha lo muestra igual.", required: false }
+          : row("Precio", price, { error: has(/^precio|^valor/i) }),
     row("Expensas", expenses, { note: expensesRaw && expenses !== expensesRaw ? "La publicación no indica la moneda: se muestran en pesos." : undefined }),
     row("Ubicación", d.location ?? fallback.location),
     mapRow(d),
@@ -225,6 +237,7 @@ export function toDemo(d: ListingDetails, fallback: Fallback): ImportedDemo {
     },
     images,
     report,
+    ...(diagnostics ? { diagnostics: { ...diagnostics, photosFound: images.length } } : {}),
   };
 }
 

@@ -45,6 +45,8 @@ function fakeDb() {
 
 vi.mock("server-only", () => ({}));
 vi.mock("next/server", () => ({ after: (fn: () => unknown) => state.after.push(fn) }));
+// No support cookie: the team works with its own rules.
+vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => undefined }) }));
 vi.mock("next/navigation", () => ({
   redirect: (to: string) => {
     throw new Error(`REDIRECT:${to}`);
@@ -259,6 +261,20 @@ describe("Agency members on their own properties", () => {
   });
 });
 
+describe("Imported photos without a ficha", () => {
+  it("tells the editor it is a photo group, and refuses to publish it until it becomes a ficha", async () => {
+    agencyAccount(HELPER);
+    const ficha = await (await one.GET(req(`/api/admin/demos/${DEMO}`), params({ id: DEMO }))).json();
+    expect(ficha.demo.kind).toBe("ficha");
+    (state.tables.demos[0] as Row).kind = "fotos";
+    const group = await (await one.GET(req(`/api/admin/demos/${DEMO}`), params({ id: DEMO }))).json();
+    expect(group.demo.kind).toBe("fotos");
+    const r = await one.PATCH(req(`/api/admin/demos/${DEMO}`, "PATCH", { action: "publish" }), params({ id: DEMO }));
+    expect(r.status).toBe(409);
+    expect((await r.json()).error).toBe("Creá la ficha antes de publicar estas fotos.");
+  });
+});
+
 describe("AI staging from the panel", () => {
   it("reserves through the demo RPC with the regular prompt and no daily cap", async () => {
     vi.stubEnv("OPENAI_API_KEY", "test-key-never-real");
@@ -358,6 +374,9 @@ describe("Public demo", () => {
   });
 
   it("opens in the configured style when some visible photo has it, else with the original", async () => {
+    // Without saved settings the ficha opens with the demo's main style (the default).
+    expect((await publishedDemo(TOKEN))?.openStyle).toBe("modern");
+    (state.tables.demos[0] as Row).settings = { openMode: "original" };
     expect((await publishedDemo(TOKEN))?.openStyle).toBeNull();
     (state.tables.demos[0] as Row).settings = { openMode: "styled", openStyle: "industrial" };
     expect((await publishedDemo(TOKEN))?.openStyle).toBe("industrial");

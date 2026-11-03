@@ -2,6 +2,7 @@
 // (opening mode, presentation strip, listing data). Pure and safe for the
 // browser; the panel's input validation lives in input.ts.
 import { cleanText, cleanUrl } from "./shared";
+import { isDemoStyle, type StyleOrderSetting } from "./styles";
 
 export const CONTACT_KINDS = ["whatsapp", "url", "phone", "email"] as const;
 export type ContactKind = (typeof CONTACT_KINDS)[number];
@@ -19,11 +20,18 @@ export type AgencyBranding = {
   visitUrl?: string;
 };
 export type OpenMode = "original" | "styled";
-/** Stored in demos.settings. Private: the buyer's page only gets their effect. */
+/**
+ * Where the property's video goes in its ficha and its demo: first or second
+ * among the thumbnails, under the gallery as its own card, or not shown.
+ * Chosen per property from the panel (Video); never a global preference.
+ */
+export type VideoPlacement = "first" | "second" | "below" | "hidden";
+export const VIDEO_PLACEMENTS: VideoPlacement[] = ["first", "second", "below", "hidden"];
 /** Icons of the key facts, chosen per property (no empty or invented fields). */
 export const FACT_ICONS = ["area", "rooms", "bedrooms", "offices", "bathrooms", "floor", "parking", "age", "other"] as const;
 export type FactIcon = (typeof FACT_ICONS)[number];
-export type Fact = { icon: FactIcon; value: string; label: string };
+/** hidden: kept and editable, but not shown on the public page («Mostrar en demostración» off). */
+export type Fact = { icon: FactIcon; value: string; label: string; hidden?: boolean };
 export type AmenityGroup = { title: string; items: string[] };
 /** How precise the published location is: the map never shows more. */
 export type MapPrecision = "none" | "zone" | "approx" | "exact";
@@ -58,6 +66,28 @@ export type Agent = {
   photoUrl: string | null;
 };
 /** Stored in demos.settings. Private: the buyer's page only gets their effect. */
+/**
+ * The property's data that can be left out of the public page one by one
+ * («Mostrar en demostración»): the value stays saved and editable. The title
+ * is not here: it names the page, its link preview and the agency's catalog.
+ */
+export const HIDEABLE_FIELDS = [
+  "location",
+  "operation",
+  "price",
+  "expenses",
+  "availability",
+  "requirements",
+  "features",
+  "reference",
+  "description",
+  "amenities",
+  "map",
+  "agent",
+  "listingUrl",
+] as const;
+export type HideableField = (typeof HIDEABLE_FIELDS)[number];
+
 export type DemoSettings = {
   propertyType: "residential" | "office";
   openMode: OpenMode;
@@ -86,10 +116,26 @@ export type DemoSettings = {
   shareDescription: string | null;
   /** When the admin last checked the demo against the listing (ISO date). */
   reviewedAt: string | null;
+  /** Fields saved but left out of the public page. */
+  hidden: HideableField[];
+  /** «Mostrar datos de la propiedad»: off hides every field above (facts included); the title stays. */
+  showData: boolean;
+  /** «Mostrar selector de estilos»: the buyer's style picker under the gallery. */
+  showStyles: boolean;
+  /** «Incluir datos de contacto»: the agent and every inquiry channel. */
+  showContact: boolean;
+  videoPlacement: VideoPlacement;
+  /**
+   * The order the demo offers its styles in (see styleSequence). New demos
+   * start on "auto": the order of the property's region (REGIONAL_STYLE_ORDERS).
+   * Demos saved before this keep "catalog", the order they always had.
+   */
+  styleOrder: StyleOrderSetting;
 };
 export const DEFAULT_SETTINGS: DemoSettings = {
   propertyType: "residential",
-  openMode: "original",
+  // Recommended: the ficha opens with the main style. A null openStyle means that style.
+  openMode: "styled",
   openStyle: null,
   banner: true,
   operation: null,
@@ -110,6 +156,14 @@ export const DEFAULT_SETTINGS: DemoSettings = {
   shareTitle: null,
   shareDescription: null,
   reviewedAt: null,
+  hidden: [],
+  showData: true,
+  showStyles: true,
+  showContact: true,
+  // New demos (every importer starts from these): the video under the gallery. Older demos without a saved choice keep reading "first".
+  videoPlacement: "below",
+  // New demos (every importer starts from these): the order of the property's region. Older demos without it keep the catalog's.
+  styleOrder: "auto",
 };
 
 /** The colors of a page without branding: the neutral blue of habita. */
@@ -158,7 +212,7 @@ export function readSettings(raw: unknown): DemoSettings {
   const agentName = agent ? text(agent.name, 80) : null;
   return {
     propertyType: v.propertyType === "office" ? "office" : "residential",
-    openMode: v.openMode === "styled" ? "styled" : "original",
+    openMode: v.openMode === "original" ? "original" : "styled",
     openStyle: typeof v.openStyle === "string" ? v.openStyle : null,
     banner: v.banner !== false,
     operation: text(v.operation, 40),
@@ -173,7 +227,12 @@ export function readSettings(raw: unknown): DemoSettings {
       .map((f) => f as Record<string, unknown>)
       .filter((f) => FACT_ICONS.includes(f?.icon as FactIcon) && cleanText(f.value, 30))
       .slice(0, 8)
-      .map((f) => ({ icon: f.icon as FactIcon, value: cleanText(f.value, 30)!, label: cleanText(f.label, 40) ?? "" })),
+      .map((f) => ({
+        icon: f.icon as FactIcon,
+        value: cleanText(f.value, 30)!,
+        label: cleanText(f.label, 40) ?? "",
+        ...(f.hidden === true ? { hidden: true } : {}),
+      })),
     description: text(v.description, 6000, true),
     amenities: list(v.amenities)
       .map((g) => g as Record<string, unknown>)
@@ -208,12 +267,50 @@ export function readSettings(raw: unknown): DemoSettings {
     shareTitle: text(v.shareTitle, 90),
     shareDescription: text(v.shareDescription, 200),
     reviewedAt: typeof v.reviewedAt === "string" && !Number.isNaN(Date.parse(v.reviewedAt)) ? v.reviewedAt : null,
+    hidden: [...new Set(list(v.hidden))].filter((k): k is HideableField => HIDEABLE_FIELDS.includes(k as HideableField)),
+    // Absent (every demo before these switches): everything shows, as before.
+    showData: v.showData !== false,
+    showStyles: v.showStyles !== false,
+    showContact: v.showContact !== false,
+    videoPlacement: VIDEO_PLACEMENTS.includes(v.videoPlacement as VideoPlacement) ? (v.videoPlacement as VideoPlacement) : "first",
+    styleOrder: readStyleOrder(v.styleOrder),
   };
 }
 
-/** WhatsApp numbers as wa.me wants them: digits with country code. */
+/** A saved style order: "auto", an explicit list of known styles, or "catalog" (absent or invalid). */
+export function readStyleOrder(v: unknown): StyleOrderSetting {
+  if (v === "auto") return "auto";
+  if (Array.isArray(v)) {
+    const ids = [...new Set(v.filter(isDemoStyle))];
+    if (ids.length) return ids;
+  }
+  return "catalog";
+}
+
+/** Whether a field reaches the public page: «Mostrar datos de la propiedad» on and its own switch on. */
+export function shows(settings: Pick<DemoSettings, "hidden" | "showData" | "showContact">, field: HideableField) {
+  if (field === "agent" && !settings.showContact) return false;
+  return settings.showData && !settings.hidden.includes(field);
+}
+
+/**
+ * WhatsApp numbers as wa.me wants them: digits with country code. An
+ * Argentine number written locally (area + number, with or without the
+ * trunk 0) gets 549: wa.me reads bare digits as a country code, so
+ * "2235273341" would open a chat with a number in Mali.
+ */
 export function whatsappNumber(value: string) {
-  const digits = value.replace(/\D/g, "");
+  let digits = value.replace(/\D/g, "").replace(/^00/, "");
+  if (!value.trim().startsWith("+") || digits.startsWith("54")) {
+    // 54 without the mobile 9, then the national forms: 0 + area + (15 +) number.
+    if (digits.length === 12 && digits.startsWith("54") && !digits.startsWith("549")) digits = `549${digits.slice(2)}`;
+    else if (!digits.startsWith("54")) {
+      const local = digits.replace(/^0/, "");
+      const mobile = local.length === 12 ? local.match(/^(\d{2,4})15(\d{6,8})$/) : null;
+      if (mobile) digits = `549${mobile[1]}${mobile[2]}`;
+      else if (local.length === 10) digits = `549${local}`;
+    }
+  }
   return digits.length >= 8 && digits.length <= 15 ? digits : null;
 }
 

@@ -1,5 +1,5 @@
 import { failure, HttpError } from "@/lib/commerce/http";
-import { requireAgency } from "@/lib/agency/server";
+import { requireAgency, requireAgencyRead } from "@/lib/agency/server";
 import { brandingOf, logoFromBytes, logoOf, saveJson } from "@/lib/demos/server";
 export const runtime = "nodejs";
 
@@ -7,7 +7,7 @@ const MAX_UPLOAD = 2 * 1024 * 1024;
 
 export async function GET() {
   try {
-    const { agency } = await requireAgency();
+    const { agency } = await requireAgencyRead();
     const logo = await logoOf(agency.id);
     if (!logo) throw new HttpError(404, "Tu inmobiliaria todavía no tiene logo.");
     return new Response(new Uint8Array(logo.bytes), {
@@ -23,8 +23,7 @@ export async function POST(request: Request) {
   try {
     if (Number(request.headers.get("content-length") || 0) > MAX_UPLOAD + 16384)
       throw new HttpError(413, "El logo es demasiado grande.");
-    const { agency, role } = await requireAgency(request);
-    if (role !== "owner") throw new HttpError(403, "Solo el dueño de la inmobiliaria puede cambiar su marca.");
+    const { agency } = await requireAgency(request, "manage");
     const file = (await request.formData().catch(() => null))?.get("logo");
     if (
       !(file instanceof File) ||
@@ -43,8 +42,7 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    const { agency, role } = await requireAgency(request);
-    if (role !== "owner") throw new HttpError(403, "Solo el dueño de la inmobiliaria puede cambiar su marca.");
+    const { agency } = await requireAgency(request, "manage");
     const { logo: _removed, ...rest } = await brandingOf(agency.id);
     await saveJson("agencies", "branding", agency.id, rest);
     return Response.json({ saved: true }, { headers: { "Cache-Control": "private, no-store" } });

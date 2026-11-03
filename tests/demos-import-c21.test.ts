@@ -33,6 +33,10 @@ ${dl("Medidas y Superficies", [["Superficie Construcción", "119,9"], ["Superfic
 describe("A Century 21 listing", () => {
   const imp = importListing(PAGE, URL_);
 
+  it("never takes the property's title as the agency's name", () => {
+    expect(imp.agency.name).not.toBe("VENTA DEPARTAMENTO 3 AMBIENTES DELFI XVI");
+  });
+
   it("takes the price from the page's offer and the operation from its title", () => {
     expect(imp.price).toBe("USD 360.000");
     expect(imp.priceConflict).toBeNull();

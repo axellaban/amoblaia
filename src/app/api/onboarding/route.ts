@@ -1,4 +1,4 @@
-import { requireUser, failure } from "@/lib/commerce/http";
+import { requireUser, failure, HttpError } from "@/lib/commerce/http";
 import { adminClient } from "@/lib/supabase/server";
 export async function GET() {
   try {
@@ -14,6 +14,9 @@ export async function GET() {
       { headers: { "Cache-Control": "private, no-store" } },
     );
   } catch (e) {
+    // Without a session there is no tour to show: answered without an error, so a visit logs none.
+    if (e instanceof HttpError && e.status === 401)
+      return Response.json({ completed: true }, { headers: { "Cache-Control": "private, no-store" } });
     return failure(e);
   }
 }

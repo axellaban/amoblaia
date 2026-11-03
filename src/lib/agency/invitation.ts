@@ -1,12 +1,35 @@
 import "server-only";
 import { HttpError, rpc } from "@/lib/commerce/http";
 import { adminClient } from "@/lib/supabase/server";
+import { recordAgencyPanel } from "@/lib/demos/activity";
 import { applyAgencyCredits } from "./admin";
 import { agencyRpc } from "./panel";
+import { INVITE_CODE } from "./demo-invite";
 import { claimHash } from "./server";
 import { slugify } from "./shared";
+import { claimReview, type ClaimMethod } from "./claim-review";
 
-export const validCode = (code: unknown): code is string => typeof code === "string" && /^[A-Za-z0-9_-]{20,64}$/.test(code);
+/**
+ * Records who took over the agency and how, for the team's review: the
+ * e-mail, the method and whether its domain is the agency's (see
+ * claim-review.ts). Never blocks the claim: a failure is only logged.
+ */
+export async function recordClaim(agencyId: string, actor: { id: string; email?: string | null }, method: ClaimMethod) {
+  try {
+    const db = adminClient();
+    const { data } = await db.from("agencies").select("website,contact_email").eq("id", agencyId).maybeSingle();
+    const known = data as { website: string | null; contact_email: string | null } | null;
+    const email = (actor.email ?? "").toLowerCase();
+    const { review, domain } = claimReview(email, known?.website, known?.contact_email ?? null);
+    const update = await db.from("agencies").update({ claim_email: email || null, claim_method: method, claim_review: review, claim_reviewed_at: null }).eq("id", agencyId);
+    if (update.error) throw new Error("CLAIM_RECORD_FAILED");
+    await db.from("admin_audit").insert({ actor_id: actor.id, action: "agency_claim", subject_id: agencyId, details: { method, review, domain } });
+  } catch {
+    console.error("claim_record_failed");
+  }
+}
+
+export const validCode = (code: unknown): code is string => typeof code === "string" && INVITE_CODE.test(code);
 
 export type Invitation = { agencyId: string; agencyName: string; properties: number; freeCredits: number; expiresAt: string };
 
@@ -46,6 +69,22 @@ export async function invitationOf(code: string | null): Promise<Invitation | nu
 }
 
 /**
+ * The demo a short link (/p/<propiedad>-<codigo>) leads to: its token, or
+ * null when no invitation has that code. A used, expired or revoked one still
+ * opens its demo, as the long link does, only without the way into the panel.
+ */
+export async function shortLinkDemoToken(code: string): Promise<string | null> {
+  const db = adminClient();
+  const claim = await db.from("agency_claims").select("demo_id").eq("code_hash", claimHash(code)).maybeSingle();
+  if (claim.error) throw new Error("SHORT_LINK_LOOKUP_FAILED");
+  const demoId = (claim.data as { demo_id: string | null } | null)?.demo_id;
+  if (!demoId) return null;
+  const demo = await db.from("demos").select("token").eq("id", demoId).maybeSingle();
+  if (demo.error) throw new Error("SHORT_LINK_LOOKUP_FAILED");
+  return (demo.data as { token: string } | null)?.token ?? null;
+}
+
+/**
  * Accepts an invitation with a new account: only an e-mail and a password.
  * The one-time link the team sent privately stands for the invitation, so
  * the account starts verified. The code is checked before the account is
@@ -78,6 +117,8 @@ export async function acceptWithNewAccount(code: unknown, email: unknown, passwo
       p_slug: slugify(invitation.agencyName),
     });
     await applyAgencyCredits(agencyId);
+    await recordAgencyPanel(agencyId);
+    await recordClaim(agencyId, { id: userId, email: mail }, "email");
     return { agencyId, email: mail };
   } catch (e) {
     // The account was only for this invitation: nothing is left half done.

@@ -2,7 +2,42 @@
 import { sourceName } from "@/lib/demos/geo";
 import { useEffect, useRef, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
-import { FACT_ICONS, type DemoSettings, type FactIcon } from "@/lib/demos/branding";
+import { FACT_ICONS, type DemoSettings, type FactIcon, type HideableField } from "@/lib/demos/branding";
+
+/**
+ * «Mostrar en demostración»: whether a saved value reaches the public page.
+ * Off never clears it: it stays saved and editable here.
+ */
+export function ShowSwitch({
+  on,
+  onChange,
+  label,
+  disabled = false,
+  locked = false,
+}: {
+  on: boolean;
+  onChange?: (on: boolean) => void;
+  label: string;
+  disabled?: boolean;
+  /** Always shown (the title names the page and its link): the switch says so and does not move. */
+  locked?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label={`Mostrar ${label} en la demostración`}
+      title={locked ? "Siempre visible: es el nombre de la ficha y de su enlace" : on ? "Se muestra en la demostración" : "Oculto en la demostración (queda guardado)"}
+      className={`dm-switch ${on ? "is-on" : ""}`}
+      disabled={disabled || locked}
+      onClick={() => onChange?.(!on)}
+    >
+      <span aria-hidden="true" />
+    </button>
+  );
+}
+export type Visibility = { hidden: HideableField[]; onToggle: (field: HideableField, show: boolean) => void; disabled?: boolean };
 
 const FACT_NAMES: Record<FactIcon, string> = {
   area: "Superficie",
@@ -32,7 +67,7 @@ type Form = {
   availability: string;
   requirements: string;
   description: string;
-  facts: { icon: FactIcon; value: string; label: string }[];
+  facts: { icon: FactIcon; value: string; label: string; hidden?: boolean }[];
   amenities: { title: string; items: string }[];
   precision: DemoSettings["map"]["precision"];
   lat: string;
@@ -135,7 +170,10 @@ export function ListingForm({
   parts = ["datos", "condiciones", "mapa", "contacto", "compartir"],
   onDirty,
   saveLabel = "Guardar ficha",
+  visibility,
 }: {
+  /** The demo's «Mostrar en demostración» switches, next to each publishable field. */
+  visibility?: Visibility;
   settings: DemoSettings;
   disabled: boolean;
   onSave: (settings: Partial<ReturnType<typeof toSettings>>) => Promise<void>;
@@ -168,6 +206,21 @@ export function ListingForm({
   const set = <K extends keyof Form>(k: K) => (e: { target: { value: string } }) =>
     setForm({ ...form, [k]: e.target.value as Form[K] });
   const ask = /alquiler/i.test(form.operation) ? "Consultar alquiler" : "Consultar precio";
+  /** A field with its switch at the right (the demo), or just the field. */
+  const vis = (field: HideableField, name: string, el: React.ReactNode, wide = false) =>
+    visibility ? (
+      <div className={`dm-vis-row ${wide ? "dm-wide" : ""}`}>
+        {el}
+        <ShowSwitch
+          on={!visibility.hidden.includes(field)}
+          label={name}
+          disabled={visibility.disabled}
+          onChange={(on) => visibility.onToggle(field, on)}
+        />
+      </div>
+    ) : (
+      el
+    );
   return (
     <form
       className="dm-listing"
@@ -183,18 +236,31 @@ export function ListingForm({
       <fieldset>
         <legend>Identificación</legend>
         <div className="dm-fields">
-          <label>
-            Operación
-            <input value={form.operation} maxLength={40} placeholder="Alquiler" onChange={set("operation")} />
-          </label>
-          <label>
-            Código de referencia
-            <input value={form.reference} maxLength={40} placeholder="RAP12025427" onChange={set("reference")} />
-          </label>
-          <label className="dm-wide">
-            Características principales <small>(línea bajo el título)</small>
-            <input value={form.features} maxLength={120} placeholder="27 m² · 2 privados · 1 baño" onChange={set("features")} />
-          </label>
+          {vis(
+            "operation",
+            "la operación",
+            <label>
+              Operación
+              <input value={form.operation} maxLength={40} placeholder="Alquiler" onChange={set("operation")} />
+            </label>,
+          )}
+          {vis(
+            "reference",
+            "el código de referencia",
+            <label>
+              Código de referencia
+              <input value={form.reference} maxLength={40} placeholder="RAP12025427" onChange={set("reference")} />
+            </label>,
+          )}
+          {vis(
+            "features",
+            "las características principales",
+            <label className={visibility ? "" : "dm-wide"}>
+              Características principales <small>(línea bajo el título)</small>
+              <input value={form.features} maxLength={120} placeholder="27 m² · 2 privados · 1 baño" onChange={set("features")} />
+            </label>,
+            true,
+          )}
         </div>
       </fieldset>
       )}
@@ -203,14 +269,22 @@ export function ListingForm({
       <fieldset>
         <legend>Precio y condiciones</legend>
         <div className="dm-fields">
-          <label>
-            Precio con moneda <small>(tal como lo publica)</small>
-            <input value={form.price} maxLength={40} placeholder="$ 950.000" onChange={set("price")} />
-          </label>
-          <label>
-            Expensas
-            <input value={form.expenses} maxLength={60} placeholder="$ 80.000" onChange={set("expenses")} />
-          </label>
+          {vis(
+            "price",
+            "el precio",
+            <label>
+              Precio con moneda <small>(tal como lo publica)</small>
+              <input value={form.price} maxLength={40} placeholder="$ 950.000" onChange={set("price")} />
+            </label>,
+          )}
+          {vis(
+            "expenses",
+            "las expensas",
+            <label>
+              Expensas
+              <input value={form.expenses} maxLength={60} placeholder="$ 80.000" onChange={set("expenses")} />
+            </label>,
+          )}
           <label className="dm-wide">
             Conflicto de precio <small>(privado: si la publicación muestra importes distintos)</small>
             <input
@@ -220,14 +294,22 @@ export function ListingForm({
               onChange={set("priceConflict")}
             />
           </label>
-          <label>
-            Disponibilidad
-            <input value={form.availability} maxLength={80} placeholder="Inmediata" onChange={set("availability")} />
-          </label>
-          <label>
-            Requisitos
-            <input value={form.requirements} maxLength={300} placeholder="Contrato 24 meses" onChange={set("requirements")} />
-          </label>
+          {vis(
+            "availability",
+            "la disponibilidad",
+            <label>
+              Disponibilidad
+              <input value={form.availability} maxLength={80} placeholder="Inmediata" onChange={set("availability")} />
+            </label>,
+          )}
+          {vis(
+            "requirements",
+            "los requisitos",
+            <label>
+              Requisitos
+              <input value={form.requirements} maxLength={300} placeholder="Contrato 24 meses" onChange={set("requirements")} />
+            </label>,
+          )}
         </div>
         <p className="dm-help">
           {form.priceConflict.trim()
@@ -242,6 +324,7 @@ export function ListingForm({
       {show("condiciones") && (
       <fieldset>
         <legend>Datos con íconos</legend>
+        {visibility && <p className="dm-help">El interruptor de cada dato se guarda con «Guardar».</p>}
         {form.facts.map((f, i) => (
           <div className="dm-fact" key={i}>
             <select
@@ -275,6 +358,14 @@ export function ListingForm({
                 setForm({ ...form, facts: form.facts.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)) })
               }
             />
+            {visibility && (
+              <ShowSwitch
+                on={!f.hidden}
+                label={`${FACT_NAMES[f.icon].toLowerCase()} (${f.value || "sin valor"})`}
+                disabled={visibility.disabled}
+                onChange={(on) => setForm({ ...form, facts: form.facts.map((x, j) => (j === i ? { ...x, hidden: !on } : x)) })}
+              />
+            )}
             <button
               type="button"
               className="icon-button dm-danger"
@@ -300,16 +391,31 @@ export function ListingForm({
       {show("datos") && (
       <fieldset>
         <legend>Descripción completa</legend>
-        <label className="dm-wide">
-          Tal como figura en la publicación <small>(líneas con «-» se muestran como lista)</small>
-          <textarea rows={8} maxLength={6000} value={form.description} onChange={set("description")} />
-        </label>
+        {vis(
+          "description",
+          "la descripción",
+          <label className={visibility ? "" : "dm-wide"}>
+            Tal como figura en la publicación <small>(líneas con «-» se muestran como lista)</small>
+            <textarea rows={8} maxLength={6000} value={form.description} onChange={set("description")} />
+          </label>,
+          true,
+        )}
       </fieldset>
       )}
 
       {show("condiciones") && (
       <fieldset>
-        <legend>Características y servicios</legend>
+        <legend className={visibility ? "dm-vis-legend" : undefined}>
+          Características y servicios
+          {visibility && (
+            <ShowSwitch
+              on={!visibility.hidden.includes("amenities")}
+              label="las características y servicios"
+              disabled={visibility.disabled}
+              onChange={(on) => visibility.onToggle("amenities", on)}
+            />
+          )}
+        </legend>
         {form.amenities.map((g, i) => (
           <div className="dm-amenity" key={i}>
             <input
@@ -354,7 +460,12 @@ export function ListingForm({
 
       {show("mapa") && (
       <fieldset>
-        <legend>Mapa</legend>
+        <legend className={visibility ? "dm-vis-legend" : undefined}>
+          Mapa
+          {visibility && (
+            <ShowSwitch on={!visibility.hidden.includes("map")} label="el mapa" disabled={visibility.disabled} onChange={(on) => visibility.onToggle("map", on)} />
+          )}
+        </legend>
         <div className="dm-fields">
           <label className="dm-wide">
             Precisión <small>(nunca más precisa que la publicación)</small>
@@ -401,7 +512,17 @@ export function ListingForm({
 
       {show("contacto") && (
       <fieldset>
-        <legend>Agente asignado</legend>
+        <legend className={visibility ? "dm-vis-legend" : undefined}>
+          Agente asignado
+          {visibility && (
+            <ShowSwitch
+              on={!visibility.hidden.includes("agent")}
+              label="el agente"
+              disabled={visibility.disabled}
+              onChange={(on) => visibility.onToggle("agent", on)}
+            />
+          )}
+        </legend>
         <div className="dm-fields">
           <label>
             Nombre

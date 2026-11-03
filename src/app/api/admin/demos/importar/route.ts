@@ -1,7 +1,8 @@
 import { requireAdmin, failure, HttpError, rpc } from "@/lib/commerce/http";
-import { completeAgency, createDemo, saveJson } from "@/lib/demos/server";
+import { completeAgency, createDemo, saveAgencyWhatsapp, saveJson, whatsappOf } from "@/lib/demos/server";
 import { DEFAULT_SETTINGS } from "@/lib/demos/branding";
-import { importedMap, readJson } from "@/lib/demos/input";
+import { importedMap, readJson, whatsappInput } from "@/lib/demos/input";
+import { normalizeArNumber } from "@/lib/demos/send";
 import { readListing } from "@/lib/demos/listing";
 import { applyImport, IMPORT_FIELDS } from "@/lib/demos/import";
 import { cleanText, isUuid } from "@/lib/demos/shared";
@@ -51,11 +52,16 @@ export async function POST(request: Request) {
         (agencies as { id: string; name: string; website: string | null }[]).find(
           (a) => host(a.website) === site,
         ) ?? null;
+    // The agency's WhatsApp to send it the demo: the one we have, else the listing's.
+    // When neither exists the panel asks for it.
+    const found = normalizeArNumber(imp.agency.whatsapp);
+    const known = agency ? ((await whatsappOf([agency.id])).get(agency.id) ?? null) : null;
     if (body.preview === true)
       return Response.json(
-        { ...imp, listingUrl: listing.listingUrl, existingAgency: agency?.name ?? null },
+        { ...imp, listingUrl: listing.listingUrl, existingAgency: agency?.name ?? null, agencyWhatsapp: known ?? found },
         { headers: noStore },
       );
+    const typed = whatsappInput(body.whatsapp);
 
     // Decisions taken on the preview: which of two published prices to show,
     // and a contact for inquiries when the listing has none.
@@ -97,6 +103,9 @@ export async function POST(request: Request) {
     const completed = agencyId
       ? await completeAgency(agencyId, imp, cleanText(body.contact, 120)).catch(() => ({ logo: false, contact: false }))
       : { logo: false, contact: false };
+    // What the team typed replaces; what the listing publishes only fills a gap.
+    if (agencyId && (typed || (found && !known)))
+      await saveAgencyWhatsapp(agencyId, typed ?? found, !typed).catch(() => undefined);
     await db.from("admin_audit").insert({
       actor_id: actor.id,
       action: "demo_create",

@@ -1,5 +1,5 @@
 import { failure, HttpError } from "@/lib/commerce/http";
-import { requireDemoAccess } from "@/lib/agency/server";
+import { assertManager, requireDemoAccess, requireDemoRead } from "@/lib/agency/server";
 import { auditAgencyEdit } from "@/lib/agency/edit-context";
 import { brandingOf, logoFromBytes, logoOf, saveJson } from "@/lib/demos/server";
 export const runtime = "nodejs";
@@ -10,7 +10,7 @@ const MAX_UPLOAD = 2 * 1024 * 1024;
 export async function GET(_request: Request, { params }: Params) {
   try {
     const { id } = await params;
-    const { demo } = await requireDemoAccess(undefined, id);
+    const { demo } = await requireDemoRead(id);
     const logo = await logoOf(demo.agency_id);
     if (!logo) throw new HttpError(404, "La inmobiliaria no tiene logo.");
     return new Response(new Uint8Array(logo.bytes), {
@@ -31,8 +31,8 @@ export async function POST(request: Request, { params }: Params) {
       throw new HttpError(413, "El logo es demasiado grande.");
     const { id } = await params;
     const access = await requireDemoAccess(request, id);
-    const { demo, admin, role } = access;
-    if (!admin && role !== "owner") throw new HttpError(403, "Solo el dueño de la inmobiliaria puede cambiar su marca.");
+    const { demo } = access;
+    assertManager(access, "Solo el dueño o un administrador de la inmobiliaria pueden cambiar su marca.");
     const file = (await request.formData().catch(() => null))?.get("logo");
     if (
       !(file instanceof File) ||
@@ -55,8 +55,8 @@ export async function DELETE(request: Request, { params }: Params) {
   try {
     const { id } = await params;
     const access = await requireDemoAccess(request, id);
-    const { demo, admin, role } = access;
-    if (!admin && role !== "owner") throw new HttpError(403, "Solo el dueño de la inmobiliaria puede cambiar su marca.");
+    const { demo } = access;
+    assertManager(access, "Solo el dueño o un administrador de la inmobiliaria pueden cambiar su marca.");
     const { logo: _removed, ...rest } = await brandingOf(demo.agency_id);
     await saveJson("agencies", "branding", demo.agency_id, rest);
     await auditAgencyEdit(access, "logo_remove");

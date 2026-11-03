@@ -1,18 +1,54 @@
 "use client";
-// The team's invitation, opened from WhatsApp: the agency enters only an
-// e-mail and a password and lands in its panel with the demos prepared for
-// it. An e-mail that already has an account signs in instead.
+// The team's invitation, opened from WhatsApp or from its demo: the agency
+// enters only an e-mail and a password and lands in its panel with the demos
+// prepared for it, or straight in the property it came from. An e-mail that
+// already has an account signs in instead.
 import Link from "next/link";
-import { useCallback, useState } from "react";
-import { Eye, EyeOff } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { ArrowLeft, Check, Eye, EyeOff } from "lucide-react";
 import { api, ApiError } from "./admin-demos";
 import { Captcha } from "./auth-form";
+import { Comparison } from "./comparison";
 import { track } from "@/lib/analytics";
+import { cta, markInternal } from "@/lib/interaction-tracking";
+import { useSignupTracking } from "@/lib/signup-tracking";
 import { browserClient } from "@/lib/supabase/client";
+import { leadFromDemoRef } from "@/lib/leads/client";
+import { GoogleSignIn } from "./google-signin";
 
 export type InvitationInfo = { agencyName: string; properties: number; freeCredits: number; expiresAt: string };
 
-export function InvitationSignup({ code, invitation, here }: { code: string; invitation: InvitationInfo | null; here: string }) {
+/** The demo the agency came from, already checked to belong to the invited agency. */
+export type InvitedProperty = {
+  id: string;
+  title: string;
+  location: string | null;
+  before: string | null;
+  after: string | null;
+  /** The presentation link with this same invitation. */
+  back: string;
+};
+
+export function InvitationSignup({
+  code,
+  invitation,
+  here,
+  property = null,
+  plan = null,
+  preview = false,
+  destination = null,
+}: {
+  code: string;
+  invitation: InvitationInfo | null;
+  here: string;
+  property?: InvitedProperty | null;
+  /** The plan chosen in the demo's prices: the account is created to finish that purchase. */
+  plan?: string | null;
+  /** The team looking at this step: the form shows, but creates nothing. */
+  preview?: boolean;
+  /** Where the panel opens once it is the agency's: the property with what it asked for in its demo. */
+  destination?: string | null;
+}) {
   const [mode, setMode] = useState<"new" | "existing">("new");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -23,6 +59,25 @@ export function InvitationSignup({ code, invitation, here }: { code: string; inv
   const [captchaReset, setCaptchaReset] = useState(0);
   const onToken = useCallback((t: string) => setToken(t), []);
   const captcha = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
+  // The same signup step as the form without a code, so the demo funnel does not break here.
+  // Legacy name kept for the current funnels: it fires when this screen is seen, not when the form is begun.
+  useEffect(() => {
+    if (invitation && !preview) {
+      track("agency_signup_started", { origin: property ? "demo_invitation" : "invitation", ...(property ? { demo_id: property.id } : {}) });
+      // Funnel (spec §8): the "Guardar mi panel" step was reached.
+      track("panel_claim_started", { origin: property ? "demo_invitation" : "invitation", ...(property ? { demo_id: property.id } : {}) });
+    }
+  }, [invitation, property, preview]);
+  // The team previewing the step is not an agency signing up.
+  useEffect(() => {
+    if (preview) markInternal("team_preview");
+  }, [preview]);
+  const origin = property ? "demo_invitation" : "invitation";
+  const steps = useSignupTracking(
+    "invitation",
+    { origin, has_invite: true, mode, from_plan: Boolean(plan), ...(property ? { demo_id: property.id } : {}) },
+    Boolean(invitation) && !preview,
+  );
 
   if (!invitation)
     return (
@@ -31,7 +86,8 @@ export function InvitationSignup({ code, invitation, here }: { code: string; inv
         <h1>Esta invitación ya no está disponible</h1>
         <p>El enlace venció, ya se usó o fue reemplazado por uno nuevo. Pedile otro al equipo de habita por el mismo WhatsApp.</p>
         <div className="ap-start-actions">
-          <Link href="/acceso?next=%2Fpanel" className="button button-outline">
+          {/* Back here after signing in: an account that already has this agency goes straight to its property. */}
+          <Link href={`/acceso?next=${encodeURIComponent(here)}`} className="button button-outline">
             Ya tengo cuenta
           </Link>
         </div>
@@ -47,24 +103,37 @@ export function InvitationSignup({ code, invitation, here }: { code: string; inv
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (busy) return;
+    if (busy || preview) return;
+    steps.submitted();
     if (captcha && !token) {
+      steps.failed("captcha");
       setError("Completá la verificación para continuar.");
       return;
     }
     setBusy(true);
     setError("");
+    let step = "account";
     try {
       if (mode === "new") {
         await api("/api/panel/invitacion", { method: "POST", body: JSON.stringify({ code, email, password }) });
+        steps.accountCreated("invitation_password");
+        step = "signin";
         await signIn();
       } else {
+        step = "signin";
         await signIn();
+        step = "claim";
         await api("/api/panel/reclamar", { method: "POST", body: JSON.stringify({ code }) });
       }
-      track("agency_claimed", { origin: "invitation", new_account: mode === "new" });
-      window.location.assign("/panel?bienvenida=1");
+      track("agency_claimed", { origin: property ? "demo_invitation" : "invitation", new_account: mode === "new", ...(property ? { demo_id: property.id } : {}) }, true);
+      track("panel_claim_completed", { method: mode === "new" ? "email" : "existing", ...(property ? { demo_id: property.id } : {}) }, true);
+      // Lead score: the server only takes it once the account belongs to the demo's agency.
+      leadFromDemoRef("demo_account_created");
+      // Into the property it came from, ready for a first try; otherwise the panel's home.
+      // To finish the purchase it came for; otherwise into the property, ready for a first try.
+      window.location.assign(plan ? `/precios?${new URLSearchParams({ plan })}` : (destination ?? (property ? `/panel/propiedades/${property.id}?bienvenida=1` : "/panel?bienvenida=1")));
     } catch (err) {
+      steps.failed(err instanceof ApiError ? (err.status === 409 ? "account_exists" : `api_${err.status}`) : step === "signin" ? "signin" : "network", { step });
       if (err instanceof ApiError && err.status === 409 && mode === "new" && /ya tiene una cuenta/.test(err.message)) setMode("existing");
       setError(err instanceof Error ? err.message : "No pudimos completar el ingreso.");
       setCaptchaReset((n) => n + 1);
@@ -73,22 +142,32 @@ export function InvitationSignup({ code, invitation, here }: { code: string; inv
   }
 
   const demos = invitation.properties;
-  return (
-    <div className="account-page container ap-start">
-      <span className="eyebrow">Invitación de habita</span>
-      <h1>{invitation.agencyName}, tu panel ya está listo</h1>
-      <p>
-        {demos
-          ? `Preparamos ${demos === 1 ? "una propiedad" : `${demos} propiedades`} con fotos ambientadas para tu inmobiliaria. `
-          : "Preparamos tu panel para que subas tus propiedades. "}
-        Creá tu acceso con tu email y una contraseña y entrás directo.
-        {invitation.freeCredits > 0 &&
-          ` Incluye ${invitation.freeCredits} ${invitation.freeCredits === 1 ? "crédito" : "créditos"} de regalo para ambientar fotos con IA.`}
-      </p>
-      <form className="account-panel ap-start-form" onSubmit={submit}>
+  const credits =
+    invitation.freeCredits > 0
+      ? `Incluye ${invitation.freeCredits} ${invitation.freeCredits === 1 ? "crédito" : "créditos"} de regalo para ambientar fotos con IA.`
+      : "";
+  const form = (
+      <form className="account-panel ap-start-form" onSubmit={submit} onInputCapture={steps.onInput}>
+        {plan ? (
+          <>
+            <h2>Creá tu cuenta</h2>
+            <p className="inline-notice">Terminá de crear tu cuenta para comprar. Tus créditos de regalo quedan en ella.</p>
+          </>
+        ) : (
+          property && <h2>Entrá a tu panel</h2>
+        )}
+        {mode === "new" && !preview && (
+          <div className="ap-start-google">
+            {/* Back here signed in: the claim continues by itself (continuar=google). */}
+            <GoogleSignIn next={`${here}${here.includes("?") ? "&" : "?"}continuar=google`} />
+            <p className="ap-start-or">
+              <span>o con tu email</span>
+            </p>
+          </div>
+        )}
         <label>
           Email
-          <input type="email" required autoComplete="email" inputMode="email" value={email} onChange={(e) => setEmail(e.target.value)} autoFocus />
+          <input type="email" required autoComplete="email" inputMode="email" value={email} onChange={(e) => setEmail(e.target.value)} />
         </label>
         <label>
           {mode === "new" ? "Elegí una contraseña" : "Tu contraseña"}
@@ -114,7 +193,8 @@ export function InvitationSignup({ code, invitation, here }: { code: string; inv
             {error}
           </p>
         )}
-        <button className="button button-primary button-large" disabled={busy}>
+        {preview && <p className="inline-notice">Vista previa del equipo: así ve este paso la inmobiliaria. No se crea ninguna cuenta.</p>}
+        <button className="button button-primary button-large" disabled={busy || preview}>
           {busy ? "Un momento…" : mode === "new" ? "Entrar a mi panel" : "Entrar y sumar mis demos"}
         </button>
         <p className="dm-help">
@@ -123,11 +203,7 @@ export function InvitationSignup({ code, invitation, here }: { code: string; inv
               ¿Ya tenés cuenta en habita?{" "}
               <button type="button" className="text-link" onClick={() => (setMode("existing"), setError(""))}>
                 Entrá con ella
-              </button>{" "}
-              o{" "}
-              <Link href={`/acceso?next=${encodeURIComponent(here)}`} className="text-link">
-                con Google
-              </Link>
+              </button>
               .
             </>
           ) : (
@@ -144,6 +220,67 @@ export function InvitationSignup({ code, invitation, here }: { code: string; inv
           Al continuar aceptás los <Link href="/terminos">términos</Link> y la <Link href="/privacidad">política de privacidad</Link>. Sin tarjeta de crédito.
         </p>
       </form>
+  );
+
+  if (property)
+    return (
+      <div className="account-page container ap-invited">
+        <Link href={property.back} className="text-link ap-invited-back" {...cta("invitation_back_to_demo", "invitation_page", "demo", "navigation")}>
+          <ArrowLeft size={16} aria-hidden="true" /> Volver a la demo
+        </Link>
+        <span className="eyebrow">Invitación para {invitation.agencyName}</span>
+        <h1>Tu propiedad está preparada</h1>
+        <p className="ap-invited-lead">
+          Creá tu acceso para editarla y probar las herramientas de fotos. {credits}
+        </p>
+        <div className="ap-invited-grid">
+          <section className="account-panel ap-invited-property" aria-labelledby="ap-invited-title">
+            <div className="ap-invited-head">
+              <div>
+                <h2 id="ap-invited-title">{property.title}</h2>
+                {property.location && <p className="dm-help">{property.location}</p>}
+              </div>
+              <span className="ap-invited-chip">
+                <Check size={14} aria-hidden="true" /> Tu punto de partida
+              </span>
+            </div>
+            {property.before && property.after ? (
+              <Comparison
+                analytics={{ demo_id: property.id, photo_id: "cover", style_id: "main" }}
+                before={property.before}
+                after={property.after}
+                beforeLabel="Original" afterLabel="Ambientado con IA" alt={`${property.title}, ambientado con IA`} beforeAlt={`${property.title}, foto original`} />
+            ) : property.before ? (
+              <img className="ap-invited-photo" src={property.before} alt={`${property.title}, foto original`} />
+            ) : null}
+            <ul className="ap-invited-checks">
+              <li>
+                <Check size={16} aria-hidden="true" /> Fotos originales conservadas
+              </li>
+              <li>
+                <Check size={16} aria-hidden="true" /> Ambientaciones disponibles
+              </li>
+              <li>
+                <Check size={16} aria-hidden="true" /> Podés sumar otras propiedades
+              </li>
+            </ul>
+          </section>
+          {form}
+        </div>
+      </div>
+    );
+
+  return (
+    <div className="account-page container ap-start">
+      <span className="eyebrow">Invitación de habita</span>
+      <h1>{invitation.agencyName}, tu panel ya está listo</h1>
+      <p>
+        {demos
+          ? `Preparamos ${demos === 1 ? "una propiedad" : `${demos} propiedades`} con fotos ambientadas para tu inmobiliaria. `
+          : "Preparamos tu panel para que subas tus propiedades. "}
+        Creá tu acceso con tu email y una contraseña y entrás directo. {credits}
+      </p>
+      {form}
     </div>
   );
 }

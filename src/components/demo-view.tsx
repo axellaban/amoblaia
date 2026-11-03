@@ -1,4 +1,5 @@
 "use client";
+import { formatRatio } from "@/lib/video/plan";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
@@ -14,28 +15,51 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  CircleDollarSign,
   DoorOpen,
+  Download,
   ExternalLink,
   FileText,
+  Image as ImageIcon,
   Info,
+  LayoutGrid,
+  Link2 as Link2Icon,
+  Lock,
+  Menu,
   Mail,
   MapPin,
   Maximize2,
   MessageCircle,
   Minimize2,
   Phone,
+  Play,
+  Plus,
   RotateCw,
   Ruler,
+  Share2,
   Sparkles,
+  Tag,
+  Eye,
+  ArrowRight,
+  House,
+  X,
 } from "lucide-react";
 import { Comparison } from "./comparison";
-import { registerSuperProperties, track } from "@/lib/analytics";
+import { PENDING_IMPORT_KEY, withIntent, type DemoIntent, type DemoInvite } from "@/lib/agency/demo-invite";
+import { registerSuperProperties, registerSuperPropertiesOnce, track, type EventProperties } from "@/lib/analytics";
+import { cta, startDemoEngagement, ViewTimer } from "@/lib/interaction-tracking";
+import { reportDemoActivity } from "@/lib/demos/activity-client";
+import { flushLeads, leadActiveTime, leadEvent, startLeadTracking } from "@/lib/leads/client";
+import { usePathname } from "next/navigation";
 import { textOn, whatsappNumber, type FactIcon } from "@/lib/demos/branding";
+import { DEMO_STYLES, demoStyleName } from "@/lib/demos/styles";
 import {
+  RETOUCH_STYLE,
   adminPhotoUrl,
   ctaHref,
   DEMO_REF_KEY,
   publicImageUrl,
+  publicVideoUrl,
   type PhotoVersion,
   type PublicDemo,
   type PublicPhoto,
@@ -66,6 +90,41 @@ const FACT_ICON: Record<FactIcon, typeof Ruler> = {
 };
 const external = { target: "_blank", rel: "noopener noreferrer" } as const;
 const VISIBLE_STYLES = 3;
+/** The agency's own view lists six styles first (two rows of three on desktop, a scrollable row on phones). */
+const OWNER_VISIBLE_STYLES = 6;
+
+/**
+ * The agency looking at its own demo with a live invitation: its panel on
+ * top, and next to each style the action that fits it. A prepared version is
+ * downloaded; any other style is generated from the panel, which asks for
+ * the access (and shows the cost) first.
+ */
+export type OwnerMode = {
+  /** The invitation code: the agency's way into its demo's editing (the server checks it). */
+  code: string;
+  href: string;
+  /** Its own panel, opened on its home without creating the account first (Ingresar al panel). */
+  panelHref: string;
+  freeCredits: number;
+  buyerHref: string;
+  /** The presentation itself and its plans: the two sections under the agency's bar, each with its own link. */
+  demoHref: string;
+  pricesHref: string;
+};
+
+const fileSlug = (text: string) =>
+  text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^A-Za-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .toLowerCase();
+
+/** A duration as m:ss (92 000 ms → "1:32"). */
+const clock = (ms: number) => {
+  const total = Math.round(ms / 1000);
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+};
 
 function urlFor(source: Source, photoId: string, version: PhotoVersion | null, width: number, retry = 0) {
   const url =
@@ -88,7 +147,7 @@ function contactActions(demo: PublicDemo, pageUrl: string) {
   const wa = c.whatsapp ? whatsappNumber(c.whatsapp) : null;
   const waHref = (text: string) => (wa ? `https://wa.me/${wa}?text=${encodeURIComponent(text)}` : null);
   const actions: Action[] = [];
-  if (wa) actions.push({ href: waHref(ask)!, label: "Consultar por WhatsApp", short: "Consultar", kind: "whatsapp" });
+  if (wa) actions.push({ href: waHref(ask)!, label: "Contactar por WhatsApp", short: "Consultar", kind: "whatsapp" });
   if (c.url) actions.push({ href: c.url, label: `Consultar a ${demo.agencyName}`, short: "Consultar", kind: "url" });
   if (c.phone)
     actions.push({ href: `tel:${c.phone.replace(/[^\d+]/g, "")}`, label: `Llamar al ${c.phone}`, short: "Llamar", kind: "phone" });
@@ -118,46 +177,205 @@ export function DemoView({
   demo,
   source,
   presentation = false,
+  invite = null,
+  owner = null,
+  plans = null,
+  backToDemo = null,
 }: {
   demo: PublicDemo;
   source: Source;
   /** The link for the agency: may show the "Demo preparada para…" strip. */
   presentation?: boolean;
+  /** The private invitation carried by the presentation link (validated on the server), if any. */
+  invite?: DemoInvite;
+  /** The agency viewing its own demo through its invitation: its panel header and the download or generate actions. */
+  owner?: OwnerMode | null;
+  /** The plans of /precios, shown under the agency's bar. */
+  plans?: React.ReactNode;
+  /** The agency looking at its buyers' page ("Ver como comprador"): the way back to its demo, nothing else of its tools. */
+  backToDemo?: string | null;
 }) {
   const { agency } = demo;
   const [pageUrl, setPageUrl] = useState("");
   // The agent's photo lives on the agency's site: if it fails, the initials stand in.
   const [agentPhotoFailed, setAgentPhotoFailed] = useState(false);
+  const ownerMode = Boolean(owner);
+  // How the visitor got here, never the invitation code itself.
+  const linkKind = ownerMode
+    ? "owner_invitation"
+    : presentation && invite && "href" in invite
+      ? "presentation_invitation"
+      : presentation && invite
+        ? "presentation_invite_unavailable"
+        : presentation
+          ? "presentation"
+          : "buyer";
   const analytics = useMemo(
     () => ({
       demo_id: demo.id,
+      // Readable names for the team's reports; both are already public on the demo page.
+      demo_titulo: demo.title,
+      inmobiliaria: agency.name,
       inmobiliaria_id: demo.agencyId,
       fotos: demo.photos.length,
       ambientadas: demo.photos.filter((p) => p.versions.length).length,
       version: presentation ? "presentacion" : "comprador",
+      agency_id: demo.agencyId,
+      demo_link_type: linkKind,
+      owner_mode: ownerMode,
     }),
-    [demo.id, demo.agencyId, demo.photos, presentation],
+    [demo.id, demo.title, agency.name, demo.agencyId, demo.photos, presentation, linkKind, ownerMode],
   );
+  // The same ficha inside the agency's own site is one more way in.
+  const linkType = useRef<string>(linkKind);
+  // Lead score: the deliberate actions of this page view (src/lib/leads). Started before the visit is reported.
+  useEffect(() => {
+    if (source.kind !== "public") return;
+    return startLeadTracking(source.token, window.location.pathname.startsWith("/inmobiliaria/") ? "agency_site" : linkType.current);
+    // A new page view per demo; the link kind is read once.
+  }, [source.kind, demo.id]);
+  // One visit per demo: the page refreshing (while a style is generated) is not a new one.
+  const viewed = useRef("");
   useEffect(() => {
     setPageUrl(window.location.href.split(/[?#]/)[0]);
-    if (source.kind !== "public") return;
-    track("demo_vista", analytics);
-    registerSuperProperties({ demo_id: demo.id, demo_inmobiliaria_id: demo.agencyId });
+    if (source.kind !== "public" || viewed.current === demo.id) return;
+    viewed.current = demo.id;
+    if (window.location.pathname.startsWith("/inmobiliaria/")) linkType.current = "agency_site";
+    const via = { demo_link_type: linkType.current };
+    // Last touch on every later event, first touch kept for the whole journey (sign-up, first import…).
+    registerSuperProperties({
+      demo_id: demo.id,
+      demo_titulo: demo.title,
+      demo_inmobiliaria: agency.name,
+      demo_inmobiliaria_id: demo.agencyId,
+      ...via,
+    });
+    registerSuperPropertiesOnce({ first_demo_id: demo.id, first_demo_agency_id: demo.agencyId, first_demo_link_type: linkType.current });
+    // A person profile only for the agencies the team writes to, not for every buyer.
+    const prospect = linkType.current !== "buyer" && linkType.current !== "agency_site";
+    track(
+      "demo_vista",
+      { ...analytics, ...via },
+      false,
+      prospect ? { first_demo_id: demo.id, first_demo_agency_id: demo.agencyId, first_demo_link_type: linkType.current } : undefined,
+    );
+    reportDemoActivity(source.token, "visita");
+    leadEvent("demo_opened");
     try {
-      localStorage.setItem(DEMO_REF_KEY, JSON.stringify({ demoId: demo.id, agencyId: demo.agencyId, at: Date.now() }));
+      // The token lets the sign-up and the panel credit their steps to this demo (lead score).
+      localStorage.setItem(
+        DEMO_REF_KEY,
+        JSON.stringify({ demoId: demo.id, agencyId: demo.agencyId, token: source.token, link: linkType.current, at: Date.now() }),
+      );
     } catch {
       /* Private mode or blocked storage. */
     }
-  }, [source.kind, demo.id, demo.agencyId, analytics]);
+  }, [source.kind, demo.id, demo.title, agency.name, demo.agencyId, analytics]);
+  useEffect(() => {
+    if (source.kind !== "public") return;
+    return startDemoEngagement({ demo_id: demo.id, agency_id: demo.agencyId, demo_link_type: linkType.current, owner_mode: ownerMode }, leadActiveTime);
+  }, [source.kind, demo.id, demo.agencyId, ownerMode]);
 
   const { primary, others, visitHref } = contactActions(demo, pageUrl);
-  const log = (event: string, extra: Record<string, unknown> = {}) =>
-    source.kind === "public" && track(event, { ...analytics, ...extra });
-  const contactLink = (a: Action, className: string, label = a.label) => (
+  // "Enviar consulta": the agency's email or its contact page, when the main channel is another one.
+  const inquiry = others.find((a) => a.kind === "email" || a.kind === "url") ?? null;
+  // The bar at the bottom of phones only once the contact next to the gallery left the screen: it never covers it.
+  const contactBox = useRef<HTMLDivElement>(null);
+  const [contactInView, setContactInView] = useState(true);
+  useEffect(() => {
+    const el = contactBox.current;
+    if (!el || !("IntersectionObserver" in window)) return;
+    const io = new IntersectionObserver((e) => setContactInView(e.some((x) => x.isIntersecting) || el.getBoundingClientRect().top > window.innerHeight));
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+  // "Compartir": the buyers' link of this same property, on the domain it is opened from.
+  const [shareNote, setShareNote] = useState("");
+  async function shareListing() {
+    if (source.kind !== "public") return;
+    const url = window.location.pathname.startsWith("/inmobiliaria/") ? window.location.href.split(/[?#]/)[0] : `${window.location.origin}/demo/${source.token}`;
+    note("demo_buyer_share", { method: typeof navigator.share === "function" ? "native" : "copy" });
+    try {
+      if (typeof navigator.share === "function") await navigator.share({ title: demo.title, text: `${demo.title} · ${agency.name}`, url });
+      else {
+        await navigator.clipboard.writeText(url);
+        setShareNote("Enlace copiado.");
+        window.setTimeout(() => setShareNote(""), 3000);
+      }
+    } catch {
+      // Cancelled by the visitor.
+    }
+  }
+  const interacted = useRef(false);
+  /** `beacon` for a click that leaves the page in this same tab. */
+  const log = (event: string, extra: EventProperties = {}, beacon = false) => {
+    if (source.kind !== "public") return;
+    track(event, { ...analytics, demo_link_type: linkType.current, ...extra }, beacon);
+    if (event === "demo_agency_cta_clicked") {
+      // It usually leaves the page: sent right away.
+      leadEvent("demo_agency_cta_clicked");
+      flushLeads(true);
+    }
+    // A download is its own step for the team's list; the server ignores repeats.
+    // A real value action of the agency (spec §8): what it obtained, not a tap on a style.
+    const VALUE: Record<string, string> = { demo_owner_download: "download", demo_owner_share: "share", demo_owner_generation_started: "generation", demo_owner_retouch_saved: "edit" };
+    if (VALUE[event]) track("demo_value_action", { ...analytics, demo_link_type: linkType.current, subtype: VALUE[event] });
+    if (event === "demo_owner_download") reportDemoActivity(source.token, "descarga");
+    // The first other interaction of this visit is step 2.
+    else if (!interacted.current) {
+      interacted.current = true;
+      reportDemoActivity(source.token, "interaccion");
+    }
+  };
+  // Behavior only (photos, full screen, time per style): PostHog, without touching the team's activity steps.
+  const note = (event: string, extra: EventProperties = {}) => {
+    if (source.kind !== "public") return;
+    track(event, { ...analytics, demo_link_type: linkType.current, ...extra });
+  };
+  // The plans are a section of the agency's environment with its own link (…/precios): the bar stays, the
+  // property is only hidden (a style being generated keeps going) and the browser's back button returns to it.
+  const pathname = usePathname();
+  const pricesOn = Boolean(owner) && (pathname?.endsWith("/precios") ?? false);
+  const pricesSince = useRef(0);
+  const pricesExit = useRef("history");
+  const noteRef = useRef(note);
+  noteRef.current = note;
+  useEffect(() => {
+    if (pricesOn) {
+      pricesSince.current = Date.now();
+      // The plans are on screen (by the link, the bar or the credits menu).
+      leadEvent("demo_pricing_viewed");
+      return;
+    }
+    if (!pricesSince.current) return;
+    noteRef.current("demo_prices_closed", { method: pricesExit.current, duration_ms: Date.now() - pricesSince.current });
+    pricesSince.current = 0;
+    pricesExit.current = "history";
+  }, [pricesOn]);
+  // Opened straight from the link the team sends.
+  const pricesLanding = useRef(pricesOn);
+  useEffect(() => {
+    // Once, on arrival.
+    if (pricesLanding.current) log("demo_owner_precios", { origen: "enlace" });
+  }, []);
+  const showPrices = (origin: string) => {
+    if (!owner) return;
+    log("demo_owner_precios", { origen: origin });
+    if (!pricesOn) window.history.pushState(null, "", owner.pricesHref);
+    window.scrollTo({ top: 0 });
+  };
+  const showDemo = (method: string) => {
+    if (!owner || !pricesOn) return;
+    pricesExit.current = method;
+    window.history.pushState(null, "", owner.demoHref);
+    window.scrollTo({ top: 0 });
+  };
+  const contactLink = (a: Action, className: string, place: string, label = a.label) => (
     <a
       className={className}
       href={a.href}
       {...(a.kind === "phone" || a.kind === "email" ? {} : external)}
+      {...cta(`contact_${a.kind}`, place, a.kind === "url" ? "agency_contact_page" : a.kind, a.kind === "listing" ? "navigation" : "buyer_contact")}
       onClick={() => log(a.kind === "listing" ? "demo_publicacion_original" : "demo_contacto", { canal: a.kind })}
     >
       <ContactIcon kind={a.kind} />
@@ -184,35 +402,64 @@ export function DemoView({
 
   return (
     <div className={`dv2-page ${agency.titleFont === "serif" ? "is-serif" : ""}`} style={brandStyle}>
-      {presentation && demo.banner && (
+      {owner && <OwnerHeader demo={demo} owner={owner} log={log} pricesOn={pricesOn} onPrices={showPrices} onDemo={showDemo} />}
+      {backToDemo && (
+        <a className="dv2-back-demo" href={backToDemo} {...cta("buyer_back_to_demo", "buyer_view", "demo", "navigation")}>
+          <ArrowLeft size={16} aria-hidden="true" /> Volver al modo demo
+        </a>
+      )}
+      {owner && pricesOn && (
+        <section className="dv2-prices" aria-label="Planes y créditos">
+          <div className="container dv2-prices-head">
+            <button type="button" className="dv2-prices-back" {...cta("prices_back", "pricing_section", "demo", "navigation")} onClick={() => showDemo("button")}>
+              ← Volver a la propiedad
+            </button>
+          </div>
+          <div className="dv2-prices-body">{plans}</div>
+        </section>
+      )}
+      {!owner && !backToDemo && presentation && demo.banner && (
         <div className="dv2-banner" role="note">
           Demo preparada para {agency.name} ·{" "}
-          <a href={ctaHref(demo.id, demo.agencyId)} {...external} onClick={() => log("demo_cta_click")}>
+          <a href={ctaHref(demo.id, demo.agencyId)} {...external} {...cta("banner_by_habita", "banner", "habita_studio")} onClick={() => log("demo_cta_click")}>
             Por habita.
           </a>
         </div>
       )}
-      <header className="dv2-header">
-        <div className="container">
-          <Brand agency={agency} />
-          <nav className="dv2-nav-links" aria-label="Secciones">
-            <a href="#propiedad">Propiedad</a>
-            {(demo.map || demo.location) && <a href="#ubicacion">Ubicación</a>}
-            <a href="#contacto">Contacto</a>
-          </nav>
-          <div className="dv2-header-actions">
-            {demo.listingUrl && (
-              <a className="dv2-header-link" href={demo.listingUrl} {...external}>
-                Ver publicación original <ExternalLink size={14} aria-hidden="true" />
-              </a>
+      {!owner && (
+        <header className="dv2-header is-buyer">
+          <div className="container">
+            <span className="dv2-owner-habita dv2-habita-mark" aria-label="Habita">
+              <House size={20} aria-hidden="true" />
+              <span aria-hidden="true">HABITA</span>
+            </span>
+            {source.kind === "public" && (
+              <button type="button" className="dv2-header-share" onClick={() => void shareListing()} {...cta("buyer_share", "header", "share_listing", "content")}>
+                <Share2 size={17} aria-hidden="true" /> <span>Compartir</span>
+              </button>
             )}
-            {primary && primary.kind !== "listing" && contactLink(primary, "dv2-header-cta", primary.short)}
           </div>
-        </div>
-      </header>
+          {shareNote && (
+            <p className="dv2-share-note" role="status">
+              {shareNote}
+            </p>
+          )}
+        </header>
+      )}
 
-      <div className="container dv2-main">
-        <section id="propiedad" className="dv2-heading" aria-labelledby="dv2-title">
+      <div className="container dv2-main" hidden={pricesOn}>
+        {owner ? (
+          <section id="propiedad" className="dv2-hero is-compact" aria-labelledby="dv2-hero-title">
+            <h1 id="dv2-hero-title" className="dv2-sr">
+              Demo de {demo.title} para {agency.name}
+            </h1>
+            <p className="dv2-hero-pill">Demo para inmobiliaria</p>
+            <a className="dv2-buyer-link" href={owner.buyerHref} {...cta("owner_buyer_view", "heading", "demo_buyer_view", "navigation")} onClick={() => log("demo_owner_buyer_view", {}, true)}>
+              <Eye size={17} aria-hidden="true" /> Ver como comprador <ArrowRight size={17} aria-hidden="true" />
+            </a>
+          </section>
+        ) : (
+        <section id="propiedad" className="dv2-heading is-buyer" aria-labelledby="dv2-title">
           <div>
             {demo.reference && <p className="dv2-ref">Ref. {demo.reference}</p>}
             <h1 id="dv2-title">{demo.title}</h1>
@@ -221,24 +468,85 @@ export function DemoView({
                 <MapPin size={17} aria-hidden="true" /> {demo.location}
               </p>
             )}
-            {demo.features && <p className="dv2-features">{demo.features}</p>}
           </div>
-          <p className={`dv2-price ${demo.price ? "" : "is-ask"}`}>
-            {demo.operation && <span className="dv2-chip">{demo.operation}</span>}
-            <strong>{priceLabel}</strong>
-          </p>
         </section>
+        )}
 
         <Gallery
           demo={demo}
           source={source}
           log={log}
-          sideAction={primary && primary.kind !== "listing" ? contactLink(primary, "dv2-contact-main") : null}
+          note={note}
+          aside={
+            owner ? null : (
+              <>
+                <div className="dv2-summary" aria-label="Resumen de la propiedad">
+                  <p className={`dv2-price ${demo.price ? "" : "is-ask"}`}>
+                    {demo.operation && <span className="dv2-chip">{demo.operation}</span>}
+                    <strong>{priceLabel}</strong>
+                  </p>
+                  {demo.features && <p className="dv2-features">{demo.features}</p>}
+                </div>
+                {(primary || visitHref) && (
+                  <div className="dv2-buyer-contact" ref={contactBox}>
+                    {primary && contactLink(primary, "dv2-contact-main", "gallery_side")}
+                    {inquiry && contactLink(inquiry, "dv2-contact-alt", "gallery_side", "Enviar consulta")}
+                    {visitHref && (
+                      <a className="dv2-contact-alt" href={visitHref} {...external} {...cta("schedule_visit", "gallery_side", "visit_scheduling", "buyer_contact")} onClick={() => log("demo_visita")}>
+                        <CalendarDays size={18} aria-hidden="true" /> <span>Agendar visita</span>
+                      </a>
+                    )}
+                  </div>
+                )}
+                {!backToDemo && presentation && demo.prospect && invite && <PanelInvite invite={invite} place="lateral" log={log} />}
+              </>
+            )
+          }
+          owner={owner}
+          ownerActions={owner && source.kind === "public" ? <OwnerValue demo={demo} token={source.token} log={log} /> : null}
         />
         {demo.photos.some((p) => p.versions.length) && <p className="dv2-illustrative">{TEXT.illustrative}</p>}
+        {!owner && (
+          <nav className="dv2-tabs" aria-label="La ficha de la propiedad">
+            <a href="#sobre">Sobre la propiedad</a>
+            <a href="#propiedad">Galería</a>
+            {(demo.map || demo.location) && <a href="#ubicacion">Ubicación</a>}
+            <a href="#contacto">Contactar</a>
+          </nav>
+        )}
+        {owner && source.kind === "public" && (
+          <>
+            <AnotherProperty owner={owner} log={log} />
+            <nav className="dv2-tabs" aria-label="La ficha de la propiedad">
+              <a href="#sobre">Sobre la propiedad</a>
+              <a href="#propiedad">Galería</a>
+              {(demo.map || demo.location) && <a href="#ubicacion">Ubicación</a>}
+              <a href="#contacto">Contactar</a>
+            </nav>
+            <section id="sobre" className="dv2-heading is-ficha" aria-labelledby="dv2-title">
+          <div>
+            {demo.reference && <p className="dv2-ref">Ref. {demo.reference}</p>}
+            <h2 id="dv2-title">{demo.title}</h2>
+            {demo.location && (
+              <p className="dv2-location">
+                <MapPin size={17} aria-hidden="true" /> {demo.location}
+              </p>
+            )}
+            {demo.features && <p className="dv2-features">{demo.features}</p>}
+          </div>
+          <div className="dv2-heading-side">
+            <p className={`dv2-price ${demo.price ? "" : "is-ask"}`}>
+              {demo.operation && <span className="dv2-chip">{demo.operation}</span>}
+              <strong>{priceLabel}</strong>
+            </p>
+            {primary && primary.kind !== "listing" && contactLink(primary, "dv2-ficha-contact", "ficha_heading", "Consultar por esta propiedad")}
+          </div>
+        </section>
+          </>
+        )}
 
         {demo.facts.length > 0 && (
-          <ul className="dv2-facts" aria-label="Datos principales">
+          <ul id={owner ? undefined : "sobre"} className="dv2-facts" aria-label="Datos principales">
             {demo.facts.map((f, i) => {
               const Icon = FACT_ICON[f.icon];
               return (
@@ -254,7 +562,7 @@ export function DemoView({
           </ul>
         )}
 
-        <div className="dv2-body">
+        <div className="dv2-body" id={owner || demo.facts.length > 0 ? undefined : "sobre"}>
           <div className="dv2-body-main">
             {demo.description && <Description text={demo.description} />}
             {demo.amenities.length > 0 && (
@@ -269,7 +577,7 @@ export function DemoView({
             )}
           </div>
           <aside id="contacto" className="dv2-contact-card" aria-label={`Contacto con ${agency.name}`}>
-            <Brand agency={agency} small />
+            <Brand agency={agency} small place="contact_card" />
             {demo.agent && (
               <div className="dv2-agent">
                 {demo.agent.photoUrl && !agentPhotoFailed ? (
@@ -294,15 +602,16 @@ export function DemoView({
                 </span>
               </div>
             )}
-            {primary && contactLink(primary, "dv2-contact-main")}
+            {primary && contactLink(primary, "dv2-contact-main", "contact_card")}
             {others.map((a) => (
-              <span key={a.kind}>{contactLink(a, "dv2-contact-alt")}</span>
+              <span key={a.kind}>{contactLink(a, "dv2-contact-alt", "contact_card")}</span>
             ))}
             {demo.listingUrl && primary?.kind !== "listing" && (
               <a
                 className="dv2-contact-link"
                 href={demo.listingUrl}
                 {...external}
+                {...cta("contact_listing", "contact_card", "listing", "navigation")}
                 onClick={() => log("demo_publicacion_original")}
               >
                 <ExternalLink size={15} aria-hidden="true" /> Ver publicación original
@@ -346,7 +655,8 @@ export function DemoView({
         )}
 
         {/* Only on the team's presentation link of an agency without an account: buyers never see it. */}
-        {presentation && demo.prospect && (
+        {!owner && !backToDemo && presentation && demo.prospect && invite && <PanelInvite invite={invite} place="final" log={log} />}
+        {!owner && presentation && demo.prospect && !invite && (
           <section className="dv2-habita" aria-labelledby="dv2-habita">
             <div>
               <h2 id="dv2-habita">¿Te imaginás todas tus propiedades así?</h2>
@@ -359,7 +669,8 @@ export function DemoView({
               <a
                 className="dv2-habita-cta"
                 href={source.kind === "public" ? `/panel/empezar?demo=${source.token}` : "/panel/empezar"}
-                onClick={() => log("demo_agency_cta_clicked", { origen: "demo" })}
+                {...cta("create_agency", "habita_section", "agency_signup")}
+                onClick={() => log("demo_agency_cta_clicked", { origen: "demo", cta_id: "create_agency", cta_location: "habita_section" }, true)}
               >
                 Crear mi inmobiliaria gratis
               </a>
@@ -374,32 +685,34 @@ export function DemoView({
             <p>{demo.closingText ?? `Contactá a ${agency.name} para conocer ${noun}.`}</p>
           </div>
           {visitHref ? (
-            <a className="dv2-closing-cta" href={visitHref} {...external} onClick={() => log("demo_visita")}>
+            <a className="dv2-closing-cta" href={visitHref} {...external} {...cta("schedule_visit", "closing", "visit_scheduling", "buyer_contact")} onClick={() => log("demo_visita")}>
               <CalendarDays size={18} aria-hidden="true" /> Coordinar una visita
             </a>
           ) : (
-            primary && contactLink(primary, "dv2-closing-cta")
+            primary && contactLink(primary, "dv2-closing-cta", "closing")
           )}
         </section>
       </div>
 
-      <footer className="dv2-footer">
+      <footer className="dv2-footer" hidden={pricesOn}>
         <div className="container">
-          <Brand agency={agency} small />
+          <Brand agency={agency} small place="footer" />
           <nav aria-label="Enlaces">
             {demo.listingUrl && (
-              <a href={demo.listingUrl} {...external}>
+              <a href={demo.listingUrl} {...external} {...cta("contact_listing", "footer", "listing", "navigation")}>
                 Ver aviso original
               </a>
             )}
-            <a href="#contacto">Contacto</a>
+            <a href="#contacto" {...cta("nav_contact", "footer", "section_contact", "navigation")}>
+              Contacto
+            </a>
           </nav>
           <span className="dv2-tech">
             <Sparkles size={12} aria-hidden="true" /> Tecnología de <b>habita.</b>
           </span>
         </div>
       </footer>
-      {primary && <div className="dv2-sticky">{contactLink(primary, "dv2-contact-main")}</div>}
+      {primary && !owner && !contactInView && <div className="dv2-sticky">{contactLink(primary, "dv2-contact-main", "sticky_bar")}</div>}
     </div>
   );
 }
@@ -410,11 +723,11 @@ function ContactIcon({ kind }: { kind: Action["kind"] }) {
   return <Icon size={18} aria-hidden="true" />;
 }
 
-function Brand({ agency, small = false }: { agency: PublicDemo["agency"]; small?: boolean }) {
+function Brand({ agency, small = false, place }: { agency: PublicDemo["agency"]; small?: boolean; place: string }) {
   const inner = agency.logo ? <img src={agency.logo} alt={agency.name} /> : <strong>{agency.name}</strong>;
   const className = `dv2-brand ${small ? "is-small" : ""}`;
   return agency.website ? (
-    <a className={className} href={agency.website} {...external}>
+    <a className={className} href={agency.website} {...external} {...cta("agency_website", place, "agency_website", "buyer_contact")}>
       {inner}
     </a>
   ) : (
@@ -554,36 +867,64 @@ function LazyMap({ map, title }: { map: NonNullable<PublicDemo["map"]>; title: s
           </>
         )}
       </div>
-      <a className="dv2-map-open" href={open} target="_blank" rel="noopener noreferrer">
+      <a className="dv2-map-open" href={open} target="_blank" rel="noopener noreferrer" {...cta("open_map", "location", "external_map", "content")}>
         Abrir el mapa en otra pestaña
       </a>
     </>
   );
 }
 
-/** One carousel of the property's photos, each with the styles prepared for it. */
+/** One entry of the carousel: a photo (by its index) or the property's video. */
+type Entry = { kind: "photo"; index: number } | { kind: "video" };
+
+/**
+ * One carousel of the property's photos, each with the styles prepared for
+ * it, and the property's video where the agency placed it: first or second
+ * among the thumbnails, or a card under the gallery. Everything here is free:
+ * the agency's "Generar" and the photos still without a staging lead to its
+ * panel (sign-up first), never to a generation from the demo.
+ */
 function Gallery({
   demo,
   source,
   log,
-  sideAction,
+  note,
+  aside = null,
+  owner = null,
+  ownerActions = null,
 }: {
   demo: PublicDemo;
   source: Source;
-  log: (event: string, extra?: Record<string, unknown>) => unknown;
-  sideAction: React.ReactNode;
+  log: (event: string, extra?: EventProperties, beacon?: boolean) => unknown;
+  note: (event: string, extra?: EventProperties) => unknown;
+  /** The buyers' column under the styles: the property's summary and the contact with the agency. */
+  aside?: React.ReactNode;
+  /** The agency's own view: every style, ready to choose or "Generar" in its panel. */
+  owner?: OwnerMode | null;
+  /** The agency's "Descargar imágenes" and "Compartir ficha", under its styles. */
+  ownerActions?: React.ReactNode;
 }) {
   const photos = demo.photos;
   const styleNames = useMemo(
     () => Object.fromEntries(demo.styles.map((s) => [s.id, s.name])) as Record<string, string>,
     [demo.styles],
   );
-  const name = (style: string) => styleNames[style] ?? style;
-  const [index, setIndex] = useState(0);
+  // A retouch the listing shows is one more option: the photo as its owner saved it.
+  const name = (style: string) => styleNames[style] ?? (style === RETOUCH_STYLE ? "Retocada" : demoStyleName(style));
+  // The agency's own view always opens compared: the chosen style, else the first style with a staging.
+  const openStyle = owner
+    ? (demo.openStyle ?? demo.styles.find((st) => photos.some((p) => p.versions.some((v) => v.style === st.id)))?.id ?? null)
+    : demo.openStyle;
+  // The before/after is the first impression, even with the video first among the thumbnails:
+  // the agency opens on the first photo with a staging, the buyers on the first photo.
+  const [index, setIndex] = useState(() => (owner ? Math.max(0, photos.findIndex((p) => p.versions.length > 0)) : 0));
+  // The video in the big frame instead of a photo (only a real, finished one; only public links can play it).
+  const video = source.kind === "public" ? demo.video : null;
+  const [videoOn, setVideoOn] = useState(false);
   // Remembered per photo during the visit.
   const [states, setStates] = useState<Record<string, PhotoState>>({});
   // The style last chosen: photos not seen yet open in it when they have it.
-  const lastStyle = useRef(demo.openStyle);
+  const lastStyle = useRef(openStyle);
   // Where the comparison line was last left, on any photo.
   const lastPosition = useRef(50);
   const [failed, setFailed] = useState<Record<string, boolean>>({});
@@ -591,15 +932,31 @@ function Gallery({
   const [ratios, setRatios] = useState<Record<string, number>>({});
   const [full, setFull] = useState(false);
   const [allStyles, setAllStyles] = useState(false);
+  // Five thumbnails and "+N fotos" (the mockup); the rest open on demand.
+  const [allThumbs, setAllThumbs] = useState(false);
+  // Buyers on phones: «Estilos» and «Video» share one place, as two tabs (the mockup); on desktop both show.
+  const [asideTab, setAsideTab] = useState<"styles" | "video">("styles");
   const thumbs = useRef<HTMLOListElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
   const swipe = useRef<{ x: number; y: number } | null>(null);
+  // What the timers and the slider report with every event (the rest comes from the demo's super properties).
+  const base = { demo_id: demo.id, agency_id: demo.agencyId, owner_mode: Boolean(owner) };
+
+  // The carousel's order: the video first or second when the agency placed it there.
+  const entries = useMemo<Entry[]>(() => {
+    const list: Entry[] = photos.map((_, i) => ({ kind: "photo", index: i }));
+    if (video?.placement === "first") list.unshift({ kind: "video" });
+    else if (video?.placement === "second") list.splice(Math.min(1, list.length), 0, { kind: "video" });
+    return list;
+  }, [photos, video?.placement]);
+  const at = videoOn ? entries.findIndex((e) => e.kind === "video") : entries.findIndex((e) => e.kind === "photo" && e.index === index);
 
   const photo = photos[index];
   // Opening mode B: every photo with stagings opens compared, the line in the middle
   // (in the style last chosen, else the configured one, else its first). Otherwise, the original.
   const opening = (p: PublicPhoto): PhotoState => {
-    if (!demo.openStyle || !p.versions.length) return ORIGINAL;
-    const style = [lastStyle.current, demo.openStyle].find((st) => st && p.versions.some((v) => v.style === st));
+    if (!openStyle || !p.versions.length) return ORIGINAL;
+    const style = [lastStyle.current, openStyle].find((st) => st && p.versions.some((v) => v.style === st));
     return { style: style ?? p.versions[0].style, compare: true, position: 50 };
   };
   const state = photo ? (states[photo.id] ?? opening(photo)) : ORIGINAL;
@@ -608,37 +965,97 @@ function Gallery({
   const stagedFailed = Boolean(stagedKey && failed[stagedKey]);
   // A version that fails to load leaves the original on screen.
   const showing = version && !stagedFailed ? version : null;
-  const comparing = Boolean(showing && state.compare);
+  const comparing = Boolean(showing && state.compare) && !videoOn;
   const alt = (i: number, p: PublicPhoto) => `${demo.title}, foto ${i + 1}${p.label ? `: ${p.label}` : ""}`;
 
   const setState = useCallback(
     (next: PhotoState) => photo && setStates((s) => ({ ...s, [photo.id]: next })),
     [photo],
   );
-  const go = useCallback(
-    (step: number) => setIndex((i) => (photos.length ? (i + step + photos.length) % photos.length : 0)),
-    [photos.length],
+  // How the visitor moved to the photo on screen, reported once it changes.
+  const navMethod = useRef("arrow");
+  const show = useCallback(
+    (entry: Entry | undefined, method: string) => {
+      if (!entry) return;
+      navMethod.current = method;
+      if (entry.kind === "video") {
+        setVideoOn(true);
+        note("demo_video_opened", { placement: video?.placement ?? "", method });
+        return;
+      }
+      setVideoOn(false);
+      setIndex(entry.index);
+    },
+    // note is rebuilt on every render; the video's placement is what matters.
+    [video?.placement],
   );
+  const go = useCallback(
+    (step: number, method = "arrow") => {
+      if (!entries.length) return;
+      const from = at < 0 ? 0 : at;
+      show(entries[(from + step + entries.length) % entries.length], method);
+    },
+    [entries, at, show],
+  );
+  // The styles chosen during the visit, in order: which comes first and how many are tried.
+  const picks = useRef<string[]>([]);
   const choose = (style: string) => {
+    setVideoOn(false);
     // The line stays where the buyer left it: moved all the way to one side,
     // the next style is seen the same way, not from the middle again.
     setState({ style, compare: true, position: state.style && state.compare ? state.position : lastPosition.current });
     lastStyle.current = style;
-    log("demo_estilo", { estilo: style });
+    picks.current.push(style);
+    leadEvent("demo_style_selected", { style });
+    log("demo_estilo", {
+      estilo: style,
+      photo_id: photo.id,
+      photo_index: index,
+      style_id: style,
+      previous_style_id: state.style ?? "original",
+      selection_order: picks.current.length,
+      distinct_styles: new Set(picks.current).size,
+    });
   };
-  const backToOriginal = () => {
-    setState(ORIGINAL);
-    log("demo_original");
-  };
+  const seen = useRef(new Set<number>());
+  const shownIndex = useRef(index);
+  useEffect(() => {
+    seen.current.add(index);
+    if (shownIndex.current === index) return;
+    // The first photo is shown by itself; only a change made by the visitor gets here.
+    if (photos[index]) leadEvent("demo_photo_selected", { photo: photos[index].id });
+    note("demo_photo_changed", {
+      photo_id: photos[index]?.id ?? "",
+      photo_index: index,
+      from_photo_id: photos[shownIndex.current]?.id ?? "",
+      from_index: shownIndex.current,
+      method: navMethod.current,
+      photos_total: photos.length,
+      photos_seen: seen.current.size,
+    });
+    shownIndex.current = index;
+    // Only a change of photo is reported.
+  }, [index]);
+  const fullMethod = useRef("button");
+  const wasFull = useRef(full);
+  useEffect(() => {
+    if (wasFull.current === full) return;
+    wasFull.current = full;
+    note("demo_fullscreen_toggled", { action: full ? "open" : "close", method: fullMethod.current, photo_id: photos[index]?.id ?? "", photo_index: index });
+    // Only opening or closing is reported.
+  }, [full]);
 
-  // Arrows move between photos (not while the comparison slider has the focus); Esc leaves full screen.
+  // Arrows move between photos (not while the comparison slider or the player has the focus); Esc leaves full screen.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") return setFull(false);
+      if (e.key === "Escape") {
+        fullMethod.current = "escape";
+        return setFull(false);
+      }
       const target = e.target as HTMLElement | null;
-      if (target?.closest("input, textarea, select")) return;
-      if (e.key === "ArrowRight") go(1);
-      if (e.key === "ArrowLeft") go(-1);
+      if (target?.closest("input, textarea, select, video")) return;
+      if (e.key === "ArrowRight") go(1, "keyboard");
+      if (e.key === "ArrowLeft") go(-1, "keyboard");
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -654,57 +1071,145 @@ function Gallery({
   // The current thumbnail stays in view; the next original starts loading.
   useEffect(() => {
     const list = thumbs.current;
-    const item = list?.querySelector<HTMLElement>(`[data-index="${index}"]`);
+    const item = list?.querySelector<HTMLElement>(`[data-entry="${at}"]`);
     if (list && item) list.scrollTo({ left: item.offsetLeft - list.clientWidth / 2 + item.clientWidth / 2, behavior: "smooth" });
     const next = photos[(index + 1) % Math.max(1, photos.length)];
     if (next && next !== photo) new Image().src = urlFor(source, next.id, null, 2048);
-  }, [index, photos, photo, source]);
+  }, [index, at, photos, photo, source]);
 
   // The strip scrolls a page at a time; the photo changes only on a thumbnail or the arrows on it.
-  const scrollThumbs = (step: number) =>
+  const scrollThumbs = (step: number) => {
+    note("demo_thumbnails_scrolled", { direction: step > 0 ? "next" : "previous" });
     thumbs.current?.scrollBy({ left: step * thumbs.current.clientWidth * 0.8, behavior: "smooth" });
+  };
+
+  // Time on screen of each photo in each style (or its original), counted while the tab is visible.
+  const views = useRef<ViewTimer | null>(null);
+  useEffect(() => {
+    if (source.kind !== "public") return;
+    const timer = new ViewTimer("demo_style_viewed");
+    views.current = timer;
+    return () => {
+      timer.dispose();
+      views.current = null;
+    };
+  }, [source.kind]);
+  const viewStyle = photo ? (versionOf(photo, state.style) && !stagedFailed ? state.style : null) : null;
+  const viewMode = viewStyle ? (state.compare ? "compare" : "staged") : "original";
+  useEffect(() => {
+    if (!photo || videoOn) return;
+    views.current?.show(`${photo.id}:${viewStyle ?? "o"}:${viewMode}`, {
+      ...base,
+      photo_id: photo.id,
+      photo_index: index,
+      style_id: viewStyle ?? "original",
+      view_mode: viewMode,
+    });
+    // The view changes with the photo, its style and the mode; base is the same demo.
+  }, [photo?.id, viewStyle, viewMode, index, videoOn]);
 
   if (!photo) return <p className="dv2-empty">Esta propiedad todavía no tiene fotos.</p>;
-  const ratio = ratios[photo.id] ?? 4 / 3;
+  const ratio = videoOn && video ? formatRatio(video.format) : (ratios[photo.id] ?? 4 / 3);
   const originalKey = `${photo.id}:o`;
-  const panelTitle =
-    demo.propertyType === "office" ? "Imaginá tu oficina a tu estilo" : "Imaginá este espacio a tu estilo";
-  // Three styles at first; the chosen one always stays in view.
-  const listed = allStyles
-    ? photo.versions
-    : photo.versions.filter((v, i) => i < VISIBLE_STYLES || v.style === state.style);
-  const panel = photo.versions.length > 0 && (
-    <section className="dv2-panel" aria-labelledby="dv2-panel-title">
-      <h2 id="dv2-panel-title">{panelTitle}</h2>
-      <p className="dv2-panel-hint">Elegí una propuesta para esta foto.</p>
-      <div className="dv2-options" role="radiogroup" aria-labelledby="dv2-panel-title">
-        {listed.map((v) => {
-          const on = state.style === v.style;
+  // The video's cover: the property's cover in its main style, a real picture of this property.
+  const cover = demo.cover ?? photos[0];
+  const coverVersion = cover.versions[0] ?? null;
+  const poster = urlFor(source, cover.id, coverVersion, 1280);
+  const posterThumb = urlFor(source, cover.id, coverVersion, 480);
+  const videoSrc = video && source.kind === "public" ? publicVideoUrl(source.token, video.id) : "";
+  const duration = video?.durationMs ? clock(video.durationMs) : null;
+  const openVideo = (method: string) => {
+    show({ kind: "video" }, method);
+    stageRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+  const toggleStyles = () => {
+    note("demo_more_styles_toggled", { expanded: !allStyles, photo_id: photo.id });
+    setAllStyles((a) => !a);
+  };
+  // The agency's panel, with what it asked for here already chosen.
+  const intentLink = (intent: Exclude<DemoIntent, null>, id: string, place: string) =>
+    owner
+      ? {
+          href: withIntent(owner.href, intent),
+          ...cta(id, place, "signup_invitation", "habita_b2b", { intent: intent.kind }),
+          onClick: () =>
+            log("demo_agency_cta_clicked", { origen: place, cta_id: id, cta_intent: intent.kind, photo_id: photo.id, ...(intent.kind === "generate" ? { style_id: intent.style } : {}) }, true),
+        }
+      : null;
+
+  // The styles: the buyers see only the versions made; the agency also every other style, with "Generar".
+  // The versions keep the demo's order (main style first); the styles still to generate follow the
+  // demo's configured order (its region's for new demos), else the catalog's.
+  const sequence = demo.styleOrder ?? [];
+  const rank = (id: string) => (sequence.includes(id) ? sequence.indexOf(id) : sequence.length);
+  const rows = owner
+    ? [
+        ...photo.versions.map((v) => ({ style: v.style, version: v as PhotoVersion | null })),
+        ...DEMO_STYLES[demo.propertyType]
+          .filter((c) => !photo.versions.some((v) => v.style === c.id))
+          .map((c, i) => ({ c, i }))
+          .sort((a, b) => rank(a.c.id) - rank(b.c.id) || a.i - b.i)
+          .map(({ c }) => ({ style: c.id, version: null })),
+      ]
+    : photo.versions.map((v) => ({ style: v.style, version: v as PhotoVersion | null }));
+  const visibleCount = owner ? OWNER_VISIBLE_STYLES : VISIBLE_STYLES;
+  const cards = allStyles ? rows : rows.filter((r, i) => i < visibleCount || (r.version && r.style === state.style));
+  // «Mostrar selector de estilos» off: buyers see the opening style only (the agency's own view keeps its picker).
+  const stylesCard = rows.length > 0 && (owner || demo.styleSelector !== false) && (
+    <section className={`dv2-styles ${owner ? "is-owner" : "is-buyer"}`} aria-labelledby="dv2-panel-title" id="dv2-estilos">
+      <div className="dv2-styles-head">
+        <h2 id="dv2-panel-title">
+          <Sparkles size={18} aria-hidden="true" /> Estilos
+        </h2>
+        {rows.length > visibleCount && (
+          <button type="button" className="dv2-styles-all" aria-expanded={allStyles} onClick={toggleStyles}>
+            {allStyles ? "Ver menos" : "Ver todos"} {allStyles ? <ChevronUp size={15} aria-hidden="true" /> : <ChevronRight size={15} aria-hidden="true" />}
+          </button>
+        )}
+      </div>
+      {/* Phones: one short line inviting to play with the styles, right under the photo. */}
+      {photo.versions.length > 0 && <p className="dv2-styles-hint">Tocá un estilo y mové el antes/después</p>}
+      <ul className="dv2-style-grid">
+        {cards.map((r) => {
+          const on = Boolean(r.version) && state.style === r.style && !videoOn;
+          if (r.version)
+            return (
+              <li key={r.style} className={`dv2-style-card ${on ? "is-on" : ""}`}>
+                <button type="button" className="dv2-style-pick" aria-pressed={on} onClick={() => choose(r.style)}>
+                  <img src={urlFor(source, photo.id, r.version, 480)} alt="" loading="lazy" />
+                  <span className="dv2-style-name" title={name(r.style)}>
+                    {name(r.style)}
+                  </span>
+                </button>
+                {on && (
+                  <span className="dv2-style-check" aria-hidden="true">
+                    <Check size={13} strokeWidth={3} />
+                  </span>
+                )}
+              </li>
+            );
+          const link = intentLink({ kind: "generate", photo: photo.id, style: r.style }, "owner_generate", "styles_panel");
           return (
-            <button
-              key={v.style}
-              type="button"
-              role="radio"
-              aria-checked={on}
-              className={on ? "is-on" : ""}
-              onClick={() => choose(v.style)}
-            >
-              <img src={urlFor(source, photo.id, v, 480)} alt="" loading="lazy" />
-              <span className="dv2-option-name">{name(v.style)}</span>
-              <span className="dv2-radio" aria-hidden="true">
-                {on && <Check size={13} strokeWidth={3} />}
+            <li key={r.style} className="dv2-style-card is-missing">
+              <span className="dv2-style-pick" aria-hidden="true">
+                <img src={urlFor(source, photo.id, null, 480)} alt="" loading="lazy" />
+                <span className="dv2-style-name" title={name(r.style)}>
+                  {name(r.style)}
+                </span>
               </span>
-            </button>
+              {/* Opens the panel's activation (sign-up, then the cost to confirm): nothing is charged from here. */}
+              {link && (
+                <a className="dv2-style-generate" aria-label={`Generar ${name(r.style)} en tu panel`} {...link}>
+                  <span className="dv2-style-generate-pill">
+                    Generar <Sparkles size={13} aria-hidden="true" />
+                  </span>
+                </a>
+              )}
+            </li>
           );
         })}
-      </div>
-      {photo.versions.length > VISIBLE_STYLES && (
-        <button type="button" className="dv2-more" aria-expanded={allStyles} onClick={() => setAllStyles((a) => !a)}>
-          {allStyles ? "Ver menos estilos" : `Ver más estilos (${photo.versions.length - VISIBLE_STYLES})`}
-          {allStyles ? <ChevronUp size={15} aria-hidden="true" /> : <ChevronDown size={15} aria-hidden="true" />}
-        </button>
-      )}
-      {stagedFailed ? (
+      </ul>
+      {stagedFailed && (
         <p className="dv2-note is-error" role="alert">
           No pudimos cargar esta ambientación. Seguís viendo la foto original.
           <button
@@ -718,43 +1223,75 @@ function Gallery({
             <RotateCw size={14} aria-hidden="true" /> Reintentar
           </button>
         </p>
-      ) : state.style ? (
-        <div className="dv2-actions">
-          {!state.compare && (
-            <button type="button" className="dv2-secondary" onClick={() => setState({ ...state, compare: true })}>
-              {TEXT.compare}
-            </button>
-          )}
-          <button type="button" className="dv2-secondary" onClick={backToOriginal}>
-            <ArrowLeft size={17} aria-hidden="true" /> {TEXT.backToOriginal}
-          </button>
-        </div>
-      ) : (
-        <p className="dv2-note">
-          <Info size={15} aria-hidden="true" /> {TEXT.keepsOriginal}
-        </p>
       )}
     </section>
   );
 
+  // "Recorré la transformación": the video as its own card, under the gallery.
+  // The buyers' phone tabs: the card also lives in «Video» when the video sits among the thumbnails.
+  const buyerTabs = !owner && Boolean(video) && rows.length > 0;
+  // The agency's demo: a compact horizontal card right after the photos and before Descargar / Compartir.
+  const ownerVideoCard = owner && video?.placement === "below" && (
+    <OwnerVideoCard key={video.id} src={videoSrc} cover={posterThumb} durationMs={video.durationMs} onOpen={openVideo} />
+  );
+  const videoCard = !owner && (video?.placement === "below" || buyerTabs) && (
+    <section
+      className={`dv2-video-card ${video?.placement === "below" ? "" : "is-tab-only"}`}
+      aria-labelledby="dv2-video-title"
+      id="dv2-aside-video"
+      {...(buyerTabs ? { role: "tabpanel" } : {})}
+    >
+      <button type="button" className="dv2-video-cover" aria-label="Ver el video" onClick={() => openVideo("card_cover")}>
+        <img src={posterThumb} alt="" loading="lazy" />
+        <span className="dv2-play" aria-hidden="true">
+          <Play size={20} fill="currentColor" />
+        </span>
+      </button>
+      <div>
+        <h2 id="dv2-video-title">Recorré la transformación</h2>
+        <p>Mirá el antes y después de {demo.propertyType === "office" ? "esta oficina" : "esta propiedad"}.</p>
+        <button type="button" className="dv2-video-cta" onClick={() => openVideo("card_button")}>
+          {owner ? (
+            <>
+              Ver video <ArrowRight size={16} aria-hidden="true" />
+            </>
+          ) : (
+            <>
+              <Play size={15} aria-hidden="true" /> Ver video{duration ? ` (${duration})` : ""}
+            </>
+          )}
+        </button>
+      </div>
+    </section>
+  );
+
+  // Five thumbnails (the video counts as one) and "+N fotos"; all of them on demand.
+  const few = !allThumbs && entries.length > 6;
+  const listedEntries = few ? entries.slice(0, 5) : entries;
+  const hiddenPhotos = entries.length - listedEntries.length;
+  // The agency's photo still without a staging: its original is free to see; staging it is in its panel.
+  const pending = Boolean(owner) && photo.versions.length === 0 && !videoOn;
+  const pendingLink = pending ? intentLink({ kind: "stage", photo: photo.id }, "owner_stage_photo", "gallery_stage") : null;
+
   return (
-    <div className={`dv2-gallery ${panel ? "has-panel" : ""}`}>
+    <div className="dv2-gallery has-panel">
       <div className="dv2-media">
         <div
-          className={`dv2-stage ${full ? "is-full" : ""}`}
+          ref={stageRef}
+          className={`dv2-stage ${full ? "is-full" : ""} ${videoOn ? "is-video" : ""}`}
           role="group"
           aria-roledescription="carrusel"
-          aria-label={`Foto ${index + 1} de ${photos.length}`}
+          aria-label={videoOn ? "Video de la propiedad" : `Foto ${index + 1} de ${photos.length}`}
           onPointerDown={(e) => {
-            if (!comparing) swipe.current = { x: e.clientX, y: e.clientY };
+            if (!comparing && !videoOn) swipe.current = { x: e.clientX, y: e.clientY };
           }}
           onPointerUp={(e) => {
             const s = swipe.current;
             swipe.current = null;
             // Swiping changes photo only outside comparison: there, dragging moves the line.
-            if (!s || comparing || photos.length < 2) return;
+            if (!s || comparing || entries.length < 2) return;
             const dx = e.clientX - s.x;
-            if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(e.clientY - s.y)) go(dx < 0 ? 1 : -1);
+            if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(e.clientY - s.y)) go(dx < 0 ? 1 : -1, "swipe");
           }}
           onPointerCancel={() => (swipe.current = null)}
         >
@@ -773,10 +1310,22 @@ function Gallery({
           <div
             className="dv2-backdrop"
             aria-hidden="true"
-            style={{ backgroundImage: `url("${urlFor(source, photo.id, comparing ? null : showing, 480)}")` }}
+            style={{ backgroundImage: `url("${videoOn ? posterThumb : urlFor(source, photo.id, comparing ? null : showing, 480)}")` }}
           />
           <div className="dv2-frame" style={{ "--ratio": String(ratio) } as React.CSSProperties}>
-            {failed[originalKey] ? (
+            {videoOn && video ? (
+              // Played only when asked: never automatically, never with sound by itself; its own proportions.
+              <video
+                key={video.id}
+                className="dv2-video"
+                src={videoSrc}
+                poster={poster}
+                controls
+                playsInline
+                preload="none"
+                onPlay={() => note("demo_video_played", { placement: video.placement, format: video.format })}
+              />
+            ) : failed[originalKey] ? (
               <div className="dv2-broken">
                 No pudimos cargar esta foto.
                 <button
@@ -797,9 +1346,11 @@ function Gallery({
                 after={urlFor(source, photo.id, showing, 2048, retries[stagedKey])}
                 alt={`${alt(index, photo)}, ambientación ${name(showing.style)} con IA, ilustrativa`}
                 beforeAlt={`${alt(index, photo)}, original`}
-                beforeLabel={TEXT.original}
-                afterLabel={TEXT.staged}
+                beforeLabel="Antes"
+                afterLabel="Después"
                 initial={state.position}
+                teach={Boolean(owner)}
+                analytics={source.kind === "public" ? { ...base, photo_id: photo.id, photo_index: index, style_id: showing.style } : undefined}
                 onPositionChange={(position) => {
                   lastPosition.current = position;
                   setStates((s) => ({ ...s, [photo.id]: { ...(s[photo.id] ?? state), position } }));
@@ -825,65 +1376,511 @@ function Gallery({
               </>
             )}
           </div>
-          {photos.length > 1 && (
+          {pendingLink && (
+            <a className="dv2-pending-cta" {...pendingLink}>
+              <Lock size={15} aria-hidden="true" /> Creá tu panel y ambientá esta foto con IA
+            </a>
+          )}
+          {entries.length > 1 && (
             <>
-              <button type="button" className="dv2-nav dv2-prev" aria-label="Foto anterior" onClick={() => go(-1)}>
+              <button type="button" className="dv2-nav dv2-prev" aria-label="Anterior" onClick={() => go(-1)}>
                 <ChevronLeft size={24} />
               </button>
-              <button type="button" className="dv2-nav dv2-next" aria-label="Foto siguiente" onClick={() => go(1)}>
+              <button type="button" className="dv2-nav dv2-next" aria-label="Siguiente" onClick={() => go(1)}>
                 <ChevronRight size={24} />
               </button>
             </>
           )}
-          <span className="dv2-counter">
-            {index + 1} / {photos.length}
-          </span>
+          <span className="dv2-counter">{videoOn ? "Video" : `${index + 1} / ${photos.length}`}</span>
           <button
             type="button"
             className="dv2-full"
             aria-label={full ? "Salir de pantalla completa" : "Ver en pantalla completa"}
             aria-pressed={full}
-            onClick={() => setFull((f) => !f)}
+            onClick={() => {
+              fullMethod.current = "button";
+              setFull((f) => !f);
+            }}
           >
             {full ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
           </button>
         </div>
-        {photos.length > 1 && (
+        {entries.length > 1 && (
           <div className="dv2-thumbs">
             <button type="button" className="dv2-thumbs-step" aria-label="Ver miniaturas anteriores" onClick={() => scrollThumbs(-1)}>
               <ChevronLeft size={18} />
             </button>
-            <ol ref={thumbs} aria-label="Fotos de la propiedad">
-              {photos.map((p, i) => (
-                <li key={p.id}>
-                  <button
-                    type="button"
-                    data-index={i}
-                    aria-label={`Ver foto ${i + 1}`}
-                    aria-current={i === index ? "true" : undefined}
-                    className={i === index ? "is-on" : ""}
-                    onClick={() => setIndex(i)}
-                  >
-                    <img src={urlFor(source, p.id, null, 480)} alt="" loading="lazy" />
+            <ol ref={thumbs} aria-label="Fotos de la propiedad" className={few ? "is-few" : ""}>
+              {listedEntries.map((entry, n) => {
+                if (entry.kind === "video")
+                  return (
+                    <li key="video">
+                      <button
+                        type="button"
+                        data-entry={n}
+                        aria-label="Ver el video"
+                        aria-current={videoOn ? "true" : undefined}
+                        className={`dv2-thumb-video ${videoOn ? "is-on" : ""}`}
+                        onClick={() => show(entry, "thumbnail")}
+                      >
+                        <img src={posterThumb} alt="" loading="lazy" />
+                        <span className="dv2-play" aria-hidden="true">
+                          <Play size={16} fill="currentColor" />
+                        </span>
+                        <span className="dv2-thumb-label">Video</span>
+                      </button>
+                    </li>
+                  );
+                const p = photos[entry.index];
+                const on = !videoOn && entry.index === index;
+                const locked = Boolean(owner) && p.versions.length === 0;
+                return (
+                  <li key={p.id}>
+                    <button
+                      type="button"
+                      data-entry={n}
+                      aria-label={locked ? `Ver foto ${entry.index + 1} (original, todavía sin ambientar)` : `Ver foto ${entry.index + 1}`}
+                      aria-current={on ? "true" : undefined}
+                      className={`${on ? "is-on" : ""} ${locked ? "is-locked" : ""}`}
+                      onClick={() => show(entry, "thumbnail")}
+                    >
+                      <img src={urlFor(source, p.id, null, 480)} alt="" loading="lazy" />
+                      {locked && (
+                        <span className="dv2-thumb-lock" aria-hidden="true">
+                          <Lock size={15} />
+                          <span>Creá tu panel y ambientá esta foto con IA</span>
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                );
+              })}
+              {few && (
+                <li>
+                  <button type="button" className="dv2-thumbs-more" aria-label={`Ver las ${hiddenPhotos} fotos restantes`} onClick={() => setAllThumbs(true)}>
+                    <strong>+{hiddenPhotos}</strong>
+                    <span>fotos</span>
                   </button>
                 </li>
-              ))}
+              )}
             </ol>
             <button type="button" className="dv2-thumbs-step" aria-label="Ver más miniaturas" onClick={() => scrollThumbs(1)}>
               <ChevronRight size={18} />
             </button>
           </div>
         )}
+        {ownerVideoCard}
       </div>
-      {panel && (
-        <aside className="dv2-aside">
-          {panel}
-          {sideAction && <div className="dv2-side-action">{sideAction}</div>}
-          <span className="dv2-tech dv2-side-tech">
-            <Sparkles size={12} aria-hidden="true" /> Tecnología de <b>habita.</b>
-          </span>
-        </aside>
-      )}
+      <aside className="dv2-aside">
+        {buyerTabs && (
+          <div className="dv2-aside-tabs" role="tablist" aria-label="Estilos y video">
+            {(["styles", "video"] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                role="tab"
+                aria-selected={asideTab === t}
+                aria-controls={t === "styles" ? "dv2-estilos" : "dv2-aside-video"}
+                className={asideTab === t ? "is-on" : ""}
+                onClick={() => {
+                  setAsideTab(t);
+                  note("demo_aside_tab", { tab: t });
+                }}
+              >
+                {t === "styles" ? <Sparkles size={16} aria-hidden="true" /> : <Play size={16} aria-hidden="true" />} {t === "styles" ? "Estilos" : "Video"}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className={`dv2-aside-group ${buyerTabs ? `has-tabs is-${asideTab}` : ""}`}>
+          {stylesCard}
+          {!owner && videoCard}
+        </div>
+        {ownerActions && <div className="dv2-aside-actions">{ownerActions}</div>}
+        {aside}
+      </aside>
     </div>
+  );
+}
+
+/**
+ * The agency's video as a compact horizontal card: a frame of the video
+ * itself (the property's cover until it loads, and where the browser loads
+ * nothing before playing), Play in the middle, its real duration and
+ * «Ver video». Nothing plays by itself: the player opens on a tap.
+ */
+function OwnerVideoCard({
+  src,
+  cover,
+  durationMs,
+  onOpen,
+}: {
+  src: string;
+  cover: string;
+  durationMs: number | null;
+  onOpen: (method: string) => void;
+}) {
+  const [frame, setFrame] = useState(false);
+  const [measured, setMeasured] = useState<number | null>(null);
+  const ms = durationMs ?? measured;
+  return (
+    <section className="dv2-video-card is-owner" aria-labelledby="dv2-video-title">
+      <button type="button" className="dv2-video-cover" aria-label="Ver el video" onClick={() => onOpen("card_cover")}>
+        <img src={cover} alt="" loading="lazy" />
+        {/* Only the metadata and the first frame; muted and never played here. */}
+        <video
+          className={frame ? "is-ready" : ""}
+          src={`${src}#t=0.1`}
+          muted
+          playsInline
+          preload="metadata"
+          tabIndex={-1}
+          aria-hidden="true"
+          onLoadedMetadata={(e) => Number.isFinite(e.currentTarget.duration) && setMeasured(Math.round(e.currentTarget.duration * 1000))}
+          onLoadedData={() => setFrame(true)}
+        />
+        <span className="dv2-play" aria-hidden="true">
+          <Play size={20} fill="currentColor" />
+        </span>
+        {ms ? <span className="dv2-video-time">{clock(ms)}</span> : null}
+      </button>
+      <div>
+        <h2 id="dv2-video-title">Recorré la propiedad en video</h2>
+        <button type="button" className="dv2-video-cta" onClick={() => onOpen("card_button")}>
+          <Play size={15} aria-hidden="true" /> Ver video
+          {ms ? <span className="dv2-sr"> ({clock(ms)})</span> : null}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * The agency's way from its demo into its own panel, with this same
+ * property, photos and versions: the team's private invitation. The same
+ * text and destination next to the result and at the end of the page.
+ */
+function PanelInvite({
+  invite,
+  place,
+  log,
+}: {
+  invite: Exclude<DemoInvite, null>;
+  place: "lateral" | "final";
+  log: (event: string, extra?: EventProperties, beacon?: boolean) => unknown;
+}) {
+  const id = `dv2-invite-${place}`;
+  if ("unavailable" in invite)
+    return (
+      <section className={`dv2-invite is-${place}`} aria-labelledby={id}>
+        <p className="dv2-invite-eyebrow">Para tu inmobiliaria</p>
+        <h2 id={id}>Esta invitación ya no está disponible</h2>
+        <p>El enlace venció o ya se usó. Pedile uno nuevo al equipo de habita para trabajar esta propiedad en tu panel.</p>
+      </section>
+    );
+  return (
+    <section className={`dv2-invite is-${place}`} aria-labelledby={id}>
+      <p className="dv2-invite-eyebrow">Para tu inmobiliaria</p>
+      <h2 id={id}>Probá con esta misma propiedad</h2>
+      <p>Preparamos esta demostración para tu inmobiliaria. Entrá a tu panel para trabajar sus fotos y sumar otras propiedades.</p>
+      <a
+        className="dv2-invite-cta"
+        href={invite.panelHref}
+        {...cta(`invite_panel_${place}`, `invite_${place}`, "panel_visit")}
+        onClick={() => log("demo_agency_cta_clicked", { origen: `demo_invitacion_${place}`, cta_id: `invite_panel_${place}`, cta_location: `invite_${place}` }, true)}
+      >
+        Ingresar a mi panel
+      </a>
+      <small>
+        <Lock size={14} aria-hidden="true" /> Sin crear cuenta todavía: la creás cuando quieras guardar, y conservás las fotos y ambientaciones que estás viendo.
+      </small>
+      {invite.freeCredits > 0 && (
+        <small>
+          Incluye {invite.freeCredits} {invite.freeCredits === 1 ? "crédito" : "créditos"} para ambientar fotos nuevas.
+        </small>
+      )}
+    </section>
+  );
+}
+
+function OwnerHeader({
+  demo,
+  owner,
+  log,
+  pricesOn,
+  onPrices,
+  onDemo,
+}: {
+  demo: PublicDemo;
+  owner: OwnerMode;
+  log: (event: string, extra?: EventProperties, beacon?: boolean) => unknown;
+  /** The plans are the section on screen, instead of the property. */
+  pricesOn: boolean;
+  onPrices: (origin: string) => void;
+  onDemo: (method: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    closeRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
+  // Every way into the panel goes through the invitation's sign-up; each keeps its own id and what it was meant to open.
+  const INTENT: Record<string, string> = {
+    inicio: "panel_home",
+    imagenes: "panel_images",
+    crear_movil: "create_property",
+    crear: "create_property",
+    guardar: "save_panel",
+  };
+  const go = (origin: string) => ({
+    href: owner.href,
+    ...cta(`owner_${origin}`, origin === "guardar" ? "owner_bar" : "owner_menu", "signup_invitation", "habita_b2b", { intent: INTENT[origin] }),
+    onClick: () => log("demo_agency_cta_clicked", { origen: `demo_encabezado_${origin}`, cta_id: `owner_${origin}`, cta_intent: INTENT[origin] }, true),
+  });
+  const versions = demo.photos.reduce((n, p) => n + p.versions.length, 0);
+  return (
+    <header className="dv2-owner">
+      <div className="dv2-owner-bar">
+        <div className="dv2-owner-brand">
+          <span className="dv2-owner-habita" aria-label="Habita">
+            <House size={24} aria-hidden="true" />
+            <span aria-hidden="true">HABITA</span>
+          </span>
+          <span className="dv2-owner-pill">Demo para inmobiliaria</span>
+        </div>
+        <div className="dv2-owner-ctas">
+          <a
+            href={owner.pricesHref}
+            className={`dv2-owner-prices ${pricesOn ? "is-on" : ""}`}
+            aria-current={pricesOn ? "page" : undefined}
+            {...cta("owner_nav_pricing", "owner_bar", "pricing_section", "navigation")}
+            onClick={(e) => {
+              e.preventDefault();
+              if (pricesOn) onDemo("nav");
+              else onPrices("encabezado");
+            }}
+          >
+            <Tag size={16} aria-hidden="true" /> Precios
+          </a>
+          <a
+            href={owner.panelHref}
+            className="dv2-owner-prices"
+            {...cta("owner_nav_panel", "owner_bar", "panel_visit", "navigation")}
+            onClick={() => log("demo_agency_cta_clicked", { origen: "demo_encabezado_panel", cta_id: "owner_nav_panel", cta_intent: "panel_home" }, true)}
+          >
+            <House size={16} aria-hidden="true" /> Mi panel
+          </a>
+          <a className="dv2-owner-save" {...go("guardar")}>
+            Guardar mi panel
+          </a>
+          <button type="button" className="dv2-owner-menu-button" aria-label="Abrir el menú" aria-expanded={open} onClick={() => setOpen(true)}>
+            <Menu size={22} aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+      {open && (
+        <div className="dv2-owner-drawer-backdrop" onClick={() => setOpen(false)}>
+          <nav className="dv2-owner-drawer" aria-label="Tu panel de demostración" onClick={(e) => e.stopPropagation()}>
+            <div className="dv2-owner-drawer-head">
+              <span>
+                <small>Demo para</small>
+                <strong>{demo.agencyName}</strong>
+              </span>
+              <button ref={closeRef} type="button" className="dv2-owner-menu-button" aria-label="Cerrar el menú" onClick={() => setOpen(false)}>
+                <X size={22} aria-hidden="true" />
+              </button>
+            </div>
+            <a
+              href={owner.panelHref}
+              {...cta("owner_menu_panel", "owner_menu", "panel_visit", "navigation")}
+              onClick={() => log("demo_agency_cta_clicked", { origen: "demo_menu_panel", cta_id: "owner_menu_panel", cta_intent: "panel_home" }, true)}
+            >
+              <House size={18} aria-hidden="true" /> Ingresar a mi panel
+            </a>
+            <a
+              href={pricesOn ? owner.demoHref : "#propiedad"}
+              className={pricesOn ? undefined : "is-on"}
+              {...cta("owner_my_properties", "owner_menu", "section_property", "navigation")}
+              onClick={(e) => {
+                setOpen(false);
+                if (!pricesOn) return;
+                e.preventDefault();
+                onDemo("nav");
+              }}
+            >
+              <LayoutGrid size={18} aria-hidden="true" /> Mis propiedades <span className="dv2-owner-count">1</span>
+            </a>
+            <a href="#otra-propiedad" {...cta("owner_create_anchor", "owner_menu", "create_property", "navigation")} onClick={() => setOpen(false)}>
+              <Plus size={18} aria-hidden="true" /> Crear otra propiedad
+            </a>
+            <a {...go("imagenes")}>
+              <ImageIcon size={18} aria-hidden="true" /> Estudio de imágenes
+            </a>
+            <a
+              href={owner.pricesHref}
+              {...cta("owner_menu_pricing", "owner_menu", "pricing_section", "navigation")}
+              onClick={(e) => {
+                e.preventDefault();
+                setOpen(false);
+                onPrices("menu");
+              }}
+            >
+              <Tag size={18} aria-hidden="true" /> Precios
+            </a>
+            <a href={owner.buyerHref} {...cta("owner_buyer_view", "owner_menu", "demo_buyer_view", "navigation")} onClick={() => log("demo_owner_buyer_view", {}, true)}>
+              <Eye size={18} aria-hidden="true" /> Ver como comprador
+            </a>
+            <p className="dv2-owner-drawer-note">
+              <CircleDollarSign size={16} aria-hidden="true" />
+              {owner.freeCredits > 0
+                ? `${owner.freeCredits} ${owner.freeCredits === 1 ? "crédito" : "créditos"} de regalo para generar estilos nuevos.`
+                : "Sin créditos de regalo: mirá los precios para generar más."}{" "}
+              {versions ? `${versions} ${versions === 1 ? "versión lista" : "versiones listas"} para descargar gratis.` : ""}
+            </p>
+            <a className="dv2-owner-save is-block" {...go("guardar")}>
+              Guardar mi panel
+            </a>
+          </nav>
+        </div>
+      )}
+    </header>
+  );
+}
+
+/**
+ * What the agency takes from its demo, without signing up: every version
+ * ready, free, one link each (the true count), and the buyers' link to share
+ * (never the presentation link: it carries the invitation).
+ */
+function OwnerValue({ demo, token, log }: { demo: PublicDemo; token: string; log: (event: string, extra?: EventProperties, beacon?: boolean) => unknown }) {
+  const [shared, setShared] = useState("");
+  const ready = demo.photos.flatMap((p, i) => p.versions.map((v) => ({ photo: p, index: i, version: v })));
+  const name = (style: string) => demo.styles.find((s) => s.id === style)?.name ?? (style === RETOUCH_STYLE ? "Retocada" : demoStyleName(style));
+  async function share() {
+    const url = `${window.location.origin}/demo/${token}`;
+    log("demo_owner_share", { method: typeof navigator.share === "function" ? "native" : "copy" });
+    try {
+      if (typeof navigator.share === "function") {
+        await navigator.share({ title: demo.title, text: `${demo.title} · ${demo.agencyName}`, url });
+        setShared("");
+      } else {
+        await navigator.clipboard.writeText(url);
+        setShared("Enlace copiado: es la ficha para compradores.");
+      }
+    } catch {
+      // Cancelled by the visitor.
+    }
+  }
+  return (
+    <section className="dv2-value" aria-label="Llevate el material">
+      <details className="dv2-value-download" onToggle={(e) => e.currentTarget.open && log("demo_owner_download_list", { versions: ready.length })}>
+        <summary {...cta("owner_download_all", "value_actions", "file_download", "habita_b2b")}>
+          <Download size={22} aria-hidden="true" />
+          <span>
+            <strong>
+              <span className="dv2-label-full">Descargar imágenes</span>
+              <span className="dv2-label-short">Descargar</span>
+            </strong>
+            <small>{ready.length ? `${ready.length} ${ready.length === 1 ? "lista" : "listas"} para publicar, gratis` : "Todavía no hay versiones listas"}</small>
+          </span>
+        </summary>
+        {ready.length > 0 && (
+          <ul>
+            {ready.map(({ photo, index, version }) => (
+              <li key={`${photo.id}:${version.style}`}>
+                <a
+                  href={publicImageUrl(token, photo.id, version, 2048)}
+                  download={`${fileSlug(`${demo.title}-foto-${index + 1}-${name(version.style)}`)}.jpg`}
+                  onClick={() => log("demo_owner_download", { estilo: version.style, photo_id: photo.id, style_id: version.style, origen: "descargar_todas" })}
+                >
+                  <img src={publicImageUrl(token, photo.id, version, 480)} alt="" loading="lazy" />
+                  <span>
+                    Foto {index + 1}
+                    {photo.label ? ` · ${photo.label}` : ""} · {name(version.style)}
+                  </span>
+                  <Download size={16} aria-hidden="true" />
+                </a>
+              </li>
+            ))}
+          </ul>
+        )}
+      </details>
+      <button type="button" className="dv2-value-share" onClick={() => void share()} {...cta("owner_share", "value_actions", "share_listing", "habita_b2b")}>
+        <Share2 size={22} aria-hidden="true" />
+        <span>
+          <strong>
+            <span className="dv2-label-full">Compartir ficha</span>
+            <span className="dv2-label-short">Compartir</span>
+          </strong>
+          <small>Con tus compradores</small>
+        </span>
+      </button>
+      {shared && (
+        <p className="dv2-note" role="status">
+          {shared}
+        </p>
+      )}
+    </section>
+  );
+}
+
+
+/**
+ * "¿Querés probarlo con otra propiedad?": the second property is where an
+ * agency starts using Habita on its own. Its address is kept for the panel,
+ * and the invitation's sign-up comes first (it is the agency's panel).
+ */
+function AnotherProperty({ owner, log }: { owner: OwnerMode; log: (event: string, extra?: EventProperties, beacon?: boolean) => unknown }) {
+  const [url, setUrl] = useState("");
+  const [error, setError] = useState("");
+  return (
+    <section id="otra-propiedad" className="dv2-another" aria-labelledby="dv2-another-title">
+      <h2 id="dv2-another-title">
+        <Link2Icon size={20} aria-hidden="true" /> ¿Querés probarlo con otra propiedad?
+      </h2>
+      <p>Pegá el enlace de una publicación y generá tu propio antes y después.</p>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          let host: string;
+          try {
+            const u = new URL(url.trim());
+            if (!/^https?:$/.test(u.protocol)) throw new Error("protocol");
+            host = u.hostname.replace(/^www\./, "");
+          } catch {
+            setError("Pegá el enlace completo de la publicación (empieza con https://).");
+            return;
+          }
+          try {
+            localStorage.setItem(PENDING_IMPORT_KEY, JSON.stringify({ url: url.trim(), at: Date.now() }));
+          } catch {
+            /* Private mode: the panel asks for the link again. */
+          }
+          // Only the site's host, never the pasted address.
+          track("second_property_import_started", { stage: "demo_before_signup", source: host });
+          log("demo_agency_cta_clicked", { origen: "otra_propiedad", cta_id: "owner_another_property", cta_intent: "create_property" }, true);
+          // After the sign-up (or straight away, already signed in) the panel's import continues with this same link.
+          window.location.assign(withIntent(owner.href, { kind: "import" }));
+        }}
+      >
+        <label className="dv2-sr" htmlFor="dv2-another-url">
+          Enlace de la publicación
+        </label>
+        <input id="dv2-another-url" type="url" inputMode="url" placeholder="Pegá el enlace de una publicación…" value={url} onChange={(e) => (setUrl(e.target.value), setError(""))} required />
+        <button type="submit" {...cta("owner_another_property", "another_property", "create_property", "habita_b2b")}>
+          Crear propiedad
+        </button>
+      </form>
+      {error && (
+        <p className="dv2-note is-error" role="alert">
+          {error}
+        </p>
+      )}
+      <small>Para guardarla te pedimos crear tu acceso: la propiedad de esta demo queda en tu panel.</small>
+    </section>
   );
 }

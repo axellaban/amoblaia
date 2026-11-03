@@ -1,0 +1,146 @@
+{
+  "elementor-scagliola": {
+    "url": "https://www.emmanuelscagliola.com/propiedad/santa-fe-1624/",
+    "status": 200,
+    "contentType": "text/html; charset=UTF-8",
+    "server": "Apache",
+    "redirects": 0,
+    "obtained": "2026-11-01",
+    "bytes": 60723
+  },
+  "houzez-grande": {
+    "url": "https://grandepropiedades.com/property/casa-de-4-ambientes-con-escritorio-garaje-y-patio/",
+    "status": 200,
+    "contentType": "text/html; charset=UTF-8",
+    "server": "LiteSpeed",
+    "redirects": 0,
+    "obtained": "2026-11-01",
+    "bytes": 185910
+  },
+  "inmobiliatica-acampora": {
+    "url": "https://www.acamporayasoc.com/departamento-venta-la-perla_372287_propiedad-inmobiliaria.html",
+    "status": 200,
+    "contentType": "text/html; charset=utf-8",
+    "server": "cloudflare",
+    "redirects": 0,
+    "obtained": "2026-11-01",
+    "bytes": 57644
+  },
+  "inmobiliatica-businessmanager": {
+    "url": "https://www.businessmanager.com.ar/casa---chalet-venta-las-avenidas_471638_propiedad-inmobiliaria.html",
+    "status": 200,
+    "contentType": "text/html; charset=utf-8",
+    "server": "cloudflare",
+    "redirects": 0,
+    "obtained": "2026-11-01",
+    "bytes": 68239
+  },
+  "inmobiliatica-damianfernandez": {
+    "url": "https://www.damianfernandez.com.ar/departamento-venta-plaza-mitre_466409_propiedad-inmobiliaria.html",
+    "status": 200,
+    "contentType": "text/html; charset=utf-8",
+    "server": "cloudflare",
+    "redirects": 0,
+    "obtained": "2026-11-01",
+    "bytes": 64408
+  },
+  "inmobiliatica-homesland": {
+    "url": "https://www.homes-land.com.ar/departamento-alquiler-por-dia-centro_475297_propiedad-inmobiliaria.html",
+    "status": 200,
+    "contentType": "text/html; charset=utf-8",
+    "server": "cloudflare",
+    "redirects": 0,
+    "obtained": "2026-11-01",
+    "bytes": 54467
+  },
+  "nextrsc-dar": {
+    "url": "https://www.darpropiedades.com.ar/propiedad/256bfb64-7bce-49d1-a653-e2d04ab00e96",
+    "status": 200,
+    "contentType": "text/html; charset=utf-8",
+    "server": "Vercel",
+    "redirects": 0,
+    "obtained": "2026-11-01",
+    "bytes": 43031
+  },
+  "nextsanity-goicoechea": {
+    "url": "https://goicoecheapropiedades.com/propiedades/departamento-venta-chauvin-2-ambientes-4762187",
+    "status": 200,
+    "contentType": "text/html; charset=utf-8",
+    "server": "Vercel",
+    "redirects": 0,
+    "obtained": "2026-11-01",
+    "bytes": 95343
+  },
+  "php-berasueta": {
+    "url": "https://www.inmobiliariaberasueta.com/ventas/propiedad/920/",
+    "status": 200,
+    "contentType": "text/html; charset=utf8",
+    "server": "Apache",
+    "redirects": 0,
+    "obtained": "2026-11-01",
+    "bytes": 41131
+  },
+  "tecnogestion-ordonez": {
+    "url": "http://www.xn--alejandraordoez-brb.com.ar/inmueble/departamento-semipiso-venta-4-ambientes-mar-del-plata-general-pueyrredon-costa-atlantica-lp837844",
+    "status": 200,
+    "contentType": "text/html; charset=utf-8",
+    "server": "Microsoft-IIS/10.0",
+    "redirects": 0,
+    "obtained": "2026-11-01",
+    "bytes": 29261
+  },
+  "tokko-bibbo": {
+    "url": "https://www.bibbopropiedades.com/p/8059687-Departamento-en-Venta-en-Sarmiento-Mexico-al-1400",
+    "status": 200,
+    "contentType": "text/html; charset=utf-8",
+    "server": "nginx/1.23.3",
+    "redirects": 0,
+    "obtained": "2026-11-01",
+    "bytes": 111995
+  },
+  "tokko-galan": {
+    "url": "https://www.galanbroker.com/p/7795735-Casa-en-Venta-en-Los-Troncos-Saavedra-al-1800",
+    "status": 200,
+    "contentType": "text/html; charset=utf-8",
+    "server": "nginx/1.23.3",
+    "redirects": 0,
+    "obtained": "2026-11-01",
+    "bytes": 147007
+  },
+  "tokko-mendiondo": {
+    "url": "https://www.claudiamendiondo.com.ar/p/12446118-Departamento-en-Venta-en-chauvin-cordoba-al-3200",
+    "status": 200,
+    "contentType": "text/html; charset=UTF-8",
+    "server": "Apache/2.4.52 (Ubuntu)",
+    "redirects": 0,
+    "obtained": "2026-11-01",
+    "bytes": 129033
+  },
+  "tokko-tormes": {
+    "url": "https://www.tormespropiedades.com/p/8634397-Departamento-en-Venta-en-Plaza-Mitre-Bolivar-al-2600",
+    "status": 200,
+    "contentType": "text/html; charset=utf-8",
+    "server": "nginx/1.23.3",
+    "redirects": 0,
+    "obtained": "2026-11-01",
+    "bytes": 131673
+  },
+  "tokkoapi-sanzyordoqui": {
+    "url": "https://www.sanzyordoqui.com.ar/propiedad/venta-departamento-cuatro-ambientes-con-dependencia-santiago-del-estero-2329--13217780",
+    "status": 200,
+    "contentType": "text/html; charset=UTF-8",
+    "server": "cloudflare",
+    "redirects": 0,
+    "obtained": "2026-11-01",
+    "bytes": 56263
+  },
+  "wasi-piglia": {
+    "url": "https://pigliainmuebles.com.ar/local-venta-mar-del-plata/8116994",
+    "status": 200,
+    "contentType": "text/html; charset=UTF-8",
+    "server": "nginx",
+    "redirects": 0,
+    "obtained": "2026-11-01",
+    "bytes": 53020
+  }
+}

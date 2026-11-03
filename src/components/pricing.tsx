@@ -1,7 +1,7 @@
 "use client";
 import { redirectKeepingClick } from "@/lib/ads";
 import Link from "next/link";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, type CSSProperties } from "react";
 import {
   Check,
   ArrowUpRight,
@@ -13,6 +13,7 @@ import {
   X,
   Timer,
   House,
+  Coins,
 } from "lucide-react";
 import {
   offers,
@@ -22,6 +23,7 @@ import {
   type Product,
 } from "@/lib/commerce/catalog";
 import { track } from "@/lib/analytics";
+import { cta } from "@/lib/interaction-tracking";
 const features = [
   "Regeneraciones incluidas",
   "Todos los ambientes y estilos",
@@ -32,6 +34,10 @@ const features = [
   "Proyectos privados en tu cuenta",
 ];
 const faqs = [
+  [
+    "¿Qué diferencia hay entre los créditos y un plan?",
+    "Los créditos se pagan una sola vez, sin suscripción, y duran 12 meses: cada crédito es una foto original, con sus regeneraciones. Cuantos más comprás, menos pagás cada uno. Los planes se renuevan cada mes y salen más baratos por foto si publicás todos los meses.",
+  ],
   [
     "¿Qué cuenta como una foto?",
     "Cada foto original que subís consume una foto de tu plan. Podés generar nuevas propuestas sobre ese original durante la vigencia paga sin consumir otra foto. Las descargas no consumen cupo. Si una generación falla por un problema técnico, la foto no se descuenta.",
@@ -79,6 +85,8 @@ export function PricingPlans({
   currentSku,
   firstPackUsed = false,
   renderedAt,
+  signupHref,
+  initialSku,
 }: {
   products: Product[];
   enabled: boolean;
@@ -91,8 +99,23 @@ export function PricingPlans({
   firstPackUsed?: boolean;
   /** Server time of this render, so the countdown hydrates identically. */
   renderedAt: number;
+  /** Someone without an account yet (an invited agency): buying starts by creating it here. */
+  signupHref?: string;
+  /** The plan chosen before creating the account: its payment opens right away. */
+  initialSku?: string;
 }) {
+  // Creating the account first, keeping the chosen plan for after it.
+  const toSignup = (sku: string) => {
+    const url = new URL(signupHref!, window.location.origin);
+    url.searchParams.set("plan", sku);
+    window.location.assign(`${url.pathname}${url.search}`);
+  };
   const checkoutKeys = useRef<Record<string, string>>({});
+  // Each buy button, with its plan; inside a demo it leads to the sign-up first.
+  const buyCta = (id: string, place: string, sku: string) => ({
+    ...cta(id, signupHref ? `demo_prices_${place}` : place, signupHref ? "signup_invitation" : "checkout", "habita_b2b", { plan: sku }),
+    ...(signupHref ? { "data-cta-navigates": "1" } : {}),
+  });
   const [now, setNow] = useState(renderedAt);
   const launch = (sku: string) => {
     const p = products.find((p) => p.sku === sku && p.active);
@@ -120,6 +143,22 @@ export function PricingPlans({
   const firstPack = firstPackUsed
     ? undefined
     : products.find((p) => p.sku === "pack-first" && p.active && p.price_cents);
+  // Credit packs, smallest first, are the stops of the credits slider. The
+  // one-per-account pack has its own section.
+  const creditPacks = products
+    .filter(
+      (p) =>
+        p.kind === "pack" && p.active && p.price_cents && !p.per_account_limit,
+    )
+    .sort((a, b) => a.photos - b.photos);
+  const [packIndex, setPackIndex] = useState(() =>
+    Math.max(
+      0,
+      creditPacks.findIndex((p) =>
+        initialSku?.startsWith("pack-") ? p.sku === initialSku : p.photos >= 20,
+      ),
+    ),
+  );
   // During the launch, plans open on the monthly prices that carry it.
   const [annual, setAnnual] = useState(
       currentSku
@@ -134,6 +173,18 @@ export function PricingPlans({
   const [expandedPlans, setExpandedPlans] = useState<Record<string, boolean>>(
     {},
   );
+  // Back from creating the account with a plan chosen: its payment opens once, right away.
+  const reopened = useRef(false);
+  useEffect(() => {
+    if (reopened.current || !initialSku || !email || !enabled) return;
+    if (!products.some((p) => p.sku === initialSku && p.active && p.price_cents)) return;
+    reopened.current = true;
+    if (initialSku.endsWith("-year")) setAnnual(true);
+    else if (initialSku.endsWith("-month")) setAnnual(false);
+    // Packs go straight to Checkout Pro; plans confirm the payer's email first.
+    if (initialSku.startsWith("pack-")) void buy(initialSku);
+    else setSelectedSku(initialSku);
+  }, [initialSku, email, enabled, products]);
   const selectedProduct = products.find((p) => p.sku === selectedSku);
   const selectedDeal = selectedProduct ? launch(selectedProduct.sku) : null;
   const modalRef = useRef<HTMLElement>(null);
@@ -219,13 +270,146 @@ export function PricingPlans({
       setBusy("");
     }
   }
+  // Back to this price after signing in, with its payment opened (see initialSku).
+  const signInFor = (sku: string) => `/acceso?next=${encodeURIComponent(`/precios?plan=${sku}`)}`;
+  // Packs go straight to Checkout Pro, which takes any account.
+  function buyPack(sku: string) {
+    if (signupHref) return toSignup(sku);
+    setError("");
+    setPayerEmail("");
+    if (!email) {
+      redirectKeepingClick(signInFor(sku));
+      return;
+    }
+    void buy(sku);
+  }
+  function creditsCard() {
+    const pack = creditPacks[Math.min(packIndex, creditPacks.length - 1)],
+      cents = pack.price_cents || 0,
+      unit = cents / pack.photos,
+      cut = 1 - unit / ((creditPacks[0].price_cents || 0) / creditPacks[0].photos),
+      ready = enabled || Boolean(signupHref),
+      // Compared with the monthly plans (launch price included), named as such: an annual plan is paid upfront.
+      plans = offers
+        .map((o) => {
+          const sku = skuFor(o.id);
+          return { ...o, cents: launch(sku)?.cents || price(sku) };
+        })
+        .filter((o) => o.cents),
+      bigger = plans.find((o) => o.photos > pack.photos),
+      covered = plans.filter((o) => o.photos <= pack.photos).pop(),
+      days = pack.valid_days;
+    return (
+      <article className="price-card credits-card">
+        <span className="price-ribbon">Sin suscripción</span>
+        <div className="price-panel">
+          <div className="credits-pick">
+            <span className="eyebrow">
+              <Coins size={15} /> PAGO ÚNICO ·{" "}
+              {!days
+                ? "NO VENCEN"
+                : days % 365 === 0
+                  ? `VÁLIDOS ${(days / 365) * 12} MESES`
+                  : `VÁLIDOS ${days} DÍAS`}
+            </span>
+            <h2>Créditos</h2>
+            <p>
+              Comprá solo lo que necesitás. Un crédito es una foto, con
+              regeneraciones.
+            </p>
+            <div className="credits-amount">
+              <div className="photo-allowance">
+                <strong>{pack.photos}</strong> créditos
+              </div>
+              <span className={`credits-cut ${cut >= 0.01 ? "" : "none"}`}>
+                {cut >= 0.01
+                  ? `−${Math.round(cut * 100)}% por volumen`
+                  : "Precio de lista"}
+              </span>
+            </div>
+            <input
+              id="credits-amount"
+              type="range"
+              className="credits-range"
+              aria-label="Cantidad de créditos"
+              aria-valuetext={`${pack.photos} créditos`}
+              min={0}
+              max={creditPacks.length - 1}
+              step={1}
+              value={Math.min(packIndex, creditPacks.length - 1)}
+              style={
+                {
+                  "--fill": `${(Math.min(packIndex, creditPacks.length - 1) / Math.max(1, creditPacks.length - 1)) * 100}%`,
+                } as CSSProperties
+              }
+              onChange={(e) => setPackIndex(Number(e.target.value))}
+            />
+            <div className="credits-stops">
+              {creditPacks.map((p, i) => (
+                <button
+                  key={p.sku}
+                  type="button"
+                  className={p.sku === pack.sku ? "selected" : ""}
+                  aria-label={`${p.photos} créditos`}
+                  aria-pressed={p.sku === pack.sku}
+                  onClick={() => setPackIndex(i)}
+                >
+                  {p.photos}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="credits-buy">
+            <div className="price">
+              {formatARS(cents)} <span>por única vez</span>
+            </div>
+            <small className="per-photo">{formatARS(unit)} por crédito</small>
+            <p className="credits-compare">
+              {bigger && cents >= bigger.cents * 0.9 ? (
+                <>
+                  Por <b>{formatARS(bigger.cents)} por mes</b>, el plan
+                  mensual <b>{bigger.name}</b> te da <b>{bigger.photos} fotos</b> todos
+                  los meses.
+                </>
+              ) : covered &&
+                pack.photos >= 20 &&
+                covered.cents / covered.photos < unit ? (
+                <>
+                  ¿Lo usás todos los meses? Con el plan mensual{" "}
+                  <b>{covered.name}</b> la foto
+                  sale <b>{formatARS(covered.cents / covered.photos)}</b>.
+                </>
+              ) : pack.photos >= 20 ? (
+                "Sin suscripción: usalos a tu ritmo, sin cupo que se pierda a fin de mes."
+              ) : (
+                "Ideal para una o dos propiedades, sin cupo que se pierda a fin de mes."
+              )}
+            </p>
+            <button
+              className="button button-primary"
+              disabled={!ready || Boolean(busy)}
+              {...buyCta("pricing_buy_pack", "credits_card", pack.sku)}
+              onClick={() => buyPack(pack.sku)}
+            >
+              {busy === pack.sku ? (
+                <LoaderCircle size={18} className="spin" />
+              ) : (
+                <ArrowUpRight size={18} />
+              )}{" "}
+              {ready ? `Comprar ${pack.photos} créditos` : "Disponible pronto"}
+            </button>
+          </div>
+        </div>
+      </article>
+    );
+  }
   function card(offer: (typeof offers)[number]) {
     const sku = skuFor(offer.id, annual),
       cents = price(sku),
       deal = annual ? null : launch(sku),
       monthly = annual ? cents / 12 : deal?.cents || cents,
       yearlyMonthly = price(skuFor(offer.id, true)) / 12,
-      ready = enabled && cents > 0,
+      ready = (enabled || Boolean(signupHref)) && cents > 0,
       featured = offer.id === "professional";
     return (
       <article
@@ -277,17 +461,17 @@ export function PricingPlans({
           <button
             className="button button-primary"
             disabled={!ready || Boolean(busy) || sku === currentSku}
+            {...buyCta("pricing_buy_plan", "plan_card", sku)}
             onClick={() => {
               setError("");
               setPayerEmail("");
+              if (signupHref) return toSignup(sku);
               // The order belongs to the signed-in customer before leaving for MP.
               if (!email) {
-                redirectKeepingClick("/acceso?next=%2Fprecios");
+                redirectKeepingClick(signInFor(sku));
                 return;
               }
-              // Packs go straight to Checkout Pro, which takes any account.
-              if (sku.startsWith("pack-")) void buy(sku);
-              else setSelectedSku(sku);
+              setSelectedSku(sku);
             }}
           >
             {busy === sku ? (
@@ -347,7 +531,7 @@ export function PricingPlans({
             <h1>
               Nuestros planes<span>.</span>
             </h1>
-            <p>Elegí el plan de virtual staging para tu trabajo.</p>
+            <p>Comprá créditos o elegí un plan de virtual staging.</p>
           </div>
           <div
             className="billing-toggle"
@@ -407,7 +591,10 @@ export function PricingPlans({
         ) : (
           trial && trialBanner
         )}
-        <div className="pricing-grid commercial-plans">{offers.map(card)}</div>
+        <div className="pricing-grid commercial-plans">
+          {creditPacks.length > 0 && creditsCard()}
+          {offers.map(card)}
+        </div>
         {launchEnds > 0 && (
           <p className="launch-terms">
             Precio de lanzamiento válido para suscripciones mensuales
@@ -437,24 +624,16 @@ export function PricingPlans({
               </small>
               <button
                 className="button button-primary"
-                disabled={!enabled || Boolean(busy)}
-                onClick={() => {
-                  setError("");
-                  setPayerEmail("");
-                  if (!email) {
-                    redirectKeepingClick("/acceso?next=%2Fprecios");
-                    return;
-                  }
-                  // Like any pack: straight to Checkout Pro.
-                  void buy(firstPack.sku);
-                }}
+                disabled={!(enabled || signupHref) || Boolean(busy)}
+                {...buyCta("pricing_buy_first_pack", "first_pack", firstPack.sku)}
+                onClick={() => buyPack(firstPack.sku)}
               >
                 {busy === firstPack.sku ? (
                   <LoaderCircle size={18} className="spin" />
                 ) : (
                   <ArrowUpRight size={18} />
                 )}{" "}
-                {enabled ? "Comprar" : "Disponible pronto"}
+                {enabled || signupHref ? "Comprar" : "Disponible pronto"}
               </button>
             </div>
           </section>

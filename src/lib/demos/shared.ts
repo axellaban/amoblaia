@@ -1,5 +1,6 @@
 // Commercial demos: types, texts and helpers shared by the admin panel, the
 // server routes and the public page. Nothing here reads secrets.
+import type { Adjust } from "./retouch";
 import { modes, rooms } from "@/lib/catalog";
 import { demoStyleName, demoStyleOrder } from "./styles";
 
@@ -37,6 +38,8 @@ export const MAX_DEMO_STYLES = 6;
 
 /** One staged version of a photo, in one style. `v` changes when the version does, so caches refresh. */
 export type PhotoVersion = { style: string; v: string };
+/** The style key of a retouch in a public photo's versions: not a demo style; "v" is the retouch's id. */
+export const RETOUCH_STYLE = "retoque";
 export type PublicPhoto = {
   id: string;
   label: string;
@@ -105,7 +108,31 @@ export type PublicDemo = {
   share: { title: string | null; description: string | null };
   /** Prepared by the team for an agency without a habita account: its presentation link invites it to create one. */
   prospect: boolean;
+  /** «Mostrar selector de estilos»: false keeps the buyer's style picker out (the opening style still shows). */
+  styleSelector?: boolean;
+  /**
+   * The property's latest finished video and where the agency placed it
+   * (first or second thumbnail, or a card under the gallery). Null when there
+   * is none or the agency hid it: no empty player is ever shown.
+   */
+  video: PublicVideoRef | null;
+  /**
+   * Every style id in the order this demo offers them (settings.styleOrder
+   * resolved by the property's location). The agency's own view lists the
+   * styles still to generate in this order. Absent: the catalog's.
+   */
+  styleOrder?: string[];
 };
+
+export type PublicVideoRef = {
+  id: string;
+  format: import("../video/plan").VideoFormat;
+  durationMs: number | null;
+  placement: "first" | "second" | "below";
+};
+
+/** A published demo's video: the route checks the demo and the video, then hands a short-lived link to the file. */
+export const publicVideoUrl = (token: string, videoId: string) => `/demo/${token}/video/${videoId}`;
 
 export type DemoStatus = "draft" | "published";
 export type DemoSummary = {
@@ -117,7 +144,13 @@ export type DemoSummary = {
   agencyName: string;
   /** Whether the agency already has its habita account (null: unknown). */
   agencyClaimed: boolean | null;
+  /** The agency's WhatsApp to send it its demo, as wa.me digits (team only). Null or absent: none known. */
+  agencyWhatsapp?: string | null;
   propertyTitle: string;
+  /** The property's location, for the WhatsApp message (team lists). */
+  propertyLocation?: string | null;
+  /** "fotos": imported photos that are not a ficha yet (cannot be published). Absent: a ficha. */
+  kind?: "ficha" | "fotos";
   photos: number;
   staged: number;
   coverPhotoId: string | null;
@@ -125,6 +158,16 @@ export type DemoSummary = {
   cover: { id: string; version: PhotoVersion | null } | null;
   createdAt: string;
   publishedAt: string | null;
+  /** When the team sent it on WhatsApp (or marked it sent by hand). Null: "Sin enviar" (team only). */
+  sentAt?: string | null;
+  /** This demo's own WhatsApp message; null uses the global template (team only). */
+  messageTemplate?: string | null;
+  /** The agency's contact person, to greet in the message (team only). */
+  agencyContact?: string | null;
+  /** What visitors and the agency did with this demo (team only). */
+  activity: DemoActivity;
+  /** The agency's credits (team only): available (its balance) and reserved; null when unknown. */
+  credits: DemoCredits;
 };
 export type AgencyRow = {
   id: string;
@@ -132,7 +175,12 @@ export type AgencyRow = {
   website: string | null;
   contact_name: string | null;
   notes: string | null;
+  /** The agency's WhatsApp to send it its demos, as wa.me digits (team lists only). */
+  whatsapp?: string | null;
 };
+
+/** One entry of the demo's sending history: by WhatsApp from the panel, marked by hand, or undone. */
+export type DemoSendEvent = { at: string; kind: "whatsapp" | "manual" | "unsent" };
 export type GenerationRow = {
   id: string;
   status: "queued" | "running" | "succeeded" | "failed" | "needs_review";
@@ -172,6 +220,16 @@ export type EditorPhoto = {
   /** The version each style shows, by style id: a generation id. */
   shown: Record<string, string>;
   generations: GenerationRow[];
+  /** Retouches saved as versions (free); "label" names them in the versions list. */
+  retouches: RetouchRow[];
+  /** The retouch the listing shows, if any. */
+  shownRetouch: string | null;
+};
+export type RetouchRow = {
+  id: string;
+  label: string;
+  adjust: Adjust;
+  created_at: string;
 };
 export type DemoDetail = {
   demo: DemoSummary;
@@ -183,6 +241,8 @@ export type DemoDetail = {
     listing_url: string | null;
     description: string | null;
   };
+  /** When it was sent or marked unsent, newest first (team only). */
+  sendLog?: DemoSendEvent[];
   photos: EditorPhoto[];
   /** Styles with a staged version, main one first. */
   styles: string[];
@@ -202,6 +262,8 @@ export type DemoDetail = {
    * with the same rule the quote and the reservation apply.
    */
   staging?: { payer: "team" | "agency"; blocked: string | null };
+  /** A user of the agency with a view-only access: nothing can be changed here. */
+  readOnly?: boolean;
 };
 
 export function roomName(id: string) {
@@ -237,10 +299,13 @@ export function shownVersions<G extends Candidate>(
   for (const g of generations) if (ok(g) && !shown.has(g.style)) shown.set(g.style, g);
   return shown;
 }
-/** Main style first, then the catalog order; unknown styles are left out. */
-export function orderStyles(ids: Iterable<string>, main: string) {
+/**
+ * Main style first, then the demo's order (the catalog's unless given, see
+ * styleSequence); unknown styles are left out.
+ */
+export function orderStyles(ids: Iterable<string>, main: string, sequence: readonly string[] = demoStyleOrder) {
   const set = new Set(ids);
-  return demoStyleOrder.filter((id) => set.has(id)).sort((a, b) => Number(b === main) - Number(a === main));
+  return sequence.filter((id) => set.has(id)).sort((a, b) => Number(b === main) - Number(a === main));
 }
 type CoverCandidate = { id: string; visible: boolean; versions: PhotoVersion[] };
 /** The chosen cover if visible, else the first visible photo staged in the main style, else the first visible. */
@@ -288,18 +353,24 @@ export const PRESENTATION_PARAM = "presentacion";
 /** The buyers' link (plain), or the presentation link for the agency. */
 export function demoUrl(origin: string, token: string, presentation = false) {
   const url = `${origin.replace(/\/$/, "")}${demoPath(token)}`;
-  return presentation ? `${url}?${PRESENTATION_PARAM}=1` : url;
+  return presentation ? `${url}/presentacion` : url;
 }
-/** wa.me opens WhatsApp Web or the app; the recipient needs nothing installed to open the link itself. */
-export function whatsappShareUrl(presentationUrl: string, buyersUrl: string, agency: string, title: string) {
-  const text = `Hola ${agency}! Preparamos una muestra de cómo podría verse "${title}" con ambientación virtual: ${presentationUrl}\n\nPara compartir con compradores (sin la franja de la demo): ${buyersUrl}`;
-  return `https://wa.me/?text=${encodeURIComponent(text)}`;
+/** wa.me opens WhatsApp Web or the app. The message is only the link: no greeting, no text of ours. */
+export function whatsappShareUrl(link: string, to?: string | null) {
+  // With a number (wa.me digits) it opens that chat; without one, WhatsApp asks who to send it to.
+  return `https://wa.me/${to ? to.replace(/\D/g, "") : ""}?text=${encodeURIComponent(link)}`;
 }
-/** The team's WhatsApp message inviting an agency to its panel, with its one-time link. */
-export function invitationWhatsappUrl(link: string, agency: string, title: string) {
-  const text = `Hola ${agency}! Les armamos su panel en habita con la demo de "${title}" ya cargada. Para entrar solo necesitan un email y una contraseña: ${link}\n\nEl enlace es personal, sirve una sola vez y vence en 30 días.`;
-  return `https://wa.me/?text=${encodeURIComponent(text)}`;
-}
+
+/**
+ * What each step of the demo's activity means, as the team reads it. The
+ * highest step reached counts (see 202611060001_demo_activity.sql).
+ */
+export const ACTIVITY_LABELS = ["Sin actividad", "Ingresó", "Interactuó", "Generó imagen", "Creó su panel", "Suscribió"] as const;
+export type DemoActivity = { level: 0 | 1 | 2 | 3 | 4 | 5; at: string | null; visitors: number };
+export const NO_ACTIVITY: DemoActivity = { level: 0, at: null, visitors: 0 };
+/** An agency's credits: available (its account's balance) and reserved (until it accepts the invitation). */
+export type DemoCredits = { available: number | null; reserved: number | null };
+export const NO_CREDITS: DemoCredits = { available: null, reserved: null };
 /** Where "Probar habita." leads: the regular studio, carrying the demo and agency for attribution. */
 export function ctaHref(demoId: string, agencyId: string) {
   const q = new URLSearchParams({
@@ -315,7 +386,9 @@ export const DEMO_REF_KEY = "amoblaia_demo_ref";
 
 /** An image of a published demo: the original, or its version in one style. */
 export function publicImageUrl(token: string, photoId: string, version: PhotoVersion | null, width?: number) {
-  const q = new URLSearchParams(version ? { e: version.style, r: version.v } : { r: "o" });
+  const q = new URLSearchParams(
+    version?.style === RETOUCH_STYLE ? { t: version.v } : version ? { e: version.style, r: version.v } : { r: "o" },
+  );
   if (width) q.set("w", String(width));
   return `/demo/${token}/imagen/${photoId}?${q}`;
 }
@@ -335,6 +408,25 @@ export function adminPhotoUrl(photoId: string, version: PhotoVersion | null, wid
   if (og) q.set("og", "1");
   return `/api/admin/demos/imagen?${q}`;
 }
+/** Where a retouch starts from: the original photo, one of its AI versions, or another retouch. */
+export type RetouchSource =
+  | { kind: "original" }
+  | { kind: "generation"; id: string }
+  | { kind: "retouch"; id: string }
+  /** The version the listing shows for that style (the public demo knows styles, not generation ids). */
+  | { kind: "style"; style: string };
+
+export function retouchDownloadUrl(retouchId: string, name: string) {
+  const q = new URLSearchParams({ retoque: retouchId, w: "2048", descargar: "1", nombre: name });
+  return `/api/admin/demos/imagen?${q}`;
+}
+
+export function adminRetouchUrl(retouchId: string, width?: number) {
+  const q = new URLSearchParams({ retoque: retouchId });
+  if (width) q.set("w", String(width));
+  return `/api/admin/demos/imagen?${q}`;
+}
+
 export function adminGenerationUrl(generationId: string, width?: number) {
   const q = new URLSearchParams({ generacion: generationId });
   if (width) q.set("w", String(width));

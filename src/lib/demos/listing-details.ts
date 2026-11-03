@@ -348,7 +348,9 @@ export function extractDetails(html: string, pageUrl: string): ListingDetails {
   const fTel = [...html.matchAll(/href\s*=\s*"tel:([^"]+)"/gi)].map((m) => `+${digits(m[1])}`).find((t) => t.length > 7 && !used.has(t)) ?? null;
   const afterText = after.flatMap((s) => s.lines.map((l) => l.text));
   const address = afterText.find((t) => /^[A-ZÁÉÍÓÚ][\wáéíóúñ. ]+ \d{2,5}\b.*(buenos aires|mar del plata|caba|argentina|\.)/i.test(t)) ?? null;
-  const siteName = meta("og:site_name") ?? docTitle?.split(" - ")[0]?.trim() ?? null;
+  // Tokko titles start with the agency ("Inmo Sur - Departamento…"); a title without that separator is only the property's.
+  const titleParts = docTitle?.split(" - ") ?? [];
+  const siteName = meta("og:site_name") ?? (titleParts.length > 1 ? titleParts[0].trim() || null : null);
   void footerHtml;
 
   // Photos: on Tokko sites the property's own files start with its id.

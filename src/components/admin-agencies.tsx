@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { ChevronDown, Copy, Eye, Gift, Link2, PencilLine, Plus } from "lucide-react";
+import { ChevronDown, Copy, Eye, Gift, Link2, PencilLine, Plus, UserCog } from "lucide-react";
 import { ApiError, api } from "@/components/admin-demos";
 import { nextStep, ORIGIN_LABEL, type PanelProperty } from "@/lib/agency/shared";
 import { CLAIM_LABEL, STAGE_LABEL, agencyStage, type AdminAgencyDetail, type AdminAgencyRow } from "@/lib/agency/stage";
@@ -116,7 +116,22 @@ export function AgencyInvitations({ agencyId, claims, hasOwner }: { agencyId: st
 }
 
 /** Opens the agency's panel as its owner sees it, read only (a support view, audited). */
-export function SupportViewButton({ agencyId, small = true, quiet = false }: { agencyId: string; small?: boolean; quiet?: boolean }) {
+/**
+ * Opens the agency's panel for one hour, audited: read only ("Ver como
+ * cliente") or, with act, working as the agency with its owner's
+ * permissions ("Entrar como la inmobiliaria"), after confirming.
+ */
+export function SupportViewButton({
+  agencyId,
+  small = true,
+  quiet = false,
+  act = false,
+}: {
+  agencyId: string;
+  small?: boolean;
+  quiet?: boolean;
+  act?: boolean;
+}) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   return (
@@ -125,12 +140,26 @@ export function SupportViewButton({ agencyId, small = true, quiet = false }: { a
         type="button"
         className={quiet ? "text-link aa-support-link" : `button ${small ? "button-small " : ""}button-outline`}
         disabled={busy}
-        title="Soporte: abre su panel tal como lo ve la inmobiliaria, solo lectura, por una hora. Queda registrado."
+        title={
+          act
+            ? "Entra a su panel como si fueras la inmobiliaria, con los permisos de su dueño, por una hora. Los cambios son reales y queda registrado."
+            : "Soporte: abre su panel tal como lo ve la inmobiliaria, solo lectura, por una hora. Queda registrado."
+        }
         onClick={async () => {
+          if (
+            act &&
+            !window.confirm(
+              "Vas a entrar al panel de esta inmobiliaria como su dueño, por una hora. Todo lo que hagas es real: cambia sus datos y las ambientaciones usan sus créditos. ¿Continuar?",
+            )
+          )
+            return;
           setBusy(true);
           setError("");
           try {
-            const { url } = await api<{ url: string }>(`/api/admin/inmobiliarias/${agencyId}/soporte`, { method: "POST" });
+            const { url } = await api<{ url: string }>(`/api/admin/inmobiliarias/${agencyId}/soporte`, {
+              method: "POST",
+              body: JSON.stringify({ mode: act ? "act" : "view" }),
+            });
             window.location.assign(url);
           } catch (e) {
             setError(e instanceof Error ? e.message : "No pudimos abrir su panel.");
@@ -138,7 +167,7 @@ export function SupportViewButton({ agencyId, small = true, quiet = false }: { a
           }
         }}
       >
-        <Eye size={15} /> {busy ? "Abriendo…" : "Ver como cliente"}
+        {act ? <UserCog size={15} /> : <Eye size={15} />} {busy ? "Abriendo…" : act ? "Entrar como la inmobiliaria" : "Ver como cliente"}
       </button>
       {error && (
         <span className="inline-error" role="alert">
@@ -544,6 +573,7 @@ export function AgenciesTable({ items }: { items: AdminAgencyRow[] }) {
                   <Gift size={15} /> Créditos
                 </button>
                 <SupportViewButton agencyId={a.id} quiet />
+                <SupportViewButton agencyId={a.id} quiet act />
               </div>
               {open && (
                 <div id={`props-${a.id}`} className="aa-row-props">

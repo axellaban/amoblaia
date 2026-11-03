@@ -1,11 +1,13 @@
 import "server-only";
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomInt } from "node:crypto";
 import { HttpError, rpc } from "@/lib/commerce/http";
 import { isUuid } from "@/lib/demos/shared";
 import { adminClient } from "@/lib/supabase/server";
 import { agencyCredits } from "./panel";
 import { claimHash } from "./server";
 import { claimState, type AdminAgencyDetail, type AdminAgencyRow } from "./stage";
+import { panelViewPath, presentationPath, pricesViewPath, SHORT_CODE_ALPHABET, SHORT_CODE_LENGTH, shortLinkPath, visitPath } from "./demo-invite";
+import type { AgencyRole } from "./shared";
 
 const CLAIM_DAYS = 30;
 
@@ -54,6 +56,26 @@ export async function adminAgencies(query: { q?: string | null; page?: number; p
   const balances = await agencyBalances(items.map((i) => i.id));
   for (const item of items) Object.assign(item, balances.get(item.id) ?? {});
   return { items, total: rows?.length ? Number(rows[0].total) : 0, page, perPage };
+}
+
+/** Who took over the agency (Fase 4). Tolerates a database without the columns yet: nothing to show. */
+export async function agencyClaimInfo(id: string) {
+  const { data, error } = await adminClient().from("agencies").select("website,claim_email,claim_method,claim_review").eq("id", id).maybeSingle();
+  if (error || !data) return null;
+  const d = data as { website: string | null; claim_email: string | null; claim_method: "google" | "email" | "existing" | null; claim_review: "ok" | "personal" | "mismatch" | "confirmed" | null };
+  return { email: d.claim_email, method: d.claim_method, review: d.claim_review, website: d.website };
+}
+
+/** Agencies whose new owner the team has not checked yet, latest first. */
+export async function claimsToReview(limit = 20) {
+  const { data, error } = await adminClient()
+    .from("agencies")
+    .select("id,name,claim_email,claim_review,claimed_at")
+    .in("claim_review", ["mismatch", "personal"])
+    .order("claimed_at", { ascending: false })
+    .limit(limit);
+  if (error) return [];
+  return (data ?? []) as { id: string; name: string; claim_email: string | null; claim_review: "mismatch" | "personal"; claimed_at: string | null }[];
 }
 
 /** One agency as the team sees it: stage, invitations, members, properties and what needs attention. */
@@ -135,8 +157,8 @@ export async function adminAgency(id: string): Promise<AdminAgencyDetail> {
       revokedAt: c.revoked_at,
       state: claimState(c, now),
     })),
-    members: ((members.data ?? []) as { user_id: string; role: "owner" | "collaborator"; created_at: string }[]).map((m) => ({
-      role: m.role,
+    members: ((members.data ?? []) as { user_id: string; role: AgencyRole | "collaborator"; created_at: string }[]).map((m) => ({
+      role: m.role === "collaborator" ? ("editor" as const) : m.role,
       since: m.created_at,
     })),
     imports: ((imports.data ?? []) as {
@@ -171,30 +193,56 @@ export async function adminAgency(id: string): Promise<AdminAgencyDetail> {
   };
 }
 
+/** The short code of a demo's link: 10 characters of SHORT_CODE_ALPHABET, uniformly random. */
+export const newShortCode = () =>
+  Array.from({ length: SHORT_CODE_LENGTH }, () => SHORT_CODE_ALPHABET[randomInt(SHORT_CODE_ALPHABET.length)]).join("");
+
+/** The demo a claim link is made from: its short link names the property. */
+export type ClaimDemo = { id: string; token: string; title: string };
+
 /**
  * A one-time link for an agency without an account to take over the demos
  * prepared for it. Only the team creates it; it works once and expires in
- * 30 days. Only its hash is stored.
+ * 30 days. Only its hash is stored. Made from a demo, the code is the short
+ * one of /p/<propiedad>-<codigo>, which leads to that demo.
  */
-export async function createClaim(agencyId: string, actorId: string, origin: string, demoToken?: string | null) {
+export async function createClaim(agencyId: string, actorId: string, origin: string, demo: ClaimDemo | null = null) {
   const db = adminClient();
   const { data, error } = await db.from("agencies").select("owner_id").eq("id", agencyId).single();
   if (error) throw new HttpError(409, "Para esto falta aplicar la migración 202610280001_agency_accounts.sql en Supabase.");
   if ((data as { owner_id: string | null }).owner_id) throw new HttpError(409, "Esta inmobiliaria ya tiene su cuenta en habita.");
-  const code = randomBytes(24).toString("base64url");
+  const code = demo ? newShortCode() : randomBytes(24).toString("base64url");
   const expiresAt = new Date(Date.now() + CLAIM_DAYS * 86400000).toISOString();
-  const saved = await db.from("agency_claims").insert({
-    agency_id: agencyId,
-    code_hash: claimHash(code),
-    created_by: actorId,
-    expires_at: expiresAt,
-  });
+  const row: Record<string, string> = { agency_id: agencyId, code_hash: claimHash(code), created_by: actorId, expires_at: expiresAt };
+  let saved = await db.from("agency_claims").insert(demo ? { ...row, demo_id: demo.id } : row);
+  // Before 202611160001_short_demo_links.sql there is no demo_id: the long links still work.
+  const short = Boolean(demo) && !saved.error;
+  if (saved.error && demo && missingDemoColumn(saved.error)) saved = await db.from("agency_claims").insert(row);
   if (saved.error) throw new Error("CLAIM_CREATE_FAILED");
   await rpc("amobla_account", { p_user: actorId, p_trial: false });
-  await db.from("admin_audit").insert({ actor_id: actorId, action: "agency_claim_link", subject_id: agencyId, details: { demo: demoToken ?? null } });
-  const demo = demoToken ? `&demo=${encodeURIComponent(demoToken)}` : "";
-  return { url: `${origin}/panel/empezar?codigo=${code}${demo}`, expiresAt };
+  await db.from("admin_audit").insert({ actor_id: actorId, action: "agency_claim_link", subject_id: agencyId, details: { demo: demo?.token ?? null } });
+  const withDemo = demo ? `&demo=${encodeURIComponent(demo.token)}` : "";
+  const link = (view: "precios" | "panel" | null) =>
+    !demo
+      ? null
+      : short
+        ? `${origin}${shortLinkPath(demo.title, code, view)}`
+        : `${origin}${view === "precios" ? pricesViewPath(demo.token, code) : view === "panel" ? panelViewPath(demo.token, code) : presentationPath(demo.token, code)}`;
+  return {
+    url: `${origin}/panel/empezar?codigo=${code}${withDemo}`,
+    // The demo itself as the way in: it offers "Probar esta propiedad en mi panel" with this same code.
+    presentationUrl: link(null),
+    // The same demo opened on its plans, for when the agency asks about prices.
+    pricesUrl: link("precios"),
+    // Its own panel, opened on its home without creating the account first (Ingresar al panel).
+    panelUrl: demo ? link("panel") : `${origin}${visitPath(code)}`,
+    expiresAt,
+  };
 }
+
+/** The error of a database without agency_claims.demo_id (PostgREST's schema cache or Postgres itself). */
+const missingDemoColumn = (error: { code?: string; message?: string }) =>
+  error.code === "PGRST204" || error.code === "42703" || /demo_id/.test(error.message ?? "");
 
 /** Revokes an invitation not used yet; the link stops working at once. */
 export async function revokeClaim(agencyId: string, claimId: string, actorId: string) {

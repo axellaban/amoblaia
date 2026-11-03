@@ -60,7 +60,8 @@ export function missingTasks(photos: EditorPhoto[], included: Set<string>, style
 
 /** Styles shown on a photo's card: the property's styles, then any other style it already has results in (never hidden). */
 export function cardStyles(photo: EditorPhoto, demoStyles: string[]) {
-  const extra = [...new Set(photo.generations.map((g) => g.style))].filter((s) => !demoStyles.includes(s));
+  // An AI tool's result is a version of its own (a retouch), never a card of a style.
+  const extra = [...new Set(photo.generations.filter((g) => g.mode !== "tool").map((g) => g.style))].filter((s) => !demoStyles.includes(s));
   return [...demoStyles, ...extra];
 }
 
