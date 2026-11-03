@@ -21851,10 +21851,14 @@ body:has(.pv-root) .pb-root {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  max-width: 100%; /* A long demo title never widens the page on phones. */
   margin-bottom: 12px;
   font-weight: 700;
 }
 .ah-links-pick select {
+  min-width: 0;
+  max-width: 100%;
+  text-overflow: ellipsis;
   padding: 6px 8px;
   border: 1px solid var(--pr-line, #dde3d7);
   border-radius: 8px;
