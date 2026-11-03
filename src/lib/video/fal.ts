@@ -51,10 +51,14 @@ function headers() {
 
 /** What the model receives: the photo (a JPEG as a data URI, never a public link) and the camera move. */
 export function clipInput(model: string, jpeg: Buffer, prompt: string, aspect: ClipAspect = "16:9") {
-  const input: Record<string, unknown> = { image_url: `data:image/jpeg;base64,${jpeg.toString("base64")}`, prompt };
+  const image = `data:image/jpeg;base64,${jpeg.toString("base64")}`;
+  // Kling takes the photo as start_image_url and keeps its shape (the photo is already cropped to the clip's).
+  if (model.includes("kling-video"))
+    return { start_image_url: image, prompt, duration: "5", negative_prompt: "blur, distort, low quality, new objects, people, text", generate_audio: false };
+  const input: Record<string, unknown> = { image_url: image, prompt };
   if (model.includes("ltx-2.3")) Object.assign(input, { duration: CLIP_SECONDS, resolution: "1080p", aspect_ratio: aspect, fps: 25, generate_audio: false });
   else if (model.includes("ltx-2")) Object.assign(input, { duration: CLIP_SECONDS, resolution: "1080p", aspect_ratio: "16:9", fps: 25, generate_audio: false });
-  // Other image-to-video models (Kling, Wan…) take a 5-second string; the scene holds its last frame.
+  // Other image-to-video models (Wan…) take a 5-second string.
   else Object.assign(input, { duration: "5" });
   return input;
 }

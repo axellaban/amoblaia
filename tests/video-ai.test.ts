@@ -221,7 +221,9 @@ describe("fal.ai queue", () => {
     expect(DEFAULT_MODEL).toBe("fal-ai/ltx-2.3/image-to-video/fast");
     expect(sent.body.aspect_ratio).toBe("16:9");
     expect(clipInput(DEFAULT_MODEL, Buffer.from("x"), "p", "9:16")).toMatchObject({ aspect_ratio: "9:16", duration: 6 });
-    expect(clipInput("fal-ai/kling-video/v2.6/pro/image-to-video", Buffer.from("x"), "p")).toMatchObject({ duration: "5" });
+    const kling = clipInput("fal-ai/kling-video/v2.6/pro/image-to-video", Buffer.from("x"), "p");
+    expect(kling).toMatchObject({ start_image_url: expect.stringMatching(/^data:image\/jpeg;base64,/), duration: "5", generate_audio: false });
+    expect(kling).not.toHaveProperty("image_url");
   });
 
   it("reads states: pending, done with the clip, failed with the reason; busy fal is asked again", async () => {
