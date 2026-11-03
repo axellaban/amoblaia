@@ -547,7 +547,7 @@ export function Landing({
             </div>
             <div className="hx-panel-tabs" aria-hidden="true">
               <b>Inicio</b>
-              <span>Mis propiedades</span>
+              <span>Mis demostraciones</span>
               <span>Créditos IA</span>
               <span>Mi sitio web</span>
             </div>

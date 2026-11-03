@@ -1273,7 +1273,7 @@ export function DemoEditor({
       <div className="account-page container dm-page ed-page dx-page">
         {banner}
         <header className="dx-head">
-          <Link href={backTo} className="icon-button dx-back" aria-label={backTo.startsWith("/panel/propiedades") ? "Volver a Mis propiedades" : "Volver"}>
+          <Link href={backTo} className="icon-button dx-back" aria-label={backTo.startsWith("/panel/propiedades") ? "Volver a Mis demostraciones" : "Volver"}>
             ←
           </Link>
           <div className="dx-head-title">
@@ -1667,7 +1667,7 @@ export function DemoEditor({
               : backTo.startsWith("/panel/imagenes")
                 ? "Fotos importadas"
                 : backTo.startsWith("/panel")
-                  ? "Mis propiedades"
+                  ? "Mis demostraciones"
                   : backTo.startsWith("/admin/demos")
                     ? "Demos"
                     : "Inmobiliarias"}
