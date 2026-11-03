@@ -768,9 +768,7 @@ async function publicPayload(demo: DemoRow, logoUrl: (v: string) => string, raw 
 }
 
 /**
- * The property's video for its demo (its file really stored), or null: the
- * newest horizontal one, which fills the gallery, or else the newest in any
- * format (a vertical or square one sits in the middle, over the blurred photo).
+ * The property's newest finished video (its file really stored), or null.
  * Never breaks the page: without the videos table (202611190001_property_videos.sql)
  * or on a failed read, the demo simply shows no video.
  */
@@ -783,10 +781,10 @@ async function latestVideo(demoId: string): Promise<Omit<NonNullable<PublicDemo[
       .eq("status", "completed")
       .not("storage_path", "is", null)
       .order("created_at", { ascending: false })
-      .limit(20);
-    const rows = (data ?? []) as { id: string; format: string; duration_ms: number | null }[];
-    if (error || !rows.length) return null;
-    const row = rows.find((r) => formatOf(r.format) === "16:9") ?? rows[0];
+      .limit(1)
+      .maybeSingle();
+    if (error || !data) return null;
+    const row = data as { id: string; format: string; duration_ms: number | null };
     return { id: row.id, format: formatOf(row.format), durationMs: row.duration_ms };
   } catch {
     return null;
