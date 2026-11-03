@@ -1,720 +1,471 @@
 "use client";
 import Link from "next/link";
-import { useState, type ReactNode } from "react";
-import { Comparison } from "./comparison";
-import { Studio } from "./studio";
-import { StagePicker } from "./stage-picker";
+import { useEffect, useState, type ReactNode } from "react";
 import {
-  ArrowUp,
-  Building2,
-  Check,
-  ChevronDown,
-  CircleHelp,
-  Clock,
+  ArrowRight,
+  ArrowUpRight,
+  Box,
+  Clapperboard,
+  Film,
+  Globe,
   Image as ImageIcon,
+  Images,
   MousePointerClick,
-  RefreshCw,
-  Rocket,
-  Settings,
-  Sofa,
-  Sparkles,
-  Target,
+  Pause,
+  Play,
+  Share2,
+  Smartphone,
   Upload,
-  Wallet,
-  WandSparkles,
-  X,
 } from "lucide-react";
+import { Comparison } from "./comparison";
 import { rooms, styles } from "@/lib/catalog";
 import { exampleRooms, exampleStyles, examplePath } from "@/lib/examples";
 
-// Layout and copy follow the reference landing section by section; figures
-// (minutes, ten styles, prices in pesos) are habita.'s own.
-const STARTING_PRICE = "$16.492"; // Inicial, annual / 12: keep in sync with the products table.
+// The home's value proposition: one property, many ways to show it (an
+// interactive demo, the image studio and videos), for the agency's web, its
+// visits and its social networks. Every picture is one of the site's own
+// examples (public/ejemplos); none is presented as a client's work.
+
+const START = "/panel/empezar";
 const roomName = (id: string) => rooms.find((r) => r.id === id)?.name || id;
 const styleName = (id: string) =>
   id === "original" ? "Original" : styles.find((s) => s.id === id)?.name || id;
-const highlights = [
-  "Bajo costo",
-  "Resultados en minutos",
-  "Retiro de muebles",
-  "10 estilos de diseño",
-  "8 tipos de ambientes",
-];
-const faqs: [string, ReactNode][] = [
-  [
-    "¿Qué es el amoblamiento virtual?",
-    <>
-      <p>
-        El amoblamiento virtual (virtual staging) es un método económico para
-        que los agentes inmobiliarios hagan que las propiedades resulten más
-        atractivas para los posibles compradores. En lugar de usar técnicas
-        tradicionales de ambientación, en las que los muebles y la decoración se
-        llevan y se acomodan físicamente, se usa tecnología digital para agregar
-        muebles, decoración y otros elementos de diseño a un ambiente. Esto se
-        hace mediante software, creando una representación virtual de un espacio
-        totalmente amoblado y decorado.
-      </p>
-      <p>
-        Con el amoblamiento virtual, los agentes inmobiliarios pueden aumentar
-        el valor percibido de una propiedad y hacerla más atractiva para los
-        posibles compradores, mostrándoles cómo podría verse el espacio
-        totalmente amoblado y decorado.
-      </p>
-      <p>
-        Además, el amoblamiento virtual puede ayudar a que las propiedades se
-        destaquen en los portales inmobiliarios, con imágenes atractivas que
-        ayudan a los compradores a imaginarse viviendo en ese espacio.
-      </p>
-    </>,
-  ],
-  [
-    "¿Por qué elegir amoblamiento virtual en lugar de amoblamiento físico?",
-    <>
-      <p>
-        Las ventajas del amoblamiento virtual en cuanto a ahorro de costos son
-        bastante claras. Al eliminar la necesidad de comprar muebles, contratar
-        decoradores, trasladar la decoración y dedicar tiempo a ambientar una
-        casa, el amoblamiento virtual puede reducir significativamente los
-        costos en comparación con la ambientación tradicional.
-      </p>
-      <p>
-        Además, las opciones de amoblamiento virtual son más flexibles que los
-        métodos tradicionales. No hay límites en los estilos de muebles que se
-        pueden agregar, porque los muebles virtuales no dependen de un depósito
-        ni de un flete. Esto permite una variedad mucho más amplia de opciones.
-      </p>
-    </>,
-  ],
-  [
-    "¿Qué es el amoblamiento virtual con IA?",
-    <>
-      <p>
-        El amoblamiento virtual con IA es cuando una inteligencia artificial
-        agrega muebles a una foto automáticamente, en lugar de un diseñador.
-        habita. puede agregar muebles atractivos y realistas, con iluminación
-        natural, a la foto de un ambiente, respetando paredes, aberturas, pisos
-        y perspectiva.
-      </p>
-      <p>
-        Al mismo tiempo, el amoblamiento virtual con IA es mucho más rápido que
-        el que hace un diseñador: reduce la espera de días a minutos y baja
-        mucho el costo de cada imagen. Revisá siempre el resultado antes de
-        publicarlo.
-      </p>
-    </>,
-  ],
-  [
-    "¿Qué tipo de fotos aceptan?",
-    <p>
-      Actualmente amoblamos livings, dormitorios, comedores, cocinas, home
-      offices, patios y balcones, monoambientes y quinchos. Ofrecemos diez
-      estilos de muebles para elegir. Si el ambiente ya tiene muebles u objetos,
-      podemos vaciarlo o reemplazar los muebles existentes por otros nuevos.
-      Aceptamos fotos JPG, PNG o WebP de hasta 10 MB.
-    </p>,
-  ],
-  [
-    "¿Cuánto tarda el amoblamiento virtual con IA?",
-    <p>
-      Procesar la imagen y generar la versión amoblada lleva unos minutos. Podés
-      cerrar la pestaña: el resultado queda guardado.
-    </p>,
-  ],
-  [
-    "¿Qué tan grande es su catálogo de muebles?",
-    <p>
-      Nuestro amoblamiento virtual con IA no trabaja con un catálogo de muebles
-      predefinido. Analiza cada ambiente y, según el estilo y el tipo de
-      ambiente, genera los muebles que mejor se adaptan. Por eso, dos ambientes
-      nunca van a tener los mismos muebles.
-    </p>,
-  ],
-];
 
-function Eyebrow({
-  icon: Icon,
-  children,
+type Has = (room: string, style: string) => boolean;
+
+/** Reduced motion: the reel and the demo do not move on their own. */
+function useReducedMotion() {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    const q = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const sync = () => setReduced(q.matches);
+    sync();
+    q.addEventListener("change", sync);
+    return () => q.removeEventListener("change", sync);
+  }, []);
+  return reduced;
+}
+
+/**
+ * What a video made in habita. looks like: the photos one after another with
+ * a slow camera movement. It is an animation of the examples, not an MP4, so
+ * it says «Vista ilustrativa» and has a pause button (WCAG 2.2.2).
+ */
+function Reel({
+  frames,
+  vertical = false,
+  strip = false,
+  label = "Vista ilustrativa de un video",
 }: {
-  icon: typeof Check;
-  children: ReactNode;
+  frames: string[];
+  vertical?: boolean;
+  strip?: boolean;
+  label?: string;
 }) {
+  const reduced = useReducedMotion();
+  const [paused, setPaused] = useState(false);
+  const [i, setI] = useState(0);
+  const playing = !paused && !reduced && frames.length > 1;
+  useEffect(() => {
+    if (!playing) return;
+    const t = window.setInterval(() => setI((n) => (n + 1) % frames.length), 3200);
+    return () => window.clearInterval(t);
+  }, [playing, frames.length]);
+  if (!frames.length) return null;
   return (
-    <div className="hx-eyebrow">
-      <span>
-        <Icon size={18} />
+    <div className={`hb-reel ${vertical ? "is-vertical" : ""} ${playing ? "is-playing" : ""}`}>
+      <div className="hb-reel-frames" role="img" aria-label={label}>
+        {frames.map((src, n) => (
+          <img key={src} src={src} alt="" loading="lazy" className={n === i ? "is-on" : ""} />
+        ))}
+      </div>
+      {vertical && <span className="hb-reel-format"><Smartphone size={13} aria-hidden="true" /> 9:16</span>}
+      <button
+        type="button"
+        className="hb-reel-toggle"
+        onClick={() => setPaused(playing)}
+        aria-label={playing ? "Pausar la vista del video" : "Reproducir la vista del video"}
+        disabled={reduced || frames.length < 2}
+      >
+        {playing ? <Pause size={20} /> : <Play size={20} />}
+      </button>
+      {strip && (
+        <div className="hb-reel-strip" aria-hidden="true">
+          {frames.map((src, n) => (
+            <img key={src} src={src} alt="" loading="lazy" className={n === i ? "is-on" : ""} />
+          ))}
+        </div>
+      )}
+      <span className="hb-reel-progress" aria-hidden="true">
+        <span key={`${i}-${playing}`} />
       </span>
-      {children}
     </div>
   );
 }
 
-export function Landing({
-  scenes,
-  trial,
+/**
+ * A miniature of the buyer's demo: the rooms of one property and its styles,
+ * as the client sees them on a phone. It works: tapping changes the photo.
+ */
+function DemoViewer({
+  has,
+  demoRooms,
+  compact = false,
 }: {
-  scenes: string[];
-  trial: boolean;
+  has: Has;
+  demoRooms: string[];
+  compact?: boolean;
 }) {
-  // No registration is required for the free generation flow.
-  const has = (room: string, style: string) =>
-    scenes.includes(`${room}-${style === "original" ? "before" : style}`);
-  // Only rooms with an empty photo and at least one staged version are shown.
-  const sceneRooms = exampleRooms.filter(
-    (r) => has(r, "original") && exampleStyles.some((s) => has(r, s)),
-  );
-  const optionsFor = (room: string) =>
-    ["original", ...exampleStyles].filter((s) => has(room, s));
-  const [room, setRoom] = useState<string>(
-    sceneRooms.includes("bedroom") ? "bedroom" : sceneRooms[0] || "living",
-  );
-  const [style, setStyle] = useState("midcentury");
-  const [scene, setScene] = useState<string>(sceneRooms[0] || room);
-  const [sceneStyle, setSceneStyle] = useState("original");
-  const [uploading, setUploading] = useState(false);
-  const [faq, setFaq] = useState<number | null>(null);
-  // The hero compares the empty photo with a staged one, so "original" is never the "after".
-  const heroOptions = optionsFor(room).filter((s) => s !== "original");
-  const heroStyle = heroOptions.includes(style) ? style : heroOptions[0];
-  const stepRoom = has("living", "modern") ? "living" : sceneRooms[0];
-  // The panel illustration: one empty photo and two staged ones from the site's own examples.
-  const mockCards = [
-    { room: stepRoom, style: "original" },
-    { room: stepRoom, style: "modern" },
-    ...sceneRooms.filter((r) => r !== stepRoom && has(r, "scandinavian")).slice(0, 1).map((r) => ({ room: r, style: "scandinavian" })),
-  ].filter((c) => has(c.room, c.style));
-
-  const upload = (
-    <>
-      {trial ? (
-        <span>
-          Subí una imagen <b>gratis</b>
-        </span>
-      ) : (
-        <span>Probá el estudio</span>
-      )}
-      <Upload size={17} />
-    </>
-  );
-  const note = trial
-    ? "Sin registro | Sin tarjeta de crédito"
-    : "Explorá ejemplos sin registrarte";
-  const ctaBlock = (className = "") => (
-    <div className={`hx-cta ${className}`}>
-      <Link href="/estudio" className="hx-button">
-        {upload}
-      </Link>
-      <span>{note}</span>
+  const [room, setRoom] = useState(demoRooms[0]);
+  const [style, setStyle] = useState("modern");
+  const options = ["original", ...exampleStyles.filter((s) => ["modern", "scandinavian", "classic", "minimalist"].includes(s))].filter((s) => has(room, s));
+  const current = options.includes(style) ? style : options[1] || options[0];
+  if (!room) return null;
+  return (
+    <div className={`hb-demo ${compact ? "is-compact" : ""}`}>
+      <div className="hb-demo-photo">
+        <img key={`${room}-${current}`} src={examplePath(room, current)} alt={`${roomName(room)}, ${styleName(current)}`} />
+        <div className="hb-demo-styles" role="group" aria-label="Estilo">
+          {options.map((s) => (
+            <button key={s} type="button" aria-pressed={s === current} onClick={() => setStyle(s)}>
+              {styleName(s)}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="hb-demo-rooms" role="group" aria-label="Ambiente">
+        {demoRooms.map((r) => (
+          <button key={r} type="button" aria-pressed={r === room} onClick={() => setRoom(r)}>
+            <img src={examplePath(r, "original")} alt="" loading="lazy" />
+            <span>{roomName(r)}</span>
+          </button>
+        ))}
+      </div>
     </div>
   );
+}
+
+function Pill({ icon: Icon, children }: { icon: typeof Play; children: ReactNode }) {
+  return (
+    <span className="hb-pill">
+      <Icon size={15} aria-hidden="true" /> {children}
+    </span>
+  );
+}
+
+export function Landing({ scenes, trial }: { scenes: string[]; trial: boolean }) {
+  const has: Has = (room, style) =>
+    scenes.includes(`${room}-${style === "original" ? "before" : style}`);
+  const sceneRooms: string[] = exampleRooms.filter((r) => has(r, "original") && exampleStyles.some((s) => has(r, s)));
+  const pick = (room: string, ...wanted: string[]) => wanted.find((s) => has(room, s)) || exampleStyles.find((s) => has(room, s)) || "original";
+  const lead = sceneRooms.includes("living") ? "living" : sceneRooms[0] || "living";
+  const leadStyle = pick(lead, "scandinavian", "modern");
+  // The rooms of the demo, in the order a visit walks through them.
+  const demoRooms = ["living", "kitchen", "bedroom", "dining", "outdoor"].filter((r) => sceneRooms.includes(r)).slice(0, 4);
+  const reel = ["living", "kitchen", "bedroom", "dining", "outdoor"]
+    .filter((r) => sceneRooms.includes(r))
+    .slice(0, 4)
+    .map((r) => examplePath(r, pick(r, "modern", "scandinavian")));
+  const second = sceneRooms.includes("bedroom") ? "bedroom" : sceneRooms[1] || lead;
+  const [view, setView] = useState<"demo" | "compare" | "video">("compare");
 
   return (
-    <div className="hx">
-      <section className="hx-hero">
-        {uploading ? (
-          <div className="hx-container">
-            <Studio embedded onClose={() => setUploading(false)} />
-          </div>
-        ) : (
-          <div className="hx-container hx-hero-grid">
-            <div>
-              <p className="hx-badge">
-                Hecho para <b>inmobiliarias de Argentina</b>
-              </p>
-              <h1>Amoblamiento virtual con un clic</h1>
-              <h2>
-                Subí una foto y nuestra IA <b>agregará muebles en minutos.</b>
-              </h2>
-              <div className="hx-cta">
-                <button
-                  className="hx-button"
-                  onClick={() =>
-                    trial ? setUploading(true) : location.assign("/estudio")
-                  }
-                >
-                  {upload}
-                </button>
-                <span>{note}</span>
-              </div>
-              <a href="#inmobiliarias" className="hx-agency-link">
-                <Building2 size={17} aria-hidden="true" /> ¿Tenés una inmobiliaria? <b>Conocé el panel</b>
+    <div className="hb">
+      {/* 1. Hero: the promise and the three ways of showing a property. */}
+      <section className="hb-hero">
+        <div className="hb-wrap hb-hero-grid">
+          <div className="hb-hero-copy">
+            <p className="hb-kicker">Marketing inmobiliario con IA</p>
+            <h1>Que tus clientes se imaginen viviendo ahí.</h1>
+            <p className="hb-lead">
+              Creá demostraciones interactivas, transformá tus imágenes y generá
+              videos para tu web, tus visitas y tus redes.
+            </p>
+            <div className="hb-actions">
+              <Link href={START} className="hb-btn">
+                Empezar con una propiedad <ArrowRight size={18} aria-hidden="true" />
+              </Link>
+              <a href="#experiencia" className="hb-link">
+                Ver demo interactiva <ArrowUpRight size={17} aria-hidden="true" />
               </a>
             </div>
-            <div className="hx-hero-stage">
-              <Comparison
-                before={examplePath(room, "original")}
-                after={examplePath(room, heroStyle)}
-                alt={`${roomName(room)} amoblado con IA, estilo ${styleName(heroStyle)}`}
-                beforeAlt={`${roomName(room)} vacío, la foto original`}
-                initial={50}
-              />
-              <StagePicker
-                className="stage-room"
-                label="Ambiente"
-                value={room}
-                onChange={setRoom}
-                options={sceneRooms.map((r) => ({
-                  value: r,
-                  label: roomName(r),
-                }))}
-              />
-              <StagePicker
-                className="stage-style"
-                label="Estilo"
-                value={heroStyle}
-                onChange={setStyle}
-                options={heroOptions.map((s) => ({
-                  value: s,
-                  label: styleName(s),
-                }))}
-              />
+          </div>
+          <div className="hb-hero-visual">
+            <div className="hb-hero-stage" id="hb-hero-stage">
+              {view === "compare" && (
+                <Comparison
+                  before={examplePath(lead, "original")}
+                  after={examplePath(lead, leadStyle)}
+                  beforeLabel="Original"
+                  afterLabel="Propuesta con IA"
+                  alt={`${roomName(lead)} ambientado con IA, estilo ${styleName(leadStyle)}`}
+                  beforeAlt={`${roomName(lead)} vacío, la foto original`}
+                  initial={50}
+                  teach
+                />
+              )}
+              {view === "demo" && <DemoViewer has={has} demoRooms={demoRooms} />}
+              {view === "video" && <Reel frames={reel} strip />}
+              {/* Desktop only: the same property as a video and on a phone. */}
+              <div className="hb-hero-float hb-hero-float-video" aria-hidden="true">
+                <img src={examplePath(second, pick(second, "modern", "scandinavian"))} alt="" />
+                <span><Play size={16} /></span>
+              </div>
+              <div className="hb-hero-float hb-hero-phone" aria-hidden="true">
+                <b>habita.</b>
+                <img src={examplePath(lead, pick(lead, "modern"))} alt="" />
+                <i>
+                  {demoRooms.slice(0, 3).map((r) => (
+                    <img key={r} src={examplePath(r, "original")} alt="" />
+                  ))}
+                </i>
+              </div>
+            </div>
+            <p className="hb-hero-note">Una propiedad. Muchas formas de mostrar su potencial.</p>
+            <div className="hb-tabs" role="group" aria-label="Formas de mostrar la propiedad">
+              {(
+                [
+                  ["demo", Box, "Demo interactiva"],
+                  ["compare", ImageIcon, "Antes / después"],
+                  ["video", Play, "Video"],
+                ] as const
+              ).map(([id, Icon, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  aria-pressed={view === id}
+                  aria-controls="hb-hero-stage"
+                  onClick={() => setView(id)}
+                >
+                  <Icon size={17} aria-hidden="true" /> {label}
+                </button>
+              ))}
             </div>
           </div>
-        )}
-        <div className="hx-container hx-highlights">
-          {highlights.map((h) => (
-            <span key={h}>
-              <Check size={18} /> {h}
-            </span>
-          ))}
         </div>
       </section>
 
-      <div className="hx-body">
-        <section className="hx-container hx-gallery">
-          <div className="hx-gallery-copy">
-            <Eyebrow icon={ImageIcon}>Galería</Eyebrow>
-            <h2>
-              <b>Mirá la transformación:</b> galería de antes y después
-            </h2>
-            <p>
-              Mirá cómo habita. transforma espacios poco atractivos en
-              propiedades atractivas y <b>listas para publicar en minutos.</b>
-            </p>
-            <Link href="/galeria" className="hx-button-outline">
-              Ver galería
-            </Link>
-          </div>
-          <div className="hx-gallery-view">
-            <div className="hx-gallery-stage">
-              <img
-                key={`${scene}-${sceneStyle}`}
-                src={examplePath(scene, sceneStyle)}
-                alt={`${roomName(scene)}, ${styleName(sceneStyle)}`}
-                loading="lazy"
-              />
-              <span className="hx-room-tag">{roomName(scene)}</span>
-              <div className="hx-style-tabs">
-                {optionsFor(scene).map((s) => (
-                  <button
-                    key={s}
-                    className={s === sceneStyle ? "selected" : ""}
-                    aria-pressed={s === sceneStyle}
-                    onClick={() => setSceneStyle(s)}
-                  >
-                    {styleName(s)}
-                  </button>
-                ))}
+      {/* 2. The three products. */}
+      <section className="hb-section" id="crear" aria-labelledby="hb-crear">
+        <div className="hb-wrap">
+          <header className="hb-head">
+            <h2 id="hb-crear">Una propiedad. Todo su potencial.</h2>
+            <p>Elegí qué querés crear. Compartilo donde tus clientes lo van a ver.</p>
+          </header>
+          <div className="hb-products">
+            <article className="hb-card">
+              <div className="hb-card-media">
+                <DemoViewer has={has} demoRooms={demoRooms.slice(0, 1)} compact />
               </div>
-              <StagePicker
-                className="hx-style-picker"
-                label="Estilo"
-                value={sceneStyle}
-                onChange={setSceneStyle}
-                options={optionsFor(scene).map((s) => ({
-                  value: s,
-                  label: styleName(s),
-                }))}
-              />
-            </div>
-            <div className="hx-thumbs">
-              {sceneRooms.map((r) => (
-                <button
-                  key={r}
-                  className={r === scene ? "selected" : ""}
-                  onClick={() => {
-                    setScene(r);
-                    setSceneStyle("original");
-                  }}
-                  aria-label={roomName(r)}
-                  aria-pressed={r === scene}
-                >
-                  <img src={examplePath(r, "original")} alt="" loading="lazy" />
-                </button>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <section className="hx-container hx-stats">
-          {[
-            [
-              "Interés de compradores",
-              <>
-                <b>El 83 % de los agentes de compradores</b> cree que ambientar
-                una vivienda ayuda a que los compradores la imaginen como su
-                futuro hogar.
-              </>,
-            ],
-            [
-              "Ventas más rápidas",
-              <>
-                Las viviendas ambientadas <b>se venden más rápido</b> que las
-                que no lo están.
-              </>,
-            ],
-            [
-              "Mejores ofertas",
-              <>
-                Las viviendas con amoblamiento virtual{" "}
-                <b>se venden a un precio mayor</b> en promedio.
-              </>,
-            ],
-          ].map(([title, text]) => (
-            <article key={title as string}>
-              <h3>
-                {title}
-                <span>
-                  <ArrowUp size={16} />
-                </span>
-              </h3>
-              <p>{text}</p>
-            </article>
-          ))}
-        </section>
-
-        <section className="hx-container-wide">
-          <div className="hx-dark-box hx-simplified">
-            <div className="hx-simplified-copy">
-              <div className="hx-heading">
-                <Eyebrow icon={Sofa}>Amoblamiento simplificado</Eyebrow>
-                <h2>
-                  Vendé sin esfuerzo con <b>amoblamiento con IA</b>
-                </h2>
-              </div>
-              {ctaBlock("hx-desktop")}
-            </div>
-            <div className="hx-feature-grid">
-              {[
-                [
-                  MousePointerClick,
-                  "Fácil de usar",
-                  <>
-                    Quitá los muebles existentes y agregá muebles nuevos{" "}
-                    <b>con un solo clic.</b>
-                  </>,
-                ],
-                [
-                  Clock,
-                  "Resultados rápidos",
-                  <>
-                    Obtené tus fotos listas para publicar en{" "}
-                    <b>solo unos minutos.</b> Sin esperar más a los diseñadores.
-                  </>,
-                ],
-                [
-                  Wallet,
-                  "Precio bajo",
-                  <>
-                    Desde <b>solo {STARTING_PRICE} por mes</b> podés amoblar
-                    virtualmente 6 imágenes. Es más barato de lo que la mayoría
-                    de las agencias cobra por una sola imagen.
-                  </>,
-                ],
-                [
-                  RefreshCw,
-                  "Regeneraciones ilimitadas",
-                  <>
-                    ¿Tenías otra idea en mente? En lugar de ir y venir con un
-                    diseñador,{" "}
-                    <b>obtené más diseños en minutos sin costo adicional.</b>
-                  </>,
-                ],
-              ].map(([Icon, title, text]) => {
-                const I = Icon as typeof Check;
-                return (
-                  <article key={title as string}>
-                    <I size={26} />
-                    <h3>{title as string}</h3>
-                    <p>{text as ReactNode}</p>
-                  </article>
-                );
-              })}
-            </div>
-            {ctaBlock("hx-mobile")}
-          </div>
-        </section>
-
-        <section className="hx-container hx-steps-section">
-          <div className="hx-center">
-            <Eyebrow icon={Settings}>Cómo funciona</Eyebrow>
-            <h2>
-              Resultados listos para publicar <b>en minutos</b>
-            </h2>
-            <p>
-              Seguí <b>tres simples pasos</b> para convertir las fotos de tu
-              propiedad en imágenes impactantes que atraigan compradores y hagan
-              que tus publicaciones se destaquen
-            </p>
-          </div>
-          <div className="hx-steps">
-            {[
-              [
-                "Subí tu imagen",
-                "Aceptamos fotos amobladas y sin amoblar.",
-                "original",
-              ],
-              [
-                "Magia de IA",
-                "Nuestra IA rediseña tu espacio en minutos.",
-                "original",
-              ],
-              [
-                "Descargá y destacá",
-                "Descargá la foto amoblada y usala donde quieras.",
-                "modern",
-              ],
-            ].map(([title, text, s], i) => (
-              <article key={title}>
-                <div className="hx-step-head">
-                  <h3>{title}</h3>
-                  <span>{i + 1}</span>
-                </div>
-                <p>{text}</p>
-                <div className="hx-step-image">
-                  <img src={examplePath(stepRoom, s)} alt="" loading="lazy" />
-                  {i === 1 && (
-                    <span className="hx-step-busy">
-                      <WandSparkles size={18} /> Agregando muebles...
-                    </span>
-                  )}
-                  {i === 2 && (
-                    <span className="hx-step-done">
-                      <Sparkles size={18} /> ¡Tus publicaciones nunca se vieron
-                      tan bien!
-                    </span>
-                  )}
-                </div>
-              </article>
-            ))}
-          </div>
-        </section>
-
-        <section className="hx-container hx-agencies" id="inmobiliarias" aria-labelledby="hx-agencies-title">
-          <div className="hx-agencies-copy">
-            <Eyebrow icon={Building2}>Para inmobiliarias</Eyebrow>
-            <h2 id="hx-agencies-title">
-              Todas tus propiedades. <b>Todo su potencial.</b>
-            </h2>
-            <p>
-              Importá tus publicaciones o tus fotos, ambientá varias propiedades
-              a la vez con IA y compartí fichas que inspiran. Todo desde un solo
-              panel.
-            </p>
-            <div className="hx-agencies-actions">
-              <Link href="/panel/empezar" className="button button-primary button-large">
-                Crear mi inmobiliaria gratis
+              <h3>Demostraciones interactivas</h3>
+              <p>Una ficha para recorrer, cambiar el estilo de cada ambiente y compartir por WhatsApp.</p>
+              <Link href={START} className="hb-more">
+                Crear mi demo <ArrowRight size={16} aria-hidden="true" />
               </Link>
-              <a href="#inmobiliarias-pasos" className="button button-outline button-large">
-                Ver cómo funciona
-              </a>
-            </div>
-            <ol className="hx-agencies-steps" id="inmobiliarias-pasos">
-              <li>
-                <b>Pegá el enlace o subí tus fotos.</b> Traemos las fotos de cada
-                publicación, de una o de hasta 10 a la vez.
-              </li>
-              <li>
-                <b>Ambientá varias propiedades en una tanda.</b> Elegí fotos y
-                estilo; antes de generar ves cuántos créditos usa.
-              </li>
-              <li>
-                <b>Descargalas o creá la ficha</b> y compartila en tu catálogo de
-                habita. Importar y publicar no usan créditos.
-              </li>
-            </ol>
-          </div>
-          {/* An illustration of the panel with the site's own example photos: no real data. */}
-          <div
-            className="hx-panel-mock"
-            role="img"
-            aria-label="Vista ilustrativa del panel de una inmobiliaria en habita: crear fichas, importar imágenes y ambientar varias propiedades a la vez"
-          >
-            <div className="hx-panel-bar">
-              <span />
-              <span />
-              <span />
-              <i>Panel de tu inmobiliaria</i>
-            </div>
-            <div className="hx-panel-tabs" aria-hidden="true">
-              <b>Inicio</b>
-              <span>Mis propiedades</span>
-              <span>Créditos IA</span>
-              <span>Mi sitio web</span>
-            </div>
-            <div className="hx-panel-entries">
-              <div className="hx-panel-entry is-dark">
-                <strong>Crear demostraciones</strong>
-                <small>o fichas de propiedades</small>
-                <span className="hx-panel-field">https://inmobiliaria.com/propiedad/…</span>
-              </div>
-              <div className="hx-panel-entry">
-                <strong>Importar imágenes</strong>
-                <small>Para ambientar y descargar</small>
-                <span className="hx-panel-chips">
-                  <em>Desde URL</em>
-                  <em>Varias URLs</em>
-                  <em>Subir fotos</em>
-                </span>
-              </div>
-            </div>
-            <div className="hx-panel-batch">
-              <p>
-                <b>Fotos importadas</b> · 2 propiedades
-              </p>
-              <div className="hx-panel-cards">
-                {mockCards.map((c) => (
-                  <div key={`${c.room}-${c.style}`} className="hx-panel-card">
-                    <img src={examplePath(c.room, c.style)} alt="" loading="lazy" />
-                    <span className={c.style === "original" ? "" : "is-ai"}>
-                      {c.style === "original" ? "Original" : "Con IA"}
-                    </span>
-                    <i>{roomName(c.room)}</i>
-                  </div>
-                ))}
-              </div>
-              <div className="hx-panel-apply">
-                <span>2 fotos elegidas · Moderno</span>
-                <b>Revisar y generar →</b>
-              </div>
-            </div>
-            <small>Vista ilustrativa</small>
-          </div>
-        </section>
-
-        <section className="hx-container hx-why">
-          <div className="hx-center">
-            <Eyebrow icon={Rocket}>Cómo se destaca nuestro servicio</Eyebrow>
-            <h2>
-              <b>¿Por qué elegirnos?</b> La ventaja de habita.
-            </h2>
-          </div>
-          <div className="hx-compare">
-            <span className="hx-vs">VS</span>
-            <div className="hx-compare-us">
-              <div className="hx-compare-title">
+            </article>
+            <article className="hb-card">
+              <div className="hb-card-media hb-split" aria-hidden="true">
                 <span>
-                  <b>habita.</b>
+                  <img src={examplePath(second, "original")} alt="" loading="lazy" />
+                  <em>Antes</em>
+                </span>
+                <span>
+                  <img src={examplePath(second, pick(second, "scandinavian", "modern"))} alt="" loading="lazy" />
+                  <em>Después</em>
                 </span>
               </div>
-              {[
-                ["Resultados rápidos", "listos en minutos"],
-                ["Amoblamiento sin esfuerzo", "simple e intuitivo"],
-                ["Económico", `desde ${STARTING_PRICE} por mes`],
-                ["Regeneraciones ilimitadas", "hasta que quedes conforme"],
-                [
-                  "IA de alta precisión",
-                  "no altera la distribución del ambiente",
-                ],
-                ["Publicación transparente", "sin tergiversar la propiedad"],
-              ].map(([b, t]) => (
-                <p key={b}>
-                  <Check size={20} strokeWidth={3} />
-                  <span>
-                    <b>{b}:</b> {t}
-                  </span>
-                </p>
-              ))}
-            </div>
-            <div className="hx-compare-them">
-              <div className="hx-compare-title">
-                <h4>Otros</h4>
+              <h3>Estudio de imágenes</h3>
+              <p>Amoblá, vaciá o mejorá tus fotos y descargalas listas para publicar.</p>
+              <Link href="/estudio" className="hb-more">
+                {trial ? "Probalo gratis" : "Explorar el estudio"} <ArrowRight size={16} aria-hidden="true" />
+              </Link>
+            </article>
+            <article className="hb-card">
+              <div className="hb-card-media">
+                <Reel frames={reel} vertical />
               </div>
-              {[
-                ["Varios días", "entrega exprés con costo extra"],
-                ["Instrucciones tediosas", "lleva tiempo"],
-                ["Caro", "desde US$20 por foto"],
-                ["Revisiones limitadas", "tardan varios días"],
-                ["Error humano", "calidad distinta cada vez"],
-                ["Se exceden", "a veces cambian demasiado"],
-              ].map(([b, t]) => (
-                <p key={b}>
-                  <X size={20} strokeWidth={3} />
-                  <span>
-                    <b>{b}:</b> {t}
-                  </span>
-                </p>
-              ))}
-            </div>
+              <h3>Videos</h3>
+              <p>Convertí las fotos en recorridos y videos verticales u horizontales, con música y tu marca.</p>
+              <Link href="/panel/video" className="hb-more">
+                Crear un video <ArrowRight size={16} aria-hidden="true" />
+              </Link>
+            </article>
           </div>
-        </section>
+        </div>
+      </section>
 
-        <section className="hx-container hx-faq" id="preguntas">
-          <div>
-            <Eyebrow icon={CircleHelp}>Preguntas frecuentes</Eyebrow>
-            <h2>
-              <b>¿Tenés preguntas?</b>
-              <br />
-              Tenemos respuestas
-            </h2>
+      {/* 3. The demo, before, during and after the visit. */}
+      <section className="hb-section hb-visit" id="experiencia" aria-labelledby="hb-visit">
+        <div className="hb-wrap hb-visit-grid">
+          <div className="hb-visit-copy">
+            <h2 id="hb-visit">Una experiencia que acompaña cada visita.</h2>
+            <p>
+              Compartí una demo que tus clientes puedan recorrer y reenviar. Probala:
+              tocá un ambiente o un estilo.
+            </p>
           </div>
-          <div className="hx-faq-list">
-            {faqs.map(([q, a], i) => (
-              <div className={faq === i ? "open" : ""} key={q}>
-                <h3>
-                  <button
-                    onClick={() => setFaq(faq === i ? null : i)}
-                    aria-expanded={faq === i}
-                    aria-controls={`faq-${i}`}
-                  >
-                    {q}
-                    <ChevronDown size={22} />
-                  </button>
-                </h3>
-                <div id={`faq-${i}`} hidden={faq !== i}>
-                  {a}
+          <div className="hb-device" aria-label="Demo de ejemplo, como la ve un comprador">
+            <div className="hb-device-bar" aria-hidden="true">
+              <b>habita.</b>
+              <span>Departamento de ejemplo</span>
+            </div>
+            <DemoViewer has={has} demoRooms={demoRooms} />
+            <small>Vista ilustrativa con fotos de ejemplo</small>
+          </div>
+          <ol className="hb-moments">
+            {[
+              ["Antes de la visita", "Despertá interés y compartí la demo."],
+              ["Durante la visita", "Ayudá a imaginar cómo podrían vivir ahí."],
+              ["Después de la visita", "Retomá la conversación con una propuesta."],
+            ].map(([title, text], n) => (
+              <li key={title}>
+                <span>0{n + 1}</span>
+                <div>
+                  <h3>{title}</h3>
+                  <p>{text}</p>
                 </div>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </section>
+
+      {/* 4. Where each result goes. */}
+      <section className="hb-section" aria-labelledby="hb-uses">
+        <div className="hb-wrap">
+          <header className="hb-head">
+            <h2 id="hb-uses">De una foto a muchas posibilidades.</h2>
+          </header>
+          <div className="hb-uses">
+            <article className="hb-use">
+              <Comparison
+                before={examplePath(lead, "original")}
+                after={examplePath(lead, pick(lead, "modern", "scandinavian"))}
+                beforeLabel="Original"
+                afterLabel="Ambientada con IA"
+                alt={`${roomName(lead)} ambientado con IA`}
+                beforeAlt={`${roomName(lead)} vacío`}
+                initial={50}
+              />
+              <h3>Imágenes que muestran el potencial</h3>
+              <p>Transformá tus fotos y mostrá cómo puede verse el espacio.</p>
+            </article>
+            <article className="hb-use">
+              <Reel frames={reel} strip />
+              <h3>Dale movimiento a tus propiedades</h3>
+              <p>Convertí tus imágenes en videos que transmiten el espacio real.</p>
+              <div className="hb-pills">
+                <Pill icon={Film}>Clásico</Pill>
+                <Pill icon={ImageIcon}>Foto en movimiento</Pill>
+                <Pill icon={Clapperboard}>Recorrido cinematográfico</Pill>
+              </div>
+            </article>
+            <article className="hb-use hb-use-web">
+              <h3>Dale vida a tu web</h3>
+              <p>Sumá demos, imágenes mejoradas y videos al sitio de tu inmobiliaria.</p>
+              <div className="hb-browser" aria-hidden="true">
+                <div className="hb-browser-bar">
+                  <i /><i /><i />
+                  <span>Propiedades · Nosotros · Contacto</span>
+                </div>
+                <div className="hb-browser-hero">
+                  <img src={examplePath(lead, pick(lead, "modern"))} alt="" loading="lazy" />
+                  <div>
+                    <strong>Departamento de 3 ambientes</strong>
+                    <em>Explorá esta propiedad <ArrowRight size={13} /></em>
+                  </div>
+                </div>
+              </div>
+              <p className="hb-use-foot">
+                <Globe size={15} aria-hidden="true" /> Imágenes · Videos · Acceso a tu demo
+              </p>
+            </article>
+            <article className="hb-use hb-use-social">
+              <h3>Expandí tu audiencia</h3>
+              <p>Mostrá tus propiedades en redes con contenido que se detiene a mirar.</p>
+              <div className="hb-posts" aria-hidden="true">
+                <span className="is-square"><img src={examplePath(second, pick(second, "modern"))} alt="" loading="lazy" /></span>
+                <span className="is-story">
+                  <img src={examplePath(lead, pick(lead, "scandinavian", "modern"))} alt="" loading="lazy" />
+                  <Play size={18} />
+                </span>
+                <span className="is-portrait">
+                  <img src={examplePath(sceneRooms.includes("dining") ? "dining" : lead, pick(sceneRooms.includes("dining") ? "dining" : lead, "modern"))} alt="" loading="lazy" />
+                </span>
+              </div>
+              <p className="hb-use-foot">
+                <Images size={15} aria-hidden="true" /> Fotos · Reels · Stories · Posts
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      {/* 5. How it starts. */}
+      <section className="hb-section hb-steps-section" id="como-funciona" aria-labelledby="hb-steps">
+        <div className="hb-wrap">
+          <header className="hb-head">
+            <h2 id="hb-steps">Empezá con lo que ya tenés.</h2>
+          </header>
+          <ol className="hb-steps">
+            {[
+              [Upload, "Subí fotos o importá una propiedad", "Pegá el enlace de tu publicación y traemos las fotos."],
+              [MousePointerClick, "Elegí qué querés crear", "Una demo, imágenes ambientadas o un video."],
+              [Share2, "Descargá o compartí el resultado", "En tu web, por WhatsApp o en tus redes."],
+            ].map(([Icon, title, text], n) => {
+              const I = Icon as typeof Upload;
+              return (
+                <li key={title as string}>
+                  <span className="hb-step-icon"><I size={22} aria-hidden="true" /></span>
+                  <div>
+                    <h3><span>{n + 1}.</span> {title as string}</h3>
+                    <p>{text as string}</p>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        </div>
+      </section>
+
+      {/* 6. Why it matters: industry figures, never habita.'s own results. */}
+      <section className="hb-wrap-wide" aria-labelledby="hb-why">
+        <div className="hb-why">
+          <h2 id="hb-why">Por qué es importante para tu negocio</h2>
+          <div className="hb-stats">
+            {[
+              ["83 %", "de los agentes de compradores", "dice que ambientar ayuda a imaginar la propiedad como un futuro hogar."],
+              ["49 %", "de los agentes de vendedores", "vio que ambientar redujo el tiempo de la propiedad en el mercado."],
+              ["29 %", "de los agentes de vendedores", "recibió ofertas entre 1 % y 10 % más altas con la propiedad ambientada."],
+            ].map(([n, who, what]) => (
+              <div key={what}>
+                <strong>{n}</strong>
+                <b>{who}</b>
+                <p>{what}</p>
               </div>
             ))}
           </div>
-        </section>
+          <p className="hb-source">
+            Fuente:{" "}
+            <a
+              href="https://www.nar.realtor/press-releases/nar-report-reveals-home-staging-boosts-sale-prices-and-reduces-time-on-market"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              NAR, 2025 Profile of Home Staging
+            </a>{" "}
+            (Estados Unidos). Se refieren al staging en general; no son resultados medidos de habita.
+          </p>
+        </div>
+      </section>
 
-        <section className="hx-container-wide">
-          <div className="hx-dark-box hx-final">
-            <div className="hx-final-copy">
-              <div className="hx-heading">
-                <Eyebrow icon={Target}>Empezá ahora</Eyebrow>
-                <h2>
-                  ¿Listo para <b>transformar tus publicaciones?</b>
-                </h2>
-                <p>
-                  Descubrí cómo nuestras soluciones de amoblamiento rápidas y
-                  económicas pueden aumentar el interés de los compradores,
-                  acelerar las ventas y conseguir mejores ofertas.
-                  <br />
-                  <br />
-                  <b>
-                    ¡No dejes que tus propiedades pasen desapercibidas: hacé que
-                    se destaquen y se vendan más rápido!
-                  </b>
-                </p>
-              </div>
-              {ctaBlock("hx-desktop")}
-            </div>
-            <div className="hx-final-visual">
-              <img src="/home/cierre.webp" alt="" loading="lazy" />
-              <div className="hx-includes">
-                <p>Incluye</p>
-                {highlights.slice(0, 4).map((h) => (
-                  <span key={h}>
-                    <Check size={18} /> {h}
-                  </span>
-                ))}
-              </div>
-            </div>
-            {ctaBlock("hx-mobile")}
-          </div>
-        </section>
-      </div>
+      {/* 7. Close. */}
+      <section className="hb-wrap hb-final">
+        <h2>Tu próxima propiedad tiene mucho para mostrar.</h2>
+        <Link href={START} className="hb-btn">
+          Empezar con una propiedad <ArrowRight size={18} aria-hidden="true" />
+        </Link>
+      </section>
     </div>
   );
 }
