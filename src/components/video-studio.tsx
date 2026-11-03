@@ -1497,7 +1497,7 @@ function Studio({
           <div className="vs-col vs-col-right">
             <section className="vs-card vs-formats" aria-labelledby="vs-format">
               <h2 id="vs-format">Formato de exportación</h2>
-              <p className="vs-hint">Elegí el formato ideal según dónde vas a publicar el video.{!group && " Para la ficha, Horizontal 16:9 ocupa toda la galería: la ficha muestra tu último video horizontal y, si no hay, el último en otro formato."}</p>
+              <p className="vs-hint">Elegí el formato ideal según dónde vas a publicar el video.{!group && " La demostración muestra tu último video: en Horizontal 16:9 ocupa toda la galería."}</p>
               <div className="vs-format-list" role="radiogroup" aria-labelledby="vs-format">
                 {VIDEO_FORMATS.map((f) => (
                   <button
@@ -1515,6 +1515,7 @@ function Studio({
                     <FormatIcon format={f} />
                     <span className="vs-format-text">
                       <strong>{FORMAT_INFO[f].name}</strong>
+                      {f === "16:9" && !group && <span className="vs-recommended">Recomendado para la demostración</span>}
                       <small className="vs-res">{resolutionOf(f)}</small>
                       <small>{FORMAT_INFO[f].uses}</small>
                     </span>

@@ -16808,6 +16808,15 @@ main:has(.ap-sidebar) {
   font-size: 11.5px;
   font-weight: 700;
 }
+.vs-recommended {
+  justify-self: start;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #e3efdc;
+  color: var(--forest);
+  font-size: 11.5px;
+  font-weight: 700;
+}
 .vs-tag.is-free {
   background: #e3efdc;
   color: var(--forest);
