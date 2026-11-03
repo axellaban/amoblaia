@@ -143,6 +143,7 @@ export function VideoStudio({
   team = false,
   previewHref = null,
   ai = false,
+  credits = null,
 }: {
   demoId: string | null;
   demo: PublicDemo | null;
@@ -160,8 +161,10 @@ export function VideoStudio({
   team?: boolean;
   /** Where «Ver vista previa de la ficha» goes (the team's own preview from administration). */
   previewHref?: string | null;
-  /** Whether the AI modes can be used here (their provider is configured). */
+  /** Whether the AI modes can be used here (HABITA_VIDEO_AI=1 and their provider configured); otherwise «Próximamente». */
   ai?: boolean;
+  /** The agency's credits balance, shown when confirming an AI video (null: unknown). */
+  credits?: number | null;
 }) {
   useEffect(() => {
     if (!team) trackEvent("video_section_viewed", { has_property: Boolean(demo), is_group: kind === "fotos", device_type: deviceType() });
@@ -180,6 +183,7 @@ export function VideoStudio({
       team={team}
       previewHref={previewHref ?? `/panel/propiedades/${demoId}/vista-previa`}
       ai={ai}
+      balance={credits}
     />
   );
 }
@@ -395,6 +399,104 @@ function FormatIcon({ format }: { format: VideoFormat }) {
   );
 }
 
+/**
+ * Before an AI video: what it costs, the agency's balance and what is left,
+ * and what the AI does. Nothing is charged until «Generar» here.
+ */
+function ConfirmAi({
+  mode,
+  credits,
+  balance,
+  photo,
+  count,
+  format,
+  seconds: secs,
+  onCancel,
+  onConfirm,
+}: {
+  mode: VideoMode;
+  credits: number;
+  balance: number | null;
+  photo: string | null;
+  count: number;
+  format: VideoFormat;
+  seconds: number;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const d = ref.current;
+    if (d && !d.open) d.showModal();
+  }, []);
+  const short = typeof balance === "number" && balance < credits;
+  return (
+    <dialog ref={ref} className="sp-dialog vs-confirm" aria-labelledby="vs-confirm-title" onClose={onCancel} onCancel={onCancel}>
+      <div className="sp-head">
+        <span className="sp-kicker">Crear video</span>
+        <button type="button" className="icon-button" aria-label="Cerrar" onClick={() => ref.current?.close()}>
+          <X size={18} />
+        </button>
+      </div>
+      <h2 id="vs-confirm-title">¿Generar «{MODE_INFO[mode].name}»?</h2>
+      <div className="vs-confirm-what">
+        {photo && <img src={photo} alt="" />}
+        <p>
+          {count === 1 ? "Se anima la primera foto del orden." : `Se animan ${count} fotos, en el orden elegido.`}
+          <br />
+          {FORMAT_INFO[format].short} · ≈ {secs} s
+        </p>
+      </div>
+      <dl className="vs-facts">
+        <div>
+          <dt>Usa</dt>
+          <dd>
+            <strong>{credits} créditos</strong>
+          </dd>
+        </div>
+        {typeof balance === "number" && (
+          <>
+            <div>
+              <dt>Tenés</dt>
+              <dd>{balance} créditos</dd>
+            </div>
+            <div>
+              <dt>Te van a quedar</dt>
+              <dd>{short ? "—" : `${balance - credits} créditos`}</dd>
+            </div>
+          </>
+        )}
+      </dl>
+      <ul className="vs-confirm-list">
+        <li>
+          <Check size={17} aria-hidden="true" /> La IA solo mueve la cámara: no agrega ni cambia nada.
+        </li>
+        <li>
+          <Check size={17} aria-hidden="true" /> Tarda uno o dos minutos; podés cerrar la página.
+        </li>
+        <li>
+          <Check size={17} aria-hidden="true" /> Si la animación falla, te devolvemos los créditos.
+        </li>
+      </ul>
+      {short && <p className="inline-error">No te alcanzan los créditos para este video.</p>}
+      <div className="vs-confirm-actions">
+        <button type="button" className="button button-outline" onClick={() => ref.current?.close()}>
+          Cancelar
+        </button>
+        {short ? (
+          <Link className="button button-primary" href="/panel/creditos">
+            Ver planes
+          </Link>
+        ) : (
+          <button type="button" className="button button-primary" onClick={onConfirm}>
+            <Sparkles size={17} aria-hidden="true" /> Generar · {credits} créditos
+          </button>
+        )}
+      </div>
+    </dialog>
+  );
+}
+
 function Studio({
   demoId,
   demo,
@@ -407,6 +509,7 @@ function Studio({
   team,
   previewHref,
   ai,
+  balance,
 }: {
   demoId: string;
   demo: PublicDemo;
@@ -419,6 +522,7 @@ function Studio({
   team: boolean;
   previewHref: string;
   ai: boolean;
+  balance: number | null;
 }) {
   const router = useRouter();
   // The team's work on an agency is not the agency's funnel: nothing is reported then.
@@ -445,11 +549,13 @@ function Studio({
   const [placement, setPlacement] = useState<VideoPlacement>(initialPlacement);
   const [videos, setVideos] = useState<PublicVideo[] | null>(null);
   const [listError, setListError] = useState("");
-  const [busy, setBusy] = useState<null | { stage: string; progress: number }>(null);
+  const [busy, setBusy] = useState<null | { stage: string; progress: number; kind?: "send" | "join" }>(null);
   const [error, setError] = useState("");
   const [fresh, setFresh] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [command, setCommand] = useState<Command | null>(null);
+  // The AI modes' confirmation: what it costs, the balance and what is left, before anything is charged.
+  const [confirming, setConfirming] = useState(false);
   const abort = useRef<AbortController | null>(null);
   const restored = useRef(false);
   const touched = useRef(false);
@@ -706,9 +812,16 @@ function Studio({
       setError("Este navegador no puede armar el video. Probá con Chrome, Edge o Safari actualizados (en iPhone, iOS 17 o posterior), o desde una computadora. No se usaron créditos.");
       return;
     }
-    if (!window.confirm(`${MODE_INFO[mode].name} usa ${credits} créditos. ¿Generar el video?`)) return;
+    // Nothing is charged until the person confirms in the dialog (launchAi).
+    setConfirming(true);
+  }
+
+  async function launchAi() {
+    setConfirming(false);
+    if (!plan || busy || !canEdit || !aiMode) return;
+    const p = props();
     try {
-      setBusy({ stage: "Enviando las fotos a la IA…", progress: 0.02 });
+      setBusy({ kind: "send", stage: "Enviando las fotos a la IA…", progress: 0.02 });
       const options: VideoOptions = { photos: chosen.map((c) => c.id), staged: useStaged, info: includeInfo, fields: chosenFields };
       const started = await api<{ id: string; status: string; error: string | null }>("/api/panel/videos", {
         method: "POST",
@@ -747,20 +860,20 @@ function Studio({
     try {
       const { canRender, loadClip, loadAsset, renderMp4 } = await import("@/lib/video/render");
       if (!(await canRender(vPlan))) throw new Error("Este navegador no puede armar el video. Abrí esta página en Chrome, Edge o Safari actualizados, o desde una computadora: los clips te esperan.");
-      setBusy({ stage: "Cargando los clips animados…", progress: 0.03 });
+      setBusy({ kind: "join", stage: "Cargando los clips animados…", progress: 0.03 });
       const assets = await Promise.all(v.ai.clips.map((c) => loadClip(c.url, c.staged)));
       const logo = vCards.outro?.logo && demo.agency.logo ? await loadAsset(demo.agency.logo, false).then((a) => a.image ?? null).catch(() => null) : null;
       step = "render";
-      const blob = await renderMp4(vPlan, vCards, assets, logo, (x) => setBusy({ stage: `Armando el video… ${Math.round(x * 100)}%`, progress: 0.05 + x * 0.8 }), controller.signal);
+      const blob = await renderMp4(vPlan, vCards, assets, logo, (x) => setBusy({ kind: "join", stage: `Armando el video… ${Math.round(x * 100)}%`, progress: 0.05 + x * 0.8 }), controller.signal);
       step = "upload";
-      setBusy({ stage: "Guardando…", progress: 0.9 });
+      setBusy({ kind: "join", stage: "Guardando…", progress: 0.9 });
       const target = await api<{ upload: { path: string; token: string; bucket: string } }>("/api/panel/videos", { method: "PUT", body: JSON.stringify({ demoId, id: v.id }) });
       const client = browserClient();
       if (!client) throw new Error("No pudimos guardar el video.");
       const up = await client.storage.from(target.upload.bucket).uploadToSignedUrl(target.upload.path, target.upload.token, blob, { contentType: "video/mp4", upsert: true });
       if (up.error) throw new Error("No pudimos subir el video. Revisá tu conexión e intentá de nuevo.");
       step = "storage";
-      setBusy({ stage: "Confirmando…", progress: 0.97 });
+      setBusy({ kind: "join", stage: "Confirmando…", progress: 0.97 });
       for (let attempt = 0; ; attempt++) {
         try {
           await api("/api/panel/videos", { method: "PATCH", body: JSON.stringify({ demoId, id: v.id, ok: true, durationMs: vPlan.durationMs }) });
@@ -985,7 +1098,7 @@ function Studio({
                         <small>{m === "classic" ? "Tus fotos con movimiento suave de cámara y transiciones." : MODE_INFO[m].text}</small>
                       </span>
                       <span className={`vs-tag ${live && !VIDEO_CREDITS[m] ? "is-free" : ""}`}>
-                        {!live ? "No disponible" : VIDEO_CREDITS[m] ? `${VIDEO_CREDITS[m]} créditos` : "Sin créditos"}
+                        {!live ? "Próximamente" : VIDEO_CREDITS[m] ? `${VIDEO_CREDITS[m]} créditos` : "Sin créditos"}
                       </span>
                       {mode === m && (
                         <span className="vs-tick" aria-hidden="true">
@@ -1112,10 +1225,18 @@ function Studio({
                 <div className="vs-progress" role="status" aria-live="polite">
                   <Loader2 size={18} className="spin" aria-hidden="true" /> {busy.stage}
                   <progress max={1} value={busy.progress} aria-label="Avance del video" />
-                  <button type="button" className="text-link" onClick={() => abort.current?.abort()}>
-                    Cancelar
-                  </button>
-                  <small className="vs-hint">{aiMode && busy.progress < 0.03 ? "Enviando las fotos: no cierres la pestaña todavía." : "Se crea en este navegador: no cierres la pestaña hasta que termine."}</small>
+                  {busy.kind !== "send" && (
+                    <button type="button" className="text-link" onClick={() => abort.current?.abort()}>
+                      {busy.kind === "join" ? "Pausar" : "Cancelar"}
+                    </button>
+                  )}
+                  <small className="vs-hint">
+                    {busy.kind === "send"
+                      ? "Enviando las fotos: no cierres la pestaña todavía."
+                      : busy.kind === "join"
+                        ? "Se arma en este navegador: no cierres la pestaña hasta que termine. Si se corta, los clips quedan guardados."
+                        : "Se crea en este navegador: no cierres la pestaña hasta que termine."}
+                  </small>
                 </div>
               ) : (
                 generateButton()
@@ -1128,11 +1249,30 @@ function Studio({
                       <button type="button" className="button button-small button-primary" onClick={() => void join(pendingAi)}>
                         <Film size={15} aria-hidden="true" /> Terminar video
                       </button>
+                      <small className="vs-hint">Falta unirlos en el video: se hace en este navegador, tarda menos de un minuto y no usa créditos.</small>
                     </>
                   ) : (
                     <>
                       <Loader2 size={18} className="spin" aria-hidden="true" /> La IA está animando las fotos: {pendingAi.ai?.done ?? 0} de {pendingAi.ai?.total ?? pendingAi.photoCount} listas.
                       <progress max={1} value={pendingAi.ai ? (pendingAi.ai.done + 0.3) / Math.max(1, pendingAi.ai.total) : 0.1} aria-label="Avance de la animación" />
+                      {pendingAi.ai && pendingAi.ai.items.length > 1 && (
+                        <ul className="vs-clips">
+                          {pendingAi.ai.items.map((s, i) => {
+                            const id = pendingAi.options?.photos[i];
+                            const photo = id ? demo.photos.find((x) => x.id === id) : null;
+                            const label = photo?.label || `Foto ${i + 1}`;
+                            return (
+                              <li key={i}>
+                                {photo && <img src={adminPhotoUrl(photo.id, null, 160)} alt="" />}
+                                <strong>
+                                  {i + 1}. {label}
+                                </strong>
+                                <span className={`vs-tag ${s === "ready" ? "is-free" : ""}`}>{s === "ready" ? "Lista" : s === "pending" ? "En cola" : s === "failed" ? "Reintentando…" : "Animando…"}</span>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
                       <small className="vs-hint">Podés cerrar esta página: el video te espera en el historial para terminarlo.</small>
                     </>
                   )}
@@ -1389,6 +1529,20 @@ function Studio({
             onPlay={() => track("video_preview_played", { ...base, video_id: result.id, mode: result.mode, format: result.format, video_format: result.format, place: "result" })}
           />
         </section>
+      )}
+
+      {confirming && aiMode && (
+        <ConfirmAi
+          mode={mode}
+          credits={credits}
+          balance={balance}
+          photo={chosen[0] ? adminPhotoUrl(chosen[0].id, chosen[0].version, 240) : null}
+          count={chosen.length}
+          format={format}
+          seconds={plan ? seconds(plan.durationMs) : 0}
+          onCancel={() => setConfirming(false)}
+          onConfirm={() => void launchAi()}
+        />
       )}
 
       <section className="vs-card" aria-labelledby="vs-history">

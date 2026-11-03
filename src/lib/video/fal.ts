@@ -10,6 +10,12 @@ import { CLIP_SECONDS } from "./plan";
 export const DEFAULT_MODEL = "fal-ai/ltx-2/image-to-video/fast";
 export const falModel = () => (process.env.FAL_VIDEO_MODEL || DEFAULT_MODEL).trim();
 export const falEnabled = () => Boolean(process.env.FAL_KEY?.trim());
+/**
+ * Whether agencies can start AI videos: the key AND HABITA_VIDEO_AI=1. Until
+ * then the AI modes show «Próximamente» and only the «Clásico» is used; the
+ * key alone lets the team test fal without opening the modes to anyone.
+ */
+export const aiVideoLive = () => falEnabled() && process.env.HABITA_VIDEO_AI?.trim() === "1";
 const QUEUE = "https://queue.fal.run/";
 /** A clip is a few MB; anything far bigger is not one. */
 export const MAX_CLIP_BYTES = 80 * 1024 * 1024;

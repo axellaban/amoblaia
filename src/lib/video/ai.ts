@@ -11,7 +11,7 @@ import { HttpError } from "@/lib/commerce/http";
 import { validStyle } from "@/lib/demos/input";
 import { adminImagePaths, previewDemo, renderImage } from "@/lib/demos/server";
 import { adminClient } from "@/lib/supabase/server";
-import { clipState, downloadClip, falEnabled, falModel, submitClip } from "./fal";
+import { aiVideoLive, clipState, downloadClip, falEnabled, falModel, submitClip } from "./fal";
 import { clipPrompt, isAiMode, isVideoFormat, MODE_INFO, photoCountProblem, VIDEO_CREDITS, VIDEO_SIZE, type AiMode, type VideoFormat } from "./plan";
 import { readOptions, VIDEO_BUCKET, type VideoRow } from "./server";
 
@@ -116,7 +116,8 @@ export async function startAiVideo(input: {
     if (found.demo_id !== input.demoId || found.actor_id !== input.actorId) throw new HttpError(409, "Pedido inválido.");
     return { id: found.id, status: found.status, error: found.error, upload: null };
   }
-  if (!falEnabled()) throw new HttpError(503, "La animación con IA todavía no está habilitada.");
+  if (process.env.HABITA_VIDEO_AI?.trim() !== "1") throw new HttpError(409, "Ese modo de video todavía no está disponible.");
+  if (!aiVideoLive()) throw new HttpError(503, "La animación con IA todavía no está habilitada.");
   const options = readOptions(input.options);
   if (!options) throw new HttpError(400, "Elegí las fotos del video.");
   const problem = photoCountProblem(mode, options.photos.length);

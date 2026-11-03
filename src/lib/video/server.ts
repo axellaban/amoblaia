@@ -82,7 +82,14 @@ export type PublicVideo = {
    * An AI video still being made: the provider animating its photos, or every
    * clip stored and waiting for a browser to join them (with short links to them).
    */
-  ai: { stage: "animating" | "joining"; done: number; total: number; clips: { url: string; staged: boolean }[] | null } | null;
+  ai: {
+    stage: "animating" | "joining";
+    done: number;
+    total: number;
+    /** Each photo's animation, in the video's order: waiting, running, stored or failed (sent again). */
+    items: ("pending" | "running" | "ready" | "failed")[];
+    clips: { url: string; staged: boolean }[] | null;
+  } | null;
 };
 
 const pathOf = (row: Pick<VideoRow, "agency_id" | "demo_id" | "id">) => `${row.agency_id}/${row.demo_id}/${row.id}.mp4`;
@@ -258,13 +265,14 @@ export async function listVideos(demoId: string, fileName: (row: VideoRow) => st
 async function aiProgress(r: VideoRow): Promise<PublicVideo["ai"]> {
   const db = adminClient();
   const { data, error } = await db.from("property_video_clips").select("position,status,staged,storage_path").eq("video_id", r.id).order("position");
-  if (error) return { stage: "animating", done: 0, total: r.photo_count, clips: null };
-  const clips = (data ?? []) as { position: number; status: string; staged: boolean; storage_path: string | null }[];
+  if (error) return { stage: "animating", done: 0, total: r.photo_count, items: [], clips: null };
+  const clips = (data ?? []) as { position: number; status: "pending" | "running" | "ready" | "failed"; staged: boolean; storage_path: string | null }[];
   const done = clips.filter((c) => c.status === "ready").length;
-  if (!r.clips_ready_at || done !== clips.length || !clips.length) return { stage: "animating", done, total: clips.length || r.photo_count, clips: null };
+  const items = clips.map((c) => c.status);
+  if (!r.clips_ready_at || done !== clips.length || !clips.length) return { stage: "animating", done, total: clips.length || r.photo_count, items, clips: null };
   const links = await Promise.all(clips.map((c) => (c.storage_path ? db.storage.from(VIDEO_BUCKET).createSignedUrl(c.storage_path, 3600) : null)));
   const urls = links.map((l) => l?.data?.signedUrl ?? null);
-  if (urls.some((u) => !u)) return { stage: "animating", done, total: clips.length, clips: null };
-  return { stage: "joining", done, total: clips.length, clips: clips.map((c, i) => ({ url: urls[i]!, staged: c.staged })) };
+  if (urls.some((u) => !u)) return { stage: "animating", done, total: clips.length, items, clips: null };
+  return { stage: "joining", done, total: clips.length, items, clips: clips.map((c, i) => ({ url: urls[i]!, staged: c.staged })) };
 }
 

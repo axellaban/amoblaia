@@ -158,6 +158,7 @@ beforeEach(() => {
   fal.failSubmit = false;
   fal.downloads = 0;
   process.env.FAL_KEY = "test-key";
+  process.env.HABITA_VIDEO_AI = "1";
   delete process.env.FAL_VIDEO_MODEL;
   vi.stubGlobal("fetch", vi.fn(fakeFetch));
   vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -301,6 +302,21 @@ describe("AI videos on the server", () => {
     expect(db.charges).toHaveLength(0);
   });
 
+  it("stays «Próximamente» until HABITA_VIDEO_AI=1, even with the provider's key", async () => {
+    delete process.env.HABITA_VIDEO_AI;
+    await expect(start()).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/todavía no está disponible/) });
+    process.env.HABITA_VIDEO_AI = "0";
+    await expect(start({ mode: "clip", options: { photos: [PHOTOS[0]], staged: true, info: false, fields: [] } })).rejects.toMatchObject({ status: 409 });
+    expect(db.charges).toHaveLength(0);
+    expect(fal.submitted).toHaveLength(0);
+    const { aiVideoLive } = await import("../src/lib/video/fal");
+    expect(aiVideoLive()).toBe(false);
+    process.env.HABITA_VIDEO_AI = "1";
+    expect(aiVideoLive()).toBe(true);
+    delete process.env.FAL_KEY;
+    expect(aiVideoLive()).toBe(false);
+  });
+
   it("if the provider cannot take the photos, the video fails and the credits come back", async () => {
     fal.failSubmit = true;
     const v = await start();
@@ -318,7 +334,7 @@ describe("AI videos on the server", () => {
     await advanceAiVideos({ demoId: DEMO });
     expect(db.uploads).toEqual([`${AG}/${DEMO}/${v.id}/clip-0.mp4`]);
     list = await listVideos(DEMO, () => "x.mp4");
-    expect(list[0].ai).toMatchObject({ stage: "animating", done: 1, total: 2 });
+    expect(list[0].ai).toMatchObject({ stage: "animating", done: 1, total: 2, items: ["ready", "running"] });
     await expect(aiUploadTarget(DEMO, v.id)).rejects.toMatchObject({ status: 409 });
     await expect(finishVideo({ demoId: DEMO, id: v.id, ok: true, durationMs: 1, error: null })).rejects.toMatchObject({ status: 409 });
     fal.state["req-2"] = "COMPLETED";
@@ -329,6 +345,7 @@ describe("AI videos on the server", () => {
       stage: "joining",
       done: 2,
       total: 2,
+      items: ["ready", "ready"],
       clips: [
         { url: `https://x/${AG}/${DEMO}/${v.id}/clip-0.mp4`, staged: false },
         { url: `https://x/${AG}/${DEMO}/${v.id}/clip-1.mp4`, staged: false },

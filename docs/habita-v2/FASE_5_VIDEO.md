@@ -1,6 +1,6 @@
 # Habita V2 — Fase 5: Video
 
-**Estado:** 5A (benchmark), 5B (video «Clásico» real) y 5C/5D (animación con IA por fal.ai: «Foto en movimiento» y «Recorrido cinematográfico») hechos en código. Para usar la animación falta cargar `FAL_KEY` en Vercel y aplicar la migración `202611210001_video_ai.sql`; antes de abrirla a todas las inmobiliarias, la prueba de calidad con fotos reales. «Equilibrado» sigue como «No disponible».
+**Estado:** 5A (benchmark), 5B (video «Clásico» real) y 5C/5D (animación con IA por fal.ai: «Foto en movimiento» y «Recorrido cinematográfico») hechos en código. **Hoy los modos con IA se muestran como «Próximamente» y solo se usa el Clásico** (decisión del 03/11/2026). Se habilitan con `HABITA_VIDEO_AI=1` + `FAL_KEY` en Vercel y la migración `202611210001_video_ai.sql`, después de la prueba de calidad con fotos reales. «Equilibrado» también figura como «Próximamente».
 
 ## 5A — Benchmark y decisiones
 
@@ -64,13 +64,15 @@ Decisión (03/11/2026): **fal.ai** con **LTX-2 Fast** (`fal-ai/ltx-2/image-to-vi
 | Historial con avance de la IA y links a los clips | `src/lib/video/server.ts` |
 | API: POST (modo IA), GET (avanza), PUT (dónde subir el armado), PATCH | `src/app/api/panel/videos/route.ts` |
 | Armado con clips en el navegador | `src/lib/video/render.ts` (`loadClip`, `seekClips`) |
-| Estudio: modos con costo, confirmación, progreso, «Terminar video» | `src/components/video-studio.tsx` |
+| Estudio: modos con costo («Próximamente» hasta activarlos), ventana de confirmación con saldo, avance por foto, «Terminar video» | `src/components/video-studio.tsx` |
 | Migración: `property_video_clips`, `credit_ledger.video_id`, `payer_id`, `clips_ready_at`, funciones de cobro y reintegro | [`202611210001_video_ai.sql`](https://github.com/axellaban/amoblaia/blob/claude/video-ia-fal/supabase/migrations/202611210001_video_ai.sql) |
 | Tests | `tests/video-ai.test.ts` |
 
 **Quién paga:** la cuenta de la inmobiliaria (su dueño), como las ambientaciones. Desde la edición administrativa del equipo, una inmobiliaria con cuenta no se cobra (403, igual que las ambientaciones); el equipo puede usar «Entrar como la inmobiliaria».
 
-**Activación:** `FAL_KEY` en Vercel (Production y Preview) y la migración aplicada. Sin `FAL_KEY` los modos IA siguen como «No disponible».
+**Activación:** la migración aplicada, `FAL_KEY` y `HABITA_VIDEO_AI=1` en Vercel. Sin `HABITA_VIDEO_AI=1` los modos IA se ven como «Próximamente» y el servidor los rechaza (409), aunque la clave esté cargada: así el equipo puede probar fal sin abrirlos a las inmobiliarias.
+
+**Pantallas (diseño aprobado el 03/11/2026):** el editor de siempre con cuatro estilos (Clásico · Foto en movimiento 3 créditos · Recorrido cinematográfico 10 créditos · Equilibrado), una ventana de confirmación con el costo, el saldo y lo que queda (nada se cobra antes), el avance foto por foto en «Generar video», «Los clips con IA están listos · Terminar video» al volver, el armado con «Pausar» y el mismo «¡Video listo!».
 
 **Eventos PostHog:** los mismos de video, con `provider: fal`, `credits_quoted`, `credits_charged`, `animated_photo_count`; errores nuevos `provider_submit` y `join_<paso>`.
 
@@ -117,7 +119,7 @@ Los cinco se decodifican completos con `ffmpeg -f null`. Cuadros: `mp4-cuadros-*
 | Ítem | Necesita |
 | --- | --- |
 | Probar el Clásico en el preview con una propiedad real: render, subida a Supabase y reproducción en **iPhone Safari** y desktop | Acceso al preview |
-| Activar la animación con IA | `FAL_KEY` en Vercel y aplicar `202611210001_video_ai.sql` |
+| Activar la animación con IA | Prueba de calidad aprobada, `202611210001_video_ai.sql` aplicada, `FAL_KEY` y `HABITA_VIDEO_AI=1` en Vercel |
 | Prueba de calidad: 10 fotos reales de inmobiliarias con LTX-2 Fast (y Kling 2.6 Pro para comparar) | `FAL_KEY` y fotos |
 | «Ver en movimiento» dentro de la demo pública y modo Equilibrado | Resultado de la prueba de calidad |
 | Música con licencia | Pistas con licencia comercial documentada |
