@@ -153,7 +153,8 @@ export const DEFAULT_SETTINGS: DemoSettings = {
   showData: true,
   showStyles: true,
   showContact: true,
-  videoPlacement: "first",
+  // New demos (every importer starts from these): the video under the gallery. Older demos without a saved choice keep reading "first".
+  videoPlacement: "below",
 };
 
 /** The colors of a page without branding: the neutral blue of habita. */

@@ -749,8 +749,9 @@ async function publicPayload(demo: DemoRow, logoUrl: (v: string) => string, raw 
     ...listingFields(settings, branding),
     styles: order.map((id) => ({ id, name: styleName(id) })),
     cover: cover ? list.find((p) => p.id === cover.id)! : null,
-    // The cover the agency chose opens the gallery; the rest keep their order.
-    photos: demo.cover_photo_id && cover?.id === demo.cover_photo_id ? [...list.filter((p) => p.id === cover.id), ...list.filter((p) => p.id !== cover.id)] : list,
+    // The cover opens the gallery: the one the agency chose or, without a choice, a staged photo
+    // (pickCover), so buyers do not land on an empty original while the property has AI versions.
+    photos: cover ? [...list.filter((p) => p.id === cover.id), ...list.filter((p) => p.id !== cover.id)] : list,
     openStyle,
     banner: settings.banner,
     share: { title: settings.shareTitle, description: settings.shareDescription },
