@@ -5,11 +5,10 @@ import { VideoStudio } from "@/components/video-studio";
 import { videoEnabled } from "@/lib/agency/flags";
 import { requirePanelPage } from "@/lib/agency/page";
 import { canEdit, inScopeOf } from "@/lib/agency/video-access";
-import { demoRow, previewDemo, settingsOf } from "@/lib/demos/server";
-import type { VideoPlacement } from "@/lib/demos/branding";
+import { demoRow } from "@/lib/demos/server";
 import { isUuid } from "@/lib/demos/shared";
 import { safeReturn } from "@/lib/agency/shared";
-import type { InfoSource } from "@/lib/video/plan";
+import { studioData, type StudioData } from "@/lib/video/studio-data";
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Video", robots: { index: false, follow: false } };
 
@@ -26,37 +25,12 @@ export default async function Page({ searchParams }: Props) {
   const { membership } = await requirePanelPage("/panel/video");
   const { propiedad, volver } = await searchParams;
   const id = typeof propiedad === "string" && isUuid(propiedad) ? propiedad : null;
-  let demo = null;
-  let info: InfoSource | null = null;
-  let placement: VideoPlacement = "below";
-  let kind: "ficha" | "fotos" = "ficha";
-  let published = false;
+  let data: StudioData | null = null;
   if (id) {
     const row = await demoRow(id).catch(() => null);
     if (!row || row.agency_id !== membership.agency.id || !inScopeOf(membership, row.property_id)) notFound();
-    kind = row.kind === "fotos" ? "fotos" : "ficha";
-    published = row.status === "published";
-    // The photos come whole; the information only as the ficha shows it (what the agency hides never reaches the video).
-    const [raw, visible, stored] = await Promise.all([
-      previewDemo(id, { raw: true }).catch(() => null),
-      previewDemo(id).catch(() => null),
-      settingsOf(id).catch(() => null),
-    ]);
-    if (!raw || !visible) notFound();
-    demo = raw;
-    placement = stored?.settings.videoPlacement ?? "below";
-    const ficha = kind === "ficha";
-    info = {
-      title: ficha ? visible.title : null,
-      location: ficha ? visible.location : null,
-      price: ficha ? visible.price : null,
-      priceFallback: `Consultar ${/alquiler/i.test(visible.operation ?? "") ? "alquiler" : "precio"}`,
-      operation: ficha ? visible.operation : null,
-      facts: ficha ? visible.facts.map((f) => `${f.value} ${f.label}`.trim()).filter(Boolean) : [],
-      agencyName: visible.agencyName || null,
-      logo: Boolean(visible.agency.logo),
-      contact: visible.contact.whatsapp ?? visible.contact.phone ?? visible.contact.email ?? null,
-    };
+    data = await studioData(row);
+    if (!data) notFound();
   }
   return (
     <>
@@ -64,12 +38,12 @@ export default async function Page({ searchParams }: Props) {
       <div className="account-page container ap-page">
         <VideoStudio
           demoId={id}
-          demo={demo}
-          kind={kind}
-          info={info}
-          published={published}
+          demo={data?.demo ?? null}
+          kind={data?.kind}
+          info={data?.info ?? null}
+          published={data?.published}
           canEdit={canEdit(membership)}
-          placement={placement}
+          placement={data?.placement}
           backTo={typeof volver === "string" && id ? safeReturn(volver, "") || null : null}
         />
       </div>

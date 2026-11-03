@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   Copy,
@@ -235,7 +235,7 @@ export function ViewLink({
   which,
 }: {
   demo: Pick<DemoSummary, "id" | "token" | "status" | "agencyClaimed"> & { agencyId?: string };
-  which: "agency" | "panel" | "buyer";
+  which: "agency" | "panel" | "buyer" | "prices";
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -248,6 +248,8 @@ export function ViewLink({
       const url =
         which === "agency"
           ? await agencyLink(demo)
+          : which === "prices"
+            ? await agencyPricesLink(demo)
           : which === "panel"
             ? await supportPanel(demo.agencyId)
           : demo.status === "published"
@@ -626,7 +628,22 @@ export function MessageTemplateDialog({ onClose, onSaved }: { onClose: () => voi
  * the agency and the message (the link included) already written. Shows the
  * final text first; sending marks the demo as "Enviada". Team only.
  */
-export function SendWhatsapp({ demo, fixHere = false }: { demo: DemoSummary; fixHere?: boolean }) {
+export function SendWhatsapp({
+  demo,
+  fixHere = false,
+  label = "Enviar por WhatsApp",
+  autoOpen = false,
+  onClosed,
+}: {
+  demo: DemoSummary;
+  fixHere?: boolean;
+  /** The button's text («Enviar demo» in the agency's header). */
+  label?: string;
+  /** Opens the dialog at once (the demo was just chosen from a list). */
+  autoOpen?: boolean;
+  /** Called when the dialog closes without sending. */
+  onClosed?: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const [template, setTemplate] = useState(DEFAULT_MESSAGE_TEMPLATE);
   const [globalTemplate, setGlobalTemplate] = useState(DEFAULT_MESSAGE_TEMPLATE);
@@ -711,6 +728,19 @@ export function SendWhatsapp({ demo, fixHere = false }: { demo: DemoSummary; fix
     }
   }
 
+  // Chosen from a list: straight to the dialog (once).
+  const opened = useRef(false);
+  useEffect(() => {
+    if (!autoOpen || opened.current || missing) return;
+    opened.current = true;
+    void openDialog();
+  }, [autoOpen, missing]);
+  const close = () => {
+    if (busy) return;
+    setOpen(false);
+    onClosed?.();
+  };
+
   return (
     <div className="dm-send">
       <button
@@ -720,11 +750,11 @@ export function SendWhatsapp({ demo, fixHere = false }: { demo: DemoSummary; fix
         disabled={Boolean(missing) || busy}
         onClick={openDialog}
       >
-        <MessageCircle size={15} /> Enviar por WhatsApp
+        <MessageCircle size={15} /> {label}
       </button>
       {missing && <span className="dm-help">{missing}</span>}
       {open && (
-        <Dialog title={`Enviar «${demo.title}» a ${demo.agencyName}`} onClose={() => !busy && setOpen(false)}>
+        <Dialog title={`Enviar «${demo.title}» a ${demo.agencyName}`} onClose={close}>
           <div className="dm-dialog-body">
             <p className="dm-help">
               Se abre WhatsApp Web con el chat de +{phone} y el mensaje escrito. Lo enviás vos.
@@ -783,7 +813,7 @@ export function SendWhatsapp({ demo, fixHere = false }: { demo: DemoSummary; fix
               </p>
             )}
             <div className="dm-dialog-actions">
-              <button type="button" className="text-link" disabled={busy} onClick={() => setOpen(false)}>
+              <button type="button" className="text-link" disabled={busy} onClick={close}>
                 Cancelar
               </button>
               <button type="button" className="button button-small dm-whatsapp" data-testid="confirm-send-demo-whatsapp" disabled={busy || !template.trim()} onClick={send}>
@@ -1162,7 +1192,7 @@ export function DemoList() {
                 <DemoCredits demo={d} onDone={(text) => { setNotice(text); void load(); }} />
                 <ActivityStatus activity={d.activity} sentAt={d.sentAt} />
                 {scores[d.id] && (
-                  <Link href={`/admin/leads?inmobiliaria=${d.agencyId}`} className="dm-lead" title="Ver el detalle en Leads">
+                  <Link href={`/admin/inmobiliarias/${d.agencyId}?pestana=actividad`} className="dm-lead" title="Ver la actividad de la inmobiliaria">
                     <span className="dm-activity-label">Lead score</span>
                     <LeadBadge score={scores[d.id].score} classification={scores[d.id].classification} partial={scores[d.id].quality === "partial"} />
                   </Link>

@@ -360,16 +360,12 @@ async function creditsOf(agencyIds: string[]) {
   return out;
 }
 
-export async function listDemos() {
+/** The team's demos, newest first; with agencyId, only that agency's (its «Propiedades y demos» tab). */
+export async function listDemos(agencyId: string | null = null) {
   const db = adminClient();
-  const demos = check(
-    await db
-      .from("demos")
-      .select(DEMO_FIELDS)
-      .order("created_at", { ascending: false })
-      .limit(300),
-    "DEMO_LIST_FAILED",
-  ) as DemoRow[];
+  let query = db.from("demos").select(DEMO_FIELDS).order("created_at", { ascending: false }).limit(300);
+  if (agencyId) query = query.eq("agency_id", agencyId);
+  const demos = check(await query, "DEMO_LIST_FAILED") as DemoRow[];
   const agencyIds = [...new Set(demos.map((d) => d.agency_id))];
   const propertyIds = demos.map((d) => d.property_id);
   const [agencies, owners, properties, photos, allAgencies] = await Promise.all([
@@ -749,8 +745,9 @@ async function publicPayload(demo: DemoRow, logoUrl: (v: string) => string, raw 
     ...listingFields(settings, branding),
     styles: order.map((id) => ({ id, name: styleName(id) })),
     cover: cover ? list.find((p) => p.id === cover.id)! : null,
-    // The cover the agency chose opens the gallery; the rest keep their order.
-    photos: demo.cover_photo_id && cover?.id === demo.cover_photo_id ? [...list.filter((p) => p.id === cover.id), ...list.filter((p) => p.id !== cover.id)] : list,
+    // The cover opens the gallery: the one the agency chose or, without a choice, a staged photo
+    // (pickCover), so buyers do not land on an empty original while the property has AI versions.
+    photos: cover ? [...list.filter((p) => p.id === cover.id), ...list.filter((p) => p.id !== cover.id)] : list,
     openStyle,
     banner: settings.banner,
     share: { title: settings.shareTitle, description: settings.shareDescription },
