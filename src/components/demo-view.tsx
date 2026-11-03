@@ -1787,7 +1787,7 @@ function OwnerHeader({
                 onDemo("nav");
               }}
             >
-              <LayoutGrid size={18} aria-hidden="true" /> Mis propiedades <span className="dv2-owner-count">1</span>
+              <LayoutGrid size={18} aria-hidden="true" /> Mis demostraciones <span className="dv2-owner-count">1</span>
             </a>
             <a href="#otra-propiedad" {...cta("owner_create_anchor", "owner_menu", "create_property", "navigation")} onClick={() => setOpen(false)}>
               <Plus size={18} aria-hidden="true" /> Crear otra propiedad
