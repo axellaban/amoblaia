@@ -3,6 +3,7 @@
 // photo's animated clip (made by the provider, kept in Habita's storage).
 // No server time; the MP4 is uploaded straight to Habita's storage. Browser only.
 import { ArrayBufferTarget, Muxer } from "mp4-muxer";
+import type { WatermarkCorner } from "./media";
 import { cameraAt, coverCrop, sceneAt, type VideoCards, type VideoPlan } from "./plan";
 
 /** What the cards say: only the information the agency chose (spec: optional). */
@@ -206,8 +207,39 @@ function drawScene(ctx: CanvasRenderingContext2D, plan: VideoPlan, info: VideoIn
   else card(ctx, plan, info, scene.kind, logo);
 }
 
+/** The agency's logo over the photos, in a corner, during the whole video (not over the cards, which carry their own). */
+export type Watermark = { image: ImageBitmap; corner: WatermarkCorner };
+
+/** Where the watermark goes: a margin from the corner, above the AI label when both share the bottom right. */
+export function watermarkBox(plan: Pick<VideoPlan, "width" | "height">, image: { width: number; height: number }, corner: WatermarkCorner, labelled: boolean) {
+  const { width: W, height: H } = plan;
+  const s = Math.min(W, H) / 1080;
+  const maxH = 110 * s;
+  const maxW = Math.min(W * 0.32, 340 * s);
+  const k = Math.min(maxH / image.height, maxW / image.width);
+  const w = image.width * k;
+  const h = image.height * k;
+  const m = 44 * s;
+  const x = corner === "tl" || corner === "bl" ? m : W - m - w;
+  // The AI label sits at the bottom right (64 px + its 48 px plate): the logo goes above it.
+  const bottom = corner === "br" && labelled ? 64 * s + 16 * s + 48 * s + 20 * s : m;
+  const y = corner === "tl" || corner === "tr" ? m : H - bottom - h;
+  return { x, y, w, h };
+}
+
+function drawWatermark(ctx: CanvasRenderingContext2D, plan: VideoPlan, assets: VideoAsset[], wm: Watermark, ms: number) {
+  const { scene, next, mix } = sceneAt(plan, ms);
+  const weight = (scene.kind === "photo" ? 1 - (next ? mix : 0) : 0) + (next && next.kind === "photo" ? mix : 0);
+  if (weight <= 0.01) return;
+  const labelled = [scene, next].some((x) => x && x.kind === "photo" && assets[x.photo] && aiLabel(assets[x.photo]));
+  const box = watermarkBox(plan, wm.image, wm.corner, labelled);
+  ctx.globalAlpha = 0.92 * Math.min(1, weight);
+  ctx.drawImage(wm.image, box.x, box.y, box.w, box.h);
+  ctx.globalAlpha = 1;
+}
+
 /** One frame at `ms`, with the crossfade into the next scene. */
-export function drawFrame(ctx: CanvasRenderingContext2D, plan: VideoPlan, info: VideoInfo, assets: VideoAsset[], logo: ImageBitmap | null, ms: number) {
+export function drawFrame(ctx: CanvasRenderingContext2D, plan: VideoPlan, info: VideoInfo, assets: VideoAsset[], logo: ImageBitmap | null, ms: number, watermark: Watermark | null = null) {
   const { scene, next, mix } = sceneAt(plan, ms);
   ctx.globalAlpha = 1;
   drawScene(ctx, plan, info, assets, logo, scene, ms);
@@ -216,13 +248,102 @@ export function drawFrame(ctx: CanvasRenderingContext2D, plan: VideoPlan, info: 
     drawScene(ctx, plan, info, assets, logo, next, ms);
     ctx.globalAlpha = 1;
   }
+  if (watermark) drawWatermark(ctx, plan, assets, watermark, ms);
 }
 
+const SAMPLE_RATE = 48_000;
+/** The audio codec this browser can write into the MP4: AAC (plays everywhere) or, failing that, Opus. Null: none. */
+export async function audioCodec(): Promise<{ codec: string; mux: "aac" | "opus" } | null> {
+  if (typeof window === "undefined" || !("AudioEncoder" in window)) return null;
+  for (const c of [
+    { codec: "mp4a.40.2", mux: "aac" as const },
+    { codec: "opus", mux: "opus" as const },
+  ]) {
+    try {
+      const r = await AudioEncoder.isConfigSupported({ codec: c.codec, sampleRate: SAMPLE_RATE, numberOfChannels: 2, bitrate: 160_000 });
+      if (r.supported) return c;
+    } catch {
+      // Next codec.
+    }
+  }
+  return null;
+}
+
+/** A song (library or uploaded), decoded and resampled to 48 kHz. */
+export async function loadMusic(url: string): Promise<AudioBuffer> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("MUSIC_LOAD_FAILED");
+  const bytes = await res.arrayBuffer();
+  return new OfflineAudioContext(2, 1, SAMPLE_RATE).decodeAudioData(bytes);
+}
+
+/** The music for the whole video: looped to its length, at its volume, fading in and out. */
+export async function mixMusic(song: AudioBuffer, durationMs: number, volume: number): Promise<AudioBuffer> {
+  const seconds = durationMs / 1000;
+  const ctx = new OfflineAudioContext(2, Math.max(1, Math.ceil(seconds * SAMPLE_RATE)), SAMPLE_RATE);
+  const source = ctx.createBufferSource();
+  source.buffer = song;
+  source.loop = true;
+  const gain = ctx.createGain();
+  const level = Math.min(1, Math.max(0, volume / 100));
+  const fadeIn = Math.min(0.4, seconds / 6);
+  const fadeOut = Math.min(1.8, seconds / 3);
+  gain.gain.setValueAtTime(0, 0);
+  gain.gain.linearRampToValueAtTime(level, fadeIn);
+  gain.gain.setValueAtTime(level, Math.max(fadeIn, seconds - fadeOut));
+  gain.gain.linearRampToValueAtTime(0, seconds);
+  source.connect(gain).connect(ctx.destination);
+  source.start(0);
+  return ctx.startRendering();
+}
+
+async function encodeAudio(muxer: Muxer<ArrayBufferTarget>, mixed: AudioBuffer, codec: string) {
+  let failure: unknown = null;
+  const encoder = new AudioEncoder({ output: (chunk, meta) => muxer.addAudioChunk(chunk, meta), error: (e) => (failure = e) });
+  encoder.configure({ codec, sampleRate: SAMPLE_RATE, numberOfChannels: 2, bitrate: 160_000 });
+  const left = mixed.getChannelData(0);
+  const right = mixed.numberOfChannels > 1 ? mixed.getChannelData(1) : left;
+  const block = 4096;
+  for (let i = 0; i < mixed.length; i += block) {
+    if (failure) throw failure;
+    const n = Math.min(block, mixed.length - i);
+    const data = new Float32Array(n * 2);
+    data.set(left.subarray(i, i + n), 0);
+    data.set(right.subarray(i, i + n), n);
+    const frame = new AudioData({ format: "f32-planar", sampleRate: SAMPLE_RATE, numberOfFrames: n, numberOfChannels: 2, timestamp: Math.round((i / SAMPLE_RATE) * 1_000_000), data });
+    encoder.encode(frame);
+    frame.close();
+    while (encoder.encodeQueueSize > 16) await new Promise((r) => setTimeout(r, 2));
+  }
+  await encoder.flush();
+  encoder.close();
+  if (failure) throw failure;
+}
+
+/** What goes over and under the frames: the watermark and the background music (already decoded). */
+export type RenderExtras = { watermark?: Watermark | null; music?: { song: AudioBuffer; volume: number; codec: { codec: string; mux: "aac" | "opus" } } | null };
+
 /** The MP4, frame by frame. `onProgress` gets 0..1; `signal` cancels. */
-export async function renderMp4(plan: VideoPlan, info: VideoInfo, assets: VideoAsset[], logo: ImageBitmap | null, onProgress: (p: number) => void, signal?: AbortSignal): Promise<Blob> {
+export async function renderMp4(
+  plan: VideoPlan,
+  info: VideoInfo,
+  assets: VideoAsset[],
+  logo: ImageBitmap | null,
+  onProgress: (p: number) => void,
+  signal?: AbortSignal,
+  extras: RenderExtras = {},
+): Promise<Blob> {
   const canvas = new OffscreenCanvas(plan.width, plan.height);
   const ctx = canvas.getContext("2d") as unknown as CanvasRenderingContext2D;
-  const muxer = new Muxer({ target: new ArrayBufferTarget(), video: { codec: "avc", width: plan.width, height: plan.height, frameRate: plan.fps }, fastStart: "in-memory" });
+  const music = extras.music ?? null;
+  const muxer = new Muxer({
+    target: new ArrayBufferTarget(),
+    video: { codec: "avc", width: plan.width, height: plan.height, frameRate: plan.fps },
+    ...(music ? { audio: { codec: music.codec.mux, numberOfChannels: 2, sampleRate: SAMPLE_RATE } } : {}),
+    fastStart: "in-memory",
+  });
+  // The music first (a few seconds of work): the frames then fill the rest of the progress.
+  if (music) await encodeAudio(muxer, await mixMusic(music.song, plan.durationMs, music.volume), music.codec.codec);
   let failure: unknown = null;
   const encoder = new VideoEncoder({ output: (chunk, meta) => muxer.addVideoChunk(chunk, meta), error: (e) => (failure = e) });
   encoder.configure({ codec: CODEC, width: plan.width, height: plan.height, bitrate: 6_000_000, framerate: plan.fps });
@@ -235,7 +356,7 @@ export async function renderMp4(plan: VideoPlan, info: VideoInfo, assets: VideoA
     if (failure) throw failure;
     const ms = (i * 1000) / plan.fps;
     if (assets.some((a) => a.clip)) await seekClips(plan, assets, ms);
-    drawFrame(ctx, plan, info, assets, logo, ms);
+    drawFrame(ctx, plan, info, assets, logo, ms, extras.watermark ?? null);
     const frame = new VideoFrame(canvas, { timestamp: Math.round(i * frameUs), duration: Math.round(frameUs) });
     encoder.encode(frame, { keyFrame: i % (plan.fps * 2) === 0 });
     frame.close();

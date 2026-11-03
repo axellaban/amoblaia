@@ -5,6 +5,7 @@
 import "server-only";
 import { HttpError } from "@/lib/commerce/http";
 import { adminClient } from "@/lib/supabase/server";
+import { readMusic, readWatermark, type VideoMusic, type VideoWatermark } from "./media";
 import { formatOf, INFO_FIELDS, isVideoFormat, MAX_VIDEO_PHOTOS, VIDEO_MODES, VIDEO_SIZE, type InfoField, type VideoFormat, type VideoMode } from "./plan";
 
 export const VIDEO_BUCKET = "property-videos";
@@ -48,7 +49,7 @@ export type VideoRow = {
  * photos without choosing them again: the photos in order, whether AI stagings
  * were used, and which information it carries. Ids and switches only.
  */
-export type VideoOptions = { photos: string[]; staged: boolean; info: boolean; fields: InfoField[] };
+export type VideoOptions = { photos: string[]; staged: boolean; info: boolean; fields: InfoField[]; music?: VideoMusic | null; watermark?: VideoWatermark | null };
 
 export function readOptions(raw: unknown): VideoOptions | null {
   if (!raw || typeof raw !== "object") return null;
@@ -56,7 +57,7 @@ export function readOptions(raw: unknown): VideoOptions | null {
   const photos = Array.isArray(v.photos) ? v.photos.filter((p): p is string => typeof p === "string" && /^[0-9a-f-]{36}$/i.test(p)).slice(0, MAX_VIDEO_PHOTOS) : [];
   if (!photos.length) return null;
   const fields = Array.isArray(v.fields) ? [...new Set(v.fields)].filter((f): f is InfoField => INFO_FIELDS.includes(f as InfoField)) : [];
-  return { photos, staged: v.staged !== false, info: v.info === true, fields };
+  return { photos, staged: v.staged !== false, info: v.info === true, fields, music: readMusic(v.music), watermark: readWatermark(v.watermark) };
 }
 
 export type PublicVideo = {
