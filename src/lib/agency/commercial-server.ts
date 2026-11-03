@@ -4,6 +4,7 @@ import { agencyDetail, allScoreRows } from "@/lib/leads/server";
 import { rollupAgency, rollupDemo, type ScoreRow } from "@/lib/leads/rollup";
 import type { Stage as ProspectStage } from "@/lib/prospecting/types";
 import { commercialStage, lastActivity, type ActivityFact, type CommercialRow } from "./commercial";
+import { funnelStep, isTestAgency } from "./demo-funnel";
 
 /**
  * The facts behind the «Inmobiliarias» panel, read in a few light queries:
@@ -21,6 +22,7 @@ type DemoRow = {
   activity_level: number | null;
   activity_at: string | null;
   cover_photo_id: string | null;
+  created_by?: string | null;
   created_at: string;
   updated_at: string | null;
   published_at: string | null;
@@ -52,7 +54,7 @@ async function optional<T>(read: () => Promise<T[]>): Promise<T[]> {
 
 async function demosOf(agencyId: string | null) {
   const db = adminClient();
-  const full = "id,agency_id,status,sent_at,activity_level,activity_at,cover_photo_id,created_at,updated_at,published_at";
+  const full = "id,agency_id,status,sent_at,activity_level,activity_at,cover_photo_id,created_by,created_at,updated_at,published_at";
   const read = (fields: string) =>
     all<DemoRow>((from, to) => {
       let q = db.from("demos").select(fields).order("created_at", { ascending: false }).range(from, to);
@@ -79,6 +81,28 @@ async function subscribedOwners(owners: string[]) {
     return out;
   });
   return new Set(rows.map((r) => r.user_id));
+}
+
+/**
+ * Owners that did something in their panel after creating their account: an
+ * image generated or a property imported (a property they created themselves
+ * is read from the demos). One light count per owner; a failed read is «no».
+ */
+async function activeOwners(owners: { id: string; since: string }[]) {
+  const db = adminClient();
+  const active = new Set<string>();
+  await Promise.all(
+    owners.map(async ({ id, since }) => {
+      for (const table of ["generations", "property_imports"] as const) {
+        const { count, error } = await db.from(table).select("id", { count: "exact", head: true }).eq("user_id", id).gt("created_at", since);
+        if (!error && (count ?? 0) > 0) {
+          active.add(id);
+          return;
+        }
+      }
+    }),
+  );
+  return active;
 }
 
 async function prospectStages(agencyId: string | null) {
@@ -121,9 +145,13 @@ export async function commercialRows(only: string | null = null): Promise<Commer
     demosOf(only),
     prospectStages(only),
   ]);
-  const [subscribed, scores] = await Promise.all([
-    subscribedOwners([...new Set(agencies.map((a) => a.owner_id).filter((v): v is string => Boolean(v)))]),
+  const claimed = agencies.filter((a): a is AgencyRow & { owner_id: string } => Boolean(a.owner_id));
+  const [subscribed, scores, active] = await Promise.all([
+    subscribedOwners([...new Set(claimed.map((a) => a.owner_id))]),
     scoreRows(only ? demos.map((d) => d.id) : null),
+    optional(async () => [
+      ...(await activeOwners(claimed.map((a) => ({ id: a.owner_id, since: a.claimed_at ?? a.created_at })))),
+    ]).then((ids) => new Set(ids)),
   ]);
   const byAgency = new Map<string, DemoRow[]>();
   for (const d of demos) byAgency.set(d.agency_id, [...(byAgency.get(d.agency_id) ?? []), d]);
@@ -141,6 +169,11 @@ export async function commercialRows(only: string | null = null): Promise<Commer
     const sent = own.map((d) => d.sent_at).filter((v): v is string => Boolean(v)).sort().at(-1) ?? null;
     const edited = own.map((d) => d.updated_at).filter((v): v is string => Boolean(v)).sort().at(-1) ?? null;
     const published = own.filter((d) => d.status === "published");
+    const since = a.claimed_at ?? a.created_at;
+    // Its account worked in its panel: an image, an import, or a property it created itself.
+    const ownerActive = Boolean(
+      a.owner_id && (active.has(a.owner_id) || own.some((d) => d.created_by === a.owner_id && d.created_at > since)),
+    );
     // The cover of its latest published demo, else of any demo.
     const cover = [...published, ...own].find((d) => d.cover_photo_id)?.cover_photo_id ?? null;
     const facts: (ActivityFact | null)[] = [
@@ -170,6 +203,17 @@ export async function commercialRows(only: string | null = null): Promise<Commer
       score,
       lastActivity: lastActivity(facts),
       createdAt: a.created_at,
+      test: isTestAgency(a.name),
+      demos: own.map((d) => ({
+        createdAt: d.created_at,
+        step: funnelStep({
+          sentAt: d.sent_at,
+          activityLevel: d.activity_level ?? 0,
+          hasOwner: Boolean(a.owner_id),
+          ownerActive,
+          subscribed: isSubscribed,
+        }),
+      })),
     };
   });
 }

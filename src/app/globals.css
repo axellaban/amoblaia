@@ -21269,40 +21269,192 @@ body:has(.pv-root) .pb-root {
   margin: 0;
   color: var(--pr-muted, #5f6f64);
 }
-.ah-cards {
+/* «Funnel de demos»: seven steps over the list, by the demo's creation date. */
+.ah-funnel {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
-  margin-bottom: 20px;
-}
-.ah-card {
-  display: flex;
-  align-items: center;
   gap: 16px;
-  padding: 16px 18px;
+  margin-bottom: 20px;
+  padding: 20px 22px;
   background: #fff;
   border: 1px solid var(--pr-line, #dde3d7);
-  border-radius: 12px;
+  border-radius: 14px;
+}
+.ah-funnel-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  align-items: center;
+  justify-content: space-between;
+}
+.ah-funnel-head h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.ah-funnel-head p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: #5f665f;
+}
+.ah-period {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  align-items: center;
+  font-size: 13px;
+  color: #5f665f;
+}
+.ah-period > span {
+  font-weight: 600;
+}
+.ah-period-presets {
+  display: flex;
+  padding: 3px;
+  background: #f3f1ec;
+  border-radius: 10px;
+}
+.ah-period-presets a {
+  padding: 7px 11px;
+  border-radius: 8px;
+  font-weight: 600;
+  color: #3d4a43;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.ah-period-presets a:hover {
   color: var(--ah-green);
 }
-.ah-card:hover,
-.ah-card:focus-visible {
+.ah-period-presets a.is-on {
+  background: var(--ah-green);
+  color: #fff;
+}
+.ah-period-range {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.ah-period-range label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.ah-period-range input {
+  padding: 6px 8px;
+  border: 1px solid var(--pr-line, #dde3d7);
+  border-radius: 8px;
+  font: inherit;
+  color: var(--pr-ink, #243d36);
+  background: #fff;
+}
+.ah-funnel-steps {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ah-funnel-steps a {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 14px 14px 12px;
+  border: 1px solid var(--pr-line, #dde3d7);
+  border-radius: 12px;
+  color: var(--pr-ink, #243d36);
+  text-decoration: none;
+}
+.ah-funnel-steps a:hover,
+.ah-funnel-steps a:focus-visible {
   border-color: var(--ah-green);
 }
-.ah-card .is-hot {
-  color: #d9542b;
+.ah-funnel-steps a.is-on {
+  border-color: var(--ah-green);
+  box-shadow: inset 0 0 0 1px var(--ah-green);
+  background: var(--ah-green-soft);
 }
-.ah-card strong {
-  display: block;
-  font-size: 24px;
-  line-height: 1.1;
-  color: var(--pr-ink, #243d36);
+.ah-funnel-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #5f665f;
 }
-.ah-card small {
+.ah-funnel-steps strong {
+  font-size: 28px;
+  line-height: 1;
+}
+.ah-funnel-bar {
   display: block;
-  font-size: 13px;
-  line-height: 1.35;
-  color: var(--pr-ink, #243d36);
+  height: 8px;
+  border-radius: 6px;
+  background: #ece9e1;
+  overflow: hidden;
+}
+.ah-funnel-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 6px;
+  background: var(--ah-green);
+}
+.ah-funnel-steps small {
+  font-size: 12px;
+  color: #5f665f;
+}
+.ah-funnel-note {
+  margin: 0;
+  font-size: 12px;
+  color: #6b6b6b;
+}
+@media (max-width: 1180px) {
+  .ah-funnel-steps {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+@media (max-width: 640px) {
+  .ah-funnel {
+    padding: 16px;
+  }
+  .ah-funnel-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+/* The list's «Demo» column: the step its demos reached and when the latest was created. */
+.ah-demo {
+  display: grid;
+  gap: 3px;
+  justify-items: start;
+}
+.ah-demo small {
+  font-size: 12px;
+  color: #6b6b6b;
+}
+.ah-demo-step {
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  background: #eef0ec;
+  color: #3d4a43;
+}
+.ah-demo-step.is-step-1 {
+  background: #e4edfb;
+  color: #2457a6;
+}
+.ah-demo-step.is-step-2 {
+  background: #dff3f1;
+  color: #16706a;
+}
+.ah-demo-step.is-step-3 {
+  background: #f1e6fa;
+  color: #7a3aa8;
+}
+.ah-demo-step.is-step-4,
+.ah-demo-step.is-step-5,
+.ah-demo-step.is-step-6 {
+  background: var(--ah-green-soft);
+  color: var(--ah-green);
 }
 .ah-toolbar {
   display: flex;
