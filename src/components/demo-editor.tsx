@@ -1200,6 +1200,11 @@ export function DemoEditor({
       }, undefined, "publicacion");
       if (ok) setJustPublished(true);
     }
+    // The same Video Studio from the agency's panel and from the team's administrative edit (with this tab's way back).
+    const videoHref =
+      team && agencyContext
+        ? `/admin/inmobiliarias/${agencyContext}/propiedades/${id}/video?${new URLSearchParams({ volver: backTo })}`
+        : `/panel/video?${new URLSearchParams({ propiedad: id, volver: `/panel/propiedades/${id}?seccion=fotos` })}`;
     const videoBlock =
       videoEnabled() && demo.kind !== "fotos" ? (
         <section className="dx-video" aria-labelledby="dx-video-title">
@@ -1235,14 +1240,23 @@ export function DemoEditor({
               </label>
             ))}
           </fieldset>
-          {canWork && !team && (
-            <Link
-              href={`/panel/video?${new URLSearchParams({ propiedad: id, volver: `/panel/propiedades/${id}?seccion=fotos` })}`}
-              className="button button-primary dx-video-go"
-              onClick={() => agencyTrack("demo_editor_video_opened", { property_id: id, has_video: Boolean(video) })}
-            >
-              <PlayCircle size={17} aria-hidden="true" /> Generar video
-            </Link>
+          {canWork ? (
+            <>
+              <Link
+                href={videoHref}
+                className="button button-primary dx-video-go"
+                onClick={() => agencyTrack("demo_editor_video_opened", { property_id: id, has_video: Boolean(video) })}
+              >
+                <PlayCircle size={17} aria-hidden="true" /> Generar video
+              </Link>
+              <p className="dm-help dx-video-note">
+                {team
+                  ? "Abre el estudio de video de esta propiedad. El estilo Clásico se crea en el navegador y no consume créditos de la inmobiliaria."
+                  : "Elegís las fotos, el formato y si incluye los datos de la propiedad. El estilo Clásico no consume créditos."}
+              </p>
+            </>
+          ) : (
+            <p className="dm-help dx-video-note">Tu rol puede ver esta propiedad pero no crear videos. Pedíselo a quien administra la cuenta.</p>
           )}
           {video ? (
             <details className="dx-video-current">

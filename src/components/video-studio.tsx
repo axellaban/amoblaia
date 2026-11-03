@@ -37,7 +37,7 @@ import {
 } from "lucide-react";
 import { ApiError, api } from "./admin-demos";
 import { StartPicker } from "./start-picker";
-import { track, type EventProperties } from "@/lib/analytics";
+import { track as trackEvent, type EventProperties } from "@/lib/analytics";
 import { adminPhotoUrl, type PublicDemo } from "@/lib/demos/shared";
 import type { VideoPlacement } from "@/lib/demos/branding";
 import { browserClient } from "@/lib/supabase/client";
@@ -133,6 +133,8 @@ export function VideoStudio({
   canEdit,
   placement = "below",
   backTo = null,
+  team = false,
+  previewHref = null,
 }: {
   demoId: string | null;
   demo: PublicDemo | null;
@@ -146,10 +148,14 @@ export function VideoStudio({
   placement?: VideoPlacement;
   /** Opened from the demo's editor («Generar video»): the way back to it, with its tab. */
   backTo?: string | null;
+  /** The team, from the administrative edit: nothing is reported as the agency's own activity. */
+  team?: boolean;
+  /** Where «Ver vista previa de la ficha» goes (the team's own preview from administration). */
+  previewHref?: string | null;
 }) {
   useEffect(() => {
-    track("video_section_viewed", { has_property: Boolean(demo), is_group: kind === "fotos", device_type: deviceType() });
-  }, [demo, kind]);
+    if (!team) trackEvent("video_section_viewed", { has_property: Boolean(demo), is_group: kind === "fotos", device_type: deviceType() });
+  }, [demo, kind, team]);
   if (!demo || !demoId) return <StartScreen />;
   return (
     <Studio
@@ -161,6 +167,8 @@ export function VideoStudio({
       canEdit={canEdit}
       initialPlacement={placement}
       backTo={backTo}
+      team={team}
+      previewHref={previewHref ?? `/panel/propiedades/${demoId}/vista-previa`}
     />
   );
 }
@@ -385,6 +393,8 @@ function Studio({
   canEdit,
   initialPlacement,
   backTo,
+  team,
+  previewHref,
 }: {
   demoId: string;
   demo: PublicDemo;
@@ -394,8 +404,12 @@ function Studio({
   canEdit: boolean;
   initialPlacement: VideoPlacement;
   backTo: string | null;
+  team: boolean;
+  previewHref: string;
 }) {
   const router = useRouter();
+  // The team's work on an agency is not the agency's funnel: nothing is reported then.
+  const track: typeof trackEvent = team ? () => undefined : trackEvent;
   const group = kind === "fotos";
   const known = useMemo(() => new Set(demo.photos.map((p) => p.id)), [demo.photos]);
   const [useStaged, setUseStaged] = useState(true);
@@ -700,12 +714,13 @@ function Studio({
   return (
     <div className="vs vs-editor-page">
       <header className="vs-bar">
-        <Link href={backTo ?? "/panel/video"} className="icon-button vs-back" aria-label={backTo ? "Volver a la demostración" : "Elegir otra propiedad"}>
+        <Link href={backTo ?? "/panel/video"} className="icon-button vs-back" aria-label={backTo ? "Volver a la propiedad" : "Elegir otra propiedad"}>
           <ArrowLeft size={20} />
         </Link>
         <div className="vs-bar-title">
           <h1>{group ? `Video de ${title}` : `Video de ${title}`}</h1>
           <p>
+            {team && `${demo.agencyName} · `}
             {group ? "Fotos sin ficha · no hace falta publicar nada" : (demo.location ?? "Propiedad")}
             {backTo && (
               <>
@@ -1160,7 +1175,7 @@ function Studio({
                   ? "La demostración no muestra el video (elegiste «No mostrar»)."
                   : `La demostración lo muestra: ${PLACEMENTS.find((o) => o.id === placement)?.name.toLowerCase()}.`}{" "}
                 {published ? "Ya está en la ficha publicada." : "Se verá cuando publiques la ficha."}{" "}
-                <Link href={`/panel/propiedades/${demoId}/vista-previa`} className="text-link">
+                <Link href={previewHref} className="text-link">
                   Ver vista previa de la ficha
                 </Link>
               </p>

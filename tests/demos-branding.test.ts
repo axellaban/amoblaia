@@ -6,7 +6,7 @@ vi.mock("@/lib/supabase/server", () => ({
   },
   currentUser: async () => null,
 }));
-import { contactHref, readSettings, textOn, whatsappNumber } from "../src/lib/demos/branding";
+import { contactHref, DEFAULT_SETTINGS, readSettings, textOn, whatsappNumber } from "../src/lib/demos/branding";
 import { brandingInput, settingsInput } from "../src/lib/demos/input";
 
 const listing = { title: "Depto en La Perla", reference: "RAP12025427", url: "https://russillo.test/p/1" };
@@ -133,5 +133,14 @@ describe("Listing data", () => {
     expect(warnings.join("\n")).toMatch(/otro tipo de inmueble \(Moderno\)/);
     expect(warnings.join("\n")).toMatch(/Sin ubicación verificada/);
     expect(warnings.join("\n")).toMatch(/revisada/);
+  });
+});
+
+describe("Video placement default", () => {
+  it("new demos (every importer starts from DEFAULT_SETTINGS) show the video under the gallery; older ones without a choice keep «first»", () => {
+    expect(DEFAULT_SETTINGS.videoPlacement).toBe("below");
+    expect(readSettings({ ...DEFAULT_SETTINGS }).videoPlacement).toBe("below");
+    expect(readSettings({}).videoPlacement).toBe("first");
+    expect(readSettings({ videoPlacement: "second" }).videoPlacement).toBe("second");
   });
 });
