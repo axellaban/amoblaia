@@ -26,7 +26,6 @@ import {
   Link2,
   MonitorPlay,
   MoreHorizontal,
-  MoreVertical,
   Pencil,
   Play,
   PlayCircle,
@@ -43,7 +42,7 @@ import { ImportPreview, MapReview, exceptions, initialMapChoice, mapOverride, sy
 import { track, trackMilestone } from "@/lib/analytics";
 import { cta } from "@/lib/interaction-tracking";
 import { registerAgency, useSignupTracking } from "@/lib/signup-tracking";
-import { shareLink } from "@/lib/agency/share";
+import { copyLink, shareLink } from "@/lib/agency/share";
 import {
   agencySitePath,
   canEdit,
@@ -256,26 +255,50 @@ function HomeCards({ creator, existingCount }: { creator: boolean; existingCount
   );
 }
 
-/** A recent property on the home: photo, title, place and state; its actions in the «⋮» menu, the same as in «Mis propiedades». */
-function HomeProperty({ p, agency, reload, canDelete, canPublish }: { p: PanelProperty; agency: PanelSummary["agency"]; reload: () => Promise<unknown>; canDelete: boolean; canPublish: boolean }) {
+/**
+ * A recent demo on the home: a bigger photo, title, place and state, and its
+ * four actions always in view. A draft has no public link yet: «Compartir» and
+ * «Copiar link» wait for it to be published. «Vista previa» opens the buyer's
+ * page inside the panel. Publishing and deleting stay in «Mis demostraciones».
+ */
+function HomeProperty({ p, agency, reload, canWork }: { p: PanelProperty; agency: PanelSummary["agency"]; reload: () => Promise<unknown>; canWork: boolean }) {
   const actions = usePropertyActions(p, agency, reload);
+  const edit = editorLink(p.id, "fotos", "/panel");
   return (
     <li className="ap-recent">
-      <Link href={editorLink(p.id, "fotos", "/panel")} className="ap-recent-photo" tabIndex={-1} aria-hidden="true">
-        {p.coverPhotoId ? <img src={adminPhotoUrl(p.coverPhotoId, null, 320)} alt="" loading="lazy" /> : <span>Sin fotos</span>}
-      </Link>
-      <div className="ap-recent-body">
-        <h3>
-          <Link href={editorLink(p.id, "fotos", "/panel")}>{p.title}</Link>
-        </h3>
-        {p.location && <p className="ap-recent-location">{p.location}</p>}
-        <span className={`ap-state ${actions.live ? "is-live" : "is-draft"}`}>
-          {actions.live ? <Check size={14} aria-hidden="true" /> : <Pencil size={14} aria-hidden="true" />}
-          {actions.live ? "Publicada" : "Borrador"}
-        </span>
-        <ActionNote note={actions.note} />
+      <div className="ap-recent-top">
+        <Link href={edit} className="ap-recent-photo" tabIndex={-1} aria-hidden="true">
+          {p.coverPhotoId ? <img src={adminPhotoUrl(p.coverPhotoId, null, 320)} alt="" loading="lazy" /> : <span>Sin fotos</span>}
+        </Link>
+        <div className="ap-recent-body">
+          <h3>
+            <Link href={edit}>{p.title}</Link>
+          </h3>
+          {p.location && <p className="ap-recent-location">{p.location}</p>}
+          <span className={`ap-state ${actions.live ? "is-live" : "is-draft"}`}>
+            {actions.live ? <Check size={14} aria-hidden="true" /> : <Pencil size={14} aria-hidden="true" />}
+            {actions.live ? "Publicada" : "Borrador"}
+          </span>
+        </div>
       </div>
-      <MoreMenu p={p} actions={actions} canDelete={canDelete} canPublish={canPublish} backTo="/panel" compact />
+      {!actions.live && <p className="ap-recent-hint">Publicala para compartir su link.</p>}
+      <ActionNote note={actions.note} />
+      <div className="ap-recent-actions" role="group" aria-label={`Acciones de ${p.title}`}>
+        <button type="button" className="is-main" disabled={!actions.live} onClick={() => void actions.share()}>
+          <Share2 size={18} aria-hidden="true" /> Compartir
+        </button>
+        <button type="button" disabled={!actions.live} onClick={() => void actions.copy()}>
+          <Link2 size={18} aria-hidden="true" /> Copiar link
+        </button>
+        {canWork && (
+          <Link href={edit}>
+            <Pencil size={18} aria-hidden="true" /> Editar
+          </Link>
+        )}
+        <Link href={previewLink(p.id, "/panel")}>
+          <Eye size={18} aria-hidden="true" /> Vista previa
+        </Link>
+      </div>
     </li>
   );
 }
@@ -332,7 +355,7 @@ function PanelHome({ data, reload }: { data: PanelSummary; reload: () => Promise
       )}
       <section className="ap-recents" aria-labelledby="ap-props-title">
         <div className="ap-section-head">
-          <h2 id="ap-props-title">Mis propiedades recientes</h2>
+          <h2 id="ap-props-title">Mis demostraciones recientes</h2>
           {data.counts.total > 0 && (
             <Link href="/panel/propiedades" className="text-link ap-see-all">
               Ver todas <ArrowRight size={16} aria-hidden="true" />
@@ -342,7 +365,7 @@ function PanelHome({ data, reload }: { data: PanelSummary; reload: () => Promise
         {shown.length ? (
           <ul className="ap-recent-list">
             {shown.map((p) => (
-              <HomeProperty key={p.id} p={p} agency={data.agency} reload={reload} canDelete={canManage(data.role)} canPublish={canEdit(data.role)} />
+              <HomeProperty key={p.id} p={p} agency={data.agency} reload={reload} canWork={canEdit(data.role)} />
             ))}
           </ul>
         ) : (
@@ -438,7 +461,7 @@ function ImportIssue({ item, onDone }: { item: PanelImport; onDone: () => Promis
 const PER_PAGE = 24;
 
 /**
- * "Mis propiedades": paged and filtered on the server with the real total;
+ * "Mis demostraciones": paged and filtered on the server with the real total;
  * the filters live in the URL, so they are kept when coming back from a
  * property. Cards for a few properties, a compact table for many.
  */
@@ -529,7 +552,7 @@ function PropertiesSection({ data, reload }: { data: PanelSummary; reload: () =>
       <div className="ap-head">
         <div>
           <span className="eyebrow">{data.agency.name}</span>
-          <h1>Mis propiedades</h1>
+          <h1>Mis demostraciones</h1>
         </div>
         {canCreate(data) && (
           <button type="button" className="button button-primary" aria-expanded={adding} onClick={() => setAdding((a) => !a)}>
@@ -618,6 +641,9 @@ type Note = { text: string; link?: string; error?: boolean } | null;
 const editorLink = (id: string, section: "fotos" | "publicacion" | "datos", backTo: string, modo?: "editar") =>
   `/panel/propiedades/${id}?${new URLSearchParams({ seccion: section, volver: backTo, ...(modo ? { modo } : {}) })}`;
 
+/** The buyer's page inside the panel; «Volver» goes back to backTo. */
+const previewLink = (id: string, backTo: string) => `/panel/propiedades/${id}/vista-previa?${new URLSearchParams({ volver: backTo })}`;
+
 type Quick = { id: string; label: string; icon: typeof Sparkles; href?: string; external?: boolean; onClick?: () => void };
 
 /**
@@ -629,7 +655,7 @@ function quickActions(p: PanelProperty, actions: ReturnType<typeof usePropertyAc
   const share: Quick = { id: "share", label: "Compartir ficha", icon: Share2, onClick: () => void actions.share() };
   const buyer: Quick = actions.live
     ? { id: "buyer", label: "Vista para comprador", icon: Eye, href: actions.link, external: true }
-    : { id: "buyer", label: "Vista para comprador", icon: Eye, href: `/panel/propiedades/${p.id}/vista-previa` };
+    : { id: "buyer", label: "Vista para comprador", icon: Eye, href: previewLink(p.id, backTo) };
   if (!canWork) return actions.live ? [share, buyer] : [buyer];
   const stage: Quick = { id: "stage", label: "Ambientar con IA", icon: Sofa, href: editorLink(p.id, "fotos", backTo) };
   const edit: Quick = { id: "edit", label: "Editar imágenes", icon: Wand2, href: editorLink(p.id, "fotos", backTo, "editar") };
@@ -713,6 +739,10 @@ function usePropertyActions(p: PanelProperty, agency: PanelSummary["agency"], re
     else if (outcome === "failed") setNote({ text: "No pudimos copiar el enlace. Copialo desde acá:", link, error: true });
     else setNote(null);
   }
+  async function copy() {
+    const outcome = await copyLink(link, p.id);
+    setNote(outcome === "copied" ? { text: "Link copiado." } : { text: "No pudimos copiar el link. Copialo desde acá:", link, error: true });
+  }
   async function remove() {
     if (!window.confirm(`¿Eliminar "${p.title}"? Se borran sus fotos y sus imágenes con IA, y su enlace deja de funcionar. No se puede deshacer.`)) return;
     setBusy(true);
@@ -724,7 +754,7 @@ function usePropertyActions(p: PanelProperty, agency: PanelSummary["agency"], re
       setBusy(false);
     }
   }
-  return { busy, note, live, link, publish, share, remove };
+  return { busy, note, live, link, publish, share, copy, remove };
 }
 
 function ActionNote({ note }: { note: Note }) {
@@ -744,27 +774,19 @@ function MoreMenu({
   canDelete,
   canPublish,
   backTo,
-  compact = false,
 }: {
   p: PanelProperty;
   actions: ReturnType<typeof usePropertyActions>;
   canDelete: boolean;
   canPublish: boolean;
   backTo: string;
-  /** The home's recent properties: an icon-only «⋮» that also shares the ficha (they have no quick actions). */
-  compact?: boolean;
 }) {
   return (
-    <details className={`ap-menu ${compact ? "ap-menu-compact" : ""}`}>
+    <details className="ap-menu">
       <summary aria-label={`Más acciones de ${p.title}`}>
-        {compact ? <MoreVertical size={18} aria-hidden="true" /> : <><MoreHorizontal size={16} aria-hidden="true" /> Más</>}
+        <MoreHorizontal size={16} aria-hidden="true" /> Más
       </summary>
       <div className="ap-menu-list">
-        {compact && actions.live && (
-          <button type="button" onClick={() => void actions.share()}>
-            <Share2 size={14} aria-hidden="true" /> Compartir ficha
-          </button>
-        )}
         <Link href={editorLink(p.id, "fotos", backTo)}>
           <Sparkles size={14} aria-hidden="true" /> Fotos y espacios
         </Link>
@@ -789,7 +811,7 @@ function MoreMenu({
             <ExternalLink size={14} aria-hidden="true" /> Ver ficha
           </a>
         ) : (
-          <Link href={`/panel/propiedades/${p.id}/vista-previa`}>
+          <Link href={previewLink(p.id, backTo)}>
             <ExternalLink size={14} aria-hidden="true" /> Vista previa
           </Link>
         )}
@@ -1804,7 +1826,7 @@ function SiteSection({ data, setData, reload }: { data: PanelSummary; setData: (
       <section className="account-panel">
         <h2>Fichas en el catálogo</h2>
         <p>
-          Publicá o despublicá cada ficha desde «Mis propiedades». Hoy hay {published} {published === 1 ? "ficha publicada" : "fichas publicadas"} de {data.counts.total}.
+          Publicá o despublicá cada ficha desde «Mis demostraciones». Hoy hay {published} {published === 1 ? "ficha publicada" : "fichas publicadas"} de {data.counts.total}.
         </p>
         <Link href="/panel/propiedades?estado=draft" className="text-link">
           Ver borradores

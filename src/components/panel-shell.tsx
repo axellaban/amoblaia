@@ -51,7 +51,7 @@ type Item = { id: PanelSection; href: string; label: string; icon: typeof Home; 
 const GROUPS = (): Item[][] => [
   [
     { id: "inicio", href: "/panel", label: "Inicio", icon: Home },
-    { id: "propiedades", href: "/panel/propiedades", label: "Mis propiedades", icon: LayoutGrid },
+    { id: "propiedades", href: "/panel/propiedades", label: "Mis demostraciones", icon: LayoutGrid },
     { id: "imagenes", href: "/panel/imagenes", label: "Estudio de imágenes", icon: Images },
     ...(videoEnabled() ? [{ id: "video", href: "/panel/video", label: "Video", icon: PlayCircle, future: "video" } as Item] : []),
     // The agency's team, right above its website (owner and administrators only).

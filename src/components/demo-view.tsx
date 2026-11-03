@@ -39,6 +39,7 @@ import {
   Share2,
   Sparkles,
   Tag,
+  Volume2,
   Eye,
   ArrowRight,
   House,
@@ -927,7 +928,10 @@ function Gallery({
   const [index, setIndex] = useState(() => (owner ? Math.max(0, photos.findIndex((p) => p.versions.length > 0)) : 0));
   // The video in the big frame instead of a photo (only a real, finished one; only public links can play it).
   const video = source.kind === "public" ? demo.video : null;
-  const [videoOn, setVideoOn] = useState(false);
+  // Placed first by the agency: the buyers' page opens on the video, playing by itself (muted, as browsers allow).
+  const [videoOn, setVideoOn] = useState(() => !owner && video?.placement === "first");
+  const [muted, setMuted] = useState(true);
+  const player = useRef<HTMLVideoElement>(null);
   // Remembered per photo during the visit.
   const [states, setStates] = useState<Record<string, PhotoState>>({});
   // The style last chosen: photos not seen yet open in it when they have it.
@@ -987,6 +991,8 @@ function Gallery({
       if (!entry) return;
       navMethod.current = method;
       if (entry.kind === "video") {
+        // Opened by a tap: the browser lets it play with sound.
+        setMuted(false);
         setVideoOn(true);
         note("demo_video_opened", { placement: video?.placement ?? "", method });
         return;
@@ -997,6 +1003,22 @@ function Gallery({
     // note is rebuilt on every render; the video's placement is what matters.
     [video?.placement],
   );
+  // The video plays as soon as it is on screen (muted when it opens the page by itself).
+  useEffect(() => {
+    const v = player.current;
+    if (!videoOn || !v) return;
+    v.muted = muted;
+    void v.play().catch(() => {
+      // Sound not allowed without a tap: muted, it can still start.
+      if (!v.muted) {
+        v.muted = true;
+        setMuted(true);
+        void v.play().catch(() => null);
+      }
+    });
+    // Only when the video comes on screen; the sound button changes muted without restarting it.
+  }, [videoOn, video?.id]);
+
   const go = useCallback(
     (step: number, method = "arrow") => {
       if (!entries.length) return;
@@ -1348,17 +1370,40 @@ function Gallery({
           />
           <div className="dv2-frame" style={{ "--ratio": String(ratio) } as React.CSSProperties}>
             {videoOn && video ? (
-              // Played only when asked: never automatically, never with sound by itself; its own proportions.
-              <video
-                key={video.id}
-                className="dv2-video"
-                src={videoSrc}
-                poster={poster}
-                controls
-                playsInline
-                preload="none"
-                onPlay={() => note("demo_video_played", { placement: video.placement, format: video.format })}
-              />
+              // Plays on screen by itself, never with sound until the visitor asks; its own proportions.
+              <>
+                <video
+                  ref={player}
+                  key={video.id}
+                  className="dv2-video"
+                  src={videoSrc}
+                  poster={poster}
+                  controls
+                  autoPlay
+                  muted={muted}
+                  loop
+                  playsInline
+                  preload="auto"
+                  onVolumeChange={(e) => setMuted(e.currentTarget.muted)}
+                  onPlay={() => note("demo_video_played", { placement: video.placement, format: video.format, muted })}
+                />
+                {muted && (
+                  <button
+                    type="button"
+                    className="dv2-unmute"
+                    onClick={() => {
+                      const v = player.current;
+                      if (!v) return;
+                      v.muted = false;
+                      setMuted(false);
+                      void v.play().catch(() => null);
+                      note("demo_video_unmuted", { placement: video.placement });
+                    }}
+                  >
+                    <Volume2 size={16} aria-hidden="true" /> Activar sonido
+                  </button>
+                )}
+              </>
             ) : failed[originalKey] ? (
               <div className="dv2-broken">
                 No pudimos cargar esta foto.
@@ -1787,7 +1832,7 @@ function OwnerHeader({
                 onDemo("nav");
               }}
             >
-              <LayoutGrid size={18} aria-hidden="true" /> Mis propiedades <span className="dv2-owner-count">1</span>
+              <LayoutGrid size={18} aria-hidden="true" /> Mis demostraciones <span className="dv2-owner-count">1</span>
             </a>
             <a href="#otra-propiedad" {...cta("owner_create_anchor", "owner_menu", "create_property", "navigation")} onClick={() => setOpen(false)}>
               <Plus size={18} aria-hidden="true" /> Crear otra propiedad

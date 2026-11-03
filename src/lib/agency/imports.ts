@@ -69,7 +69,7 @@ export async function startImport(agencyId: string, userId: string, url: string,
       // The same key raced with itself: return that import; otherwise the URL is being imported.
       const again = await db.from("property_imports").select(FIELDS).eq("agency_id", agencyId).eq("request_key", key).maybeSingle();
       if (again.data) return { row: again.data as unknown as ImportRow, replay: true };
-      throw new HttpError(409, "Esta propiedad ya se está importando. Esperá unos segundos y revisá Mis propiedades.");
+      throw new HttpError(409, "Esta propiedad ya se está importando. Esperá unos segundos y revisá Mis demostraciones.");
     }
     throw new Error("IMPORT_START_FAILED");
   }

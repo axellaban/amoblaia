@@ -1497,7 +1497,7 @@ function Studio({
           <div className="vs-col vs-col-right">
             <section className="vs-card vs-formats" aria-labelledby="vs-format">
               <h2 id="vs-format">Formato de exportación</h2>
-              <p className="vs-hint">Elegí el formato ideal según dónde vas a publicar el video.</p>
+              <p className="vs-hint">Elegí el formato ideal según dónde vas a publicar el video.{!group && " Para la ficha, Horizontal 16:9 ocupa toda la galería: la ficha muestra tu último video horizontal y, si no hay, el último en otro formato."}</p>
               <div className="vs-format-list" role="radiogroup" aria-labelledby="vs-format">
                 {VIDEO_FORMATS.map((f) => (
                   <button
