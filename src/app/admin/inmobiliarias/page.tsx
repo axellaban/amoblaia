@@ -16,7 +16,7 @@ import {
   type ListFilters,
 } from "@/lib/agency/commercial";
 import { commercialRows } from "@/lib/agency/commercial-server";
-import { AccountPill, AgencyThumb, MoreMenu, ScorePill, StagePill } from "@/components/admin-agency-hub";
+import { AccountPill, AgencyThumb, MoreMenu, RecalcScores, ScorePill, StagePill } from "@/components/admin-agency-hub";
 import { SupportViewButton } from "@/components/admin-agencies";
 import { requireAdminPage } from "@/lib/demos/admin-page";
 export const dynamic = "force-dynamic";
@@ -324,6 +324,7 @@ function AgencyList({
           {current < pages ? <Link href={pageHref(current + 1)}>Siguiente</Link> : <span />}
         </nav>
       )}
+      <RecalcScores />
     </>
   );
 }

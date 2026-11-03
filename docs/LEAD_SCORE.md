@@ -10,7 +10,7 @@ contratar: nunca se muestra como «X % de probabilidad».
 - Ingesta del navegador: `src/lib/leads/ingest.ts` (validación) y `src/lib/leads/client.ts`.
 - Persistencia: `src/lib/leads/server.ts` y `supabase/migrations/202611140001_lead_engagement.sql`.
 - Backfill: `src/lib/leads/backfill.ts` y `scripts/lead-backfill.ts`.
-- Panel: columna «Lead score» en `/admin/inmobiliarias` y pestaña «Actividad» de cada inmobiliaria (el detalle por visitante es `AgencyView` de `src/components/admin-leads.tsx`). `/admin/leads` redirige ahí. Ver `docs/PANEL_INMOBILIARIAS.md`.
+- Panel: columna «Lead score» en `/admin/inmobiliarias` y pestaña «Actividad» de cada inmobiliaria (el detalle por visitante es `AgencyView` de `src/components/admin-leads.tsx`; «Recalcular lead scores» al pie de la lista). `/admin/leads` redirige ahí. Ver `docs/PANEL_INMOBILIARIAS.md`.
 
 ## 1. Auditoría (30/10/2026)
 

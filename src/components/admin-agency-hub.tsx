@@ -382,3 +382,35 @@ export function VisitorDetail({ agencyId }: { agencyId: string }) {
     </details>
   );
 }
+
+/** «Recalcular lead scores»: the audit recalculation of every demo, from the old «Leads» page. */
+export function RecalcScores() {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState("");
+  return (
+    <p className="ah-recalc">
+      <button
+        type="button"
+        className="text-link"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          setNote("");
+          try {
+            await api("/api/admin/leads/recalcular", { method: "POST" });
+            setNote("Lead scores recalculados.");
+            router.refresh();
+          } catch (e) {
+            setNote(e instanceof Error ? e.message : "No pudimos recalcular.");
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        {busy ? "Recalculando…" : "Recalcular lead scores"}
+      </button>
+      {note && <span role="status"> · {note}</span>}
+    </p>
+  );
+}
