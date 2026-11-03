@@ -21270,7 +21270,7 @@ body:has(.pv-root) .pb-root {
   color: var(--pr-muted, #5f6f64);
 }
 /* «Funnel de demos»: seven steps over the list, by the demo's creation date. */
-.ah-funnel {
+.ah-dfunnel {
   display: grid;
   gap: 16px;
   margin-bottom: 20px;
@@ -21279,18 +21279,18 @@ body:has(.pv-root) .pb-root {
   border: 1px solid var(--pr-line, #dde3d7);
   border-radius: 14px;
 }
-.ah-funnel-head {
+.ah-dfunnel-head {
   display: flex;
   flex-wrap: wrap;
   gap: 12px 20px;
   align-items: center;
   justify-content: space-between;
 }
-.ah-funnel-head h2 {
+.ah-dfunnel-head h2 {
   margin: 0;
   font-size: 18px;
 }
-.ah-funnel-head p {
+.ah-dfunnel-head p {
   margin: 4px 0 0;
   font-size: 13px;
   color: #5f665f;
@@ -21346,7 +21346,7 @@ body:has(.pv-root) .pb-root {
   color: var(--pr-ink, #243d36);
   background: #fff;
 }
-.ah-funnel-steps {
+.ah-dfunnel-steps {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 10px;
@@ -21354,7 +21354,7 @@ body:has(.pv-root) .pb-root {
   padding: 0;
   list-style: none;
 }
-.ah-funnel-steps a {
+.ah-dfunnel-steps a {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -21366,56 +21366,57 @@ body:has(.pv-root) .pb-root {
   color: var(--pr-ink, #243d36);
   text-decoration: none;
 }
-.ah-funnel-steps a:hover,
-.ah-funnel-steps a:focus-visible {
+.ah-dfunnel-steps a:hover,
+.ah-dfunnel-steps a:focus-visible {
   border-color: var(--ah-green);
 }
-.ah-funnel-steps a.is-on {
+.ah-dfunnel-steps a.is-on {
   border-color: var(--ah-green);
   box-shadow: inset 0 0 0 1px var(--ah-green);
   background: var(--ah-green-soft);
 }
-.ah-funnel-label {
+.ah-dfunnel-label {
+  min-height: 32px; /* Two lines: every count sits at the same height. */
   font-size: 12px;
   font-weight: 700;
   color: #5f665f;
 }
-.ah-funnel-steps strong {
+.ah-dfunnel-steps strong {
   font-size: 28px;
   line-height: 1;
 }
-.ah-funnel-bar {
+.ah-dfunnel-bar {
   display: block;
   height: 8px;
   border-radius: 6px;
   background: #ece9e1;
   overflow: hidden;
 }
-.ah-funnel-bar span {
+.ah-dfunnel-bar span {
   display: block;
   height: 100%;
   border-radius: 6px;
   background: var(--ah-green);
 }
-.ah-funnel-steps small {
+.ah-dfunnel-steps small {
   font-size: 12px;
   color: #5f665f;
 }
-.ah-funnel-note {
+.ah-dfunnel-note {
   margin: 0;
   font-size: 12px;
   color: #6b6b6b;
 }
 @media (max-width: 1180px) {
-  .ah-funnel-steps {
+  .ah-dfunnel-steps {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 @media (max-width: 640px) {
-  .ah-funnel {
+  .ah-dfunnel {
     padding: 16px;
   }
-  .ah-funnel-steps {
+  .ah-dfunnel-steps {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

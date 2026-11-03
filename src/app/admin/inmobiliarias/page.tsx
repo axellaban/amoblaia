@@ -29,6 +29,8 @@ export const metadata: Metadata = {
 type Props = { searchParams: Promise<Record<string, string | string[] | undefined>> };
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
 const PER_PAGE = 50;
+/** Each funnel step's share, said of the step before it. */
+const OF_PREVIOUS = ["", "de las creadas", "de las enviadas", "de las visitadas", "de las que interactuaron", "de las cuentas creadas", "de las cuentas activas"];
 const ACCOUNT_PARAM: Record<AccountState, string> = { none: "sin-cuenta", registered: "registrada", active: "activa" };
 
 /**
@@ -142,10 +144,10 @@ function AgencyList({
   const presetHref = (key: string) => href({ periodo: key === "todo" ? null : key, desde: null, hasta: null });
   return (
     <>
-      <section className="ah-funnel" aria-labelledby="ah-funnel-title">
-        <div className="ah-funnel-head">
+      <section className="ah-dfunnel" aria-labelledby="ah-dfunnel-title">
+        <div className="ah-dfunnel-head">
           <div>
-            <h2 id="ah-funnel-title">Funnel de demos</h2>
+            <h2 id="ah-dfunnel-title">Funnel de demos</h2>
             <p>Cada paso cuenta las demos que llegaron hasta ahí. El % compara con el paso anterior.</p>
           </div>
           <div className="ah-period">
@@ -172,7 +174,7 @@ function AgencyList({
             </form>
           </div>
         </div>
-        <ol className="ah-funnel-steps">
+        <ol className="ah-dfunnel-steps">
           {funnel.map((f, i) => (
             <li key={f.label}>
               <Link
@@ -180,19 +182,19 @@ function AgencyList({
                 className={step === i ? "is-on" : undefined}
                 aria-current={step === i ? "true" : undefined}
               >
-                <span className="ah-funnel-label">
+                <span className="ah-dfunnel-label">
                   {i + 1}. {f.label}
                 </span>
                 <strong>{f.count}</strong>
-                <span className="ah-funnel-bar" aria-hidden="true">
+                <span className="ah-dfunnel-bar" aria-hidden="true">
                   <span style={{ width: `${Math.max(f.ofFirst * 100, f.count ? 2 : 0)}%` }} />
                 </span>
-                <small>{i === 0 ? "Base del período" : f.ofPrevious === null ? "—" : `${f.ofPrevious}% de ${FUNNEL_STEPS[i - 1].toLowerCase()}`}</small>
+                <small>{i === 0 ? "Base del período" : f.ofPrevious === null ? "—" : `${f.ofPrevious}% ${OF_PREVIOUS[i]}`}</small>
               </Link>
             </li>
           ))}
         </ol>
-        <p className="ah-funnel-note">
+        <p className="ah-dfunnel-note">
           Tocá un paso para ver sus inmobiliarias. «Con interacción» incluye descargas e imágenes generadas en la demo; «Cuenta con interacción»: la
           cuenta subió o importó una propiedad, o generó una imagen. Las inmobiliarias de prueba (QA) no cuentan.
         </p>
