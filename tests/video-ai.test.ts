@@ -209,7 +209,7 @@ describe("AI modes, credits and timing", () => {
 });
 
 describe("fal.ai queue", () => {
-  it("sends the photo as a data URI with LTX-2 Fast's settings, without storing the request at fal", async () => {
+  it("sends the photo as a data URI with LTX-2.3 Fast's settings, without storing the request at fal", async () => {
     const req = await submitClip(Buffer.from("jpg"), "move");
     expect(req).toMatchObject({ requestId: "req-1", statusUrl: expect.stringMatching(/^https:\/\/queue\.fal\.run\//) });
     const sent = fal.submitted[0];
@@ -218,6 +218,9 @@ describe("fal.ai queue", () => {
     expect(sent.headers["X-Fal-Store-IO"]).toBe("0");
     expect(JSON.parse(sent.headers["X-Fal-Object-Lifecycle-Preference"])).toEqual({ expiration_duration_seconds: 86400 });
     expect(sent.body).toMatchObject({ image_url: `data:image/jpeg;base64,${Buffer.from("jpg").toString("base64")}`, prompt: "move", duration: 6, resolution: "1080p", generate_audio: false });
+    expect(DEFAULT_MODEL).toBe("fal-ai/ltx-2.3/image-to-video/fast");
+    expect(sent.body.aspect_ratio).toBe("16:9");
+    expect(clipInput(DEFAULT_MODEL, Buffer.from("x"), "p", "9:16")).toMatchObject({ aspect_ratio: "9:16", duration: 6 });
     expect(clipInput("fal-ai/kling-video/v2.6/pro/image-to-video", Buffer.from("x"), "p")).toMatchObject({ duration: "5" });
   });
 
@@ -273,6 +276,8 @@ describe("AI videos on the server", () => {
       [3, "running", false, null],
     ]);
     expect(fal.submitted).toHaveLength(4);
+    // A vertical video gets vertical clips (9:16), from photos cropped to that shape.
+    expect(fal.submitted.map((s) => s.body.aspect_ratio)).toEqual(["9:16", "9:16", "9:16", "9:16"]);
     // The same key again: the same video, nothing charged or sent twice.
     expect((await start({ key })).id).toBe(v.id);
     expect(db.charges).toHaveLength(1);
@@ -477,7 +482,7 @@ describe("credit functions", () => {
     const v = (
       await pg.query<{ id: string }>("insert into property_videos(agency_id,demo_id,actor_id,idempotency_key,mode,format,photo_count,provider) values($1,$2,$3,$4,'clip','16:9',1,'fal') returning id", [agency, demo, payer, crypto.randomUUID()])
     ).rows[0].id;
-    const ins = "insert into property_video_clips(video_id,position,photo_id,model,status) values($1,$2,$3,'fal-ai/ltx-2/image-to-video/fast',$4)";
+    const ins = "insert into property_video_clips(video_id,position,photo_id,model,status) values($1,$2,$3,'fal-ai/ltx-2.3/image-to-video/fast',$4)";
     await pg.query(ins, [v, 0, crypto.randomUUID(), "pending"]);
     await expect(pg.query(ins, [v, 0, crypto.randomUUID(), "pending"])).rejects.toThrow(/unique|duplicate/i);
     await expect(pg.query(ins, [v, 1, crypto.randomUUID(), "dreaming"])).rejects.toThrow(/check/i);

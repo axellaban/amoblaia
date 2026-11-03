@@ -33,7 +33,7 @@ Virtual staging para Latinoamérica. MVP en español inspirado en la experiencia
 | `NEXT_PUBLIC_CONTACT_URL` | Opcional: enlace HTTPS comercial, por ejemplo a tu formulario de contacto o WhatsApp.                                                             |
 | `FAL_KEY`                 | Opcional: clave de fal.ai para los videos con animación IA («Foto en movimiento» y «Recorrido cinematográfico»). |
 | `HABITA_VIDEO_AI`         | `1` habilita esos modos para las inmobiliarias (junto con `FAL_KEY`). Mientras no esté, aparecen como «Próximamente» y solo se usa el Clásico. |
-| `FAL_VIDEO_MODEL`         | Opcional: otro modelo imagen→video de fal. Predeterminado: `fal-ai/ltx-2/image-to-video/fast`.                                                    |
+| `FAL_VIDEO_MODEL`         | Opcional: otro modelo imagen→video de fal. Predeterminado: `fal-ai/ltx-2.3/image-to-video/fast`.                                                    |
 
 5. Confirmá que **Fluid compute** esté habilitado. La ruta de generación declara `maxDuration = 300`, con timeout del proveedor a los 270 segundos. Los archivos se optimizan para quedar debajo del límite de 4.5 MB de Vercel Functions.
 6. Desplegá o hacé **Redeploy** después de agregar o cambiar variables. Las variables privadas se leen en el servidor; el enlace público de contacto se incorpora al build.

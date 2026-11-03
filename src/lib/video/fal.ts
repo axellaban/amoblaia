@@ -6,8 +6,14 @@
 import "server-only";
 import { CLIP_SECONDS } from "./plan";
 
-/** LTX-2 Fast: USD 0.04 per second at 1080p (6 s ≈ USD 0.24), 16:9, without sound. */
-export const DEFAULT_MODEL = "fal-ai/ltx-2/image-to-video/fast";
+/**
+ * LTX-2.3 Fast: USD 0.04 per second at 1080p (6 s ≈ USD 0.24), 16:9 or 9:16,
+ * without sound. (LTX-2 Fast, the first choice, is no longer on fal: 03/11/2026.)
+ */
+export const DEFAULT_MODEL = "fal-ai/ltx-2.3/image-to-video/fast";
+/** The clip's shape: vertical for the vertical formats, horizontal otherwise. */
+export type ClipAspect = "16:9" | "9:16";
+export const clipAspect = (format: string): ClipAspect => (format === "9:16" || format === "4:5" ? "9:16" : "16:9");
 export const falModel = () => (process.env.FAL_VIDEO_MODEL || DEFAULT_MODEL).trim();
 export const falEnabled = () => Boolean(process.env.FAL_KEY?.trim());
 /**
@@ -44,21 +50,22 @@ function headers() {
 }
 
 /** What the model receives: the photo (a JPEG as a data URI, never a public link) and the camera move. */
-export function clipInput(model: string, jpeg: Buffer, prompt: string) {
+export function clipInput(model: string, jpeg: Buffer, prompt: string, aspect: ClipAspect = "16:9") {
   const input: Record<string, unknown> = { image_url: `data:image/jpeg;base64,${jpeg.toString("base64")}`, prompt };
-  if (model.includes("ltx-2")) Object.assign(input, { duration: CLIP_SECONDS, resolution: "1080p", aspect_ratio: "16:9", fps: 25, generate_audio: false });
+  if (model.includes("ltx-2.3")) Object.assign(input, { duration: CLIP_SECONDS, resolution: "1080p", aspect_ratio: aspect, fps: 25, generate_audio: false });
+  else if (model.includes("ltx-2")) Object.assign(input, { duration: CLIP_SECONDS, resolution: "1080p", aspect_ratio: "16:9", fps: 25, generate_audio: false });
   // Other image-to-video models (Kling, Wan…) take a 5-second string; the scene holds its last frame.
   else Object.assign(input, { duration: "5" });
   return input;
 }
 
 /** Sends one photo to the queue. fal keeps neither the request's data nor, after a day, the clip. */
-export async function submitClip(jpeg: Buffer, prompt: string, model = falModel()): Promise<FalRequest> {
+export async function submitClip(jpeg: Buffer, prompt: string, model = falModel(), aspect: ClipAspect = "16:9"): Promise<FalRequest> {
   if (!/^[a-z0-9-]+\/[a-z0-9./-]+$/i.test(model) || model.includes("..")) throw new FalError("FAL_MODEL_INVALID");
   const res = await fetch(`${QUEUE}${model}`, {
     method: "POST",
     headers: { ...headers(), "X-Fal-Store-IO": "0", "X-Fal-Object-Lifecycle-Preference": JSON.stringify({ expiration_duration_seconds: 86400 }) },
-    body: JSON.stringify(clipInput(model, jpeg, prompt)),
+    body: JSON.stringify(clipInput(model, jpeg, prompt, aspect)),
     signal: AbortSignal.timeout(30_000),
   });
   const body = (await res.json().catch(() => null)) as Record<string, unknown> | null;

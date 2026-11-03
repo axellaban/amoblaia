@@ -11,7 +11,7 @@ import { HttpError } from "@/lib/commerce/http";
 import { validStyle } from "@/lib/demos/input";
 import { adminImagePaths, previewDemo, renderImage } from "@/lib/demos/server";
 import { adminClient } from "@/lib/supabase/server";
-import { aiVideoLive, clipState, downloadClip, falEnabled, falModel, submitClip } from "./fal";
+import { aiVideoLive, clipAspect, clipState, downloadClip, falEnabled, falModel, submitClip, type ClipAspect } from "./fal";
 import { clipPrompt, isAiMode, isVideoFormat, MODE_INFO, photoCountProblem, VIDEO_CREDITS, VIDEO_SIZE, type AiMode, type VideoFormat } from "./plan";
 import { readOptions, VIDEO_BUCKET, type VideoRow } from "./server";
 
@@ -55,16 +55,18 @@ export async function chosenPhotos(demoId: string, ids: string[], staged: boolea
   });
 }
 
-/** The photo the model animates: the same image the studio shows, as a 16:9 JPEG (the clip's shape). */
-async function sourceJpeg(clip: Pick<ClipRow, "photo_id" | "style">) {
+/** The photo the model animates: the same image the studio shows, as a JPEG in the clip's shape (16:9 or 9:16). */
+async function sourceJpeg(clip: Pick<ClipRow, "photo_id" | "style">, aspect: ClipAspect) {
   const paths = await adminImagePaths({ photoId: clip.photo_id, style: validStyle(clip.style) ? clip.style : null });
   const image = paths ? await renderImage(paths.staged ?? paths.original, 1920) : null;
   if (!image) throw new Error("PHOTO_UNAVAILABLE");
-  return sharp(image).resize(1920, 1080, { fit: "cover", position: "centre" }).jpeg({ quality: 86 }).toBuffer();
+  const [w, h] = aspect === "9:16" ? [1080, 1920] : [1920, 1080];
+  return sharp(image).resize(w, h, { fit: "cover", position: "centre" }).jpeg({ quality: 86 }).toBuffer();
 }
 
-async function submit(clip: ClipRow) {
-  const req = await submitClip(await sourceJpeg(clip), clipPrompt(clip.position), clip.model);
+async function submit(clip: ClipRow, format: string) {
+  const aspect = clipAspect(format);
+  const req = await submitClip(await sourceJpeg(clip, aspect), clipPrompt(clip.position), clip.model, aspect);
   const { error } = await adminClient()
     .from("property_video_clips")
     .update({ status: "running", request_id: req.requestId, status_url: req.statusUrl, response_url: req.responseUrl, attempts: clip.attempts + 1, error: null, updated_at: now() })
@@ -175,7 +177,7 @@ export async function startAiVideo(input: {
     throw new Error("VIDEO_CLIPS_CREATE_FAILED");
   }
   const clips = ((inserted.data ?? []) as ClipRow[]).sort((a, b) => a.position - b.position);
-  const sent = await Promise.allSettled(clips.map((c) => submit(c)));
+  const sent = await Promise.allSettled(clips.map((c) => submit(c, format)));
   const firstFailure = sent.find((s): s is PromiseRejectedResult => s.status === "rejected");
   if (firstFailure) {
     console.error("video_ai_submit_failed", row.id, String(firstFailure.reason));
@@ -238,7 +240,7 @@ async function advanceOne(row: VideoRow, deadline: number) {
         await failAiVideo(row, "No pudimos animar una de las fotos. Te devolvimos los créditos; probá con otra foto.");
         return;
       }
-      await submit(clip);
+      await submit(clip, row.format);
       continue;
     }
     if (!clip.status_url || !clip.response_url) continue;
@@ -251,7 +253,7 @@ async function advanceOne(row: VideoRow, deadline: number) {
         await failAiVideo(row, "No pudimos animar una de las fotos. Te devolvimos los créditos; probá con otra foto.");
         return;
       }
-      await submit(clip);
+      await submit(clip, row.format);
       continue;
     }
     const bytes = await downloadClip(state.url);
