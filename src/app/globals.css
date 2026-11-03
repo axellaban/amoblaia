@@ -22850,3 +22850,842 @@ body:has(.pv-root) .pb-root {
   flex: 1;
   font-size: 14px;
 }
+
+/* ── «¿Cómo uso Habita en mi negocio?» in the sidebar: a softer, two-line item. ── */
+.ap-side-group a.ap-side-guide {
+  margin-top: 6px;
+  border: 1px dashed rgba(207, 227, 200, 0.35);
+  line-height: 1.3;
+  font-size: 14px;
+  color: #dcebd5;
+}
+.ap-side-group a.ap-side-guide svg {
+  flex: none;
+  color: #cfe3c8;
+}
+
+/* ── «Cómo usar Habita en tu negocio»: the guide at the bottom of the panel's home. ── */
+.hg {
+  --hg-green: #eaf1e5;
+  --hg-sand: #ece5da;
+  margin: 8px 0 48px;
+  padding-top: 36px;
+  border-top: 1px solid var(--line);
+  scroll-margin-top: 24px;
+  color: var(--ink);
+}
+.ap-page .hg h2,
+.ap-page .hg h3,
+.ap-page .hg h4 {
+  color: var(--forest);
+  font-weight: 800;
+  line-height: 1.2;
+}
+.hg-eyebrow {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--subtle);
+}
+.hg-intro {
+  margin-bottom: 28px;
+}
+.ap-page .hg-intro h2 {
+  margin: 6px 0 6px;
+  font-size: clamp(24px, 2.8vw, 30px);
+}
+.hg-intro p,
+.hg-head p {
+  margin: 0;
+  color: #4a554d;
+  font-size: 15px;
+}
+.hg-block {
+  margin-bottom: 40px;
+}
+.hg-head {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+.hg-head-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--hg-green);
+  color: var(--forest);
+}
+.ap-page .hg-head h3 {
+  margin: 4px 0 4px;
+  font-size: clamp(20px, 2.2vw, 24px);
+}
+.hg-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: #fff;
+  overflow: hidden;
+}
+.ap-page .hg h4 {
+  margin: 0 0 6px;
+  font-size: 16px;
+}
+.hg p {
+  line-height: 1.6;
+}
+.hg-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--forest);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.hg-link:hover {
+  text-decoration-thickness: 2px;
+}
+
+/* 1. Web: the browser mockup and its three steps, then the three ways. */
+.hg-web-art {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 18px;
+  padding: 28px;
+  background: var(--hg-green);
+}
+.hg-browser {
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 10px 30px rgba(36, 56, 46, 0.12);
+  overflow: hidden;
+}
+.hg-browser-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 7px 10px;
+  border-bottom: 1px solid #eee;
+  font-size: 10px;
+  color: var(--subtle);
+}
+.hg-browser-bar i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #d9d9d9;
+}
+.hg-browser-bar span {
+  margin-left: 8px;
+}
+.hg-browser-body {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+}
+.hg-browser-photo {
+  position: relative;
+  aspect-ratio: 4 / 3;
+}
+.hg-browser-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.hg-browser-photo span {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.92);
+  font-size: 9px;
+  text-align: center;
+}
+.hg-browser-copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  padding: 12px;
+  background: #fbf8f2;
+}
+.hg-browser-copy small {
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--subtle);
+}
+.hg-browser-copy strong {
+  font-size: clamp(15px, 1.7vw, 21px);
+  line-height: 1.15;
+  color: var(--forest);
+}
+.hg-browser-copy span {
+  font-size: 10px;
+  color: var(--subtle);
+}
+.hg-browser-copy em {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 5px 9px;
+  border-radius: 4px;
+  background: var(--forest);
+  color: #fff;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 700;
+}
+.hg-steps {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: hg-step;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--forest);
+}
+.hg-steps li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  counter-increment: hg-step;
+}
+.hg-steps li::before {
+  content: counter(hg-step);
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  font-size: 11px;
+}
+.hg-web-list {
+  padding: 28px;
+}
+.hg-lead {
+  margin: 0 0 18px;
+  font-size: 14px;
+  color: #4a554d;
+}
+.hg-web-list ul {
+  display: grid;
+  gap: 20px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.hg-web-list li {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 12px;
+}
+.hg-web-list li > svg {
+  margin-top: 1px;
+  color: var(--forest);
+}
+.hg-web-list p,
+.hg-moment p,
+.hg-social-card p {
+  margin: 0;
+  font-size: 14px;
+  color: #4a554d;
+}
+
+/* 2. Demo: copy on green, the real comparison with three styles. */
+.hg-demo {
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+}
+.hg-demo-copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 14px;
+  padding: 32px;
+  background: var(--hg-green);
+}
+.hg-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--forest);
+}
+.ap-page .hg-demo-copy h4 {
+  margin: 0;
+  font-size: clamp(22px, 2.4vw, 28px);
+}
+.hg-demo-copy p {
+  margin: 0;
+  font-size: 14px;
+  color: #4a554d;
+}
+.hg-demo-go {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.hg-demo-media {
+  padding: 8px;
+  min-width: 0;
+}
+.hg-demo-media .comparison,
+.hg-demo-media > div:first-child {
+  border-radius: 12px;
+  overflow: hidden;
+}
+.hg-demo-styles {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding: 0 4px;
+}
+.hg-demo-styles div {
+  display: flex;
+  gap: 6px;
+}
+.hg-demo-styles button {
+  min-height: 36px;
+  padding: 6px 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--forest);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.hg-demo-styles button.is-on {
+  background: var(--forest);
+  border-color: var(--forest);
+  color: #fff;
+}
+.hg-demo-styles small,
+.hg-note {
+  font-size: 12px;
+  color: var(--subtle);
+}
+.hg-note {
+  margin: 6px 4px 4px;
+}
+
+/* The three moments. */
+.hg-moments,
+.hg-social {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.hg-moment,
+.hg-social-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 10px 18px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #fff;
+}
+.hg-moment > :not(.hg-moment-art),
+.hg-social-card > :not(.hg-social-art) {
+  margin-left: 8px;
+  margin-right: 8px;
+}
+.hg-moment-art {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  height: 170px;
+  margin-bottom: 10px;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--hg-green);
+  overflow: hidden;
+  font-size: 10px;
+}
+.hg-moment-art.is-sand {
+  background: var(--hg-sand);
+}
+.hg-moment-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--forest);
+}
+.ap-page .hg-moment h4,
+.ap-page .hg-social-card h4 {
+  margin: 4px 8px 2px;
+}
+.hg-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--forest);
+  font-weight: 600;
+}
+.hg-chip.is-center {
+  align-self: center;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.7);
+}
+.hg-bubble {
+  max-width: 82%;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  line-height: 1.35;
+}
+.hg-bubble.is-card {
+  position: relative;
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 72%;
+}
+.hg-bubble.is-card img {
+  width: 100%;
+  height: 52px;
+  object-fit: cover;
+  border-radius: 5px;
+}
+.hg-bubble-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 8px;
+}
+.hg-bubble.is-card small {
+  font-size: 9px;
+  color: var(--subtle);
+}
+.hg-bubble-check {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  color: #4b8a5a;
+}
+.hg-bubble.is-in {
+  align-self: flex-start;
+}
+.hg-bubble.is-out {
+  align-self: flex-end;
+  background: #eef6e8;
+}
+.hg-bubble-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 4px;
+}
+.hg-bubble-row img {
+  width: 36px;
+  height: 26px;
+  object-fit: cover;
+  border-radius: 3px;
+}
+.hg-bubble-row span {
+  display: flex;
+  flex-direction: column;
+}
+.hg-bubble-row small {
+  font-size: 8px;
+  color: var(--subtle);
+}
+.hg-moment-art.is-visit {
+  padding: 0;
+}
+.hg-moment-art.is-visit > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.hg-phone {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-30%) rotate(6deg);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 92px;
+  padding: 5px 5px 8px;
+  border: 3px solid #1d1f1d;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.25);
+}
+.hg-phone img {
+  width: 100%;
+  height: 60px;
+  object-fit: cover;
+  border-radius: 8px;
+}
+.hg-phone strong {
+  font-size: 9px;
+  line-height: 1.2;
+  color: var(--forest);
+}
+.hg-caption {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 5px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.94);
+}
+
+/* 3. Social networks. */
+.hg-social {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.hg-social.is-single {
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 620px;
+}
+.hg-social-art {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 200px;
+  margin-bottom: 10px;
+  padding: 14px;
+  border-radius: 12px;
+  background: var(--hg-sand);
+  font-size: 10px;
+}
+.hg-social-art > small {
+  color: var(--subtle);
+}
+.hg-post {
+  width: min(100%, 300px);
+  padding: 8px;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
+}
+.hg-post-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.hg-post-head span {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--forest);
+  color: #fff;
+  font-weight: 800;
+}
+.hg-post-head small {
+  margin-left: auto;
+  font-size: 8px;
+  color: var(--subtle);
+}
+.hg-post-photos {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+}
+.hg-post-photos figure {
+  position: relative;
+  margin: 0;
+}
+.hg-post-photos img {
+  width: 100%;
+  height: 76px;
+  object-fit: cover;
+  display: block;
+}
+.hg-post-photos figcaption {
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 8px;
+}
+.hg-post-q {
+  display: block;
+  margin-top: 6px;
+  color: var(--forest);
+}
+.hg-social-art.is-video {
+  flex-direction: row;
+  gap: 16px;
+}
+.hg-reel {
+  position: relative;
+  flex: none;
+  width: 92px;
+  aspect-ratio: 9 / 16;
+  border-radius: 8px;
+  overflow: hidden;
+  color: #fff;
+}
+.hg-reel img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: brightness(0.62);
+}
+.hg-reel-brand {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  font-weight: 800;
+}
+.hg-reel strong {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 10px;
+  font-size: 11px;
+  line-height: 1.2;
+}
+.hg-reel-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-width: 160px;
+  color: var(--forest);
+}
+.hg-reel-copy strong {
+  font-size: 13px;
+  line-height: 1.25;
+}
+.hg-reel-copy small {
+  color: var(--subtle);
+}
+.hg-reel-thumbs {
+  display: flex;
+  gap: 3px;
+}
+.hg-reel-thumbs img {
+  width: 30px;
+  height: 22px;
+  object-fit: cover;
+  border-radius: 3px;
+  border: 2px solid #fff;
+}
+.hg-social-card .hg-link {
+  align-self: flex-start;
+}
+.hg-tip {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin: 12px 0 0;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: var(--hg-green);
+  font-size: 13px;
+  color: #3e4a42;
+}
+.hg-tip svg {
+  flex: none;
+  margin-top: 3px;
+  color: var(--forest);
+}
+.hg-tip strong {
+  color: var(--forest);
+}
+
+/* 4. Why it matters: three sourced figures on forest green. */
+.hg-why {
+  padding: 32px;
+  border-radius: 20px;
+  background: var(--forest);
+  color: #e8efe4;
+}
+.hg-why .hg-eyebrow {
+  color: #b9cdb0;
+}
+.ap-page .hg-why h3 {
+  margin: 6px 0 8px;
+  font-size: clamp(22px, 2.4vw, 26px);
+  color: #fff;
+}
+.hg-why-lead {
+  max-width: 560px;
+  margin: 0 0 24px;
+  font-size: 14px;
+  color: #cfdcc9;
+}
+.hg-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.hg-stats li {
+  display: flex;
+  flex-direction: column;
+  padding: 0 24px;
+  border-left: 1px solid rgba(255, 255, 255, 0.14);
+}
+.hg-stats li:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+.hg-stat-tag {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: #cfdcc9;
+}
+.hg-stat-tag > span {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+.hg-stat-value {
+  margin-top: 18px;
+  font-size: clamp(44px, 5vw, 60px);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  color: #cfe3c8;
+}
+.hg-stat-who {
+  margin: 6px 0 16px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+}
+.ap-page .hg-why h4 {
+  color: #fff;
+}
+.hg-stats p {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: #cfdcc9;
+}
+.hg-stat-source {
+  margin-top: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #e8efe4;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.hg-why-note {
+  margin: 28px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: 11px;
+  color: #aebfa6;
+}
+
+/* Tablet and mobile: everything stacks, art keeps a readable size. */
+@media (max-width: 960px) {
+  .hg-card,
+  .hg-demo {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .hg-moments {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .hg-moment-art {
+    height: 190px;
+  }
+}
+@media (max-width: 720px) {
+  .hg {
+    padding-top: 28px;
+  }
+  .hg-head-icon {
+    width: 34px;
+    height: 34px;
+  }
+  .hg-web-art,
+  .hg-web-list,
+  .hg-demo-copy {
+    padding: 20px;
+  }
+  .hg-browser-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .hg-browser-photo {
+    aspect-ratio: 16 / 9;
+  }
+  .hg-demo-go {
+    align-self: stretch;
+    justify-content: center;
+  }
+  .hg-social {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .hg-why {
+    padding: 24px 20px;
+  }
+  .hg-stats {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 22px;
+  }
+  .hg-stats li,
+  .hg-stats li:first-child {
+    padding: 22px 0 0;
+    border-left: 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.14);
+  }
+  .hg-stats li:first-child {
+    padding-top: 0;
+    border-top: 0;
+  }
+}
