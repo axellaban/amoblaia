@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+vi.mock("server-only", () => ({}));
 import { isMediaPath, MUSIC_GENRES, MUSIC_TRACKS, readMusic, readWatermark, trackOf } from "../src/lib/video/media";
 import { watermarkBox } from "../src/lib/video/render";
 
@@ -42,5 +43,23 @@ describe("Video music and watermark", () => {
     }
     expect(watermarkBox(plan, logo, "br", true).y).toBeLessThan(watermarkBox(plan, logo, "br", false).y);
     expect(watermarkBox(plan, logo, "bl", true).y).toBe(watermarkBox(plan, logo, "bl", false).y);
+  });
+});
+
+describe("Music library on fal", async () => {
+  const { falDetail, musicModels, readAudio } = await import("../src/lib/video/media-server");
+  it("reads fal's reason and its audio leniently", () => {
+    expect(falDetail({ detail: "User is not allowed" })).toBe("User is not allowed");
+    expect(falDetail({ detail: [{ msg: "field required" }, { msg: "bad" }] })).toBe("field required; bad");
+    expect(falDetail(null)).toBe("");
+    expect(readAudio({ audio: { url: "https://v3.fal.media/files/a.wav", content_type: "audio/wav" } })).toEqual({ url: "https://v3.fal.media/files/a.wav", type: "audio/wav" });
+    expect(readAudio({ audio_file: { url: "https://v3.fal.media/files/a.mp3" } })?.url).toBe("https://v3.fal.media/files/a.mp3");
+    expect(readAudio({ audio: { url: "https://evil.example/a.wav" } })).toBeNull();
+  });
+  it("tries Lyria 2 first, then other music models", () => {
+    const models = musicModels();
+    expect(models[0]).toBe("fal-ai/lyria2");
+    expect(new Set(models).size).toBe(models.length);
+    expect(models.length).toBeGreaterThan(1);
   });
 });
