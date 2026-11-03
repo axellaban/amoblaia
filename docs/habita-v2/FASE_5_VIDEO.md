@@ -41,12 +41,12 @@ format|duration=14.700000|size=8195610
 
 ## 5C/5D — Animación con IA (fal.ai)
 
-Decisión (03/11/2026): **fal.ai** con **LTX-2.3 Fast** (`fal-ai/ltx-2.3/image-to-video/fast`, USD 0,04 por segundo a 1080p; un clip de 6 s ≈ USD 0,24). LTX-2 Fast, la primera elección, ya no está en fal. LTX-2.3 genera clips 16:9 o **9:16**: los formatos verticales (9:16 y 4:5) se animan en vertical, sin recortar los costados. Es la opción económica para empezar; el modelo se cambia con `FAL_VIDEO_MODEL` sin tocar el resto (Kling 2.6 Pro ≈ USD 0,35 por clip de 5 s como opción de mayor calidad, a probar). Sora quedó descartado: OpenAI cerró su API de video el 24/09/2026.
+Decisión (03/11/2026, después de la prueba de calidad): **fal.ai** con **Kling 2.6 Pro** (`fal-ai/kling-video/v2.6/pro/image-to-video`, sin audio, USD 0,07 por segundo; un clip de 5 s ≈ USD 0,35). En la prueba con «Departamento en La Perla» (Russillo), Kling mantuvo muebles, luz y ventanas tal como en la foto; **LTX-2.3 Fast** (USD 0,04/s, la opción más barata) inventó un cuarto que no existe a partir de la foto del balcón y cambió la luz del living. LTX-2 Fast ya no está en fal. El modelo se cambia con `FAL_VIDEO_MODEL` sin tocar el resto; con LTX-2.3 los formatos verticales se animan en 9:16. Con Kling, la foto se recorta antes a la forma del clip (falta confirmar en vertical que Kling conserve esa forma). Sora quedó descartado: OpenAI cerró su API de video el 24/09/2026.
 
 | Modo | Fotos | Créditos | Costo de proveedor estimado |
 | --- | --- | --- | --- |
-| Foto en movimiento | 1 (la primera del orden) | **3** | ≈ USD 0,24 (+ un reintento si falla) |
-| Recorrido cinematográfico | 2 a 6 | **10** | ≈ USD 0,48–1,44 |
+| Foto en movimiento | 1 (la primera del orden) | **3** | ≈ USD 0,35 (+ un reintento si falla) |
+| Recorrido cinematográfico | 2 a 6 | **10** | ≈ USD 0,70–2,10 |
 
 **Cómo funciona**
 
@@ -120,7 +120,7 @@ Los cinco se decodifican completos con `ffmpeg -f null`. Cuadros: `mp4-cuadros-*
 | --- | --- |
 | Probar el Clásico en el preview con una propiedad real: render, subida a Supabase y reproducción en **iPhone Safari** y desktop | Acceso al preview |
 | Activar la animación con IA | Prueba de calidad aprobada, `202611210001_video_ai.sql` aplicada, `FAL_KEY` y `HABITA_VIDEO_AI=1` en Vercel |
-| Prueba de calidad: 10 fotos reales de inmobiliarias con LTX-2.3 Fast (y Kling 2.6 Pro para comparar) | `FAL_KEY` y fotos |
+| Prueba de Kling 2.6 Pro en vertical (9:16, foto recortada antes) y de un recorrido completo en Preview | `HABITA_VIDEO_AI=1` solo en Preview |
 | «Ver en movimiento» dentro de la demo pública y modo Equilibrado | Resultado de la prueba de calidad |
 | Música con licencia | Pistas con licencia comercial documentada |
 | Navegadores sin WebCodecs (iOS < 17) | Hoy: mensaje claro y sugerencia de desktop |

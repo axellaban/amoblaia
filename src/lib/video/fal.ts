@@ -7,10 +7,12 @@ import "server-only";
 import { CLIP_SECONDS } from "./plan";
 
 /**
- * LTX-2.3 Fast: USD 0.04 per second at 1080p (6 s ≈ USD 0.24), 16:9 or 9:16,
- * without sound. (LTX-2 Fast, the first choice, is no longer on fal: 03/11/2026.)
+ * Kling 2.6 Pro: USD 0.07 per second without sound (5 s ≈ USD 0.35). Chosen
+ * after the quality test of 03/11/2026 with real photos: it keeps the room as
+ * it is, while LTX-2.3 Fast (USD 0.04/s) invented spaces and changed the light.
+ * Its clip keeps the shape of the photo, which is cropped to the clip's first.
  */
-export const DEFAULT_MODEL = "fal-ai/ltx-2.3/image-to-video/fast";
+export const DEFAULT_MODEL = "fal-ai/kling-video/v2.6/pro/image-to-video";
 /** The clip's shape: vertical for the vertical formats, horizontal otherwise. */
 export type ClipAspect = "16:9" | "9:16";
 export const clipAspect = (format: string): ClipAspect => (format === "9:16" || format === "4:5" ? "9:16" : "16:9");

@@ -209,7 +209,7 @@ describe("AI modes, credits and timing", () => {
 });
 
 describe("fal.ai queue", () => {
-  it("sends the photo as a data URI with LTX-2.3 Fast's settings, without storing the request at fal", async () => {
+  it("sends the photo as a data URI to Kling 2.6 Pro (LTX-2.3 Fast by configuration), without storing the request at fal", async () => {
     const req = await submitClip(Buffer.from("jpg"), "move");
     expect(req).toMatchObject({ requestId: "req-1", statusUrl: expect.stringMatching(/^https:\/\/queue\.fal\.run\//) });
     const sent = fal.submitted[0];
@@ -217,10 +217,10 @@ describe("fal.ai queue", () => {
     expect(sent.headers.Authorization).toBe("Key test-key");
     expect(sent.headers["X-Fal-Store-IO"]).toBe("0");
     expect(JSON.parse(sent.headers["X-Fal-Object-Lifecycle-Preference"])).toEqual({ expiration_duration_seconds: 86400 });
-    expect(sent.body).toMatchObject({ image_url: `data:image/jpeg;base64,${Buffer.from("jpg").toString("base64")}`, prompt: "move", duration: 6, resolution: "1080p", generate_audio: false });
-    expect(DEFAULT_MODEL).toBe("fal-ai/ltx-2.3/image-to-video/fast");
-    expect(sent.body.aspect_ratio).toBe("16:9");
-    expect(clipInput(DEFAULT_MODEL, Buffer.from("x"), "p", "9:16")).toMatchObject({ aspect_ratio: "9:16", duration: 6 });
+    expect(sent.body).toMatchObject({ start_image_url: `data:image/jpeg;base64,${Buffer.from("jpg").toString("base64")}`, prompt: "move", duration: "5", generate_audio: false });
+    expect(DEFAULT_MODEL).toBe("fal-ai/kling-video/v2.6/pro/image-to-video");
+    expect(clipInput("fal-ai/ltx-2.3/image-to-video/fast", Buffer.from("x"), "p")).toMatchObject({ image_url: expect.any(String), aspect_ratio: "16:9", duration: 6, resolution: "1080p", generate_audio: false });
+    expect(clipInput("fal-ai/ltx-2.3/image-to-video/fast", Buffer.from("x"), "p", "9:16")).toMatchObject({ aspect_ratio: "9:16", duration: 6 });
     const kling = clipInput("fal-ai/kling-video/v2.6/pro/image-to-video", Buffer.from("x"), "p");
     expect(kling).toMatchObject({ start_image_url: expect.stringMatching(/^data:image\/jpeg;base64,/), duration: "5", generate_audio: false });
     expect(kling).not.toHaveProperty("image_url");
@@ -278,12 +278,19 @@ describe("AI videos on the server", () => {
       [3, "running", false, null],
     ]);
     expect(fal.submitted).toHaveLength(4);
-    // A vertical video gets vertical clips (9:16), from photos cropped to that shape.
-    expect(fal.submitted.map((s) => s.body.aspect_ratio)).toEqual(["9:16", "9:16", "9:16", "9:16"]);
+    expect(fal.submitted.every((s) => s.url.endsWith("/fal-ai/kling-video/v2.6/pro/image-to-video"))).toBe(true);
     // The same key again: the same video, nothing charged or sent twice.
     expect((await start({ key })).id).toBe(v.id);
     expect(db.charges).toHaveLength(1);
     expect(fal.submitted).toHaveLength(4);
+  });
+
+  it("with LTX-2.3 by configuration, a vertical video gets vertical clips (9:16)", async () => {
+    process.env.FAL_VIDEO_MODEL = "fal-ai/ltx-2.3/image-to-video/fast";
+    await start();
+    expect(fal.submitted.map((s) => s.body.aspect_ratio)).toEqual(["9:16", "9:16", "9:16", "9:16"]);
+    await start({ format: "16:9" });
+    expect(fal.submitted.slice(4).map((s) => s.body.aspect_ratio)).toEqual(["16:9", "16:9", "16:9", "16:9"]);
   });
 
   it("«Foto en movimiento»: one photo, 3 credits", async () => {
