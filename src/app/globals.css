@@ -22291,16 +22291,37 @@ body:has(.pv-root) .pb-root {
   }
 }
 
-/* Video de la demo comercial: tarjeta horizontal compacta, debajo de la galería. */
+/* Video de la demo comercial: tarjeta horizontal compacta (toda la tarjeta abre el video), debajo de la galería. */
 .dv2-video-card.is-owner {
-  grid-template-columns: 168px minmax(0, 1fr);
+  display: block;
+  padding: 0;
+  overflow: hidden;
+}
+.dv2-video-open {
+  display: grid;
+  grid-template-columns: 168px minmax(0, 1fr) auto;
+  align-items: center;
   gap: 14px;
-  padding: 10px;
+  width: 100%;
+  padding: 8px 14px 8px 8px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.dv2-video-open:hover {
+  background: #f6f8f4;
 }
 .dv2-video-card.is-owner .dv2-video-cover {
+  position: relative;
   display: block;
   width: 100%;
-  aspect-ratio: 16 / 10;
+  aspect-ratio: 16 / 9;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #eceef2;
 }
 .dv2-video-card.is-owner .dv2-video-cover img,
 .dv2-video-card.is-owner .dv2-video-cover video {
@@ -22320,7 +22341,14 @@ body:has(.pv-root) .pb-root {
   opacity: 1;
 }
 .dv2-video-card.is-owner .dv2-play {
+  position: absolute;
   z-index: 1;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 44px;
+  height: 44px;
+  border: 2px solid #fff;
 }
 .dv2-video-time {
   position: absolute;
@@ -22335,82 +22363,171 @@ body:has(.pv-root) .pb-root {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
-.dv2-video-card.is-owner h2 {
-  margin: 0 0 8px;
+.dv2-video-text {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.dv2-video-text strong {
+  color: var(--forest);
   font-size: 16px;
   line-height: 1.25;
 }
-.dv2-video-card.is-owner .dv2-video-cta {
-  min-height: 40px;
-  padding: 0 14px;
-  border: 1.5px solid var(--forest);
-  background: #fff;
-  color: var(--forest);
-  font-size: 14px;
+.dv2-video-text small {
+  color: var(--muted);
+  font-size: 13px;
 }
-.dv2-video-card.is-owner .dv2-video-cta:hover {
-  background: #eef3eb;
+.dv2-video-chevron {
+  color: var(--forest);
 }
 @media (max-width: 900px) {
-  .dv2-video-card.is-owner {
-    grid-template-columns: 124px minmax(0, 1fr);
+  .dv2-video-open {
+    grid-template-columns: 128px minmax(0, 1fr) auto;
     gap: 12px;
-    padding: 8px;
+    padding: 6px 10px 6px 6px;
   }
-  .dv2-video-card.is-owner h2 {
+  .dv2-video-text strong {
     font-size: 15px;
   }
   .dv2-video-card.is-owner .dv2-play {
-    width: 38px;
-    height: 38px;
+    width: 40px;
+    height: 40px;
   }
 }
 
-/* Descargar / Compartir: textos completos en desktop; en el teléfono, dos botones iguales y etiquetas cortas. */
-.dv2-label-short {
-  display: none;
-}
-/* The same height side by side; the list of downloads, once open, only grows its own column. */
-.dv2-value {
-  align-items: stretch;
-}
-.dv2-value:has(.dv2-value-download[open]) {
-  align-items: start;
-}
-.dv2-value-download:not([open]) > summary {
-  height: 100%;
+/* Foto principal de la demo comercial: el recuadro toma las proporciones de la foto (sin franjas); las verticales, con fondo desenfocado a los lados. */
+.dv2-page:has(.dv2-owner) .dv2-stage:not(.is-full) {
+  /* The width is the column's: the height follows the photo, never the other way round. */
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  aspect-ratio: var(--ratio, 4 / 3);
+  max-height: min(70vh, 640px);
 }
 @media (max-width: 900px) {
-  .dv2-value {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
+  .dv2-page:has(.dv2-owner) .dv2-stage:not(.is-full) {
+    max-height: 62vh;
   }
-  .dv2-value-download > summary,
-  .dv2-value-share {
-    justify-content: center;
+}
+/* Los puntos debajo de la foto y el título de la galería (el mockup). */
+.dv2-dots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  padding: 2px 0;
+}
+.dv2-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #cfd6cb;
+  transition: width 0.2s;
+}
+.dv2-dots span.is-on {
+  width: 16px;
+  background: var(--forest);
+}
+.dv2-gallery-title {
+  display: none;
+}
+@media (max-width: 900px) {
+  .dv2-media > .dv2-dots {
+    order: 1;
+  }
+  .dv2-gallery-title {
+    order: 4;
+    display: flex;
+    align-items: center;
     gap: 8px;
-    height: 52px;
-    min-height: 52px;
-    padding: 0 12px;
-    border-radius: 12px;
+    margin: 4px 0 -4px;
+    color: var(--ink);
+    font-size: 16px;
   }
-  .dv2-value-download > summary > svg,
-  .dv2-value-share > svg {
-    flex: none;
-    width: 20px;
-    height: 20px;
+}
+
+/* Descargar / Compartir: dos botones iguales, con contorno y el texto completo (el mockup). */
+.dv2-page:has(.dv2-owner) .dv2-value {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  align-items: stretch;
+}
+.dv2-page:has(.dv2-owner) .dv2-value:has(.dv2-value-download[open]) {
+  align-items: start;
+}
+.dv2-page:has(.dv2-owner) .dv2-value-download:not([open]) > summary {
+  height: 100%;
+}
+.dv2-page:has(.dv2-owner) .dv2-value-download > summary,
+.dv2-page:has(.dv2-owner) .dv2-value-share {
+  justify-content: center;
+  gap: 10px;
+  min-height: 56px;
+  padding: 8px 12px;
+  border: 1.5px solid var(--forest);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--forest);
+}
+.dv2-page:has(.dv2-owner) .dv2-value-download > summary:hover,
+.dv2-page:has(.dv2-owner) .dv2-value-share:hover {
+  background: #f1f6ee;
+}
+.dv2-page:has(.dv2-owner) .dv2-value-download > summary > svg,
+.dv2-page:has(.dv2-owner) .dv2-value-share > svg {
+  flex: none;
+}
+.dv2-page:has(.dv2-owner) .dv2-value strong {
+  font-size: 14px;
+  line-height: 1.2;
+}
+@media (max-width: 900px) {
+  .dv2-page:has(.dv2-owner) .dv2-value-download[open] {
+    grid-column: 1 / -1;
   }
-  .dv2-value small {
-    display: none;
-  }
-  .dv2-value strong {
-    font-size: 15px;
-    white-space: nowrap;
-  }
-  .dv2-label-full {
-    display: none;
-  }
-  .dv2-label-short {
-    display: inline;
+}
+
+/* «¿Te imaginás esto con todas tus propiedades?» y «Guardar esta demo en mi panel». */
+.dv2-save-demo {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 16px;
+  border-radius: 14px;
+  background: #eaf2e4;
+}
+.dv2-save-demo h2 {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0;
+  color: var(--ink);
+  font-size: 16px;
+  line-height: 1.3;
+}
+.dv2-save-demo h2 svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--forest);
+}
+.dv2-save-demo-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 16px;
+  border-radius: 12px;
+  background: var(--forest);
+  color: #fff;
+  font-weight: 700;
+  text-decoration: none;
+}
+.dv2-save-demo-cta:hover {
+  background: var(--forest-light);
+}
+/* Desktop: the actions right under «Estilos», as in the mockup (not pushed to the bottom of the column). */
+@media (min-width: 901px) {
+  .dv2-page:has(.dv2-owner) .dv2-aside-actions {
+    margin-top: 0;
   }
 }

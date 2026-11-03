@@ -126,9 +126,10 @@ export type DemoSettings = {
   showContact: boolean;
   videoPlacement: VideoPlacement;
   /**
-   * The order the demo offers its styles in (see styleSequence). New demos
-   * start on "auto": the order of the property's region (REGIONAL_STYLE_ORDERS).
-   * Demos saved before this keep "catalog", the order they always had.
+   * The order the demo offers its styles in (see styleSequence). Every demo
+   * is "auto" unless chosen otherwise: the order of the property's region
+   * (REGIONAL_STYLE_ORDERS), else the catalog's. Only the order changes:
+   * the main style and every generated image stay as they are.
    */
   styleOrder: StyleOrderSetting;
 };
@@ -162,7 +163,7 @@ export const DEFAULT_SETTINGS: DemoSettings = {
   showContact: true,
   // New demos (every importer starts from these): the video under the gallery. Older demos without a saved choice keep reading "first".
   videoPlacement: "below",
-  // New demos (every importer starts from these): the order of the property's region. Older demos without it keep the catalog's.
+  // The order of the property's region (older demos without a saved choice read the same).
   styleOrder: "auto",
 };
 
@@ -277,14 +278,14 @@ export function readSettings(raw: unknown): DemoSettings {
   };
 }
 
-/** A saved style order: "auto", an explicit list of known styles, or "catalog" (absent or invalid). */
+/** A saved style order: "catalog" or an explicit list of known styles when chosen; otherwise "auto" (by region). */
 export function readStyleOrder(v: unknown): StyleOrderSetting {
-  if (v === "auto") return "auto";
+  if (v === "catalog") return "catalog";
   if (Array.isArray(v)) {
     const ids = [...new Set(v.filter(isDemoStyle))];
     if (ids.length) return ids;
   }
-  return "catalog";
+  return "auto";
 }
 
 /** Whether a field reaches the public page: «Mostrar datos de la propiedad» on and its own switch on. */
