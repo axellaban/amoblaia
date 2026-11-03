@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ArrowRight,
   ArrowUpRight,
@@ -33,7 +33,7 @@ const styleName = (id: string) =>
 
 type Has = (room: string, style: string) => boolean;
 
-/** Reduced motion: the reel and the demo do not move on their own. */
+/** Reduced motion: videos do not start on their own. */
 function useReducedMotion() {
   const [reduced, setReduced] = useState(false);
   useEffect(() => {
@@ -46,59 +46,70 @@ function useReducedMotion() {
   return reduced;
 }
 
+// A real video made with habita.'s «Recorrido» (AI camera movement), muted
+// for the web: public/home/recorrido.{webm,mp4} (720 px, no audio) and its poster.
+const CLIP_POSTER = "/home/recorrido.webp";
+
 /**
- * What a video made in habita. looks like: the photos one after another with
- * a slow camera movement. It is an animation of the examples, not an MP4, so
- * it says «Vista ilustrativa» and has a pause button (WCAG 2.2.2).
+ * The video, muted and looping, playing only while it is on screen (so the
+ * page downloads it only when someone gets there). With a pause button
+ * (WCAG 2.2.2); with reduced motion it waits for that button. `decorative`
+ * drops the button for the small copies that only accompany another view.
  */
-function Reel({
-  frames,
-  vertical = false,
-  strip = false,
-  label = "Vista ilustrativa de un video",
-}: {
-  frames: string[];
-  vertical?: boolean;
-  strip?: boolean;
-  label?: string;
-}) {
+function Clip({ label = "Video de un departamento hecho con habita.", decorative = false, format }: { label?: string; decorative?: boolean; format?: string }) {
+  const ref = useRef<HTMLVideoElement>(null);
   const reduced = useReducedMotion();
   const [paused, setPaused] = useState(false);
-  const [i, setI] = useState(0);
-  const playing = !paused && !reduced && frames.length > 1;
+  const [visible, setVisible] = useState(false);
+  const [playing, setPlaying] = useState(false);
+  // With reduced motion, a video plays only after its button is pressed.
+  const [started, setStarted] = useState(false);
   useEffect(() => {
-    if (!playing) return;
-    const t = window.setInterval(() => setI((n) => (n + 1) % frames.length), 3200);
-    return () => window.clearInterval(t);
-  }, [playing, frames.length]);
-  if (!frames.length) return null;
+    const v = ref.current;
+    if (!v) return;
+    const io = new IntersectionObserver(([e]) => setVisible(e.isIntersecting), { rootMargin: "200px" });
+    io.observe(v);
+    return () => io.disconnect();
+  }, []);
+  const wanted = visible && !paused && (!reduced || started);
+  useEffect(() => {
+    const v = ref.current;
+    if (!v) return;
+    if (wanted) v.play().catch(() => setPlaying(false));
+    else v.pause();
+  }, [wanted]);
   return (
-    <div className={`hb-reel ${vertical ? "is-vertical" : ""} ${playing ? "is-playing" : ""}`}>
-      <div className="hb-reel-frames" role="img" aria-label={label}>
-        {frames.map((src, n) => (
-          <img key={src} src={src} alt="" loading="lazy" className={n === i ? "is-on" : ""} />
-        ))}
-      </div>
-      {vertical && <span className="hb-reel-format"><Smartphone size={13} aria-hidden="true" /> 9:16</span>}
-      <button
-        type="button"
-        className="hb-reel-toggle"
-        onClick={() => setPaused(playing)}
-        aria-label={playing ? "Pausar la vista del video" : "Reproducir la vista del video"}
-        disabled={reduced || frames.length < 2}
+    <div className={`hb-clip ${decorative ? "is-decorative" : ""}`}>
+      <video
+        ref={ref}
+        poster={CLIP_POSTER}
+        muted
+        loop
+        playsInline
+        preload="none"
+        aria-label={decorative ? undefined : label}
+        aria-hidden={decorative || undefined}
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
       >
-        {playing ? <Pause size={20} /> : <Play size={20} />}
-      </button>
-      {strip && (
-        <div className="hb-reel-strip" aria-hidden="true">
-          {frames.map((src, n) => (
-            <img key={src} src={src} alt="" loading="lazy" className={n === i ? "is-on" : ""} />
-          ))}
-        </div>
+        <source src="/home/recorrido.webm" type="video/webm" />
+        <source src="/home/recorrido.mp4" type="video/mp4" />
+      </video>
+      {!decorative && <span className="hb-clip-tag">Video hecho con habita.</span>}
+      {format && <span className="hb-clip-format"><Smartphone size={13} aria-hidden="true" /> {format}</span>}
+      {!decorative && (
+        <button
+          type="button"
+          className={`hb-clip-toggle ${playing ? "is-playing" : ""}`}
+          onClick={() => {
+            setStarted(true);
+            setPaused(playing);
+          }}
+          aria-label={playing ? "Pausar el video" : "Reproducir el video"}
+        >
+          {playing ? <Pause size={20} /> : <Play size={20} />}
+        </button>
       )}
-      <span className="hb-reel-progress" aria-hidden="true">
-        <span key={`${i}-${playing}`} />
-      </span>
     </div>
   );
 }
@@ -162,10 +173,6 @@ export function Landing({ scenes, trial }: { scenes: string[]; trial: boolean })
   const leadStyle = pick(lead, "scandinavian", "modern");
   // The rooms of the demo, in the order a visit walks through them.
   const demoRooms = ["living", "kitchen", "bedroom", "dining", "outdoor"].filter((r) => sceneRooms.includes(r)).slice(0, 4);
-  const reel = ["living", "kitchen", "bedroom", "dining", "outdoor"]
-    .filter((r) => sceneRooms.includes(r))
-    .slice(0, 4)
-    .map((r) => examplePath(r, pick(r, "modern", "scandinavian")));
   const second = sceneRooms.includes("bedroom") ? "bedroom" : sceneRooms[1] || lead;
   const [view, setView] = useState<"demo" | "compare" | "video">("compare");
 
@@ -205,13 +212,14 @@ export function Landing({ scenes, trial }: { scenes: string[]; trial: boolean })
                 />
               )}
               {view === "demo" && <DemoViewer has={has} demoRooms={demoRooms} />}
-              {view === "video" && <Reel frames={reel} strip />}
-              {/* Desktop only: the same property as a video and on a phone. */}
-              <div className="hb-hero-float hb-hero-float-video" aria-hidden="true">
-                <img src={examplePath(second, pick(second, "modern", "scandinavian"))} alt="" />
-                <span><Play size={16} /></span>
-              </div>
-              <div className="hb-hero-float hb-hero-phone" aria-hidden="true">
+              {view === "video" && <Clip />}
+              {/* Desktop only, next to the before/after: the property as a video and on a phone. */}
+              {view === "compare" && (
+                <>
+                  <div className="hb-hero-float hb-hero-float-video" aria-hidden="true">
+                    <Clip decorative />
+                  </div>
+                  <div className="hb-hero-float hb-hero-phone" aria-hidden="true">
                 <b>habita.</b>
                 <img src={examplePath(lead, pick(lead, "modern"))} alt="" />
                 <i>
@@ -219,7 +227,9 @@ export function Landing({ scenes, trial }: { scenes: string[]; trial: boolean })
                     <img key={r} src={examplePath(r, "original")} alt="" />
                   ))}
                 </i>
-              </div>
+                  </div>
+                </>
+              )}
             </div>
             <p className="hb-hero-note">Una propiedad. Muchas formas de mostrar su potencial.</p>
             <div className="hb-tabs" role="group" aria-label="Formas de mostrar la propiedad">
@@ -282,7 +292,7 @@ export function Landing({ scenes, trial }: { scenes: string[]; trial: boolean })
             </article>
             <article className="hb-card">
               <div className="hb-card-media">
-                <Reel frames={reel} vertical />
+                <Clip format="1:1 · 9:16 · 4:5 · 16:9" />
               </div>
               <h3>Videos</h3>
               <p>Convertí las fotos en recorridos y videos verticales u horizontales, con música y tu marca.</p>
@@ -351,7 +361,7 @@ export function Landing({ scenes, trial }: { scenes: string[]; trial: boolean })
               <p>Transformá tus fotos y mostrá cómo puede verse el espacio.</p>
             </article>
             <article className="hb-use">
-              <Reel frames={reel} strip />
+              <Clip />
               <h3>Dale movimiento a tus propiedades</h3>
               <p>Convertí tus imágenes en videos que transmiten el espacio real.</p>
               <div className="hb-pills">
@@ -386,8 +396,7 @@ export function Landing({ scenes, trial }: { scenes: string[]; trial: boolean })
               <div className="hb-posts" aria-hidden="true">
                 <span className="is-square"><img src={examplePath(second, pick(second, "modern"))} alt="" loading="lazy" /></span>
                 <span className="is-story">
-                  <img src={examplePath(lead, pick(lead, "scandinavian", "modern"))} alt="" loading="lazy" />
-                  <Play size={18} />
+                  <Clip decorative />
                 </span>
                 <span className="is-portrait">
                   <img src={examplePath(sceneRooms.includes("dining") ? "dining" : lead, pick(sceneRooms.includes("dining") ? "dining" : lead, "modern"))} alt="" loading="lazy" />
