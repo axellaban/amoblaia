@@ -23057,7 +23057,7 @@ body:has(.pv-root) .pb-root {
 }
 .hb-hero-stage > .comparison,
 .hb-hero-stage > .hb-demo,
-.hb-hero-stage > .hb-reel {
+.hb-hero-stage > .hb-clip {
   border-radius: 16px;
   box-shadow: 0 18px 40px -24px #24382e66;
 }
@@ -23192,63 +23192,33 @@ body:has(.pv-root) .pb-root {
   display: none;
 }
 
-/* The reel: an illustration of a video */
-.hb-reel {
+/* The video: a real clip made with habita., muted */
+.hb-clip {
   position: relative;
   overflow: hidden;
   border-radius: 14px;
   background: #1d2a23;
   aspect-ratio: 3 / 2;
 }
-.hb-reel.is-vertical {
-  aspect-ratio: 3 / 2;
-}
-.hb-reel-frames,
-.hb-reel-frames img {
+.hb-clip video {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-}
-.hb-reel-frames img {
   object-fit: cover;
-  opacity: 0;
-  transition: opacity 0.9s ease;
 }
-.hb-reel-frames img.is-on {
-  opacity: 1;
-}
-.hb-reel.is-playing .hb-reel-frames img.is-on {
-  animation: hb-pan 3.4s ease-out both;
-}
-.hb-reel-toggle {
+.hb-clip-tag {
   position: absolute;
-  left: 50%;
-  top: 50%;
-  translate: -50% -50%;
-  display: grid;
-  place-items: center;
-  width: 52px;
-  height: 52px;
-  border: 0;
-  border-radius: 50%;
-  background: #1b2b22b3;
-  color: #fff;
-  cursor: pointer;
-  backdrop-filter: blur(4px);
-  transition: opacity 0.2s;
+  top: 10px;
+  left: 10px;
+  padding: 3px 9px;
+  border-radius: 6px;
+  background: #ffffffe6;
+  color: var(--hb-green);
+  font-size: 12px;
+  font-weight: 700;
 }
-.hb-reel.is-playing .hb-reel-toggle {
-  opacity: 0.55;
-}
-.hb-reel-toggle:hover,
-.hb-reel-toggle:focus-visible {
-  opacity: 1 !important;
-}
-.hb-reel-toggle:disabled {
-  cursor: default;
-}
-.hb-reel-format {
+.hb-clip-format {
   position: absolute;
   top: 10px;
   right: 10px;
@@ -23259,55 +23229,36 @@ body:has(.pv-root) .pb-root {
   border-radius: 6px;
   background: #1b2b22cc;
   color: #fff;
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 700;
 }
-.hb-reel-strip {
+.hb-clip-toggle {
   position: absolute;
-  left: 10px;
   right: 10px;
-  bottom: 12px;
+  bottom: 10px;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 4px;
-  padding: 4px;
-  border-radius: 8px;
-  background: #ffffffcc;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: #1b2b22b3;
+  color: #fff;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
 }
-.hb-reel-strip img {
+.hb-clip-toggle:not(.is-playing) {
+  right: 50%;
+  bottom: 50%;
+  translate: 50% 50%;
+  width: 56px;
+  height: 56px;
+}
+.hb-clip.is-decorative {
+  border-radius: inherit;
+  aspect-ratio: auto;
   width: 100%;
-  aspect-ratio: 16 / 10;
-  object-fit: cover;
-  border-radius: 4px;
-  opacity: 0.6;
-}
-.hb-reel-strip img.is-on {
-  opacity: 1;
-  outline: 2px solid var(--hb-green);
-}
-.hb-reel-progress {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 3px;
-  background: #ffffff33;
-}
-.hb-reel-progress span {
-  display: block;
   height: 100%;
-  width: 0;
-  background: #fff;
-}
-.hb-reel.is-playing .hb-reel-progress span {
-  animation: hb-progress 3.2s linear both;
-}
-@keyframes hb-pan {
-  from { transform: scale(1.02) translateX(0); }
-  to { transform: scale(1.12) translateX(-2.5%); }
-}
-@keyframes hb-progress {
-  to { width: 100%; }
 }
 @keyframes hb-fade {
   from { opacity: 0.35; }
@@ -23350,7 +23301,7 @@ body:has(.pv-root) .pb-root {
 .hb-card-media .hb-demo {
   border-radius: 10px;
 }
-.hb-card-media .hb-reel {
+.hb-card-media .hb-clip {
   border-radius: 10px;
 }
 .hb-card p {
@@ -23478,7 +23429,7 @@ body:has(.pv-root) .pb-root {
   min-width: 0;
 }
 .hb-use > .comparison,
-.hb-use > .hb-reel {
+.hb-use > .hb-clip {
   aspect-ratio: 16 / 10;
   border-radius: 14px;
   margin-bottom: 8px;
@@ -23613,18 +23564,6 @@ body:has(.pv-root) .pb-root {
 .hb-posts .is-story {
   aspect-ratio: 9 / 16;
   border: 3px solid #fff;
-}
-.hb-posts .is-story svg {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  translate: -50% -50%;
-  width: 40px;
-  height: 40px;
-  padding: 11px;
-  border-radius: 50%;
-  background: #1b2b22b3;
-  color: #fff;
 }
 .hb-posts .is-portrait {
   aspect-ratio: 4 / 5;
@@ -23782,7 +23721,7 @@ body:has(.pv-root) .pb-root {
     gap: 28px;
   }
   .hb-use > .comparison,
-  .hb-use > .hb-reel {
+  .hb-use > .hb-clip {
     aspect-ratio: 16 / 9;
   }
   .hb-visit .hb-wrap {
@@ -23852,24 +23791,6 @@ body:has(.pv-root) .pb-root {
     border: 4px solid #fff;
     border-radius: 12px;
   }
-  .hb-hero-float-video img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-  .hb-hero-float-video span {
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    translate: -50% -50%;
-    display: grid;
-    place-items: center;
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    background: #1b2b22b3;
-    color: #fff;
-  }
   .hb-hero-phone {
     right: 0;
     bottom: 8px;
@@ -23914,7 +23835,6 @@ body:has(.pv-root) .pb-root {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .hb-reel-frames img,
   .hb-demo-photo > img {
     transition: none;
     animation: none !important;
