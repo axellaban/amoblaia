@@ -15,6 +15,9 @@
 //
 // Después, en Playwright:
 //   browser.newContext({ storageState: "salida.json" })
+import console from "node:console";
+import process from "node:process";
+import { URL } from "node:url";
 import { createRequire } from "node:module";
 import { writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
