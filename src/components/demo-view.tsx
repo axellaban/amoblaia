@@ -90,8 +90,8 @@ const FACT_ICON: Record<FactIcon, typeof Ruler> = {
 };
 const external = { target: "_blank", rel: "noopener noreferrer" } as const;
 const VISIBLE_STYLES = 3;
-/** The agency's own view lists the original and four styles first. */
-const OWNER_VISIBLE_STYLES = 4;
+/** The agency's own view lists six styles first (two rows of three on desktop, a scrollable row on phones). */
+const OWNER_VISIBLE_STYLES = 6;
 
 /**
  * The agency looking at its own demo with a live invitation: its panel on
@@ -119,6 +119,12 @@ const fileSlug = (text: string) =>
     .replace(/[^A-Za-z0-9]+/g, "-")
     .replace(/^-|-$/g, "")
     .toLowerCase();
+
+/** A duration as m:ss (92 000 ms → "1:32"). */
+const clock = (ms: number) => {
+  const total = Math.round(ms / 1000);
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+};
 
 function urlFor(source: Source, photoId: string, version: PhotoVersion | null, width: number, retry = 0) {
   const url =
@@ -1111,7 +1117,7 @@ function Gallery({
   const poster = urlFor(source, cover.id, coverVersion, 1280);
   const posterThumb = urlFor(source, cover.id, coverVersion, 480);
   const videoSrc = video && source.kind === "public" ? publicVideoUrl(source.token, video.id) : "";
-  const duration = video?.durationMs ? `${Math.floor(video.durationMs / 60000)}:${String(Math.round((video.durationMs % 60000) / 1000)).padStart(2, "0")}` : null;
+  const duration = video?.durationMs ? clock(video.durationMs) : null;
   const openVideo = (method: string) => {
     show({ kind: "video" }, method);
     stageRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -1132,17 +1138,25 @@ function Gallery({
       : null;
 
   // The styles: the buyers see only the versions made; the agency also every other style, with "Generar".
+  // The versions keep the demo's order (main style first); the styles still to generate follow the
+  // demo's configured order (its region's for new demos), else the catalog's.
+  const sequence = demo.styleOrder ?? [];
+  const rank = (id: string) => (sequence.includes(id) ? sequence.indexOf(id) : sequence.length);
   const rows = owner
     ? [
         ...photo.versions.map((v) => ({ style: v.style, version: v as PhotoVersion | null })),
-        ...DEMO_STYLES[demo.propertyType].filter((c) => !photo.versions.some((v) => v.style === c.id)).map((c) => ({ style: c.id, version: null })),
+        ...DEMO_STYLES[demo.propertyType]
+          .filter((c) => !photo.versions.some((v) => v.style === c.id))
+          .map((c, i) => ({ c, i }))
+          .sort((a, b) => rank(a.c.id) - rank(b.c.id) || a.i - b.i)
+          .map(({ c }) => ({ style: c.id, version: null })),
       ]
     : photo.versions.map((v) => ({ style: v.style, version: v as PhotoVersion | null }));
   const visibleCount = owner ? OWNER_VISIBLE_STYLES : VISIBLE_STYLES;
   const cards = allStyles ? rows : rows.filter((r, i) => i < visibleCount || (r.version && r.style === state.style));
   // «Mostrar selector de estilos» off: buyers see the opening style only (the agency's own view keeps its picker).
   const stylesCard = rows.length > 0 && (owner || demo.styleSelector !== false) && (
-    <section className={`dv2-styles ${owner ? "" : "is-buyer"}`} aria-labelledby="dv2-panel-title" id="dv2-estilos">
+    <section className={`dv2-styles ${owner ? "is-owner" : "is-buyer"}`} aria-labelledby="dv2-panel-title" id="dv2-estilos">
       <div className="dv2-styles-head">
         <h2 id="dv2-panel-title">
           <Sparkles size={18} aria-hidden="true" /> Estilos
@@ -1163,7 +1177,9 @@ function Gallery({
               <li key={r.style} className={`dv2-style-card ${on ? "is-on" : ""}`}>
                 <button type="button" className="dv2-style-pick" aria-pressed={on} onClick={() => choose(r.style)}>
                   <img src={urlFor(source, photo.id, r.version, 480)} alt="" loading="lazy" />
-                  <span className="dv2-style-name">{name(r.style)}</span>
+                  <span className="dv2-style-name" title={name(r.style)}>
+                    {name(r.style)}
+                  </span>
                 </button>
                 {on && (
                   <span className="dv2-style-check" aria-hidden="true">
@@ -1177,11 +1193,16 @@ function Gallery({
             <li key={r.style} className="dv2-style-card is-missing">
               <span className="dv2-style-pick" aria-hidden="true">
                 <img src={urlFor(source, photo.id, null, 480)} alt="" loading="lazy" />
-                <span className="dv2-style-name">{name(r.style)}</span>
+                <span className="dv2-style-name" title={name(r.style)}>
+                  {name(r.style)}
+                </span>
               </span>
+              {/* Opens the panel's activation (sign-up, then the cost to confirm): nothing is charged from here. */}
               {link && (
                 <a className="dv2-style-generate" aria-label={`Generar ${name(r.style)} en tu panel`} {...link}>
-                  Generar <Sparkles size={13} aria-hidden="true" />
+                  <span className="dv2-style-generate-pill">
+                    Generar <Sparkles size={13} aria-hidden="true" />
+                  </span>
                 </a>
               )}
             </li>
@@ -1209,7 +1230,11 @@ function Gallery({
   // "Recorré la transformación": the video as its own card, under the gallery.
   // The buyers' phone tabs: the card also lives in «Video» when the video sits among the thumbnails.
   const buyerTabs = !owner && Boolean(video) && rows.length > 0;
-  const videoCard = (video?.placement === "below" || buyerTabs) && (
+  // The agency's demo: a compact horizontal card right after the photos and before Descargar / Compartir.
+  const ownerVideoCard = owner && video?.placement === "below" && (
+    <OwnerVideoCard key={video.id} src={videoSrc} cover={posterThumb} durationMs={video.durationMs} onOpen={openVideo} />
+  );
+  const videoCard = !owner && (video?.placement === "below" || buyerTabs) && (
     <section
       className={`dv2-video-card ${video?.placement === "below" ? "" : "is-tab-only"}`}
       aria-labelledby="dv2-video-title"
@@ -1324,6 +1349,7 @@ function Gallery({
                 beforeLabel="Antes"
                 afterLabel="Después"
                 initial={state.position}
+                teach={Boolean(owner)}
                 analytics={source.kind === "public" ? { ...base, photo_id: photo.id, photo_index: index, style_id: showing.style } : undefined}
                 onPositionChange={(position) => {
                   lastPosition.current = position;
@@ -1443,7 +1469,7 @@ function Gallery({
             </button>
           </div>
         )}
-        {owner && videoCard}
+        {ownerVideoCard}
       </div>
       <aside className="dv2-aside">
         {buyerTabs && (
@@ -1474,6 +1500,58 @@ function Gallery({
         {aside}
       </aside>
     </div>
+  );
+}
+
+/**
+ * The agency's video as a compact horizontal card: a frame of the video
+ * itself (the property's cover until it loads, and where the browser loads
+ * nothing before playing), Play in the middle, its real duration and
+ * «Ver video». Nothing plays by itself: the player opens on a tap.
+ */
+function OwnerVideoCard({
+  src,
+  cover,
+  durationMs,
+  onOpen,
+}: {
+  src: string;
+  cover: string;
+  durationMs: number | null;
+  onOpen: (method: string) => void;
+}) {
+  const [frame, setFrame] = useState(false);
+  const [measured, setMeasured] = useState<number | null>(null);
+  const ms = durationMs ?? measured;
+  return (
+    <section className="dv2-video-card is-owner" aria-labelledby="dv2-video-title">
+      <button type="button" className="dv2-video-cover" aria-label="Ver el video" onClick={() => onOpen("card_cover")}>
+        <img src={cover} alt="" loading="lazy" />
+        {/* Only the metadata and the first frame; muted and never played here. */}
+        <video
+          className={frame ? "is-ready" : ""}
+          src={`${src}#t=0.1`}
+          muted
+          playsInline
+          preload="metadata"
+          tabIndex={-1}
+          aria-hidden="true"
+          onLoadedMetadata={(e) => Number.isFinite(e.currentTarget.duration) && setMeasured(Math.round(e.currentTarget.duration * 1000))}
+          onLoadedData={() => setFrame(true)}
+        />
+        <span className="dv2-play" aria-hidden="true">
+          <Play size={20} fill="currentColor" />
+        </span>
+        {ms ? <span className="dv2-video-time">{clock(ms)}</span> : null}
+      </button>
+      <div>
+        <h2 id="dv2-video-title">Recorré la propiedad en video</h2>
+        <button type="button" className="dv2-video-cta" onClick={() => onOpen("card_button")}>
+          <Play size={15} aria-hidden="true" /> Ver video
+          {ms ? <span className="dv2-sr"> ({clock(ms)})</span> : null}
+        </button>
+      </div>
+    </section>
   );
 }
 
@@ -1703,7 +1781,10 @@ function OwnerValue({ demo, token, log }: { demo: PublicDemo; token: string; log
         <summary {...cta("owner_download_all", "value_actions", "file_download", "habita_b2b")}>
           <Download size={22} aria-hidden="true" />
           <span>
-            <strong>Descargar imágenes</strong>
+            <strong>
+              <span className="dv2-label-full">Descargar imágenes</span>
+              <span className="dv2-label-short">Descargar</span>
+            </strong>
             <small>{ready.length ? `${ready.length} ${ready.length === 1 ? "lista" : "listas"} para publicar, gratis` : "Todavía no hay versiones listas"}</small>
           </span>
         </summary>
@@ -1731,7 +1812,10 @@ function OwnerValue({ demo, token, log }: { demo: PublicDemo; token: string; log
       <button type="button" className="dv2-value-share" onClick={() => void share()} {...cta("owner_share", "value_actions", "share_listing", "habita_b2b")}>
         <Share2 size={22} aria-hidden="true" />
         <span>
-          <strong>Compartir ficha</strong>
+          <strong>
+            <span className="dv2-label-full">Compartir ficha</span>
+            <span className="dv2-label-short">Compartir</span>
+          </strong>
           <small>Con tus compradores</small>
         </span>
       </button>

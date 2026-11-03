@@ -87,11 +87,13 @@ describe("the agency's own demo, under its panel header", () => {
   });
 
   it("has one «Estilos» section: prepared styles to choose (no pencil, no video), then «Generar» in the panel for the rest", () => {
-    const cards = [...html.matchAll(/<li class="dv2-style-card[^"]*">[\s\S]*?<span class="dv2-style-name">([^<]+)<\/span>/g)].map((m) => m[1]);
+    const cards = [...html.matchAll(/<li class="dv2-style-card[^"]*">[\s\S]*?<span class="dv2-style-name"[^>]*>([^<]+)<\/span>/g)].map((m) => m[1]);
     expect(cards[0]).toBe("Moderno");
-    expect(cards).toHaveLength(4);
-    expect((html.match(/class="dv2-style-card is-missing"/g) ?? []).length).toBe(3);
-    expect((html.match(/class="dv2-style-generate"/g) ?? []).length).toBe(3);
+    // Six cards first (two rows of three on desktop, a row that scrolls on phones), then «Ver todos».
+    expect(cards).toHaveLength(6);
+    expect((html.match(/class="dv2-style-card is-missing"/g) ?? []).length).toBe(5);
+    expect((html.match(/class="dv2-style-generate"/g) ?? []).length).toBe(5);
+    expect(html).toContain('class="dv2-styles is-owner"');
     for (const tool of ['aria-label="Editar Moderno"', "Crear un video con", "dv2-style-tool"]) expect(html).not.toContain(tool);
     // «Generar» never generates from the demo: it is a link to the sign-up, with the photo and the style.
     expect(html).toMatch(/<a class="dv2-style-generate" aria-label="Generar Nórdico en tu panel" href="\/panel\/empezar\?codigo=[^"]+&amp;accion=generar&amp;foto=p1&amp;estilo=scandinavian"/);
@@ -105,6 +107,13 @@ describe("the agency's own demo, under its panel header", () => {
     expect(html).toContain("1 lista para publicar, gratis");
     expect(html).toContain("Compartir ficha");
     expect(html).not.toContain("créditos de regalo.");
+  });
+
+  it("keeps the full labels for desktop and short ones for phones, without changing the actions", () => {
+    expect(html).toMatch(/<span class="dv2-label-full">Descargar imágenes<\/span><span class="dv2-label-short">Descargar<\/span>/);
+    expect(html).toMatch(/<span class="dv2-label-full">Compartir ficha<\/span><span class="dv2-label-short">Compartir<\/span>/);
+    expect(html).toMatch(/<summary[^>]*data-cta="owner_download_all"/);
+    expect(html).toMatch(/<button type="button" class="dv2-value-share"/);
   });
 
   it("asks for another listing before the invitation's sign-up, without sending it anywhere else", () => {
@@ -180,25 +189,37 @@ describe("the property's video, where the agency placed it", () => {
     for (const html of [first, second]) {
       expect(html).toContain('class="comparison');
       expect(html).not.toContain("<video");
-      expect(html).not.toContain("Recorré la transformación");
+      expect(html).not.toContain("Recorré la propiedad en video");
     }
   });
 
-  it("goes under the gallery as its own card, with «Ver video»", () => {
+  it("goes after the photos and before Descargar / Compartir, as a compact card: frame, Play, title, length and «Ver video»", () => {
     const html = renderToStaticMarkup(<DemoView demo={withVideo("below")} source={{ kind: "public", token: "tok" }} presentation owner={owner} />);
     expect(entries(html)).not.toContain("Ver el video");
-    expect(html).toContain("Recorré la transformación");
+    expect(html).toContain('class="dv2-video-card is-owner"');
+    expect(html).toContain("Recorré la propiedad en video");
+    expect(html).toContain('<span class="dv2-video-time">0:20</span>');
     expect(html).toContain("Ver video");
+    // A frame of the video itself as its thumbnail: muted, only its metadata, never playing by itself.
+    const thumb = html.match(/<video[^>]*>/)?.[0] ?? "";
+    expect(thumb).toContain('src="/demo/tok/video/vid1#t=0.1"');
+    expect(thumb).toContain('preload="metadata"');
+    expect(thumb).not.toMatch(/autoplay|autoPlay/);
+    expect(html.indexOf("dv2-thumbs")).toBeLessThan(html.indexOf("dv2-video-card"));
+    expect(html.indexOf("dv2-video-card")).toBeLessThan(html.indexOf("dv2-value"));
   });
 
   it("shows no player nor promise without a finished video", () => {
     const html = renderToStaticMarkup(<DemoView demo={demo} source={{ kind: "public", token: "tok" }} presentation owner={owner} />);
-    for (const text of ["Ver el video", "Recorré la transformación", "<video"]) expect(html).not.toContain(text);
+    for (const text of ["Ver el video", "Recorré la propiedad en video", "dv2-video-card", "<video"]) expect(html).not.toContain(text);
   });
 
   it("is on the buyers' page too, with its length", () => {
     const html = renderToStaticMarkup(<DemoView demo={withVideo("below")} source={{ kind: "public", token: "tok" }} />);
     expect(html).toContain("Ver video (0:20)");
+    // The buyers keep their own card.
+    expect(html).toContain("Recorré la transformación");
+    expect(html).not.toContain("dv2-video-card is-owner");
   });
 });
 
