@@ -51,7 +51,7 @@ Ambientación con IA: modos amoblar (ambiente vacío), rediseñar (reemplaza los
 
 Consejos de fotos: buena luz natural, toma amplia desde una esquina a la altura del pecho, verticales derechas, ambientes ordenados, sin personas ni documentos visibles. JPG, PNG o WebP de hasta 10 MB.
 
-Demos y "modo demostración": el equipo de habita. puede preparar una demo de una propiedad de la inmobiliaria y enviarle un enlace privado. En ese enlace la inmobiliaria ve su propiedad dentro de su panel en "modo demostración": puede recorrer los estilos ya creados, descargarlos gratis, generar otros estilos con sus créditos de regalo (cada estilo nuevo usa 1 crédito) sin registrarse, tocar **Ver como comprador** para ver la ficha como la verá el cliente y tocar **Guardar mi panel** para crear su cuenta gratis y quedarse con la demo, sus créditos y las versiones. Con **Ver precios** abre los planes sin salir de la demo.`;
+Demos y "modo demostración": el equipo de habita. puede preparar una demo de una propiedad de la inmobiliaria y enviarle un enlace privado. En ese enlace la inmobiliaria ve su propiedad dentro de su panel en "modo demostración": puede recorrer los estilos ya creados, descargarlos gratis, generar otros estilos con sus créditos de regalo (cada estilo nuevo usa 1 crédito) sin registrarse, tocar **Ver como comprador** para ver la ficha como la verá el cliente, tocar **Continuar en mi panel** para recorrer su panel sin registrarse y tocar **Activar mi cuenta gratis** para crear su cuenta gratis y quedarse con la demo, sus créditos y las versiones. Con **Ver precios** abre los planes sin salir de la demo.`;
 
 const faq = () => faqItems.map((f) => `- ${f.q} ${f.a}`).join("\n");
 
