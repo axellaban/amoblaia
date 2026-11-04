@@ -1,4 +1,5 @@
 import "server-only";
+import { parseToolRef } from "@/lib/demos/tool-ref";
 import { createHash } from "node:crypto";
 import { adminClient } from "@/lib/supabase/server";
 import { HttpError, rpc } from "./http";
@@ -289,25 +290,44 @@ export async function runJob(id: string, deadline?: number) {
   }
 }
 /**
- * A finished tool job becomes a version of its photo (like a retouch): the
- * photo's id comes from its project. Best effort: the result is kept in storage
- * even if this row is not written, and the job still finishes as succeeded.
+ * A finished tool job becomes a version of the photo that asked for it (like
+ * a retouch). The photo travels in the job's source_ref: a project can be
+ * shared by several demos, so the project alone does not say which photo.
+ * Older jobs without it fall back to the source retouch's photo, or to the
+ * project's only photo. Best effort: the result is kept in storage even if
+ * this row is not written, and the job still finishes as succeeded.
  */
 async function saveToolResult(job: Job, resultPath: string, bytes: number) {
   const db = adminClient();
-  const { data: photo } = await db.from("demo_photos").select("id").eq("project_id", job.project_id).maybeSingle();
-  if (!photo) return;
-  const ref = job.source_ref ?? "original";
-  const [kind, id] = ref.split(":");
-  await db.from("photo_retouches").insert({
-    photo_id: (photo as { id: string }).id,
-    source_generation_id: kind === "generation" ? id : null,
-    source_retouch_id: kind === "retouch" ? id : null,
+  const ref = parseToolRef(job.source_ref);
+  let photoId: string | null = null;
+  if (ref.photoId) {
+    const { data } = await db.from("demo_photos").select("id").eq("id", ref.photoId).eq("project_id", job.project_id).maybeSingle();
+    photoId = (data as { id: string } | null)?.id ?? null;
+  }
+  if (!photoId && ref.kind === "retouch" && ref.id) {
+    const { data } = await db.from("photo_retouches").select("photo_id").eq("id", ref.id).maybeSingle();
+    photoId = (data as { photo_id: string } | null)?.photo_id ?? null;
+  }
+  if (!photoId) {
+    const { data } = await db.from("demo_photos").select("id").eq("project_id", job.project_id).limit(2);
+    const rows = (data ?? []) as { id: string }[];
+    if (rows.length === 1) photoId = rows[0].id;
+  }
+  if (!photoId) {
+    console.error("tool_result_unlinked", job.id);
+    return;
+  }
+  const { error } = await db.from("photo_retouches").insert({
+    photo_id: photoId,
+    source_generation_id: ref.kind === "generation" ? ref.id : null,
+    source_retouch_id: ref.kind === "retouch" ? ref.id : null,
     adjust: {},
     result_path: resultPath,
     result_bytes: bytes,
     tool: job.tool,
   });
+  if (error) console.error("tool_result_insert_failed", job.id);
 }
 
 export async function signPath(path: string) {

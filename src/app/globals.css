@@ -1516,6 +1516,7 @@ fieldset {
   color: var(--terracotta);
 }
 .billing-toggle em {
+  white-space: nowrap;
   font-style: normal;
   font-size: 12px;
   font-weight: 700;
@@ -2718,7 +2719,7 @@ fieldset {
 }
 @media (max-width: 480px) {
   .pricing-grid.commercial-plans {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .commercial-plans .price-card {
     padding: 35px 28px 28px;
@@ -3000,6 +3001,14 @@ fieldset {
   color: var(--ink);
   font-weight: 800;
 }
+@media (max-width: 480px) {
+  /* Nine stops in a phone's card: the slider itself is the control, the numbers only label it. */
+  .credits-stops button {
+    min-width: 0;
+    padding: 4px 1px;
+    font-size: 12px;
+  }
+}
 .credits-buy {
   background: var(--cream);
   border-radius: 14px;
@@ -3021,7 +3030,7 @@ fieldset {
 }
 @media (max-width: 760px) {
   .credits-card .price-panel {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .credits-buy {
     padding: 18px;
@@ -3737,7 +3746,8 @@ h2 .accent {
     margin-bottom: 32px;
   }
   .pricing-band {
-    height: 280px;
+    /* Tall enough for the heading and the billing toggle, also inside the panel (its heading sits lower). */
+    height: 320px;
   }
   .pricing-page .plans-heading h1 {
     font-size: 34px;
@@ -3747,7 +3757,8 @@ h2 .accent {
   }
   .pricing-grid.commercial-plans {
     display: grid;
-    grid-template-columns: 1fr;
+    /* minmax(0, …): a card never widens the column past the screen (the panel's «Planes y créditos» overflowed). */
+    grid-template-columns: minmax(0, 1fr);
     gap: 26px;
   }
   .commercial-plans .price-card ul {
@@ -14889,6 +14900,7 @@ a.dm-agency:hover {
 /* Editar: luz y color con vista previa, como el editor del estudio. */
 .pw-edit {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
   font-size: 14px;
 }
@@ -14906,6 +14918,7 @@ a.dm-agency:hover {
 }
 .pw-edit-group {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
   padding: 12px;
   border: 1px solid var(--line);
@@ -14966,6 +14979,7 @@ a.dm-agency:hover {
 }
 .pw-edit-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 .pw-edit-actions .button {
@@ -19177,6 +19191,8 @@ body:has(.pv-root) .pb-root {
 }
 .dx-side {
   display: grid;
+  /* One column no wider than the card: the photo editor's side panel overflowed it at 1366 px. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   align-content: start;
 }

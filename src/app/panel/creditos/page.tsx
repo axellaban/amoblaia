@@ -6,9 +6,9 @@ import { pricingProps } from "@/lib/commerce/pricing-page";
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Planes y créditos", robots: { index: false, follow: false } };
 
-/** "Planes y créditos": the plans of /precios inside the panel (its sidebar stays), then the agency's balance and movements. */
+/** "Planes y créditos": the plans of /precios inside the panel (its sidebar stays), then the agency's balance and movements. No «probá sin registrarte»: the agency already has its account. */
 export default async function Page({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   await requirePanelPage("/panel/creditos");
   const props = await pricingProps((await searchParams).plan);
-  return <AgencyPanel section="creditos" plans={<PricingPlans {...props} />} />;
+  return <AgencyPanel section="creditos" plans={<PricingPlans {...props} trial={false} />} />;
 }

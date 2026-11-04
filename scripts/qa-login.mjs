@@ -24,7 +24,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServerClient } from "@supabase/ssr";
 
-const SITE = process.env.HABITA_QA_SITE || "https://habitaia.vercel.app";
+const SITE = process.env.HABITA_QA_SITE || "https://www.habitaia.app";
 // Valores públicos por diseño (NEXT_PUBLIC_*), los mismos que usa el navegador.
 const SUPABASE_URL =
   process.env.NEXT_PUBLIC_SUPABASE_URL ||

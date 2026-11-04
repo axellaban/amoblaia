@@ -1,4 +1,5 @@
 import { after } from "next/server";
+import { toolRef } from "@/lib/demos/tool-ref";
 import { failure, HttpError, rpc } from "@/lib/commerce/http";
 import { requireDemoAccess, requireDemoRead, stagingRule } from "@/lib/agency/server";
 import { auditAgencyEdit } from "@/lib/agency/edit-context";
@@ -316,7 +317,7 @@ async function requestTool(access: Awaited<ReturnType<typeof requireDemoAccess>>
   // The job knows its source and mask before it can run; if that cannot be written, it fails and refunds.
   const linked = await adminClient()
     .from("generations")
-    .update({ tool, source_ref: source.ref, source_path: source.path, mask_path: maskPath })
+    .update({ tool, source_ref: toolRef(source.ref, photo.id), source_path: source.path, mask_path: maskPath })
     .in("id", ids);
   if (linked.error) {
     await Promise.allSettled(ids.map((job) => rpc("amobla_finish_generation", { p_job: job, p_status: "failed", p_error: "TOOL_SETUP_FAILED" })));

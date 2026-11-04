@@ -43,8 +43,9 @@ export async function POST(request: Request) {
     if (!isUuid(body.demoId)) throw new HttpError(400, "Propiedad inválida.");
     const access = await requireDemoAccess(request, body.demoId);
     if (isAiMode(body.mode)) {
-      // Like stagings: an agency with its own account pays from its panel, never from the team's edit.
-      if (access.admin && access.billingUser) throw new HttpError(403, "Esta inmobiliaria ya tiene su cuenta: los videos con IA se crean desde su panel, con sus créditos.");
+      // Like stagings (stagingRule): an agency with its own account pays from its panel, never from the
+      // team's edit; a team member who owns the agency is in their own panel and pays from it.
+      if (access.admin && access.billingUser && access.billingUser !== access.actor.id) throw new HttpError(403, "Esta inmobiliaria ya tiene su cuenta: los videos con IA se crean desde su panel, con sus créditos.");
       const started = await startAiVideo({
         agencyId: access.demo.agency_id,
         demoId: access.demo.id,
