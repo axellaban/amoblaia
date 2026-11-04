@@ -95,9 +95,12 @@ Nunca se suman scores.
 
 ## 4. Visitantes internos
 
-Un visitante es interno si:
+Un visitante es interno si (definición completa en docs/TRAFICO_INTERNO.md):
 
-- Alguno de sus eventos viene de una sesión del equipo (`team_session`).
+- Alguno de sus eventos viene de una sesión del equipo (`team_session`), de un dispositivo
+  marcado por el servidor (`internal_device`) o de la marca del navegador (`device_hint`).
+- Su navegador o su dispositivo de PostHog está en `internal_visitor_ids` (registro de
+  dispositivos internos, incluida la reclasificación histórica del 03/11).
 - El dispositivo está marcado (`device_flag`, la marca de PostHog `habita_internal`).
 - Es una automatización (`navigator.webdriver`).
 - Es un bot (por user agent).

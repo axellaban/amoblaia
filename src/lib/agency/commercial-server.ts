@@ -1,5 +1,6 @@
 import "server-only";
 import { adminClient } from "@/lib/supabase/server";
+import { internalUserIds } from "@/lib/internal/server";
 import { agencyDetail, allScoreRows } from "@/lib/leads/server";
 import { rollupAgency, rollupDemo, type ScoreRow } from "@/lib/leads/rollup";
 import type { Stage as ProspectStage } from "@/lib/prospecting/types";
@@ -136,7 +137,7 @@ async function scoreRows(demoIds: string[] | null) {
  */
 export async function commercialRows(only: string | null = null): Promise<CommercialRow[]> {
   const db = adminClient();
-  const [agencies, demos, prospects] = await Promise.all([
+  const [agenciesRaw, demos, prospects, team] = await Promise.all([
     all<AgencyRow>((from, to) => {
       let q = db.from("agencies").select("id,name,owner_id,claimed_at,created_at").order("created_at", { ascending: false }).range(from, to);
       if (only) q = q.eq("id", only);
@@ -144,7 +145,11 @@ export async function commercialRows(only: string | null = null): Promise<Commer
     }, "COMMERCIAL_AGENCIES_FAILED"),
     demosOf(only),
     prospectStages(only),
+    internalUserIds(),
   ]);
+  // An agency taken by a team account (QA of the claim, a test) has no real account:
+  // no «Cuenta creada», no activity, no subscription. Its demos' visits still count.
+  const agencies = agenciesRaw.map((a) => (a.owner_id && team.has(a.owner_id) ? { ...a, owner_id: null, claimed_at: null } : a));
   const claimed = agencies.filter((a): a is AgencyRow & { owner_id: string } => Boolean(a.owner_id));
   const [subscribed, scores, active] = await Promise.all([
     subscribedOwners([...new Set(claimed.map((a) => a.owner_id))]),

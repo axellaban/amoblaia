@@ -333,7 +333,8 @@ export function AgencyView({ id, onClose, onChanged }: { id: string; onClose?: (
   const visitors = (d.visitors as Visitor[]).filter((v) => (withInternal || !v.is_internal) && (demo === "all" || v.demo_id === demo));
   const top = (d.visitors as Visitor[]).find((v) => !v.is_internal && v.demo_id === d.rollup.top_demo_id && v.score === d.rollup.score);
   const internalIds = new Set(d.visitors.filter((v) => v.is_internal).map((v) => v.visitor_id));
-  const manual = new Map(d.internal.map((m) => [m.visitor_id, m]));
+  // Marks made here (the team's devices from the registry are managed in /admin/internos).
+  const manual = new Map(d.internal.filter((m) => m.reason !== "device").map((m) => [m.visitor_id, m]));
   const events = d.events.filter((e) => (withInternal || (!e.is_internal && !internalIds.has(e.visitor_id))) && (demo === "all" || e.demo_id === demo)).slice(0, 120);
 
   return (

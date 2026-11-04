@@ -18,10 +18,18 @@ export function visitorId() {
  * forget: a failed report never shows anything to the visitor.
  */
 export function reportDemoActivity(token: string, kind: "visita" | "interaccion" | "descarga" | "generacion") {
-  fetch(`/api/demo/${encodeURIComponent(token)}/actividad`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ visitor: visitorId(), kind }),
-    keepalive: true,
-  }).catch(() => undefined);
+  // Waits (briefly) for the internal-traffic verdict, so a private window of the team is
+  // recognized before its first visit; the server decides again with its own cookie.
+  void import("@/lib/internal/client")
+    .then(({ internalReady }) => internalReady())
+    .catch(() => false)
+    .then((internal) =>
+      fetch(`/api/demo/${encodeURIComponent(token)}/actividad`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ visitor: visitorId(), kind, internal }),
+        keepalive: true,
+      }),
+    )
+    .catch(() => undefined);
 }

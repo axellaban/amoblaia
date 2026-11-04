@@ -1,6 +1,6 @@
 import "server-only";
-import { isAdmin } from "@/lib/commerce/http";
-import { adminClient, currentUser } from "@/lib/supabase/server";
+import { internalRequest, isInternalUserId } from "@/lib/internal/server";
+import { adminClient } from "@/lib/supabase/server";
 import type { DemoActivity } from "./shared";
 
 /** The steps a visitor of the public demo can report (the agency's step 3 comes from its claim). */
@@ -11,27 +11,28 @@ export type VisitorKind = (typeof VISITOR_KINDS)[number];
 export const validVisitor = (v: unknown): v is string => typeof v === "string" && /^[A-Za-z0-9-]{8,64}$/.test(v);
 
 /**
- * Whether the request comes from a signed-in member of the team. Their own
- * visits to a demo are never counted. Without a session it is simply false.
+ * Whether the request comes from the team: an internal account (ADMIN_EMAILS
+ * or the registry), a device the server marked (signed cookie: the team's
+ * browser without a session, a phone or a private window it linked), or,
+ * only to exclude, the browser's own hint. Never throws.
  */
-export async function teamRequest() {
-  try {
-    return isAdmin((await currentUser())?.email ?? undefined);
-  } catch {
-    return false;
-  }
+export async function teamRequest(hint = false) {
+  return (await internalRequest(hint)).internal;
 }
 
 /**
- * Records one step of a demo. Best effort: a failure is logged and never
- * breaks the page or the claim that triggered it.
+ * Records one step of a demo. The team's steps are stored too (flagged, for
+ * QA) and never move the demo's summary. Best effort: a failure is logged
+ * and never breaks the page or the claim that triggered it.
  */
-export async function recordDemoActivity(demoId: string, visitor: string, kind: VisitorKind | "panel") {
+export async function recordDemoActivity(demoId: string, visitor: string, kind: VisitorKind | "panel", internal: { internal: boolean; reason: string | null } = { internal: false, reason: null }) {
   try {
     const { error } = await adminClient().rpc("habita_record_demo_activity", {
       p_demo: demoId,
       p_visitor: visitor,
       p_kind: kind,
+      p_internal: internal.internal,
+      p_reason: internal.reason,
     });
     if (error) console.error("demo_activity_failed");
   } catch {
@@ -45,17 +46,18 @@ export async function recordAgencyPurchase(userId: string) {
     const { data } = await adminClient().from("agency_members").select("agency_id").eq("user_id", userId).maybeSingle();
     const agencyId = (data as { agency_id: string } | null)?.agency_id;
     if (!agencyId) return;
-    const { error } = await adminClient().rpc("habita_record_agency_purchase", { p_agency: agencyId });
+    // A purchase by a team account (a test in the agency's panel) is stored as internal.
+    const { error } = await adminClient().rpc("habita_record_agency_purchase", { p_agency: agencyId, p_internal: await isInternalUserId(userId) });
     if (error) console.error("demo_activity_failed");
   } catch {
     console.error("demo_activity_failed");
   }
 }
 
-/** The agency took its demos into its own account (step 3 on each). Best effort. */
-export async function recordAgencyPanel(agencyId: string) {
+/** The agency took its demos into its own account (step 3 on each). Best effort. `internal`: a team account claimed it (QA). */
+export async function recordAgencyPanel(agencyId: string, internal = false) {
   try {
-    const { error } = await adminClient().rpc("habita_record_agency_activity", { p_agency: agencyId });
+    const { error } = await adminClient().rpc("habita_record_agency_activity", { p_agency: agencyId, p_internal: internal });
     if (error) console.error("demo_activity_failed");
   } catch {
     console.error("demo_activity_failed");

@@ -19,8 +19,10 @@ import type { LeadEvent } from "./score.ts";
 export type IngestContext = {
   demoId: string;
   agencyId: string | null;
-  /** A signed-in member of the team: everything it does is internal. */
+  /** The team (account, signed device or the browser's mark): everything it does is internal. */
   team: boolean;
+  /** Why (team_session, internal_device, device_hint); team_session when not given. */
+  teamReason?: string | null;
   /** A signed-in member of the demo's own agency (verified by the server). */
   member: boolean;
   userId: string | null;
@@ -56,7 +58,7 @@ export function normalizeClientBatch(body: Record<string, unknown>, ctx: IngestC
   const link = text(body.link, SAFE);
   const linkType = link && LINKS.has(link) ? link : null;
   const reasons = [
-    ctx.team && "team_session",
+    ctx.team && (ctx.teamReason || "team_session"),
     body.internal === true && "device_flag",
     body.automation === true && "automation",
     BOT_PATTERN.test(ctx.userAgent) && "bot",
@@ -120,7 +122,7 @@ export function normalizeClientBatch(body: Record<string, unknown>, ctx: IngestC
 /** A generation the server itself confirmed (the public generation route). */
 export function serverGenerationEvent(
   kind: "demo_generation_started" | "demo_generation_completed",
-  args: { demoId: string; agencyId: string | null; visitor: string; generationId: string; photoId: string; styleId: string; at: string; team: boolean },
+  args: { demoId: string; agencyId: string | null; visitor: string; generationId: string; photoId: string; styleId: string; at: string; team: boolean; reason?: string | null },
 ): LeadEvent {
   return {
     event_id: `s:${kind === "demo_generation_started" ? "gen-start" : "gen-done"}:${args.generationId}`,
@@ -135,7 +137,7 @@ export function serverGenerationEvent(
     source: "server",
     visitor_type: args.team ? "internal" : "unknown",
     is_internal: args.team,
-    internal_reason: args.team ? "team_session" : null,
+    internal_reason: args.team ? (args.reason ?? "team_session") : null,
     identity: "anonymous",
     quality: "complete",
   };

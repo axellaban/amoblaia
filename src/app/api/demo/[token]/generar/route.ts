@@ -1,7 +1,8 @@
 import { after } from "next/server";
 import { HttpError, failure } from "@/lib/commerce/http";
 import { runJob } from "@/lib/commerce/jobs";
-import { teamRequest, validVisitor } from "@/lib/demos/activity";
+import { validVisitor } from "@/lib/demos/activity";
+import { internalRequest } from "@/lib/internal/server";
 import { readJson, validStyle } from "@/lib/demos/input";
 import { assertNoLiveJobs, demoRow, photoOf, publishedDemo, settingsOf } from "@/lib/demos/server";
 import { isUuid } from "@/lib/demos/shared";
@@ -31,7 +32,7 @@ async function projectOwner(projectId: string) {
  */
 async function recordConfirmedGenerations(
   ids: string[],
-  lead: { demoId: string; agencyId: string; visitor: string; photoId: string; styleId: string; team: boolean },
+  lead: { demoId: string; agencyId: string; visitor: string; photoId: string; styleId: string; team: boolean; reason?: string | null },
 ) {
   try {
     const { data } = await adminClient().from("generations").select("id,status,result_path,finished_at").in("id", ids);
@@ -107,7 +108,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
       });
       if (reserveError || !Array.isArray(ids)) throw new Error("PUBLIC_STAGING_RESERVE_FAILED");
       const deadline = started + maxDuration * 1000 - 5000;
-      const lead = { demoId: demo.id, agencyId: demo.agencyId, visitor: body.visitor as string, photoId: photo.id, styleId: style, team: await teamRequest() };
+      const who = await internalRequest(body.internal === true);
+      const lead = { demoId: demo.id, agencyId: demo.agencyId, visitor: body.visitor as string, photoId: photo.id, styleId: style, team: who.internal, reason: who.reason };
       after(async () => {
         // Lead score: the request was accepted (started) and, once the job ends, only a stored image counts as done.
         await recordLeadEvents([serverGenerationEvent("demo_generation_started", { ...lead, generationId: key, at: new Date(started).toISOString() })]).catch(() => undefined);

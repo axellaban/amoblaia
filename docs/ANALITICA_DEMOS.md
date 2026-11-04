@@ -57,18 +57,9 @@ no se hizo porque cambia el enlace que recibe la inmobiliaria.
 
 ### Tráfico interno
 
-`is_internal = true` en eventos y persona cuando:
-
-1. El dispositivo abrió el panel del equipo (`AdminNav`, solo se dibuja para el equipo).
-2. El equipo ve la vista previa del alta por invitación (`InvitationSignup` con `preview`).
-3. Se abrió cualquier página con `?habita_interno=1` (para teléfonos de prueba).
-   `?habita_interno=0` lo quita.
-
-La marca queda en `localStorage` (`habita_internal`). En los dashboards:
-filtro `is_internal` ≠ `true` **y** `app_env` = `production`. Conviene sumar
-esta condición al filtro de cuentas de prueba del proyecto (Settings → Filter
-out internal and test users) para que se aplique sola. La vista previa del
-equipo desde el admin (`source.kind = "preview"`) no envía eventos.
+Ver **docs/TRAFICO_INTERNO.md**: quién es interno (cuenta, dispositivo firmado, huella del
+equipo), el registro en `/admin/internos`, la cohorte de PostHog y cómo se excluye en el panel.
+`?habita_interno=1` ya no marca; `?habita_interno=0` desmarca.
 
 ## 3. Catálogo de eventos nuevos
 
@@ -211,7 +202,7 @@ Las propiedades de contexto (`origin`, `has_invite`, `demo_id`, `from_plan`,
 
 ## 5. Dashboards propuestos
 
-Filtro global en los tres: `is_internal` ≠ `true`, `app_env` = `production`,
+Filtro global en los tres: filtro de cuentas de prueba (cohorte de internos) + `is_internal` ≠ `true`, `app_env` = `production`,
 `tracking_version` = `2` para los gráficos que usan eventos nuevos.
 
 ### Adquisición B2B (funnel, conversión por persona, ventana 30 días)
