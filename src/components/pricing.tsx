@@ -9,6 +9,7 @@ import { ArrowUpRight, Check, Copy, House, Layers, Minus, Plus, BadgeCheck, Shar
 import { formatARS, type Product } from "@/lib/commerce/catalog";
 import { creditPackages, FREE_MONTHLY_CREDITS, PRICES_PATH, type CreditPackage } from "@/lib/commerce/credit-packs";
 import { track } from "@/lib/analytics";
+import { MODE_INFO, VIDEO_CREDITS, type VideoMode } from "@/lib/video/plan";
 import { cta } from "@/lib/interaction-tracking";
 import { openCreditsPurchase } from "./credits-purchase";
 
@@ -38,6 +39,10 @@ const faqs = [
     "Podés arrepentirte dentro de los 10 días corridos desde la compra con el botón de arrepentimiento, sin explicar el motivo. Para otros casos escribinos desde Soporte.",
   ],
 ];
+/** What the panel does without spending credits (only AI generations use them). */
+const FREE_FEATURES = ["Propiedades", "Usuarios del equipo", "Sitio web propio", "Demos para compartir"];
+/** The video styles the video studio offers today, in its order and with its names. */
+const SHEET_VIDEO_MODES: VideoMode[] = ["classic", "clip", "cinematic"];
 const ars = (cents: number) => formatARS(cents).replace(/\s/g, "");
 
 export function PricingPlans({
@@ -316,8 +321,35 @@ function PriceSheet({
             </li>
           ))}
         </ul>
+        <div className="hb-sheet-uses" aria-label="Cuántos créditos usa cada cosa">
+          <p>Imagen</p>
+          <dl>
+            <div>
+              <dt>Foto transformada con IA</dt>
+              <dd>1 crédito</dd>
+            </div>
+          </dl>
+          <p>Video</p>
+          <dl>
+            {SHEET_VIDEO_MODES.map((m) => (
+              <div key={m}>
+                <dt>{MODE_INFO[m].name}</dt>
+                <dd className={VIDEO_CREDITS[m] ? "" : "is-free"}>{VIDEO_CREDITS[m] ? `${VIDEO_CREDITS[m]} créditos` : "Sin créditos"}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+        <div className="hb-sheet-free-list">
+          <p>Incluido gratis, sin usar créditos</p>
+          <ul>
+            {FREE_FEATURES.map((f) => (
+              <li key={f}>
+                <Check size={14} aria-hidden="true" /> {f}
+              </li>
+            ))}
+          </ul>
+        </div>
         <footer>
-          <span>1 crédito = 1 foto transformada con IA</span>
           <span>Sin suscripción · Pagás con Mercado Pago · Los créditos duran 12 meses</span>
         </footer>
       </div>
