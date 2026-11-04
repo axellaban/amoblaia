@@ -4,6 +4,7 @@
 // prepared for it, or straight in the property it came from. An e-mail that
 // already has an account signs in instead.
 import Link from "next/link";
+import { freeCreditsLine } from "@/lib/commerce/credit-packs";
 import { useCallback, useEffect, useState } from "react";
 import { ArrowLeft, Check, Eye, EyeOff } from "lucide-react";
 import { api, ApiError } from "./admin-demos";
@@ -142,16 +143,13 @@ export function InvitationSignup({
   }
 
   const demos = invitation.properties;
-  const credits =
-    invitation.freeCredits > 0
-      ? `Incluye ${invitation.freeCredits} ${invitation.freeCredits === 1 ? "crédito" : "créditos"} de regalo para ambientar fotos con IA.`
-      : "";
+  const credits = freeCreditsLine(invitation.freeCredits);
   const form = (
       <form className="account-panel ap-start-form" onSubmit={submit} onInputCapture={steps.onInput}>
         {plan ? (
           <>
             <h2>Creá tu cuenta</h2>
-            <p className="inline-notice">Terminá de crear tu cuenta para comprar. Tus créditos de regalo quedan en ella.</p>
+            <p className="inline-notice">Terminá de crear tu cuenta para comprar. Tus créditos gratis quedan en ella.</p>
           </>
         ) : (
           property && <h2>Entrá a tu panel</h2>

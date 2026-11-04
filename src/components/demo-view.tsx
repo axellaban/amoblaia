@@ -1,5 +1,6 @@
 "use client";
 import { formatRatio } from "@/lib/video/plan";
+import { freeCreditsLine } from "@/lib/commerce/credit-packs";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
@@ -1714,11 +1715,7 @@ function PanelInvite({
       <small>
         <Lock size={14} aria-hidden="true" /> Sin crear cuenta todavía: la creás cuando quieras guardar, y conservás las fotos y ambientaciones que estás viendo.
       </small>
-      {invite.freeCredits > 0 && (
-        <small>
-          Incluye {invite.freeCredits} {invite.freeCredits === 1 ? "crédito" : "créditos"} para ambientar fotos nuevas.
-        </small>
-      )}
+      <small>{freeCreditsLine(invite.freeCredits)}</small>
     </section>
   );
 }
@@ -1856,9 +1853,7 @@ function OwnerHeader({
             </a>
             <p className="dv2-owner-drawer-note">
               <CircleDollarSign size={16} aria-hidden="true" />
-              {owner.freeCredits > 0
-                ? `${owner.freeCredits} ${owner.freeCredits === 1 ? "crédito" : "créditos"} de regalo para generar estilos nuevos.`
-                : "Sin créditos de regalo: mirá los precios para generar más."}{" "}
+              {freeCreditsLine(owner.freeCredits)}{" "}
               {versions ? `${versions} ${versions === 1 ? "versión lista" : "versiones listas"} para descargar gratis.` : ""}
             </p>
             <a className="dv2-owner-save is-block" {...go("guardar")}>

@@ -78,10 +78,27 @@ describe("Plan Gratis: 10 créditos por mes", () => {
     expect(grants[0].total).toBe(10);
     expect(new Date(grants[0].expires_at).getTime()).toBeGreaterThan(Date.now());
     expect(new Date(grants[0].expires_at).getTime()).toBeLessThanOrEqual(Date.now() + 32 * 86400e3);
-    // Welcome credits (10) + this month's (10).
-    expect(before).toBe(20);
+    // The welcome credits are this month's 10: never 10 + 10.
+    expect(before).toBe(10);
     const ledger = await one<{ c: string }>("select count(*) c from credit_ledger where user_id=$1 and reason='free_monthly'", [owner]);
     expect(Number(ledger!.c)).toBe(1);
+  });
+  it("turns the credits a demo already used into part of the first month", async () => {
+    const owner = await user();
+    const agency = (await one<{ id: string }>("insert into agencies(name,free_credits_pending) values('Demo Norte',7) returning id"))!.id;
+    await db.query("update agencies set owner_id=$1,claimed_at=now() where id=$2", [owner, agency]);
+    await db.query("select habita_apply_agency_credits($1)", [agency]);
+    // 3 were used in the demo: 7 left of the month, and no top-up to 10 this month.
+    expect(await credits(owner)).toBe(7);
+    expect((await monthly(owner))[0].total).toBe(7);
+  });
+  it("keeps the team's extra credits on top of the month's 10", async () => {
+    const owner = await user();
+    const agency = (await one<{ id: string }>("insert into agencies(name,free_credits_pending) values('Demo Sur',15) returning id"))!.id;
+    await db.query("update agencies set owner_id=$1,claimed_at=now() where id=$2", [owner, agency]);
+    await db.query("select habita_apply_agency_credits($1)", [agency]);
+    expect(await credits(owner)).toBe(15);
+    expect((await monthly(owner))[0].total).toBe(10);
   });
   it("gives nothing to accounts without a verified agency", async () => {
     const u = await user();

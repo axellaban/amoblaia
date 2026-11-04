@@ -44,3 +44,17 @@ export function safeReturnTo(value: unknown): string | null {
   if (value.startsWith("//") || value.includes("\\") || /[\s<>"']/.test(value)) return null;
   return value;
 }
+
+/**
+ * The free credits an agency has before (or right when) creating its
+ * account, said as the one offer: 10 free credits a month. Its welcome
+ * credits are its first month's (202611240003); more than 10 means the team
+ * added some on top.
+ */
+export function freeCreditsLine(n: number) {
+  if (n > FREE_MONTHLY_CREDITS)
+    return `Incluye ${n} créditos para ambientar fotos con IA: los ${FREE_MONTHLY_CREDITS} gratis de este mes y ${n - FREE_MONTHLY_CREDITS} de regalo.`;
+  if (n === FREE_MONTHLY_CREDITS) return `Incluye ${FREE_MONTHLY_CREDITS} créditos gratis por mes para ambientar fotos con IA.`;
+  if (n > 0) return `Te ${n === 1 ? "queda" : "quedan"} ${n} de tus ${FREE_MONTHLY_CREDITS} créditos gratis de este mes.`;
+  return `Ya usaste los ${FREE_MONTHLY_CREDITS} créditos gratis de este mes: el mes que viene tenés ${FREE_MONTHLY_CREDITS} más, o podés comprar créditos.`;
+}

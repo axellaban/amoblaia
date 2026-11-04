@@ -64,7 +64,7 @@ describe("Miguel Ángel's instructions", () => {
 
   it("know the demo they are in", () => {
     const text = assistantInstructions({ kind: "demo", path: "/demo/tok", agencyName: "Inmobiliaria Sur", title: "Casa en el lago", freeCredits: 1 });
-    for (const part of ["Casa en el lago", "1 crédito de regalo", "Guardar mi panel"]) expect(text).toContain(part);
+    for (const part of ["Casa en el lago", "1 crédito gratis", "Guardar mi panel"]) expect(text).toContain(part);
   });
 });
 

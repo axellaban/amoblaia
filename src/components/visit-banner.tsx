@@ -4,6 +4,7 @@
 // a quiet bar offers the account, and only a change it tries (save, stage,
 // import…) opens the step to create it, with everything it is seeing kept.
 import { useEffect, useLayoutEffect, useState } from "react";
+import { freeCreditsLine } from "@/lib/commerce/credit-packs";
 import { usePathname } from "next/navigation";
 import { Lock, Sparkles } from "lucide-react";
 import { Dialog, setVisiting, VISIT_ACCOUNT_EVENT } from "./admin-demos";
@@ -33,7 +34,7 @@ export function VisitBanner({ agencyName, freeCredits }: { agencyName: string; f
     return () => window.removeEventListener(VISIT_ACCOUNT_EVENT, ask);
   }, []);
   if (signup) return null;
-  const gift = freeCredits > 0 ? ` Incluye ${freeCredits} ${freeCredits === 1 ? "crédito" : "créditos"} de regalo.` : "";
+  const gift = ` ${freeCreditsLine(freeCredits)}`;
   return (
     <>
       <div className="support-banner visit-banner" role="status">

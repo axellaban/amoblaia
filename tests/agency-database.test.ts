@@ -235,11 +235,11 @@ describe("Free credits for an agency", () => {
     const before = await credits(owner);
     await claim(owner, await claimCode(agency, admin), `free-${id().slice(-6)}`);
     expect((await one<{ n: number }>("select habita_apply_agency_credits($1) as n", [agency]))!.n).toBe(18);
-    // Plus the plan Gratis's 10 of the month, now that the agency is claimed.
-    expect(await credits(owner)).toBe(before + 18 + 10);
+    // 10 of them are this month's free credits (not 10 more on top), 8 a regular gift.
+    expect(await credits(owner)).toBe(before + 18);
     // Applied once: calling again moves nothing.
     expect((await one<{ n: number }>("select habita_apply_agency_credits($1) as n", [agency]))!.n).toBe(0);
-    expect(await credits(owner)).toBe(before + 18 + 10);
+    expect(await credits(owner)).toBe(before + 18);
   });
 
   it("goes to the owner at once when the agency has an account, and is audited", async () => {
@@ -260,8 +260,8 @@ describe("Free credits for an agency", () => {
     const owner = await account();
     const before = await credits(owner);
     const own = await createAgency(owner, "Recién Creada", `recien-${id().slice(-6)}`);
-    // The 10 welcome credits plus the plan Gratis's 10 of the month.
-    expect(await credits(owner)).toBe(before + 20);
+    // The 10 welcome credits are this month's free credits: not 10 more on top.
+    expect(await credits(owner)).toBe(before + 10);
     expect((await one<{ n: number }>("select free_credits_pending as n from agencies where id=$1", [own]))!.n).toBe(0);
   });
 

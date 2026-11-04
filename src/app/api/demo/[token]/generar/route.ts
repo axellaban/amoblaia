@@ -50,7 +50,7 @@ async function recordConfirmedGenerations(
 
 /** Maps the claim's refusals to what the visitor sees. Anything else stays generic. */
 function claimError(message: string) {
-  if (message.includes("NO_GIFT_CREDITS")) return new HttpError(409, "Esta demo ya usó sus créditos de regalo. Para generar más, mirá los precios.");
+  if (message.includes("NO_GIFT_CREDITS")) return new HttpError(409, "Ya usaste los 10 créditos gratis de este mes. Para generar más, comprá créditos o esperá al mes que viene.");
   if (message.includes("AGENCY_CLAIMED")) return new HttpError(409, "Esta inmobiliaria ya tiene su cuenta: generá desde su panel.");
   if (message.includes("DEMO_NOT_PUBLISHED")) return new HttpError(404, "Esta demo no está disponible.");
   return new Error("PUBLIC_STAGING_CLAIM_FAILED");
