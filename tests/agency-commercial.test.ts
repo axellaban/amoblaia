@@ -6,6 +6,9 @@ import {
   lastActivity,
   listTotals,
   nextAction,
+  sortFromParam,
+  sortParam,
+  sortRows,
   stageFromParam,
   STAGE_PARAM,
   type CommercialFacts,
@@ -90,6 +93,19 @@ describe("list", () => {
     row({ name: "Bianchi", score: 18 }),
     row({ name: "Russillo", stage: "panel", hasOwner: true, lastActivity: { at: "2026-10-01T00:00:00Z", text: "x" } }),
   ];
+  it("sorts newest first by default, and by score or latest activity either way", () => {
+    const dated = [row({ name: "A", createdAt: "2026-10-01T00:00:00Z", score: 10 }), row({ name: "B", createdAt: "2026-11-01T00:00:00Z" }), ...rows];
+    const names = (s: string) => sortRows(dated, sortFromParam(s)).map((r) => r.name);
+    expect(names("")[0]).toBe("B");
+    // Without a score they go last, in either direction.
+    expect(names("score")).toEqual(["Del Mar", "Demaio", "Bianchi", "A", "B", "Russillo"]);
+    expect(names("score-asc").slice(0, 4)).toEqual(["A", "Bianchi", "Demaio", "Del Mar"]);
+    expect(names("actividad").slice(0, 3)).toEqual(["Del Mar", "Demaio", "Russillo"]);
+    expect(names("actividad-asc").slice(0, 3)).toEqual(["Russillo", "Demaio", "Del Mar"]);
+    expect(sortParam(sortFromParam(""))).toBe("");
+    expect(sortParam(sortFromParam("score-asc"))).toBe("score-asc");
+    expect(sortFromParam("raro")).toEqual({ by: "creada", dir: "desc" });
+  });
   it("counts the cards and each tab", () => {
     const t = listTotals(rows);
     expect(t).toMatchObject({ total: 4, hot: 2, withAccount: 2, paying: 1 });

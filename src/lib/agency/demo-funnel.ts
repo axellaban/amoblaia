@@ -57,6 +57,7 @@ export const isTestAgency = (name: string) => /^qa(?![a-záéíóúñ])/i.test(n
 
 /** The period presets of the funnel's date filter, by the demo's creation date. */
 export const PERIODS = [
+  { key: "hoy", label: "Hoy" },
   { key: "7", label: "7 días" },
   { key: "30", label: "30 días" },
   { key: "mes", label: "Este mes" },
@@ -79,6 +80,7 @@ export function parsePeriod(p: { periodo?: string; desde?: string; hasta?: strin
   const to = p.hasta && valid(p.hasta) ? p.hasta : null;
   if (from || to) return { key: "rango", from, to: to && from && to < from ? from : to };
   const today = argDay(now);
+  if (p.periodo === "hoy") return { key: "hoy", from: today, to: today };
   if (p.periodo === "7" || p.periodo === "30") return { key: p.periodo, from: argDay(now - (Number(p.periodo) - 1) * 86400000), to: today };
   if (p.periodo === "mes") return { key: "mes", from: `${today.slice(0, 8)}01`, to: today };
   return { key: "todo", from: null, to: null };

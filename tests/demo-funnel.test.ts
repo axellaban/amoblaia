@@ -53,6 +53,7 @@ describe("periods", () => {
   const now = Date.parse("2026-11-03T13:00:00Z");
   it("reads presets in Argentina days, both ends included", () => {
     expect(parsePeriod({ periodo: "7" }, now)).toEqual({ key: "7", from: "2026-10-28", to: "2026-11-03" });
+    expect(parsePeriod({ periodo: "hoy" }, now)).toEqual({ key: "hoy", from: "2026-11-03", to: "2026-11-03" });
     expect(parsePeriod({ periodo: "mes" }, now)).toEqual({ key: "mes", from: "2026-11-01", to: "2026-11-03" });
     expect(parsePeriod({}, now)).toEqual({ key: "todo", from: null, to: null });
     expect(parsePeriod({ periodo: "raro" }, now).key).toBe("todo");
