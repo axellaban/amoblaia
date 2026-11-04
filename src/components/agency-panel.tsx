@@ -113,8 +113,8 @@ export function AgencyPanel({ section, plans = null }: { section: Section; /** T
           <PropertiesSection data={data} reload={load} />
         ) : section === "creditos" ? (
           <>
-            <CreditsSection />
             {plans && <div className="ap-plans">{plans}</div>}
+            <CreditsSection />
           </>
         ) : (
           <SiteSection data={data} setData={setData} reload={load} />

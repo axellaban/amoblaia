@@ -134,6 +134,8 @@ export function PricingPlans({
           </p>
         )}
 
+        {packages.length > 0 && <PriceSheet packages={packages} ready={ready} where={where} onBuy={(sku) => open("price_sheet", sku)} />}
+
         <div className="hb-plans">
           <article className="hb-plan">
             <h2>Gratis</h2>
@@ -198,8 +200,6 @@ export function PricingPlans({
             </button>
           </article>
         </div>
-
-        {packages.length > 0 && <PriceSheet packages={packages} ready={ready} where={where} onBuy={(sku) => open("price_sheet", sku)} />}
 
         <section className="hb-how" id="como-funcionan-los-creditos" aria-labelledby="hb-how-title">
           <h2 id="hb-how-title">Cómo funcionan los créditos</h2>

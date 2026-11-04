@@ -21,5 +21,5 @@ export default async function Page() {
       /* Unknown: the public prices are the same. */
     }
   }
-  redirect(inPanel ? "/panel/creditos#precios" : "/precios#precios");
+  redirect(inPanel ? "/panel/creditos" : "/precios");
 }

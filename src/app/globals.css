@@ -24128,30 +24128,33 @@ body:has(.pv-root) .pb-root {
    older pricing rules above never reach them.
    ------------------------------------------------------------------------- */
 .hb-pricing {
-  padding: 56px 0 24px;
+  padding: 40px 0 24px;
 }
 .hb-pricing-head {
   max-width: 720px;
-  margin-bottom: 36px;
+  margin-bottom: 4px;
 }
 .hb-pricing-head .eyebrow {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   color: var(--forest);
-  margin-bottom: 16px;
+  margin-bottom: 10px;
 }
 .hb-pricing-head h1 {
-  font-size: clamp(34px, 5vw, 52px);
-  line-height: 1.08;
+  font-size: clamp(28px, 4vw, 42px);
+  line-height: 1.1;
   letter-spacing: -0.02em;
-  margin: 0 0 16px;
+  margin: 0 0 10px;
   color: var(--ink);
 }
 .hb-pricing-head > p {
-  font-size: 18px;
+  font-size: 16px;
   color: var(--subtle);
   margin: 0;
+}
+.hb-pricing .hb-plans {
+  margin-top: 32px;
 }
 .hb-pricing .hb-pricing-balance {
   display: inline-flex;
@@ -24666,7 +24669,19 @@ body:has(.pv-root) .pb-root {
 
 @media (max-width: 760px) {
   .hb-pricing {
-    padding-top: 32px;
+    padding-top: 20px;
+  }
+  .hb-pricing-head > p {
+    font-size: 14.5px;
+  }
+  .hb-pricing-head .eyebrow {
+    font-size: 10.5px;
+    margin-bottom: 8px;
+  }
+  .hb-pricing .hb-pricing-balance {
+    margin-top: 10px;
+    padding: 5px 12px;
+    font-size: 14px;
   }
   .hb-plans {
     grid-template-columns: 1fr;
@@ -24720,7 +24735,7 @@ body:has(.pv-root) .pb-root {
 
 /* The price card to share (screenshot or /panel/precios). */
 .hb-sheet-wrap {
-  margin-top: 40px;
+  margin-top: 22px;
   max-width: 880px;
   scroll-margin-top: 90px;
 }
@@ -24933,7 +24948,7 @@ body:has(.pv-root) .pb-root {
 }
 @media (max-width: 480px) {
   .hb-sheet-wrap {
-    margin-top: 28px;
+    margin-top: 16px;
   }
   .hb-sheet {
     padding: 18px 16px 14px;
