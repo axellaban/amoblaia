@@ -7,6 +7,7 @@ import { applyAgencyCredits } from "./admin";
 import { agencyRpc } from "./panel";
 import { INVITE_CODE } from "./demo-invite";
 import { claimHash } from "./server";
+import type { User } from "@supabase/supabase-js";
 import { slugify } from "./shared";
 import { claimReview, type ClaimMethod } from "./claim-review";
 
@@ -95,8 +96,8 @@ export async function acceptWithNewAccount(code: unknown, email: unknown, passwo
   if (!validCode(code)) throw new HttpError(404, "Esta invitación no es válida. Pedile un enlace nuevo al equipo de habita.");
   const mail = typeof email === "string" ? email.trim().toLowerCase() : "";
   if (!/^[^\s@]{1,64}@[^\s@]+\.[^\s@]{2,}$/.test(mail) || mail.length > 200) throw new HttpError(400, "Revisá el email.");
-  if (typeof password !== "string" || password.length < 8 || password.length > 72)
-    throw new HttpError(400, "La contraseña tiene que tener entre 8 y 72 caracteres.");
+  if (typeof password !== "string" || password.length < 10 || password.length > 72)
+    throw new HttpError(400, "La contraseña tiene que tener entre 10 y 72 caracteres.");
   const invitation = await invitationOf(code);
   if (!invitation) throw new HttpError(404, "Esta invitación venció o ya se usó. Pedile un enlace nuevo al equipo de habita.");
 
@@ -106,7 +107,7 @@ export async function acceptWithNewAccount(code: unknown, email: unknown, passwo
     const msg = `${created.error?.code ?? ""} ${created.error?.message ?? ""}`.toLowerCase();
     if (msg.includes("exist") || msg.includes("registered"))
       throw new HttpError(409, "Ese email ya tiene una cuenta en habita. Ingresá con tu contraseña para sumar tus demos.");
-    if (msg.includes("password")) throw new HttpError(400, "Elegí una contraseña más segura (por lo menos 8 caracteres, con letras y números).");
+    if (msg.includes("password")) throw new HttpError(400, "Elegí una contraseña más segura (por lo menos 10 caracteres, con letras y números).");
     throw new Error("INVITATION_SIGNUP_FAILED");
   }
   const userId = created.data.user.id;
@@ -127,4 +128,24 @@ export async function acceptWithNewAccount(code: unknown, email: unknown, passwo
     await auth.deleteUser(userId).catch(() => null);
     throw e;
   }
+}
+
+/**
+ * Takes over the agency with a signed-in account and a one-time code: its
+ * demos, stagings and reserved credits move to it. The same steps whether the
+ * code came in the team's invitation or was made from the agency's fixed link.
+ */
+export async function claimWithCode(user: Pick<User, "id" | "email" | "app_metadata">, code: string) {
+  const hash = claimHash(code);
+  const { data } = await adminClient().from("agency_claims").select("agencies(name)").eq("code_hash", hash).maybeSingle();
+  const name = (data as unknown as { agencies: { name: string } | null } | null)?.agencies?.name ?? "inmobiliaria";
+  await rpc("amobla_account", { p_user: user.id, p_trial: false });
+  const agencyId = await agencyRpc<string>("habita_claim_agency", { p_user: user.id, p_code_hash: hash, p_slug: slugify(name) });
+  // Credits the team left waiting for this agency move to its new owner.
+  await applyAgencyCredits(agencyId);
+  // A team account (QA of the claim) is stored as internal and never counts as an agency signing up.
+  await recordAgencyPanel(agencyId, await isInternalUser(user));
+  // Google proves the address; any other existing account signed in with its own password.
+  await recordClaim(agencyId, user, user.app_metadata?.provider === "google" ? "google" : "existing");
+  return agencyId;
 }

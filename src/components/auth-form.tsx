@@ -71,7 +71,13 @@ export function Captcha({
   }, [reset, onToken]);
   return key ? <div className="captcha" ref={ref} /> : null;
 }
-export function AuthForm() {
+/**
+ * The account's sign-in, sign-up and password recovery. `panelAgency`: it
+ * comes from an agency's panel link (docs/ACCESO_PANEL.md), so the card names
+ * that agency, offers the e-mail next to Google, and creating the account goes
+ * through the agency's own sign-up (which keeps its demos).
+ */
+export function AuthForm({ panelAgency = null }: { panelAgency?: string | null } = {}) {
   const params = useSearchParams();
   const [mode, setMode] = useState<"login" | "signup" | "reset" | "update">(
     params.get("modo") === "actualizar"
@@ -97,7 +103,9 @@ export function AuthForm() {
     [captchaReset, setCaptchaReset] = useState(0);
   const available = Boolean(browserClient());
   const googleEnabled = process.env.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED === "true";
-  const emailEnabled = process.env.NEXT_PUBLIC_EMAIL_AUTH_ENABLED === "true";
+  // From an agency's panel link the e-mail is always offered (its invitation's sign-up offers it too).
+  const emailEnabled = process.env.NEXT_PUBLIC_EMAIL_AUTH_ENABLED === "true" || Boolean(panelAgency);
+  const back = safeNext(params.get("next"), "/panel");
   // Sign-up and sign-in screens (with Google only, signing in for the first time creates the account).
   const form = useSignupTracking(
     mode === "signup" ? "auth_signup" : "auth_login",
@@ -123,7 +131,8 @@ export function AuthForm() {
     }
     setBusy(true);
     try {
-      const redirect = `${window.location.origin}/auth/callback?next=${encodeURIComponent(mode === "reset" ? "/acceso?modo=actualizar" : safeNext(params.get("next")))}`;
+      const afterReset = panelAgency ? `/acceso?${new URLSearchParams({ modo: "actualizar", next: back })}` : "/acceso?modo=actualizar";
+      const redirect = `${window.location.origin}/auth/callback?next=${encodeURIComponent(mode === "reset" ? afterReset : safeNext(params.get("next")))}`;
       if (mode === "login") {
         const { error } = await client.auth.signInWithPassword({
           email,
@@ -181,7 +190,8 @@ export function AuthForm() {
           throw new Error(
             "No pudimos actualizar la contraseña. Pedí un nuevo enlace de recuperación.",
           );
-        window.location.assign("/cuenta");
+        // Back to the agency's panel when the recovery started there.
+        window.location.assign(panelAgency ? back : "/cuenta");
       }
     } catch (e) {
       setError(
@@ -219,7 +229,12 @@ export function AuthForm() {
           </ul>
         </div>
         <div className="auth-card">
-          {emailEnabled && mode !== "reset" && mode !== "update" && (
+          {panelAgency && (
+            <p className="auth-agency">
+              <span aria-hidden="true">{panelAgency.trim().charAt(0).toUpperCase()}</span> Panel de {panelAgency}
+            </p>
+          )}
+          {emailEnabled && !panelAgency && mode !== "reset" && mode !== "update" && (
             <div className="billing-toggle">
               <button
                 className={mode === "login" ? "selected" : ""}
@@ -368,9 +383,24 @@ export function AuthForm() {
                       Volver a ingresar
                     </button>
                   )}
+                  {mode === "reset" && googleEnabled && (
+                    <small className="auth-sub">
+                      ¿Entrás con Google? No necesitás contraseña: volvé y
+                      usá «Continuar con Google».
+                    </small>
+                  )}
                 </form>
               )}
             </>
+          )}
+          {panelAgency && mode === "login" && (
+            <div className="auth-panel-links">
+              <p>
+                ¿No tenés cuenta?{" "}
+                <a href={`/panel/visita/cuenta?${new URLSearchParams({ volver: back })}`}>Crear cuenta</a>
+              </p>
+              <a href={back}>Ver como invitado</a>
+            </div>
           )}
           {error && (
             <p className="inline-error" role="alert">

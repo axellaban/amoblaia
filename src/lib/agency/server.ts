@@ -83,6 +83,8 @@ export async function requireAgency(request?: Request, action?: "edit" | "create
     throw e;
   });
   const membership = await membershipFor(user);
+  // Signed in with an account outside this agency, looking around its panel from its link: the same "access to save".
+  if (!membership && (await visitorMembership())) throw new VisitorError();
   if (!membership) throw new HttpError(404, "Todavía no creaste tu inmobiliaria.");
   if (membership.support && !membership.acting) assertReadable(request);
   if (action) assertCan(membership, action);
@@ -140,6 +142,7 @@ export async function requireDemoAccess(request: Request | undefined, demoId: st
   }
   // Accounts outside any agency are turned away before any property is read.
   let membership: Membership | null = admin ? null : await membershipOf(actor.id);
+  if (!admin && !membership && (await visitorMembership())) throw new VisitorError();
   if (!admin && !membership) throw new HttpError(404, "No encontramos la demo.");
   // A tab editing one agency (Editar inmobiliaria) only reads and writes that agency's properties.
   // The context is the team's: anyone else sending one is refused, never silently ignored.
@@ -182,8 +185,10 @@ export type DemoAccess = Awaited<ReturnType<typeof requireDemoAccess>>;
  */
 export async function requireDemoRead(demoId: string) {
   const user = await optionalUser();
-  if (user) return requireDemoAccess(undefined, demoId);
+  // A signed-in account outside any agency may still be looking around one from its link (the visit below).
+  if (user && (isAdmin(user.email) || (await membershipFor(user)))) return requireDemoAccess(undefined, demoId);
   const visit = await visitorMembership();
+  if (!visit && user) return requireDemoAccess(undefined, demoId);
   if (!visit) throw new HttpError(401, "Ingresá a tu cuenta y verificá tu email.");
   const demo = await demoRow(demoId);
   if (demo.agency_id !== visit.agency.id) throw new HttpError(404, "No encontramos la demo.");
@@ -247,7 +252,7 @@ export async function imageOwners(params: { photoId?: string | null; generationI
 export async function canSeeImage(user: User | null, params: { photoId?: string | null; generationId?: string | null; retouchId?: string | null }) {
   if (user && isAdmin(user.email)) return true;
   // Without an account, only the agency's own visit (its invitation) sees its pictures.
-  const membership = user ? await membershipOf(user.id) : await visitorMembership();
+  const membership = (user ? await membershipOf(user.id) : null) ?? (await visitorMembership());
   if (!membership) return false;
   return (await imageOwners(params))?.some((o) => o.agencyId === membership.agency.id && inScope(membership, o.propertyId)) ?? false;
 }

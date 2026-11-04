@@ -76,8 +76,10 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const payload = await r.json().catch(() => ({}));
   // The agency's visit to its panel (no account yet): a change asks it to create the account, here.
   if ((r.status === 401 && visiting) || (r.status === 403 && payload.code === "visita")) {
-    window.dispatchEvent(new Event(VISIT_ACCOUNT_EVENT));
-    throw new ApiError(payload.error || "Creá tu cuenta gratis para guardar cambios.", r.status, payload);
+    // The action it tried (its API path, without ids), for the exploration funnel.
+    const action = `${(init.method ?? "GET").toUpperCase()} ${path.split("?")[0].replace(/[0-9a-f]{8}-[0-9a-f-]{27}/gi, ":id")}`;
+    window.dispatchEvent(new CustomEvent(VISIT_ACCOUNT_EVENT, { detail: { action } }));
+    throw new ApiError(payload.error || "Para guardar tus cambios, necesitás acceder a tu cuenta.", r.status, payload);
   }
   if (r.status === 401) {
     window.location.assign(`/acceso?next=${encodeURIComponent(window.location.pathname)}`);

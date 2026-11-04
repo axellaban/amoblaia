@@ -6,6 +6,7 @@ import { invitationOf } from "@/lib/agency/invitation";
 import { membershipOf } from "@/lib/agency/server";
 import { intentDestination, intentOf, presentationPath, withIntent } from "@/lib/agency/demo-invite";
 import { isAdmin } from "@/lib/commerce/http";
+import { safeNext } from "@/lib/commerce/redirect";
 import { publishedDemo } from "@/lib/demos/server";
 import { coverVersion, publicImageUrl } from "@/lib/demos/shared";
 import { currentUser } from "@/lib/supabase/server";
@@ -32,6 +33,9 @@ export default async function StartPage({ searchParams }: Props) {
   const chosenPlan = plan && /^[a-z0-9-]{1,40}$/.test(plan) ? plan : null;
   // What the agency asked for in its demo (a style, a photo to stage, another listing): its panel opens it ready.
   const intent = intentOf(q);
+  // The panel page a guest was on when it chose to create its account (from its fixed link): back there after.
+  const volver = one(q.volver);
+  const back = volver && safeNext(volver, "") === volver && volver.startsWith("/panel/") && !volver.startsWith("/panel/empezar") ? volver : null;
   const user = await currentUser().catch(() => null);
   const signedIn = Boolean(user && !user.is_anonymous && user.email_confirmed_at);
   // Not knowing whether the account already has an agency is an error, not a "no".
@@ -47,7 +51,7 @@ export default async function StartPage({ searchParams }: Props) {
   if (code && (!signedIn || (team && chosenPlan))) {
     const invitation = await invitationOf(code);
     const here = withIntent(
-      `/panel/empezar?${new URLSearchParams({ codigo: code, ...(token ? { demo: token } : {}), ...(chosenPlan ? { plan: chosenPlan } : {}) })}`,
+      `/panel/empezar?${new URLSearchParams({ codigo: code, ...(token ? { demo: token } : {}), ...(chosenPlan ? { plan: chosenPlan } : {}), ...(back ? { volver: back } : {}) })}`,
       intent,
     );
     // The demo the agency came from, only when the invitation is for that same agency.
@@ -72,7 +76,7 @@ export default async function StartPage({ searchParams }: Props) {
         property={property}
         plan={chosenPlan}
         preview={signedIn && team}
-        destination={intentDestination(property?.id ?? null, intent)}
+        destination={!property && !intent && back ? back : intentDestination(property?.id ?? null, intent)}
       />
     );
   }
@@ -82,7 +86,7 @@ export default async function StartPage({ searchParams }: Props) {
       signedIn={signedIn}
       hasAgency={Boolean(membership)}
       code={code}
-      destination={demo ? intentDestination(demo.id, intent) : null}
+      destination={demo ? intentDestination(demo.id, intent) : back}
       demo={
         demo
           ? { token: token!, id: demo.id, agencyId: demo.agencyId, agencyName: demo.agencyName, title: demo.title, listingUrl: demo.listingUrl }

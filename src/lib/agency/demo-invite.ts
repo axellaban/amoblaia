@@ -51,6 +51,13 @@ export function propertySlug(title: string | null | undefined) {
 export const shortLinkPath = (title: string | null | undefined, code: string, view: "precios" | "ficha" | "panel" | null = null) =>
   `/p/${propertySlug(title)}-${code}${view ? `/${view}` : ""}`;
 
+/**
+ * The agency's fixed link to its panel: /i/<inmobiliaria>-<codigo>. Always
+ * the same for that agency (until the team changes it); it opens the home of
+ * its panel, where it signs in, creates its account or looks around as a guest.
+ */
+export const panelLinkPath = (agencyName: string | null | undefined, code: string) => `/i/${propertySlug(agencyName)}-${code}`;
+
 /** The code of a short link's segment, or null. The readable part is not checked: a renamed property keeps its link. */
 export function shortLinkCode(segment: string) {
   return SHORT_LINK.exec(segment)?.[1] ?? null;
@@ -105,8 +112,8 @@ export const redactInvite = (text: string) =>
   text
     .replace(/([?&#]codigo=)[^&#\s"]*/gi, "$1[oculto]")
     .replace(/(\/demo\/[^/\s"?#]+\/presentacion\/)[^/\s"?#]+/gi, "$1[oculto]")
-    // The short link /p/<property>-<code>: the property stays readable.
-    .replace(/(\/p\/(?:[^/\s"?#]*-)?)[2-9a-hjkmnp-z]{10}(?=[/?#\s"]|$)/g, "$1[oculto]");
+    // The short links /p/<property>-<code> and /i/<agency>-<code>: the name stays readable.
+    .replace(/(\/(?:p|i)\/(?:[^/\s"?#]*-)?)[2-9a-hjkmnp-z]{10}(?=[/?#\s"]|$)/g, "$1[oculto]");
 
 /**
  * What the agency asked for in its demo before it had its panel: a style for

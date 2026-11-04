@@ -1,6 +1,6 @@
 import { Assistant } from "@/components/assistant";
 import { SupportBanner } from "@/components/support-banner";
-import { VisitBanner } from "@/components/visit-banner";
+import { SharedLinkOpened, VisitBanner } from "@/components/visit-banner";
 import { supportAgency } from "@/lib/agency/support";
 import { currentVisit } from "@/lib/agency/visit";
 import { membershipOf } from "@/lib/agency/server";
@@ -20,8 +20,8 @@ async function pendingCredits(agencyId: string) {
 
 /**
  * The agency panel; in a team member's support view, a banner says so on
- * every page, and in the agency's visit before its account, another one
- * offers to create it. Miguel Ángel, the assistant, is at hand for accounts.
+ * every page, and in the agency's visit (from its link, before signing in)
+ * the welcome and the «Modo exploración» bar (visit-banner.tsx). Miguel Ángel, the assistant, is at hand for accounts.
  */
 export default async function PanelLayout({ children }: { children: React.ReactNode }) {
   const user = await currentUser().catch(() => null);
@@ -33,7 +33,16 @@ export default async function PanelLayout({ children }: { children: React.ReactN
   return (
     <>
       {viewing && <SupportBanner agencyId={viewing.id} agencyName={viewing.name} acting={viewing.supportMode === "act"} />}
-      {visit && <VisitBanner agencyName={visit.agency.name} freeCredits={await pendingCredits(visit.agency.id)} />}
+      <SharedLinkOpened />
+      {visit && (
+        <VisitBanner
+          agencyId={visit.agency.id}
+          agencyName={visit.agency.name}
+          freeCredits={await pendingCredits(visit.agency.id)}
+          claimed={visit.claimed}
+          signedInEmail={verified && !own ? (verified.email ?? null) : null}
+        />
+      )}
       {children}
       {user && !visit && <Assistant place={PANEL} />}
     </>

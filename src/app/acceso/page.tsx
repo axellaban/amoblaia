@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { AuthForm } from "@/components/auth-form";
 import { currentUser } from "@/lib/supabase/server";
+import { currentVisit } from "@/lib/agency/visit";
 import { cloudConfigured, cloudEnabled } from "@/lib/supabase/config";
 import { safeNext } from "@/lib/commerce/redirect";
 import { withClickIds } from "@/lib/ads";
@@ -36,13 +37,15 @@ export default async function Access({
       );
     }
   }
+  // From an agency's panel link (its visit is in this browser): the card names that agency.
+  const visit = cloudEnabled() && cloudConfigured() ? await currentVisit().catch(() => null) : null;
   return (
     <Suspense
       fallback={
         <div className="container account-page">Preparando tu acceso…</div>
       }
     >
-      <AuthForm />
+      <AuthForm panelAgency={visit?.agency.name ?? null} />
     </Suspense>
   );
 }
