@@ -1,5 +1,7 @@
 import { after } from "next/server";
 import { HttpError, failure } from "@/lib/commerce/http";
+import { INVITE_CODE } from "@/lib/agency/demo-invite";
+import { liveInvitation } from "@/lib/agency/visit";
 import { runJob } from "@/lib/commerce/jobs";
 import { validVisitor } from "@/lib/demos/activity";
 import { internalRequest } from "@/lib/internal/server";
@@ -57,9 +59,11 @@ function claimError(message: string) {
 }
 
 /**
- * A visitor of a published demo generates one style of one of its photos,
- * with the agency's gift credits. Everything is checked here: the demo must
- * be published and the photo visible; each try (its key) spends one credit once.
+ * The agency, from its own demo («Ambientá con IA»), generates one style of
+ * one of its photos with its gift credits. Everything is checked here: the
+ * invitation in the request must be live and belong to this demo's agency (a
+ * buyer's link cannot spend them), the demo must be published and the photo
+ * visible; each try (its key) spends one credit once.
  */
 export async function POST(request: Request, { params }: { params: Promise<{ token: string }> }) {
   const started = Date.now();
@@ -72,6 +76,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
     if (!validStyle(body.style)) throw new HttpError(400, "Elegí un estilo válido.");
     const demo = await publishedDemo(token);
     if (!demo) throw new HttpError(404, "Esta demo no está disponible.");
+    const code = typeof body.code === "string" && INVITE_CODE.test(body.code) ? body.code : null;
+    const invitation = code ? await liveInvitation(code).catch(() => null) : null;
+    if (!invitation || invitation.agency.id !== demo.agencyId)
+      throw new HttpError(403, "Abrí la demo desde el enlace de tu inmobiliaria para generar con tus créditos gratis.");
     const { settings } = await settingsOf(demo.id);
     if (!styleFits(body.style, settings.propertyType)) throw new HttpError(400, "Ese estilo no corresponde a este inmueble.");
     const photo = await photoOf(await demoRow(demo.id), body.photo);
@@ -115,6 +123,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
         await recordLeadEvents([serverGenerationEvent("demo_generation_started", { ...lead, generationId: key, at: new Date(started).toISOString() })]).catch(() => undefined);
         await Promise.allSettled((ids as string[]).map((job) => runJob(job, deadline)));
         await recordConfirmedGenerations(ids as string[], lead);
+        // Ended without an image: the gift credit comes back (once; the cron settles what was still running).
+        const settled = await adminClient().rpc("habita_public_staging_settle", { p_key: key });
+        if (settled.error) console.error("public_staging_settle_failed");
       });
       return Response.json({ ids, remaining: claim.remaining }, { status: 202, headers: NO_STORE });
     } catch (e) {

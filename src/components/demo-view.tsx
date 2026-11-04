@@ -2,6 +2,7 @@
 import { formatRatio } from "@/lib/video/plan";
 import { freeCreditsLine } from "@/lib/commerce/credit-packs";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   ArrowLeft,
   Bath,
@@ -52,7 +53,8 @@ import { registerSuperProperties, registerSuperPropertiesOnce, track, type Event
 import { cta, startDemoEngagement, ViewTimer } from "@/lib/interaction-tracking";
 import { reportDemoActivity } from "@/lib/demos/activity-client";
 import { flushLeads, leadActiveTime, leadEvent, startLeadTracking } from "@/lib/leads/client";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { requestPublicStaging } from "@/lib/demos/staging-client";
 import { textOn, whatsappNumber, type FactIcon } from "@/lib/demos/branding";
 import { DEMO_STYLES, demoStyleName } from "@/lib/demos/styles";
 import {
@@ -889,9 +891,10 @@ type Entry = { kind: "photo"; index: number } | { kind: "video" };
 /**
  * One carousel of the property's photos, each with the styles prepared for
  * it, and the property's video where the agency placed it: first or second
- * among the thumbnails, or a card under the gallery. Everything here is free:
- * the agency's "Generar" and the photos still without a staging lead to its
- * panel (sign-up first), never to a generation from the demo.
+ * among the thumbnails, or a card under the gallery. The agency's "Generar"
+ * opens «Ambientá con IA» over the demo while it has gift credits (one per
+ * style, spent on the server); without them, and for the photos still without
+ * a staging, it leads to its panel.
  */
 function Gallery({
   demo,
@@ -945,6 +948,9 @@ function Gallery({
   const lastRatio = useRef(4 / 3);
   const [full, setFull] = useState(false);
   const [allStyles, setAllStyles] = useState(false);
+  // «Ambientá con IA»: the photo and style it opened with, and the agency's gift credits left.
+  const [generate, setGenerate] = useState<{ photoId: string; style: string } | null>(null);
+  const [credits, setCredits] = useState(owner?.freeCredits ?? 0);
   // Five thumbnails and "+N fotos" (the mockup); the rest open on demand.
   const [allThumbs, setAllThumbs] = useState(false);
   // Buyers on phones: «Estilos» and «Video» share one place, as two tabs (the mockup); on desktop both show.
@@ -1178,12 +1184,12 @@ function Gallery({
     note("demo_more_styles_toggled", { expanded: !allStyles, photo_id: photo.id });
     setAllStyles((a) => !a);
   };
-  // The agency's panel, with what it asked for here already chosen.
+  // The agency's panel (its visit, no account yet), with what it asked for here already chosen.
   const intentLink = (intent: Exclude<DemoIntent, null>, id: string, place: string) =>
     owner
       ? {
-          href: withIntent(owner.href, intent),
-          ...cta(id, place, "signup_invitation", "habita_b2b", { intent: intent.kind }),
+          href: withIntent(owner.panelHref, intent),
+          ...cta(id, place, "panel_visit", "habita_b2b", { intent: intent.kind }),
           onClick: () =>
             log("demo_agency_cta_clicked", { origen: place, cta_id: id, cta_intent: intent.kind, photo_id: photo.id, ...(intent.kind === "generate" ? { style_id: intent.style } : {}) }, true),
         }
@@ -1245,6 +1251,8 @@ function Gallery({
               </li>
             );
           const link = intentLink({ kind: "generate", photo: photo.id, style: r.style }, "owner_generate", "styles_panel");
+          // With gift credits left, «Generar» opens «Ambientá con IA» over the demo; without them, the panel.
+          const inDemo = Boolean(owner) && source.kind === "public" && credits > 0;
           return (
             <li key={r.style} className="dv2-style-card is-missing">
               <span className="dv2-style-pick" aria-hidden="true">
@@ -1253,13 +1261,30 @@ function Gallery({
                   {name(r.style)}
                 </span>
               </span>
-              {/* Opens the panel's activation (sign-up, then the cost to confirm): nothing is charged from here. */}
-              {link && (
+              {inDemo ? (
+                <button
+                  type="button"
+                  className="dv2-style-generate"
+                  aria-label={`Generar ${name(r.style)} con IA`}
+                  aria-haspopup="dialog"
+                  {...cta("owner_generate", "styles_panel", "generation_modal", "habita_b2b", { photo: photo.id, style: r.style, intent: "generate" })}
+                  onClick={() => {
+                    setGenerate({ photoId: photo.id, style: r.style });
+                    log("demo_style_generation_cta_clicked", { photo_id: photo.id, style_id: r.style, credits_left: credits });
+                  }}
+                >
+                  <span className="dv2-style-generate-pill">
+                    Generar <Sparkles size={13} aria-hidden="true" />
+                  </span>
+                </button>
+              ) : (
+                link && (
                 <a className="dv2-style-generate" aria-label={`Generar ${name(r.style)} en tu panel`} {...link}>
                   <span className="dv2-style-generate-pill">
                     Generar <Sparkles size={13} aria-hidden="true" />
                   </span>
                 </a>
+                )
               )}
             </li>
           );
@@ -1585,6 +1610,30 @@ function Gallery({
         {ownerActions && <div className="dv2-aside-actions">{ownerActions}</div>}
         {aside}
       </aside>
+      {generate && owner && source.kind === "public" && (
+        <GenerateDialog
+          key={generate.photoId}
+          token={source.token}
+          owner={owner}
+          photo={photos.find((p) => p.id === generate.photoId) ?? photo}
+          photoIndex={Math.max(0, photos.findIndex((p) => p.id === generate.photoId))}
+          title={demo.title}
+          initialStyle={generate.style}
+          pending={rows.filter((r) => !r.version && DEMO_STYLES[demo.propertyType].some((c) => c.id === r.style)).map((r) => r.style)}
+          name={name}
+          credits={credits}
+          onCredits={setCredits}
+          log={log}
+          onClose={() => setGenerate(null)}
+          onContinue={(style) => {
+            setGenerate(null);
+            const at = photos.findIndex((p) => p.id === generate.photoId);
+            if (at >= 0 && at !== index) setIndex(at);
+            setStates((s) => ({ ...s, [generate.photoId]: { style, compare: true, position: 50 } }));
+            lastStyle.current = style;
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -1657,7 +1706,321 @@ function PageDots({ count, at }: { count: number; at: number }) {
   );
 }
 
-/** «¿Te imaginás esto con todas tus propiedades?»: the agency keeps this demo in its own panel (the invitation's sign-up). */
+/** How long «Ambientá con IA» waits for a staging before saying it is taking longer (it keeps going on the server). */
+const GENERATION_WAIT_MS = 4 * 60 * 1000;
+/** How often the page asks the server again while a staging runs. */
+const GENERATION_POLL_MS = 4000;
+
+type GenerateStep =
+  | { kind: "pick" }
+  | { kind: "running"; style: string; since: number }
+  | { kind: "slow"; style: string }
+  | { kind: "done"; style: string }
+  | { kind: "error"; message: string };
+
+/**
+ * «Ambientá con IA»: the agency generates one style of a photo without leaving
+ * its demo, with its gift credits (one per style; the server checks the
+ * invitation, spends it once per try and gives it back if the staging does not
+ * start). A bottom sheet on phones, a centered dialog on desktop. While it
+ * runs the page asks the server again until the photo has the new version;
+ * nothing here shows a result that does not exist. Then «Generar mi panel»
+ * (the panel's visit, with this photo and style), «Probar otro estilo» or
+ * «Continuar en la demo» (the new style chosen on the same photo).
+ */
+function GenerateDialog({
+  token,
+  owner,
+  photo,
+  photoIndex,
+  title,
+  initialStyle,
+  pending,
+  name,
+  credits,
+  onCredits,
+  log,
+  onClose,
+  onContinue,
+}: {
+  token: string;
+  owner: OwnerMode;
+  photo: PublicPhoto;
+  photoIndex: number;
+  title: string;
+  initialStyle: string;
+  /** The catalog styles this photo does not have yet, in the demo's order. */
+  pending: string[];
+  name: (style: string) => string;
+  credits: number;
+  onCredits: (n: number) => void;
+  log: (event: string, extra?: EventProperties, beacon?: boolean) => unknown;
+  onClose: () => void;
+  onContinue: (style: string) => void;
+}) {
+  const router = useRouter();
+  const [style, setStyle] = useState(pending.includes(initialStyle) ? initialStyle : (pending[0] ?? initialStyle));
+  const [step, setStep] = useState<GenerateStep>({ kind: "pick" });
+  const sending = useRef(false);
+  const box = useRef<HTMLDivElement>(null);
+  const ids = { photo_id: photo.id, photo_index: photoIndex };
+  const original = publicImageUrl(token, photo.id, null, 1600);
+  const ready = (st: string) => photo.versions.find((v) => v.style === st) ?? null;
+
+  useEffect(() => {
+    log("demo_generation_modal_opened", { ...ids, style_id: initialStyle, credits_left: credits });
+    box.current?.focus();
+    // Once, when it opens.
+  }, []);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = overflow;
+    };
+  }, [onClose]);
+
+  // While it runs: the page asks the server again (the photo's versions come back with the page).
+  const running = step.kind === "running" ? step : null;
+  useEffect(() => {
+    if (!running) return;
+    const poll = window.setInterval(() => router.refresh(), GENERATION_POLL_MS);
+    const late = window.setTimeout(() => {
+      setStep({ kind: "slow", style: running.style });
+      log("demo_trial_generation_slow", { ...ids, style_id: running.style });
+    }, Math.max(0, running.since + GENERATION_WAIT_MS - Date.now()));
+    return () => {
+      window.clearInterval(poll);
+      window.clearTimeout(late);
+    };
+    // One loop per staging.
+  }, [running?.style, running?.since]);
+  // Done only when the photo really has the version (stored and visible): never before.
+  const waiting = step.kind === "running" || step.kind === "slow" ? step.style : null;
+  useEffect(() => {
+    if (!waiting || !ready(waiting)) return;
+    setStep({ kind: "done", style: waiting });
+    log("demo_trial_generation_completed", { ...ids, style_id: waiting });
+    log("demo_generated_result_viewed", { ...ids, style_id: waiting });
+  }, [waiting, photo.versions]);
+
+  async function start() {
+    if (sending.current || credits < 1) return;
+    sending.current = true;
+    log("demo_trial_generation_started", { ...ids, style_id: style, credits_left: credits });
+    const r = await requestPublicStaging(token, photo.id, style, owner.code);
+    sending.current = false;
+    if (!r.ok) {
+      setStep({ kind: "error", message: r.error });
+      log("demo_trial_generation_failed", { ...ids, style_id: style, reason: "request" });
+      return;
+    }
+    if (typeof r.remaining === "number") onCredits(r.remaining);
+    setStep({ kind: "running", style, since: Date.now() });
+    router.refresh();
+  }
+
+  const shown = step.kind === "done" ? ready(step.style) : null;
+  const heading =
+    step.kind === "done" ? "¡Tu ambientación está lista!" : step.kind === "running" || step.kind === "slow" ? "Generando tu ambientación" : "Ambientá con IA";
+  const panelLink = (st: string) => withIntent(owner.panelHref, { kind: "generate", photo: photo.id, style: st });
+  const thumb = (st: string) => `/ejemplos/living-${st}.webp`;
+
+  return createPortal(
+    <div className="pe-backdrop dv2-gen-backdrop" onMouseDown={onClose}>
+      <div
+        ref={box}
+        className={`pe-dialog dv2-gen is-${step.kind}`}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="dv2-gen-title"
+        aria-busy={step.kind === "running"}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div className="dv2-gen-head">
+          <div>
+            <h2 id="dv2-gen-title">
+              {heading} {step.kind !== "running" && step.kind !== "slow" && <Sparkles size={20} aria-hidden="true" />}
+            </h2>
+            <p>
+              {step.kind === "done"
+                ? "Así podría verse esta propiedad con el estilo seleccionado"
+                : step.kind === "running" || step.kind === "slow"
+                  ? `Estilo ${name(step.style)} sobre esta foto.`
+                  : "Generá una nueva versión de esta foto con otro estilo"}
+            </p>
+          </div>
+          <button type="button" className="dv2-gen-close" aria-label="Cerrar" onClick={onClose}>
+            <X size={20} aria-hidden="true" />
+          </button>
+        </div>
+
+        <div className="dv2-gen-body">
+          <div className="dv2-gen-media">
+            {shown ? (
+              <Comparison
+                before={original}
+                after={publicImageUrl(token, photo.id, shown, 1600)}
+                alt={`${title}, foto ${photoIndex + 1}, ambientación ${name(shown.style)} con IA, ilustrativa`}
+                beforeAlt={`${title}, foto ${photoIndex + 1}, original`}
+                beforeLabel="Antes"
+                afterLabel={name(shown.style)}
+                initial={50}
+                teach
+              />
+            ) : (
+              <div className={`dv2-gen-photo ${step.kind === "running" || step.kind === "slow" ? "is-busy" : ""}`}>
+                <img src={original} alt={`${title}, foto ${photoIndex + 1}, original`} />
+                <span className="dv2-gen-tag">Foto original</span>
+                {(step.kind === "running" || step.kind === "slow") && (
+                  <span className="dv2-gen-spinner" role="status">
+                    <span className="dv2-sr">Generando</span>
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="dv2-gen-side">
+            {step.kind === "pick" && (
+              <>
+                <p className="dv2-gen-label">Elegí un estilo</p>
+                <ul className="dv2-gen-styles">
+                  {pending.map((st) => (
+                    <li key={st}>
+                      <button
+                        type="button"
+                        className={`dv2-gen-style ${st === style ? "is-on" : ""}`}
+                        aria-pressed={st === style}
+                        onClick={() => {
+                          setStyle(st);
+                          log("demo_style_selected", { ...ids, style_id: st, origen: "generation_modal" });
+                        }}
+                      >
+                        <img src={thumb(st)} alt="" loading="lazy" onError={(e) => ((e.currentTarget.src = original), (e.currentTarget.onerror = null))} />
+                        <span>{name(st)}</span>
+                        {st === style && (
+                          <span className="dv2-gen-check" aria-hidden="true">
+                            <Check size={13} strokeWidth={3} />
+                          </span>
+                        )}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                <div className="dv2-gen-actions">
+                  <p className="dv2-gen-credits">
+                    <CircleDollarSign size={16} aria-hidden="true" />
+                    {credits > 0
+                      ? `Usa 1 de tus ${credits} ${credits === 1 ? "crédito gratis" : "créditos gratis"}.`
+                      : "Ya usaste tus créditos gratis de este mes. Seguí en tu panel para generar más."}
+                  </p>
+                  {credits > 0 ? (
+                    <button type="button" className="dv2-gen-primary" disabled={!pending.length} onClick={() => void start()}>
+                      Generar imagen <Sparkles size={17} aria-hidden="true" />
+                    </button>
+                  ) : (
+                    <a className="dv2-gen-primary" href={panelLink(style)} onClick={() => log("demo_agency_cta_clicked", { origen: "generation_modal", cta_id: "generation_no_credits", cta_intent: "generate", ...ids, style_id: style }, true)}>
+                      Continuar en mi panel <ArrowRight size={17} aria-hidden="true" />
+                    </a>
+                  )}
+                  <button type="button" className="dv2-gen-tertiary" onClick={onClose}>
+                    Cancelar
+                  </button>
+                </div>
+              </>
+            )}
+
+            {step.kind === "running" && (
+              <>
+                <p className="dv2-gen-text">Te mostramos el resultado apenas esté listo. Podés quedarte en esta ventana.</p>
+                <div className="dv2-gen-actions">
+                  <button type="button" className="dv2-gen-primary" disabled>
+                    Generando…
+                  </button>
+                </div>
+              </>
+            )}
+
+            {step.kind === "slow" && (
+              <>
+                <p className="dv2-gen-text">Está tardando más de lo habitual. Cuando termine, la vas a ver en la demo con el estilo {name(step.style)}.</p>
+                <div className="dv2-gen-actions">
+                  <button type="button" className="dv2-gen-secondary" onClick={() => setStep({ kind: "running", style: step.style, since: Date.now() })}>
+                    <RotateCw size={16} aria-hidden="true" /> Seguir esperando
+                  </button>
+                  <button type="button" className="dv2-gen-tertiary" onClick={onClose}>
+                    Volver a la demo
+                  </button>
+                </div>
+              </>
+            )}
+
+            {step.kind === "error" && (
+              <>
+                <p className="dv2-note is-error" role="alert">
+                  {step.message}
+                </p>
+                <div className="dv2-gen-actions">
+                  <button type="button" className="dv2-gen-secondary" onClick={() => setStep({ kind: "pick" })}>
+                    <RotateCw size={16} aria-hidden="true" /> Volver a intentar
+                  </button>
+                  <button type="button" className="dv2-gen-tertiary" onClick={onClose}>
+                    Volver a la demo
+                  </button>
+                </div>
+              </>
+            )}
+
+            {step.kind === "done" && (
+              <div className="dv2-gen-actions">
+                <a
+                  className="dv2-gen-primary"
+                  href={panelLink(step.style)}
+                  {...cta("generation_result_panel", "generation_result", "panel_visit", "habita_b2b", { photo: photo.id, style: step.style, intent: "generate" })}
+                  onClick={() => {
+                    log("demo_generated_result_save_clicked", { ...ids, style_id: step.style });
+                    log("demo_agency_cta_clicked", { origen: "generation_result", cta_id: "generation_result_panel", cta_intent: "generate", ...ids, style_id: step.style }, true);
+                  }}
+                >
+                  <House size={18} aria-hidden="true" /> Generar mi panel <ArrowRight size={17} aria-hidden="true" />
+                </a>
+                <button
+                  type="button"
+                  className="dv2-gen-secondary"
+                  onClick={() => {
+                    log("demo_generation_try_another", { ...ids, style_id: step.style, credits_left: credits });
+                    setStyle(pending[0] ?? style);
+                    setStep({ kind: "pick" });
+                  }}
+                >
+                  <RotateCw size={16} aria-hidden="true" /> Probar otro estilo
+                </button>
+                <button
+                  type="button"
+                  className="dv2-gen-tertiary"
+                  onClick={() => {
+                    log("demo_generation_back_to_demo", { ...ids, style_id: step.style });
+                    onContinue(step.style);
+                  }}
+                >
+                  Continuar en la demo
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+/** «¿Te imaginás esto con todas tus propiedades?»: the agency continues in its own panel (its visit: the account is asked when it saves). */
 function OwnerSaveDemo({ owner, log }: { owner: OwnerMode; log: (event: string, extra?: EventProperties, beacon?: boolean) => unknown }) {
   return (
     <section className="dv2-save-demo" aria-labelledby="dv2-save-demo-title">
@@ -1666,11 +2029,11 @@ function OwnerSaveDemo({ owner, log }: { owner: OwnerMode; log: (event: string, 
       </h2>
       <a
         className="dv2-save-demo-cta"
-        href={owner.href}
-        {...cta("owner_save_demo", "value_actions", "signup_invitation", "habita_b2b", { intent: "save_panel" })}
-        onClick={() => log("demo_agency_cta_clicked", { origen: "demo_guardar_demo", cta_id: "owner_save_demo", cta_intent: "save_panel" }, true)}
+        href={owner.panelHref}
+        {...cta("owner_save_demo", "value_actions", "panel_visit", "habita_b2b", { intent: "panel_home" })}
+        onClick={() => log("demo_agency_cta_clicked", { origen: "demo_guardar_demo", cta_id: "owner_save_demo", cta_intent: "panel_home" }, true)}
       >
-        Guardar esta demo en mi panel <ArrowRight size={17} aria-hidden="true" />
+        Continuar en mi panel <ArrowRight size={17} aria-hidden="true" />
       </a>
     </section>
   );
@@ -1745,7 +2108,7 @@ function OwnerHeader({
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [open]);
-  // Every way into the panel goes through the invitation's sign-up; each keeps its own id and what it was meant to open.
+  // «Activar mi cuenta gratis» is the invitation's sign-up; every other way opens the panel's visit. Each keeps its own id and what it was meant to open.
   const INTENT: Record<string, string> = {
     inicio: "panel_home",
     imagenes: "panel_images",
@@ -1754,8 +2117,8 @@ function OwnerHeader({
     guardar: "save_panel",
   };
   const go = (origin: string) => ({
-    href: owner.href,
-    ...cta(`owner_${origin}`, origin === "guardar" ? "owner_bar" : "owner_menu", "signup_invitation", "habita_b2b", { intent: INTENT[origin] }),
+    href: origin === "guardar" ? owner.href : owner.panelHref,
+    ...cta(`owner_${origin}`, origin === "guardar" ? "owner_bar" : "owner_menu", origin === "guardar" ? "signup_invitation" : "panel_visit", "habita_b2b", { intent: INTENT[origin] }),
     onClick: () => log("demo_agency_cta_clicked", { origen: `demo_encabezado_${origin}`, cta_id: `owner_${origin}`, cta_intent: INTENT[origin] }, true),
   });
   const versions = demo.photos.reduce((n, p) => n + p.versions.length, 0);
@@ -1792,7 +2155,7 @@ function OwnerHeader({
             <House size={16} aria-hidden="true" /> Mi panel
           </a>
           <a className="dv2-owner-save" {...go("guardar")}>
-            Guardar mi panel
+            Activar mi cuenta gratis
           </a>
           <button type="button" className="dv2-owner-menu-button" aria-label="Abrir el menú" aria-expanded={open} onClick={() => setOpen(true)}>
             <Menu size={22} aria-hidden="true" />
@@ -1816,7 +2179,7 @@ function OwnerHeader({
               {...cta("owner_menu_panel", "owner_menu", "panel_visit", "navigation")}
               onClick={() => log("demo_agency_cta_clicked", { origen: "demo_menu_panel", cta_id: "owner_menu_panel", cta_intent: "panel_home" }, true)}
             >
-              <House size={18} aria-hidden="true" /> Ingresar a mi panel
+              <House size={18} aria-hidden="true" /> Continuar en mi panel
             </a>
             <a
               href={pricesOn ? owner.demoHref : "#propiedad"}
@@ -1832,7 +2195,7 @@ function OwnerHeader({
               <LayoutGrid size={18} aria-hidden="true" /> Mis demostraciones <span className="dv2-owner-count">1</span>
             </a>
             <a href="#otra-propiedad" {...cta("owner_create_anchor", "owner_menu", "create_property", "navigation")} onClick={() => setOpen(false)}>
-              <Plus size={18} aria-hidden="true" /> Crear otra propiedad
+              <Plus size={18} aria-hidden="true" /> Probar con otra propiedad
             </a>
             <a {...go("imagenes")}>
               <ImageIcon size={18} aria-hidden="true" /> Estudio de imágenes
@@ -1857,7 +2220,7 @@ function OwnerHeader({
               {versions ? `${versions} ${versions === 1 ? "versión lista" : "versiones listas"} para descargar gratis.` : ""}
             </p>
             <a className="dv2-owner-save is-block" {...go("guardar")}>
-              Guardar mi panel
+              Activar mi cuenta gratis
             </a>
           </nav>
         </div>
@@ -1941,7 +2304,7 @@ function OwnerValue({ demo, token, log }: { demo: PublicDemo; token: string; log
 /**
  * "¿Querés probarlo con otra propiedad?": the second property is where an
  * agency starts using Habita on its own. Its address is kept for the panel,
- * and the invitation's sign-up comes first (it is the agency's panel).
+ * which opens first; the account is asked when the property is saved.
  */
 function AnotherProperty({ owner, log }: { owner: OwnerMode; log: (event: string, extra?: EventProperties, beacon?: boolean) => unknown }) {
   const [url, setUrl] = useState("");
@@ -1972,8 +2335,8 @@ function AnotherProperty({ owner, log }: { owner: OwnerMode; log: (event: string
           // Only the site's host, never the pasted address.
           track("second_property_import_started", { stage: "demo_before_signup", source: host });
           log("demo_agency_cta_clicked", { origen: "otra_propiedad", cta_id: "owner_another_property", cta_intent: "create_property" }, true);
-          // After the sign-up (or straight away, already signed in) the panel's import continues with this same link.
-          window.location.assign(withIntent(owner.href, { kind: "import" }));
+          // The panel (its visit, or the agency's own if signed in) continues the import with this same link; saving it asks for the account.
+          window.location.assign(withIntent(owner.panelHref, { kind: "import" }));
         }}
       >
         <label className="dv2-sr" htmlFor="dv2-another-url">
@@ -1981,7 +2344,7 @@ function AnotherProperty({ owner, log }: { owner: OwnerMode; log: (event: string
         </label>
         <input id="dv2-another-url" type="url" inputMode="url" placeholder="Pegá el enlace de una publicación…" value={url} onChange={(e) => (setUrl(e.target.value), setError(""))} required />
         <button type="submit" {...cta("owner_another_property", "another_property", "create_property", "habita_b2b")}>
-          Crear propiedad
+          Probar con otra propiedad
         </button>
       </form>
       {error && (

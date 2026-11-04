@@ -562,6 +562,9 @@ export function PhotoWorkspace({
             )}
             {!flat && (
             <div className="pw-actions">
+              {viewGen && !shownHere && photo.pendingPublic?.includes(viewGen.id) && (
+                <span className="pw-badge">Generada en la demo · los compradores la ven cuando la aprobás</span>
+              )}
               {viewGen && !shownHere && (
                 <button type="button" className="button button-small button-primary" onClick={() => void actions.patchPhoto(photo.id, { approve: viewGen.id })}>
                   <Check size={14} /> Mostrar esta en la ficha
@@ -865,6 +868,9 @@ export function PhotoWorkspace({
               onUseInDemo={onUseInDemo ? () => onUseInDemo(photo.id, viewGen?.id ?? viewRetouch?.id ?? null) : undefined}
               more={
                 <>
+                  {viewGen && !shownHere && !photosOnly && photo.pendingPublic?.includes(viewGen.id) && (
+                    <span className="pw-badge">Generada en la demo · los compradores la ven cuando la aprobás</span>
+                  )}
                   {viewGen && !shownHere && !photosOnly && (
                     <button type="button" className="button button-small button-outline" onClick={() => void actions.patchPhoto(photo.id, { approve: viewGen.id })}>
                       <Check size={14} /> Mostrar esta en la ficha

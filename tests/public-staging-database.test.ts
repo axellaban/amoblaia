@@ -91,4 +91,48 @@ describe("public staging with the agency's gift credits", () => {
     await db.query("select habita_public_staging_refund($1)", [key]);
     expect(await gift(agency)).toBe(before);
   });
+
+  // 202611250001_public_staging_review.sql: the credit comes back when the staging ends without an image.
+  const job = (key: string, photo: string, status: string, result: string | null = null) =>
+    db.query(
+      "insert into generations(user_id,project_id,request_key,room,style,mode,prompt,status,result_path,is_free) select p.user_id,p.id,$1,'living','modern','furnish','x',$3,$4,false from demo_photos ph join projects p on p.id=ph.project_id where ph.id=$2",
+      [key, photo, status, result],
+    );
+  const settle = async (key: string) => ((await db.query("select habita_public_staging_settle($1) as r", [key])).rows[0] as { r: string }).r;
+
+  it("gives the credit back once when every job ended without an image", async () => {
+    const { agency, demo: d, photo } = await demo();
+    await db.query("update agencies set free_credits_pending = 3 where id=$1", [agency]);
+    const key = id();
+    await claim(d, photo, key);
+    expect(await gift(agency)).toBe(2);
+    await job(key, photo, "failed");
+    expect(await settle(key)).toBe("refunded");
+    expect(await settle(key)).toBe("refunded");
+    expect(await gift(agency)).toBe(3);
+  });
+
+  it("keeps the credit spent when the image was made, and waits while it runs", async () => {
+    const { agency, demo: d, photo } = await demo();
+    await db.query("update agencies set free_credits_pending = 3 where id=$1", [agency]);
+    const running = id();
+    await claim(d, photo, running);
+    await job(running, photo, "running");
+    expect(await settle(running)).toBe("pending");
+    const made = id();
+    await claim(d, photo, made);
+    await job(made, photo, "succeeded", "a/b/c.jpg");
+    expect(await settle(made)).toBe("succeeded");
+    expect(await gift(agency)).toBe(1);
+  });
+
+  it("starts unapproved: the agency approves it before buyers see it", async () => {
+    const { demo: d, photo } = await demo();
+    const key = id();
+    await db.query("update agencies set free_credits_pending = 1 where id=(select agency_id from demos where id=$1)", [d]);
+    await claim(d, photo, key);
+    const row = await one<{ approved_at: string | null }>("select approved_at from demo_public_stagings where key=$1", [key]);
+    expect(row!.approved_at).toBeNull();
+  });
 });
+

@@ -224,6 +224,8 @@ export type EditorPhoto = {
   retouches: RetouchRow[];
   /** The retouch the listing shows, if any. */
   shownRetouch: string | null;
+  /** Images the agency generated in its demo that wait for its approval before buyers see them. */
+  pendingPublic?: string[];
 };
 export type RetouchRow = {
   id: string;

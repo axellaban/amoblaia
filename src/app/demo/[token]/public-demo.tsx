@@ -14,10 +14,10 @@ import { adminClient } from "@/lib/supabase/server";
 // Shared by the buyers' page (/demo/<token>) and the agency's presentation
 // (/demo/<token>/presentacion[/<codigo>][/ficha], or its short link
 // /p/<propiedad>-<codigo>[/ficha]). Read on every request.
-export const load = cache(async (token: string) => {
+export const load = cache(async (token: string, withPending = false) => {
   if (!cloudConfigured()) return null;
   try {
-    return await publishedDemo(token);
+    return await publishedDemo(token, { withPending });
   } catch {
     console.error("demo_page_lookup_failed");
     return null;
@@ -122,8 +122,11 @@ export async function PublicDemo({
     } catch {
       console.error("demo_invitation_lookup_failed");
     }
+  const ownView = Boolean(invitation && invite && "href" in invite && !ficha);
+  // The agency's own demo also shows the images it generated there before approving them (buyers never do).
+  const shown = ownView ? ((await load(token, true)) ?? demo) : demo;
   const owner =
-    invitation && invite && "href" in invite && !ficha
+    ownView && invitation && invite && "href" in invite
       ? {
           code: invitation,
           href: invite.href,
@@ -140,5 +143,5 @@ export async function PublicDemo({
   if (prices && !owner) redirect(shortPath ?? presentationPath(token, code));
   const plans = owner ? await plansOf(owner.href) : null;
   // No floating assistant here: nothing covers the photo, the styles or the contact (demo and buyers' page alike).
-  return <DemoView demo={demo} source={{ kind: "public", token }} presentation={presentation} invite={invite} owner={owner} plans={plans} backToDemo={backToDemo} />;
+  return <DemoView demo={shown} source={{ kind: "public", token }} presentation={presentation} invite={invite} owner={owner} plans={plans} backToDemo={backToDemo} />;
 }

@@ -61,7 +61,7 @@ describe("the agency's own demo, under its panel header", () => {
   const hrefs = [...html.matchAll(/href="([^"]+)"/g)].map((m) => m[1].replace(/&amp;/g, "&"));
 
   it("follows the mockup: HABITA bar with «Demo para inmobiliaria», straight to the photo and the styles, then the listing", () => {
-    for (const text of ["HABITA", "Demo para inmobiliaria", "Precios", "Guardar mi panel", "Ver como comprador", "Departamento de prueba"])
+    for (const text of ["HABITA", "Demo para inmobiliaria", "Precios", "Activar mi cuenta gratis", "Ver como comprador", "Departamento de prueba"])
       expect(html).toContain(text);
     // No pitch before the picture: the demo starts with the experience itself.
     for (const pitch of ["Así podría verse esta propiedad con Habita", "Mejorá tus fotos, probá distintos estilos"]) expect(html).not.toContain(pitch);
@@ -75,12 +75,13 @@ describe("the agency's own demo, under its panel header", () => {
     expect(html).toContain("Después");
   });
 
-  it("leads every saving action to the private invitation, and «Mi panel» to its visit (no account needed yet)", () => {
+  it("leads its CTAs to the panel's visit (no account needed yet) and only «Activar mi cuenta gratis» to the invitation's sign-up", () => {
     const panel = hrefs.filter((h) => h.startsWith("/panel"));
     expect(panel.length).toBeGreaterThanOrEqual(1);
-    // Generar and the photos still without a staging carry what was chosen (?accion=&foto=&estilo=) on the same invitation.
-    expect(panel.every((h) => h === VISIT || h === INVITE || h.startsWith(`${INVITE}&accion=`))).toBe(true);
+    // Generar and the photos still without a staging carry what was chosen (?accion=&foto=&estilo=) on the same visit.
+    expect(panel.every((h) => h === VISIT || h === INVITE || h.startsWith(`${VISIT}&accion=`))).toBe(true);
     expect(panel).toContain(VISIT);
+    expect(html).toMatch(/<a class="dv2-owner-save" href="\/panel\/empezar\?codigo=[^"]+"[^>]*>Activar mi cuenta gratis<\/a>/);
     // The only other ways out are the buyers' view and the plans, both inside the agency's environment.
     expect(hrefs.filter((h) => !h.startsWith("/panel")).every((h) => h === owner.buyerHref || h === owner.pricesHref || h.startsWith("#") || h.startsWith("/demo/tok/imagen/"))).toBe(true);
     expect(hrefs).not.toContain("/precios");
@@ -95,8 +96,9 @@ describe("the agency's own demo, under its panel header", () => {
     expect((html.match(/class="dv2-style-generate"/g) ?? []).length).toBe(5);
     expect(html).toContain('class="dv2-styles is-owner"');
     for (const tool of ['aria-label="Editar Moderno"', "Crear un video con", "dv2-style-tool"]) expect(html).not.toContain(tool);
-    // «Generar» never generates from the demo: it is a link to the sign-up, with the photo and the style.
-    expect(html).toMatch(/<a class="dv2-style-generate" aria-label="Generar Nórdico en tu panel" href="\/panel\/empezar\?codigo=[^"]+&amp;accion=generar&amp;foto=p1&amp;estilo=scandinavian"/);
+    // With gift credits, «Generar» opens «Ambientá con IA» over the demo: nothing is generated or charged until its «Generar imagen».
+    expect(html).toMatch(/<button type="button" class="dv2-style-generate" aria-label="Generar Nórdico con IA" aria-haspopup="dialog"/);
+    expect(html).not.toContain("Ambientá con IA");
     expect(html).toContain("Ver todos");
     expect(html).not.toContain("Imaginá este espacio a tu estilo");
     expect(html).not.toMatch(/Ver en movimiento/);
@@ -109,11 +111,12 @@ describe("the agency's own demo, under its panel header", () => {
     expect(html).not.toContain("créditos de regalo.");
   });
 
-  it("shows Descargar imágenes and Compartir ficha as two equal buttons, then «Guardar esta demo en mi panel»", () => {
+  it("shows Descargar imágenes and Compartir ficha as two equal buttons, then «Continuar en mi panel»", () => {
     expect(html).toMatch(/<summary[^>]*data-cta="owner_download_all"[\s\S]*?<strong>Descargar imágenes<\/strong>/);
     expect(html).toMatch(/<button type="button" class="dv2-value-share"[\s\S]*?<strong>Compartir ficha<\/strong>/);
     expect(html).toContain("¿Te imaginás esto con todas tus propiedades?");
-    expect(html).toContain(`<a class="dv2-save-demo-cta" href="${INVITE.replace(/&/g, "&amp;")}" data-cta="owner_save_demo"`);
+    expect(html).toContain(`<a class="dv2-save-demo-cta" href="${VISIT}" data-cta="owner_save_demo"`);
+    expect(html).toMatch(/data-cta="owner_save_demo"[^>]*>Continuar en mi panel/);
     expect(html.indexOf("dv2-value")).toBeLessThan(html.indexOf("dv2-save-demo"));
   });
 
@@ -129,9 +132,15 @@ describe("the agency's own demo, under its panel header", () => {
     expect(names).toEqual(["Moderno", "Costero", "Nórdico", "Minimalista", "Mid-century", "Lujo"]);
   });
 
-  it("asks for another listing before the invitation's sign-up, without sending it anywhere else", () => {
+  it("without gift credits, «Generar» leads to the panel's visit with the photo and the style", () => {
+    const spent = renderToStaticMarkup(<DemoView demo={demo} source={{ kind: "public", token: "tok" }} presentation owner={{ ...owner, freeCredits: 0 }} />);
+    expect(spent).toMatch(/<a class="dv2-style-generate" aria-label="Generar Nórdico en tu panel" href="\/panel\/visita\?codigo=[^"]+&amp;accion=generar&amp;foto=p1&amp;estilo=scandinavian"/);
+    expect(spent).not.toContain('aria-haspopup="dialog"');
+  });
+
+  it("asks for another listing and takes it to the panel, without sending it anywhere else", () => {
     expect(html).toContain("¿Querés probarlo con otra propiedad?");
-    expect(html).toMatch(/<form[^>]*>[\s\S]*?id="dv2-another-url"[\s\S]*?Crear propiedad<\/button><\/form>/);
+    expect(html).toMatch(/<form[^>]*>[\s\S]*?id="dv2-another-url"[\s\S]*?Probar con otra propiedad<\/button><\/form>/);
   });
 });
 
@@ -142,7 +151,7 @@ describe("«Ver como comprador» from the agency's demo", () => {
   it("is the buyers' page: no tools, no sign-up, no banner; only the way back to the demo", () => {
     expect(html).toContain("Volver al modo demo");
     expect(html).toContain('href="/demo/tok/presentacion/codigo"');
-    for (const tool of ["Probar esta propiedad en mi panel", "Guardar mi panel", "dv2-banner", "dv2-style-generate", "Editar foto", "créditos de regalo", "/panel/"]) expect(html).not.toContain(tool);
+    for (const tool of ["Probar esta propiedad en mi panel", "Activar mi cuenta gratis", "dv2-banner", "dv2-style-generate", "Editar foto", "créditos de regalo", "/panel/"]) expect(html).not.toContain(tool);
     expect(html).toContain("Departamento de prueba");
   });
 });
@@ -255,7 +264,7 @@ describe("a photo still without a staging, in the agency's demo", () => {
   });
   it("is never offered to buyers", () => {
     const html = renderToStaticMarkup(<DemoView demo={demo} source={{ kind: "public", token: "tok" }} />);
-    for (const text of ["is-locked", "Creá tu panel", "Generar", "Guardar mi panel", "Demo para inmobiliaria"]) expect(html).not.toContain(text);
+    for (const text of ["is-locked", "Creá tu panel", "Generar", "Activar mi cuenta gratis", "Demo para inmobiliaria"]) expect(html).not.toContain(text);
   });
 });
 
