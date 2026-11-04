@@ -1,3 +1,4 @@
+import { internalHint } from "@/lib/internal/client";
 import { visitorId } from "./activity-client";
 
 /**
@@ -10,7 +11,7 @@ export async function requestPublicStaging(token: string, photoId: string, style
     const r = await fetch(`/api/demo/${encodeURIComponent(token)}/generar`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ visitor: visitorId(), key: crypto.randomUUID(), photo: photoId, style }),
+      body: JSON.stringify({ visitor: visitorId(), key: crypto.randomUUID(), photo: photoId, style, internal: internalHint() }),
     });
     if (r.ok) return { ok: true };
     const payload = (await r.json().catch(() => ({}))) as { error?: string };

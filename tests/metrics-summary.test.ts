@@ -140,7 +140,10 @@ describe("GET /api/metricas", () => {
   });
 
   it("returns only aggregates", async () => {
-    state.tables.payments = [{ user_id: "u1", status: "approved", amount_cents: 100, paid_at: "2026-10-01T10:00:00Z", created_at: "2026-10-01T10:00:00Z" }];
+    const paid = { user_id: "u1", status: "approved", amount_cents: 100, paid_at: "2026-10-01T10:00:00Z", created_at: "2026-10-01T10:00:00Z" };
+    // A test purchase of the team is in payments but not in its commercial view (202611230001_internal_traffic.sql).
+    state.tables.payments = [paid, { ...paid, user_id: "equipo" }];
+    state.tables.payments_commercial = [paid];
     const res = await GET(req(`Bearer ${SECRET}`));
     expect(res.status).toBe(200);
     const body = await res.json();

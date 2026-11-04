@@ -28,8 +28,17 @@ export async function recordLeadEvents(events: LeadEvent[]) {
   return Number(data) || 0;
 }
 
+/**
+ * Every browser id of the team, from the single definition the reports share
+ * (the internal_visitor_ids view: ids marked here by hand, and the aliases of
+ * the devices classified internal). Before that migration, the manual marks.
+ */
 export async function internalVisitorIds() {
-  const rows = check(await adminClient().from("lead_internal_visitors").select("visitor_id").limit(5000), "LEAD_INTERNAL_FAILED") as { visitor_id: string }[];
+  const db = adminClient();
+  const all = await db.from("internal_visitor_ids").select("visitor_id").limit(20000);
+  const rows = (all.error
+    ? check(await db.from("lead_internal_visitors").select("visitor_id").limit(5000), "LEAD_INTERNAL_FAILED")
+    : all.data) as { visitor_id: string }[];
   return new Set(rows.map((r) => r.visitor_id));
 }
 
@@ -125,7 +134,11 @@ export async function setInternalVisitor(args: { visitorId: string; internal: bo
   });
   const demos = await demosOfVisitor(args.visitorId);
   const internal = await internalVisitorIds();
-  for (const id of demos) await recomputeDemo(id, internal);
+  for (const id of demos) {
+    await recomputeDemo(id, internal);
+    // The demo's visit summary (activity_*) follows the same marks.
+    await db.rpc("habita_recompute_demo_activity", { p_demo: id });
+  }
   return { demos: demos.length };
 }
 
@@ -168,7 +181,7 @@ export async function leadOverview(): Promise<LeadOverview> {
     demoInfos(),
     allScoreRows(),
     adminClient().from("agencies").select("id,name,owner_id").limit(2000),
-    adminClient().from("lead_internal_visitors").select("visitor_id", { count: "exact", head: true }),
+    internalVisitorIds(),
   ]);
   const agencyRows = check(agencies, "LEAD_AGENCIES_FAILED") as { id: string; name: string; owner_id: string | null }[];
   const names = new Map(agencyRows.map((a) => [a.id, a.name]));
@@ -193,7 +206,7 @@ export async function leadOverview(): Promise<LeadOverview> {
       status: d.status,
       sent_at: d.sent_at,
     })),
-    internal_visitors: internal.count ?? 0,
+    internal_visitors: internal.size,
     calculated_at: new Date().toISOString(),
   };
 }
@@ -227,11 +240,16 @@ export async function agencyDetail(agencyId: string) {
   if (!a) return null;
   const ids = demos.map((d) => d.id);
   if (!ids.length) return { agency: a, demos: [], visitors: [], events: [], internal: [], rollup: rollupAgency(agencyId, [], []) };
-  const [visitors, events, internal] = await Promise.all([
+  const [visitors, events, internal, devices] = await Promise.all([
     db.from("lead_visitor_scores").select("*").in("demo_id", ids).order("score", { ascending: false }).limit(2000),
     db.from("lead_events").select(EVENT_FIELDS).in("demo_id", ids).neq("event_name", "demo_active_time").order("occurred_at", { ascending: false }).limit(400),
     db.from("lead_internal_visitors").select("visitor_id,reason,note,marked_by,marked_at").limit(5000),
+    internalVisitorIds(),
   ]);
+  const manual = check(internal, "LEAD_INTERNAL_FAILED") as { visitor_id: string; reason: string; note: string | null; marked_by: string | null; marked_at: string }[];
+  const marked = new Set(manual.map((m) => m.visitor_id));
+  // The team's devices (registry) next to the manual marks: the activity tab leaves both out.
+  const fromDevices = [...devices].filter((v) => !marked.has(v)).map((visitor_id) => ({ visitor_id, reason: "device", note: null, marked_by: null, marked_at: "" }));
   const rows = (check(visitors, "LEAD_SCORES_FAILED") as (ScoreRow & Record<string, unknown>)[]).map((r) => ({ ...r, agency_id: agencyId }));
   // Visitors seen on other agencies' demos too (possible team traffic) need every agency's rows.
   const shared = sharedVisitors(await allScoreRows());
@@ -241,7 +259,7 @@ export async function agencyDetail(agencyId: string) {
     demos: demos.map((d) => ({ ...rollupDemo(d.id, agencyId, rows), title: d.title ?? "Demo", status: d.status, sent_at: d.sent_at })),
     visitors: rows.map((r) => ({ ...r, shared: shared.has(r.visitor_id) })),
     events: (check(events, "LEAD_EVENTS_FAILED") as LeadEvent[]).map((e) => ({ ...e, value: e.value == null ? null : Number(e.value) })),
-    internal: check(internal, "LEAD_INTERNAL_FAILED") as { visitor_id: string; reason: string; note: string | null; marked_by: string | null; marked_at: string }[],
+    internal: [...manual, ...fromDevices],
   };
 }
 export type AgencyDetail = NonNullable<Awaited<ReturnType<typeof agencyDetail>>>;

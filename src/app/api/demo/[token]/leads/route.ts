@@ -1,6 +1,6 @@
 import { after } from "next/server";
 import { readJson } from "@/lib/demos/input";
-import { isAdmin } from "@/lib/commerce/http";
+import { classifyRequest } from "@/lib/internal/server";
 import { normalizeClientBatch } from "@/lib/leads/ingest";
 import { demoByToken, memberOf, recomputeQuietly, recordLeadEvents } from "@/lib/leads/server";
 import { cloudConfigured } from "@/lib/supabase/config";
@@ -12,9 +12,10 @@ const noContent = (status = 204) => new Response(null, { status, headers: { "Cac
 /**
  * Lead events of a published demo: { visitor, view, session, device, link,
  * internal, automation, events: [{ id, name, at, style?, photo?, value? }] }.
- * The demo comes from the token, never from the body. A signed-in member of
- * the team is internal; a member of the demo's agency is identified and may
- * report its activation (import, account). Generations are never accepted
+ * The demo comes from the token, never from the body. The team (an internal
+ * account, a device the server marked, or the browser's mark) is internal; a
+ * member of the demo's agency is identified and may report its activation
+ * (import, account). Generations are never accepted
  * here: the generation route records them when the backend confirms them.
  * The demo is recalculated after the response, so the page never waits.
  */
@@ -26,12 +27,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
     const demo = await demoByToken(token);
     if (!demo) return noContent(404);
     const user = await currentUser().catch(() => null);
-    const team = isAdmin(user?.email ?? undefined);
+    // The team: its account, a device the server marked, or the browser's own mark (device_flag, below).
+    const who = await classifyRequest({ user });
+    const team = who.internal;
     const member = Boolean(user && !user.is_anonymous && !team && (await memberOf(user.id, demo.agency_id)));
     const batch = normalizeClientBatch(body, {
       demoId: demo.id,
       agencyId: demo.agency_id,
       team,
+      teamReason: who.reason,
       member,
       userId: member ? user!.id : null,
       userAgent: request.headers.get("user-agent") ?? "",

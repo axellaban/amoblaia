@@ -2,6 +2,7 @@ import "server-only";
 import { HttpError, rpc } from "@/lib/commerce/http";
 import { adminClient } from "@/lib/supabase/server";
 import { recordAgencyPanel } from "@/lib/demos/activity";
+import { isInternalUser } from "@/lib/internal/server";
 import { applyAgencyCredits } from "./admin";
 import { agencyRpc } from "./panel";
 import { INVITE_CODE } from "./demo-invite";
@@ -117,7 +118,8 @@ export async function acceptWithNewAccount(code: unknown, email: unknown, passwo
       p_slug: slugify(invitation.agencyName),
     });
     await applyAgencyCredits(agencyId);
-    await recordAgencyPanel(agencyId);
+    // A team account (QA of the claim) is stored as internal and never counts as an agency signing up.
+    await recordAgencyPanel(agencyId, await isInternalUser({ id: userId, email: mail }));
     await recordClaim(agencyId, { id: userId, email: mail }, "email");
     return { agencyId, email: mail };
   } catch (e) {

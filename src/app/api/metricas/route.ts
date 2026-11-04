@@ -8,6 +8,19 @@ export const runtime = "nodejs";
 
 const PAGE = 1000;
 
+/**
+ * The commercial view of a table (the team's activity and test payments left
+ * out, see 202611230001_internal_traffic.sql), or the table itself before
+ * that migration.
+ */
+async function commercial<T>(view: string, table: string, columns: string): Promise<T[]> {
+  try {
+    return await all<T>(view, columns);
+  } catch {
+    return all<T>(table, columns);
+  }
+}
+
 /** Every row of a table, paging past PostgREST's row limit. */
 async function all<T>(table: string, columns: string): Promise<T[]> {
   const out: T[] = [];
@@ -21,7 +34,8 @@ async function all<T>(table: string, columns: string): Promise<T[]> {
 
 /**
  * Aggregated metrics for the Chapa Labs dashboard: prospecting, demos and
- * revenue, as totals and daily series. No personal data. Server to server:
+ * revenue, as totals and daily series, without the team's own traffic or
+ * test payments (the same views as the panel). No personal data. Server to server:
  * `Authorization: Bearer $METRICS_SECRET`. Optional `?desde=&hasta=`
  * (YYYY-MM-DD, Buenos Aires).
  */
@@ -40,8 +54,8 @@ export async function GET(request: Request) {
     const [ds, demos, activity, payments] = await Promise.all([
       prospectDataset(),
       all<DemoRow>("demos", "status,activity_level,activity_visitors,created_at,published_at"),
-      all<ActivityRow>("demo_activity", "kind,created_at"),
-      all<PaymentRow>("payments", "user_id,status,amount_cents,paid_at,created_at"),
+      commercial<ActivityRow>("demo_activity_commercial", "demo_activity", "kind,created_at"),
+      commercial<PaymentRow>("payments_commercial", "payments", "user_id,status,amount_cents,paid_at,created_at"),
     ]);
     return Response.json(
       {

@@ -2,6 +2,7 @@ import { failure, HttpError, requireUser, rpc } from "@/lib/commerce/http";
 import { applyAgencyCredits } from "@/lib/agency/admin";
 import { agencyRpc, panelSummary } from "@/lib/agency/panel";
 import { recordAgencyPanel } from "@/lib/demos/activity";
+import { isInternalUser } from "@/lib/internal/server";
 import { INVITE_CODE } from "@/lib/agency/demo-invite";
 import { claimHash, membershipOf } from "@/lib/agency/server";
 import { slugify } from "@/lib/agency/shared";
@@ -32,7 +33,8 @@ export async function POST(request: Request) {
     const agencyId = await agencyRpc<string>("habita_claim_agency", { p_user: user.id, p_code_hash: hash, p_slug: slugify(name) });
     // Credits the team left waiting for this agency move to its new owner.
     await applyAgencyCredits(agencyId);
-    await recordAgencyPanel(agencyId);
+    // A team account (QA of the claim) is stored as internal and never counts as an agency signing up.
+    await recordAgencyPanel(agencyId, await isInternalUser(user));
     // Google proves the address; any other existing account signed in with its own password.
     await recordClaim(agencyId, user, user.app_metadata?.provider === "google" ? "google" : "existing");
     const membership = await membershipOf(user.id);

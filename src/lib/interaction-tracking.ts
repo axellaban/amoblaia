@@ -81,46 +81,12 @@ const leavesPage = (el: HTMLElement) => {
  */
 const LEAVING = "habita:leaving";
 
-const INTERNAL_KEY = "habita_internal";
-const INTERNAL_PARAM = "habita_interno";
-
 /**
- * The team's own traffic (admin pages, its previews, or a device marked with
- * ?habita_interno=1) carries is_internal on every event and on the person,
- * so the commercial dashboards can leave it out. ?habita_interno=0 unmarks it.
+ * The team's own traffic carries is_internal on every event and on the
+ * person. The server decides who is internal (src/lib/internal); the admin
+ * panel and the team's previews still mark their device at once.
  */
-export function markInternal(reason: string) {
-  try {
-    localStorage.setItem(INTERNAL_KEY, reason.slice(0, 40));
-  } catch {
-    /* Blocked storage: this page load is still marked. */
-  }
-  try {
-    if (!posthog.__loaded) return;
-    posthog.register({ is_internal: true });
-    posthog.setPersonProperties({ is_internal: true });
-  } catch {
-    /* Tracking is best effort. */
-  }
-}
-
-function applyInternal() {
-  let flagged: string | null = null;
-  try {
-    const param = new URLSearchParams(window.location.search).get(INTERNAL_PARAM);
-    if (param === "0") {
-      localStorage.removeItem(INTERNAL_KEY);
-      posthog.unregister("is_internal");
-      posthog.setPersonProperties({ is_internal: false });
-      return;
-    }
-    if (param === "1") localStorage.setItem(INTERNAL_KEY, "manual");
-    flagged = localStorage.getItem(INTERNAL_KEY);
-  } catch {
-    /* Blocked storage: nothing to read. */
-  }
-  if (flagged) markInternal(flagged);
-}
+export { markInternal } from "@/lib/internal/client";
 
 /** Installed once, from instrumentation-client.ts, after PostHog starts. */
 export function installInteractionTracking(): void {
@@ -132,7 +98,6 @@ export function installInteractionTracking(): void {
     app_env: process.env.NEXT_PUBLIC_VERCEL_ENV || "local",
     tracking_version: 2,
   });
-  applyInternal();
   // Capture phase: runs before the element's own handler and before a navigation starts.
   document.addEventListener(
     "click",

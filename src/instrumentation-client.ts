@@ -1,5 +1,6 @@
 import posthog from "posthog-js";
 import { redactInvite } from "@/lib/agency/demo-invite";
+import { internalHint } from "@/lib/internal/client";
 // habita. project token (US Cloud). Public by design; override per environment if needed.
 const key =
   process.env.NEXT_PUBLIC_POSTHOG_KEY ??
@@ -14,11 +15,15 @@ if (key && (process.env.NEXT_PUBLIC_VERCEL_ENV === "production" || process.env.N
     // The private invitation code travels in some URLs: it never reaches the analytics.
     before_send: (event) => {
       if (!event) return event;
+      // The team's browsers: marked synchronously, so not even the first page view leaves unmarked.
+      if (internalHint()) event.properties = { ...event.properties, is_internal: true };
       for (const bag of [event.properties, event.$set, event.$set_once] as (Record<string, unknown> | undefined)[])
         if (bag) for (const k of Object.keys(bag)) if (typeof bag[k] === "string") bag[k] = redactInvite(bag[k] as string);
       return event;
     },
   });
-  // Clicks on tracked calls to action and the internal-traffic mark, loaded off the critical path.
+  // Clicks on tracked calls to action, loaded off the critical path.
   void import("@/lib/interaction-tracking").then(({ installInteractionTracking }) => installInteractionTracking());
 }
+// Is this browser the team's? The server answers (session, signed device, team fingerprint) in every environment.
+if (typeof window !== "undefined") void import("@/lib/internal/client").then(({ syncInternal }) => syncInternal());
