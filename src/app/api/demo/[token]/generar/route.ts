@@ -52,7 +52,7 @@ async function recordConfirmedGenerations(
 
 /** Maps the claim's refusals to what the visitor sees. Anything else stays generic. */
 function claimError(message: string) {
-  if (message.includes("NO_GIFT_CREDITS")) return new HttpError(409, "Esta demo ya usó sus créditos de regalo. Para generar más, mirá los precios.");
+  if (message.includes("NO_GIFT_CREDITS")) return new HttpError(409, "Ya usaste los 10 créditos gratis de este mes. Para generar más, comprá créditos o esperá al mes que viene.");
   if (message.includes("AGENCY_CLAIMED")) return new HttpError(409, "Esta inmobiliaria ya tiene su cuenta: generá desde su panel.");
   if (message.includes("DEMO_NOT_PUBLISHED")) return new HttpError(404, "Esta demo no está disponible.");
   return new Error("PUBLIC_STAGING_CLAIM_FAILED");
@@ -79,7 +79,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
     const code = typeof body.code === "string" && INVITE_CODE.test(body.code) ? body.code : null;
     const invitation = code ? await liveInvitation(code).catch(() => null) : null;
     if (!invitation || invitation.agency.id !== demo.agencyId)
-      throw new HttpError(403, "Abrí la demo desde el enlace de tu inmobiliaria para generar con tus créditos de regalo.");
+      throw new HttpError(403, "Abrí la demo desde el enlace de tu inmobiliaria para generar con tus créditos gratis.");
     const { settings } = await settingsOf(demo.id);
     if (!styleFits(body.style, settings.propertyType)) throw new HttpError(400, "Ese estilo no corresponde a este inmueble.");
     const photo = await photoOf(await demoRow(demo.id), body.photo);

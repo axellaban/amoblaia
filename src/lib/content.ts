@@ -147,8 +147,8 @@ export const resources: Resource[] = [
         body: "Los planes se miden por fotos originales. Cada una incluye regeneraciones durante la vigencia paga y podés volver a descargar sus resultados. La versión gratuita ofrece resultados con marca de agua.",
       },
       {
-        title: "Mensual o anual",
-        body: "El plan mensual se renueva por mes. En el anual pagás el año completo y el cupo se habilita mes a mes. El precio final, el ahorro y el importe anual se muestran en Precios antes de comprar.",
+        title: "Gratis y créditos",
+        body: "Cada inmobiliaria tiene 10 créditos gratis por mes. Cuando necesitás más, comprás un paquete de créditos con pago único en Mercado Pago, sin suscripción. Los precios y el ahorro por volumen se muestran en Precios antes de comprar.",
       },
       {
         title: "Qué mirar al comparar",

@@ -14,6 +14,9 @@ beforeAll(async () => {
  insert into auth.users values('${user}');`);
   for (const file of readdirSync("supabase/migrations").sort())
     await db.exec(readFileSync(`supabase/migrations/${file}`, "utf8"));
+  // Plans retired by the simplified pricing (202611240001) still exist for the
+  // customers who have them: a plan change among them is tested selling them again here.
+  await db.exec("update products set active=true where price_cents>0");
   await db.query("select amobla_account($1,false)", [user]);
   await db.query("select amobla_create_order($1,$2,'basic-month')", [
     user,
