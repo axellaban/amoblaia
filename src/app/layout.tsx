@@ -1,4 +1,5 @@
 import { ProductTour } from "@/components/product-tour";
+import { CreditsPurchaseHost } from "@/components/credits-purchase";
 import Script from "next/script";
 import { GOOGLE_ADS_ID } from "@/lib/ads";
 import { MetaPixel } from "@/components/meta-pixel";
@@ -45,6 +46,7 @@ export default function RootLayout({
         <main id="contenido">{children}</main>
         <Footer />
         <ProductTour />
+        <CreditsPurchaseHost />
         {process.env.VERCEL_ENV === "production" && (
           <>
             <Script

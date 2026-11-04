@@ -23,8 +23,10 @@ export function useStagingQueue(opts: {
   poll: (photoId: string) => Promise<EditorPhoto | null>;
   report: (r: QueueReport) => void;
   trackAgency: boolean;
+  /** The balance does not cover it: «Necesitás más créditos» (the agency's panel only). */
+  onNoCredits?: () => void;
 }) {
-  const { base, detail, poll, report, trackAgency } = opts;
+  const { base, detail, poll, report, trackAgency, onNoCredits } = opts;
   const queueRef = useRef<Task[]>([]);
   const [queue, setQueue] = useState<Task[]>([]);
   const [current, setCurrentState] = useState<Task | null>(null);
@@ -85,6 +87,7 @@ export function useStagingQueue(opts: {
           queueRef.current = [];
           setQueue([]);
         }
+        if (e instanceof ApiError && e.status === 402) onNoCredits?.();
         report({
           tone: "error",
           text: `${e instanceof Error ? e.message : "No pudimos crear la versión."}${stop && left ? ` ${left} ${left === 1 ? "versión quedó" : "versiones quedaron"} sin enviar.` : ""}`,
@@ -97,7 +100,7 @@ export function useStagingQueue(opts: {
     if (trackAgency) track("property_ai_generation_completed", { versions: done + failures, failed: failures, status: failures ? "partial" : "ok" });
     if (trackAgency && done) trackMilestone("first_generation_completed", { versions: done, source: "panel" });
     if (done && !failures) report({ tone: "notice", text: `${done} ${done === 1 ? "versión lista" : "versiones listas"}. Revisalas antes de publicar.` });
-  }, [base, poll, report, trackAgency]);
+  }, [base, poll, report, trackAgency, onNoCredits]);
 
   /**
    * Adds versions to the queue. fresh: a deliberate new version even if one
@@ -151,7 +154,9 @@ export function useStagingQueue(opts: {
             return false;
           }
           if (quote.blocked) {
+            const short = quote.credits !== null && quote.credits < quote.newPhotos;
             report({ tone: "error", text: `${quote.blocked} Podés ver el saldo en «Créditos».` });
+            if (short) onNoCredits?.();
             return false;
           }
           const n = quote.newPhotos;
@@ -180,7 +185,7 @@ export function useStagingQueue(opts: {
         setStarting(false);
       }
     },
-    [base, drain, report, trackAgency],
+    [base, drain, report, trackAgency, onNoCredits],
   );
 
   /** Takes versions not sent yet out of the queue (the one being created keeps going). */

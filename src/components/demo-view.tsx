@@ -410,7 +410,7 @@ export function DemoView({
         </a>
       )}
       {owner && pricesOn && (
-        <section className="dv2-prices" aria-label="Planes y créditos">
+        <section className="dv2-prices" aria-label="Precios y créditos">
           <div className="container dv2-prices-head">
             <button type="button" className="dv2-prices-back" {...cta("prices_back", "pricing_section", "demo", "navigation")} onClick={() => showDemo("button")}>
               ← Volver a la propiedad

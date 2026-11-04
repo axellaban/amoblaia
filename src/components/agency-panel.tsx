@@ -35,7 +35,6 @@ import {
   Sparkles,
   Sun,
   Wand2,
-  Zap,
 } from "lucide-react";
 import { ApiError, api } from "./admin-demos";
 import { ImportPreview, MapReview, exceptions, initialMapChoice, mapOverride, syncPhotos, type MapChoice } from "./demo-import";
@@ -60,6 +59,8 @@ import { PENDING_IMPORT_KEY, PENDING_IMPORT_TTL_MS } from "@/lib/agency/demo-inv
 import { adminPhotoUrl } from "@/lib/demos/shared";
 import { leadFromDemoRef } from "@/lib/leads/client";
 import { PanelNav, PanelTopbar, type PanelSection } from "./panel-shell";
+import { CreditsMenu } from "./credits-menu";
+import { openCreditsPurchase } from "./credits-purchase";
 import { videoEnabled } from "@/lib/agency/flags";
 import { StartPicker, toolPath, type StartTool } from "./start-picker";
 
@@ -112,8 +113,8 @@ export function AgencyPanel({ section, plans = null }: { section: Section; /** T
           <PropertiesSection data={data} reload={load} />
         ) : section === "creditos" ? (
           <>
-            {plans && <div className="ap-plans">{plans}</div>}
             <CreditsSection />
+            {plans && <div className="ap-plans">{plans}</div>}
           </>
         ) : (
           <SiteSection data={data} setData={setData} reload={load} />
@@ -313,9 +314,7 @@ function PanelHome({ data, reload }: { data: PanelSummary; reload: () => Promise
       <PanelTopbar agencyName={data.agency.name} logo={data.agency.logo}>
         {data.role !== "owner" && <span className="ap-chip">{ROLE_LABEL[data.role]}</span>}
         {typeof data.credits === "number" && (
-          <Link href="/panel/creditos" className="ap-credits-chip" {...cta("panel_topbar_credits", "panel_home", "panel_credits")}>
-            <Zap size={16} aria-hidden="true" /> {data.credits} {data.credits === 1 ? "crédito" : "créditos"}
-          </Link>
+          <CreditsMenu credits={data.credits} canBuy={data.role === "owner" && !data.support} source="panel_balance" />
         )}
       </PanelTopbar>
       {(!editor || data.scope) && (
@@ -1496,6 +1495,7 @@ const REASONS: Record<string, string> = {
   photo_reserved: "Foto ambientada",
   technical_failure: "Devolución por falla técnica",
   payment: "Compra",
+  free_monthly: "Créditos gratis del mes",
   annual_period: "Plan anual",
   // Welcome credits and the team's grants share this reason.
   admin_adjustment: "Créditos de habita",
@@ -1528,9 +1528,9 @@ function CreditsSection() {
           <h1>{info.credits === null ? "Saldo no disponible" : `${info.credits} ${info.credits === 1 ? "crédito disponible" : "créditos disponibles"}`}</h1>
         </div>
         {owner && !info.support && (
-          <Link href="/precios" className="button button-primary" {...cta("buy_credits", "panel_credits", "pricing")}>
+          <button type="button" className="button button-primary" {...cta("buy_credits", "panel_credits", "checkout")} onClick={() => openCreditsPurchase({ source: "panel_credits" })}>
             Comprar créditos
-          </Link>
+          </button>
         )}
       </div>
       {info.creditsError && <RetryRow error="No pudimos consultar el saldo ahora. No significa que no tengas créditos." onRetry={() => void load()} />}
@@ -1546,13 +1546,13 @@ function CreditsSection() {
         <h2>Cómo se usan</h2>
         <p>
           Cada foto que transformás con IA usa 1 crédito la primera vez. Las demás versiones y estilos de esa misma foto no consumen créditos
-          mientras el plan esté vigente. Si una generación falla por un problema técnico, el crédito vuelve solo. Importar propiedades,
+          mientras el crédito esté vigente. Los créditos gratis del mes se usan primero y vencen a fin de mes; los comprados duran 12 meses. Si una generación falla por un problema técnico, el crédito vuelve solo. Importar propiedades,
           publicarlas y compartirlas no usa créditos.
         </p>
       </section>
       {owner && (
-        <section className="account-panel">
-          <h2>Planes y movimientos</h2>
+        <section className="account-panel" id="movimientos">
+          <h2>Saldo y movimientos</h2>
           {grants.length ? (
             <ul className="ap-grants">
               {grants.map((g) => (
@@ -1565,7 +1565,7 @@ function CreditsSection() {
               ))}
             </ul>
           ) : (
-            <p>Todavía no hay planes ni packs. Elegí uno para transformar las fotos de tus propiedades.</p>
+            <p>Todavía no hay créditos cargados. Comprá un paquete para transformar las fotos de tus propiedades.</p>
           )}
           {info.ledger && info.ledger.length > 0 && (
             <ul className="ap-grants" aria-label="Últimos movimientos">
