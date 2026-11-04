@@ -65,7 +65,7 @@ const GROUPS = (): Item[][] => [
     { id: "api", href: "/panel/api", label: "API", icon: Code2, future: "api" },
   ],
   [
-    { id: "creditos", href: "/panel/creditos", label: "Créditos", icon: CreditCard },
+    { id: "creditos", href: "/panel/creditos", label: "Precios y créditos", icon: CreditCard },
   ],
 ];
 
@@ -170,8 +170,8 @@ function PlansBox({ credits }: { credits?: number | null }) {
           "¿Necesitás más créditos para tu inmobiliaria?"
         )}
       </p>
-      <Link href="/panel/creditos" className="ap-side-plans-button" {...cta("panel_sidebar_plans", "panel_sidebar", "panel_credits")}>
-        Comprar créditos
+      <Link href="/panel/creditos#precios" className="ap-side-plans-button" {...cta("panel_sidebar_plans", "panel_sidebar", "panel_credits")}>
+        Ver precios
       </Link>
     </div>
   );

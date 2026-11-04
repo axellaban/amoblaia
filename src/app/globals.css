@@ -24717,3 +24717,207 @@ body:has(.pv-root) .pb-root {
     width: auto;
   }
 }
+
+/* The price card to share (screenshot or /panel/precios). */
+.hb-sheet-wrap {
+  margin-top: 40px;
+  max-width: 880px;
+  scroll-margin-top: 90px;
+}
+.hb-sheet {
+  max-width: 460px;
+  padding: 26px 24px 20px;
+  border-radius: 22px;
+  background: #fff;
+  border: 1px solid var(--line);
+  box-shadow: 0 10px 40px #24382e14;
+}
+.hb-sheet header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.hb-sheet-brand {
+  font-weight: 800;
+  font-size: 20px;
+  color: var(--forest);
+}
+.hb-sheet h2 {
+  margin: 0;
+  font-size: 15px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--subtle);
+}
+.hb-sheet-free {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: #eef2ea;
+}
+.hb-sheet-free div {
+  display: grid;
+}
+.hb-sheet-free strong {
+  font-size: 18px;
+}
+.hb-sheet-free span {
+  font-size: 14px;
+  color: var(--subtle);
+}
+.hb-sheet-free b {
+  font-size: 24px;
+}
+.hb-sheet-label {
+  margin: 18px 0 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--subtle);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.hb-sheet ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.hb-sheet li + li {
+  border-top: 1px solid var(--line);
+}
+.hb-sheet li button {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.hb-sheet li button:hover:not(:disabled) b {
+  color: var(--forest);
+  text-decoration: underline;
+}
+.hb-sheet li button:disabled {
+  cursor: default;
+}
+.hb-sheet-amount {
+  font-size: 15px;
+}
+.hb-sheet-amount strong {
+  font-size: 20px;
+}
+.hb-sheet-unit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--subtle);
+}
+.hb-sheet-unit em {
+  font-style: normal;
+  font-weight: 700;
+  font-size: 12px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #dfeedd;
+  color: #2f6b3c;
+}
+.hb-sheet li b {
+  font-size: 19px;
+  min-width: 84px;
+  text-align: right;
+}
+.hb-sheet footer {
+  display: grid;
+  gap: 2px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--line);
+  font-size: 12.5px;
+  color: var(--subtle);
+  text-align: center;
+}
+.hb-sheet footer span:first-child {
+  color: var(--ink);
+  font-weight: 700;
+}
+.hb-sheet-share {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  max-width: 460px;
+}
+.hb-sheet-share .button {
+  min-height: 42px;
+  padding: 8px 16px;
+  gap: 8px;
+  background: #fff;
+}
+.hb-sheet-share small {
+  flex-basis: 100%;
+  color: var(--subtle);
+}
+@media (max-width: 480px) {
+  .hb-sheet-wrap {
+    margin-top: 28px;
+  }
+  .hb-sheet {
+    padding: 18px 16px 14px;
+    border-radius: 18px;
+  }
+  .hb-sheet header {
+    margin-bottom: 10px;
+  }
+  .hb-sheet-free {
+    padding: 10px 14px;
+  }
+  .hb-sheet-free strong {
+    font-size: 16px;
+  }
+  .hb-sheet-free span {
+    font-size: 13px;
+  }
+  .hb-sheet-free b {
+    font-size: 20px;
+  }
+  .hb-sheet-label {
+    margin: 12px 0 2px;
+    font-size: 11.5px;
+  }
+  .hb-sheet li button {
+    grid-template-columns: 1fr auto;
+    gap: 0 10px;
+    padding: 7px 2px;
+  }
+  .hb-sheet-amount {
+    font-size: 14px;
+  }
+  .hb-sheet-amount strong {
+    font-size: 17px;
+  }
+  .hb-sheet-unit {
+    grid-row: 2;
+    font-size: 12px;
+  }
+  .hb-sheet li b {
+    grid-row: 1 / span 2;
+    grid-column: 2;
+    font-size: 17px;
+  }
+  .hb-sheet footer {
+    margin-top: 8px;
+    padding-top: 10px;
+    font-size: 11.5px;
+  }
+}

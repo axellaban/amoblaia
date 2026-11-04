@@ -5,9 +5,9 @@
 // through the existing Mercado Pago checkout.
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { ArrowUpRight, Check, House, Layers, Minus, Plus, BadgeCheck } from "lucide-react";
+import { ArrowUpRight, Check, Copy, House, Layers, Minus, Plus, BadgeCheck, Share2 } from "lucide-react";
 import { formatARS, type Product } from "@/lib/commerce/catalog";
-import { creditPackages, FREE_MONTHLY_CREDITS } from "@/lib/commerce/credit-packs";
+import { creditPackages, FREE_MONTHLY_CREDITS, PRICES_PATH, type CreditPackage } from "@/lib/commerce/credit-packs";
 import { track } from "@/lib/analytics";
 import { cta } from "@/lib/interaction-tracking";
 import { openCreditsPurchase } from "./credits-purchase";
@@ -194,31 +194,7 @@ export function PricingPlans({
           </article>
         </div>
 
-        {packages.length > 0 && (
-          <section className="hb-packs" aria-labelledby="hb-packs-title">
-            <h2 id="hb-packs-title">Paquetes de créditos</h2>
-            <ul>
-              {packages.map((p) => (
-                <li key={p.sku}>
-                  <button
-                    type="button"
-                    disabled={!ready}
-                    onClick={() => open("pack_tile", p.sku)}
-                    {...cta("pricing_pack_tile", `${where}_packs`, "checkout", "habita_b2b", { plan: p.sku })}
-                  >
-                    <span className="hb-packs-amount">
-                      <strong>{p.credits}</strong> créditos
-                    </span>
-                    {p.discount >= 0.01 ? <span className="hb-credits-off">−{Math.round(p.discount * 100)}%</span> : <span />}
-                    <span className="hb-packs-price">{ars(p.cents)}</span>
-                    <small>{ars(p.unitCents)} por crédito</small>
-                  </button>
-                </li>
-              ))}
-            </ul>
-            <p className="hb-packs-note">Pago único · Sin suscripción · Los créditos duran 12 meses · Pagás con Mercado Pago</p>
-          </section>
-        )}
+        {packages.length > 0 && <PriceSheet packages={packages} ready={ready} where={where} onBuy={(sku) => open("price_sheet", sku)} />}
 
         <section className="hb-how" id="como-funcionan-los-creditos" aria-labelledby="hb-how-title">
           <h2 id="hb-how-title">Cómo funcionan los créditos</h2>
@@ -268,5 +244,94 @@ export function PricingPlans({
         </section>
       </div>
     </div>
+  );
+}
+
+/**
+ * All the prices in one card, made to be sent as a screenshot or a link
+ * (people ask for them a lot). The link, /panel/precios, opens this card in
+ * the agency's own panel, or on /precios for someone without one.
+ */
+function PriceSheet({
+  packages,
+  ready,
+  where,
+  onBuy,
+}: {
+  packages: CreditPackage[];
+  ready: boolean;
+  where: string;
+  onBuy: (sku: string) => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const [canShare, setCanShare] = useState(false);
+  useEffect(() => setCanShare(typeof navigator !== "undefined" && typeof navigator.share === "function"), []);
+  const link = () => `${window.location.origin}${PRICES_PATH}`;
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(link());
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+      track("pricing_link_copied", { surface: where });
+    } catch {
+      window.prompt("Copiá el link de precios:", link());
+    }
+  }
+  async function share() {
+    try {
+      await navigator.share({ title: "Precios de habita.", text: "Los precios de habita.: 10 créditos gratis por mes y paquetes de créditos sin suscripción.", url: link() });
+      track("pricing_link_shared", { surface: where });
+    } catch {
+      /* Closed without sharing. */
+    }
+  }
+  return (
+    <section className="hb-sheet-wrap" id="precios" aria-labelledby="hb-sheet-title">
+      <div className="hb-sheet">
+        <header>
+          <span className="hb-sheet-brand">habita.</span>
+          <h2 id="hb-sheet-title">Precios</h2>
+        </header>
+        <div className="hb-sheet-free">
+          <div>
+            <strong>Gratis</strong>
+            <span>{FREE_MONTHLY_CREDITS} créditos por mes · sin tarjeta</span>
+          </div>
+          <b>$0</b>
+        </div>
+        <p className="hb-sheet-label">Paquetes de créditos · pago único</p>
+        <ul>
+          {packages.map((p) => (
+            <li key={p.sku}>
+              <button type="button" disabled={!ready} onClick={() => onBuy(p.sku)} {...cta("pricing_sheet_pack", `${where}_sheet`, "checkout", "habita_b2b", { plan: p.sku })}>
+                <span className="hb-sheet-amount">
+                  <strong>{p.credits}</strong> créditos
+                </span>
+                <span className="hb-sheet-unit">
+                  {ars(p.unitCents)} c/u
+                  {p.discount >= 0.01 && <em>−{Math.round(p.discount * 100)}%</em>}
+                </span>
+                <b>{ars(p.cents)}</b>
+              </button>
+            </li>
+          ))}
+        </ul>
+        <footer>
+          <span>1 crédito = 1 foto transformada con IA</span>
+          <span>Sin suscripción · Pagás con Mercado Pago · Los créditos duran 12 meses</span>
+        </footer>
+      </div>
+      <div className="hb-sheet-share">
+        <button type="button" className="button button-outline" onClick={() => void copy()}>
+          {copied ? <Check size={17} aria-hidden="true" /> : <Copy size={17} aria-hidden="true" />} {copied ? "¡Link copiado!" : "Copiar link de precios"}
+        </button>
+        {canShare && (
+          <button type="button" className="button button-outline" onClick={() => void share()}>
+            <Share2 size={17} aria-hidden="true" /> Compartir
+          </button>
+        )}
+        <small>Tip: hacé una captura de esta tarjeta para mandarla por WhatsApp.</small>
+      </div>
+    </section>
   );
 }
