@@ -695,7 +695,7 @@ describe("The team's view of agencies", () => {
 describe("Invitation from WhatsApp with only an e-mail and a password", () => {
   const CODE = "z".repeat(32);
   const HASH = createHash("sha256").update(CODE).digest("hex");
-  const accept = (body: Record<string, unknown>) => invitacionPanel.POST(req("/api/panel/invitacion", "POST", { code: CODE, email: "Duenia@Nueva.test", password: "segura123", ...body }));
+  const accept = (body: Record<string, unknown>) => invitacionPanel.POST(req("/api/panel/invitacion", "POST", { code: CODE, email: "Duenia@Nueva.test", password: "segura12345", ...body }));
   beforeEach(() => {
     state.user = null;
     state.tables.agencies[0].owner_id = null;
@@ -740,11 +740,13 @@ describe("Invitation from WhatsApp with only an e-mail and a password", () => {
 
   it("checks the password, the e-mail and where the request comes from", async () => {
     expect((await accept({ password: "corta" })).status).toBe(400);
+    // At least 10 characters, the same as the account's own sign-up.
+    expect((await accept({ password: "segura123" })).status).toBe(400);
     expect((await accept({ email: "no-es-email" })).status).toBe(400);
     const foreign = new Request(`${origin}/api/panel/invitacion`, {
       method: "POST",
       headers: { origin: "https://evil.test", "content-type": "application/json" },
-      body: JSON.stringify({ code: CODE, email: "a@b.test", password: "segura123" }),
+      body: JSON.stringify({ code: CODE, email: "a@b.test", password: "segura12345" }),
     });
     expect((await invitacionPanel.POST(foreign)).status).toBe(403);
     expect(state.authUsers).toEqual([]);

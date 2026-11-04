@@ -153,7 +153,7 @@ export default async function AgencyPage({ params, searchParams }: Props) {
       {tab === "enlaces" && (
         <section className="account-panel ah-panel" aria-labelledby="ah-links-title">
           <h2 id="ah-links-title">Enlaces de esta inmobiliaria</h2>
-          <AgencyLinks demos={demos} />
+          <AgencyLinks agencyId={agency.id} demos={demos} />
         </section>
       )}
       {tab === "actividad" && <Activity agencyId={agency.id} hasOwner={agency.hasOwner} activity={activity} />}

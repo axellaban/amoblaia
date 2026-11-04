@@ -18,7 +18,7 @@ import {
   Building2,
 } from "lucide-react";
 import { AgencyView } from "@/components/admin-leads";
-import { api, Dialog, LinkCopy, SendWhatsapp, ViewLink } from "@/components/admin-demos";
+import { api, copyLinkWhenReady, Dialog, LinkCopy, SendWhatsapp, ViewLink } from "@/components/admin-demos";
 import { ACCOUNT_LABEL, HOT_SCORE, STAGE_STEP, type AccountState, type CommercialStage, type NextAction } from "@/lib/agency/commercial";
 import { normalizeArNumber } from "@/lib/demos/send";
 import { adminPhotoUrl, type DemoSummary } from "@/lib/demos/shared";
@@ -314,55 +314,142 @@ export function DemoMenu({ demo }: { demo: DemoSummary }) {
 const LINKS = [
   { which: "agency", icon: Building2, title: "Demo para inmobiliaria", help: "La experiencia comercial con IA: antes y después, estilos y su invitación." },
   { which: "buyer", icon: Home, title: "Vista comprador", help: "La ficha interactiva para compartir con sus clientes." },
-  { which: "panel", icon: KeyRound, title: "Acceso al panel", help: "Su panel, para que cree su cuenta y administre sus propiedades." },
   { which: "prices", icon: Tag, title: "Página de precios", help: "Los planes y beneficios de habita, dentro de su demo." },
 ] as const;
 
 /**
- * The four links of one demo, each with «Ver» and «Copiar». The links that
- * invite the agency carry a fresh one-time code while it has no account.
+ * «Acceso al panel»: the agency's fixed link (docs/ACCESO_PANEL.md). It does
+ * not depend on any demo and is always the same; «Cambiar enlace» replaces it
+ * and the previous one stops working.
  */
-export function AgencyLinks({ demos }: { demos: DemoSummary[] }) {
+function PanelLinkRow({ agencyId }: { agencyId: string }) {
+  const [url, setUrl] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState("");
+  const endpoint = `/api/admin/inmobiliarias/${agencyId}/enlace-panel`;
+  useEffect(() => {
+    let alive = true;
+    api<{ url: string }>(endpoint, { method: "POST", body: "{}" })
+      .then((r) => alive && setUrl(r.url))
+      .catch((e) => alive && setError(e instanceof Error ? e.message : "No pudimos cargar el enlace."));
+    return () => {
+      alive = false;
+    };
+  }, [endpoint]);
+  async function copy() {
+    setError("");
+    try {
+      const ok = await copyLinkWhenReady(async () => url || (await api<{ url: string }>(endpoint, { method: "POST", body: "{}" })).url);
+      if (ok) {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No pudimos copiar el enlace.");
+    }
+  }
+  async function rotate() {
+    if (!window.confirm("¿Cambiar el enlace al panel? El enlace actual deja de funcionar y hay que mandarles el nuevo.")) return;
+    setBusy(true);
+    setError("");
+    try {
+      setUrl((await api<{ url: string }>(endpoint, { method: "POST", body: JSON.stringify({ rotate: true }) })).url);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No pudimos cambiar el enlace.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <li>
+      <span className="ah-link-icon" aria-hidden="true">
+        <KeyRound size={20} />
+      </span>
+      <span className="ah-link-main">
+        <strong>Acceso al panel</strong>
+        <small>Abre el Inicio de su panel: pueden iniciar sesión, crear la cuenta o recorrerlo como invitados. Siempre es el mismo enlace.</small>
+        {url && <code className="ah-link-url">{url.replace(/^https?:\/\//, "")}</code>}
+        {error && (
+          <span className="inline-error" role="alert">
+            {error}
+          </span>
+        )}
+      </span>
+      <span className="ah-link-actions">
+        <a
+          className="dm-text"
+          href={url || undefined}
+          aria-disabled={!url}
+          target="_blank"
+          rel="noreferrer"
+          data-view="panel"
+          title="Lo abrís como equipo: ves su panel en la vista de soporte (solo lectura). Queda registrado."
+        >
+          Ver
+        </a>
+        <button type="button" className="dm-text" data-link="panel" disabled={!url} onClick={() => void copy()}>
+          {copied ? "Copiado" : "Copiar link"}
+        </button>
+        <button type="button" className="dm-text is-danger" disabled={busy || !url} onClick={() => void rotate()}>
+          {busy ? "Cambiando…" : "Cambiar enlace"}
+        </button>
+      </span>
+    </li>
+  );
+}
+
+/**
+ * The agency's links: its fixed panel link, and the three links of one demo,
+ * each with «Ver» and «Copiar». The demo links that invite the agency carry
+ * a fresh one-time code while it has no account.
+ */
+export function AgencyLinks({ agencyId, demos }: { agencyId: string; demos: DemoSummary[] }) {
   const published = demos.filter((d) => d.status === "published");
   const [id, setId] = useState(published[0]?.id ?? "");
   const demo = published.find((d) => d.id === id) ?? published[0];
-  if (!demo)
-    return (
-      <p className="aa-empty">
-        <Link2 size={16} aria-hidden="true" /> Los enlaces aparecen cuando tenga una demo publicada.
-      </p>
-    );
   return (
     <div className="ah-links">
-      {published.length > 1 && (
-        <label className="ah-links-pick">
-          Demo
-          <select value={demo.id} onChange={(e) => setId(e.target.value)}>
-            {published.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.title}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
       <ul className="ah-link-list">
-        {LINKS.map(({ which, icon: Icon, title, help }) => (
-          <li key={which}>
-            <span className="ah-link-icon" aria-hidden="true">
-              <Icon size={20} />
-            </span>
-            <span className="ah-link-main">
-              <strong>{title}</strong>
-              <small>{help}</small>
-            </span>
-            <span className="ah-link-actions">
-              <ViewLink demo={demo} which={which} />
-              {which !== "panel" || demo.agencyClaimed !== true ? <LinkCopy demo={demo} which={which} /> : null}
-            </span>
-          </li>
-        ))}
+        <PanelLinkRow agencyId={agencyId} />
       </ul>
+      {!demo ? (
+        <p className="aa-empty">
+          <Link2 size={16} aria-hidden="true" /> Los enlaces de cada demo aparecen cuando tenga una demo publicada.
+        </p>
+      ) : (
+        <>
+          {published.length > 1 && (
+            <label className="ah-links-pick">
+              Demo
+              <select value={demo.id} onChange={(e) => setId(e.target.value)}>
+                {published.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <ul className="ah-link-list">
+            {LINKS.map(({ which, icon: Icon, title, help }) => (
+              <li key={which}>
+                <span className="ah-link-icon" aria-hidden="true">
+                  <Icon size={20} />
+                </span>
+                <span className="ah-link-main">
+                  <strong>{title}</strong>
+                  <small>{help}</small>
+                </span>
+                <span className="ah-link-actions">
+                  <ViewLink demo={demo} which={which} />
+                  <LinkCopy demo={demo} which={which} />
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
     </div>
   );
 }
