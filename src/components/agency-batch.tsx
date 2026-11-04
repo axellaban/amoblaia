@@ -5,6 +5,7 @@
 // one at a time with the same routes, keys and limits the editor uses. The
 // queue of versions not sent yet lives in this tab, and the page says so.
 import Link from "next/link";
+import { openCreditsPurchase } from "./credits-purchase";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { ApiError, api } from "./admin-demos";
@@ -597,7 +598,18 @@ export function PhotoBatch({ initialGroup }: { initialGroup?: string }) {
               </p>
               <p>
                 Podés seguir organizando las fotos o descargar las versiones que ya están listas desde el editor.{" "}
-                {total.payer === "agency" && <Link href="/panel/creditos">Ver créditos</Link>}
+                {total.payer === "agency" &&
+                  (total.credits !== null && total.after !== null && total.after < 0 ? (
+                    <button
+                      type="button"
+                      className="button button-primary button-small"
+                      onClick={() => openCreditsPurchase({ source: "batch_no_credits", reason: "no_credits" })}
+                    >
+                      Comprar créditos
+                    </button>
+                  ) : (
+                    <Link href="/panel/creditos">Ver créditos</Link>
+                  ))}
               </p>
             </div>
           )}

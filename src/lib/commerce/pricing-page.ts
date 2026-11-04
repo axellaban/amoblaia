@@ -3,7 +3,7 @@
 import "server-only";
 import { cloudConfigured, cloudEnabled } from "@/lib/supabase/config";
 import { adminClient, currentUser } from "@/lib/supabase/server";
-import { isAdmin } from "@/lib/commerce/http";
+import { isAdmin, rpc } from "@/lib/commerce/http";
 import { billingConfigured } from "@/lib/commerce/mercadopago";
 import type { Product } from "@/lib/commerce/catalog";
 
@@ -28,7 +28,12 @@ export async function pricingProps(plan: string | string[] | undefined) {
   // The active subscription, so its plan is marked and the others offer a
   // change. A pending one was never paid and is not anybody's plan.
   let currentSku: string | undefined;
+  // The signed-in account's own balance (the agency's, for its owner).
+  let balance: number | null = null;
   if (user) {
+    balance = await rpc<{ credits: number }>("amobla_account", { p_user: user.id, p_trial: false })
+      .then((a) => a.credits)
+      .catch(() => null);
     const { count } = await adminClient()
       .from("orders")
       .select("id", { count: "exact", head: true })
@@ -50,6 +55,8 @@ export async function pricingProps(plan: string | string[] | undefined) {
     enabled: canBuy,
     trial: cloudEnabled() && process.env.LIVE_TRIAL_ENABLED === "true",
     email: user?.email || undefined,
+    userId: user?.id,
+    balance,
     currentSku,
     firstPackUsed,
     renderedAt: Date.now(),

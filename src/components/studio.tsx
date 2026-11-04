@@ -1,4 +1,5 @@
 "use client";
+import { openCreditsPurchase } from "./credits-purchase";
 import {
   useEffect,
   useRef,
@@ -683,8 +684,8 @@ export function Studio({
       }
     }
     if (outOfPhotos) {
-      track("limite_planes_visto", { motivo: "sin_fotos" }, true);
-      window.location.assign("/precios");
+      track("limite_planes_visto", { motivo: "sin_fotos" });
+      openCreditsPurchase({ source: "studio_no_credits", reason: "no_credits" });
       return;
     }
     if (activeFreeTier && availableFree <= 0) {
@@ -987,7 +988,10 @@ export function Studio({
     "Calidad alta · No descuenta fotos"
   ) : outOfPhotos ? (
     <>
-      No te quedan fotos · <Link href="/precios">Ver planes</Link>
+      No te quedan créditos ·{" "}
+      <button type="button" className="text-link" onClick={() => openCreditsPurchase({ source: "studio_hint", reason: "no_credits" })}>
+        Comprar créditos
+      </button>
     </>
   ) : projectId ? (
     "Calidad alta · Regeneraciones incluidas"

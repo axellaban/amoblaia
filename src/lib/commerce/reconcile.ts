@@ -1,6 +1,6 @@
 import "server-only";
 import { adminClient } from "@/lib/supabase/server";
-import { HttpError } from "./http";
+import { HttpError, rpc } from "./http";
 import {
   checkoutUrl,
   mp,
@@ -150,11 +150,21 @@ export async function reconcileCheckout(
       /* Never return an unsafe destination. */
     }
   }
+  // A confirmed pack: how many credits it added and the balance now, for
+  // «¡Listo!». Read from the server, never from the return URL.
+  const pack = order.snapshot.kind === "pack";
+  const balance =
+    approved && pack
+      ? await rpc<{ credits: number }>("amobla_account", { p_user: userId, p_trial: false })
+          .then((a) => a.credits)
+          .catch(() => null)
+      : null;
   return {
     order: order.id,
     state,
     name: order.snapshot.name,
     url,
     value: charge?.amount_cents != null ? charge.amount_cents / 100 : null,
+    ...(pack ? { credits: order.snapshot.photos, balance } : {}),
   };
 }
