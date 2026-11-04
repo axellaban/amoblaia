@@ -156,7 +156,8 @@ create or replace view public.payments_commercial as
  select p.* from public.payments p where p.user_id not in (select public.habita_internal_user_ids());
 revoke all on public.payments_commercial from anon, authenticated;
 
--- Records one step. Internal steps are stored (QA) and never move the summary.
+-- Records one step. Internal steps are stored (QA) and never move the summary
+-- (a visit of the team does not mark the demo as sent either).
 drop function if exists public.habita_record_demo_activity(uuid, text, text);
 create or replace function public.habita_record_demo_activity(p_demo uuid, p_visitor text, p_kind text, p_internal boolean default false, p_reason text default null) returns void language plpgsql security definer set search_path=public as $$
 declare lvl smallint;
@@ -171,7 +172,9 @@ begin
  update demos set
   activity_level = greatest(activity_level, lvl),
   activity_at = now(),
-  activity_visitors = activity_visitors + (case when p_kind = 'visita' then 1 else 0 end)
+  activity_visitors = activity_visitors + (case when p_kind = 'visita' then 1 else 0 end),
+  -- As in 202611130001_demo_sent_stage: an external visit proves the demo was sent.
+  sent_at = case when p_kind = 'visita' then coalesce(sent_at, now()) else sent_at end
  where id = p_demo;
 end $$;
 

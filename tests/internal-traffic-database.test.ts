@@ -68,8 +68,11 @@ describe("demo activity", () => {
     await record(d, "equipo-aaaa-0001", "visita", true);
     await record(d, "equipo-aaaa-0001", "interaccion", true);
     expect(await summary(d)).toEqual({ activity_level: 0, activity_visitors: 0 });
+    // The team opening its own demo does not make it «Enviada».
+    expect((await one<{ sent_at: string | null }>("select sent_at from demos where id=$1", [d]))!.sent_at).toBeNull();
     await record(d, "cliente-bbbb-0001", "visita");
     expect(await summary(d)).toEqual({ activity_level: 1, activity_visitors: 1 });
+    expect((await one<{ sent_at: string | null }>("select sent_at from demos where id=$1", [d]))!.sent_at).not.toBeNull();
     const rows = await all<{ visitor: string; is_internal: boolean }>("select visitor,is_internal from demo_activity where demo_id=$1 order by visitor", [d]);
     expect(rows.filter((r) => r.is_internal)).toHaveLength(2);
   });
