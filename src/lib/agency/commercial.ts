@@ -166,6 +166,33 @@ export type ListFilters = {
   days: number | null;
 };
 
+/** The list's order: the newest agencies first by default; lead score or latest activity, either way, from the column headers. */
+export type ListSort = { by: "creada" | "score" | "actividad"; dir: "desc" | "asc" };
+export const DEFAULT_SORT: ListSort = { by: "creada", dir: "desc" };
+
+/** The order from the URL (`orden=score`, `orden=actividad-asc`…); anything else is the default. */
+export function sortFromParam(v: string): ListSort {
+  const [by, dir] = v.split("-");
+  if (by !== "score" && by !== "actividad" && by !== "creada") return DEFAULT_SORT;
+  return { by, dir: dir === "asc" ? "asc" : "desc" };
+}
+/** The URL value of an order: empty for the default. */
+export const sortParam = (s: ListSort) => (s.by === DEFAULT_SORT.by && s.dir === DEFAULT_SORT.dir ? "" : s.dir === "desc" ? s.by : `${s.by}-${s.dir}`);
+
+/** Sorts a copy of the rows. Rows without a score or activity go last either way; ties by name. */
+export function sortRows<T extends CommercialRow>(rows: T[], s: ListSort): T[] {
+  const key = (r: CommercialRow): number | string | null =>
+    s.by === "score" ? r.score : s.by === "actividad" ? (r.lastActivity?.at ?? null) : r.createdAt;
+  const sign = s.dir === "asc" ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    const ka = key(a);
+    const kb = key(b);
+    if (ka === null || kb === null) return ka === kb ? a.name.localeCompare(b.name) : ka === null ? 1 : -1;
+    const c = typeof ka === "number" && typeof kb === "number" ? ka - kb : String(ka).localeCompare(String(kb));
+    return c * sign || a.name.localeCompare(b.name);
+  });
+}
+
 /** The list after its filters, most recent activity first. */
 export function filterRows(rows: CommercialRow[], f: ListFilters, now = Date.now()) {
   const q = f.q.trim().toLowerCase();

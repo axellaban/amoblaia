@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import type React from "react";
 import Link from "next/link";
 import { ArrowRight, Filter, Plus, Search } from "lucide-react";
 import { claimsToReview } from "@/lib/agency/admin";
@@ -11,6 +12,10 @@ import {
   agoText,
   filterRows,
   listTotals,
+  sortFromParam,
+  sortParam,
+  sortRows,
+  type ListSort,
   stageFromParam,
   type AccountState,
   type ListFilters,
@@ -31,6 +36,15 @@ const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) 
 const PER_PAGE = 50;
 /** Each funnel step's share, said of the step before it. */
 const OF_PREVIOUS = ["", "de las creadas", "de las enviadas", "de las visitadas", "de las que interactuaron", "de las cuentas creadas", "de las cuentas activas"];
+/** «hoy», «últimos 7 días», «del 02/11 al 04/11»: the period, said in the list's summary. */
+function periodLabel(p: Period) {
+  const day = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
+  if (p.key === "hoy") return "hoy";
+  if (p.key === "7" || p.key === "30") return `últimos ${p.key} días`;
+  if (p.key === "mes") return "este mes";
+  if (p.from && p.to) return p.from === p.to ? `el ${day(p.from)}` : `del ${day(p.from)} al ${day(p.to)}`;
+  return p.from ? `desde el ${day(p.from)}` : p.to ? `hasta el ${day(p.to)}` : "";
+}
 const ACCOUNT_PARAM: Record<AccountState, string> = { none: "sin-cuenta", registered: "registrada", active: "activa" };
 
 /**
@@ -54,6 +68,7 @@ export default async function AgenciesPage({ searchParams }: Props) {
   const stepRaw = Number(one(sp.paso));
   const step = one(sp.paso) !== "" && Number.isInteger(stepRaw) && stepRaw >= 0 && stepRaw < FUNNEL_STEPS.length ? stepRaw : null;
   const page = Math.max(1, Number(one(sp.pagina)) || 1);
+  const sort = sortFromParam(one(sp.orden));
   const [rows, toReview] = await Promise.all([commercialRows().catch(() => null), claimsToReview().catch(() => [])]);
   const filtering = Boolean(filters.account || filters.minScore !== null || filters.days);
 
@@ -70,6 +85,7 @@ export default async function AgenciesPage({ searchParams }: Props) {
       cuenta: filters.account ? ACCOUNT_PARAM[filters.account] : "",
       score: filters.minScore !== null ? String(filters.minScore) : "",
       actividad: filters.days ? String(filters.days) : "",
+      orden: sortParam(sort),
     };
     for (const [k, v] of Object.entries({ ...current, ...change })) if (v) next.set(k, v);
     const s = next.toString();
@@ -97,7 +113,7 @@ export default async function AgenciesPage({ searchParams }: Props) {
           </Link>
         </div>
       ) : (
-        <AgencyList rows={rows} filters={filters} filtering={filtering} page={page} href={href} toReview={toReview} period={period} withDemo={withDemo} step={step} />
+        <AgencyList rows={rows} filters={filters} filtering={filtering} page={page} href={href} toReview={toReview} period={period} withDemo={withDemo} step={step} sort={sort} />
       )}
     </div>
   );
@@ -113,7 +129,9 @@ function AgencyList({
   period,
   withDemo,
   step,
+  sort,
 }: {
+  sort: ListSort;
   rows: NonNullable<Awaited<ReturnType<typeof commercialRows>>>;
   period: Period;
   withDemo: boolean;
@@ -124,16 +142,33 @@ function AgencyList({
   href: (change: Record<string, string | null>) => string;
   toReview: Awaited<ReturnType<typeof claimsToReview>>;
 }) {
-  const totals = listTotals(rows);
   const funnel = funnelCounts(rows.filter((r) => !r.test).flatMap((r) => r.demos.filter((d) => inPeriod(d.createdAt, period)).map((d) => d.step)));
   const view = new Map(rows.map((r) => [r.id, demosInPeriod(r.demos, period)]));
+  // A period other than «Todo» scopes the whole list (and its tab counts) to the agencies with demos created in it,
+  // so what's below matches the funnel above.
+  const periodOn = period.key !== "todo";
+  const scoped = periodOn ? rows.filter((r) => view.get(r.id)!.count > 0) : rows;
+  const totals = listTotals(scoped);
   const withDemos = rows.filter((r) => view.get(r.id)!.count > 0).length;
-  const shown = filterRows(rows, filters).filter((r) => {
+  const periodDemos = scoped.reduce((n, r) => n + view.get(r.id)!.count, 0);
+  const filtered = filterRows(scoped, filters).filter((r) => {
     const v = view.get(r.id)!;
     if (withDemo && !v.count) return false;
     // A funnel step: agencies with a demo of the period that reached it (test agencies too, marked as such).
     return step === null || (v.step !== null && v.step >= step);
   });
+  const shown = sortRows(filtered, sort);
+  /** A sortable header: the first click sorts from highest to lowest, the next one the other way. */
+  const sortHead = (by: "score" | "actividad", label: React.ReactNode) => {
+    const on = sort.by === by;
+    const next: ListSort = { by, dir: on && sort.dir === "desc" ? "asc" : "desc" };
+    return (
+      <Link href={href({ orden: sortParam(next) || null })} className={`ah-sort${on ? " is-on" : ""}`}>
+        {label}
+        <span aria-hidden="true">{on ? (sort.dir === "desc" ? " ↓" : " ↑") : " ↕"}</span>
+      </Link>
+    );
+  };
   const pages = Math.max(1, Math.ceil(shown.length / PER_PAGE));
   const current = Math.min(page, pages);
   const items = shown.slice((current - 1) * PER_PAGE, current * PER_PAGE);
@@ -164,6 +199,7 @@ function AgencyList({
               {!withDemo && filters.stage && <input type="hidden" name="etapa" value={STAGE_PARAM[filters.stage]} />}
               {step !== null && <input type="hidden" name="paso" value={step} />}
               {filters.q && <input type="hidden" name="q" value={filters.q} />}
+              {sortParam(sort) && <input type="hidden" name="orden" value={sortParam(sort)} />}
               <label>
                 Desde <input type="date" name="desde" defaultValue={period.from ?? ""} />
               </label>
@@ -245,6 +281,7 @@ function AgencyList({
           {filters.account && <input type="hidden" name="cuenta" value={ACCOUNT_PARAM[filters.account]} />}
           {filters.minScore !== null && <input type="hidden" name="score" value={filters.minScore} />}
           {filters.days && <input type="hidden" name="actividad" value={filters.days} />}
+          {sortParam(sort) && <input type="hidden" name="orden" value={sortParam(sort)} />}
           <Search size={17} aria-hidden="true" />
           <input type="search" name="q" defaultValue={filters.q} placeholder="Buscar inmobiliaria…" aria-label="Buscar inmobiliaria" />
         </form>
@@ -260,6 +297,7 @@ function AgencyList({
             {period.key === "rango" && period.from && <input type="hidden" name="desde" value={period.from} />}
             {period.key === "rango" && period.to && <input type="hidden" name="hasta" value={period.to} />}
             {filters.q && <input type="hidden" name="q" value={filters.q} />}
+            {sortParam(sort) && <input type="hidden" name="orden" value={sortParam(sort)} />}
             <label>
               Cuenta habita
               <select name="cuenta" defaultValue={filters.account ? ACCOUNT_PARAM[filters.account] : ""}>
@@ -300,6 +338,18 @@ function AgencyList({
         </details>
       </div>
 
+      {(periodOn || step !== null) && (
+        <p className="ah-scope">
+          {shown.length} {shown.length === 1 ? "inmobiliaria" : "inmobiliarias"}
+          {step !== null ? ` en «${FUNNEL_STEPS[step]}»` : " con demos creadas"}
+          {periodOn ? ` · ${periodLabel(period)} (${periodDemos} ${periodDemos === 1 ? "demo" : "demos"})` : ""}
+          {" · "}
+          <Link href={href({ periodo: null, desde: null, hasta: null, paso: null })} className="text-link">
+            Ver todas
+          </Link>
+        </p>
+      )}
+
       {!items.length ? (
         rows.length ? (
           <p className="ah-empty">No hay inmobiliarias con estos filtros.</p>
@@ -328,10 +378,12 @@ function AgencyList({
                 <th scope="col" className="is-num">
                   Propiedades
                 </th>
-                <th scope="col">
-                  <span title="Engagement de visitantes externos con sus demos (0 a 100). No es probabilidad de compra.">Lead score ⓘ</span>
+                <th scope="col" aria-sort={sort.by === "score" ? (sort.dir === "desc" ? "descending" : "ascending") : undefined}>
+                  {sortHead("score", <span title="Engagement de visitantes externos con sus demos (0 a 100). No es probabilidad de compra. Tocá para ordenar.">Lead score ⓘ</span>)}
                 </th>
-                <th scope="col">Última actividad</th>
+                <th scope="col" aria-sort={sort.by === "actividad" ? (sort.dir === "desc" ? "descending" : "ascending") : undefined}>
+                  {sortHead("actividad", "Última actividad")}
+                </th>
                 <th scope="col" className="is-actions">
                   Acciones
                 </th>
