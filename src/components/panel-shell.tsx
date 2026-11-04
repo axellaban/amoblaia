@@ -65,7 +65,7 @@ const GROUPS = (): Item[][] => [
     { id: "api", href: "/panel/api", label: "API", icon: Code2, future: "api" },
   ],
   [
-    { id: "creditos", href: "/panel/creditos", label: "Planes y créditos", icon: CreditCard },
+    { id: "creditos", href: "/panel/creditos", label: "Créditos", icon: CreditCard },
   ],
 ];
 
@@ -167,11 +167,11 @@ function PlansBox({ credits }: { credits?: number | null }) {
             Te quedan <strong>{credits}</strong> {credits === 1 ? "crédito" : "créditos"} IA.
           </>
         ) : (
-          "¿Necesitás más créditos o un plan para tu inmobiliaria?"
+          "¿Necesitás más créditos para tu inmobiliaria?"
         )}
       </p>
       <Link href="/panel/creditos" className="ap-side-plans-button" {...cta("panel_sidebar_plans", "panel_sidebar", "panel_credits")}>
-        Ver planes
+        Comprar créditos
       </Link>
     </div>
   );

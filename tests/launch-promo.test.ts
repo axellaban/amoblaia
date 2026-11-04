@@ -31,7 +31,8 @@ beforeAll(async () => {
  create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
  create table storage.objects(id uuid,name text,bucket_id text); alter table storage.objects enable row level security;
  create function storage.foldername(text) returns text[] language sql immutable as $$select string_to_array($1,'/')$$;`);
-  for (const file of readdirSync("supabase/migrations").sort())
+  // The launch catalog as it was sold: the simplified pricing (202611240001) retires it and has its own test.
+  for (const file of readdirSync("supabase/migrations").sort().filter((f) => !f.startsWith("202611240001")))
     await db.exec(readFileSync(`supabase/migrations/${file}`, "utf8"));
 }, 30000);
 afterAll(async () => await db?.close());

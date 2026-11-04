@@ -17,6 +17,7 @@ import {
   checkoutUrl,
 } from "@/lib/commerce/mercadopago";
 import { firstChargeCents, type Product } from "@/lib/commerce/catalog";
+import { safeReturnTo } from "@/lib/commerce/credit-packs";
 
 export async function POST(request: Request) {
   try {
@@ -39,7 +40,7 @@ export async function POST(request: Request) {
       );
     if (Number(request.headers.get("content-length") || 0) > 2048)
       throw new HttpError(413, "Solicitud inválida.");
-    const { sku, key, payerEmail, cardToken } = await request.json();
+    const { sku, key, payerEmail, cardToken, returnTo } = await request.json();
     // Card entry and tokenization now belong entirely to MP's hosted checkout.
     // An old tab must reload rather than accidentally using the retired flow.
     if (cardToken !== undefined)
@@ -184,7 +185,10 @@ export async function POST(request: Request) {
       .eq("id", key);
     if (noted.error) throw new Error("ORDER_SAVE_FAILED");
     const notification_url = `${base}/api/webhooks/mercadopago?token=${encodeURIComponent(process.env.MERCADOPAGO_NOTIFICATION_TOKEN!)}`;
-    const back = `${base}/cuenta?orden=${encodeURIComponent(key)}`;
+    // The page the purchase started from (the editor, the panel…), to go back
+    // to once the payment is confirmed. Only our own paths are kept.
+    const origin = safeReturnTo(returnTo);
+    const back = `${base}/cuenta?orden=${encodeURIComponent(key)}${origin ? `&volver=${encodeURIComponent(origin)}` : ""}`;
     let checkout: {
       id: string;
       init_point: string;
