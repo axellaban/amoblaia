@@ -4,7 +4,7 @@
 // (the agency owner's, from /api/panel), no second count.
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { CircleHelp, History, Layers } from "lucide-react";
+import { CircleHelp, History, Layers, Tag } from "lucide-react";
 import { openCreditsPurchase } from "./credits-purchase";
 
 export function CreditsMenu({ credits, canBuy, source }: { credits: number; canBuy: boolean; source: string }) {
@@ -55,6 +55,9 @@ export function CreditsMenu({ credits, canBuy, source }: { credits: number; canB
           ) : (
             <p>Los créditos de la inmobiliaria los compra la cuenta dueña.</p>
           )}
+          <Link href="/panel/creditos#precios" onClick={() => setOpen(false)}>
+            <Tag size={17} aria-hidden="true" /> Ver precios
+          </Link>
           <Link href="/panel/creditos#movimientos" onClick={() => setOpen(false)}>
             <History size={17} aria-hidden="true" /> Ver historial
           </Link>

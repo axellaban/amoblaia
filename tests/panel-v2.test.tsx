@@ -136,7 +136,7 @@ describe("Interest in upcoming tools (API)", () => {
 describe("Panel navigation and home", () => {
   it("the sidebar has Sitio web and the four upcoming tools as plain items, without «Próximamente»", () => {
     const html = renderToStaticMarkup(<PanelNav section="inicio" agencyName="Inmo Sur" role="owner" credits={3} />);
-    for (const label of ["Inicio", "Mis demostraciones", "Estudio de imágenes", "Video", "Sitio web", "Tour 360", "Planos", "Redes", "API", "Créditos", "Usuarios", "Ayuda"])
+    for (const label of ["Inicio", "Mis demostraciones", "Estudio de imágenes", "Video", "Sitio web", "Tour 360", "Planos", "Redes", "API", "Precios y créditos", "Usuarios", "Ayuda"])
       expect(html).toContain(`<span>${label}</span>`);
     for (const slug of ["tour-360", "planos", "redes", "api"]) expect(html).toContain(`href="/panel/${slug}"`);
     expect(html).not.toMatch(/Pr[oó]ximamente/i);

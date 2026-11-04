@@ -5,6 +5,8 @@ import type { Product } from "./catalog";
 
 /** The packs of «Comprar créditos», smallest first. */
 export const CREDIT_PACK_SKUS = ["pack-10", "pack-25", "pack-50", "pack-100"] as const;
+/** The link to share the prices: the agency's own panel, or /precios without one. */
+export const PRICES_PATH = "/panel/precios";
 /** Credits per month of the «Gratis» plan (see 202611240002_free_monthly_credits.sql). */
 export const FREE_MONTHLY_CREDITS = 10;
 

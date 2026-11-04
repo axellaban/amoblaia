@@ -4,7 +4,7 @@ import { PricingPlans } from "@/components/pricing";
 import { requirePanelPage } from "@/lib/agency/page";
 import { pricingProps } from "@/lib/commerce/pricing-page";
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Créditos", robots: { index: false, follow: false } };
+export const metadata: Metadata = { title: "Precios y créditos", robots: { index: false, follow: false } };
 
 /** "Planes y créditos": the plans of /precios inside the panel (its sidebar stays), then the agency's balance and movements. No «probá sin registrarte»: the agency already has its account. */
 export default async function Page({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
