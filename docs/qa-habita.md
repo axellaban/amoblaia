@@ -1,6 +1,6 @@
 # QA diario de Habita
 
-Guía para retomar el QA de habitaia.vercel.app en cada sesión nueva.
+Guía para retomar el QA de www.habitaia.app en cada sesión nueva.
 
 ## Regla principal
 
