@@ -75,6 +75,9 @@ export async function GET(request: Request) {
   if (jobs.error || events.error || checkouts.error || renewals.error)
     return new Response("Retry", { status: 503 });
   after(async () => {
+    // «Ambientá con IA» tries that ended without an image give their gift credit back (202611250001).
+    const settled = await db.rpc("habita_public_staging_settle_recent");
+    if (settled.error && !/habita_public_staging_settle_recent/.test(settled.error.message)) console.error("public_staging_settle_failed");
     for (const event of events.data || []) {
       if (Date.now() > deadline - 60000) break;
       await processInbox(event.event_key, event.topic, event.resource_id);

@@ -14,7 +14,9 @@ const notFound = () =>
  * Images of a published demo. The bucket stays private: each request checks
  * that the demo is published and the photo visible, then serves a web-sized
  * copy, so no storage path, signed URL or account id reaches the page.
- * `e` names a style (its staged version); `og=1` is the link preview card.
+ * `e` names a style (its staged version) and `r` that version: an image the
+ * agency generated in its demo and has not approved yet is served only by its
+ * own `r`. `og=1` is the link preview card.
  * Edge caching is short so unpublishing takes effect within minutes.
  */
 export async function GET(
@@ -30,7 +32,7 @@ export async function GET(
     const retouch = q.get("t");
     const paths = retouch
       ? await publicRetouchPaths(token, photoId, retouch)
-      : await publicImagePaths(token, photoId, validStyle(style) ? style : null);
+      : await publicImagePaths(token, photoId, validStyle(style) ? style : null, q.get("r"));
     if (!paths) return notFound();
     const image =
       q.get("og") === "1"
