@@ -123,6 +123,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
         await recordLeadEvents([serverGenerationEvent("demo_generation_started", { ...lead, generationId: key, at: new Date(started).toISOString() })]).catch(() => undefined);
         await Promise.allSettled((ids as string[]).map((job) => runJob(job, deadline)));
         await recordConfirmedGenerations(ids as string[], lead);
+        // Ended without an image: the gift credit comes back (once; the cron settles what was still running).
+        const settled = await adminClient().rpc("habita_public_staging_settle", { p_key: key });
+        if (settled.error) console.error("public_staging_settle_failed");
       });
       return Response.json({ ids, remaining: claim.remaining }, { status: 202, headers: NO_STORE });
     } catch (e) {

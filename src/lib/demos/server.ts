@@ -125,15 +125,48 @@ async function stagedOf(projectIds: string[]) {
   return rows;
 }
 type ShownSource = Pick<PhotoRow, "id" | "project_id" | "approved_generation_id" | "discarded">;
-/** For each photo, the version shown in each style. */
-async function shownOf<P extends ShownSource>(photos: P[]) {
-  const staged = await stagedOf(photos.map((p) => p.project_id));
+/**
+ * The images generated from the agency's demo («Ambientá con IA») that still
+ * wait for its approval (202611250001_public_staging_review.sql): generation
+ * ids. Before that migration (no approved_at) there is nothing to wait for.
+ */
+export async function unapprovedPublicOf(photoIds: string[]) {
+  const out = new Set<string>();
+  if (!photoIds.length) return out;
+  const db = adminClient();
+  const { data, error } = await db
+    .from("demo_public_stagings")
+    .select("key")
+    .in("photo_id", [...new Set(photoIds)])
+    .is("approved_at", null)
+    .is("refunded_at", null)
+    .limit(1000);
+  if (error || !data?.length) return out;
+  const keys = (data as { key: string }[]).map((s) => s.key);
+  for (let i = 0; i < keys.length; i += 100) {
+    const chunk = keys.slice(i, i + 100).join(",");
+    const res = await db.from("generations").select("id").or(`batch_id.in.(${chunk}),request_key.in.(${chunk})`);
+    if (res.error) throw new Error("DEMO_PUBLIC_STAGINGS_LOOKUP_FAILED");
+    for (const g of (res.data ?? []) as { id: string }[]) out.add(g.id);
+  }
+  return out;
+}
+/**
+ * For each photo, the version shown in each style. An image generated from the
+ * agency's demo counts only once the agency approved it, except where the
+ * agency itself looks (withPending: its own demo).
+ */
+async function shownOf<P extends ShownSource>(photos: P[], opts: { withPending?: boolean } = {}) {
+  const [staged, waiting] = await Promise.all([
+    stagedOf(photos.map((p) => p.project_id)),
+    opts.withPending ? Promise.resolve(new Set<string>()) : unapprovedPublicOf(photos.map((p) => p.id)),
+  ]);
   return new Map(
     photos.map((p) => [
       p.id,
       shownVersions(
         p,
-        staged.filter((g) => g.project_id === p.project_id),
+        staged.filter((g) => g.project_id === p.project_id && !waiting.has(g.id)),
       ),
     ]),
   );
@@ -518,10 +551,11 @@ export async function demoDetail(id: string): Promise<DemoDetail> {
   const prop = check(property, "DEMO_PROPERTY_LOOKUP_FAILED") as DemoDetail["property"];
   const generationStyle = new Map(generations.map((g) => [g.id, demoStyleName(g.style)]));
   const retouches = await retouchesOf(photos.map((p) => p.id), generationStyle);
-  const [shown, branding, saved] = await Promise.all([
+  const [shown, branding, saved, waiting] = await Promise.all([
     shownOf(photos),
     brandingOf(demo.agency_id),
     settingsOf(demo.id),
+    unapprovedPublicOf(photos.map((p) => p.id)),
   ]);
   const main = mainOf(photos, shown);
   const order = orderStyles(
@@ -549,6 +583,7 @@ export async function demoDetail(id: string): Promise<DemoDetail> {
     generations: generations
       .filter((g) => g.project_id === p.project_id)
       .map(({ project_id: _ignored, ...g }) => g),
+    pendingPublic: generations.filter((g) => g.project_id === p.project_id && waiting.has(g.id)).map((g) => g.id),
     retouches: retouches.get(p.id) ?? [],
   }));
   const withVersions = photos.map((p) => ({ ...p, versions: versionList(shown.get(p.id), order) }));
@@ -669,7 +704,7 @@ export function reviewWarnings(input: {
 }
 
 /** Builds the minimal public payload. Only visible photos; a staged version only when it can be delivered. */
-async function publicPayload(demo: DemoRow, logoUrl: (v: string) => string, raw = false): Promise<PublicDemo> {
+async function publicPayload(demo: DemoRow, logoUrl: (v: string) => string, raw = false, withPending = false): Promise<PublicDemo> {
   const db = adminClient();
   const [agency, prospect, property, photos, branding, { settings }, video] = await Promise.all([
     db.from("agencies").select("name,website").eq("id", demo.agency_id).single(),
@@ -691,7 +726,7 @@ async function publicPayload(demo: DemoRow, logoUrl: (v: string) => string, raw 
     latestVideo(demo.id),
   ]);
   const visible = photos.filter((p) => p.visible);
-  const shown = await shownOf(visible);
+  const shown = await shownOf(visible, { withPending });
   const main = mainOf(visible.length ? visible : photos, shown);
   // Only styles that fit the property: an office never shows a living room.
   // The demo's own order (its region's for new demos), the main style always first.
@@ -885,7 +920,12 @@ export function contactOf(
 }
 
 /** The public demo for a token, or null when the token is malformed, unknown or not published. */
-export async function publishedDemo(token: string) {
+/**
+ * A published demo as its page receives it. withPending: the agency's own view
+ * (its invitation checked by the caller), which also shows the images it
+ * generated there before approving them.
+ */
+export async function publishedDemo(token: string, opts: { withPending?: boolean } = {}) {
   if (!TOKEN_PATTERN.test(token)) return null;
   const demo = check(
     await adminClient()
@@ -896,7 +936,7 @@ export async function publishedDemo(token: string) {
       .maybeSingle(),
     "DEMO_LOOKUP_FAILED",
   ) as DemoRow | null;
-  return demo ? publicPayload(demo, (v) => `/demo/${token}/logo?v=${v}`) : null;
+  return demo ? publicPayload(demo, (v) => `/demo/${token}/logo?v=${v}`, false, opts.withPending === true) : null;
 }
 /**
  * The same payload for an admin preview, whatever the state. raw: every saved
@@ -908,9 +948,20 @@ export async function previewDemo(id: string, opts: { raw?: boolean } = {}) {
   return publicPayload(demo, (v) => `/api/admin/demos/${demo.id}/logo?v=${v}`, opts.raw);
 }
 
-/** Storage path of a photo: the original, or the version it shows in a style. */
-async function photoPath(photo: PhotoRow, style: string | null) {
-  if (style) return (await shownOf([photo])).get(photo.id)?.get(style)?.result_path ?? null;
+/**
+ * Storage path of a photo: the original, or the version it shows in a style.
+ * An image still waiting for the agency's approval is served only to whoever
+ * names it (version: the first characters of its id, which only the agency's
+ * own demo links to).
+ */
+async function photoPath(photo: PhotoRow, style: string | null, version: string | null = null) {
+  if (style) {
+    const shown = (await shownOf([photo])).get(photo.id)?.get(style);
+    if (shown && (!version || shown.id.startsWith(version))) return shown.result_path ?? null;
+    if (!version || !/^[0-9a-f]{8}$/.test(version)) return shown?.result_path ?? null;
+    const waiting = (await shownOf([photo], { withPending: true })).get(photo.id)?.get(style);
+    return waiting && waiting.id.startsWith(version) ? (waiting.result_path ?? null) : (shown?.result_path ?? null);
+  }
   const project = check(
     await adminClient()
       .from("projects")
@@ -1010,7 +1061,7 @@ export async function storeMask(projectId: string, key: string, painted: Buffer,
   return path;
 }
 
-export async function publicImagePaths(token: string, photoId: string, style: string | null) {
+export async function publicImagePaths(token: string, photoId: string, style: string | null, version: string | null = null) {
   if (!TOKEN_PATTERN.test(token) || !isUuid(photoId)) return null;
   const db = adminClient();
   const demo = check(
@@ -1033,13 +1084,13 @@ export async function publicImagePaths(token: string, photoId: string, style: st
       .maybeSingle(),
     "DEMO_PHOTO_LOOKUP_FAILED",
   ) as PhotoRow | null;
-  return photo ? imagePaths(photo, style) : null;
+  return photo ? imagePaths(photo, style, version) : null;
 }
 
-async function imagePaths(photo: PhotoRow, style: string | null) {
+async function imagePaths(photo: PhotoRow, style: string | null, version: string | null = null) {
   const original = await photoPath(photo, null);
   if (!original) return null;
-  const staged = style ? await photoPath(photo, style) : null;
+  const staged = style ? await photoPath(photo, style, version) : null;
   if (style && !staged) return null;
   return { original, staged };
 }

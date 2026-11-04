@@ -163,7 +163,7 @@ export async function PATCH(request: Request, { params }: Params) {
         if (!isUuid(body.approve)) throw new HttpError(400, "Propuesta inválida.");
         const { data: g, error } = await db
           .from("generations")
-          .select("id,status,result_path,is_free")
+          .select("id,status,result_path,is_free,batch_id,request_key")
           .eq("id", body.approve)
           .eq("project_id", photo.project_id)
           .maybeSingle();
@@ -173,6 +173,18 @@ export async function PATCH(request: Request, { params }: Params) {
         changes.approved_generation_id = g.id;
         discarded.delete(g.id);
         changes.discarded = [...discarded];
+        // An image the agency generated in its demo («Ambientá con IA») reaches the buyers once approved here.
+        const keys = [g.batch_id, g.request_key].filter((k): k is string => typeof k === "string");
+        if (keys.length) {
+          const approved = await db
+            .from("demo_public_stagings")
+            .update({ approved_at: new Date().toISOString(), approved_by: access.actor.id })
+            .eq("photo_id", photo.id)
+            .in("key", keys)
+            .is("approved_at", null);
+          // Before 202611250001_public_staging_review.sql there is nothing to approve.
+          if (approved.error && !/approved_at|approved_by/.test(approved.error.message)) throw new Error("DEMO_PUBLIC_STAGING_APPROVE_FAILED");
+        }
       }
     }
     if ("discard" in body) {
