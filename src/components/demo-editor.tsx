@@ -26,6 +26,7 @@ import { Comparison } from "./comparison";
 import { ActivityStatus, AgencyFields, AgencyWhatsappEditor, LinkPreview, PropertyFields, SendLog, SendWhatsapp, SentToggle, ShareCards, StatusChip, api, publicLink } from "./admin-demos";
 import { PhotoWorkspace, type WorkspaceActions } from "./editor-photos";
 import { useStagingQueue, type QueueReport } from "./use-staging-queue";
+import { openCreditsPurchase } from "./credits-purchase";
 import { optimizePhoto } from "@/lib/images";
 import { PROPERTY_TYPE_NAMES, styleFits, type PropertyType } from "@/lib/demos/styles";
 import { ListingForm, type ListingPart, type Visibility } from "./demo-listing-form";
@@ -338,7 +339,9 @@ export function DemoEditor({
     },
     [base, updatePhoto],
   );
-  const staging = useStagingQueue({ base, detail, poll, report, trackAgency: agencyMode });
+  // Without balance, the agency's panel offers the same credits selector, and comes back here after paying.
+  const noCredits = useCallback(() => openCreditsPurchase({ source: "editor_no_credits", reason: "no_credits" }), []);
+  const staging = useStagingQueue({ base, detail, poll, report, trackAgency: agencyMode, onNoCredits: agencyMode ? noCredits : undefined });
 
   // Versions already on the server (also after a reload) are followed until they finish; nothing is sent again.
   const livePhotos = useMemo(() => (detail?.photos || []).filter((p) => isLive(p)).map((p) => p.id), [detail]);
