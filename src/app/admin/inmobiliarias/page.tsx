@@ -158,7 +158,7 @@ function AgencyList({
     return step === null || (v.step !== null && v.step >= step);
   });
   const shown = sortRows(filtered, sort);
-  /** A sortable header: the first click sorts from highest to lowest, the next one the other way. */
+  /** A sortable header: the first click sorts from highest to lowest (newest activity first), the next one the other way. */
   const sortHead = (by: "score" | "actividad", label: React.ReactNode) => {
     const on = sort.by === by;
     const next: ListSort = { by, dir: on && sort.dir === "desc" ? "asc" : "desc" };
