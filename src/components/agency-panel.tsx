@@ -1937,6 +1937,11 @@ export function AgencyOnboarding({
         window.location.assign(destination ?? `/panel/propiedades/${demo.id}?bienvenida=1`);
         return;
       }
+      // Claimed from its panel's fixed link: back to the page it was looking at.
+      if (kind === "claimed" && !demo && destination) {
+        window.location.assign(destination);
+        return;
+      }
       setDone({ kind, summary });
       router.refresh();
     } catch (e) {

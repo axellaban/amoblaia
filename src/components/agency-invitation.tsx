@@ -173,7 +173,7 @@ export function InvitationSignup({
             <input
               type={show ? "text" : "password"}
               required
-              minLength={mode === "new" ? 8 : 1}
+              minLength={mode === "new" ? 10 : 1}
               maxLength={72}
               autoComplete={mode === "new" ? "new-password" : "current-password"}
               value={password}
@@ -183,7 +183,7 @@ export function InvitationSignup({
               {show ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>
           </span>
-          {mode === "new" && <small className="dm-help">Mínimo 8 caracteres.</small>}
+          {mode === "new" && <small className="dm-help">Usá al menos 10 caracteres.</small>}
         </label>
         <Captcha onToken={onToken} reset={captchaReset} />
         {error && (
