@@ -25271,3 +25271,22 @@ body:has(.pv-root) .pb-root {
     font-size: 12px;
   }
 }
+
+/* Editor header: the title keeps a row of its own on phones (never one letter per line);
+   «Vista previa» and the saved state wrap under it. */
+.dx-head-title {
+  flex: 1 1 260px;
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+.dx-page .dx-head h1 {
+  overflow-wrap: break-word;
+}
+@media (max-width: 700px) {
+  .dx-head-title {
+    flex-basis: calc(100% - 64px);
+  }
+  .dx-page .dx-head h1 {
+    font-size: 22px;
+  }
+}
