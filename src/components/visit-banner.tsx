@@ -9,6 +9,7 @@
 // the visit on every request.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
+import { freeCreditsLine } from "@/lib/commerce/credit-packs";
 import { Eye, Lock, Mail, UserRound } from "lucide-react";
 import { api, setVisiting, VISIT_ACCOUNT_EVENT } from "./admin-demos";
 import { track } from "@/lib/analytics";
@@ -206,7 +207,7 @@ export function VisitBanner({
   }
 
   if (signup) return null;
-  const gift = freeCredits > 0 && !claimed ? ` Incluye ${freeCredits} ${freeCredits === 1 ? "crédito" : "créditos"} de regalo.` : "";
+  const gift = !claimed ? ` ${freeCreditsLine(freeCredits)}` : "";
   return (
     <>
       <div className="support-banner visit-banner" role="status">

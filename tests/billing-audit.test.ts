@@ -46,6 +46,9 @@ beforeAll(async () => {
  create function storage.foldername(text) returns text[] language sql immutable as $$select string_to_array($1,'/')$$;`);
   for (const file of readdirSync("supabase/migrations").sort())
     await db.exec(readFileSync(`supabase/migrations/${file}`, "utf8"));
+  // Plans retired by the simplified pricing (202611240001) are still renewed,
+  // refunded and reversed for the customers who bought them: sell them again here.
+  await db.exec("update products set active=true where price_cents>0");
 }, 30000);
 afterAll(async () => await db?.close());
 

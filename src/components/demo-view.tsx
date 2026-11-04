@@ -1,5 +1,6 @@
 "use client";
 import { formatRatio } from "@/lib/video/plan";
+import { freeCreditsLine } from "@/lib/commerce/credit-packs";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -412,7 +413,7 @@ export function DemoView({
         </a>
       )}
       {owner && pricesOn && (
-        <section className="dv2-prices" aria-label="Planes y créditos">
+        <section className="dv2-prices" aria-label="Precios y créditos">
           <div className="container dv2-prices-head">
             <button type="button" className="dv2-prices-back" {...cta("prices_back", "pricing_section", "demo", "navigation")} onClick={() => showDemo("button")}>
               ← Volver a la propiedad
@@ -1915,8 +1916,8 @@ function GenerateDialog({
                   <p className="dv2-gen-credits">
                     <CircleDollarSign size={16} aria-hidden="true" />
                     {credits > 0
-                      ? `Usa 1 de tus ${credits} ${credits === 1 ? "crédito" : "créditos"} de regalo.`
-                      : "Ya usaste tus créditos de regalo. Seguí en tu panel para generar más."}
+                      ? `Usa 1 de tus ${credits} ${credits === 1 ? "crédito gratis" : "créditos gratis"}.`
+                      : "Ya usaste tus créditos gratis de este mes. Seguí en tu panel para generar más."}
                   </p>
                   {credits > 0 ? (
                     <button type="button" className="dv2-gen-primary" disabled={!pending.length} onClick={() => void start()}>
@@ -2077,11 +2078,7 @@ function PanelInvite({
       <small>
         <Lock size={14} aria-hidden="true" /> Sin crear cuenta todavía: la creás cuando quieras guardar, y conservás las fotos y ambientaciones que estás viendo.
       </small>
-      {invite.freeCredits > 0 && (
-        <small>
-          Incluye {invite.freeCredits} {invite.freeCredits === 1 ? "crédito" : "créditos"} para ambientar fotos nuevas.
-        </small>
-      )}
+      <small>{freeCreditsLine(invite.freeCredits)}</small>
     </section>
   );
 }
@@ -2219,9 +2216,7 @@ function OwnerHeader({
             </a>
             <p className="dv2-owner-drawer-note">
               <CircleDollarSign size={16} aria-hidden="true" />
-              {owner.freeCredits > 0
-                ? `${owner.freeCredits} ${owner.freeCredits === 1 ? "crédito" : "créditos"} de regalo para generar estilos nuevos.`
-                : "Sin créditos de regalo: mirá los precios para generar más."}{" "}
+              {freeCreditsLine(owner.freeCredits)}{" "}
               {versions ? `${versions} ${versions === 1 ? "versión lista" : "versiones listas"} para descargar gratis.` : ""}
             </p>
             <a className="dv2-owner-save is-block" {...go("guardar")}>
