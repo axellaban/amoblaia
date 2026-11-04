@@ -1178,12 +1178,12 @@ function Gallery({
     note("demo_more_styles_toggled", { expanded: !allStyles, photo_id: photo.id });
     setAllStyles((a) => !a);
   };
-  // The agency's panel, with what it asked for here already chosen.
+  // The agency's panel (its visit, no account yet), with what it asked for here already chosen.
   const intentLink = (intent: Exclude<DemoIntent, null>, id: string, place: string) =>
     owner
       ? {
-          href: withIntent(owner.href, intent),
-          ...cta(id, place, "signup_invitation", "habita_b2b", { intent: intent.kind }),
+          href: withIntent(owner.panelHref, intent),
+          ...cta(id, place, "panel_visit", "habita_b2b", { intent: intent.kind }),
           onClick: () =>
             log("demo_agency_cta_clicked", { origen: place, cta_id: id, cta_intent: intent.kind, photo_id: photo.id, ...(intent.kind === "generate" ? { style_id: intent.style } : {}) }, true),
         }
@@ -1657,7 +1657,7 @@ function PageDots({ count, at }: { count: number; at: number }) {
   );
 }
 
-/** «¿Te imaginás esto con todas tus propiedades?»: the agency keeps this demo in its own panel (the invitation's sign-up). */
+/** «¿Te imaginás esto con todas tus propiedades?»: the agency continues in its own panel (its visit: the account is asked when it saves). */
 function OwnerSaveDemo({ owner, log }: { owner: OwnerMode; log: (event: string, extra?: EventProperties, beacon?: boolean) => unknown }) {
   return (
     <section className="dv2-save-demo" aria-labelledby="dv2-save-demo-title">
@@ -1666,11 +1666,11 @@ function OwnerSaveDemo({ owner, log }: { owner: OwnerMode; log: (event: string, 
       </h2>
       <a
         className="dv2-save-demo-cta"
-        href={owner.href}
-        {...cta("owner_save_demo", "value_actions", "signup_invitation", "habita_b2b", { intent: "save_panel" })}
-        onClick={() => log("demo_agency_cta_clicked", { origen: "demo_guardar_demo", cta_id: "owner_save_demo", cta_intent: "save_panel" }, true)}
+        href={owner.panelHref}
+        {...cta("owner_save_demo", "value_actions", "panel_visit", "habita_b2b", { intent: "panel_home" })}
+        onClick={() => log("demo_agency_cta_clicked", { origen: "demo_guardar_demo", cta_id: "owner_save_demo", cta_intent: "panel_home" }, true)}
       >
-        Guardar esta demo en mi panel <ArrowRight size={17} aria-hidden="true" />
+        Continuar en mi panel <ArrowRight size={17} aria-hidden="true" />
       </a>
     </section>
   );
@@ -1745,7 +1745,7 @@ function OwnerHeader({
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [open]);
-  // Every way into the panel goes through the invitation's sign-up; each keeps its own id and what it was meant to open.
+  // «Activar mi cuenta gratis» is the invitation's sign-up; every other way opens the panel's visit. Each keeps its own id and what it was meant to open.
   const INTENT: Record<string, string> = {
     inicio: "panel_home",
     imagenes: "panel_images",
@@ -1754,8 +1754,8 @@ function OwnerHeader({
     guardar: "save_panel",
   };
   const go = (origin: string) => ({
-    href: owner.href,
-    ...cta(`owner_${origin}`, origin === "guardar" ? "owner_bar" : "owner_menu", "signup_invitation", "habita_b2b", { intent: INTENT[origin] }),
+    href: origin === "guardar" ? owner.href : owner.panelHref,
+    ...cta(`owner_${origin}`, origin === "guardar" ? "owner_bar" : "owner_menu", origin === "guardar" ? "signup_invitation" : "panel_visit", "habita_b2b", { intent: INTENT[origin] }),
     onClick: () => log("demo_agency_cta_clicked", { origen: `demo_encabezado_${origin}`, cta_id: `owner_${origin}`, cta_intent: INTENT[origin] }, true),
   });
   const versions = demo.photos.reduce((n, p) => n + p.versions.length, 0);
@@ -1792,7 +1792,7 @@ function OwnerHeader({
             <House size={16} aria-hidden="true" /> Mi panel
           </a>
           <a className="dv2-owner-save" {...go("guardar")}>
-            Guardar mi panel
+            Activar mi cuenta gratis
           </a>
           <button type="button" className="dv2-owner-menu-button" aria-label="Abrir el menú" aria-expanded={open} onClick={() => setOpen(true)}>
             <Menu size={22} aria-hidden="true" />
@@ -1816,7 +1816,7 @@ function OwnerHeader({
               {...cta("owner_menu_panel", "owner_menu", "panel_visit", "navigation")}
               onClick={() => log("demo_agency_cta_clicked", { origen: "demo_menu_panel", cta_id: "owner_menu_panel", cta_intent: "panel_home" }, true)}
             >
-              <House size={18} aria-hidden="true" /> Ingresar a mi panel
+              <House size={18} aria-hidden="true" /> Continuar en mi panel
             </a>
             <a
               href={pricesOn ? owner.demoHref : "#propiedad"}
@@ -1832,7 +1832,7 @@ function OwnerHeader({
               <LayoutGrid size={18} aria-hidden="true" /> Mis demostraciones <span className="dv2-owner-count">1</span>
             </a>
             <a href="#otra-propiedad" {...cta("owner_create_anchor", "owner_menu", "create_property", "navigation")} onClick={() => setOpen(false)}>
-              <Plus size={18} aria-hidden="true" /> Crear otra propiedad
+              <Plus size={18} aria-hidden="true" /> Probar con otra propiedad
             </a>
             <a {...go("imagenes")}>
               <ImageIcon size={18} aria-hidden="true" /> Estudio de imágenes
@@ -1857,7 +1857,7 @@ function OwnerHeader({
               {versions ? `${versions} ${versions === 1 ? "versión lista" : "versiones listas"} para descargar gratis.` : ""}
             </p>
             <a className="dv2-owner-save is-block" {...go("guardar")}>
-              Guardar mi panel
+              Activar mi cuenta gratis
             </a>
           </nav>
         </div>
@@ -1941,7 +1941,7 @@ function OwnerValue({ demo, token, log }: { demo: PublicDemo; token: string; log
 /**
  * "¿Querés probarlo con otra propiedad?": the second property is where an
  * agency starts using Habita on its own. Its address is kept for the panel,
- * and the invitation's sign-up comes first (it is the agency's panel).
+ * which opens first; the account is asked when the property is saved.
  */
 function AnotherProperty({ owner, log }: { owner: OwnerMode; log: (event: string, extra?: EventProperties, beacon?: boolean) => unknown }) {
   const [url, setUrl] = useState("");
@@ -1972,8 +1972,8 @@ function AnotherProperty({ owner, log }: { owner: OwnerMode; log: (event: string
           // Only the site's host, never the pasted address.
           track("second_property_import_started", { stage: "demo_before_signup", source: host });
           log("demo_agency_cta_clicked", { origen: "otra_propiedad", cta_id: "owner_another_property", cta_intent: "create_property" }, true);
-          // After the sign-up (or straight away, already signed in) the panel's import continues with this same link.
-          window.location.assign(withIntent(owner.href, { kind: "import" }));
+          // The panel (its visit, or the agency's own if signed in) continues the import with this same link; saving it asks for the account.
+          window.location.assign(withIntent(owner.panelHref, { kind: "import" }));
         }}
       >
         <label className="dv2-sr" htmlFor="dv2-another-url">
@@ -1981,7 +1981,7 @@ function AnotherProperty({ owner, log }: { owner: OwnerMode; log: (event: string
         </label>
         <input id="dv2-another-url" type="url" inputMode="url" placeholder="Pegá el enlace de una publicación…" value={url} onChange={(e) => (setUrl(e.target.value), setError(""))} required />
         <button type="submit" {...cta("owner_another_property", "another_property", "create_property", "habita_b2b")}>
-          Crear propiedad
+          Probar con otra propiedad
         </button>
       </form>
       {error && (
