@@ -24121,3 +24121,262 @@ body:has(.pv-root) .pb-root {
     animation: none !important;
   }
 }
+
+/* ---- «Ambientá con IA» desde la demo de la inmobiliaria ---- */
+/* «Generar» es un botón cuando abre el diálogo: el mismo aspecto que el enlace (la tarjeta entera). */
+.dv2-styles.is-owner button.dv2-style-generate {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: auto;
+  min-height: 0;
+  padding: 0;
+  border-radius: 12px;
+  background: none;
+}
+.dv2-styles.is-owner button.dv2-style-generate:hover,
+.dv2-styles.is-owner button.dv2-style-generate:focus-visible {
+  background: rgba(36, 56, 46, 0.05);
+}
+.dv2-gen-backdrop {
+  z-index: 95;
+}
+.pe-dialog.dv2-gen {
+  max-width: 880px;
+  gap: 18px;
+  max-height: calc(100dvh - 36px);
+  overflow-y: auto;
+}
+.dv2-gen-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.dv2-gen-head h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.2;
+  color: var(--forest);
+}
+.dv2-gen-head p {
+  margin: 4px 0 0;
+  color: #5f6f64;
+  font-size: 14px;
+}
+.dv2-gen-close {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  margin: -8px -8px 0 0;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: #243d36;
+  cursor: pointer;
+}
+.dv2-gen-close:hover {
+  background: #f1f3ee;
+}
+.dv2-gen-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 22px;
+  align-items: start;
+}
+.dv2-gen-media {
+  border-radius: 14px;
+  overflow: hidden;
+  background: #efece6;
+}
+.dv2-gen-photo {
+  position: relative;
+}
+.dv2-gen-photo img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+}
+.dv2-gen-photo.is-busy img {
+  filter: blur(2px) brightness(1.05);
+  opacity: 0.75;
+}
+.dv2-gen-tag {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: rgba(20, 30, 24, 0.72);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+.dv2-gen-spinner {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 52px;
+  height: 52px;
+  margin: -26px 0 0 -26px;
+  border: 5px solid rgba(255, 255, 255, 0.85);
+  border-top-color: var(--forest);
+  border-radius: 50%;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .dv2-gen-spinner {
+    animation: dv2-gen-spin 0.9s linear infinite;
+  }
+  @keyframes dv2-gen-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+}
+.dv2-gen-side {
+  display: grid;
+  gap: 12px;
+}
+.dv2-gen-label {
+  margin: 0;
+  font-weight: 800;
+  color: #243d36;
+}
+.dv2-gen-styles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 300px;
+  overflow-y: auto;
+}
+.dv2-gen-style {
+  position: relative;
+  display: grid;
+  width: 100%;
+  padding: 0;
+  border: 1.5px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  overflow: hidden;
+  font: inherit;
+  color: #243d36;
+  text-align: left;
+  cursor: pointer;
+}
+.dv2-gen-style img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  object-fit: cover;
+}
+.dv2-gen-style span:not(.dv2-gen-check) {
+  padding: 7px 10px;
+  font-size: 13.5px;
+  font-weight: 700;
+}
+.dv2-gen-style.is-on {
+  border: 2px solid var(--forest);
+}
+.dv2-gen-check {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--forest);
+  color: #fff;
+}
+.dv2-gen-credits {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #eef3eb;
+  color: #243d36;
+  font-size: 13.5px;
+}
+.dv2-gen-text {
+  margin: 0;
+  color: #5f6f64;
+  font-size: 14px;
+}
+.dv2-gen-actions {
+  display: grid;
+  gap: 8px;
+}
+.dv2-gen-primary,
+.dv2-gen-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 50px;
+  padding: 0 18px;
+  border-radius: 12px;
+  font: inherit;
+  font-weight: 800;
+  text-decoration: none;
+  cursor: pointer;
+}
+.dv2-gen-primary {
+  border: 0;
+  background: var(--forest);
+  color: #fff;
+}
+.dv2-gen-primary:hover {
+  background: var(--forest-light);
+}
+.dv2-gen-primary:disabled {
+  background: #dde3db;
+  color: #3e4c44;
+  cursor: progress;
+}
+.dv2-gen-secondary {
+  border: 1.5px solid var(--forest);
+  background: #fff;
+  color: var(--forest);
+}
+.dv2-gen-tertiary {
+  min-height: 44px;
+  border: 0;
+  background: none;
+  color: var(--forest);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+@media (max-width: 760px) {
+  .pe-dialog.dv2-gen {
+    max-height: calc(100dvh - 24px);
+  }
+  .dv2-gen-body {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+  }
+  .dv2-gen-styles {
+    max-height: none;
+  }
+  /* The main action stays in reach above the browser's bars. */
+  .dv2-gen-actions {
+    position: sticky;
+    bottom: calc(-26px - env(safe-area-inset-bottom, 0px));
+    margin: 0 -20px calc(-26px - env(safe-area-inset-bottom, 0px));
+    padding: 12px 20px calc(16px + env(safe-area-inset-bottom, 0px));
+    background: #fff;
+    border-top: 1px solid #eceeea;
+  }
+}

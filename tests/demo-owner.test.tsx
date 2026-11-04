@@ -96,8 +96,9 @@ describe("the agency's own demo, under its panel header", () => {
     expect((html.match(/class="dv2-style-generate"/g) ?? []).length).toBe(5);
     expect(html).toContain('class="dv2-styles is-owner"');
     for (const tool of ['aria-label="Editar Moderno"', "Crear un video con", "dv2-style-tool"]) expect(html).not.toContain(tool);
-    // «Generar» never generates from the demo: it is a link to the panel's visit, with the photo and the style.
-    expect(html).toMatch(/<a class="dv2-style-generate" aria-label="Generar Nórdico en tu panel" href="\/panel\/visita\?codigo=[^"]+&amp;accion=generar&amp;foto=p1&amp;estilo=scandinavian"/);
+    // With gift credits, «Generar» opens «Ambientá con IA» over the demo: nothing is generated or charged until its «Generar imagen».
+    expect(html).toMatch(/<button type="button" class="dv2-style-generate" aria-label="Generar Nórdico con IA" aria-haspopup="dialog"/);
+    expect(html).not.toContain("Ambientá con IA");
     expect(html).toContain("Ver todos");
     expect(html).not.toContain("Imaginá este espacio a tu estilo");
     expect(html).not.toMatch(/Ver en movimiento/);
@@ -129,6 +130,12 @@ describe("the agency's own demo, under its panel header", () => {
     const out = renderToStaticMarkup(<DemoView demo={mdp} source={{ kind: "public", token: "tok" }} presentation owner={owner} />);
     const names = [...out.matchAll(/<span class="dv2-style-name"[^>]*>([^<]+)<\/span>/g)].map((m) => m[1]);
     expect(names).toEqual(["Moderno", "Costero", "Nórdico", "Minimalista", "Mid-century", "Lujo"]);
+  });
+
+  it("without gift credits, «Generar» leads to the panel's visit with the photo and the style", () => {
+    const spent = renderToStaticMarkup(<DemoView demo={demo} source={{ kind: "public", token: "tok" }} presentation owner={{ ...owner, freeCredits: 0 }} />);
+    expect(spent).toMatch(/<a class="dv2-style-generate" aria-label="Generar Nórdico en tu panel" href="\/panel\/visita\?codigo=[^"]+&amp;accion=generar&amp;foto=p1&amp;estilo=scandinavian"/);
+    expect(spent).not.toContain('aria-haspopup="dialog"');
   });
 
   it("asks for another listing and takes it to the panel, without sending it anywhere else", () => {
