@@ -4,20 +4,40 @@ import { HttpError } from "@/lib/commerce/http";
 import type { ImportedDemo } from "@/lib/demos/import";
 import { adminClient } from "@/lib/supabase/server";
 
+/** Text compared as read: spacing and line breaks a page re-renders differently don't count. */
+const sameText = (v: string | null | undefined) => (v ?? "").replace(/\s+/g, " ").trim();
+
+/**
+ * A photo's address without what some sites change on every visit (a
+ * cache-busting query or fragment, upper/lower case in the host), so the same
+ * photo read twice is the same photo.
+ */
+export function photoKey(src: string) {
+  try {
+    const u = new URL(src);
+    return `${u.hostname.toLowerCase().replace(/^www\./, "")}${u.pathname}`;
+  } catch {
+    return src.split(/[?#]/)[0];
+  }
+}
+
 /**
  * What the admin saw on the preview, to tell whether the listing changed
  * before confirming: the fields that are saved and the photos offered.
+ * Photos count as a set (some sites shuffle them or add a changing query on
+ * every visit) and the map to about a meter, so only real changes show.
  */
 export function snapshotOf(imp: ImportedDemo) {
+  const round = (n: number | null) => (n == null ? null : Math.round(n * 1e5) / 1e5);
   const seen = {
-    title: imp.title,
-    location: imp.location,
-    operation: imp.operation,
-    price: imp.price,
+    title: sameText(imp.title),
+    location: sameText(imp.location),
+    operation: sameText(imp.operation),
+    price: sameText(imp.price),
     priceConflict: imp.priceConflict,
-    description: imp.description,
-    images: imp.images,
-    map: imp.map ? [imp.map.lat, imp.map.lng, imp.map.precision, imp.mapStatus] : null,
+    description: sameText(imp.description),
+    images: [...new Set(imp.images.map(photoKey))].sort(),
+    map: imp.map ? [round(imp.map.lat), round(imp.map.lng), imp.map.precision, imp.mapStatus] : null,
   };
   return createHash("sha256").update(JSON.stringify(seen)).digest("hex");
 }
