@@ -82,7 +82,8 @@ describe("Listing importer against saved pages of each platform", () => {
   it("Inmobiliatica: the price of the listing, not of a similar listing further down", () => {
     const { imp } = read("inmobiliatica-acampora");
     expect(imp.price).toBe("USD 143.640");
-    expect(imp.diagnostics?.conflicts.join(" ")).toMatch(/USD 84\.900 en lectura genérica/);
+    // The similar listing's price (USD 84.900) is not even read: its card is out of the property's part.
+    expect(imp.diagnostics?.conflicts.join(" ")).not.toMatch(/84\.900/);
   });
 
   it("Tokko: watermarked web copies become the originals and the brand prefix leaves the title", () => {

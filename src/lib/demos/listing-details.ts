@@ -8,6 +8,7 @@
 export type Money = { text: string; currency: "USD" | "$"; amount: number };
 export type Pair = { label: string; value: string; section: string };
 export type FeatureGroup = { title: string; items: string[] };
+import { otherListingsAt, withoutOtherBlocks } from "@/lib/listings/photos";
 import { extractLocation, type GeoMap, type GeoResult } from "./geo";
 
 export type MapData = GeoMap;
@@ -234,12 +235,15 @@ export function extractDetails(html: string, pageUrl: string): ListingDetails {
   const own = cut > 0 ? secs.slice(0, cut) : secs;
   const after = cut > 0 ? secs.slice(cut) : [];
   // The same cut in the HTML, for links and images.
+  // A heading with its text inside other tags (<h2><span>Propiedades Similares</span></h2>) is found too.
   const ownHtmlEnd = (() => {
-    if (cut <= 0) return html.length;
+    const heading = otherListingsAt(html);
+    if (cut <= 0) return heading >= 0 ? heading : html.length;
     const m = html.match(new RegExp(`<h[1-6][^>]*>\\s*${secs[cut].title.slice(0, 20).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i"));
-    return m?.index ?? html.length;
+    return m?.index ?? (heading >= 0 ? heading : html.length);
   })();
-  const ownHtml = html.slice(0, ownHtmlEnd);
+  // Without the blocks of other listings (their cards have descriptions and prices of their own).
+  const ownHtml = withoutOtherBlocks(html.slice(0, ownHtmlEnd));
   const meta = (key: string) =>
     decode(html.match(new RegExp(`<meta[^>]+(?:property|name)=["']${key}["'][^>]*content=["']([^"']*)["']`, "i"))?.[1] ?? "").trim() || null;
   const ogTitle = meta("og:title");

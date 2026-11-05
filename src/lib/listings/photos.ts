@@ -106,14 +106,13 @@ const OTHERS_BLOCK = /(^|[\s_-])(related|relacionad[oa]s?|similar|similares|otra
 const OTHERS_HEADING =
   /^(?:(?:ventas|alquileres|propiedades|inmuebles|avisos)\s+)?(relacionad[oa]s|similares|propiedades similares|te puede interesar|tambi[eé]n te puede(?:n)? interesar|otras propiedades|propiedades destacadas|destacadas|recomendad[oa]s|propiedades relacionadas|propiedades recomendadas)\b/i;
 
-/** Removes every element whose class or id names a list of other properties (counting nested tags of the same name). */
-export function withoutOtherBlocks(html: string) {
+/** Removes every element (of these tags) that `remove` picks by its attributes, counting nested tags of the same name. */
+function removeElements(html: string, tags: string, remove: (attrs: string) => boolean) {
   let out = html;
-  for (let guard = 0; guard < 20; guard++) {
+  for (let guard = 0; guard < 40; guard++) {
     let found: { start: number; end: number } | null = null;
-    for (const m of out.matchAll(/<(div|section|aside|ul|ol|article|nav)\b([^>]*)>/gi)) {
-      const named = [...m[2].matchAll(/\b(?:id|class)\s*=\s*("([^"]*)"|'([^']*)')/gi)].some((a) => OTHERS_BLOCK.test(a[2] ?? a[3] ?? ""));
-      if (!named) continue;
+    for (const m of out.matchAll(new RegExp(`<(${tags})\\b([^>]*)>`, "gi"))) {
+      if (!remove(m[2])) continue;
       const tag = m[1].toLowerCase();
       const start = m.index ?? 0;
       const from = start + m[0].length;
@@ -134,6 +133,25 @@ export function withoutOtherBlocks(html: string) {
   }
   return out;
 }
+const named = (attrs: string, words: RegExp) => [...attrs.matchAll(/\b(?:id|class)\s*=\s*("([^"]*)"|'([^']*)')/gi)].some((a) => words.test(a[2] ?? a[3] ?? ""));
+
+/** Removes every element whose class or id names a list of other properties. */
+export function withoutOtherBlocks(html: string) {
+  return removeElements(html, "div|section|aside|ul|ol|article|nav", (attrs) => named(attrs, OTHERS_BLOCK));
+}
+
+/** A class or id naming the site's logo ("logo", "logo-desktop", "site-logo"). */
+const LOGO = /(^|[\s_-])logo(?=[\s_-]|$)/i;
+/**
+ * The site's own graphics are never the property's photos: the page footer,
+ * logo containers (the logo's file name says nothing: "566b083e….png") and
+ * <link> icons (apple-touch-icon, favicons).
+ */
+export function withoutSiteChrome(html: string) {
+  const noFooter = removeElements(html, "footer", () => true);
+  const noLogo = removeElements(noFooter, "div|a|span|figure|p|picture", (attrs) => named(attrs, LOGO));
+  return noLogo.replace(/<link\b[^>]*>/gi, " ");
+}
 
 /** Where a heading opens the list of other properties, or -1. */
 export function otherListingsAt(html: string) {
@@ -146,7 +164,7 @@ export function otherListingsAt(html: string) {
 
 /** The page without the blocks of other properties, and cut where their heading starts. */
 export function propertyPart(html: string) {
-  const blocks = withoutOtherBlocks(html);
+  const blocks = withoutOtherBlocks(withoutSiteChrome(html));
   const at = otherListingsAt(blocks);
   return { withoutBlocks: blocks, own: at >= 0 ? blocks.slice(0, at) : blocks };
 }

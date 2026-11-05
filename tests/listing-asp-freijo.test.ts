@@ -72,6 +72,24 @@ describe("Freijo (.asp): two reads of the same listing", () => {
 });
 
 describe("photo rules", () => {
+  it("Houzez-like page: only the property's own photos, not the similar listings' galleries nor the site's graphics", () => {
+    const G = "https://storage.googleapis.com/portales-prod-images/1886";
+    const page = `<html><head><meta property="og:image" content="${G}/property-images/2026/10/own-1_wm.jpeg">
+      <link rel="apple-touch-icon" href="${G}/web-images/2022/11/566b083e-icon.png"></head><body>
+      <header><div class="logo logo-desktop"><a href="/"><img src="${G}/web-images/2022/11/6f8aed71-logo.png"></a></div></header>
+      <h1>Departamento en venta en Plaza Colón</h1>
+      <div id="similar-listings-wrap" class="similar-property-wrap listing-v1"><h2>Propiedades similares</h2>
+        <div class="item-listing-wrap hz-item-gallery-js" data-images='["${G}/property-images/2026/11/other-1_wm.jpeg","${G}/property-images/2026/11/other-2_wm.jpeg"]'>
+          <img src="${G}/property-images/2026/11/other-1_thumbnail.jpeg"></div></div>
+      <footer id="footer-section"><div class="col-md-3"><img src="${G}/web-images/2022/11/29bb62c1-footer.jpeg"></div></footer>
+      <div class="modal"><div id="lightbox-slider-js" class="lightbox-slider">
+        <div><img class="img-fluid" src="${G}/property-images/2026/10/own-1_wm.jpeg"></div>
+        <div><img class="img-fluid" src="${G}/property-images/2026/10/own-2_wm.jpeg"></div>
+        <div><img class="img-fluid" src="${G}/property-images/2026/10/own-3_wm.jpeg"></div></div></div></body></html>`;
+    const { images } = parseListing(page, "https://www.jurquizapropiedades.com.ar/propiedad/238864_departamento-en-venta-en-plaza-colon/");
+    expect(images.map((u) => u.split("/").pop())).toEqual(["own-1_wm.jpeg", "own-2_wm.jpeg", "own-3_wm.jpeg"]);
+  });
+
   it("map templates and tiles are never photos", () => {
     expect(isMapImage("https://{s}.tile.openstreetmap.se/hydda/full/%7Bz%7D/%7Bx%7D/%7By%7D.png")).toBe(true);
     expect(isMapImage("https://a.tile.openstreetmap.org/16/22000/40000.png")).toBe(true);
