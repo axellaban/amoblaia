@@ -21,7 +21,7 @@ import {
   type ListFilters,
 } from "@/lib/agency/commercial";
 import { commercialRows } from "@/lib/agency/commercial-server";
-import { FUNNEL_STEPS, PERIODS, STEP_LABEL, demosInPeriod, funnelCounts, inPeriod, parsePeriod, shortDay, type Period } from "@/lib/agency/demo-funnel";
+import { FUNNEL_STEPS, PERIODS, STEP_LABEL, demosInPeriod, funnelCounts, parsePeriod, shortDay, type Period } from "@/lib/agency/demo-funnel";
 import { AccountPill, AgencyThumb, DemoStepMenu, MoreMenu, RecalcScores, RowQuickActions, ScorePill, StagePill } from "@/components/admin-agency-hub";
 import { SupportViewButton } from "@/components/admin-agencies";
 import { requireAdminPage } from "@/lib/demos/admin-page";
@@ -149,8 +149,9 @@ function AgencyList({
   href: (change: Record<string, string | null>) => string;
   toReview: Awaited<ReturnType<typeof claimsToReview>>;
 }) {
-  const funnel = funnelCounts(rows.filter((r) => !r.test).flatMap((r) => r.demos.filter((d) => inPeriod(d.createdAt, period)).map((d) => d.step)));
   const view = new Map(rows.map((r) => [r.id, demosInPeriod(r.demos, period)]));
+  // One per agency (its highest step among the period's demos), test agencies out: tapping a part of a bar lists exactly that many.
+  const funnel = funnelCounts(rows.filter((r) => !r.test).flatMap((r) => (view.get(r.id)!.step === null ? [] : [view.get(r.id)!.step!])));
   // A period other than «Todo» scopes the whole list (and its tab counts) to the agencies with demos created in it,
   // so what's below matches the funnel above.
   const periodOn = period.key !== "todo";
@@ -161,9 +162,9 @@ function AgencyList({
   const filtered = filterRows(scoped, filters).filter((r) => {
     const v = view.get(r.id)!;
     if (withDemo && !v.count) return false;
-    // A funnel step: agencies with a demo of the period that reached it (test agencies too, marked as such).
+    // A funnel step: agencies with a demo of the period that reached it, without test agencies, like the bar.
     // «Se quedaron»: its highest step is exactly that one.
-    return step === null || (v.step !== null && (stayed ? v.step === step : v.step >= step));
+    return step === null || (!r.test && v.step !== null && (stayed ? v.step === step : v.step >= step));
   });
   const shown = sortRows(filtered, sort);
   /** A sortable header: the first click sorts from highest to lowest (newest activity first), the next one the other way. */
@@ -191,7 +192,7 @@ function AgencyList({
         <div className="ah-dfunnel-head">
           <div>
             <h2 id="ah-dfunnel-title">Funnel de demos</h2>
-            <p>Cada paso cuenta las demos que llegaron hasta ahí. El % compara con el paso anterior.</p>
+            <p>Cada paso cuenta las inmobiliarias cuya demo llegó hasta ahí. El % compara con el paso anterior.</p>
           </div>
           <div className="ah-period">
             <span>Demo creada:</span>

@@ -107,11 +107,27 @@ describe("«Inmobiliarias», the team's single list", () => {
   });
   it("narrows the funnel and the list by the demo's creation date and step", async () => {
     const html = renderToStaticMarkup(await List({ searchParams: Promise.resolve({ desde: "2026-10-01", hasta: "2026-10-31", paso: "3" }) }));
-    // Only Demaio's demo was created in October: one demo, and it reached «Con interacción».
+    // Only Demaio's demo was created in October: one agency, and it reached «Con interacción».
     expect(html).toMatch(/<strong>1<\/strong><small>Base del período<\/small>/);
     expect(html).toContain("Demaio Estudio Inmobiliario");
     expect(html).not.toContain("Del Mar Propiedades");
     expect(html).not.toContain("Bianchi Propiedades");
+  });
+  it("counts each agency once and leaves test agencies out of the bar and of its list", async () => {
+    const extra: CommercialRow[] = [
+      { ...rows[1], id: "77777777-7777-4777-8777-777777777777", name: "Costa Brokers", stage: "panel", subscribed: false, test: false, demos: [{ createdAt: "2026-10-03T15:00:00Z", step: 5 }, { createdAt: "2026-10-04T15:00:00Z", step: 5 }] },
+      { ...rows[1], id: "88888888-8888-4888-8888-888888888888", name: "QA Habita", stage: "panel", subscribed: false, test: true, demos: [{ createdAt: "2026-10-05T15:00:00Z", step: 5 }] },
+    ];
+    rows.push(...extra);
+    try {
+      const html = renderToStaticMarkup(await List({ searchParams: Promise.resolve({ paso: "5" }) }));
+      // Del Mar (subscribed) and Costa Brokers (two demos, counted once): 2 in «Cuenta con interacción», 2 listed.
+      expect(html).toMatch(/<strong>2<\/strong><small>100% de las cuentas creadas<\/small>/);
+      expect(html).toContain("Costa Brokers");
+      expect(html).not.toContain("QA Habita");
+    } finally {
+      rows.splice(rows.length - extra.length, extra.length);
+    }
   });
   it("splits each bar in who went on and who stayed, and filters by who stayed", async () => {
     const all = renderToStaticMarkup(await List({ searchParams: Promise.resolve({}) }));
