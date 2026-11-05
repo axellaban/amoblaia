@@ -143,6 +143,18 @@ describe("/api/prospeccion", () => {
     expect(names()).toEqual([]);
   });
 
+  it("sincronización: la pestaña que manda Chapa se importa con el origen de la última importación", async () => {
+    state.dataset = { ...dataset(), last_import: { id: "i", source: "Origen de la planilla", file_name: null, applied_at: "2026-11-01T00:00:00Z", report: {} } };
+    state.results.habita_prospect_agencies = [];
+    state.results.habita_prospect_import = { created: 1, updated: 0, unchanged: 0, legacy_sends: 1 };
+    const csv = "Inmobiliaria,Número (sin 0 ni 15),Estado,Fecha envío\nInmo Uno,2235111111,Enviado,03/11/2026";
+    const r = await POST(req("POST", { sync: { csv } }));
+    expect(r.status).toBe(200);
+    expect((await r.json()).legacy_sends).toBe(1);
+    expect(state.rpcs.find((x) => x.name === "habita_prospect_import")!.args).toMatchObject({ p_actor: ACTOR, p_source: "Origen de la planilla", p_legacy_channel: "whatsapp", p_overwrite: false });
+    expect((await POST(req("POST", { sync: { csv } }, "Bearer x"))).status).toBe(401);
+  });
+
   it("próximo paso: se guarda con la versión de la cuenta", async () => {
     await POST(req("POST", { code: A, action: { type: "schedule", nextAt: "2026-11-10", nextStep: "Llamar" } }));
     expect(state.rpcs.find((x) => x.name === "habita_prospect_update")!.args).toMatchObject({

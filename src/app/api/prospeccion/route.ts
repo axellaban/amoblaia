@@ -2,6 +2,7 @@ import { HttpError, isAdmin } from "@/lib/commerce/http";
 import { demoUrl, isUuid } from "@/lib/demos/shared";
 import { activity, contactFor, HEADER, stableUuid, stepFor, toRow } from "@/lib/prospecting/external";
 import { NO_STORE, ProspectError, prospectDataset, prospectFailure, prospectRpc } from "@/lib/prospecting/server";
+import { runSheetSync } from "@/lib/prospecting/sync";
 import type { Dataset, ProspectAccount } from "@/lib/prospecting/types";
 import { sameSecret } from "@/lib/session";
 import { cloudConfigured, cloudEnabled } from "@/lib/supabase/config";
@@ -15,6 +16,9 @@ export const maxDuration = 60;
  *
  *   GET                       { header, rows, events }: una fila por cuenta (ver lib/prospecting/external.ts).
  *   POST { code, action, by } aplica una acción a la cuenta `code` y devuelve { header, row }.
+ *   POST { sync: { csv } }    la pestaña de la planilla, como la manda scripts/prospeccion-sync.gs: Chapa,
+ *                             que ya lee la planilla, hace esa sincronización (cuentas nuevas, cambios y
+ *                             envíos históricos con fecha). Mismo origen que la última importación.
  *
  * Las acciones pasan por las mismas funciones que el panel del equipo (/admin/prospeccion), con sus
  * reglas: solo contactos revisados, bajas, secuencia de tres pasos, evidencia. «Mandé el mensaje»
@@ -72,13 +76,21 @@ export async function GET(request: Request) {
     if (!cloudEnabled() || !cloudConfigured()) throw new HttpError(503, "La base de prospección no está disponible.");
     const { ds, demos } = await sheet(new URL(request.url).origin);
     return Response.json(
-      { header: HEADER, rows: ds.accounts.map((a) => toRow(ds, a, demos.get(a.agency_id))), events: activity(ds) },
+      {
+        header: HEADER,
+        rows: ds.accounts.map((a) => toRow(ds, a, demos.get(a.agency_id))),
+        events: activity(ds),
+        lastImport: ds.last_import ? { at: ds.last_import.applied_at, source: ds.last_import.source } : null,
+      },
       { headers: NO_STORE },
     );
   } catch (e) {
     return prospectFailure(e);
   }
 }
+
+// El mismo origen que usa scripts/prospeccion-sync.gs (si nunca se importó).
+const DEFAULT_SOURCE = "Prospecting amobla IA · Prospectos";
 
 type Action = {
   type?: string;
@@ -234,7 +246,14 @@ export async function POST(request: Request) {
   if (!authorized(request)) return new Response("Unauthorized", { status: 401 });
   try {
     if (!cloudEnabled() || !cloudConfigured()) throw new HttpError(503, "La base de prospección no está disponible.");
-    const b = (await request.json().catch(() => null)) as { code?: unknown; action?: Action; by?: unknown } | null;
+    const b = (await request.json().catch(() => null)) as { code?: unknown; action?: Action; by?: unknown; sync?: { csv?: unknown } } | null;
+    if (b?.sync && !b.code) {
+      if (typeof b.sync.csv !== "string" || !b.sync.csv.trim()) throw new HttpError(400, "Falta el contenido de la pestaña.");
+      const actor = await actorId();
+      const { last_import } = await prospectDataset();
+      const report = await runSheetSync({ actor, csv: b.sync.csv, source: last_import?.source || DEFAULT_SOURCE, legacyChannel: "whatsapp" });
+      return Response.json(report, { headers: NO_STORE });
+    }
     if (!b || !isUuid(b.code) || !b.action || typeof b.action.type !== "string") throw new HttpError(400, "Falta la cuenta o la acción.");
     const by = str(b.by, 80) || "Chapa Labs";
     const origin = new URL(request.url).origin;
