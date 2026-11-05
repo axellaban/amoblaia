@@ -13,6 +13,7 @@ import { freeCreditsLine } from "@/lib/commerce/credit-packs";
 import { Eye, Lock, Mail, UserRound } from "lucide-react";
 import { api, setVisiting, VISIT_ACCOUNT_EVENT } from "./admin-demos";
 import { track } from "@/lib/analytics";
+import { leadFromDemoRef } from "@/lib/leads/client";
 import { cta } from "@/lib/interaction-tracking";
 import { browserClient } from "@/lib/supabase/client";
 import { entryChoiceKey, explorationClick } from "@/lib/agency/exploration";
@@ -195,6 +196,8 @@ export function VisitBanner({
     try {
       await api("/api/panel/visita", { method: "POST", body: "{}" });
       track("panel_claim_completed", { agency_id: agencyId, method: "signed_in", origin: "panel_link" }, true);
+      // Lead score: the demo this browser came from counts its account (the server checks it is that agency's).
+      leadFromDemoRef("demo_account_created");
       window.location.assign(here());
     } catch (e) {
       setError(e instanceof Error ? e.message : "No pudimos pasar el panel a tu cuenta.");

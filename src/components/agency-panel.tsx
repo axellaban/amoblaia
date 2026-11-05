@@ -1057,6 +1057,8 @@ export function ImportProperty({
   const [partial, setPartial] = useState<Created | null>(null);
   // One key per confirmed preview: sending it twice creates one property.
   const key = useRef("");
+  // The preview on screen is the listing as it changed: confirming it imports what the listing shows then.
+  const accept = useRef(false);
   const busy = Boolean(status);
   const step: 1 | 2 | 3 = preview && busy ? 3 : preview ? 2 : 1;
   useEffect(() => onStep?.(step), [onStep, step]);
@@ -1081,6 +1083,7 @@ export function ImportProperty({
     setNotice("");
     setPartial(null);
     setPreview(null);
+    accept.current = false;
     setStatus("Leyendo la publicación…");
     track("property_import_started", { source: hostOf(url), mode: "single" });
     track("listing_import_preview_started", { source: hostOf(url), mode: "single" });
@@ -1116,6 +1119,7 @@ export function ImportProperty({
           url: preview.listingUrl,
           key: key.current,
           snapshot: preview.snapshot,
+          accept: accept.current,
           overrides: { ...fields, map: mapChoice ? mapOverride(preview, mapChoice) : undefined },
           images: preview.images.filter((src) => keep.has(src)),
         }),
@@ -1124,6 +1128,7 @@ export function ImportProperty({
       const body = err instanceof ApiError ? err.body : null;
       if (body?.changed && body.preview) {
         show(body.preview as Preview);
+        accept.current = true;
         setNotice("La publicación cambió desde que la revisaste: estos son los datos actuales. Revisalos y volvé a confirmar.");
       } else if (body?.duplicateOf) {
         setPreview({ ...preview, duplicateOf: String(body.duplicateOf) });
@@ -1391,7 +1396,8 @@ function ImportMany({ onDone, onSingle }: { onDone?: () => Promise<unknown>; onS
         // A doubtful map is not saved without a person looking at it.
         const made = await api<Created>("/api/panel/importar", {
           method: "POST",
-          body: JSON.stringify({ url: row.data.listingUrl, key: row.key, snapshot: row.data.snapshot }),
+          // Nothing is corrected in a batch: what the listing shows when it is imported is what was asked for.
+          body: JSON.stringify({ url: row.data.listingUrl, key: row.key, snapshot: row.data.snapshot, accept: true }),
         });
         const done = await finishPhotos(made, () => null);
         update(i, { state: done.status === "completed" ? "done" : "partial", result: done });

@@ -7,7 +7,7 @@ import { readListing } from "@/lib/demos/listing";
 import { completeAgency, createDemo, MAX_PHOTOS_PER_DEMO, saveJson } from "@/lib/demos/server";
 import { cleanText, cleanUrl, isUuid } from "@/lib/demos/shared";
 import { adminClient } from "@/lib/supabase/server";
-import { reportPhotos, snapshotOf, startImport, updateImport, type ImportRow } from "./imports";
+import { photoKey, reportPhotos, snapshotOf, startImport, updateImport, type ImportRow } from "./imports";
 import { existingImport, logImport } from "./panel";
 
 const PRIVATE = { "Cache-Control": "private, no-store" };
@@ -33,7 +33,8 @@ export type ImportTarget = { agencyId: string; userId: string; origin: "agency" 
  * property already imported from that URL (if any) and a snapshot of what
  * was shown. { url, key, snapshot, overrides, images } creates the property
  * as a draft with the preview's corrections and kept photos, once per key;
- * if the listing changed since the preview it answers 409 with the new one.
+ * if the listing changed since the preview it answers 409 with the new one,
+ * and the confirm of that new one ({ accept: true }) goes ahead with what it reads.
  * The photos are then downloaded by the browser and reported with PATCH, so
  * the import says what really happened: completed, or partial with the
  * photos (or data) still missing. Nothing is staged and no credit is used.
@@ -71,7 +72,9 @@ export async function importListing(request: Request, target: ImportTarget, onCr
       return Response.json({ error: "Esta propiedad ya está en tu panel.", duplicateOf }, { status: 409, headers: PRIVATE });
     }
     const snapshot = snapshotOf(imp);
-    if (typeof body.snapshot === "string" && body.snapshot !== snapshot) {
+    // { accept: true }: the person already saw a changed listing and confirmed what it shows
+    // now. Some sites change a little on every visit, so asking again would never end.
+    if (typeof body.snapshot === "string" && body.snapshot !== snapshot && body.accept !== true) {
       await updateImport(row.id, { status: "failed", error: "La publicación cambió desde la vista previa." });
       started = null;
       return Response.json(
@@ -104,9 +107,11 @@ export async function importListing(request: Request, target: ImportTarget, onCr
     if ("description" in edits) settings.description = cleanText(edits.description, 6000, true);
     // The map as confirmed on the preview (validated here; links are only read for their coordinates).
     settings.map = importedMap(imp, edits.map, settings.map);
-    const kept = Array.isArray(body.images)
-      ? imp.images.filter((src) => (body.images as unknown[]).includes(src))
-      : imp.images;
+    // The photos kept on the preview, matched by address without the parts some sites change
+    // on every visit. If none of them is found anymore, every photo read now (never none).
+    const chosen = Array.isArray(body.images) ? new Set(body.images.filter((x): x is string => typeof x === "string").map(photoKey)) : null;
+    const matched = chosen ? imp.images.filter((src) => chosen.has(photoKey(src))) : imp.images;
+    const kept = chosen && chosen.size && !matched.length ? imp.images : matched;
     const images = kept.slice(0, MAX_PHOTOS_PER_DEMO);
 
     await rpc("amobla_account", { p_user: target.userId, p_trial: false });
