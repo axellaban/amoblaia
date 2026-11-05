@@ -1,30 +1,33 @@
 ---
 name: qa-habita
-description: QA autónomo de producción de Habita (www.habitaia.app). Revisa errores de Vercel y Supabase, analiza en PostHog las sesiones reales de demos públicas y del panel, recorre con Playwright los flujos de crear demo, estudio de imágenes, video y demos públicas (escritorio, celular, tablet y red lenta) buscando errores técnicos y problemas de usabilidad, corrige lo que encuentra, lo verifica, mergea los errores a main (producción), deja las mejoras de usabilidad como PR para revisar y anota el resultado en docs/qa-habita.md. Usar cuando se pida «QA de Habita», «correr el QA» o desde la tarea programada.
+description: QA autónomo de producción de Habita (www.habitaia.app). Revisa errores de Vercel y Supabase, analiza en PostHog las sesiones reales de demos públicas y del panel, recorre con Playwright los flujos de crear demo, estudio de imágenes, video y demos públicas (escritorio, celular, tablet y red lenta) buscando errores técnicos y problemas de usabilidad, corrige lo que encuentra, lo verifica, mergea los errores a main (producción), registra los hallazgos de usabilidad para que los evalúe Astra (CRO) y anota el resultado en docs/qa-habita.md. Usar cuando se pida «QA de Habita», «correr el QA» o desde la tarea programada.
 ---
 
 # QA autónomo de Habita
 
-Objetivo: encontrar en producción errores reales **y problemas de usabilidad** en el panel y en las demos, corregirlos y publicarlos. Al final dejar un resumen corto con lo encontrado, lo corregido (con el enlace al PR), las propuestas de usabilidad para revisar y lo que quedó pendiente.
+Objetivo: encontrar en producción errores reales **y problemas de usabilidad** en el panel y en las demos, corregirlos y publicarlos. Al final dejar un resumen corto con lo encontrado, lo corregido (con el enlace al PR), los hallazgos de usabilidad registrados y lo que quedó pendiente.
+
+Claude responde por lo técnico: bugs y regresiones. Astra analiza la conversión todos los días, lee `docs/qa-habita.md` por su cuenta y decide qué cambios de usabilidad proponer. No suponer que esta corrida ocurre a una hora determinada: registrar siempre la hora real.
 
 ## Reglas que no se rompen
 
 - **Plata:** no comprar créditos ni planes y no completar pagos. Si algo pide pago, frenar ese flujo y anotarlo.
 - **Generaciones:** como máximo una por flujo, la mínima. Leer el «Costo estimado» en pantalla antes de generar. El video se prueba con el estilo **Clásico**, que no consume créditos. Las pruebas de caminos de error (paso 5) **no** generan: se frenan antes de confirmar o usan entradas que el sistema rechaza.
 - **Datos reales:** no abrir demos ni paneles de inmobiliarias reales sin la sesión de QA. Sin sesión, la visita cuenta como cliente externo y ensucia métricas y lead score (`docs/TRAFICO_INTERNO.md`). Con la sesión de QA, que es cuenta interna, sí se puede.
-- **Privacidad (PostHog):** los visitantes de las demos son clientes de las inmobiliarias. Usar solo datos agregados y patrones. Nunca copiar nombres, teléfonos, emails, IPs ni IDs de persona a archivos del repo, commits, PRs, logs ni al resumen. Para citar una sesión concreta, usar solo el enlace de PostHog.
+- **Privacidad (PostHog):** los visitantes de las demos son clientes de las inmobiliarias. Usar solo datos agregados y patrones. Nunca copiar nombres, teléfonos, emails, IPs ni IDs de persona a archivos del repo, commits, PRs, logs ni al resumen.
+- **Repositorio público:** hasta que se confirme que es privado, en archivos del repo, commits y PRs no van métricas comerciales, tasas de conversión, cantidades de sesiones o usuarios, enlaces a grabaciones ni IDs de sesión. Se describe el patrón con palabras y su frecuencia como `aislado` o `repetido`. Para citar una sesión concreta, usar el enlace de PostHog solo en el resumen final de la conversación.
 - **Base de datos:** solo lecturas con `execute_sql`. Una migración se aplica solo si es aditiva (`add column if not exists`, funciones nuevas). Antes, simular con un `select` a cuántas filas reales afecta. Nunca volver a correr una migración vieja entera: puede pisar funciones más nuevas. Ver con `grep` si una migración posterior redefine la misma función.
 - **Facturación y Mercado Pago:** si un arreglo cambia cómo se cobra, reembolsa o cancela, abrir el PR **sin mergear** y avisar.
-- **Usabilidad:** los cambios de usabilidad (textos, diseño, orden de pasos, flujo) se abren como PR **sin mergear**, para que los revise una persona. Solo se mergean solos los arreglos de algo roto (error, botón que no responde, contenido cortado o tapado, scroll horizontal, imagen que no carga).
+- **Usabilidad:** no abrir PRs de mejoras de usabilidad por iniciativa propia (textos, diseño, orden de pasos, flujo). Se registran con su identificador en `docs/qa-habita.md` para que Astra los evalúe y priorice. Solo se corrigen y mergean solos los arreglos de algo roto (error, botón que no responde, contenido cortado o tapado, scroll horizontal, imagen que no carga). Si se pide a mano implementar un cambio de usabilidad ya aprobado, va como PR **sin mergear**.
 - **Tests:** nunca saltear, borrar ni desactivar un test para que pase.
 - **Secretos:** nunca escribir credenciales en archivos del repo, logs ni commits. El archivo de sesión va al scratchpad y se borra al terminar.
-- **Duplicados:** antes de corregir algo, leer las «Observaciones abiertas» y las «Propuestas de usabilidad abiertas» de `docs/qa-habita.md`, `git log --oneline -30` y los PR abiertos (`list_pull_requests` de GitHub, o `gh api "repos/axellaban/amoblaia/pulls?state=open"`; `gh pr list` no funciona en estas sesiones), para no rehacer lo que otra sesión ya arregló o propuso.
+- **Duplicados:** antes de corregir algo, leer las «Observaciones abiertas» y las «Propuestas UX pendientes» de `docs/qa-habita.md`, `git log --oneline -30` y los PR abiertos (`list_pull_requests` de GitHub, o `gh api "repos/axellaban/amoblaia/pulls?state=open"`; `gh pr list` no funciona en estas sesiones), para no rehacer lo que otra sesión ya arregló o propuso.
 
 ## Datos fijos
 
 - Vercel: proyecto `prj_2oV0H7KmtlUAzpq1xdiaiQatoX3b`, equipo `team_KSLdEYQ5MNrnhjPR9G3PxpVO`.
 - Supabase: proyecto `cmpfwuycxdleunuumlkm`.
-- PostHog: conector de PostHog de la tarea (herramientas `query-run`, `query-generate-hogql-from-question`, grabaciones de sesión). Si el conector no está, saltear el paso 3 y avisarlo en el resumen.
+- PostHog: proyecto 683617, por el conector de PostHog de la tarea (consultas SQL y grabaciones de sesión). Si el conector no está, saltear el paso 3, marcar la cobertura de PostHog como `sin acceso` y avisarlo en el resumen. Recetas y limitaciones: `docs/CRO_INSTRUMENTACION.md`.
 - Panel de QA: `/panel` (inmobiliaria QA_Habita, slug `qa-habita-2`). Inmobiliaria de prueba original: `/admin/inmobiliarias/67b74437-b305-41a3-bada-42205ae090aa`.
 - Credenciales: variables de entorno `HABITA_QA_EMAIL` y `HABITA_QA_PASSWORD` del entorno de la nube. **No** leerlas de Vercel: el modo automático lo bloquea.
 
@@ -40,6 +43,7 @@ Si se pide a mano «QA completo», hacer la completa a cualquier hora.
 ## Pasos
 
 ### 1. Preparar
+Anotar la hora real de inicio (`TZ=America/Argentina/Buenos_Aires date -Iseconds`), el commit de `origin/main` y el despliegue de producción analizado (`list_deployments`). Van al registro del paso 9.
 ```bash
 npm ci --no-audit --no-fund
 npm i --no-save --no-audit --no-fund @axe-core/playwright
@@ -74,10 +78,10 @@ Qué tiene que revisar: lo que hacen los usuarios reales, no la cuenta de QA. Cl
 - Confusión: idas y vueltas entre las mismas dos pantallas, tiempo largo sin interacción en una pantalla con acción pendiente, búsquedas o filtros que no devuelven nada.
 - Fricción: `$rageclick`, `$dead_click` y `$exception` por página y elemento.
 
-**3.3 Qué hacer con lo que aparece.** Para cada patrón: cuántas sesiones lo muestran sobre el total (por ejemplo, «7 de 20 en celular») y 1 a 3 enlaces a grabaciones de ejemplo. Después:
+**3.3 Qué hacer con lo que aparece.** Para cada patrón: cuántas sesiones lo muestran sobre el total (por ejemplo, «7 de 20 en celular») y 1 a 3 enlaces a grabaciones de ejemplo, solo para el resumen final, nunca en el repo. Después:
 - Si el patrón apunta a algo roto, reproducirlo con Playwright en el paso 5 y corregirlo (paso 7).
-- Si es de usabilidad, reproducirlo, sacar captura y preparar la propuesta (paso 7, PR sin mergear).
-- Si son pocos casos (menos de 3 sesiones) o no se puede reproducir, anotarlo en «Observaciones abiertas» para ver si se repite en las próximas corridas.
+- Si es de usabilidad, reproducirlo si se puede y registrarlo en «Propuestas UX pendientes» con identificador `UX-NNN`, sin implementarlo.
+- Si son pocos casos (menos de 3 sesiones) o no se puede reproducir, anotarlo en «Observaciones abiertas» con identificador `OBS-NNN` para ver si se repite en las próximas corridas.
 
 ### 4. Sesión de QA
 ```bash
@@ -132,30 +136,35 @@ Ordenar todo lo encontrado (pasos 2, 3 y 5) así:
 2. **Usabilidad con evidencia real:** patrones de PostHog que se reproducen con Playwright.
 3. **Usabilidad detectada solo en el recorrido:** puntos de la lista de chequeo, tiempos lentos, accesibilidad `serious`.
 
-Primero corregir los de la categoría 1. Con los de 2 y 3 armar como máximo **un PR de usabilidad por corrida**, con los 1 a 3 cambios de mayor impacto; el resto va a «Propuestas de usabilidad abiertas».
+Corregir los de la categoría 1. Los de 2 y 3 no se implementan: van a «Propuestas UX pendientes» para que Astra los evalúe.
 
 ### 7. Corregir
 - Arreglo mínimo en la causa.
 - **Cada bug corregido deja un test de regresión** en `tests/`: unitario si es lógica; si es de interfaz y el repo tiene una suite de Playwright (hoy no la tiene: no hay `playwright.config.*`), sumar el caso ahí; si no, un test de componente o, como mínimo, el paso de reproducción en `docs/qa-habita.md`.
 - `npx eslint <archivos>`, `npx tsc --noEmit`, `npx vitest run --maxWorkers=2`. Si cambió algo de render o del servidor, también `npx next build`.
 - Migración nueva: `supabase/migrations/<siguiente número>_<nombre>.sql`, con comentario del porqué. Aplicarla con `apply_migration` solo si cumple la regla de base de datos y dar siempre el enlace de GitHub (ver `AGENTS.md`).
-- **Propuestas de usabilidad:** cambios chicos y concretos (texto, orden, tamaño, indicador de carga, mensaje de error). En el PR poner: el problema, la evidencia (números de PostHog con enlaces a grabaciones, o qué punto de la lista falló), captura de antes y de después en escritorio y celular, y qué métrica de PostHog debería mejorar.
+- **Hallazgos de usabilidad:** no se corrigen acá. Cada uno se registra con el problema, la pantalla y el dispositivo, qué punto de la lista falló y si se reprodujo.
 
 ### 8. Publicar
-- Rama `claude/qa-<fecha>-<am|pm>` desde `origin/main` (o la rama que indique la sesión) para los arreglos; rama aparte `claude/qa-ux-<fecha>-<am|pm>` para la propuesta de usabilidad. Commits en castellano explicando causa y arreglo, con las líneas de atribución de la sesión.
+- Rama `claude/qa-<fecha>-<am|pm>` desde `origin/main` (o la rama que indique la sesión) para los arreglos. Commits en castellano explicando causa y arreglo, con las líneas de atribución de la sesión.
 - **Arreglos de algo roto:** crear el PR y mergearlo (método `merge`) si todo está en verde y no toca cobros. Esperar el deploy (`list_deployments`, target production, estado READY) y repetir en producción el paso que fallaba para confirmar.
-- **Propuesta de usabilidad:** crear el PR **sin mergear**, con título que empiece con `UX:`.
 - Si el deploy queda en ERROR: leer los logs de build, corregir o revertir con un PR nuevo. Nunca dejar producción rota.
 
 ### 9. Registrar
-Agregar en `docs/qa-habita.md` la sección «Resultado del QA del <fecha> <am|pm>» con:
+Agregar en `docs/qa-habita.md`, debajo de «Resultados» y arriba de los anteriores, una sección con la plantilla de ese archivo. El título es siempre `### QA AAAA-MM-DD <am|pm>`, con la fecha de Argentina, para que Astra encuentre la del día. Si la corrida se corta, registrar igual lo hecho con estado `parcial` o `fallido`. Campos:
+- Inicio y fin, con hora real y zona horaria.
+- Commit y despliegue analizados.
+- Estado: `completo` (se hizo todo lo que corresponde a ese tipo de corrida), `parcial` (faltó algo; decir qué y por qué) o `fallido`.
 - Tipo de corrida (completa o liviana) y pantallas probadas.
-- **PostHog:** cantidad de sesiones analizadas (demos / panel), principales números (rebote, uso de la comparación, conversión a WhatsApp, abandono por paso del panel) y su cambio contra la corrida anterior, y los patrones encontrados. Sin datos personales.
-- Flujos probados y bugs corregidos con su PR.
-- Propuesta de usabilidad enviada (enlace al PR) y estado de las anteriores (mergeadas, abiertas o cerradas).
+- Flujos técnicos revisados y los que no se revisaron.
+- Bugs encontrados y corregidos, con su PR.
+- Observaciones y propuestas nuevas, por identificador.
+- PRs de usabilidad abiertos y pendientes (`gh api "repos/axellaban/amoblaia/pulls?state=open"`, los de título `UX:`).
+- `PostHog revisado hasta: <ISO> · cobertura: completa|parcial|sin acceso`, con qué áreas y qué quedó afuera, sin cantidades.
 - Lo esperado que no es bug.
-- Actualizar las listas «Observaciones abiertas» y «Propuestas de usabilidad abiertas» (sacar lo resuelto, sumar lo nuevo, marcar lo que se repite) y el valor `PostHog revisado hasta: <ISO>`.
 
-Commit y merge junto con los arreglos, o solo si no hubo arreglos.
+Actualizar las listas «Observaciones abiertas» y «Propuestas UX pendientes»: sacar lo resuelto, sumar lo nuevo con el número siguiente y marcar lo que se repite. Los identificadores no se reutilizan.
 
-Resumen final, corto y en castellano: qué se probó, qué se corrigió (con enlaces), qué propuesta de usabilidad quedó para revisar, los 2 o 3 hallazgos más importantes de PostHog y qué no se pudo hacer (por ejemplo, si faltaban las credenciales de QA o el conector de PostHog).
+Commit y merge junto con los arreglos, o solo si no hubo arreglos. Este commit a main es lo que Astra lee: sin él, la corrida no existe para ella.
+
+Resumen final, corto y en castellano: qué se probó, qué se corrigió (con enlaces), qué hallazgos de usabilidad se registraron, los 2 o 3 hallazgos más importantes de PostHog y qué no se pudo hacer (por ejemplo, si faltaban las credenciales de QA o el conector de PostHog).

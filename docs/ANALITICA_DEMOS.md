@@ -41,6 +41,7 @@ Super propiedades (viajan en todos los eventos siguientes del navegador):
 | `app_env` | siempre | `production`, `preview` o `local` |
 | `is_internal` | dispositivos del equipo | excluir tráfico interno |
 | `tracking_version` | siempre (`2`) | distinguir datos anteriores a esta instrumentación |
+| `flow_name`, `ux_version`, `deployment_id`, `experiment_variant` | ver [CRO_INSTRUMENTACION.md](CRO_INSTRUMENTACION.md) | saber qué versión del diseño vio cada persona |
 
 Propiedades de persona (`$set_once`): `first_demo_*` (solo para enlaces de
 presentación, no para compradores, para no crear perfiles de cada visitante),
