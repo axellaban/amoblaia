@@ -41,11 +41,38 @@ export function funnelStep(f: DemoFunnelFacts): FunnelStep {
   return 0;
 }
 
-/** How many demos reached each step, and each step's share of the one before (null without a base). */
-export function funnelCounts(steps: FunnelStep[]) {
-  const counts = FUNNEL_STEPS.map((_, i) => steps.filter((s) => s >= i).length);
+/**
+ * The panel's whole funnel: the three prospecting steps of the sheet, then
+ * the demo's seven. Counted per agency: its highest step, prospecting or demo.
+ */
+export const PROSPECT_STEPS = ["Contactados", "Saludo respondido", "Interesados"] as const;
+export const AGENCY_STEPS = [...PROSPECT_STEPS, ...FUNNEL_STEPS] as const;
+
+/** What prospecting knows of an agency: 0 contacted, 1 replied to the greeting, 2 interested; null: never contacted. */
+export type ProspectFacts = { contacted: boolean; replied: boolean; interested: boolean };
+export function prospectStep(f: ProspectFacts | null): number | null {
+  if (!f) return null;
+  if (f.interested) return 2;
+  if (f.replied) return 1;
+  return f.contacted ? 0 : null;
+}
+
+/**
+ * An agency's step in the whole funnel, or null when it is in neither part.
+ * A demo is the step after «Interesados»: an agency with a demo counts in the
+ * three prospecting steps too, so every step holds the ones after it.
+ */
+export function agencyStep(prospect: number | null, demo: FunnelStep | null): number | null {
+  const fromDemo = demo === null ? null : demo + PROSPECT_STEPS.length;
+  if (fromDemo === null) return prospect;
+  return prospect === null ? fromDemo : Math.max(prospect, fromDemo);
+}
+
+/** How many reached each step (cumulative), and each step's share of the one before (null without a base). */
+export function funnelCounts(steps: number[], labels: readonly string[] = FUNNEL_STEPS) {
+  const counts = labels.map((_, i) => steps.filter((s) => s >= i).length);
   return counts.map((count, i) => ({
-    label: FUNNEL_STEPS[i],
+    label: labels[i],
     count,
     ofPrevious: i === 0 ? null : counts[i - 1] ? Math.round((count / counts[i - 1]) * 100) : null,
     ofFirst: counts[0] ? count / counts[0] : 0,

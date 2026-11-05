@@ -198,11 +198,17 @@ export function parseDay(s: string) {
   return isDate(out) && d.getUTCDate() === Number(m[1]) ? out : null;
 }
 
-export type LegacyStatus = "pending" | "sent" | "invalid" | "unknown" | null;
+/** «Estado» of the sheet. «replied» and «interested» are sends too (the funnel's «Saludo respondido» and «Interesados»). */
+export type LegacyStatus = "pending" | "sent" | "replied" | "interested" | "invalid" | "unknown" | null;
+/** The sheet says the agency was already written to. */
+export const isSentStatus = (s: LegacyStatus) => s === "sent" || s === "replied" || s === "interested";
 export function parseStatus(s: string): LegacyStatus {
   const t = s.trim().toLowerCase();
   if (!t) return null;
-  if (/enviad/.test(t)) return "sent";
+  if (/^no\b/.test(t)) return "unknown";
+  if (/interesad/.test(t)) return "interested";
+  if (/respondi|respuesta|saludo/.test(t)) return "replied";
+  if (/enviad|contactad/.test(t)) return "sent";
   if (/pendiente/.test(t)) return "pending";
   if (/incorrect|inv[aá]lid|equivocad/.test(t)) return "invalid";
   return "unknown";
@@ -302,8 +308,8 @@ export function buildRows(parsed: { headers: string[]; rows: string[][] }, mappi
     const dateText = get("sent_date");
     const sent_date = dateText ? parseDay(dateText) : null;
     if (dateText && !sent_date) messages.push(`Fecha «${dateText}» no reconocida`);
-    if (legacy_status === "sent" && !sent_date) messages.push("Figura como Enviado sin fecha válida: no se registra el envío");
-    if (legacy_status === "sent" && sent_date) messages.push("Envío histórico: fecha sin hora, canal y variante desconocidos");
+    if (isSentStatus(legacy_status) && !sent_date) messages.push("Figura como Enviado sin fecha válida: no se registra el envío");
+    if (isSentStatus(legacy_status) && sent_date) messages.push("Envío histórico: fecha sin hora, canal y variante desconocidos");
 
     const contacts: ImportContact[] = [];
     const wa = normalizeWhatsapp(get("whatsapp_link"), get("phone"));

@@ -7,7 +7,24 @@
  *   PROSPECT_SYNC_TOKEN  el mismo valor que PROSPECT_SYNC_TOKEN en Vercel
  *
  * Después, ejecutar una vez instalarDisparador() y autorizar el script.
+ *
+ * Columna «Estado» (alimenta el funnel del panel de Inmobiliarias):
+ *   Contactado (o Enviado) → Contactados
+ *   Respondió saludo       → Saludo respondido
+ *   Interesado             → Interesados
+ *   Pendiente / Número incorrecto → no entran al funnel
+ * Para no esperar a la hora siguiente: menú habita → Sincronizar ahora.
  */
+
+/** Agrega el menú «habita» al abrir la planilla. */
+function onOpen() {
+  SpreadsheetApp.getUi().createMenu('habita').addItem('Sincronizar ahora', 'sincronizarAhora').addToUi();
+}
+
+function sincronizarAhora() {
+  sincronizarProspectos();
+  SpreadsheetApp.getActiveSpreadsheet().toast('Listo: el panel ya tiene los estados de la planilla.', 'habita', 5);
+}
 
 // Debe ser la misma cadena que usaron al importar a mano: si no, cada
 // inmobiliaria figura dos veces.

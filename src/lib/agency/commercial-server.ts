@@ -5,7 +5,7 @@ import { agencyDetail, allScoreRows } from "@/lib/leads/server";
 import { rollupAgency, rollupDemo, type ScoreRow } from "@/lib/leads/rollup";
 import type { Stage as ProspectStage } from "@/lib/prospecting/types";
 import { commercialStage, lastActivity, type ActivityFact, type CommercialRow } from "./commercial";
-import { funnelStep, isTestAgency } from "./demo-funnel";
+import { funnelStep, isTestAgency, prospectStep } from "./demo-funnel";
 
 /**
  * The facts behind the «Inmobiliarias» panel, read in a few light queries:
@@ -107,15 +107,58 @@ async function activeOwners(owners: { id: string; since: string }[]) {
   return active;
 }
 
+type ProspectRow = { id: string; agency_id: string; stage: ProspectStage; created_at: string };
+type ProspectEventRow = { id: string; account_id: string; type: string; occurred_at: string; human: boolean | null; corrects_event_id: string | null };
+/** Prospecting stages that prove a reply or an interest (the stage only moves forward). */
+const INTERESTED_STAGES: readonly ProspectStage[] = ["interested", "activated", "customer"];
+
 async function prospectStages(agencyId: string | null) {
   const rows = await optional(() =>
-    all<{ agency_id: string; stage: ProspectStage }>((from, to) => {
-      let q = adminClient().from("prospect_accounts").select("agency_id,stage").range(from, to);
+    all<ProspectRow>((from, to) => {
+      let q = adminClient().from("prospect_accounts").select("id,agency_id,stage,created_at").range(from, to);
       if (agencyId) q = q.eq("agency_id", agencyId);
       return q;
     }, "COMMERCIAL_PROSPECTS_FAILED"),
   );
-  return new Map(rows.map((r) => [r.agency_id, r.stage]));
+  return { stages: new Map(rows.map((r) => [r.agency_id, r.stage])), accounts: rows };
+}
+
+/**
+ * Each agency's prospecting step for the funnel: contacted (a send, or a
+ * stage past «pending»), replied (a human reply) and interested, with the
+ * day it was first contacted. Corrected events don't count.
+ */
+async function prospectFunnel(accounts: ProspectRow[]) {
+  const out = new Map<string, { step: number; at: string }>();
+  if (!accounts.length) return out;
+  const events = await optional(() =>
+    all<ProspectEventRow>((from, to) => {
+      let q = adminClient()
+        .from("prospect_events")
+        .select("id,account_id,type,occurred_at,human,corrects_event_id")
+        .in("type", ["sent", "reply", "interest", "correction"])
+        .range(from, to);
+      if (accounts.length === 1) q = q.eq("account_id", accounts[0].id);
+      return q;
+    }, "COMMERCIAL_PROSPECT_EVENTS_FAILED"),
+  );
+  const corrected = new Set(events.map((e) => e.corrects_event_id).filter(Boolean));
+  const byAccount = new Map<string, ProspectEventRow[]>();
+  for (const e of events)
+    if (e.type !== "correction" && !corrected.has(e.id) && !(e.type === "reply" && e.human === false))
+      byAccount.set(e.account_id, [...(byAccount.get(e.account_id) ?? []), e]);
+  for (const a of accounts) {
+    const own = byAccount.get(a.id) ?? [];
+    const interested = INTERESTED_STAGES.includes(a.stage) || own.some((e) => e.type === "interest");
+    const replied = interested || a.stage === "conversation" || own.some((e) => e.type === "reply");
+    const contacted = replied || own.length > 0 || (a.stage !== "pending" && a.stage !== "discarded");
+    const step = prospectStep({ contacted, replied, interested });
+    if (step === null) continue;
+    const at = own.map((e) => e.occurred_at).sort()[0] ?? a.created_at;
+    const prev = out.get(a.agency_id);
+    if (!prev || step > prev.step) out.set(a.agency_id, { step, at: prev && prev.at < at ? prev.at : at });
+  }
+  return out;
 }
 
 /** Each agency's contact WhatsApp; optional (before its migration, nothing). */
@@ -165,12 +208,13 @@ export async function commercialRows(only: string | null = null): Promise<Commer
   // no «Cuenta creada», no activity, no subscription. Its demos' visits still count.
   const agencies = agenciesRaw.map((a) => (a.owner_id && team.has(a.owner_id) ? { ...a, owner_id: null, claimed_at: null } : a));
   const claimed = agencies.filter((a): a is AgencyRow & { owner_id: string } => Boolean(a.owner_id));
-  const [subscribed, scores, active] = await Promise.all([
+  const [subscribed, scores, active, funnelOf] = await Promise.all([
     subscribedOwners([...new Set(claimed.map((a) => a.owner_id))]),
     scoreRows(only ? demos.map((d) => d.id) : null),
     optional(async () => [
       ...(await activeOwners(claimed.map((a) => ({ id: a.owner_id, since: a.claimed_at ?? a.created_at })))),
     ]).then((ids) => new Set(ids)),
+    prospectFunnel(prospects.accounts),
   ]);
   const byAgency = new Map<string, DemoRow[]>();
   for (const d of demos) byAgency.set(d.agency_id, [...(byAgency.get(d.agency_id) ?? []), d]);
@@ -182,7 +226,7 @@ export async function commercialRows(only: string | null = null): Promise<Commer
     const own = byAgency.get(a.id) ?? [];
     const rollup = own.length ? rollupAgency(a.id, own.map((d) => d.id), fixed) : null;
     const score = rollup?.score ?? null;
-    const prospectStage = prospects.get(a.id) ?? null;
+    const prospectStage = prospects.stages.get(a.id) ?? null;
     const isSubscribed = Boolean(a.owner_id && subscribed.has(a.owner_id));
     const level = Math.max(0, ...own.map((d) => d.activity_level ?? 0));
     const sent = own.map((d) => d.sent_at).filter((v): v is string => Boolean(v)).sort().at(-1) ?? null;
@@ -218,6 +262,7 @@ export async function commercialRows(only: string | null = null): Promise<Commer
       hasOwner: Boolean(a.owner_id),
       subscribed: isSubscribed,
       prospect: Boolean(prospectStage),
+      prospectFunnel: funnelOf.get(a.id) ?? null,
       properties: own.length,
       published: published.length,
       score,

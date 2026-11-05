@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
 import { HttpError, requireAdmin } from "@/lib/commerce/http";
 import { isUuid } from "@/lib/demos/shared";
-import { buildRows, guessMapping, IMPORT_FIELDS, LEGACY_CHANNELS, MAX_IMPORT_BYTES, MAX_IMPORT_ROWS, parseCsv, preview, type Mapping } from "@/lib/prospecting/import";
+import { buildRows, guessMapping, IMPORT_FIELDS, LEGACY_CHANNELS, MAX_IMPORT_BYTES, MAX_IMPORT_ROWS, isSentStatus, parseCsv, preview, type Mapping } from "@/lib/prospecting/import";
 import { body, existingAgencies, NO_STORE, prospectFailure, prospectRpc, text } from "@/lib/prospecting/server";
-import { importRows } from "@/lib/prospecting/sync";
+import { applySheetStages, importRows } from "@/lib/prospecting/sync";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
@@ -49,7 +49,7 @@ export async function POST(request: Request) {
             errors: rows.filter((r) => r.action === "error").length,
             duplicates: rows.filter((r) => r.duplicates.length).length,
             suggestions: rows.filter((r) => r.suggestion).length,
-            legacySends: rows.filter((r) => r.legacy_status === "sent" && r.sent_date).length,
+            legacySends: rows.filter((r) => isSentStatus(r.legacy_status) && r.sent_date).length,
           },
         },
         { headers: NO_STORE },
@@ -69,8 +69,10 @@ export async function POST(request: Request) {
       p_overwrite: b.overwrite === true,
       p_legacy_channel: typeof b.legacyChannel === "string" && b.legacyChannel in LEGACY_CHANNELS ? b.legacyChannel : "unknown",
     });
+    const legacyChannel = typeof b.legacyChannel === "string" && b.legacyChannel in LEGACY_CHANNELS ? b.legacyChannel : "unknown";
+    const stages = report.replayed ? null : await applySheetStages({ actor: actor.id, source, rows, channel: legacyChannel });
     const errors = rows.filter((r) => r.action === "error").map((r) => ({ row: r.row_number, error: r.error }));
-    return Response.json({ ...report, rejected: errors }, { headers: NO_STORE });
+    return Response.json({ ...report, stages, rejected: errors }, { headers: NO_STORE });
   } catch (e) {
     return prospectFailure(e);
   }

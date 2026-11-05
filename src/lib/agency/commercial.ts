@@ -153,6 +153,8 @@ export type CommercialRow = {
   createdAt: string;
   /** A test agency (QA): out of the demos funnel. */
   test: boolean;
+  /** Prospecting: its step (0 contacted, 1 replied, 2 interested; demo-funnel.ts) and when it was first contacted. Absent: never contacted. */
+  prospectFunnel?: { step: number; at: string } | null;
   /** Its demos: when each was created and the funnel step it reached (demo-funnel.ts). */
   demos: { createdAt: string; step: number; id?: string; sent?: boolean }[];
   /** Its contact WhatsApp, as loaded on the agency (null when unknown). */

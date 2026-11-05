@@ -1,7 +1,7 @@
 import "server-only";
 import { createHash, randomUUID } from "node:crypto";
 import { HttpError } from "@/lib/commerce/http";
-import { buildRows, guessMapping, MAX_IMPORT_BYTES, MAX_IMPORT_ROWS, parseCsv, preview, type LegacyChannel, type Mapping, type PreviewRow } from "./import";
+import { buildRows, guessMapping, isSentStatus, MAX_IMPORT_BYTES, MAX_IMPORT_ROWS, parseCsv, preview, type LegacyChannel, type Mapping, type PreviewRow } from "./import";
 import { existingAgencies, prospectRpc } from "./server";
 
 /** The rows of a preview as the import function receives them. Links to existing agencies are never sent from here. */
@@ -25,7 +25,8 @@ export function importRows(rows: PreviewRow[], links: Record<string, unknown> = 
         address: r.address,
         decision_maker: r.decision_maker,
         notes: r.notes,
-        legacy_status: r.legacy_status,
+        // «Respondió saludo» and «Interesado» were sent too: the import records the dated send; sheetStages, the rest.
+        legacy_status: isSentStatus(r.legacy_status) ? "sent" : r.legacy_status,
         sent_date: r.sent_date,
         contacts: r.contacts,
         raw: r.raw,
@@ -33,6 +34,32 @@ export function importRows(rows: PreviewRow[], links: Record<string, unknown> = 
         messages: [...r.messages, ...r.duplicates],
       };
     });
+}
+
+/** The rows whose «Estado» moves the prospecting stage (habita_prospect_sheet_stages). */
+export function stageRows(rows: PreviewRow[]) {
+  return rows
+    .filter((r) => r.action !== "error" && isSentStatus(r.legacy_status))
+    .map((r) => ({
+      source_key: r.source_key,
+      stage: r.legacy_status === "sent" ? "contacted" : r.legacy_status,
+      date: r.sent_date,
+    }));
+}
+
+/**
+ * Records «Contactado», «Respondió saludo» and «Interesado» after an import.
+ * Before its migration (202611270001) the import still applies and the
+ * report says the stages are pending, instead of failing the whole sync.
+ */
+export async function applySheetStages(input: { actor: string; source: string; rows: PreviewRow[]; channel: string }) {
+  const rows = stageRows(input.rows);
+  if (!rows.length) return { contacted: 0, replies: 0, interests: 0 };
+  try {
+    return await prospectRpc<Record<string, number>>("habita_prospect_sheet_stages", { p_actor: input.actor, p_source: input.source, p_rows: rows, p_channel: input.channel });
+  } catch {
+    return { error: "No se registraron los estados de la planilla: falta aplicar la migración 202611270001_prospect_sheet_stages.sql." };
+  }
 }
 
 /**
@@ -76,8 +103,10 @@ export async function runSheetSync(input: { actor: string; csv: string; source: 
     p_overwrite: false,
     p_legacy_channel: input.legacyChannel,
   });
+  const stages = await applySheetStages({ actor: input.actor, source: input.source, rows: apply, channel: input.legacyChannel });
   return {
     ...report,
+    stages,
     held: held.map((r) => ({ row: r.row_number, name: r.name, reason: r.suggestion?.reason ?? null, agencyName: r.suggestion?.name ?? null })),
     rejected: rows.filter((r) => r.action === "error").map((r) => ({ row: r.row_number, error: r.error })),
   };

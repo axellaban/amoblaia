@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { demosInPeriod, funnelCounts, funnelStep, inPeriod, isTestAgency, parsePeriod, shortDay, type DemoFunnelFacts } from "@/lib/agency/demo-funnel";
+import { AGENCY_STEPS, agencyStep, demosInPeriod, funnelCounts, prospectStep, funnelStep, inPeriod, isTestAgency, parsePeriod, shortDay, type DemoFunnelFacts } from "@/lib/agency/demo-funnel";
 
 const none: DemoFunnelFacts = { sentAt: null, activityLevel: 0, hasOwner: false, ownerActive: false, subscribed: false };
 
@@ -82,5 +82,25 @@ describe("periods", () => {
     );
     expect(v).toEqual({ count: 2, step: 2, latest: "2026-11-02T12:00:00Z" });
     expect(demosInPeriod([], p)).toEqual({ count: 0, step: null, latest: null });
+  });
+});
+
+describe("the whole funnel (sheet + demos)", () => {
+  it("puts the three prospecting steps before the demo ones", () => {
+    expect(AGENCY_STEPS.slice(0, 4)).toEqual(["Contactados", "Saludo respondido", "Interesados", "Demos creadas"]);
+    expect(AGENCY_STEPS).toHaveLength(10);
+  });
+  it("takes the highest step of each part, and a demo counts in the prospecting steps", () => {
+    expect(prospectStep(null)).toBeNull();
+    expect(prospectStep({ contacted: false, replied: false, interested: false })).toBeNull();
+    expect(prospectStep({ contacted: true, replied: false, interested: false })).toBe(0);
+    expect(prospectStep({ contacted: true, replied: true, interested: false })).toBe(1);
+    expect(prospectStep({ contacted: true, replied: true, interested: true })).toBe(2);
+    expect(agencyStep(null, null)).toBeNull();
+    expect(agencyStep(1, null)).toBe(1);
+    expect(agencyStep(null, 0)).toBe(3);
+    expect(agencyStep(2, 4)).toBe(7);
+    const f = funnelCounts([0, 1, 2, 3, 9], AGENCY_STEPS);
+    expect(f.map((s) => s.count)).toEqual([5, 4, 3, 2, 1, 1, 1, 1, 1, 1]);
   });
 });

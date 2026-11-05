@@ -21,7 +21,7 @@ import {
   type ListFilters,
 } from "@/lib/agency/commercial";
 import { commercialRows } from "@/lib/agency/commercial-server";
-import { FUNNEL_STEPS, PERIODS, STEP_LABEL, demosInPeriod, funnelCounts, parsePeriod, shortDay, type Period } from "@/lib/agency/demo-funnel";
+import { AGENCY_STEPS, PERIODS, STEP_LABEL, agencyStep, demosInPeriod, funnelCounts, inPeriod, parsePeriod, shortDay, type Period } from "@/lib/agency/demo-funnel";
 import { AccountPill, AgencyThumb, DemoStepMenu, MoreMenu, RecalcScores, RowQuickActions, ScorePill, StagePill } from "@/components/admin-agency-hub";
 import { SupportViewButton } from "@/components/admin-agencies";
 import { requireAdminPage } from "@/lib/demos/admin-page";
@@ -36,8 +36,8 @@ const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) 
 const PER_PAGE = 50;
 /** Each funnel step's share, said of the step before it. */
 /** Who stayed at each step without reaching the next one: the orange part of its bar. */
-const STAYED = ["No se enviaron", "No abrieron la demo", "Visitaron, sin interactuar", "Interactuaron, sin cuenta", "Cuenta sin uso", "Sin suscripción"];
-const OF_PREVIOUS = ["", "de las creadas", "de las enviadas", "de las visitadas", "de las que interactuaron", "de las cuentas creadas", "de las cuentas activas"];
+const STAYED = ["No respondieron el saludo", "Respondieron, sin interés", "Interesados, sin demo", "No se enviaron", "No abrieron la demo", "Visitaron, sin interactuar", "Interactuaron, sin cuenta", "Cuenta sin uso", "Sin suscripción"];
+const OF_PREVIOUS = ["", "de los contactados", "de los que respondieron", "de los interesados", "de las creadas", "de las enviadas", "de las visitadas", "de las que interactuaron", "de las cuentas creadas", "de las cuentas activas"];
 /** «hoy», «últimos 7 días», «del 02/11 al 04/11»: the period, said in the list's summary. */
 function periodLabel(p: Period) {
   const day = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
@@ -65,12 +65,12 @@ export default async function AgenciesPage({ searchParams }: Props) {
     days: [7, 30, 90].includes(Number(one(sp.actividad))) ? Number(one(sp.actividad)) : null,
   };
   const period = parsePeriod({ periodo: one(sp.periodo), desde: one(sp.desde), hasta: one(sp.hasta) });
-  // «Con demo creada» is a tab of its own (not a commercial stage); «paso» is a step of the demos funnel.
+  // «Con demo creada» is a tab of its own (not a commercial stage); «paso» is a step of the funnel (AGENCY_STEPS).
   const withDemo = one(sp.etapa) === "con-demo";
   const stepRaw = Number(one(sp.paso));
-  const step = one(sp.paso) !== "" && Number.isInteger(stepRaw) && stepRaw >= 0 && stepRaw < FUNNEL_STEPS.length ? stepRaw : null;
+  const step = one(sp.paso) !== "" && Number.isInteger(stepRaw) && stepRaw >= 0 && stepRaw < AGENCY_STEPS.length ? stepRaw : null;
   // «quedo»: only the agencies that stayed at the step (not the ones that went on). The last step has nothing after it.
-  const stayed = step !== null && step < FUNNEL_STEPS.length - 1 && one(sp.quedo) === "1";
+  const stayed = step !== null && step < AGENCY_STEPS.length - 1 && one(sp.quedo) === "1";
   const page = Math.max(1, Number(one(sp.pagina)) || 1);
   const sort = sortFromParam(one(sp.orden));
   const [rows, toReview] = await Promise.all([commercialRows().catch(() => null), claimsToReview().catch(() => [])]);
@@ -150,12 +150,19 @@ function AgencyList({
   toReview: Awaited<ReturnType<typeof claimsToReview>>;
 }) {
   const view = new Map(rows.map((r) => [r.id, demosInPeriod(r.demos, period)]));
-  // One per agency (its highest step among the period's demos), test agencies out: tapping a part of a bar lists exactly that many.
-  const funnel = funnelCounts(rows.filter((r) => !r.test).flatMap((r) => (view.get(r.id)!.step === null ? [] : [view.get(r.id)!.step!])));
+  // One per agency: its highest step, prospecting (first contacted in the period) or demo (created in the period).
+  // Test agencies are out: tapping a part of a bar lists exactly that many.
+  const reached = new Map(
+    rows.map((r) => {
+      const p = r.prospectFunnel && inPeriod(r.prospectFunnel.at, period) ? r.prospectFunnel.step : null;
+      return [r.id, agencyStep(p, view.get(r.id)!.step)];
+    }),
+  );
+  const funnel = funnelCounts(rows.filter((r) => !r.test).flatMap((r) => (reached.get(r.id) == null ? [] : [reached.get(r.id)!])), AGENCY_STEPS);
   // A period other than «Todo» scopes the whole list (and its tab counts) to the agencies with demos created in it,
   // so what's below matches the funnel above.
   const periodOn = period.key !== "todo";
-  const scoped = periodOn ? rows.filter((r) => view.get(r.id)!.count > 0) : rows;
+  const scoped = periodOn ? rows.filter((r) => view.get(r.id)!.count > 0 || reached.get(r.id) != null) : rows;
   const totals = listTotals(scoped);
   const withDemos = rows.filter((r) => view.get(r.id)!.count > 0).length;
   const periodDemos = scoped.reduce((n, r) => n + view.get(r.id)!.count, 0);
@@ -164,7 +171,8 @@ function AgencyList({
     if (withDemo && !v.count) return false;
     // A funnel step: agencies with a demo of the period that reached it, without test agencies, like the bar.
     // «Se quedaron»: its highest step is exactly that one.
-    return step === null || (!r.test && v.step !== null && (stayed ? v.step === step : v.step >= step));
+    const s = reached.get(r.id);
+    return step === null || (!r.test && s != null && (stayed ? s === step : s >= step));
   });
   const shown = sortRows(filtered, sort);
   /** A sortable header: the first click sorts from highest to lowest (newest activity first), the next one the other way. */
@@ -191,11 +199,11 @@ function AgencyList({
       <section className="ah-dfunnel" aria-labelledby="ah-dfunnel-title">
         <div className="ah-dfunnel-head">
           <div>
-            <h2 id="ah-dfunnel-title">Funnel de demos</h2>
-            <p>Cada paso cuenta las inmobiliarias cuya demo llegó hasta ahí. El % compara con el paso anterior.</p>
+            <h2 id="ah-dfunnel-title">Funnel comercial</h2>
+            <p>Cada paso cuenta las inmobiliarias que llegaron hasta ahí. El % compara con el paso anterior.</p>
           </div>
           <div className="ah-period">
-            <span>Demo creada:</span>
+            <span>Período:</span>
             <nav className="ah-period-presets" aria-label="Período">
               {PERIODS.map((p) => (
                 <Link key={p.key} href={presetHref(p.key)} className={period.key === p.key ? "is-on" : undefined} aria-current={period.key === p.key ? "true" : undefined}>
@@ -245,7 +253,7 @@ function AgencyList({
                 </Link>
                 <div className="ah-dfunnel-plot">
                   {f.count ? (
-                    <div className="ah-dfunnel-col" style={{ height: `max(${total}%, ${(stay > 0 ? 24 : 0) + (went > 0 ? 24 : 0)}px)` }}>
+                    <div className="ah-dfunnel-col" style={{ height: `max(${total}%, ${(stay > 0 ? 24 : 0) + (went > 0 ? 24 : 0)}px)`, ["--w" as string]: `${total}%` }}>
                       {stay > 0 && (
                         <Link
                           href={href({ paso: isOn(i, true) ? null : String(i), quedo: isOn(i, true) ? null : "1" })}
@@ -282,7 +290,9 @@ function AgencyList({
           })}
         </ol>
         <p className="ah-dfunnel-note">
-          Tocá una parte de una barra para ver sus inmobiliarias: lo verde pasó al paso siguiente; lo naranja se quedó ahí. «Con interacción» incluye descargas e imágenes generadas en la demo; «Cuenta con interacción»: la
+          Tocá una parte de una barra para ver sus inmobiliarias: lo verde pasó al paso siguiente; lo naranja se quedó ahí. Los tres primeros pasos salen
+          de la columna «Estado» de la planilla de prospección (se sincroniza cada hora) y el período los cuenta por la fecha del primer contacto; una
+          inmobiliaria con demo cuenta también en esos pasos. «Con interacción» incluye descargas e imágenes generadas en la demo; «Cuenta con interacción»: la
           cuenta subió o importó una propiedad, o generó una imagen. Las inmobiliarias de prueba (QA) no cuentan.
         </p>
       </section>
@@ -394,8 +404,8 @@ function AgencyList({
           {shown.length} {shown.length === 1 ? "inmobiliaria" : "inmobiliarias"}
           {step !== null
             ? stayed
-              ? ` en «${FUNNEL_STEPS[step]}» sin pasar a «${FUNNEL_STEPS[step + 1]}» (${STAYED[step].toLowerCase()})`
-              : ` en «${FUNNEL_STEPS[step]}»`
+              ? ` en «${AGENCY_STEPS[step]}» sin pasar a «${AGENCY_STEPS[step + 1]}» (${STAYED[step].toLowerCase()})`
+              : ` en «${AGENCY_STEPS[step]}»`
             : " con demos creadas"}
           {periodOn ? ` · ${periodLabel(period)} (${periodDemos} ${periodDemos === 1 ? "demo" : "demos"})` : ""}
           {" · "}

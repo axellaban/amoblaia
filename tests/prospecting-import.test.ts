@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { buildRows, guessMapping, normalizeWhatsapp, parseCsv, parseDay, parseNumber, preview } from "@/lib/prospecting/import";
+import { buildRows, guessMapping, normalizeWhatsapp, parseCsv, parseDay, parseNumber, parseStatus, preview } from "@/lib/prospecting/import";
 
 // tests/fixtures/prospeccion-sintetica.csv is synthetic: names marked
 // FICTICIA, numbers in a reserved-looking range, .test domains.
@@ -47,6 +47,22 @@ describe("Sheet import", () => {
     expect(rows[3]).toMatchObject({ legacy_status: "sent", sent_date: null });
     expect(rows[3].messages.join(" ")).toMatch(/sin fecha válida/);
     expect(rows[2].contacts[0]).toMatchObject({ invalid: true, is_primary: false });
+  });
+
+  it("reads the funnel's statuses from «Estado»", () => {
+    for (const [t, v] of [
+      ["Enviado", "sent"],
+      ["Contactado", "sent"],
+      ["Respondió saludo", "replied"],
+      ["Saludo respondido", "replied"],
+      ["Interesado", "interested"],
+      ["Interesada", "interested"],
+      ["No interesado", "unknown"],
+      ["Pendiente", "pending"],
+      ["Número incorrecto", "invalid"],
+      ["", null],
+    ] as const)
+      expect(parseStatus(t)).toBe(v);
   });
 
   it("reports errors and repeated rows without dropping them", () => {
