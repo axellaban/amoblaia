@@ -1,6 +1,7 @@
 // From what a listing page publishes to the demo's data, with the state of
 // each field: found, not published, not extracted (the page has the section
 // but nothing could be read) or contradictory. Pure: no network, no database.
+import { agentName } from "./agent-name";
 import { DEFAULT_SETTINGS, type AmenityGroup, type DemoSettings, type Fact, type FactIcon, type MapSettings } from "./branding";
 import { placesOf, sourceName } from "./geo";
 import { norm, type ListingDetails } from "./listing-details";
@@ -166,8 +167,10 @@ export function toDemo(d: ListingDetails, fallback: Fallback, diagnostics?: Impo
     required: Boolean(opts.required),
   });
   const pairConflicts = [...contradictions].filter(([, vals]) => vals.size > 1).map(([k, vals]) => `${k}: ${[...vals].join(" / ")}`);
-  const agent = d.agent?.name
-    ? { name: d.agent.name, role: null, whatsapp: d.agent.whatsapp, phone: d.agent.phone, email: d.agent.email, photoUrl: d.agent.photoUrl?.startsWith("https://") ? d.agent.photoUrl : null }
+  // The agent with its contact even without a real name (name ""): its WhatsApp or phone is kept.
+  const name = agentName(d.agent?.name);
+  const agent = d.agent && (name || d.agent.whatsapp || d.agent.phone || d.agent.email)
+    ? { name: name ?? "", role: null, whatsapp: d.agent.whatsapp, phone: d.agent.phone, email: d.agent.email, photoUrl: d.agent.photoUrl?.startsWith("https://") ? d.agent.photoUrl : null }
     : null;
   const images = d.images.length ? d.images : fallback.images;
   const description = d.description ?? fallback.description;
@@ -200,7 +203,7 @@ export function toDemo(d: ListingDetails, fallback: Fallback, diagnostics?: Impo
     row("Fotos de la propiedad", images.length ? `${images.length}` : null, { required: true, note: d.images.length ? "Solo las de esta propiedad, sin las de propiedades similares." : "Revisá que todas sean de esta propiedad." }),
     row("Inmobiliaria", d.agency.name ?? fallback.agencyName),
     row("Logo", d.agency.logoUrl ? decodeURIComponent(d.agency.logoUrl.split(/[?#]/)[0].split("/").pop() ?? "") : null, { note: d.agency.logoUrl ? "Se guarda en la demo si la inmobiliaria no tiene uno." : undefined }),
-    row("Agente", agent?.name, { error: !agent && has(/^contacto/i) }),
+    row("Agente", agent?.name || null, { error: !agent && has(/^contacto/i) }),
     row("Email del agente", agent?.email),
     row("WhatsApp del agente", agent?.whatsapp),
     row("Teléfono del agente", agent?.phone),

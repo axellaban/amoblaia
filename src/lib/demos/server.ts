@@ -863,7 +863,8 @@ export function listingFields(settings: DemoSettings, branding: AgencyBranding) 
     facts: settings.facts,
     amenities: settings.amenities,
     map: publicMap(settings),
-    agent: settings.agent
+    // The agent's card needs a name; a nameless agent only gives its contact (contactOf).
+    agent: settings.agent?.name
       ? {
           name: settings.agent.name,
           role: settings.agent.role,

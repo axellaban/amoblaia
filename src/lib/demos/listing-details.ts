@@ -9,6 +9,7 @@ export type Money = { text: string; currency: "USD" | "$"; amount: number };
 export type Pair = { label: string; value: string; section: string };
 export type FeatureGroup = { title: string; items: string[] };
 import { otherListingsAt, withoutOtherBlocks } from "@/lib/listings/photos";
+import { agentName } from "./agent-name";
 import { extractLocation, type GeoMap, type GeoResult } from "./geo";
 
 export type MapData = GeoMap;
@@ -189,7 +190,8 @@ function personNear(html: string, at: number, base: string): Person {
   const tel = after.match(/href\s*=\s*"tel:([^"]+)"/i);
   const mail = after.match(/href\s*=\s*"mailto:([^"?]+)/i);
   return {
-    name: name ? squash(name[1]) || null : null,
+    // A contact button's text ("Contáctenos") is not the agent's name.
+    name: name ? agentName(squash(name[1])) : null,
     photoUrl: imgs.length ? absolute(imgs[imgs.length - 1][1], base) : null,
     email: mail ? decode(mail[1]).trim() : null,
     phone: tel && digits(tel[1]).length >= 6 ? `+${digits(tel[1])}` : null,
@@ -327,14 +329,19 @@ export function extractDetails(html: string, pageUrl: string): ListingDetails {
   const map: MapData | null = geo.map;
 
   // Agent: the first named contact block of the property (before other listings).
+  // Without a real name ("Contáctenos" is a button), the first block's contact is kept, nameless.
   let agent: Person | null = null;
+  let nameless: Person | null = null;
   for (const m of ownHtml.matchAll(/<h[3-6]\b[^>]*>([^<]{3,60})<\/h[3-6]>/gi)) {
     const p = personNear(ownHtml, m.index ?? 0, page.toString());
-    if (p.name && (p.email || p.phone || p.whatsapp)) {
+    if (!(p.email || p.phone || p.whatsapp)) continue;
+    if (p.name) {
       agent = p;
       break;
     }
+    nameless ??= p;
   }
+  agent ??= nameless;
 
   // Agency: its name, logo and the contact in the page's footer.
   const logo = [...html.matchAll(/<img\b[^>]*>/gi)]

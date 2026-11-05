@@ -1899,7 +1899,9 @@ export function DemoEditor({
         summary={
           detail.settings.agent?.name
             ? `Agente: ${detail.settings.agent.name}`
-            : detail.branding.contactKind && detail.branding.contactValue
+            : detail.settings.agent
+              ? "Contacto del agente"
+              : detail.branding.contactKind && detail.branding.contactValue
               ? "Contacto de la inmobiliaria"
               : "Sin contacto para consultas"
         }
