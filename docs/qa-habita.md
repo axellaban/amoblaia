@@ -28,6 +28,16 @@ Las credenciales de QA están en Vercel (proyecto amoblaia, producción): `HABIT
 
 El skill `.claude/skills/qa-habita/SKILL.md` tiene el procedimiento completo (errores de Vercel y Supabase, flujos con Playwright, corrección, merge y registro). Corre dos veces por día como tarea programada.
 
+## Resultado del QA del 5/11/2026 pm
+
+Sin bugs nuevos; no hubo nada que corregir.
+
+- Errores de Vercel (24 h): todos los grupos son anteriores al deploy de #140/#139 (`window is not defined`, barridos del cron, `limit` de Mercado Pago, `IMPORT_UPDATE_FAILED`). Hay que confirmar mañana que no reaparezcan.
+- Supabase (logs de Postgres): solo errores de consultas sueltas del 5/11 (columnas inexistentes, tipos) y el check de `property_imports_snapshot_check` ya corregido en #139.
+- Con sesión de QA, escritorio y celular, sin errores de consola ni de red y sin scroll horizontal: `/`, `/precios`, `/acceso`, `/panel` y sus 11 subpáginas, ficha de propiedad, `/admin`, inmobiliarias (lista y ficha de prueba), prospección, demos, `/demo/<token>` y `/presentacion`.
+- No se hicieron generaciones (crear demo, estudio, video Clásico): se evitó gastar créditos en una corrida sin cambios de código en esos flujos desde el 3/11.
+- Sigue abierta la observación 1: la demo de QA se titula «Propiedad nueva».
+
 ## Resultado del QA del 5/11/2026
 
 Errores de producción corregidos en [#140](https://github.com/axellaban/amoblaia/pull/140):
