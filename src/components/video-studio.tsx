@@ -15,6 +15,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
+  Bell,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -52,6 +53,7 @@ import {
   type WatermarkChoice,
 } from "./video-media";
 import { track as trackEvent, type EventProperties } from "@/lib/analytics";
+import { cta } from "@/lib/interaction-tracking";
 import { adminPhotoUrl, type PublicDemo } from "@/lib/demos/shared";
 import type { VideoPlacement } from "@/lib/demos/branding";
 import { browserClient } from "@/lib/supabase/client";
@@ -65,6 +67,7 @@ import {
   INFO_LABEL,
   infoAvailable,
   isAiMode,
+  isComingSoon,
   isVideoFormat,
   MAX_VIDEO_PHOTOS,
   MODE_INFO,
@@ -463,6 +466,92 @@ function FormatIcon({ format }: { format: VideoFormat }) {
 }
 
 /**
+ * A style that is not offered yet («Recorrido cinematográfico»): its card
+ * looks available, and choosing it opens this notice instead. Nothing is
+ * selected or charged; the person can ask to be told when it is ready or
+ * try «Foto en movimiento» instead.
+ */
+function ComingSoon({
+  mode,
+  canTry,
+  onClose,
+  onNotify,
+  onTry,
+}: {
+  mode: VideoMode;
+  canTry: boolean;
+  onClose: () => void;
+  onNotify: () => void;
+  onTry: () => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const [asked, setAsked] = useState(false);
+  useEffect(() => {
+    const d = ref.current;
+    if (d && !d.open) d.showModal();
+  }, []);
+  return (
+    <dialog ref={ref} className="sp-dialog vs-soon" aria-labelledby="vs-soon-title" onClose={onClose} onCancel={onClose}>
+      <div className="sp-head">
+        <span className="sp-kicker">Crear video</span>
+        <button type="button" className="icon-button" aria-label="Cerrar" onClick={() => ref.current?.close()}>
+          <X size={18} />
+        </button>
+      </div>
+      <div className="vs-soon-art" aria-hidden="true">
+        <span>Próximamente</span>
+        <i />
+        <i />
+        <i />
+        <i />
+      </div>
+      <h2 id="vs-soon-title">El {MODE_INFO[mode].name.toLowerCase()} llega pronto</h2>
+      <p className="vs-soon-text">
+        Estamos terminando de ajustarlo para que cada recorrido salga como tiene que salir.
+        {canTry && " Mientras tanto, probá «Foto en movimiento»: la IA le da movimiento de cámara a una foto."}
+      </p>
+      {asked && (
+        <p className="vs-soon-done" role="status">
+          <Check size={17} aria-hidden="true" /> Listo, te avisamos cuando esté disponible.
+        </p>
+      )}
+      <div className="vs-confirm-actions">
+        {!asked && (
+          <button
+            type="button"
+            className="button button-outline"
+            {...cta("video_coming_soon_notify", "video_coming_soon", "notify", "habita_b2b", { style: mode })}
+            onClick={() => {
+              setAsked(true);
+              onNotify();
+            }}
+          >
+            <Bell size={16} aria-hidden="true" /> Avisarme cuando esté
+          </button>
+        )}
+        {canTry ? (
+          <button
+            type="button"
+            className="button button-primary"
+            {...cta("video_coming_soon_try_clip", "video_coming_soon", "mode_clip", "habita_b2b", { style: "clip" })}
+            onClick={() => {
+              onTry();
+              ref.current?.close();
+            }}
+          >
+            <Sparkles size={16} aria-hidden="true" /> Probar Foto en movimiento
+          </button>
+        ) : (
+          <button type="button" className="button button-primary" onClick={() => ref.current?.close()}>
+            Entendido
+          </button>
+        )}
+      </div>
+    </dialog>
+  );
+}
+
+/**
  * Before an AI video: what it costs, the agency's balance and what is left,
  * and what the AI does. Nothing is charged until «Generar» here.
  */
@@ -624,6 +713,8 @@ function Studio({
   const [command, setCommand] = useState<Command | null>(null);
   // The AI modes' confirmation: what it costs, the balance and what is left, before anything is charged.
   const [confirming, setConfirming] = useState(false);
+  // A style not offered yet, chosen: its «Próximamente» notice.
+  const [soon, setSoon] = useState<VideoMode | null>(null);
   const abort = useRef<AbortController | null>(null);
   const restored = useRef(false);
   const touched = useRef(false);
@@ -1268,7 +1359,9 @@ function Studio({
               <h2 id="vs-mode">Estilo del video</h2>
               <div className="vs-modes" role="radiogroup" aria-labelledby="vs-mode">
                 {(["classic", "clip", "cinematic", "balanced"] as VideoMode[]).map((m) => {
-                  const live = m === "classic" || (ai && isAiMode(m));
+                  // A style coming soon looks available: its clicks measure interest, and the notice says the rest.
+                  const later = isComingSoon(m);
+                  const live = m === "classic" || later || (ai && isAiMode(m));
                   return (
                     <button
                       key={m}
@@ -1277,10 +1370,16 @@ function Studio({
                       aria-checked={mode === m}
                       aria-disabled={!live}
                       className={`vs-mode ${mode === m ? "is-on" : ""} ${live ? "" : "is-later"}`}
+                      {...(live ? cta(`video_mode_${m}`, "video_style", later ? "coming_soon" : `mode_${m}`, "habita_b2b", { style: m }) : {})}
                       onClick={() => {
                         if (!live) return;
+                        track("video_mode_selected", { ...base, mode: m, video_mode: m, ...(later ? { coming_soon: true } : {}) });
+                        if (later) {
+                          track("video_coming_soon_viewed", { ...base, mode: m, video_mode: m, current_mode: mode });
+                          setSoon(m);
+                          return;
+                        }
                         setMode(m);
-                        track("video_mode_selected", { ...base, mode: m, video_mode: m });
                       }}
                     >
                       <span className="vs-mode-icon" aria-hidden="true">
@@ -1758,6 +1857,20 @@ function Studio({
             onPlay={() => track("video_preview_played", { ...base, video_id: result.id, mode: result.mode, format: result.format, video_format: result.format, place: "result" })}
           />
         </section>
+      )}
+
+      {soon && (
+        <ComingSoon
+          mode={soon}
+          canTry={ai}
+          onClose={() => setSoon(null)}
+          onNotify={() => track("video_coming_soon_notify", { ...base, mode: soon, video_mode: soon })}
+          onTry={() => {
+            setMode("clip");
+            track("video_mode_selected", { ...base, mode: "clip", video_mode: "clip", from: "coming_soon" });
+            track("video_coming_soon_try_clip", { ...base, mode: soon, video_mode: soon });
+          }}
+        />
       )}
 
       {confirming && aiMode && (
