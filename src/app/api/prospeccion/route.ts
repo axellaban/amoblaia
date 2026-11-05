@@ -3,12 +3,13 @@ import { demoUrl, isUuid } from "@/lib/demos/shared";
 import { activity, contactFor, HEADER, stableUuid, stepFor, toRow } from "@/lib/prospecting/external";
 import { NO_STORE, ProspectError, prospectDataset, prospectFailure, prospectRpc } from "@/lib/prospecting/server";
 import { runSheetSync } from "@/lib/prospecting/sync";
+import { agencyDemoLink, agencyList, agencyPanel, agencyThumb, recalcScores, setDemosSent } from "@/lib/agency/external";
 import type { Dataset, ProspectAccount } from "@/lib/prospecting/types";
 import { sameSecret } from "@/lib/session";
 import { cloudConfigured, cloudEnabled } from "@/lib/supabase/config";
 import { adminClient } from "@/lib/supabase/server";
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 /**
  * La prospección de habita. para el panel comercial de Chapa Labs, servidor a servidor, como la API
@@ -19,6 +20,12 @@ export const maxDuration = 60;
  *   POST { sync: { csv } }    la pestaña de la planilla, como la manda scripts/prospeccion-sync.gs: Chapa,
  *                             que ya lee la planilla, hace esa sincronización (cuentas nuevas, cambios y
  *                             envíos históricos con fecha). Mismo origen que la última importación.
+ *
+ * La lista «Inmobiliarias» del equipo (/admin/inmobiliarias), para la misma vista en Chapa:
+ *   GET ?vista=inmobiliarias          { rows, toReview }: las filas de la lista y los reclamos a revisar.
+ *   GET ?foto=<id>&w=120              la portada de una demo, chica (JPEG).
+ *   POST { inmobiliaria, accion }     «demo-estado» { enviada }, «link-demo», «link-panel».
+ *   POST { accion: "recalcular-scores" }
  *
  * Las acciones pasan por las mismas funciones que el panel del equipo (/admin/prospeccion), con sus
  * reglas: solo contactos revisados, bajas, secuencia de tres pasos, evidencia. «Mandé el mensaje»
@@ -74,6 +81,12 @@ export async function GET(request: Request) {
   if (!authorized(request)) return new Response("Unauthorized", { status: 401 });
   try {
     if (!cloudEnabled() || !cloudConfigured()) throw new HttpError(503, "La base de prospección no está disponible.");
+    const q = new URL(request.url).searchParams;
+    if (q.get("vista") === "inmobiliarias") return Response.json(await agencyList(), { headers: NO_STORE });
+    if (q.get("foto")) {
+      const image = await agencyThumb(q.get("foto")!, q.get("w"));
+      return new Response(new Uint8Array(image), { headers: { "Content-Type": "image/jpeg", "Cache-Control": "private, max-age=3600" } });
+    }
     const { ds, demos } = await sheet(new URL(request.url).origin);
     return Response.json(
       {
@@ -246,7 +259,20 @@ export async function POST(request: Request) {
   if (!authorized(request)) return new Response("Unauthorized", { status: 401 });
   try {
     if (!cloudEnabled() || !cloudConfigured()) throw new HttpError(503, "La base de prospección no está disponible.");
-    const b = (await request.json().catch(() => null)) as { code?: unknown; action?: Action; by?: unknown; sync?: { csv?: unknown } } | null;
+    const b = (await request.json().catch(() => null)) as { code?: unknown; action?: Action; by?: unknown; sync?: { csv?: unknown }; inmobiliaria?: unknown; accion?: unknown; enviada?: unknown } | null;
+    if (b?.accion === "recalcular-scores") return Response.json(await recalcScores(), { headers: NO_STORE });
+    if (b && typeof b.accion === "string" && b.inmobiliaria !== undefined) {
+      if (!isUuid(b.inmobiliaria)) throw new HttpError(404, "No encontramos la inmobiliaria.");
+      const actor = await actorId();
+      const origin = new URL(request.url).origin;
+      if (b.accion === "demo-estado") {
+        if (typeof b.enviada !== "boolean") throw new HttpError(400, "Indicá si la demo ya se envió.");
+        return Response.json({ changed: await setDemosSent(b.inmobiliaria, b.enviada, actor) }, { headers: NO_STORE });
+      }
+      if (b.accion === "link-demo") return Response.json(await agencyDemoLink(b.inmobiliaria, actor, origin), { headers: NO_STORE });
+      if (b.accion === "link-panel") return Response.json(await agencyPanel(b.inmobiliaria, actor, origin), { headers: NO_STORE });
+      throw new HttpError(400, "Acción desconocida.");
+    }
     if (b?.sync && !b.code) {
       if (typeof b.sync.csv !== "string" || !b.sync.csv.trim()) throw new HttpError(400, "Falta el contenido de la pestaña.");
       const actor = await actorId();
