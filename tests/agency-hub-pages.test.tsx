@@ -108,10 +108,27 @@ describe("«Inmobiliarias», the team's single list", () => {
   it("narrows the funnel and the list by the demo's creation date and step", async () => {
     const html = renderToStaticMarkup(await List({ searchParams: Promise.resolve({ desde: "2026-10-01", hasta: "2026-10-31", paso: "3" }) }));
     // Only Demaio's demo was created in October: one demo, and it reached «Con interacción».
-    expect(html).toMatch(/1\. Demos creadas<\/span><strong>1<\/strong>/);
+    expect(html).toMatch(/<strong>1<\/strong><small>Base del período<\/small>/);
     expect(html).toContain("Demaio Estudio Inmobiliario");
     expect(html).not.toContain("Del Mar Propiedades");
     expect(html).not.toContain("Bianchi Propiedades");
+  });
+  it("splits each bar in who went on and who stayed, and filters by who stayed", async () => {
+    const all = renderToStaticMarkup(await List({ searchParams: Promise.resolve({}) }));
+    // Two demos: one stayed at «Con interacción», the other reached «Suscripciones».
+    expect(all).toContain("1 interactuaron, sin cuenta");
+    expect(all).toContain("paso=3&amp;quedo=1");
+    const html = renderToStaticMarkup(await List({ searchParams: Promise.resolve({ paso: "3", quedo: "1" }) }));
+    expect(html).toContain("Demaio Estudio Inmobiliario");
+    expect(html).not.toContain("Del Mar Propiedades");
+    expect(html).toContain("sin pasar a «Cuenta creada»");
+  });
+  it("offers to write each agency on WhatsApp with «¡Buenas!»", async () => {
+    rows[0].whatsapp = "5492234567890";
+    const html = renderToStaticMarkup(await List({ searchParams: Promise.resolve({}) }));
+    rows[0].whatsapp = undefined;
+    expect(html).toContain(`https://wa.me/5492234567890?text=${encodeURIComponent("¡Buenas!")}`);
+    expect(html).toContain("Contactar por WhatsApp");
   });
   it("lists only agencies with a demo in the «Con demo creada» tab", async () => {
     const html = renderToStaticMarkup(await List({ searchParams: Promise.resolve({ etapa: "con-demo" }) }));

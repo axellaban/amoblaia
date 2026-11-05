@@ -155,6 +155,8 @@ export type CommercialRow = {
   test: boolean;
   /** Its demos: when each was created and the funnel step it reached (demo-funnel.ts). */
   demos: { createdAt: string; step: number }[];
+  /** Its contact WhatsApp, as loaded on the agency (null when unknown). */
+  whatsapp?: string | null;
 };
 
 export type ListFilters = {

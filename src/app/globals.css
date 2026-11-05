@@ -20824,78 +20824,168 @@ body:has(.pv-root) .pb-root {
   color: var(--pr-ink, #243d36);
   background: #fff;
 }
-.ah-dfunnel-steps {
+/* The funnel as vertical bars: each bar is the demos that reached its step, split in who went on (green) and who stayed (orange). */
+.ah-dfunnel {
+  --ah-stayed: #e2a54a;
+  --ah-stayed-on: #c9852a;
+}
+.ah-dfunnel-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  color: #5f665f;
+}
+.ah-dfunnel-legend li::before {
+  content: "";
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 6px;
+  border-radius: 3px;
+  vertical-align: -1px;
+  background: var(--ah-green);
+}
+.ah-dfunnel-legend li.is-stayed::before {
+  background: var(--ah-stayed);
+}
+.ah-dfunnel-chart {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 10px;
+  gap: 12px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
-.ah-dfunnel-steps a {
+.ah-dfunnel-chart > li {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  height: 100%;
-  box-sizing: border-box;
-  padding: 14px 14px 12px;
-  border: 1px solid var(--pr-line, #dde3d7);
-  border-radius: 12px;
-  color: var(--pr-ink, #243d36);
+  min-width: 0;
+}
+.ah-dfunnel-top {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 6px 4px 8px;
+  border-radius: 10px;
+  color: inherit;
+  text-align: center;
   text-decoration: none;
 }
-.ah-dfunnel-steps a:hover,
-.ah-dfunnel-steps a:focus-visible {
-  border-color: var(--ah-green);
+.ah-dfunnel-top:hover,
+.ah-dfunnel-top:focus-visible {
+  background: #f6f5f1;
 }
-.ah-dfunnel-steps a.is-on {
-  border-color: var(--ah-green);
-  box-shadow: inset 0 0 0 1px var(--ah-green);
+.ah-dfunnel-top.is-on {
   background: var(--ah-green-soft);
+  box-shadow: inset 0 0 0 1px var(--ah-green);
 }
-.ah-dfunnel-label {
-  min-height: 32px; /* Two lines: every count sits at the same height. */
-  font-size: 12px;
-  font-weight: 700;
-  color: #5f665f;
-}
-.ah-dfunnel-steps strong {
-  font-size: 28px;
+.ah-dfunnel-top strong {
+  font-size: 26px;
   line-height: 1;
 }
-.ah-dfunnel-bar {
-  display: block;
-  height: 8px;
-  border-radius: 6px;
-  background: #ece9e1;
-  overflow: hidden;
-}
-.ah-dfunnel-bar span {
-  display: block;
-  height: 100%;
-  border-radius: 6px;
-  background: var(--ah-green);
-}
-.ah-dfunnel-steps small {
+.ah-dfunnel-top small {
+  min-height: 30px; /* Two lines: every plot starts at the same height. */
   font-size: 12px;
   color: #5f665f;
+}
+.ah-dfunnel-plot {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  height: 220px;
+  background: repeating-linear-gradient(to top, #f0eee8 0 1px, transparent 1px 55px);
+}
+.ah-dfunnel-col {
+  display: flex;
+  flex-direction: column;
+  width: 72%;
+  min-height: 24px;
+  border-radius: 10px 10px 4px 4px;
+  overflow: hidden;
+}
+.ah-dfunnel-seg {
+  display: flex;
+  flex-basis: 0;
+  align-items: center;
+  justify-content: center;
+  min-height: 22px;
+  font-size: 13px;
+  font-weight: 800;
+  text-decoration: none;
+  transition: filter 0.15s;
+}
+.ah-dfunnel-seg + .ah-dfunnel-seg {
+  border-top: 2px solid #fff;
+}
+.ah-dfunnel-seg:hover,
+.ah-dfunnel-seg:focus-visible {
+  filter: brightness(1.08);
+}
+.ah-dfunnel-seg.is-went {
+  background: var(--ah-green);
+  color: #fff;
+}
+.ah-dfunnel-seg.is-went.is-last {
+  background: #1b3d31;
+}
+.ah-dfunnel-seg.is-stayed {
+  background-color: var(--ah-stayed);
+  background-image: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.18) 0 6px, transparent 6px 12px);
+  color: #4a2f08;
+}
+.ah-dfunnel-seg.is-stayed.is-on {
+  background-color: var(--ah-stayed-on);
+}
+.ah-dfunnel-seg.is-on {
+  box-shadow: inset 0 0 0 3px #1c211d;
+}
+.ah-dfunnel-zero {
+  display: block;
+  width: 72%;
+  height: 4px;
+  border-radius: 3px;
+  background: #ece9e1;
+}
+.ah-dfunnel-label {
+  display: grid;
+  gap: 2px;
+  margin-top: 10px;
+  min-height: 34px;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+}
+.ah-dfunnel-label small {
+  font-size: 12px;
+  font-weight: 600;
+  color: #a86a17;
+}
+.ah-dfunnel-label small.is-went {
+  color: var(--ah-green);
 }
 .ah-dfunnel-note {
   margin: 0;
   font-size: 12px;
   color: #6b6b6b;
 }
-@media (max-width: 1180px) {
-  .ah-dfunnel-steps {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+@media (max-width: 900px) {
+  .ah-dfunnel-chart {
+    overflow-x: auto;
+    grid-template-columns: repeat(7, minmax(96px, 1fr));
+    padding-bottom: 6px;
   }
 }
 @media (max-width: 640px) {
   .ah-dfunnel {
     padding: 16px;
   }
-  .ah-dfunnel-steps {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .ah-dfunnel-plot {
+    height: 160px;
   }
 }
 /* The list's «Demo» column: the step its demos reached and when the latest was created. */
