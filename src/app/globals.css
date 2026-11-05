@@ -22754,6 +22754,72 @@ body:has(.pv-root) .pb-root {
   gap: 10px;
   justify-content: flex-end;
 }
+/* «Próximamente»: a style shown as available whose click opens this notice. */
+.vs-soon {
+  width: min(460px, calc(100vw - 32px));
+}
+.vs-soon-art {
+  position: relative;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  height: 120px;
+  margin: 6px 0 14px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, var(--forest-light) 0%, var(--forest) 55%, var(--terracotta-dark) 100%);
+  overflow: hidden;
+}
+.vs-soon-art i {
+  display: block;
+  width: 46px;
+  height: 64px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.12);
+}
+.vs-soon-art i:nth-of-type(2) {
+  background: rgba(255, 255, 255, 0.22);
+  transform: translateY(-4px);
+}
+.vs-soon-art span {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: #e3efdc;
+  color: var(--forest);
+  font-size: 11.5px;
+  font-weight: 800;
+}
+.vs-soon h2 {
+  margin-bottom: 8px;
+  text-wrap: balance;
+}
+.vs-soon-text {
+  margin: 0 0 16px;
+  color: #4b554e;
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+.vs-soon-done {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #e3efdc;
+  color: var(--forest);
+  font-size: 14px;
+  font-weight: 700;
+}
+@media (max-width: 420px) {
+  .vs-soon .vs-confirm-actions .button {
+    flex: 1 1 100%;
+  }
+}
 .vs-clips {
   grid-column: 1 / -1;
   display: grid;

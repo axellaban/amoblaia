@@ -62,6 +62,13 @@ export const MODE_INFO: Record<VideoMode, { name: string; text: string }> = {
 export const AI_MODES = ["clip", "cinematic"] as const satisfies readonly VideoMode[];
 export type AiMode = (typeof AI_MODES)[number];
 export const isAiMode = (m: unknown): m is AiMode => AI_MODES.includes(m as AiMode);
+/**
+ * Modes shown as available in «Estilo del video» but not offered yet: the
+ * card looks like any other (so its clicks measure real interest), and
+ * choosing it opens a «Próximamente» notice instead of selecting it.
+ */
+export const COMING_SOON_MODES: readonly VideoMode[] = ["cinematic"];
+export const isComingSoon = (m: VideoMode) => COMING_SOON_MODES.includes(m);
 export const VIDEO_CREDITS: Record<VideoMode, number> = { classic: 0, balanced: 0, cinematic: 10, clip: 3 };
 /** How many photos each AI mode animates: one for «Foto en movimiento», a short tour for the cinematic one. */
 export const AI_PHOTOS: Record<AiMode, { min: number; max: number }> = { clip: { min: 1, max: 1 }, cinematic: { min: 2, max: 6 } };
