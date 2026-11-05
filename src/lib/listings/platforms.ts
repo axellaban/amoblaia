@@ -41,7 +41,7 @@ export function byClass(html: string, names: string[], limit = 20): string[] {
 }
 
 /** Where the property ends and the lists of other properties begin (their prices and photos are not this one's). */
-const SIMILAR = /<h[1-6][^>]*>\s*(?:<[^>]+>\s*)*(propiedades similares|similares|te puede interesar|tambi[eé]n te pueden? interesar|otras propiedades|propiedades relacionadas|propiedades destacadas)/i;
+const SIMILAR = /<h[1-6][^>]*>\s*(?:<[^>]+>\s*)*(?:(?:ventas|alquileres)\s+(?:<[^>]+>\s*)*relacionad[oa]s|propiedades similares|similares|te puede interesar|tambi[eé]n te pueden? interesar|otras propiedades|propiedades relacionadas|propiedades destacadas)/i;
 export function ownPart(html: string) {
   const m = SIMILAR.exec(html);
   return m ? html.slice(0, m.index) : html;
@@ -116,6 +116,9 @@ export function detectPlatform(html: string, pageUrl: string): Detection {
   if (has(/<meta[^>]+generator[^>]+Elementor/i, "elementor")) return { platform: "elementor", signals };
   if (wp) return { platform: "wordpress", signals };
   if (next) return { platform: "next_rsc", signals };
+  // Classic ASP sites (ver-propiedad-venta.asp?…&codigo=N): the address, or the page linking its own fichas that way.
+  if (/\/ver-propiedad-(venta|alquiler)[\w-]*\.asp$/i.test(url.pathname) || (has(/class=["']portfolio-title["']/, "portfolio-title") && has(/href=["'][^"']*ver-propiedad-(venta|alquiler)[\w-]*\.asp\?/i, "asp:ficha")))
+    return { platform: "asp_ficha", signals: [...signals, "url:ver-propiedad.asp"] };
   return { platform: "generic", signals };
 }
 
@@ -400,6 +403,73 @@ function generic(html: string, pageUrl: string): Extracted {
   };
 }
 
+/**
+ * Classic ASP listing sites (ver-propiedad-venta.asp?…&codigo=N): the heading
+ * "Casa en Venta en La Baliza, Miramar. u$s 65000" holds kind, operation,
+ * place and price; the features, the description and the gallery (swipebox
+ * links) follow in the same column. "Publicado… Visto N veces" and the form's
+ * security code change on every visit and are never read.
+ */
+function aspFicha(html: string, pageUrl: string): Extracted {
+  const own = ownPart(html);
+  const head = squash(byClass(own, ["portfolio-title"])[0]?.match(/<h[1-3]\b[^>]*>([\s\S]*?)<\/h[1-3]>/i)?.[1] ?? "");
+  const docTitle = squash(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "");
+  // "Casa en Venta en La Baliza, Miramar. u$s 65000" → the title before the price.
+  const title = (head || docTitle.split(/\s+\|\s+/)[0]).split(/\.?\s+(?=(?:u\$s|us\$|usd|\$|consultar)\b)/i)[0].replace(/\.$/, "").trim() || null;
+  const k = kindOpPlace(title);
+  const [price] = moneyIn(head);
+  const pairs: Pair[] = [];
+  const pair = (label: string, value: string | undefined | null) => {
+    const v = value?.trim();
+    if (v) pairs.push({ label, value: v, section: "plantilla" });
+  };
+  // "Sup. Total 170 m2", "3 Ambientes", "2 Habitaciones", "1 Baños".
+  for (const li of (byClass(own, ["property-main-features"])[0] ?? "").matchAll(/<li\b[^>]*>([\s\S]*?)<\/li>/gi)) {
+    const t = squash(li[1]);
+    const area = t.match(/^sup\.?\s*(total|cubierta|construida)\s+(.+)$/i);
+    if (area) pair(/total/i.test(area[1]) ? "Superficie total" : "Superficie cubierta", area[2]);
+    const count = t.match(/^(\d+)\s+(ambientes?|habitaciones?|dormitorios?|ba(?:ñ|n)os?|cocheras?)$/i);
+    if (count) {
+      const what = norm(count[2]);
+      pair(/^amb/.test(what) ? "Ambientes" : /^(hab|dorm)/.test(what) ? "Dormitorios" : /^ba/.test(what) ? "Baños" : "Cocheras", count[1]);
+    }
+  }
+  // "Sup Construida: <span>80 m2</span>", "Estado: <span>Muy Bueno</span>".
+  for (const li of own.matchAll(/<li\b[^>]*>\s*([^<>:]{2,40}):\s*<span[^>]*>([^<]{1,60})<\/span>/gi)) {
+    const label = norm(li[1]);
+    if (/^sup(erficie)? (construida|cubierta)$/.test(label)) pair("Superficie cubierta", squash(li[2]));
+    else if (/^estado$/.test(label)) pair("Estado", squash(li[2]));
+  }
+  // The text right after the features: the description, without an empty "Notas Adicionales:".
+  const descHtml = own.match(/property-main-features[\s\S]*?<\/ul>\s*(?:<\/div>\s*)+<div\b[^>]*class=["']row["'][^>]*>([\s\S]*?)<\/div>/i)?.[1] ?? "";
+  const description =
+    decode(descHtml.replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, " "))
+      .replace(/[ \t]+/g, " ")
+      .replace(/\s*Notas Adicionales:\s*$/i, "")
+      .trim() || null;
+  const images: string[] = [];
+  for (const m of own.matchAll(/<a\b[^>]*href=["']([^"']+\.(?:jpe?g|png|webp))["'][^>]*class=["'][^"']*\bswipebox\b/gi)) {
+    try {
+      images.push(new URL(decode(m[1]), pageUrl).toString());
+    } catch {
+      // Not an address.
+    }
+  }
+  const agencyName = docTitle.split(/\s+\|\s+/)[1]?.trim() || null;
+  return {
+    title,
+    location: k?.place ?? null,
+    price: price ?? null,
+    priceOnRequest: !price && /consultar/i.test(head),
+    operation: k?.operation ?? null,
+    propertyKind: k?.kind ?? null,
+    description,
+    pairs,
+    images: uniqueBy(images, (u) => u),
+    agencyName,
+  };
+}
+
 /** The fields this platform's template publishes in known places. */
 export function extractPlatform(platform: PlatformId, html: string, pageUrl: string): Extracted {
   switch (platform) {
@@ -419,6 +489,8 @@ export function extractPlatform(platform: PlatformId, html: string, pageUrl: str
     case "elementor":
     case "wordpress":
       return wordpress(html, pageUrl, platform);
+    case "asp_ficha":
+      return aspFicha(html, pageUrl);
     case "next_rsc":
       return nextRsc(html);
     default:

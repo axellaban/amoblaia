@@ -10,6 +10,8 @@ const state = vi.hoisted(() => ({
   rpcs: [] as { name: string; args: Record<string, unknown> }[],
   listing: null as null | Record<string, unknown>,
   listingError: null as null | Error,
+  /** The agency a guest of the panel is looking at (its visit, no account), or null. */
+  visitAgency: null as null | string,
   /** Errors to return, by "table:select|insert|update". */
   fail: {} as Record<string, { code?: string }>,
   creditsError: false,
@@ -112,6 +114,14 @@ vi.mock("next/headers", () => ({
   }),
 }));
 vi.mock("@/lib/commerce/jobs", () => ({ onFreeTier: async () => false, runJob: async () => {} }));
+vi.mock("@/lib/agency/visit", async (original) => {
+  const real = await original<typeof import("../src/lib/agency/visit")>();
+  return {
+    ...real,
+    visitorMembership: async () =>
+      state.visitAgency ? { role: "owner", agency: { id: state.visitAgency, name: "Sur", website: null, slug: "sur", owner_id: null, site_published: false }, scope: null, visitor: true } : null,
+  };
+});
 vi.mock("@/lib/supabase/server", () => ({
   adminClient: () => fakeDb(),
   currentUser: async () => state.user,
@@ -238,6 +248,7 @@ beforeEach(() => {
   state.rpcs = [];
   state.listing = structuredClone(LISTING);
   state.listingError = null;
+  state.visitAgency = null;
   state.fail = {};
   state.creditsError = false;
   state.claimOk = false;
@@ -291,6 +302,24 @@ describe("Importing a property by URL", () => {
     expect(await r.json()).toMatchObject({ title: "Departamento en La Perla", price: "USD 265.000", duplicateOf: null });
     expect(state.inserts).toEqual([]);
     expect(state.rpcs.filter((c) => /reserve|generation/.test(c.name))).toEqual([]);
+  });
+
+  it("lets a guest of the panel (no account yet) read the preview, and asks for the account to import", async () => {
+    state.user = null;
+    state.visitAgency = "ag1";
+    const r = await importar.POST(req("/api/panel/importar", "POST", { url: "https://sur.test/p/123", preview: true }));
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({ title: "Departamento en La Perla", snapshot: expect.stringMatching(/^v2\./) });
+    const create = await importar.POST(req("/api/panel/importar", "POST", { url: "https://sur.test/p/123", key: crypto.randomUUID() }));
+    expect(create.status).toBe(403);
+    expect(await create.json()).toMatchObject({ code: "visita" });
+    expect(state.inserts).toEqual([]);
+  });
+
+  it("refuses the preview to someone with neither account nor visit", async () => {
+    state.user = null;
+    const r = await importar.POST(req("/api/panel/importar", "POST", { url: "https://sur.test/p/123", preview: true }));
+    expect(r.status).toBe(401);
   });
 
   it("refuses a property already imported into the same agency, and records it", async () => {
@@ -562,7 +591,7 @@ describe("Imports that tell what really happened", () => {
     expect(r.status).toBe(409);
     const body = await r.json();
     expect(body.changed).toBe(true);
-    expect(body.preview).toMatchObject({ title: "Departamento en La Perla", snapshot: expect.stringMatching(/^[0-9a-f]{64}$/) });
+    expect(body.preview).toMatchObject({ title: "Departamento en La Perla", snapshot: expect.stringMatching(/^v2\./) });
     expect(state.inserts.filter((i) => i.table === "demo_properties")).toEqual([]);
     expect(state.tables.property_imports[0].status).toBe("failed");
   });

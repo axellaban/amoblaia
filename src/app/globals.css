@@ -8663,6 +8663,21 @@ h2 .accent {
   background: #fff;
   color: var(--ink);
 }
+/* The photos of an import downloading: how many of how many, and which failed. */
+.ap-import-progress {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 0.92rem;
+}
+.ap-import-progress progress {
+  width: 100%;
+  height: 8px;
+  accent-color: var(--accent, currentColor);
+}
+.ap-import-progress .inline-error {
+  overflow-wrap: anywhere;
+}
 .ap-import-result .dm-help {
   color: var(--muted);
 }

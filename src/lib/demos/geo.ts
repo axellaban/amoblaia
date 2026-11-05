@@ -261,8 +261,8 @@ export function geoCandidates(rawHtml: string, ownEnd = rawHtml.length): GeoCand
   for (const m of html.matchAll(re(`${KEY_LAT}\\s*,\\s*${KEY_LNG}`))) add(Number(m[1]), Number(m[2]), "lat-lng-object", 0.6, m.index ?? 0);
   for (const m of html.matchAll(re(`${KEY_LNG}\\s*,\\s*${KEY_LAT}`))) add(Number(m[2]), Number(m[1]), "lat-lng-object", 0.6, m.index ?? 0);
   // Data attributes of one element.
-  for (const m of html.matchAll(/<[a-z][^>]*\bdata-(?:lat|latitude)\s*=\s*["']([^"']+)["'][^>]*>/gi)) {
-    const lng = m[0].match(/\bdata-(?:lng|lon|long|longitude)\s*=\s*["']([^"']+)["']/i);
+  for (const m of html.matchAll(/<[a-z][^>]*\bdata-(?:lat|latitude|latitud)\s*=\s*["']([^"']+)["'][^>]*>/gi)) {
+    const lng = m[0].match(/\bdata-(?:lng|lon|long|longitude|longitud)\s*=\s*["']([^"']+)["']/i);
     if (lng) add(Number(m[1]), Number(lng[1]), "data-attribute", 0.75, m.index ?? 0);
   }
   // Meta tags about the page itself.

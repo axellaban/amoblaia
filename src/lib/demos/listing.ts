@@ -7,6 +7,7 @@ import { HttpError } from "@/lib/commerce/http";
 import { analyzeListing, type ReadMeta } from "@/lib/listings/analyze";
 import { decodeHtml } from "@/lib/listings/charset";
 import { FetchFailure, publicAddress, safeFetch, type FetchErrorCode } from "@/lib/listings/fetch";
+import { ownPhotos, propertyPart } from "@/lib/listings/photos";
 import { renderProvider } from "@/lib/listings/render";
 import { cleanText, cleanUrl } from "./shared";
 import { toDemo, type ImportedDemo } from "./import";
@@ -286,32 +287,43 @@ export function parseListing(html: string, pageUrl: string): Listing {
     160,
   );
 
+  // Photos are read from the property's part of the page: blocks of related or
+  // similar listings are removed and the page is cut where their heading starts.
+  // If that leaves no photo at all, the cut is not trusted (the page may list
+  // its own gallery after such a heading) and only the blocks stay out.
+  const parts = propertyPart(html);
+  const fromTags = (source: string) => {
+    const found: string[] = [];
+    for (const img of tags(source, "img")) {
+      const src =
+        img["data-zoom-image"] ||
+        img["data-full"] ||
+        img["data-large"] ||
+        img["data-lazy-src"] ||
+        img["data-original"] ||
+        img["data-src"] ||
+        (img["data-srcset"] && largest(img["data-srcset"])) ||
+        (img.srcset && largest(img.srcset)) ||
+        img.src;
+      const w = Number(img.width || 0);
+      const h = Number(img.height || 0);
+      if (!src || (w && w < 300) || (h && h < 200)) continue;
+      found.push(src);
+    }
+    // Galleries often link each thumbnail to the full picture.
+    for (const a of tags(source, "a")) if (a.href && PHOTO_EXTENSION.test(a.href)) found.push(a.href);
+    for (const s of tags(source, "source")) if (s.srcset) found.push(largest(s.srcset));
+    return found;
+  };
+  const ownTags = fromTags(parts.own);
   const candidates = [
     ...ldImages(property?.image),
     ...metaValues(html, "og:image", "og:image:url", "og:image:secure_url", "twitter:image"),
+    ...(ownTags.length ? ownTags : fromTags(parts.withoutBlocks)),
   ];
-  for (const img of tags(html, "img")) {
-    const src =
-      img["data-zoom-image"] ||
-      img["data-full"] ||
-      img["data-large"] ||
-      img["data-lazy-src"] ||
-      img["data-original"] ||
-      img["data-src"] ||
-      (img["data-srcset"] && largest(img["data-srcset"])) ||
-      (img.srcset && largest(img.srcset)) ||
-      img.src;
-    const w = Number(img.width || 0);
-    const h = Number(img.height || 0);
-    if (!src || (w && w < 300) || (h && h < 200)) continue;
-    candidates.push(src);
-  }
-  // Galleries often link each thumbnail to the full picture.
-  for (const a of tags(html, "a")) if (a.href && PHOTO_EXTENSION.test(a.href)) candidates.push(a.href);
-  for (const s of tags(html, "source")) if (s.srcset) candidates.push(largest(s.srcset));
   // Background images and JSON blobs in scripts (SPA galleries).
   // Tags already read above are left out, so their thumbnails and small variants stay skipped.
-  const rest = html.replace(/<(img|source|a)\b[^>]*>/gi, " ");
+  const rest = parts.withoutBlocks.replace(/<(img|source|a)\b[^>]*>/gi, " ");
   for (const m of rest.matchAll(/https?:\\?\/\\?\/[^"'\s()<>]+?\.(?:jpe?g|png|webp)(?:\?[^"'\s()<>]*)?/gi))
     candidates.push(m[0].replace(/\\\//g, "/"));
 
@@ -330,10 +342,10 @@ export function parseListing(html: string, pageUrl: string): Listing {
         images[at] = full;
       continue;
     }
-    if (images.length >= MAX_LISTING_PHOTOS) continue;
     seen.set(key, images.length);
     images.push(full);
   }
+  const photos = ownPhotos(images, page.toString()).slice(0, MAX_LISTING_PHOTOS);
 
   const longest = blocksNamed(html, /descrip/i)
     .map(blockText)
@@ -356,7 +368,7 @@ export function parseListing(html: string, pageUrl: string): Listing {
     headlinePrices,
     listingUrl: page.toString(),
     agency: { name: agencyName, website: `${page.protocol}//${page.host}/` },
-    images,
+    images: photos,
   };
 }
 

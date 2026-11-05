@@ -7,7 +7,7 @@ import { readListing } from "@/lib/demos/listing";
 import { completeAgency, createDemo, MAX_PHOTOS_PER_DEMO, saveJson } from "@/lib/demos/server";
 import { cleanText, cleanUrl, isUuid } from "@/lib/demos/shared";
 import { adminClient } from "@/lib/supabase/server";
-import { photoKey, reportPhotos, snapshotOf, startImport, updateImport, type ImportRow } from "./imports";
+import { photoKey, reportPhotos, snapshotChanges, snapshotOf, startImport, updateImport, type ImportRow } from "./imports";
 import { existingImport, logImport } from "./panel";
 
 const PRIVATE = { "Cache-Control": "private, no-store" };
@@ -24,6 +24,8 @@ const result = (row: ImportRow, extra: Record<string, unknown> = {}) => ({
 
 /** Who imports into which agency: the agency's member from its panel, or the team from administration. */
 export type ImportTarget = { agencyId: string; userId: string; origin: "agency" | "admin" };
+/** The same, from a guest of the panel (no account yet): it may only read the preview. */
+type ListingTarget = Omit<ImportTarget, "userId"> & { userId: string | null };
 
 /**
  * A property of the agency from the URL of its listing, with the same reader
@@ -41,14 +43,15 @@ export type ImportTarget = { agencyId: string; userId: string; origin: "agency" 
  * The agency comes from the caller (the member's own, or the one the team
  * is editing), never from the request body.
  */
-export async function importListing(request: Request, target: ImportTarget, onCreated?: (demoId: string) => Promise<void>) {
+export async function importListing(request: Request, target: ListingTarget, onCreated?: (demoId: string) => Promise<void>) {
   let ctx: { agencyId: string; userId: string; url: string } | null = null;
+  // A guest's failed preview is not logged as an import attempt of the agency.
   let started: ImportRow | null = null;
   try {
     const body = await readJson(request, 32768);
     const pasted = cleanUrl(body.url);
     if (!pasted) throw new HttpError(400, "Pegá la URL de la ficha de la propiedad.");
-    ctx = { agencyId: target.agencyId, userId: target.userId, url: pasted };
+    ctx = target.userId ? { agencyId: target.agencyId, userId: target.userId, url: pasted } : null;
     if (body.preview === true) {
       const listing = await readListing(pasted);
       const duplicateOf = await existingImport(target.agencyId, listing.listingUrl);
@@ -57,8 +60,11 @@ export async function importListing(request: Request, target: ImportTarget, onCr
         { headers: PRIVATE },
       );
     }
+    // Creating needs the account: the preview alone is allowed to a guest of the panel.
+    const userId = target.userId;
+    if (!userId) throw new HttpError(401, "Accedé a tu cuenta para importar la propiedad.");
     if (!isUuid(body.key)) throw new HttpError(400, "Volvé a leer la publicación e intentá de nuevo.");
-    const { row, replay } = await startImport(target.agencyId, target.userId, pasted, body.key);
+    const { row, replay } = await startImport(target.agencyId, userId, pasted, body.key);
     // The same confirm again: what that import did, nothing new.
     if (replay) return Response.json(result(row, { replay: true }), { status: row.demo_id ? 200 : 409, headers: PRIVATE });
     started = row;
@@ -72,15 +78,19 @@ export async function importListing(request: Request, target: ImportTarget, onCr
       return Response.json({ error: "Esta propiedad ya está en tu panel.", duplicateOf }, { status: 409, headers: PRIVATE });
     }
     const snapshot = snapshotOf(imp);
-    // { accept: true }: the person already saw a changed listing and confirmed what it shows
-    // now. Some sites change a little on every visit, so asking again would never end.
-    if (typeof body.snapshot === "string" && body.snapshot !== snapshot && body.accept !== true) {
+    const chosenList = Array.isArray(body.images) ? body.images.filter((x): x is string => typeof x === "string") : null;
+    const change = snapshotChanges(body.snapshot, imp, chosenList);
+    // Only a real change asks again: a reviewed field that reads differently, or every chosen photo gone.
+    // { accept: true }: the person already saw the listing as it changed and confirmed it.
+    if ((change.fields.length || change.chosenGone) && body.accept !== true) {
       await updateImport(row.id, { status: "failed", error: "La publicación cambió desde la vista previa." });
       started = null;
+      const what = change.fields.length ? `Cambió ${change.fields.join(", ")}` : "Las fotos elegidas ya no están en la publicación";
       return Response.json(
         {
-          error: "La publicación cambió desde que la revisaste. Mirá los datos nuevos antes de importarla.",
+          error: `${what} desde que la revisaste. Mirá los datos nuevos antes de importarla.`,
           changed: true,
+          changes: change.fields,
           preview: { ...imp, listingUrl: listing.listingUrl, duplicateOf: null, snapshot },
         },
         { status: 409, headers: PRIVATE },
@@ -109,14 +119,14 @@ export async function importListing(request: Request, target: ImportTarget, onCr
     settings.map = importedMap(imp, edits.map, settings.map);
     // The photos kept on the preview, matched by address without the parts some sites change
     // on every visit. If none of them is found anymore, every photo read now (never none).
-    const chosen = Array.isArray(body.images) ? new Set(body.images.filter((x): x is string => typeof x === "string").map(photoKey)) : null;
+    const chosen = chosenList ? new Set(chosenList.map(photoKey)) : null;
     const matched = chosen ? imp.images.filter((src) => chosen.has(photoKey(src))) : imp.images;
     const kept = chosen && chosen.size && !matched.length ? imp.images : matched;
     const images = kept.slice(0, MAX_PHOTOS_PER_DEMO);
 
-    await rpc("amobla_account", { p_user: target.userId, p_trial: false });
+    await rpc("amobla_account", { p_user: userId, p_trial: false });
     const id = await createDemo({
-      actorId: target.userId,
+      actorId: userId,
       agencyId: target.agencyId,
       agency: null,
       property: {
