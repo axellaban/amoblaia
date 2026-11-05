@@ -187,7 +187,7 @@ export function toDemo(d: ListingDetails, fallback: Fallback, diagnostics?: Impo
       : priceNote
         ? { field: "Precio", status: "error", value: null, note: priceNote, required: false }
         : onRequest
-          ? { field: "Precio", status: "missing", value: null, note: "La publicación dice «Consultar precio»: la ficha lo muestra igual.", required: false }
+          ? { field: "Precio", status: "found", value: "Consultar precio", note: "La publicación dice «Consultar precio»: la ficha lo muestra igual.", required: false }
           : row("Precio", price, { error: has(/^precio|^valor/i) }),
     row("Expensas", expenses, { note: expensesRaw && expenses !== expensesRaw ? "La publicación no indica la moneda: se muestran en pesos." : undefined }),
     row("Ubicación", d.location ?? fallback.location),

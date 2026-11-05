@@ -37,7 +37,7 @@ import {
   Wand2,
 } from "lucide-react";
 import { ApiError, api } from "./admin-demos";
-import { ImportPreview, MapReview, exceptions, initialMapChoice, mapOverride, syncPhotos, type MapChoice } from "./demo-import";
+import { ImportPreview, MapReview, exceptions, initialMapChoice, mapOverride, photoName, syncPhotos, type MapChoice, type PhotoProgress } from "./demo-import";
 import { track, trackMilestone } from "@/lib/analytics";
 import { cta } from "@/lib/interaction-tracking";
 import { registerAgency, useSignupTracking } from "@/lib/signup-tracking";
@@ -962,6 +962,56 @@ function PropertyRow({
 }
 
 type Preview = ImportedDemo & { listingUrl: string; duplicateOf: string | null; snapshot: string };
+
+/**
+ * An import a guest of the panel reviewed and confirmed before having its
+ * account: kept in this browser while it signs in (Google or e-mail, also on
+ * a phone, where the sign-in may come back in another tab), then the same
+ * preview is read again with its corrections and chosen photos.
+ */
+const GUEST_IMPORT_KEY = "habita_import_en_curso";
+const GUEST_IMPORT_TTL_MS = 2 * 3600 * 1000;
+type GuestImport = {
+  url: string;
+  fields: { title: string; location: string; price: string; operation: string; description: string };
+  /** The chosen photos, by address without query (the page may change it on every visit). */
+  keep: string[];
+  at: number;
+};
+const bareAddress = (src: string) => src.split(/[?#]/)[0].toLowerCase();
+function saveGuestImport(g: GuestImport) {
+  try {
+    localStorage.setItem(GUEST_IMPORT_KEY, JSON.stringify(g));
+  } catch {
+    /* Private mode: the link is pasted again. */
+  }
+}
+/**
+ * The guest's import, if any. It stays saved until it is imported or another
+ * listing is read: after signing in, taking the agency over reloads the page,
+ * and the review must still be there.
+ */
+function guestImport(): GuestImport | null {
+  try {
+    const raw = localStorage.getItem(GUEST_IMPORT_KEY);
+    if (!raw) return null;
+    const g = JSON.parse(raw) as GuestImport;
+    if (typeof g?.url !== "string" || typeof g.at !== "number" || Date.now() - g.at > GUEST_IMPORT_TTL_MS || !g.fields || !Array.isArray(g.keep)) {
+      localStorage.removeItem(GUEST_IMPORT_KEY);
+      return null;
+    }
+    return g;
+  } catch {
+    return null;
+  }
+}
+function forgetGuestImport() {
+  try {
+    localStorage.removeItem(GUEST_IMPORT_KEY);
+  } catch {
+    /* Nothing saved. */
+  }
+}
 type Created = {
   importId: string;
   id: string | null;
@@ -974,9 +1024,9 @@ type Created = {
 };
 
 /** Downloads the photos of a created import and reports them: what it says is what happened. */
-async function finishPhotos(made: Created, onStatus: (t: string) => void, endpoint = "/api/panel/importar") {
+async function finishPhotos(made: Created, onStatus: (t: string) => void, endpoint = "/api/panel/importar", onProgress?: (p: PhotoProgress) => void) {
   if (!made.id) return made;
-  const sync = await syncPhotos(`/api/admin/demos/${made.id}`, made.images, onStatus);
+  const sync = await syncPhotos(`/api/admin/demos/${made.id}`, made.images, onStatus, onProgress);
   return api<Created>(endpoint, {
     method: "PATCH",
     body: JSON.stringify({ importId: made.importId, done: sync.done, failed: sync.failedUrls }),
@@ -1030,6 +1080,7 @@ export function ImportProperty({
   const router = useRouter();
   const [many, setMany] = useState(false);
   const [url, setUrl] = useState(initialUrl);
+  const urlField = url;
   const [carried, setCarried] = useState("");
   // The listing pasted in the agency's demo before signing up: offered here once, then forgotten.
   useEffect(() => {
@@ -1047,6 +1098,17 @@ export function ImportProperty({
       /* Private mode or malformed: nothing to continue. */
     }
   }, [initialUrl, inputId, bar]);
+  // Back from signing in with an import confirmed as a guest: the same preview again.
+  const resumed = useRef(false);
+  useEffect(() => {
+    if (resumed.current || initialUrl || inputId !== "ap-import-url") return;
+    resumed.current = true;
+    const g = guestImport();
+    if (!g) return;
+    setUrl(g.url);
+    void read(undefined, g);
+    // read is recreated on every render; this runs once, on arrival (resumed).
+  }, [initialUrl, inputId]);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [fields, setFields] = useState({ title: "", location: "", price: "", operation: "", description: "" });
   const [keep, setKeep] = useState<Set<string>>(new Set());
@@ -1055,6 +1117,7 @@ export function ImportProperty({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [partial, setPartial] = useState<Created | null>(null);
+  const [progress, setProgress] = useState<PhotoProgress | null>(null);
   // One key per confirmed preview: sending it twice creates one property.
   const key = useRef("");
   // The preview on screen is the listing as it changed: confirming it imports what the listing shows then.
@@ -1077,8 +1140,11 @@ export function ImportProperty({
     key.current = crypto.randomUUID();
   };
 
-  async function read(e?: React.FormEvent) {
+  async function read(e?: React.FormEvent, resume?: GuestImport) {
     e?.preventDefault();
+    const url = resume?.url ?? urlField;
+    // Reading another listing (or the same one again by hand) replaces the guest's saved review.
+    if (!resume) forgetGuestImport();
     setError("");
     setNotice("");
     setPartial(null);
@@ -1094,6 +1160,16 @@ export function ImportProperty({
     try {
       const data = await api<Preview>(endpoint, { method: "POST", body: JSON.stringify({ url, preview: true }) });
       show(data);
+      if (resume) {
+        // Back from signing in: the same review, with what the person had corrected and chosen.
+        setFields(resume.fields);
+        const chosen = new Set(resume.keep);
+        const kept = data.images.filter((src) => chosen.has(bareAddress(src)));
+        if (kept.length) setKeep(new Set(kept));
+        setNotice("Seguimos con la propiedad que estabas importando: revisala y tocá «Importar».");
+        track("listing_import_resumed", { source: hostOf(url), photos_kept: kept.length });
+        window.setTimeout(() => document.getElementById(inputId)?.scrollIntoView({ block: "start", behavior: "smooth" }), 50);
+      }
       track("listing_import_preview_completed", importEventProps(data.diagnostics, { source: hostOf(url), mode: "single", client_ms: Date.now() - started, duplicate: Boolean(data.duplicateOf) }));
     } catch (err) {
       setError(message(err, "No pudimos leer la publicación."));
@@ -1126,6 +1202,14 @@ export function ImportProperty({
       });
     } catch (err) {
       const body = err instanceof ApiError ? err.body : null;
+      // A guest of the panel: the account is asked for now (the dialog opens by itself); this review waits for it.
+      if (err instanceof ApiError && (body?.code === "visita" || err.status === 401)) {
+        saveGuestImport({ url: preview.listingUrl, fields, keep: [...keep].map(bareAddress), at: Date.now() });
+        track("listing_import_account_asked", { source: hostOf(preview.listingUrl), photos_kept: keep.size });
+        setNotice("Para importarla, accedé a tu cuenta: al volver vas a ver esta misma propiedad, lista para importar.");
+        setStatus("");
+        return;
+      }
       if (body?.changed && body.preview) {
         show(body.preview as Preview);
         accept.current = true;
@@ -1138,8 +1222,10 @@ export function ImportProperty({
       setStatus("");
       return;
     }
+    // Created: a guest's saved review is done.
+    forgetGuestImport();
     try {
-      const done = await finishPhotos(made, (t) => setStatus(`${made.title ?? "Propiedad"}. ${t}`), endpoint);
+      const done = await finishPhotos(made, (t) => setStatus(`${made.title ?? "Propiedad"}. ${t}`), endpoint, setProgress);
       track("property_import_completed", { source: hostOf(preview.listingUrl), photos: done.photosDone, mode: "single", status: done.status });
       track(done.status === "completed" ? "listing_import_completed" : "listing_import_partial", importEventProps(preview.diagnostics, { source: hostOf(preview.listingUrl), mode: "single", photos_done: done.photosDone, photos_total: done.photosTotal }));
       // The agency created its second property on its own: the activation signal (spec §2.5, §8), once per browser.
@@ -1161,6 +1247,7 @@ export function ImportProperty({
       setError(`${message(err, "No pudimos terminar de importar las fotos.")} La propiedad quedó como borrador; podés reintentar desde el inicio.`);
     } finally {
       setStatus("");
+      setProgress(null);
     }
   }
 
@@ -1168,13 +1255,14 @@ export function ImportProperty({
     if (!partial) return;
     setStatus("Reintentando fotos…");
     try {
-      const done = await finishPhotos(partial, setStatus, endpoint);
+      const done = await finishPhotos(partial, setStatus, endpoint, setProgress);
       if (done.status === "completed") router.push(openPath(partial.id!));
       else setPartial(done);
     } catch (err) {
       setError(message(err, "No pudimos reintentar."));
     } finally {
       setStatus("");
+      setProgress(null);
     }
   }
 
@@ -1242,6 +1330,17 @@ export function ImportProperty({
             <strong>Importada parcialmente:</strong> {partial.photosDone} de {partial.photosTotal} fotos
             {partial.settingsSaved ? "" : ", y faltan los datos de la ficha"}. La propiedad quedó como borrador.
           </p>
+          {partial.images.length > 0 && !progress && (
+            <p className="dm-help">No se pudieron traer: {partial.images.map(photoName).join(", ")}.</p>
+          )}
+          {progress && !preview && (
+            <div className="ap-import-progress" role="status" aria-live="polite">
+              <progress max={progress.total || 1} value={progress.done} aria-label="Fotos importadas" />
+              <span>
+                Reintentando fotos: {progress.done} de {progress.total}
+              </span>
+            </div>
+          )}
           <div className="ap-card-actions">
             <Link href={`${openPath(partial.id!)}${partial.settingsSaved ? "" : `${openPath(partial.id!).includes("?") ? "&" : "?"}completar=1`}`} className="button button-small button-primary">
               Abrir la propiedad
@@ -1338,8 +1437,21 @@ export function ImportProperty({
             disabled={busy || Boolean(preview.duplicateOf) || !fields.title.trim()}
             onClick={() => void create()}
           >
-            {busy ? "Importando…" : `Importar con ${keep.size} ${keep.size === 1 ? "foto" : "fotos"}`}
+            {progress ? `Importando fotos: ${progress.done} de ${progress.total}` : busy ? "Importando…" : `Importar con ${keep.size} ${keep.size === 1 ? "foto" : "fotos"}`}
           </button>
+          {progress && (
+            <div className="ap-import-progress" role="status" aria-live="polite">
+              <progress max={progress.total || 1} value={progress.done} aria-label="Fotos importadas" />
+              <span>
+                Importando fotos: {progress.done} de {progress.total}
+              </span>
+              {progress.failed.length > 0 && (
+                <span className="inline-error">
+                  No se pudo traer {progress.failed.length === 1 ? "la foto" : "las fotos"} {progress.failed.map(photoName).join(", ")}: se puede reintentar al terminar.
+                </span>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

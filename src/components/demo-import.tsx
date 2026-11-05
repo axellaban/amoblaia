@@ -246,10 +246,14 @@ export function MapReview({ data, value, onChange }: { data: ImportedDemo; value
 }
 
 /** The listing's own photos in a demo: added if missing (the ones already there keep their stagings), in the listing's order. */
-export async function syncPhotos(base: string, images: string[], onStatus: (text: string) => void) {
+/** Where the photo download goes: how many are done of how many, and which failed so far. */
+export type PhotoProgress = { done: number; total: number; failed: string[] };
+
+export async function syncPhotos(base: string, images: string[], onStatus: (text: string) => void, onProgress?: (p: PhotoProgress) => void) {
   const ids: string[] = [];
   const done: string[] = [];
   const failedUrls: string[] = [];
+  onProgress?.({ done: 0, total: images.length, failed: [] });
   for (const [i, url] of images.entries()) {
     onStatus(`Fotos de la publicación: ${i + 1} de ${images.length}…`);
     try {
@@ -262,8 +266,18 @@ export async function syncPhotos(base: string, images: string[], onStatus: (text
     } catch {
       failedUrls.push(url);
     }
+    onProgress?.({ done: i + 1, total: images.length, failed: [...failedUrls] });
   }
   return { ids, failed: failedUrls.length, done, failedUrls };
+}
+
+/** "7674_20260619161744290.webp": the file name of a photo's address, to say which one failed. */
+export function photoName(url: string) {
+  try {
+    return decodeURIComponent(new URL(url).pathname.split("/").filter(Boolean).pop() ?? url);
+  } catch {
+    return url;
+  }
 }
 
 /** Photos imported from another listing of the same site (their file starts with another property id). */

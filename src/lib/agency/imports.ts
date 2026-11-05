@@ -21,13 +21,32 @@ export function photoKey(src: string) {
   }
 }
 
+/** The fields a person reviews on the preview; a change in any of them is worth asking again. */
+const REVIEWED = {
+  title: "título",
+  price: "precio",
+  operation: "operación",
+  location: "ubicación",
+  description: "descripción",
+} as const;
+type Reviewed = keyof typeof REVIEWED;
+const short = (v: string) => createHash("sha256").update(v).digest("base64url").slice(0, 12);
+const reviewedValue = (imp: ImportedDemo, k: Reviewed) => sameText(k === "price" ? (imp.price ?? imp.priceConflict) : imp[k]);
+
 /**
- * What the admin saw on the preview, to tell whether the listing changed
- * before confirming: the fields that are saved and the photos offered.
- * Photos count as a set (some sites shuffle them or add a changing query on
- * every visit) and the map to about a meter, so only real changes show.
+ * What the person saw on the preview, to tell on confirming whether the
+ * listing really changed: one short hash per reviewed field and one per
+ * photo (by address, without what sites change on every visit). It travels
+ * through the browser and back; nothing in it is trusted beyond comparing.
  */
 export function snapshotOf(imp: ImportedDemo) {
+  const f = Object.fromEntries((Object.keys(REVIEWED) as Reviewed[]).map((k) => [k, short(reviewedValue(imp, k))]));
+  const p = [...new Set(imp.images.map((src) => short(photoKey(src))))].sort();
+  return `v2.${Buffer.from(JSON.stringify({ f, p })).toString("base64url")}`;
+}
+
+/** The single hash a tab opened before v2 still sends: compared as it was. */
+export function legacySnapshotOf(imp: ImportedDemo) {
   const round = (n: number | null) => (n == null ? null : Math.round(n * 1e5) / 1e5);
   const seen = {
     title: sameText(imp.title),
@@ -40,6 +59,40 @@ export function snapshotOf(imp: ImportedDemo) {
     map: imp.map ? [round(imp.map.lat), round(imp.map.lng), imp.map.precision, imp.mapStatus] : null,
   };
   return createHash("sha256").update(JSON.stringify(seen)).digest("hex");
+}
+
+export type SnapshotChange = {
+  /** Reviewed fields that read differently now, in Spanish ("precio", "descripción"). */
+  fields: string[];
+  /** Every photo the person chose is gone from the page (some were chosen). */
+  chosenGone: boolean;
+  /** How many of the chosen photos are no longer on the page. */
+  chosenMissing: number;
+};
+
+/**
+ * What changed between the preview and the listing as read now. Photos the
+ * person did not choose, new photos and photos no longer on the page do not
+ * count as a change (the chosen ones still there are imported); only the
+ * reviewed fields, or all the chosen photos being gone, do.
+ */
+export function snapshotChanges(sent: unknown, now: ImportedDemo, chosen: string[] | null): SnapshotChange {
+  const none: SnapshotChange = { fields: [], chosenGone: false, chosenMissing: 0 };
+  if (typeof sent !== "string" || !sent) return none;
+  if (!sent.startsWith("v2.")) return legacySnapshotOf(now) === sent ? none : { ...none, fields: ["la publicación"] };
+  let seen: { f?: Record<string, string>; p?: string[] };
+  try {
+    seen = JSON.parse(Buffer.from(sent.slice(3), "base64url").toString("utf8"));
+  } catch {
+    return none;
+  }
+  const fields = (Object.keys(REVIEWED) as Reviewed[])
+    .filter((k) => typeof seen.f?.[k] === "string" && seen.f[k] !== short(reviewedValue(now, k)))
+    .map((k) => REVIEWED[k]);
+  const present = new Set(now.images.map((src) => short(photoKey(src))));
+  const wanted = chosen ? [...new Set(chosen.map((src) => short(photoKey(src))))] : (seen.p ?? []);
+  const missing = wanted.filter((h) => !present.has(h)).length;
+  return { fields, chosenGone: wanted.length > 0 && missing === wanted.length, chosenMissing: missing };
 }
 
 export type ImportRow = {

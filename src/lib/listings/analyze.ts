@@ -6,6 +6,7 @@
 // Pure: no network.
 import { extractDetails, norm, type ListingDetails, type Money } from "@/lib/demos/listing-details";
 import { detectPlatform, extractPlatform, ownPart, templatePairs, tidyCaps } from "./platforms";
+import { ownPhotos } from "./photos";
 import { extractStructured } from "./structured";
 import { PLATFORM_NAMES, type Extracted, type ImportDiagnostics, type Strategy } from "./types";
 
@@ -119,7 +120,8 @@ export function analyzeListing(
     description: description?.[1] ?? null,
     // First match per label wins in toDemo: the template's and JSON-LD's labels come first.
     pairs: [...(p.pairs ?? []), ...templatePairs(html), ...(s.pairs ?? []), ...generic.pairs],
-    images: images?.[1] ?? [],
+    // Whatever source found them: no map tiles, no photos named after another listing.
+    images: ownPhotos(images?.[1] ?? [], pageUrl),
     agency: { ...generic.agency, name: agencyName },
   };
 
