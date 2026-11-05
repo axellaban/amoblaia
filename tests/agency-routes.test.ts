@@ -21,6 +21,8 @@ const state = vi.hoisted(() => ({
   pendingToApply: 0,
   authUsers: [] as { id: string; email: string; email_confirm?: boolean }[],
   deletedUsers: [] as string[],
+  /** property_imports.snapshot as the database checks it (null: no check). */
+  snapshotOk: null as null | ((s: string) => boolean),
 }));
 
 /**
@@ -49,7 +51,9 @@ function fakeDb() {
       let total: number | null = null;
       let op = "select";
       let removing = false;
-      const error = () => state.fail[`${table}:${op}`] ?? null;
+      // A check constraint the row breaks (23514), like Postgres answers.
+      let violation: { code: string } | null = null;
+      const error = () => violation ?? state.fail[`${table}:${op}`] ?? null;
       const apply = () => {
         if (error()) return;
         if (removing) {
@@ -75,6 +79,8 @@ function fakeDb() {
         },
         update: (row: Row) => {
           op = "update";
+          if (table === "property_imports" && typeof row.snapshot === "string" && state.snapshotOk && !state.snapshotOk(row.snapshot))
+            violation = { code: "23514" };
           if (error()) return q;
           state.updates.push({ table, row });
           patch = row;
@@ -199,6 +205,7 @@ import * as usuario from "../src/app/api/panel/usuarios/[id]/route";
 import * as unirme from "../src/app/api/panel/unirme/route";
 import { agencyStage, claimState } from "../src/lib/agency/stage";
 import { publicSite } from "../src/lib/agency/site";
+import { snapshotRule } from "./helpers/db-checks";
 
 const OWNER = "00000000-0000-4000-8000-0000000000b1";
 const DEMO = "00000000-0000-4000-8000-000000000d01";
@@ -257,6 +264,7 @@ beforeEach(() => {
   state.cookies = new Map();
   state.pendingToApply = 0;
   state.deletedUsers = [];
+  state.snapshotOk = snapshotRule().accepts;
   state.tables = {
     agency_members: [{ user_id: OWNER, role: "owner", agencies: AGENCY }],
     agencies: [{ ...AGENCY, notes: "Le interesa el plan Agente", contact_name: "Ana", branding: {} }],
@@ -594,6 +602,51 @@ describe("Imports that tell what really happened", () => {
     expect(body.preview).toMatchObject({ title: "Departamento en La Perla", snapshot: expect.stringMatching(/^v2\./) });
     expect(state.inserts.filter((i) => i.table === "demo_properties")).toEqual([]);
     expect(state.tables.property_imports[0].status).toBe("failed");
+  });
+
+  it("saves the preview's v2 snapshot with the import, as the database checks it", async () => {
+    const preview = await (await importar.POST(req("/api/panel/importar", "POST", { url: "https://sur.test/p/123", preview: true }))).json();
+    const r = await create({ snapshot: preview.snapshot });
+    expect(r.status).toBe(201);
+    expect(state.tables.property_imports[0]).toMatchObject({ status: "partial", snapshot: expect.stringMatching(/^v2\./) });
+  });
+
+  it("never leaves an empty property when the import's record cannot be saved: the demo goes back for its photos", async () => {
+    // The check before the fix: only the old hex snapshot.
+    state.snapshotOk = (s) => /^[0-9a-f]{64}$/.test(s);
+    const r = await create({ images: ["https://cdn.test/123_a.jpg"] });
+    expect(r.status).toBe(201);
+    const made = await r.json();
+    expect(made).toMatchObject({ id: expect.any(String), importId: expect.any(String), images: ["https://cdn.test/123_a.jpg"] });
+    // Saved without the snapshot: the import knows its property and the photos still to download.
+    expect(state.tables.property_imports[0]).toMatchObject({ status: "partial", demo_id: made.id, pending_images: ["https://cdn.test/123_a.jpg"] });
+    expect(state.tables.property_imports[0].snapshot).toBeUndefined();
+    const done = await importar.PATCH(req("/api/panel/importar", "PATCH", { importId: made.importId, done: ["https://cdn.test/123_a.jpg"], failed: [] }));
+    expect(await done.json()).toMatchObject({ status: "completed", photosDone: 1 });
+  });
+
+  it("fills the empty property a failed import left instead of calling the retry a duplicate", async () => {
+    const LEFT = "00000000-0000-4000-8000-000000000d09";
+    state.tables.demo_properties = [{ id: "pr9", agency_id: "ag1", listing_url: "https://sur.test/p/123", demos: { id: LEFT } }];
+    state.tables.demos.push({ id: LEFT, agency_id: "ag1", kind: "ficha", property_id: "pr9", token: "tok_leftleftleftleftleftle", status: "draft", settings: {} });
+    state.tables.property_imports.push({ id: "00000000-0000-4000-8000-00000000f009", agency_id: "ag1", status: "failed", demo_id: LEFT, pending_images: [] });
+    const r = await create({ images: ["https://cdn.test/123_a.jpg"] });
+    expect(r.status).toBe(201);
+    expect((await r.json()).id).toBe(LEFT);
+    expect(state.inserts.filter((i) => i.table === "demo_properties" || i.table === "demos")).toEqual([]);
+    expect(state.updates).toContainEqual({ table: "demo_properties", row: expect.objectContaining({ title: "Departamento en La Perla", listing_url: "https://sur.test/p/123" }) });
+  });
+
+  it("still refuses a retry when the existing property has photos or a successful import", async () => {
+    const LEFT = "00000000-0000-4000-8000-000000000d09";
+    state.tables.demo_properties = [{ id: "pr9", agency_id: "ag1", listing_url: "https://sur.test/p/123", demos: { id: LEFT } }];
+    state.tables.demos.push({ id: LEFT, agency_id: "ag1", kind: "ficha", property_id: "pr9", token: "tok_leftleftleftleftleftle", status: "draft", settings: {} });
+    state.tables.property_imports.push({ id: "00000000-0000-4000-8000-00000000f009", agency_id: "ag1", status: "failed", demo_id: LEFT, pending_images: [] });
+    state.tables.demo_photos.push({ id: "ph1", property_id: "pr9" });
+    expect((await create()).status).toBe(409);
+    state.tables.demo_photos = [];
+    state.tables.property_imports.push({ id: "00000000-0000-4000-8000-00000000f00a", agency_id: "ag1", status: "completed", demo_id: LEFT, pending_images: [] });
+    expect((await create()).status).toBe(409);
   });
 
   it("never lets an agency report photos of another agency's import", async () => {

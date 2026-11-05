@@ -7,7 +7,7 @@ import { readListing } from "@/lib/demos/listing";
 import { completeAgency, createDemo, MAX_PHOTOS_PER_DEMO, saveJson } from "@/lib/demos/server";
 import { cleanText, cleanUrl, isUuid } from "@/lib/demos/shared";
 import { adminClient } from "@/lib/supabase/server";
-import { photoKey, reportPhotos, snapshotChanges, snapshotOf, startImport, updateImport, type ImportRow } from "./imports";
+import { leftoverOf, photoKey, reportPhotos, snapshotChanges, snapshotOf, startImport, storableSnapshot, updateImport, type ImportRow } from "./imports";
 import { existingImport, logImport } from "./panel";
 
 const PRIVATE = { "Cache-Control": "private, no-store" };
@@ -47,6 +47,8 @@ export async function importListing(request: Request, target: ListingTarget, onC
   let ctx: { agencyId: string; userId: string; url: string } | null = null;
   // A guest's failed preview is not logged as an import attempt of the agency.
   let started: ImportRow | null = null;
+  // The property this attempt created: once it exists, a failure is recorded on it, never left empty and unlinked.
+  let created: string | null = null;
   try {
     const body = await readJson(request, 32768);
     const pasted = cleanUrl(body.url);
@@ -71,7 +73,11 @@ export async function importListing(request: Request, target: ListingTarget, onC
 
     const listing = await readListing(pasted);
     const imp = listing.imported;
-    const duplicateOf = await existingImport(target.agencyId, listing.listingUrl);
+    const found = await existingImport(target.agencyId, listing.listingUrl);
+    // An empty property left by a failed import of this same listing is not a duplicate:
+    // this attempt fills it instead of creating another one.
+    const reuse = found ? await leftoverOf(target.agencyId, found) : null;
+    const duplicateOf = reuse ? null : found;
     if (duplicateOf) {
       await updateImport(row.id, { status: "duplicate", demo_id: duplicateOf, error: null });
       started = null;
@@ -104,9 +110,10 @@ export async function importListing(request: Request, target: ListingTarget, onC
       imp,
       [...IMPORT_FIELDS],
     );
-    const title = "title" in edits ? cleanText(edits.title, 160) : fixed.title;
+    // Clamped to what demo_properties accepts (160), whatever the reader found.
+    const title = "title" in edits ? cleanText(edits.title, 160) : cleanText(fixed.title, 160);
     if (!title) throw new HttpError(400, "Ingresá el título de la propiedad.");
-    const location = "location" in edits ? cleanText(edits.location, 160) : fixed.location;
+    const location = "location" in edits ? cleanText(edits.location, 160) : cleanText(fixed.location, 160);
     const settings = { ...fixed.settings };
     if ("price" in edits) {
       // A price confirmed on the preview settles a published contradiction.
@@ -125,19 +132,23 @@ export async function importListing(request: Request, target: ListingTarget, onC
     const images = kept.slice(0, MAX_PHOTOS_PER_DEMO);
 
     await rpc("amobla_account", { p_user: userId, p_trial: false });
-    const id = await createDemo({
-      actorId: userId,
-      agencyId: target.agencyId,
-      agency: null,
-      property: {
-        title,
-        location,
-        listing_url: listing.listingUrl,
-        description: cleanText(listing.description, 1000, true),
-        origin: target.origin,
-      },
-    });
-    // From here the property exists: whatever fails is recorded as missing, never lost.
+    const property = {
+      title,
+      location,
+      listing_url: listing.listingUrl,
+      description: cleanText(listing.description, 1000, true),
+      origin: target.origin,
+    };
+    let id: string;
+    if (reuse) {
+      // The empty property of the failed attempt: its data as read now.
+      const { error } = await adminClient().from("demo_properties").update(property).eq("id", reuse.propertyId);
+      if (error) throw new Error("IMPORT_REUSE_FAILED");
+      id = reuse.demoId;
+    } else id = await createDemo({ actorId: userId, agencyId: target.agencyId, agency: null, property });
+    created = id;
+    // From here the property exists: whatever fails is recorded as missing, never lost,
+    // and the demo always goes back to the browser so it downloads the photos.
     const saved = await saveJson("demos", "settings", id, settings).then(
       () => true,
       () => false,
@@ -154,7 +165,8 @@ export async function importListing(request: Request, target: ListingTarget, onC
       settings_saved: saved,
       error: saved ? null : "No pudimos guardar los datos de la ficha. Completalos desde la publicación.",
     };
-    await updateImport(row.id, {
+    started = null;
+    await recordCreated(row.id, {
       status: done.status,
       demo_id: id,
       photos_total: done.photos_total,
@@ -163,20 +175,36 @@ export async function importListing(request: Request, target: ListingTarget, onC
       settings_saved: saved,
       error: done.error,
       property_id: (demo as { property_id: string } | null)?.property_id ?? null,
-      snapshot,
+      ...(storableSnapshot(snapshot) ? { snapshot } : {}),
     });
-    started = null;
-    await onCreated?.(id);
+    await onCreated?.(id).catch((e) => console.error("IMPORT_ON_CREATED_FAILED", e));
     return Response.json(result(done, { title }), { status: 201, headers: PRIVATE });
   } catch (e) {
     if (started)
       await updateImport(started.id, {
         status: "failed",
         error: e instanceof HttpError ? e.message.slice(0, 300) : "No pudimos completar la importación.",
+        // Linked to the property it created, so a retry fills that one instead of calling it a duplicate.
+        ...(created ? { demo_id: created } : {}),
       }).catch(() => null);
     else if (ctx && e instanceof HttpError && ![401, 403, 409].includes(e.status))
       await logImport({ ...ctx, status: "failed", error: e.message });
     return failure(e);
+  }
+}
+
+/**
+ * The import's record once its property exists. A failure here never undoes
+ * the import: it retries with the essentials (what the browser needs to
+ * report the photos) and otherwise only logs it.
+ */
+async function recordCreated(id: string, patch: Parameters<typeof updateImport>[1]) {
+  try {
+    await updateImport(id, patch);
+  } catch (e) {
+    console.error("IMPORT_RECORD_FAILED", e);
+    const { snapshot: _snapshot, property_id: _property, ...essential } = patch;
+    await updateImport(id, essential).catch((again) => console.error("IMPORT_RECORD_RETRY_FAILED", again));
   }
 }
 

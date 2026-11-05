@@ -41,9 +41,21 @@ const reviewedValue = (imp: ImportedDemo, k: Reviewed) => sameText(k === "price"
  */
 export function snapshotOf(imp: ImportedDemo) {
   const f = Object.fromEntries((Object.keys(REVIEWED) as Reviewed[]).map((k) => [k, short(reviewedValue(imp, k))]));
-  const p = [...new Set(imp.images.map((src) => short(photoKey(src))))].sort();
+  // At most SNAPSHOT_PHOTOS photos, so it always fits the column (12000 characters).
+  const p = [...new Set(imp.images.map((src) => short(photoKey(src))))].sort().slice(0, SNAPSHOT_PHOTOS);
   return `v2.${Buffer.from(JSON.stringify({ f, p })).toString("base64url")}`;
 }
+
+/**
+ * What property_imports.snapshot accepts (its check, in
+ * 202611260001_import_snapshot_v2.sql): the old sha256 in hex or v2, up to
+ * SNAPSHOT_MAX characters. Change both together; a test compares them.
+ */
+export const SNAPSHOT_PATTERN = /^([0-9a-f]{64}|v2\.[A-Za-z0-9_-]+)$/;
+export const SNAPSHOT_MAX = 12000;
+/** Photos kept in a snapshot: 500 hashes are about 10 000 characters. */
+const SNAPSHOT_PHOTOS = 500;
+export const storableSnapshot = (s: string) => s.length <= SNAPSHOT_MAX && SNAPSHOT_PATTERN.test(s);
 
 /** The single hash a tab opened before v2 still sends: compared as it was. */
 export function legacySnapshotOf(imp: ImportedDemo) {
@@ -185,6 +197,26 @@ export async function reportPhotos(agencyId: string, importId: string, done: unk
   const status = importStatus({ settings_saved: row.settings_saved, pending_images: pending });
   await updateImport(row.id, { ...next, status });
   return { ...row, ...next, status };
+}
+
+/**
+ * An empty property that a failed import of this agency left (it has no
+ * photos, and every import linked to it failed): a new attempt of the same
+ * listing fills it instead of being refused as a duplicate. Null otherwise.
+ */
+export async function leftoverOf(agencyId: string, demoId: string) {
+  const db = adminClient();
+  const [imports, demo] = await Promise.all([
+    db.from("property_imports").select("status").eq("agency_id", agencyId).eq("demo_id", demoId),
+    db.from("demos").select("id,property_id").eq("id", demoId).eq("agency_id", agencyId).maybeSingle(),
+  ]);
+  if (imports.error || demo.error || !demo.data) return null;
+  const rows = (imports.data ?? []) as { status: string }[];
+  if (!rows.length || rows.some((r) => r.status !== "failed")) return null;
+  const propertyId = (demo.data as { property_id: string }).property_id;
+  const photos = await db.from("demo_photos").select("id", { count: "exact", head: true }).eq("property_id", propertyId);
+  if (photos.error || (photos.count ?? 0) > 0) return null;
+  return { demoId, propertyId };
 }
 
 /** After the property's data was completed from its listing: its imports no longer miss it. */
