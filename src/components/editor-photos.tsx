@@ -83,6 +83,7 @@ import type { Tool } from "@/lib/demos/tools";
 import { MaskBrush, type BrushHandle } from "./mask-brush";
 import { track } from "@/lib/analytics";
 import { RetouchControls, type ToolsState } from "./retouch-controls";
+import { GenerationProgress } from "./generation-progress";
 
 /** A state of one style of one photo, in words: created, in the queue, failed, uncertain… */
 export function stateLabel(s: CellState) {
@@ -522,8 +523,10 @@ export function PhotoWorkspace({
               )}
               {liveGen && (
                 <div className="pw-generating" role="status" aria-live="polite">
-                  <Loader2 size={24} className="spin" aria-hidden="true" />
-                  <span>Creando {styleName(liveGen.style)}…</span>
+                  <span className="dv2-gen-scan" aria-hidden="true" />
+                  <span className="dv2-gen-live">
+                    <Sparkles size={14} aria-hidden="true" /> IA trabajando · Creando {styleName(liveGen.style)}
+                  </span>
                 </div>
               )}
               <div className="pw-tools" role="group" aria-label="Qué ver en la foto grande">
@@ -1635,6 +1638,11 @@ function CreatePanel({
   const state = stateOf(value.style);
   const exists = state.kind === "ready";
   const live = state.kind === "running" || state.kind === "queued" || state.kind === "waiting" || (state.kind === "ready" && state.running);
+  // Since when this style is being created: the server's record, or the moment this tab asked for it.
+  const liveRow = live ? photo.generations.find((g) => g.style === value.style && (g.status === "queued" || g.status === "running")) : undefined;
+  const askedAt = useMemo(() => Date.now(), [photo.id, value.style, live]);
+  const liveSince = liveRow ? Math.min(Date.parse(liveRow.created_at) || askedAt, Date.now()) : askedAt;
+  const progress = live && !staging?.blocked;
   const why =
     staging?.blocked ??
     (live
@@ -1775,8 +1783,15 @@ function CreatePanel({
           estilo; podés volver a elegir la anterior.
         </p>
       )}
+      {progress && (
+        <GenerationProgress
+          since={liveSince}
+          styleName={styleName(value.style)}
+          note="Podés seguir con otras fotos: la versión aparece en «Versiones de esta foto» y se abre sola cuando esté lista."
+        />
+      )}
       <div className="pw-quote" role="status" aria-live="polite">
-        {why ? (
+        {progress ? null : why ? (
           <span className="inline-error">{why}</span>
         ) : done ? (
           <span>{done}</span>
@@ -1809,8 +1824,8 @@ function CreatePanel({
       <div className="pw-create-actions">
         {step === "choose" ? (
           <button className="button button-primary" disabled={Boolean(why) || working}>
-            {working ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />} Generar versión
-            {compact && estimate && !estimate.blocked
+            {working || progress ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />} {progress ? `Generando ${styleName(value.style)}…` : "Generar versión"}
+            {!progress && compact && estimate && !estimate.blocked
               ? estimate.newPhotos
                 ? ` (${estimate.newPhotos} ${estimate.newPhotos === 1 ? "crédito" : "créditos"})`
                 : " (sin costo)"
