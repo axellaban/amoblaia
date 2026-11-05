@@ -101,9 +101,11 @@ export class ApiError extends Error {
   }
 }
 
-/** The buyers' link, or the one for presenting the demo to the agency (it may show the strip). */
+/** The buyers' link, or the one for presenting the demo to the agency (it may show the strip).
+ * Callers may run while rendering (the send dialog's preview), so on the server
+ * it is the path alone; the full link is only shown and copied in the browser. */
 export const publicLink = (token: string, presentation = false) =>
-  demoUrl(window.location.origin, token, presentation);
+  demoUrl(typeof window === "undefined" ? "" : window.location.origin, token, presentation);
 
 export async function copyText(text: string) {
   try {
