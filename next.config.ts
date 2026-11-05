@@ -7,6 +7,8 @@ const FRAMED_PREVIEW = "panel/propiedades/[^/]+/vista-previa";
 
 const config: NextConfig = {
   poweredByHeader: false,
+  // Vercel does not expose this one to the browser by itself. See src/lib/ux-context.ts.
+  env: { NEXT_PUBLIC_HABITA_DEPLOYMENT_ID: process.env.VERCEL_DEPLOYMENT_ID ?? "" },
   // Required by the PostHog reverse proxy: its API paths end with a slash.
   skipTrailingSlashRedirect: true,
   async rewrites() {

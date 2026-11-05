@@ -38,6 +38,18 @@ export function registerSuperProperties(properties: EventProperties) {
   }
 }
 
+/** The variant this browser sees, as "experiment:variant", on every later
+ * event; `null` removes it when the experiment ends. There is none today. */
+export function setExperimentVariant(experiment: string | null, variant?: string) {
+  try {
+    if (!posthog.__loaded) return;
+    if (experiment && variant) posthog.register({ experiment_variant: `${experiment}:${variant}` });
+    else posthog.unregister("experiment_variant");
+  } catch {
+    /* Tracking is best effort. */
+  }
+}
+
 /** First-touch attribution: kept from the first demo seen, never replaced. */
 export function registerSuperPropertiesOnce(properties: EventProperties) {
   try {

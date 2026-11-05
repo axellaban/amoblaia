@@ -26,7 +26,51 @@ Las credenciales de QA están en Vercel (proyecto amoblaia, producción): `HABIT
 
 ## QA automático
 
-El skill `.claude/skills/qa-habita/SKILL.md` tiene el procedimiento completo (errores de Vercel y Supabase, flujos con Playwright, corrección, merge y registro). Corre dos veces por día como tarea programada.
+El skill `.claude/skills/qa-habita/SKILL.md` tiene el procedimiento completo (errores de Vercel y Supabase, flujos con Playwright, corrección, merge y registro). Puede correr más de una vez por día, sin hora garantizada: lo que vale es la hora registrada en cada corrida.
+
+## Para quien lee este archivo (Astra)
+
+Buscá `### QA <fecha de hoy> am` o `pm`, con la fecha de Argentina. Si no está, ese día todavía no hay QA: no uses el de otro día como si fuera de hoy. Mirá `Estado` y `PostHog revisado hasta` para saber qué se cubrió de verdad. Este archivo es público: no trae métricas comerciales ni grabaciones, que se consultan directo en PostHog. Ver `docs/CRO_INSTRUMENTACION.md`.
+
+## Listas vivas
+
+### Observaciones abiertas
+
+- **OBS-001** El video toma el título «Propiedad nueva» si el borrador no tiene título.
+- **OBS-002** La nota «Generar crea otra» junto a «(sin costo)» puede confundir (`src/components/editor-photos.tsx`).
+- **OBS-003** Los estilos de video Equilibrado y Cinematográfico figuran como «No disponible» en la cuenta y no se probaron.
+
+### Propuestas UX pendientes
+
+Para que Astra las evalúe. Claude no las implementa sin aprobación.
+
+- Ninguna registrada todavía con este formato. OBS-002 es candidata.
+
+### PRs de usabilidad abiertos
+
+- Ninguno con título `UX:` al 5/11/2026.
+
+## Plantilla de cada corrida
+
+```markdown
+### QA AAAA-MM-DD am|pm
+
+- Inicio: <ISO con zona> · Fin: <ISO con zona>
+- Commit: <sha corto> · Despliegue: <id o sha> · Estado: completo|parcial|fallido
+- Tipo: completa|liviana · Pantallas: <lista>
+- Flujos revisados: <lista> · Sin revisar: <lista y motivo>
+- Bugs encontrados: <lista o «ninguno»> · Corregidos: <PR o «ninguno»>
+- Observaciones nuevas: <OBS-NNN o «ninguna»> · Propuestas nuevas: <UX-NNN o «ninguna»>
+- PRs de usabilidad abiertos: <lista o «ninguno»>
+- PostHog revisado hasta: <ISO con zona> · cobertura: completa|parcial|sin acceso · <áreas revisadas y qué faltó, sin cantidades>
+- Esperado, no es bug: <lista o «nada nuevo»>
+```
+
+Sin nombres, teléfonos, emails, enlaces a grabaciones, IDs de sesión, tasas de conversión ni cantidades de usuarios o sesiones.
+
+## Resultados
+
+Las corridas nuevas van acá, la más reciente primero. Las anteriores al 6/11/2026 conservan su formato original.
 
 ## Resultado del QA del 5/11/2026 pm (segunda corrida)
 
@@ -80,8 +124,4 @@ Errores conocidos que no se tocaron:
 - «Generar versión (sin costo)»: el costo se cobra una vez por foto, no por estilo.
 - Abrir la edición administrativa hace `POST …/edicion`: inicia la sesión de edición, no guarda datos.
 
-### Observaciones abiertas
-
-1. El video toma el título «Propiedad nueva» si el borrador no tiene título.
-2. La nota «Generar crea otra» junto a «(sin costo)» puede confundir (`src/components/editor-photos.tsx`).
-3. Los estilos de video Equilibrado y Cinematográfico figuran como «No disponible» en la cuenta y no se probaron.
+Las observaciones de esta corrida pasaron a «Listas vivas» como OBS-001 a OBS-003.
