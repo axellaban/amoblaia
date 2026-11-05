@@ -28,6 +28,21 @@ Las credenciales de QA están en Vercel (proyecto amoblaia, producción): `HABIT
 
 El skill `.claude/skills/qa-habita/SKILL.md` tiene el procedimiento completo (errores de Vercel y Supabase, flujos con Playwright, corrección, merge y registro). Corre dos veces por día como tarea programada.
 
+## Resultado del QA del 5/11/2026 pm (segunda corrida)
+
+Corrida liviana (17:51 h Argentina). Sin bugs nuevos; no hubo nada que corregir.
+
+- Pantallas: escritorio 1366×900, iPhone 13 y Galaxy S8 (demos con red lenta y con user agent de WhatsApp).
+- Errores de Vercel (24 h): los mismos 6 grupos de la corrida anterior; el último de `window is not defined` (15:32 UTC) es anterior al deploy actual (`ad0f3a0`, READY). Los de cron (09:45) se confirman mañana.
+- Sesión de QA: OK. Sin errores de consola ni de red, sin scroll horizontal y sin placeholders en `/panel`, `/panel/propiedades`, `/precios`, `/acceso`, demo publicada (`/demo/<token>` y `/presentacion`) en las tres pantallas; `og:title`, `og:description` y `og:image` presentes.
+- `/demo/<token-inexistente>`: página 404 clara en castellano con «Volver al inicio».
+- Las demos de QA en borrador dan 404 en `/demo/<token>` aun con la sesión de QA: esperado, solo se ven publicadas.
+- Accesibilidad (`serious`, ya conocidas): contraste en `/panel` (5 nodos), `/acceso` en celular (5) y demo pública (1 contraste y 1 `aria-prohibited-attr`).
+- Carga de la demo pública con red lenta: 8–9 s hasta `load` en celular (con imágenes); no hay medición de LCP todavía.
+- No se hicieron: generaciones (crear demo, estudio, video), tablet, caminos de error de subida; la corrida de la tarde no los incluye y no hay cambios de código en esos flujos.
+- PostHog: sin conector en esta sesión; el paso 3 quedó sin hacer.
+- Sigue abierta la observación 1 (la demo publicada de QA se titula «Propiedad nueva»).
+
 ## Resultado del QA del 5/11/2026 pm
 
 Sin bugs nuevos; no hubo nada que corregir.
