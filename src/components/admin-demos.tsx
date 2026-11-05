@@ -176,7 +176,7 @@ async function agencyPanelLink(demo: Pick<DemoSummary, "id" | "token" | "agencyC
 }
 
 /** The link of each "which": the agency's demo, its prices, its panel or the buyers' page. */
-const linkOf = (demo: Pick<DemoSummary, "id" | "token" | "agencyClaimed">, which: "agency" | "prices" | "panel" | "buyer") =>
+export const linkOf = (demo: Pick<DemoSummary, "id" | "token" | "agencyClaimed">, which: "agency" | "prices" | "panel" | "buyer") =>
   which === "agency"
     ? agencyLink(demo)
     : which === "prices"

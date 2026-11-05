@@ -21180,6 +21180,130 @@ body:has(.pv-root) .pb-root {
   align-items: center;
   gap: 8px;
 }
+/* The list's quick actions: WhatsApp (its logo) and copy the demo or panel link. */
+.ah-wa {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: #25d366;
+  color: #fff;
+}
+.ah-wa:hover,
+.ah-wa:focus-visible {
+  background: #1fb457;
+}
+.ah-wa.is-off {
+  background: #eceae4;
+  color: #a7a69f;
+  cursor: not-allowed;
+}
+.ah-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--pr-line, #dde3d7);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ah-chip:hover:not(:disabled),
+.ah-chip:focus-visible {
+  border-color: var(--ah-green);
+}
+.ah-chip:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.ah-chip.is-done {
+  background: var(--ah-green-soft);
+  border-color: #b9dcc6;
+  color: var(--ah-green);
+}
+.ah-chip.is-error {
+  color: #a3333b;
+}
+/* On the phone every agency is a card: name and activity, its stage and demo, and big buttons. */
+@media (max-width: 720px) {
+  .ah-table-wrap {
+    background: none;
+    border: 0;
+    overflow: visible;
+  }
+  .ah-table {
+    min-width: 0;
+  }
+  .ah-table,
+  .ah-table tbody {
+    display: block;
+  }
+  .ah-table thead,
+  .ah-table td.is-account,
+  .ah-table td.is-num,
+  .ah-table td.is-score {
+    display: none;
+  }
+  .ah-table tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "name when"
+      "stage demo"
+      "acts acts";
+    gap: 10px 12px;
+    align-items: center;
+    margin-bottom: 12px;
+    padding: 14px;
+    background: #fff;
+    border: 1px solid var(--pr-line, #dde3d7);
+    border-radius: 16px;
+  }
+  .ah-table td {
+    padding: 0;
+    border: 0;
+  }
+  .ah-table td.is-name {
+    grid-area: name;
+  }
+  .ah-table td.is-when {
+    grid-area: when;
+    text-align: right;
+    font-size: 13px;
+  }
+  .ah-table td.is-stage {
+    grid-area: stage;
+  }
+  .ah-table td.is-demo {
+    grid-area: demo;
+    justify-self: end;
+  }
+  .ah-table td.is-actions {
+    grid-area: acts;
+    display: grid;
+    grid-template-columns: 46px minmax(0, 1fr) minmax(0, 1fr) 34px;
+    justify-content: stretch;
+    gap: 8px;
+  }
+  .ah-table td.is-actions .ah-wa,
+  .ah-table td.is-actions .ah-chip {
+    width: auto;
+    height: 46px;
+  }
+  /* Its name already opens the agency: the card keeps room for the big buttons. */
+  .ah-table td.is-actions .ah-see {
+    display: none;
+  }
+}
 .ah-name {
   display: flex;
   align-items: center;

@@ -157,6 +157,8 @@ export type CommercialRow = {
   demos: { createdAt: string; step: number }[];
   /** Its contact WhatsApp, as loaded on the agency (null when unknown). */
   whatsapp?: string | null;
+  /** Its latest published demo, whose agency link the list copies (null without one). */
+  shareDemo?: { id: string; token: string } | null;
 };
 
 export type ListFilters = {
