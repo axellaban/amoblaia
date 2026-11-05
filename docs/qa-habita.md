@@ -28,6 +28,22 @@ Las credenciales de QA están en Vercel (proyecto amoblaia, producción): `HABIT
 
 El skill `.claude/skills/qa-habita/SKILL.md` tiene el procedimiento completo (errores de Vercel y Supabase, flujos con Playwright, corrección, merge y registro). Corre dos veces por día como tarea programada.
 
+## Resultado del QA del 5/11/2026 pm (corrida liviana, segunda)
+
+QA parcial: no se pudo probar producción.
+
+- Vercel: `get_runtime_errors` y `list_deployments` devolvieron 403 (el conector necesita `authorize_team_access` para el equipo). No se revisaron errores de runtime ni deploys.
+- Sin `HABITA_QA_EMAIL` / `HABITA_QA_PASSWORD` en el entorno: no hubo sesión de QA ni recorrido con Playwright. `www.habitaia.app` tampoco respondió desde el sandbox (curl sin respuesta), así que tampoco se probaron las páginas públicas.
+- PostHog (últimas 72 h, solo tráfico externo, `is_internal` distinto de true): demos 31 sesiones (25 celular, 6 escritorio), panel 10 sesiones (7 celular, 3 escritorio). La mayoría de los eventos de esas rutas son internos (unos 1.700 de ~3.000), el filtro funciona. Rage clicks externos: 4 en demos y 3 en panel escritorio (menos de 3 sesiones por patrón: solo observación). Sin `$exception` ni `$dead_click` en el proyecto (esos eventos no existen en la taxonomía).
+- No se modificó código ni se abrió PR de usabilidad.
+
+Observaciones nuevas:
+4. El conector de Vercel necesita autorizar el equipo para que el QA programado lea errores y deploys.
+5. El proyecto de PostHog no captura `$exception` ni `$dead_click`; el paso 3 del skill no puede medirlos.
+6. Rage clicks externos: 4 en demos y 3 en panel escritorio; ver si se repiten.
+
+PostHog revisado hasta: 2026-11-05T17:45:00Z
+
 ## Resultado del QA del 5/11/2026 pm
 
 Sin bugs nuevos; no hubo nada que corregir.
