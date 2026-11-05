@@ -173,8 +173,18 @@ export function SendDemo({ demos }: { demos: DemoSummary[] }) {
   );
 }
 
-/** Opens the agency's WhatsApp chat (no text of ours). Disabled without a number. */
-export function WhatsappContact({ phone, label = "Contactar por WhatsApp", small = true }: { phone: string | null; label?: string; small?: boolean }) {
+/** Opens the agency's WhatsApp chat, with `text` written when given. Disabled without a number. */
+export function WhatsappContact({
+  phone,
+  label = "Contactar por WhatsApp",
+  small = true,
+  text,
+}: {
+  phone: string | null;
+  label?: string;
+  small?: boolean;
+  text?: string;
+}) {
   const to = normalizeArNumber(phone);
   if (!to)
     return (
@@ -183,7 +193,7 @@ export function WhatsappContact({ phone, label = "Contactar por WhatsApp", small
       </button>
     );
   return (
-    <a href={`https://wa.me/${to}`} target="_blank" rel="noreferrer" className={`button ${small ? "button-small " : ""}dm-whatsapp`}>
+    <a href={`https://wa.me/${to}${text ? `?text=${encodeURIComponent(text)}` : ""}`} target="_blank" rel="noreferrer" className={`button ${small ? "button-small " : ""}dm-whatsapp`}>
       <MessageCircle size={15} aria-hidden="true" /> {label}
     </a>
   );

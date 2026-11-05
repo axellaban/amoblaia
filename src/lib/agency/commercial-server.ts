@@ -117,6 +117,18 @@ async function prospectStages(agencyId: string | null) {
   return new Map(rows.map((r) => [r.agency_id, r.stage]));
 }
 
+/** Each agency's contact WhatsApp; optional (before its migration, nothing). */
+async function agencyWhatsapps(agencyId: string | null) {
+  const rows = await optional(() =>
+    all<{ id: string; contact_whatsapp: string | null }>((from, to) => {
+      let q = adminClient().from("agencies").select("id,contact_whatsapp").range(from, to);
+      if (agencyId) q = q.eq("id", agencyId);
+      return q;
+    }, "COMMERCIAL_WHATSAPPS_FAILED"),
+  );
+  return new Map(rows.map((r) => [r.id, r.contact_whatsapp]));
+}
+
 async function scoreRows(demoIds: string[] | null) {
   if (demoIds === null) return optional(() => allScoreRows());
   if (!demoIds.length) return [];
@@ -137,7 +149,7 @@ async function scoreRows(demoIds: string[] | null) {
  */
 export async function commercialRows(only: string | null = null): Promise<CommercialRow[]> {
   const db = adminClient();
-  const [agenciesRaw, demos, prospects, team] = await Promise.all([
+  const [agenciesRaw, demos, prospects, team, whatsapps] = await Promise.all([
     all<AgencyRow>((from, to) => {
       let q = db.from("agencies").select("id,name,owner_id,claimed_at,created_at").order("created_at", { ascending: false }).range(from, to);
       if (only) q = q.eq("id", only);
@@ -146,6 +158,7 @@ export async function commercialRows(only: string | null = null): Promise<Commer
     demosOf(only),
     prospectStages(only),
     internalUserIds(),
+    agencyWhatsapps(only),
   ]);
   // An agency taken by a team account (QA of the claim, a test) has no real account:
   // no «Cuenta creada», no activity, no subscription. Its demos' visits still count.
@@ -209,6 +222,7 @@ export async function commercialRows(only: string | null = null): Promise<Commer
       lastActivity: lastActivity(facts),
       createdAt: a.created_at,
       test: isTestAgency(a.name),
+      whatsapp: whatsapps.get(a.id) ?? null,
       demos: own.map((d) => ({
         createdAt: d.created_at,
         step: funnelStep({

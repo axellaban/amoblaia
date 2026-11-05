@@ -22,7 +22,7 @@ import {
 } from "@/lib/agency/commercial";
 import { commercialRows } from "@/lib/agency/commercial-server";
 import { FUNNEL_STEPS, PERIODS, STEP_LABEL, demosInPeriod, funnelCounts, inPeriod, parsePeriod, shortDay, type Period } from "@/lib/agency/demo-funnel";
-import { AccountPill, AgencyThumb, MoreMenu, RecalcScores, ScorePill, StagePill } from "@/components/admin-agency-hub";
+import { AccountPill, AgencyThumb, MoreMenu, RecalcScores, ScorePill, StagePill, WhatsappContact } from "@/components/admin-agency-hub";
 import { SupportViewButton } from "@/components/admin-agencies";
 import { requireAdminPage } from "@/lib/demos/admin-page";
 export const dynamic = "force-dynamic";
@@ -35,6 +35,10 @@ type Props = { searchParams: Promise<Record<string, string | string[] | undefine
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
 const PER_PAGE = 50;
 /** Each funnel step's share, said of the step before it. */
+/** Who stayed at each step without reaching the next one: the orange part of its bar. */
+const STAYED = ["No se enviaron", "No abrieron la demo", "Visitaron, sin interactuar", "Interactuaron, sin cuenta", "Cuenta sin uso", "Sin suscripción"];
+/** The message the list's WhatsApp button leaves written. */
+const WHATSAPP_HELLO = "¡Buenas!";
 const OF_PREVIOUS = ["", "de las creadas", "de las enviadas", "de las visitadas", "de las que interactuaron", "de las cuentas creadas", "de las cuentas activas"];
 /** «hoy», «últimos 7 días», «del 02/11 al 04/11»: the period, said in the list's summary. */
 function periodLabel(p: Period) {
@@ -67,6 +71,8 @@ export default async function AgenciesPage({ searchParams }: Props) {
   const withDemo = one(sp.etapa) === "con-demo";
   const stepRaw = Number(one(sp.paso));
   const step = one(sp.paso) !== "" && Number.isInteger(stepRaw) && stepRaw >= 0 && stepRaw < FUNNEL_STEPS.length ? stepRaw : null;
+  // «quedo»: only the agencies that stayed at the step (not the ones that went on). The last step has nothing after it.
+  const stayed = step !== null && step < FUNNEL_STEPS.length - 1 && one(sp.quedo) === "1";
   const page = Math.max(1, Number(one(sp.pagina)) || 1);
   const sort = sortFromParam(one(sp.orden));
   const [rows, toReview] = await Promise.all([commercialRows().catch(() => null), claimsToReview().catch(() => [])]);
@@ -78,6 +84,7 @@ export default async function AgenciesPage({ searchParams }: Props) {
     const current: Record<string, string> = {
       etapa: withDemo ? "con-demo" : filters.stage ? STAGE_PARAM[filters.stage] : "",
       paso: step !== null ? String(step) : "",
+      quedo: stayed ? "1" : "",
       periodo: period.key === "todo" || period.key === "rango" ? "" : period.key,
       desde: period.key === "rango" && period.from ? period.from : "",
       hasta: period.key === "rango" && period.to ? period.to : "",
@@ -113,7 +120,7 @@ export default async function AgenciesPage({ searchParams }: Props) {
           </Link>
         </div>
       ) : (
-        <AgencyList rows={rows} filters={filters} filtering={filtering} page={page} href={href} toReview={toReview} period={period} withDemo={withDemo} step={step} sort={sort} />
+        <AgencyList rows={rows} filters={filters} filtering={filtering} page={page} href={href} toReview={toReview} period={period} withDemo={withDemo} step={step} stayed={stayed} sort={sort} />
       )}
     </div>
   );
@@ -129,6 +136,7 @@ function AgencyList({
   period,
   withDemo,
   step,
+  stayed,
   sort,
 }: {
   sort: ListSort;
@@ -136,6 +144,7 @@ function AgencyList({
   period: Period;
   withDemo: boolean;
   step: number | null;
+  stayed: boolean;
   filters: ListFilters;
   filtering: boolean;
   page: number;
@@ -155,7 +164,8 @@ function AgencyList({
     const v = view.get(r.id)!;
     if (withDemo && !v.count) return false;
     // A funnel step: agencies with a demo of the period that reached it (test agencies too, marked as such).
-    return step === null || (v.step !== null && v.step >= step);
+    // «Se quedaron»: its highest step is exactly that one.
+    return step === null || (v.step !== null && (stayed ? v.step === step : v.step >= step));
   });
   const shown = sortRows(filtered, sort);
   /** A sortable header: the first click sorts from highest to lowest (newest activity first), the next one the other way. */
@@ -198,6 +208,7 @@ function AgencyList({
               {withDemo && <input type="hidden" name="etapa" value="con-demo" />}
               {!withDemo && filters.stage && <input type="hidden" name="etapa" value={STAGE_PARAM[filters.stage]} />}
               {step !== null && <input type="hidden" name="paso" value={step} />}
+              {stayed && <input type="hidden" name="quedo" value="1" />}
               {filters.q && <input type="hidden" name="q" value={filters.q} />}
               {sortParam(sort) && <input type="hidden" name="orden" value={sortParam(sort)} />}
               <label>
@@ -210,28 +221,69 @@ function AgencyList({
             </form>
           </div>
         </div>
-        <ol className="ah-dfunnel-steps">
-          {funnel.map((f, i) => (
-            <li key={f.label}>
-              <Link
-                href={href({ paso: step === i ? null : String(i) })}
-                className={step === i ? "is-on" : undefined}
-                aria-current={step === i ? "true" : undefined}
-              >
+        <ul className="ah-dfunnel-legend" aria-hidden="true">
+          <li className="is-went">Pasaron al paso siguiente</li>
+          <li className="is-stayed">Se quedaron (para hacer seguimiento)</li>
+        </ul>
+        <ol className="ah-dfunnel-chart">
+          {funnel.map((f, i) => {
+            const last = i === funnel.length - 1;
+            const went = last ? f.count : funnel[i + 1].count;
+            const stay = f.count - went;
+            // Heights in % of the plot: the bar is its share of the first step, split between who went on and who stayed.
+            const total = f.ofFirst * 100;
+            const isOn = (s: number, st: boolean) => step === s && stayed === st;
+            return (
+              <li key={f.label}>
+                <Link
+                  href={href({ paso: isOn(i, false) ? null : String(i), quedo: null })}
+                  className={`ah-dfunnel-top${isOn(i, false) ? " is-on" : ""}`}
+                  aria-current={isOn(i, false) ? "true" : undefined}
+                  title={`Ver las ${f.count} que llegaron a «${f.label}»`}
+                >
+                  <strong>{f.count}</strong>
+                  <small>{i === 0 ? "Base del período" : f.ofPrevious === null ? "—" : `${f.ofPrevious}% ${OF_PREVIOUS[i]}`}</small>
+                </Link>
+                <div className="ah-dfunnel-plot">
+                  {f.count ? (
+                    <div className="ah-dfunnel-col" style={{ height: `max(${total}%, ${(stay > 0 ? 24 : 0) + (went > 0 ? 24 : 0)}px)` }}>
+                      {stay > 0 && (
+                        <Link
+                          href={href({ paso: isOn(i, true) ? null : String(i), quedo: isOn(i, true) ? null : "1" })}
+                          className={`ah-dfunnel-seg is-stayed${isOn(i, true) ? " is-on" : ""}`}
+                          style={{ flexGrow: stay }}
+                          aria-current={isOn(i, true) ? "true" : undefined}
+                          aria-label={`${stay}: ${STAYED[i].toLowerCase()}. Ver sus inmobiliarias`}
+                        >
+                          {stay}
+                        </Link>
+                      )}
+                      {went > 0 && (
+                        <Link
+                          href={href({ paso: isOn(last ? i : i + 1, false) ? null : String(last ? i : i + 1), quedo: null })}
+                          className={`ah-dfunnel-seg is-went${last ? " is-last" : ""}${isOn(last ? i : i + 1, false) ? " is-on" : ""}`}
+                          style={{ flexGrow: went }}
+                          aria-current={isOn(last ? i : i + 1, false) ? "true" : undefined}
+                          aria-label={last ? `${went} suscriptas. Ver sus inmobiliarias` : `${went} pasaron a «${funnel[i + 1].label}». Ver sus inmobiliarias`}
+                        >
+                          {went}
+                        </Link>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="ah-dfunnel-zero" />
+                  )}
+                </div>
                 <span className="ah-dfunnel-label">
                   {i + 1}. {f.label}
+                  {last ? <small className="is-went">Clientes pagos</small> : stay > 0 ? <small>{stay} {STAYED[i].toLowerCase()}</small> : <small>&nbsp;</small>}
                 </span>
-                <strong>{f.count}</strong>
-                <span className="ah-dfunnel-bar" aria-hidden="true">
-                  <span style={{ width: `${Math.max(f.ofFirst * 100, f.count ? 2 : 0)}%` }} />
-                </span>
-                <small>{i === 0 ? "Base del período" : f.ofPrevious === null ? "—" : `${f.ofPrevious}% ${OF_PREVIOUS[i]}`}</small>
-              </Link>
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ol>
         <p className="ah-dfunnel-note">
-          Tocá un paso para ver sus inmobiliarias. «Con interacción» incluye descargas e imágenes generadas en la demo; «Cuenta con interacción»: la
+          Tocá una parte de una barra para ver sus inmobiliarias: lo verde pasó al paso siguiente; lo naranja se quedó ahí. «Con interacción» incluye descargas e imágenes generadas en la demo; «Cuenta con interacción»: la
           cuenta subió o importó una propiedad, o generó una imagen. Las inmobiliarias de prueba (QA) no cuentan.
         </p>
       </section>
@@ -341,10 +393,14 @@ function AgencyList({
       {(periodOn || step !== null) && (
         <p className="ah-scope">
           {shown.length} {shown.length === 1 ? "inmobiliaria" : "inmobiliarias"}
-          {step !== null ? ` en «${FUNNEL_STEPS[step]}»` : " con demos creadas"}
+          {step !== null
+            ? stayed
+              ? ` en «${FUNNEL_STEPS[step]}» sin pasar a «${FUNNEL_STEPS[step + 1]}» (${STAYED[step].toLowerCase()})`
+              : ` en «${FUNNEL_STEPS[step]}»`
+            : " con demos creadas"}
           {periodOn ? ` · ${periodLabel(period)} (${periodDemos} ${periodDemos === 1 ? "demo" : "demos"})` : ""}
           {" · "}
-          <Link href={href({ periodo: null, desde: null, hasta: null, paso: null })} className="text-link">
+          <Link href={href({ periodo: null, desde: null, hasta: null, paso: null, quedo: null })} className="text-link">
             Ver todas
           </Link>
         </p>
@@ -438,6 +494,7 @@ function AgencyList({
                       )}
                     </td>
                     <td className="is-actions">
+                      <WhatsappContact phone={r.whatsapp ?? null} text={WHATSAPP_HELLO} />
                       <Link href={base} className="button button-small button-outline ah-see">
                         Ver <ArrowRight size={15} aria-hidden="true" />
                       </Link>
