@@ -122,7 +122,7 @@ export function ImportPreview({ data }: { data: ImportedDemo }) {
       )}
       {agent && (
         <p className="dm-help">
-          Agente: <strong>{agent.name}</strong>
+          Agente: <strong>{agent.name || "sin nombre"}</strong>
           {[agent.email, agent.whatsapp && `WhatsApp ${agent.whatsapp}`, agent.phone && agent.phone !== agent.whatsapp && agent.phone]
             .filter(Boolean)
             .map((v) => ` · ${v}`)

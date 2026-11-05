@@ -211,6 +211,7 @@ export function readSettings(raw: unknown): DemoSettings {
   const map = (v.map && typeof v.map === "object" ? v.map : {}) as Record<string, unknown>;
   const agent = (v.agent && typeof v.agent === "object" ? v.agent : null) as Record<string, unknown> | null;
   const agentName = agent ? text(agent.name, 80) : null;
+  const agentContact = Boolean(agent && [agent.whatsapp, agent.phone, agent.email].some((x) => typeof x === "string" && x.trim()));
   return {
     propertyType: v.propertyType === "office" ? "office" : "residential",
     openMode: v.openMode === "original" ? "original" : "styled",
@@ -253,9 +254,10 @@ export function readSettings(raw: unknown): DemoSettings {
       radius: num(map.radius, 50, 5000),
       source: MAP_SOURCES.includes(map.source as MapSource) ? (map.source as MapSource) : null,
     },
-    agent: agentName
+    // Kept with its contact even without a name (an import that only found a WhatsApp).
+    agent: agentName || agentContact
       ? {
-          name: agentName,
+          name: agentName ?? "",
           role: text(agent!.role, 60),
           whatsapp: text(agent!.whatsapp, 30),
           phone: text(agent!.phone, 30),
