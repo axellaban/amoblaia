@@ -18,10 +18,18 @@ import {
 } from "@/lib/commerce/mercadopago";
 import { firstChargeCents, type Product } from "@/lib/commerce/catalog";
 import { safeReturnTo } from "@/lib/commerce/credit-packs";
+import { membershipOf } from "@/lib/agency/server";
+import { BUY_ONLY_BILLING } from "@/lib/agency/workspace-shared";
 
 export async function POST(request: Request) {
   try {
     const user = await requireUser(request);
+    // The agency's credits are one balance, its billing account's (agencies.owner_id):
+    // anyone else of its team buying would only add credits to a personal account the
+    // agency never uses. Members and administrators ask that account to buy.
+    const membership = await membershipOf(user.id);
+    if (membership && membership.agency.owner_id !== user.id)
+      throw new HttpError(403, BUY_ONLY_BILLING);
     if (!billingConfigured())
       throw new HttpError(
         503,

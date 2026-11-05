@@ -9,15 +9,16 @@
 export type AgencyRole = "owner" | "admin" | "editor" | "viewer";
 export type InvitedRole = Exclude<AgencyRole, "owner">;
 export const INVITED_ROLES: InvitedRole[] = ["admin", "editor", "viewer"];
+/** Visible roles (Equipo y accesos): Administrador and Miembro; the owner is an administrator whose account pays. */
 export const ROLE_LABEL: Record<AgencyRole, string> = {
-  owner: "Dueño",
+  owner: "Administrador",
   admin: "Administrador",
-  editor: "Edición",
+  editor: "Miembro",
   viewer: "Solo vista",
 };
 export const ROLE_HELP: Record<InvitedRole, string> = {
-  admin: "Todo, menos comprar créditos: propiedades, sitio web y usuarios.",
-  editor: "Carga, edita, ambienta con IA y publica propiedades.",
+  admin: "Todo lo de un miembro, y además invita, cambia permisos, quita accesos y aprueba solicitudes.",
+  editor: "Ve, crea y edita propiedades, crea demostraciones y genera imágenes y videos con los créditos compartidos.",
   viewer: "Ve las propiedades y comparte sus enlaces. No cambia nada.",
 };
 /** Site, branding, deleting properties and users. */
@@ -122,6 +123,8 @@ export type TeamMember = {
   /** The properties it is limited to, null: all. */
   properties: string[] | null;
   you: boolean;
+  /** The principal administrator of the agency (members only). */
+  principal?: boolean;
   createdAt: string;
   /** Pending: when its link stops working. */
   expiresAt?: string;
