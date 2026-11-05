@@ -220,3 +220,14 @@ La base de la prospección es la de este panel; la planilla de Google solo la al
 - `POST { sync: { csv } }`: la pestaña «Prospectos» tal como se ve, igual que la manda `scripts/prospeccion-sync.gs`. Chapa, que ya lee la planilla, hace esta sincronización cuando la última importación tiene más de una hora (y con «Traer la planilla»), así que el script de la planilla deja de ser necesario. Usa el origen de la última importación.
 - Los cambios quedan a nombre de `PROSPECTING_ACTOR_ID` (o `PROSPECT_SYNC_ACTOR_ID`; si no hay ninguno, el primer usuario de `ADMIN_EMAILS`).
 - Tests: `tests/prospecting-external.test.ts`.
+
+### La lista «Inmobiliarias» en Chapa
+
+La misma lista de `/admin/inmobiliarias` (funnel de demos, pestañas por etapa comercial, filtros, Creada/Enviada, WhatsApp, links de Demo y Panel, recalcular lead scores) se ve y se opera desde `/prospecting/habita?vista=inmobiliarias`. Lee y escribe por esta misma ruta (`src/lib/agency/external.ts`), con las mismas funciones que la lista:
+
+- `GET ?vista=inmobiliarias` → `{ rows, toReview }` (`commercialRows` y `claimsToReview`; cada fila con `wa`, el número para wa.me).
+- `GET ?foto=<id>&w=120` → la portada de la demo, chica.
+- `POST { inmobiliaria, accion: "demo-estado", enviada }` → como el menú Creada/Enviada (todas sus demos), con auditoría.
+- `POST { inmobiliaria, accion: "link-demo" }` → el link de su última demo publicada como lo copia «Demo» (con código de reclamo si no tiene cuenta).
+- `POST { inmobiliaria, accion: "link-panel" }` → el link fijo de su panel.
+- `POST { accion: "recalcular-scores" }` → recalcula los lead scores.

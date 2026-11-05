@@ -27,6 +27,15 @@ vi.mock("@/lib/supabase/server", () => ({
   }),
 }));
 
+const ext = vi.hoisted(() => ({ calls: [] as unknown[][] }));
+vi.mock("@/lib/agency/external", () => ({
+  agencyList: async () => (ext.calls.push(["list"]), { rows: [{ id: "ag", name: "Inmo", wa: "5492235111111" }], toReview: [] }),
+  agencyThumb: async (id: string, w: unknown) => (ext.calls.push(["thumb", id, w]), Buffer.from([0xff, 0xd8])),
+  setDemosSent: async (...a: unknown[]) => (ext.calls.push(["sent", ...a]), 2),
+  agencyDemoLink: async (...a: unknown[]) => (ext.calls.push(["demo", ...a]), { url: "https://habita.test/d/x/presentacion" }),
+  agencyPanel: async (...a: unknown[]) => (ext.calls.push(["panel", ...a]), { url: "https://habita.test/p/x" }),
+  recalcScores: async () => (ext.calls.push(["recalc"]), { demos: 3 }),
+}));
 import { GET, POST } from "../src/app/api/prospeccion/route";
 import { HEADER, stableUuid } from "../src/lib/prospecting/external";
 
@@ -153,6 +162,30 @@ describe("/api/prospeccion", () => {
     expect((await r.json()).legacy_sends).toBe(1);
     expect(state.rpcs.find((x) => x.name === "habita_prospect_import")!.args).toMatchObject({ p_actor: ACTOR, p_source: "Origen de la planilla", p_legacy_channel: "whatsapp", p_overwrite: false });
     expect((await POST(req("POST", { sync: { csv } }, "Bearer x"))).status).toBe(401);
+  });
+
+  it("lista «Inmobiliarias»: filas, portada y acciones de la lista, a nombre del equipo", async () => {
+    ext.calls = [];
+    const AG = "00000000-0000-4000-8000-0000000000e1";
+    const list = await GET(new Request(`${origin}/api/prospeccion?vista=inmobiliarias`, { headers: { authorization: `Bearer ${SECRET}` } }));
+    expect((await list.json()).rows[0].wa).toBe("5492235111111");
+    const img = await GET(new Request(`${origin}/api/prospeccion?foto=${AG}&w=120`, { headers: { authorization: `Bearer ${SECRET}` } }));
+    expect(img.headers.get("content-type")).toBe("image/jpeg");
+    expect((await (await POST(req("POST", { inmobiliaria: AG, accion: "demo-estado", enviada: true }))).json()).changed).toBe(2);
+    expect((await (await POST(req("POST", { inmobiliaria: AG, accion: "link-demo" }))).json()).url).toContain("/presentacion");
+    expect((await (await POST(req("POST", { inmobiliaria: AG, accion: "link-panel" }))).json()).url).toBe("https://habita.test/p/x");
+    expect((await POST(req("POST", { accion: "recalcular-scores" }))).status).toBe(200);
+    expect(ext.calls).toEqual([
+      ["list"],
+      ["thumb", AG, "120"],
+      ["sent", AG, true, ACTOR],
+      ["demo", AG, ACTOR, origin],
+      ["panel", AG, ACTOR, origin],
+      ["recalc"],
+    ]);
+    expect((await POST(req("POST", { inmobiliaria: "x", accion: "link-panel" }))).status).toBe(404);
+    expect((await POST(req("POST", { inmobiliaria: AG, accion: "demo-estado" }))).status).toBe(400);
+    expect((await GET(new Request(`${origin}/api/prospeccion?vista=inmobiliarias`, { headers: { authorization: "Bearer otra" } }))).status).toBe(401);
   });
 
   it("próximo paso: se guarda con la versión de la cuenta", async () => {
