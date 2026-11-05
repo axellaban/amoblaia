@@ -2,7 +2,8 @@
 // The panel's navigation (Habita V2): a dark green sidebar on desktop and a
 // compact bar with a drawer on mobile. The upcoming tools (Tour 360, Planos,
 // Redes, API) are ordinary items here, without "Próximamente": their own page
-// says it. The site and users stay for the owner and administrators.
+// says it. The site stays for the owner and administrators; «Equipo y accesos»
+// is for everyone (its actions are for administrators).
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -54,8 +55,8 @@ const GROUPS = (): Item[][] => [
     { id: "propiedades", href: "/panel/propiedades", label: "Mis demostraciones", icon: LayoutGrid },
     { id: "imagenes", href: "/panel/imagenes", label: "Estudio de imágenes", icon: Images },
     ...(videoEnabled() ? [{ id: "video", href: "/panel/video", label: "Video", icon: PlayCircle, future: "video" } as Item] : []),
-    // The agency's team, right above its website (owner and administrators only).
-    { id: "usuarios", href: "/panel/usuarios", label: "Usuarios", icon: Users, managers: true },
+    // «Equipo y accesos», right above its website: every role sees its team; the actions are for administrators.
+    { id: "usuarios", href: "/panel/equipo", label: "Equipo y accesos", icon: Users },
     { id: "sitio", href: "/panel/sitio", label: "Sitio web", icon: Globe, managers: true },
   ],
   [
@@ -71,7 +72,48 @@ const GROUPS = (): Item[][] => [
 
 const deviceType = () => (typeof window === "undefined" ? "unknown" : window.matchMedia("(max-width: 860px)").matches ? "mobile" : "desktop");
 
+/**
+ * Requests waiting in «Equipo y accesos» (to join, for administrators; for
+ * the administration, for its principal): a count for the badge, read once
+ * per page and kept a minute in this tab.
+ */
+function usePendingTeam(role?: AgencyRole) {
+  const [total, setTotal] = useState(0);
+  useEffect(() => {
+    if (!role) return;
+    let live = true;
+    const KEY = "habita_team_pending";
+    try {
+      const cached = JSON.parse(sessionStorage.getItem(KEY) ?? "null") as { total: number; at: number } | null;
+      if (cached && Date.now() - cached.at < 60_000) {
+        setTotal(cached.total);
+        return;
+      }
+    } catch {
+      // No storage: read it.
+    }
+    fetch("/api/panel/equipo/pendientes", { credentials: "same-origin" })
+      .then((r) => (r.ok ? r.json() : { total: 0 }))
+      .then((d: { total?: number }) => {
+        if (!live) return;
+        const n = typeof d.total === "number" ? d.total : 0;
+        setTotal(n);
+        try {
+          sessionStorage.setItem(KEY, JSON.stringify({ total: n, at: Date.now() }));
+        } catch {
+          // Private mode: the badge still shows.
+        }
+      })
+      .catch(() => null);
+    return () => {
+      live = false;
+    };
+  }, [role]);
+  return total;
+}
+
 function NavList({ section, role, onNavigate }: { section: PanelSection; role?: AgencyRole; onNavigate?: () => void }) {
+  const pendingTeam = usePendingTeam(role);
   return (
     <>
       {GROUPS().map((group, i) => (
@@ -94,6 +136,11 @@ function NavList({ section, role, onNavigate }: { section: PanelSection; role?: 
                 >
                   <Icon size={19} aria-hidden="true" />
                   <span>{label}</span>
+                  {id === "usuarios" && pendingTeam > 0 && (
+                    <span className="ap-side-badge" aria-label={`${pendingTeam} ${pendingTeam === 1 ? "solicitud pendiente" : "solicitudes pendientes"}`}>
+                      {pendingTeam}
+                    </span>
+                  )}
                 </Link>
               </li>
             ))}

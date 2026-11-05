@@ -14454,6 +14454,121 @@ a.dm-agency:hover {
   font: inherit;
 }
 
+/* «Equipo y accesos» (docs/EQUIPO_Y_ACCESOS.md): badges, the actions menu, requests and the administration. */
+.ap-side-badge {
+  margin-left: auto;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--cream);
+  color: var(--forest);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 22px;
+  text-align: center;
+}
+.at-chip-principal,
+.at-chip-billing {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.at-chip-principal {
+  background: var(--cream);
+  border-color: var(--forest);
+}
+.at-status-accepted {
+  border-color: var(--forest);
+}
+.at-status-expired,
+.at-status-revoked {
+  color: var(--muted);
+}
+.at-menu {
+  position: relative;
+  margin-left: auto;
+}
+.at-menu-button {
+  width: 44px;
+  height: 44px;
+}
+.at-menu-list {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 30;
+  display: grid;
+  min-width: 240px;
+  padding: 6px;
+  background: var(--paper, #fff);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.12);
+}
+.at-menu-list button {
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.at-menu-list button:hover,
+.at-menu-list button:focus-visible {
+  background: var(--cream);
+}
+.at-transfer {
+  border-color: var(--forest);
+}
+.at-transfer h2,
+.at-admin h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 0;
+}
+.at-consequences {
+  margin: 0 0 12px;
+  padding-left: 20px;
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+}
+.at-history summary {
+  cursor: pointer;
+  font-weight: 650;
+}
+.wr-sent h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 0;
+}
+@media (max-width: 600px) {
+  .at-cards li {
+    position: relative;
+    padding: 14px 52px 14px 14px;
+    margin-bottom: 10px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+  }
+  .at-cards li:last-child {
+    border-bottom: 1px solid var(--line);
+  }
+  .at-cards .at-menu {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+  }
+  .at-actions .button,
+  .dm-dialog-actions .button {
+    min-height: 44px;
+  }
+}
+
 /* /admin/asistente: the history of Miguel Ángel's conversations. */
 .ma-page {
   display: grid;

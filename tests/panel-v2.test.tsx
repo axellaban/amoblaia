@@ -136,14 +136,15 @@ describe("Interest in upcoming tools (API)", () => {
 describe("Panel navigation and home", () => {
   it("the sidebar has Sitio web and the four upcoming tools as plain items, without «Próximamente»", () => {
     const html = renderToStaticMarkup(<PanelNav section="inicio" agencyName="Inmo Sur" role="owner" credits={3} />);
-    for (const label of ["Inicio", "Mis demostraciones", "Estudio de imágenes", "Video", "Sitio web", "Tour 360", "Planos", "Redes", "API", "Precios y créditos", "Usuarios", "Ayuda"])
+    for (const label of ["Inicio", "Mis demostraciones", "Estudio de imágenes", "Video", "Sitio web", "Tour 360", "Planos", "Redes", "API", "Precios y créditos", "Equipo y accesos", "Ayuda"])
       expect(html).toContain(`<span>${label}</span>`);
     for (const slug of ["tour-360", "planos", "redes", "api"]) expect(html).toContain(`href="/panel/${slug}"`);
     expect(html).not.toMatch(/Pr[oó]ximamente/i);
     expect(html).not.toMatch(/aria-disabled|disabled/);
-    // «Usuarios» sits right above «Sitio web».
-    expect(html.indexOf("<span>Usuarios</span>")).toBeLessThan(html.indexOf("<span>Sitio web</span>"));
-    expect(html.indexOf("<span>Estudio de imágenes</span>")).toBeLessThan(html.indexOf("<span>Usuarios</span>"));
+    // «Equipo y accesos» sits right above «Sitio web».
+    expect(html.indexOf("<span>Equipo y accesos</span>")).toBeLessThan(html.indexOf("<span>Sitio web</span>"));
+    expect(html.indexOf("<span>Estudio de imágenes</span>")).toBeLessThan(html.indexOf("<span>Equipo y accesos</span>"));
+    expect(html).toContain('href="/panel/equipo"');
   });
 
   it("«Ayuda» opens Miguel Ángel (a button, no page) and «Mi cuenta» and the plans stay inside the panel", () => {
@@ -155,10 +156,10 @@ describe("Panel navigation and home", () => {
     expect(html).toContain('href="/panel/creditos"');
   });
 
-  it("the site and users are only for the owner and administrators", () => {
+  it("the site is only for the owner and administrators; every role sees «Equipo y accesos» (its actions are the administrators')", () => {
     const html = renderToStaticMarkup(<PanelNav section="inicio" agencyName="Inmo Sur" role="viewer" />);
     expect(html).not.toContain("<span>Sitio web</span>");
-    expect(html).not.toContain("<span>Usuarios</span>");
+    expect(html).toContain("<span>Equipo y accesos</span>");
     expect(html).toContain("<span>Tour 360</span>");
   });
 

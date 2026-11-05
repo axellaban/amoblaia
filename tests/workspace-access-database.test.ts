@@ -102,7 +102,8 @@ describe("Solicitudes de acceso (Journey C)", () => {
     // An administrator of another agency cannot answer this one's requests.
     const other = await agency();
     const req2 = (await one<{ r: { id: string } }>("select habita_request_access($1,$2,'','link',null) as r", [visitor, a]))!.r;
-    await fails("select habita_resolve_access_request($1,$2,$3,true)", [other.owner, other.a, req2.id], "NOT_ADMIN");
+    // Answering it as its own agency's request does not find it.
+    await fails("select habita_resolve_access_request($1,$2,$3,true)", [other.owner, other.a, req2.id], "REQUEST_NOT_FOUND");
     await fails("select habita_resolve_access_request($1,$2,$3,true)", [other.owner, a, req2.id], "NOT_ADMIN");
   });
 

@@ -8,9 +8,9 @@ export type AssistantContext =
 
 /** What each role of the panel may do (see AgencyRole), for answers that fit the person asking. */
 const ROLE_CONTEXT: Record<string, string> = {
-  owner: "Quien escribe es el dueño de la inmobiliaria: puede hacer todo, incluso comprar créditos y crear usuarios para su equipo en Usuarios.",
-  admin: "Quien escribe es administrador de la inmobiliaria: puede hacer todo menos comprar créditos (eso lo hace el dueño), incluso cambiar el sitio y crear usuarios en Usuarios.",
-  editor: "Quien escribe es un usuario de edición: carga, edita, ambienta y publica propiedades, pero no compra créditos, no cambia el sitio, no elimina propiedades ni crea usuarios. Puede estar limitado a algunas propiedades.",
+  owner: "Quien escribe es administrador de la inmobiliaria y su cuenta de facturación: puede hacer todo, incluso comprar créditos e invitar a su equipo desde «Equipo y accesos».",
+  admin: "Quien escribe es administrador de la inmobiliaria: puede hacer todo menos comprar créditos (eso lo hace la cuenta de facturación), incluso cambiar el sitio, invitar integrantes y aprobar solicitudes en «Equipo y accesos».",
+  editor: "Quien escribe es miembro de la inmobiliaria: carga, edita, ambienta y publica propiedades con los créditos compartidos, pero no compra créditos, no cambia el sitio, no elimina propiedades ni administra usuarios. Puede estar limitado a algunas propiedades. Si es el titular, puede solicitar la administración principal en «Equipo y accesos».",
   viewer: "Quien escribe es un usuario de solo vista: puede ver propiedades y compartir sus enlaces, pero no cambiar nada. Para más permisos, que se lo pida a un administrador de la inmobiliaria.",
 };
 
