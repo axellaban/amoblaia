@@ -206,3 +206,16 @@ Configuración:
 5. Probar a mano con `sincronizarProspectos()`: el registro muestra el reporte (creadas, actualizadas, retenidas, rechazadas).
 
 Sin el token o con uno incorrecto, la ruta responde 401. Para rotarlo, cambiar el valor en Vercel y en las propiedades del script.
+
+## 11. API para el panel de Chapa Labs (`/api/prospeccion`)
+
+La base de la prospección es la de este panel; la planilla de Google solo la alimenta (§10). Para que el panel comercial de Chapa Labs (`/prospecting/habita`) vea y opere lo mismo que `/admin/prospeccion`, hay una API servidor a servidor, con la misma forma que la de Turnia:
+
+- `Authorization: Bearer $PROSPECTING_API_SECRET` (o `$METRICS_SECRET`, la misma que usa `/api/metricas`). En Chapa va como `HABITA_PROSPECTING_SECRET` o `HABITA_METRICS_SECRET`.
+- `GET`: `{ header, rows, events }`, una fila por cuenta (estado, mensajes = pasos 1–3 confirmados, primer y último contacto, respondió, interés, reunión, cliente, baja, demo publicada y hasta dónde llegaron sus visitas) y la historia (envíos confirmados y hechos registrados). Ver `src/lib/prospecting/external.ts`.
+- `POST { code, action, by }`: aplica la acción con las mismas funciones del panel y devuelve `{ header, row }`.
+  - `sent`: prepara, abre y confirma (método `manual`, «Confirmado en Chapa Labs por …») el paso que dice la plantilla (`whatsapp_2` → paso 2), el de `step` o el siguiente; si la cuenta ya respondió, es conversación (paso 0). Un paso ya confirmado no se repite. Solo contactos revisados: un número «por revisar» devuelve `CONTACT_NEEDS_REVIEW`. Un intento que quedó preparado en este panel se cancela; uno abierto o incierto se confirma.
+  - `outcome`: `respondio` → respuesta, `interesado` → interés (con la nota como evidencia), `reunion`, `perdido`, `baja` (de la cuenta), `invalido` (el WhatsApp). «Cliente» no se marca: sale del primer pago.
+  - `note`, `call`, `visit` → nota; `reopen`; `schedule` y `edit` (zona, SDR, prioridad, campaña, próximo paso) → actualización con la versión de la cuenta. `undo` y `demo` se rechazan (se corrige desde la ficha; la demo se mide sola).
+- Los cambios quedan a nombre de `PROSPECTING_ACTOR_ID` (o `PROSPECT_SYNC_ACTOR_ID`; si no hay ninguno, el primer usuario de `ADMIN_EMAILS`).
+- Tests: `tests/prospecting-external.test.ts`.
