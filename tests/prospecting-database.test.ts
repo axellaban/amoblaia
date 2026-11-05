@@ -307,6 +307,43 @@ describe("Import", () => {
     expect(await count("select count(*) as n from prospect_contacts where account_id=$1 and invalid_at is not null", [sur.id])).toBe(1);
   });
 
+  it("the sheet's «Respondió saludo» and «Interesado» move the stage once, never backwards", async () => {
+    const rs = ["contactada", "respondio", "interesada"].map((k, i) => ({
+      row_number: i + 2,
+      source_key: `nombre:fixture-${k}`,
+      name: `Fixture ${k}`,
+      legacy_status: "sent",
+      sent_date: i === 0 ? null : "2026-10-20",
+      contacts: [],
+      raw: {},
+    }));
+    await json("select habita_prospect_import($1,$2,'planilla-estados',null,null,'{}',$3,false,'whatsapp') as r", [admin, id(), JSON.stringify(rs)]);
+    const stages = [
+      { source_key: "nombre:fixture-contactada", stage: "contacted", date: null },
+      { source_key: "nombre:fixture-respondio", stage: "replied", date: "2026-10-20" },
+      { source_key: "nombre:fixture-interesada", stage: "interested", date: "2026-10-20" },
+    ];
+    const run = () => json<Record<string, number>>("select habita_prospect_sheet_stages($1,'planilla-estados',$2,'whatsapp') as r", [admin, JSON.stringify(stages)]);
+    expect(await run()).toEqual({ contacted: 1, replies: 2, interests: 1 });
+    // Every sync sends the same rows: nothing is recorded twice.
+    expect(await run()).toEqual({ contacted: 0, replies: 0, interests: 0 });
+    const stage = async (k: string) => (await one<{ stage: string }>("select stage from prospect_accounts where source_key=$1", [`nombre:fixture-${k}`]))!.stage;
+    expect(await stage("contactada")).toBe("sent");
+    expect(await stage("respondio")).toBe("conversation");
+    expect(await stage("interesada")).toBe("interested");
+    const acc = (await one<{ id: string }>("select id from prospect_accounts where source_key='nombre:fixture-interesada'"))!.id;
+    expect(await count("select count(*) as n from prospect_events where account_id=$1 and type in ('reply','interest')", [acc])).toBe(2);
+    expect(await one("select human,source,channel,occurred_precision from prospect_events where account_id=$1 and type='reply'", [acc])).toEqual({
+      human: true,
+      source: "import",
+      channel: "whatsapp",
+      occurred_precision: "day",
+    });
+    // The sheet going back to «Respondió saludo» does not lower the stage.
+    await json("select habita_prospect_sheet_stages($1,'planilla-estados',$2,'whatsapp') as r", [admin, JSON.stringify([{ ...stages[2], stage: "replied" }])]);
+    expect(await stage("interesada")).toBe("interested");
+  });
+
   it("imports sheet-verified contacts as verified and past sends with the channel the team states", async () => {
     const rs = [
       {
