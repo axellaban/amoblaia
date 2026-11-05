@@ -238,7 +238,7 @@ function CopyChip({ label, icon, link, off, offTitle }: { label: string; icon: R
 
 /**
  * The list's quick actions, made for the phone: WhatsApp (just its logo, with
- * «¡Buenas!» written), copy the agency's demo link and copy its panel link.
+ * «Buenas!» written), copy the agency's demo link and copy its panel link.
  */
 export function RowQuickActions({ agencyId, name, phone, demo, claimed }: { agencyId: string; name: string; phone: string | null; demo: { id: string; token: string } | null; claimed: boolean }) {
   const to = normalizeArNumber(phone);
@@ -246,7 +246,7 @@ export function RowQuickActions({ agencyId, name, phone, demo, claimed }: { agen
   return (
     <>
       {to ? (
-        <a className="ah-wa" href={`https://wa.me/${to}?text=${encodeURIComponent("¡Buenas!")}`} target="_blank" rel="noreferrer" aria-label={`Escribir a ${name} por WhatsApp`} title="Escribir por WhatsApp">
+        <a className="ah-wa" href={`https://wa.me/${to}?text=${encodeURIComponent("Buenas!")}`} target="_blank" rel="noreferrer" aria-label={`Escribir a ${name} por WhatsApp`} title="Escribir por WhatsApp">
           <WhatsappLogo />
         </a>
       ) : (

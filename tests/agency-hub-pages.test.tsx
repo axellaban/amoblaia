@@ -123,11 +123,11 @@ describe("«Inmobiliarias», the team's single list", () => {
     expect(html).not.toContain("Del Mar Propiedades");
     expect(html).toContain("sin pasar a «Cuenta creada»");
   });
-  it("offers to write each agency on WhatsApp with «¡Buenas!»", async () => {
+  it("offers to write each agency on WhatsApp with «Buenas!»", async () => {
     rows[0].whatsapp = "5492234567890";
     const html = renderToStaticMarkup(await List({ searchParams: Promise.resolve({}) }));
     rows[0].whatsapp = undefined;
-    expect(html).toContain(`https://wa.me/5492234567890?text=${encodeURIComponent("¡Buenas!")}`);
+    expect(html).toContain(`https://wa.me/5492234567890?text=${encodeURIComponent("Buenas!")}`);
     expect(html).toContain("Escribir a Demaio Estudio Inmobiliario por WhatsApp");
     // Without a number, the logo is there but off.
     expect(html).toContain("Falta su WhatsApp");
