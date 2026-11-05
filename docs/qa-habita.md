@@ -24,6 +24,24 @@ Las credenciales de QA están en Vercel (proyecto amoblaia, producción): `HABIT
 - Inmobiliaria de prueba original, edición administrativa: `/admin/inmobiliarias/67b74437-b305-41a3-bada-42205ae090aa/editar`.
 - Flujos prioritarios: crear demostración, estudio de imágenes y video. Después, el resto del panel, el admin, las demos públicas y móvil.
 
+## QA automático
+
+El skill `.claude/skills/qa-habita/SKILL.md` tiene el procedimiento completo (errores de Vercel y Supabase, flujos con Playwright, corrección, merge y registro). Corre dos veces por día como tarea programada.
+
+## Resultado del QA del 5/11/2026
+
+Errores de producción corregidos en [#140](https://github.com/axellaban/amoblaia/pull/140):
+
+- `/admin/inmobiliarias/[id]`: «window is not defined» en el servidor (43 veces). Lo causaba `publicLink` en la vista previa de «Enviar demo».
+- Cron: Mercado Pago rechaza `limit=20` en `/authorized_payments/search`, y la conciliación de checkouts quedaba diferida todos los días.
+- Cron: los barridos de precio de lanzamiento y de suscripciones reembolsadas fallaban todos los días desde el 23/10, porque `202610230002_billing_audit` no estaba aplicada. Se aplicó solo lo que faltaba, con [202611270001_billing_sweeps.sql](https://github.com/axellaban/amoblaia/blob/main/supabase/migrations/202611270001_billing_sweeps.sql).
+
+Sin hacer: los flujos con sesión (crear demo, estudio, video, demos), porque esta sesión no tenía `HABITA_QA_EMAIL` ni `HABITA_QA_PASSWORD`. Las páginas públicas cargan sin errores en escritorio y celular.
+
+Errores conocidos que no se tocaron:
+- `/api/admin/video-musica`: la clave de fal no tiene acceso a los modelos de música (403). Se resuelve en la cuenta de fal, no en el código.
+- `/api/asistente`: timeouts de 60 s el 30/10, sin repetirse desde entonces.
+
 ## Resultado del QA del 3/11/2026
 
 - Crear demostración (subir fotos, borrador, editor): funciona.
