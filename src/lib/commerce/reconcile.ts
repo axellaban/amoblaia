@@ -60,7 +60,9 @@ export async function reconcileCheckout(
           payment?: { id: string | number };
         }[];
       }>(
-        `/authorized_payments/search?preapproval_id=${encodeURIComponent(sub.id)}&limit=20`,
+        // No `limit`: this endpoint answers 400 «Invalid value for limit» to it.
+        // The default page is enough; the newest come first after the sort below.
+        `/authorized_payments/search?preapproval_id=${encodeURIComponent(sub.id)}`,
       );
       const ids = [
         ...new Set(
