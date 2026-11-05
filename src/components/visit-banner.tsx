@@ -258,7 +258,7 @@ export function VisitBanner({
 
       {step === "ask" && (
         <EntryDialog label="Accedé para guardar" onClose={() => setStep(null)}>
-          <AgencyHead agencyName={agencyName} title="Accedé para guardar" sub={`Para guardar tus cambios, entrá a la cuenta de ${agencyName}.`} />
+          <AgencyHead agencyName={agencyName} title="Accedé para guardar" />
           <p className="pe-note">
             <Lock size={14} aria-hidden="true" /> Al entrar, volvés a esta misma pantalla.{gift}
           </p>
