@@ -6,9 +6,10 @@ import { validOrigin } from "@/lib/session";
 export const runtime = "nodejs";
 
 /**
- * "Usar esta cuenta para <inmobiliaria>": a signed-in account that is looking
- * around an agency's panel from its link (or its invitation) takes it over,
- * while the agency has no owner. Only the visit's own agency, never another.
+ * Activates the agency's space for a signed-in account that came from its
+ * private link or invitation (Journey A, docs/EQUIPO_Y_ACCESOS.md): it becomes
+ * its first administrator, while the agency has no owner. Only the visit's own
+ * agency, never another; a public demo link alone never gets here.
  */
 export async function POST(request: Request) {
   try {

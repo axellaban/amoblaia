@@ -206,6 +206,8 @@ export function DemoEditor({
   const [downloading, setDownloading] = useState<string | null>(null);
   // Arrived from its invitation (?bienvenida=1): one concrete first task, not a setup checklist.
   const [welcome, setWelcome] = useState(false);
+  // The welcome's line about the space: the agency and its real balance (never a fixed number).
+  const [space, setSpace] = useState<{ agency: string; credits: number | null } | null>(null);
   // Drafts of the forms: set once, and again only when that same form is saved.
   const [forms, setForms] = useState<ReturnType<typeof formsOf> | null>(null);
   const [dirtyParts, setDirtyParts] = useState<Set<ListingPart>>(new Set());
@@ -253,7 +255,12 @@ export function DemoEditor({
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
     setBackTo(safeReturn(q.get("volver"), home));
-    if (agencyMode && q.get("bienvenida") === "1") setWelcome(true);
+    if (agencyMode && q.get("bienvenida") === "1") {
+      setWelcome(true);
+      api<{ payer?: { agency: string }; credits: number | null }>("/api/panel/creditos")
+        .then((c) => setSpace({ agency: c.payer?.agency ?? "", credits: typeof c.credits === "number" ? c.credits : null }))
+        .catch(() => null);
+    }
     const target = q.get("seccion") ?? window.location.hash.slice(1);
     if (isSection(target)) {
       setOpen((o) => new Set(o).add(target));
@@ -1362,8 +1369,13 @@ export function DemoEditor({
                 <ImageIcon size={20} />
               </span>
               <div>
-                <h2 id="ed-welcome-title">Empezá con una foto</h2>
-                <p>Elegí un estilo, comparalo con el original y descargalo. Descargar no usa créditos.</p>
+                <h2 id="ed-welcome-title">¡Bienvenido a Habita! Tu espacio de trabajo está listo.</h2>
+                <p>
+                  {space?.agency && <strong>{space.agency}. </strong>}
+                  Ya podés crear imágenes y demostraciones interactivas para tus propiedades.
+                  {typeof space?.credits === "number" && ` Tenés ${space.credits} ${space.credits === 1 ? "crédito disponible" : "créditos disponibles"}.`}{" "}
+                  Empezá con una foto: elegí un estilo, comparalo con el original y descargalo (descargar no usa créditos).
+                </p>
               </div>
               <button type="button" className="icon-button" aria-label="Cerrar la guía" onClick={() => setWelcome(false)}>
                 <X size={16} />

@@ -3,6 +3,7 @@ import { INVITE_CODE, INVITE_PARAM, intentDestination, intentOf, type DemoIntent
 import { membershipOf } from "@/lib/agency/server";
 import { startSupport } from "@/lib/agency/support";
 import { liveInvitation, startVisit, type LiveInvitation } from "@/lib/agency/visit";
+import { entrySpace } from "@/lib/agency/workspace-entry";
 import { isAdmin } from "@/lib/commerce/http";
 import { adminClient, currentUser } from "@/lib/supabase/server";
 import { cloudConfigured, cloudEnabled } from "@/lib/supabase/config";
@@ -57,7 +58,12 @@ export async function GET(request: Request) {
   const code = url.searchParams.get(INVITE_PARAM) ?? "";
   if (!INVITE_CODE.test(code)) return to("/panel");
   const invitation = await liveInvitation(code).catch(() => null);
-  if (!invitation) return to(`/panel/empezar?${new URLSearchParams({ [INVITE_PARAM]: code })}`);
+  if (!invitation) {
+    // Used: the agency already has its space, so it is asked for access (Journey C), never claimed again.
+    const space = await entrySpace({ code }).catch(() => null);
+    if (space?.agency.ownerId) return to(`/panel/solicitar-acceso?${new URLSearchParams({ [INVITE_PARAM]: code })}`);
+    return to(`/panel/empezar?${new URLSearchParams({ [INVITE_PARAM]: code })}`);
+  }
   const intent = intentOf(Object.fromEntries(url.searchParams));
   const user = await currentUser().catch(() => null);
   const verified = user && !user.is_anonymous && user.email_confirmed_at ? user : null;
@@ -73,5 +79,14 @@ export async function GET(request: Request) {
   const own = verified ? await membershipOf(verified.id).catch(() => null) : null;
   if (own) return to("/panel");
   await startVisit(code, invitation);
-  return to(await landing(invitation, intent));
+  const destination = await landing(invitation, intent);
+  // Signed in, from the CTA of its private demo: the space is activated on arrival
+  // (visit-banner.tsx, ?activar=1), without the old «¿Usás esta cuenta…?» question.
+  return to(verified ? withParam(destination, "activar", "1") : destination);
+}
+
+/** A path with one more query parameter, before its hash. */
+function withParam(path: string, key: string, value: string) {
+  const [base, hash] = path.split("#");
+  return `${base}${base.includes("?") ? "&" : "?"}${key}=${value}${hash ? `#${hash}` : ""}`;
 }

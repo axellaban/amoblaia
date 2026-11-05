@@ -142,9 +142,14 @@ export async function currentVisit(): Promise<(LiveInvitation & { code: string }
   return invitation ? { ...invitation, code: visit.code } : null;
 }
 
-/** The panel a visitor sees: its agency, as the owner would. */
+/**
+ * The panel a visitor sees: its agency, as the owner would, only while the
+ * agency has no account yet. Once it has its team (claimed), its private data
+ * is for its members: a visit through its fixed link only leads to signing in
+ * or to «Solicitar acceso» (docs/EQUIPO_Y_ACCESOS.md, Journey C).
+ */
 export async function visitorMembership(): Promise<Membership | null> {
   const visit = await currentVisit();
-  return visit ? { role: "owner", agency: visit.agency, scope: null, visitor: true } : null;
+  return visit && !visit.claimed ? { role: "owner", agency: visit.agency, scope: null, visitor: true } : null;
 }
 
