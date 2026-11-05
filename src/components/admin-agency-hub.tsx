@@ -18,7 +18,7 @@ import {
   Building2,
 } from "lucide-react";
 import { AgencyView } from "@/components/admin-leads";
-import { api, copyLinkWhenReady, Dialog, LinkCopy, SendWhatsapp, ViewLink } from "@/components/admin-demos";
+import { api, copyLinkWhenReady, Dialog, LinkCopy, linkOf, SendWhatsapp, ViewLink } from "@/components/admin-demos";
 import { ACCOUNT_LABEL, HOT_SCORE, STAGE_STEP, type AccountState, type CommercialStage, type NextAction } from "@/lib/agency/commercial";
 import { normalizeArNumber } from "@/lib/demos/send";
 import { adminPhotoUrl, type DemoSummary } from "@/lib/demos/shared";
@@ -196,6 +196,76 @@ export function WhatsappContact({
     <a href={`https://wa.me/${to}${text ? `?text=${encodeURIComponent(text)}` : ""}`} target="_blank" rel="noreferrer" className={`button ${small ? "button-small " : ""}dm-whatsapp`}>
       <MessageCircle size={15} aria-hidden="true" /> {label}
     </a>
+  );
+}
+
+/** WhatsApp's logo, for the list's compact button. */
+function WhatsappLogo() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+      <path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2Zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.2-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.8 11.9 11.9 0 0 0 4.6 4c1.7.7 2.4.8 3.2.7.5-.1 1.5-.6 1.8-1.2.2-.6.2-1.1.1-1.2l-.4-.2Z" />
+    </svg>
+  );
+}
+
+/** A compact button that copies a link and says «Copiado» for two seconds. */
+function CopyChip({ label, icon, link, off, offTitle }: { label: string; icon: ReactNode; link: () => Promise<string>; off?: boolean; offTitle?: string }) {
+  const [state, setState] = useState<"idle" | "busy" | "copied" | "error">("idle");
+  async function copy() {
+    setState("busy");
+    try {
+      const ok = await copyLinkWhenReady(link);
+      setState(ok ? "copied" : "error");
+    } catch {
+      setState("error");
+    }
+    setTimeout(() => setState("idle"), 2000);
+  }
+  return (
+    <button
+      type="button"
+      className={`ah-chip${state === "copied" ? " is-done" : ""}${state === "error" ? " is-error" : ""}`}
+      disabled={off || state === "busy"}
+      title={off ? offTitle : `Copiar el link: ${label.toLowerCase()}`}
+      onClick={() => void copy()}
+    >
+      {state === "copied" ? <Check size={16} aria-hidden="true" /> : icon}
+      <span aria-live="polite">{state === "copied" ? "Copiado" : state === "error" ? "No se pudo" : label}</span>
+    </button>
+  );
+}
+
+/**
+ * The list's quick actions, made for the phone: WhatsApp (just its logo, with
+ * «¡Buenas!» written), copy the agency's demo link and copy its panel link.
+ */
+export function RowQuickActions({ agencyId, name, phone, demo, claimed }: { agencyId: string; name: string; phone: string | null; demo: { id: string; token: string } | null; claimed: boolean }) {
+  const to = normalizeArNumber(phone);
+  const panel = `/api/admin/inmobiliarias/${agencyId}/enlace-panel`;
+  return (
+    <>
+      {to ? (
+        <a className="ah-wa" href={`https://wa.me/${to}?text=${encodeURIComponent("¡Buenas!")}`} target="_blank" rel="noreferrer" aria-label={`Escribir a ${name} por WhatsApp`} title="Escribir por WhatsApp">
+          <WhatsappLogo />
+        </a>
+      ) : (
+        <span className="ah-wa is-off" role="img" aria-label="Falta su WhatsApp" title="Falta su WhatsApp: cargalo en «Editar inmobiliaria»">
+          <WhatsappLogo />
+        </span>
+      )}
+      <CopyChip
+        label="Demo"
+        icon={<Link2 size={16} aria-hidden="true" />}
+        off={!demo}
+        offTitle="Todavía no tiene una demo publicada"
+        link={() => linkOf({ id: demo!.id, token: demo!.token, agencyClaimed: claimed }, "agency")}
+      />
+      <CopyChip
+        label="Panel"
+        icon={<KeyRound size={16} aria-hidden="true" />}
+        link={async () => (await api<{ url: string }>(panel, { method: "POST", body: "{}" })).url}
+      />
+    </>
   );
 }
 

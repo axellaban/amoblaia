@@ -17,6 +17,7 @@ import { funnelStep, isTestAgency } from "./demo-funnel";
 type AgencyRow = { id: string; name: string; owner_id: string | null; claimed_at: string | null; created_at: string };
 type DemoRow = {
   id: string;
+  token?: string | null;
   agency_id: string;
   status: string;
   sent_at: string | null;
@@ -55,7 +56,7 @@ async function optional<T>(read: () => Promise<T[]>): Promise<T[]> {
 
 async function demosOf(agencyId: string | null) {
   const db = adminClient();
-  const full = "id,agency_id,status,sent_at,activity_level,activity_at,cover_photo_id,created_by,created_at,updated_at,published_at";
+  const full = "id,token,agency_id,status,sent_at,activity_level,activity_at,cover_photo_id,created_by,created_at,updated_at,published_at";
   const read = (fields: string) =>
     all<DemoRow>((from, to) => {
       let q = db.from("demos").select(fields).order("created_at", { ascending: false }).range(from, to);
@@ -66,7 +67,7 @@ async function demosOf(agencyId: string | null) {
     return await read(full);
   } catch {
     // Before the activity and sending migrations: the basic columns only.
-    return read("id,agency_id,status,cover_photo_id,created_at,published_at");
+    return read("id,token,agency_id,status,cover_photo_id,created_at,published_at");
   }
 }
 
@@ -188,6 +189,7 @@ export async function commercialRows(only: string | null = null): Promise<Commer
     const edited = own.map((d) => d.updated_at).filter((v): v is string => Boolean(v)).sort().at(-1) ?? null;
     const published = own.filter((d) => d.status === "published");
     const since = a.claimed_at ?? a.created_at;
+    const share = published.find((d) => d.token);
     // Its account worked in its panel: an image, an import, or a property it created itself.
     const ownerActive = Boolean(
       a.owner_id && (active.has(a.owner_id) || own.some((d) => d.created_by === a.owner_id && d.created_at > since)),
@@ -223,6 +225,8 @@ export async function commercialRows(only: string | null = null): Promise<Commer
       createdAt: a.created_at,
       test: isTestAgency(a.name),
       whatsapp: whatsapps.get(a.id) ?? null,
+      // Demos come newest first: the first published one with its token.
+      shareDemo: share?.token ? { id: share.id, token: share.token } : null,
       demos: own.map((d) => ({
         createdAt: d.created_at,
         step: funnelStep({

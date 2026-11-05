@@ -128,7 +128,18 @@ describe("«Inmobiliarias», the team's single list", () => {
     const html = renderToStaticMarkup(await List({ searchParams: Promise.resolve({}) }));
     rows[0].whatsapp = undefined;
     expect(html).toContain(`https://wa.me/5492234567890?text=${encodeURIComponent("¡Buenas!")}`);
-    expect(html).toContain("Contactar por WhatsApp");
+    expect(html).toContain("Escribir a Demaio Estudio Inmobiliario por WhatsApp");
+    // Without a number, the logo is there but off.
+    expect(html).toContain("Falta su WhatsApp");
+  });
+  it("copies each agency's demo link and panel link from the list", async () => {
+    rows[0].shareDemo = { id: "44444444-4444-4444-8444-444444444444", token: "tok" };
+    const html = renderToStaticMarkup(await List({ searchParams: Promise.resolve({}) }));
+    rows[0].shareDemo = undefined;
+    expect(html).toMatch(/class="ah-chip"[^>]*title="Copiar el link: demo"/);
+    // Without a published demo, its «Demo» button is off.
+    expect(html).toContain("Todavía no tiene una demo publicada");
+    expect(html).toContain("Copiar el link: panel");
   });
   it("lists only agencies with a demo in the «Con demo creada» tab", async () => {
     const html = renderToStaticMarkup(await List({ searchParams: Promise.resolve({ etapa: "con-demo" }) }));

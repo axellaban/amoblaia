@@ -22,7 +22,7 @@ import {
 } from "@/lib/agency/commercial";
 import { commercialRows } from "@/lib/agency/commercial-server";
 import { FUNNEL_STEPS, PERIODS, STEP_LABEL, demosInPeriod, funnelCounts, inPeriod, parsePeriod, shortDay, type Period } from "@/lib/agency/demo-funnel";
-import { AccountPill, AgencyThumb, MoreMenu, RecalcScores, ScorePill, StagePill, WhatsappContact } from "@/components/admin-agency-hub";
+import { AccountPill, AgencyThumb, MoreMenu, RecalcScores, RowQuickActions, ScorePill, StagePill } from "@/components/admin-agency-hub";
 import { SupportViewButton } from "@/components/admin-agencies";
 import { requireAdminPage } from "@/lib/demos/admin-page";
 export const dynamic = "force-dynamic";
@@ -37,8 +37,6 @@ const PER_PAGE = 50;
 /** Each funnel step's share, said of the step before it. */
 /** Who stayed at each step without reaching the next one: the orange part of its bar. */
 const STAYED = ["No se enviaron", "No abrieron la demo", "Visitaron, sin interactuar", "Interactuaron, sin cuenta", "Cuenta sin uso", "Sin suscripción"];
-/** The message the list's WhatsApp button leaves written. */
-const WHATSAPP_HELLO = "¡Buenas!";
 const OF_PREVIOUS = ["", "de las creadas", "de las enviadas", "de las visitadas", "de las que interactuaron", "de las cuentas creadas", "de las cuentas activas"];
 /** «hoy», «últimos 7 días», «del 02/11 al 04/11»: the period, said in the list's summary. */
 function periodLabel(p: Period) {
@@ -450,16 +448,16 @@ function AgencyList({
                 const base = `/admin/inmobiliarias/${r.id}`;
                 return (
                   <tr key={r.id}>
-                    <td>
+                    <td className="is-name">
                       <Link href={base} className="ah-name">
                         <AgencyThumb photoId={r.coverPhotoId} />
                         <strong>{r.name}</strong>
                       </Link>
                     </td>
-                    <td>
+                    <td className="is-stage">
                       <StagePill stage={r.stage} />
                     </td>
-                    <td>
+                    <td className="is-demo">
                       {(() => {
                         const v = view.get(r.id)!;
                         return v.latest && v.step !== null ? (
@@ -476,14 +474,14 @@ function AgencyList({
                         );
                       })()}
                     </td>
-                    <td>
+                    <td className="is-account">
                       <AccountPill state={accountState(r)} />
                     </td>
                     <td className="is-num">{r.properties}</td>
-                    <td>
+                    <td className="is-score">
                       <ScorePill score={r.score} />
                     </td>
-                    <td>
+                    <td className="is-when">
                       {r.lastActivity ? (
                         <span className="ah-when">
                           {agoText(r.lastActivity.at)}
@@ -494,7 +492,7 @@ function AgencyList({
                       )}
                     </td>
                     <td className="is-actions">
-                      <WhatsappContact phone={r.whatsapp ?? null} text={WHATSAPP_HELLO} />
+                      <RowQuickActions agencyId={r.id} name={r.name} phone={r.whatsapp ?? null} demo={r.shareDemo ?? null} claimed={r.hasOwner} />
                       <Link href={base} className="button button-small button-outline ah-see">
                         Ver <ArrowRight size={15} aria-hidden="true" />
                       </Link>
