@@ -6,6 +6,7 @@ import { adminClient } from "@/lib/supabase/server";
 import { readSettings } from "@/lib/demos/branding";
 import { claimHash, type Membership } from "./server";
 import { INVITED_ROLES, joinPath, scopable, type AgencyRole, type InvitedRole, type TeamMember, type TeamProperty } from "./shared";
+import { principalOf } from "./workspace";
 
 /**
  * "Usuarios" of the agency panel: the owner and its administrators create
@@ -34,7 +35,7 @@ const cleanName = (v: unknown) => {
   return name || null;
 };
 const cleanRole = (v: unknown): InvitedRole => {
-  if (!INVITED_ROLES.includes(v as InvitedRole)) throw new HttpError(400, "Elegí un rol: administrador, edición o solo vista.");
+  if (!INVITED_ROLES.includes(v as InvitedRole)) throw new HttpError(400, "Elegí un rol: miembro o administrador.");
   return v as InvitedRole;
 };
 const newCode = () => randomBytes(24).toString("base64url");
@@ -78,6 +79,8 @@ export async function teamOf(agencyId: string, viewerId: string): Promise<TeamMe
   ]);
   if (members.error || invites.error) throw new HttpError(503, "Los usuarios todavía no están habilitados: falta aplicar la migración 202611110001_agency_team.sql.");
   const rows = members.data as MemberRow[];
+  const owner = rows.find((m) => m.role === "owner")?.user_id ?? null;
+  const principal = await principalOf(agencyId, owner);
   // E-mails live in the accounts, not in the agency's tables.
   const emails = await Promise.all(
     rows.map((m) =>
@@ -98,6 +101,7 @@ export async function teamOf(agencyId: string, viewerId: string): Promise<TeamMe
         role,
         properties: scopable(role) ? m.property_ids : null,
         you: m.user_id === viewerId,
+        principal: m.user_id === principal,
         createdAt: m.created_at,
       };
     }),
@@ -208,7 +212,9 @@ export async function updateAccess(membership: Membership, actorId: string, targ
     ) as typeof current;
   }
   if (!current) throw new HttpError(404, "No encontramos ese usuario.");
-  if (current.role === "owner") throw new HttpError(403, "El acceso del dueño no se puede cambiar.");
+  if (current.role === "owner") throw new HttpError(403, "Es la cuenta de facturación de la inmobiliaria: su acceso no se puede cambiar.");
+  if (target.kind === "member" && target.id === (await principalOf(agencyId, membership.agency.owner_id)))
+    throw new HttpError(403, "Es el administrador principal: primero transferí la administración a otra persona.");
   const role = "role" in body ? cleanRole(body.role) : (current.role as InvitedRole);
   const properties = "properties" in body ? await cleanScope(agencyId, role, body.properties) : scopable(role) ? current.property_ids : null;
   const changes = { role, property_ids: properties };
@@ -237,7 +243,9 @@ export async function removeAccess(membership: Membership, actorId: string, targ
       "TEAM_MEMBER_LOOKUP_FAILED",
     ) as { role: AgencyRole } | null;
     if (!row) throw new HttpError(404, "No encontramos ese usuario.");
-    if (row.role === "owner") throw new HttpError(403, "El dueño de la inmobiliaria no se puede quitar.");
+    if (row.role === "owner") throw new HttpError(403, "Es la cuenta de facturación de la inmobiliaria: su acceso no se puede quitar.");
+    if (target.id === (await principalOf(agencyId, membership.agency.owner_id)))
+      throw new HttpError(403, "Es el administrador principal: primero transferí la administración a otra persona.");
     check(await db.from("agency_members").delete().eq("agency_id", agencyId).eq("user_id", target.id).neq("role", "owner"), "TEAM_REMOVE_FAILED");
   }
   await audit(actorId, "agency_access_removed", agencyId, { [target.kind]: target.id });

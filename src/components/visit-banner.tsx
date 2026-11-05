@@ -4,14 +4,17 @@
 // sign in, create the account (Google in one click, or e-mail) or look around
 // as a guest. As a guest, a quiet «Modo exploración» bar stays on every page,
 // and only a change it tries (save, stage, publish…) asks for the account.
-// A signed-in account outside the agency is offered to take it over, or told
-// it already has an owner. Nothing here grants anything: the server checks
-// the visit on every request.
+// A signed-in account outside the agency is never asked «¿Usás esta cuenta…?»
+// (docs/EQUIPO_Y_ACCESOS.md): from its demo's CTA (?activar=1), its first
+// change or «Empezar a trabajar», its space is activated and it keeps working
+// on the same page. An agency that already has its team only offers to ask
+// for access. Nothing here grants anything: the server checks the visit (an
+// unused, unexpired invitation for an agency without an account) every time.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { freeCreditsLine } from "@/lib/commerce/credit-packs";
-import { Eye, Lock, Mail, UserRound } from "lucide-react";
-import { api, setVisiting, VISIT_ACCOUNT_EVENT } from "./admin-demos";
+import { Eye, Loader2, Lock, Mail, UserRound } from "lucide-react";
+import { api, ApiError, setVisiting, VISIT_ACCOUNT_EVENT } from "./admin-demos";
 import { track } from "@/lib/analytics";
 import { leadFromDemoRef } from "@/lib/leads/client";
 import { cta } from "@/lib/interaction-tracking";
@@ -21,9 +24,9 @@ import { entryChoiceKey, explorationClick } from "@/lib/agency/exploration";
 /** The invitation's sign-up: the route reads the code from the visit's cookie. */
 const ACCOUNT_HREF = "/panel/visita/cuenta";
 /** The sign-up pages themselves: no bar, and their requests are not the panel's. */
-const SIGNUP = /^\/panel\/(empezar|unirme)(\/|$)/;
+const SIGNUP = /^\/panel\/(empezar|unirme|solicitar-acceso)(\/|$)/;
 
-type Step = "welcome" | "ask" | "account" | null;
+type Step = "welcome" | "ask" | "account" | "activating" | null;
 
 // Signed in, the choice is asked again once: that account may now take the agency over.
 function readChoice(agencyId: string, signedIn: boolean) {
@@ -45,6 +48,20 @@ function saveChoice(agencyId: string, signedIn: boolean) {
 function here() {
   const url = new URL(window.location.href);
   url.searchParams.delete("enlace");
+  url.searchParams.delete("activar");
+  return `${url.pathname}${url.search}`;
+}
+
+/** The same page, asking it to activate the space on arrival (after signing in). */
+function hereActivating() {
+  const back = here();
+  return `${back}${back.includes("?") ? "&" : "?"}activar=1`;
+}
+
+/** Where to continue once the space is the account's: the same page; a property opens with its welcome. */
+function afterActivation() {
+  const url = new URL(here(), window.location.origin);
+  if (url.pathname.startsWith("/panel/propiedades/")) url.searchParams.set("bienvenida", "1");
   return `${url.pathname}${url.search}`;
 }
 
@@ -91,13 +108,15 @@ function AgencyHead({ agencyName, title, sub }: { agencyName: string; title: str
 }
 
 /** Sign in, and create the account with its one line: Google in one click, or e-mail. */
-function AccessButtons({ place, onPick }: { place: string; onPick: (choice: "iniciar_sesion" | "crear_cuenta") => void }) {
+function AccessButtons({ place, onPick, claimed }: { place: string; onPick: (choice: "iniciar_sesion" | "crear_cuenta") => void; claimed: boolean }) {
   const back = typeof window === "undefined" ? "/panel" : here();
+  // Signing in to an agency without its account yet comes back ready to activate it.
+  const login = typeof window === "undefined" || claimed ? back : hereActivating();
   return (
     <div className="pe-stack">
       <a
         className="button button-primary"
-        href={`/acceso?${new URLSearchParams({ next: back })}`}
+        href={`/acceso?${new URLSearchParams({ next: login })}`}
         {...cta(`${place}_login`, place, "auth_login", "habita_b2b")}
         onClick={() => onPick("iniciar_sesion")}
       >
@@ -136,7 +155,6 @@ export function VisitBanner({
   const path = usePathname() ?? "";
   const signup = SIGNUP.test(path);
   const [step, setStep] = useState<Step>(null);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const viewed = useRef("");
 
@@ -147,20 +165,65 @@ export function VisitBanner({
     return () => setVisiting(false);
   }, [signup]);
 
-  // The first time in this browser: the welcome (or, signed in, what that account can do here).
+  const activating = useRef(false);
+  /**
+   * Journey A: a signed-in account with this agency's live invitation starts
+   * working at once. The server checks the invitation (unused, unexpired, no
+   * owner yet) and makes this account the space's first administrator.
+   */
+  const activate = useCallback(
+    async (entry: string) => {
+      if (activating.current) return;
+      activating.current = true;
+      setStep("activating");
+      setError("");
+      const base = { agency_id: agencyId, entry_point: entry, is_existing_workspace: false };
+      track("workspace_access_started", base);
+      try {
+        await api("/api/panel/visita", { method: "POST", body: "{}" });
+        track("workspace_created", base);
+        track("workspace_access_completed", { ...base, user_role: "owner", is_first_member: true }, true);
+        // Earlier funnels keep their step.
+        track("panel_claim_completed", { agency_id: agencyId, method: "signed_in", origin: "panel_link" }, true);
+        // Lead score: the demo this browser came from counts its account (the server checks it is that agency's).
+        leadFromDemoRef("demo_account_created");
+        window.location.assign(afterActivation());
+      } catch (e) {
+        const status = e instanceof ApiError ? e.status : 0;
+        track("workspace_access_denied", { ...base, reason: status ? `api_${status}` : "network" });
+        setError(e instanceof Error ? e.message : "No pudimos preparar tu espacio de trabajo.");
+        setStep("account");
+        activating.current = false;
+      }
+    },
+    [agencyId],
+  );
+
+  // The first time in this browser: the welcome. Signed in, nothing is asked:
+  // from its demo's CTA (?activar=1) the space is activated right away.
   useEffect(() => {
-    if (signup || readChoice(agencyId, Boolean(signedInEmail))) return;
-    setStep(signedInEmail ? "account" : "welcome");
-  }, [agencyId, signedInEmail, signup]);
+    if (signup) return;
+    if (signedInEmail) {
+      if (claimed) {
+        if (!readChoice(agencyId, true)) setStep("account");
+        return;
+      }
+      if (new URLSearchParams(window.location.search).get("activar") === "1") void activate("demo");
+      return;
+    }
+    if (!readChoice(agencyId, false)) setStep("welcome");
+  }, [activate, agencyId, claimed, signedInEmail, signup]);
 
   useEffect(() => {
     const ask = (e: Event) => {
-      setStep(signedInEmail ? "account" : "ask");
       track("panel_visit_account_asked", { ruta: window.location.pathname, accion: (e as CustomEvent<{ action?: string }>).detail?.action ?? "desconocida" });
+      // Signed in: the change it tried is the intent to work here.
+      if (signedInEmail && !claimed) void activate("panel_action");
+      else setStep(signedInEmail ? "account" : "ask");
     };
     window.addEventListener(VISIT_ACCOUNT_EVENT, ask);
     return () => window.removeEventListener(VISIT_ACCOUNT_EVENT, ask);
-  }, [signedInEmail]);
+  }, [activate, claimed, signedInEmail]);
 
   // Exploration analytics: the home seen, and which section or property it opens from there.
   useEffect(() => {
@@ -190,20 +253,6 @@ export function VisitBanner({
   );
   const pick = (choice: "iniciar_sesion" | "crear_cuenta", origen: string) => track("panel_entry_choice", { agency_id: agencyId, choice, origen }, true);
 
-  async function claimWithThisAccount() {
-    setBusy(true);
-    setError("");
-    try {
-      await api("/api/panel/visita", { method: "POST", body: "{}" });
-      track("panel_claim_completed", { agency_id: agencyId, method: "signed_in", origin: "panel_link" }, true);
-      // Lead score: the demo this browser came from counts its account (the server checks it is that agency's).
-      leadFromDemoRef("demo_account_created");
-      window.location.assign(here());
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "No pudimos pasar el panel a tu cuenta.");
-      setBusy(false);
-    }
-  }
   async function otherAccount() {
     await browserClient()?.auth.signOut().catch(() => null);
     window.location.assign(`/acceso?${new URLSearchParams({ next: here() })}`);
@@ -215,24 +264,30 @@ export function VisitBanner({
     <>
       <div className="support-banner visit-banner" role="status">
         <span className="pe-chip">Modo exploración</span>
-        <span className="pe-msg">Explorá las herramientas de Habita. Para guardar tus cambios, necesitás acceder a tu cuenta.</span>
+        <span className="pe-msg">
+          {signedInEmail && !claimed
+            ? `Entraste como ${signedInEmail}. Empezá a trabajar para guardar tus cambios.`
+            : "Explorá las herramientas de Habita. Para guardar tus cambios, necesitás acceder a tu cuenta."}
+        </span>
         <button
           type="button"
           className="button button-small"
+          disabled={step === "activating"}
           {...cta("visit_banner_account", "visit_banner", "panel_access", "habita_b2b")}
           onClick={() => {
-            setStep(signedInEmail ? "account" : "ask");
             track("panel_visit_account_clicked", { origen: "franja" }, true);
+            if (signedInEmail && !claimed) void activate("panel_banner");
+            else setStep(signedInEmail ? "account" : "ask");
           }}
         >
-          Acceder a mi cuenta
+          {signedInEmail && !claimed ? (step === "activating" ? "Preparando…" : "Empezar a trabajar") : "Acceder a mi cuenta"}
         </button>
       </div>
 
       {step === "welcome" && (
         <EntryDialog label={`Panel de ${agencyName}`} onClose={() => guest("cerrar")}>
           <AgencyHead agencyName={agencyName} title={`Este es el panel de ${agencyName}`} sub="Tus propiedades y las herramientas de Habita." />
-          <AccessButtons place="panel_welcome" onPick={(c) => pick(c, "bienvenida")} />
+          <AccessButtons place="panel_welcome" claimed={claimed} onPick={(c) => pick(c, "bienvenida")} />
           <p className="pe-or">
             <span>o</span>
           </p>
@@ -262,44 +317,61 @@ export function VisitBanner({
           <p className="pe-note">
             <Lock size={14} aria-hidden="true" /> Al entrar, volvés a esta misma pantalla.{gift}
           </p>
-          <AccessButtons place="visit_dialog" onPick={(c) => pick(c, "guardar")} />
+          <AccessButtons place="visit_dialog" claimed={claimed} onPick={(c) => pick(c, "guardar")} />
           <button type="button" className="text-link pe-keep" onClick={() => setStep(null)}>
             Seguir explorando
           </button>
         </EntryDialog>
       )}
 
-      {step === "account" && signedInEmail && (
-        <EntryDialog label={`Panel de ${agencyName}`} onClose={() => guest("cerrar")}>
-          <AgencyHead
-            agencyName={agencyName}
-            title={claimed ? "Tu cuenta todavía no tiene acceso" : `¿Usás esta cuenta para ${agencyName}?`}
-          />
+      {step === "activating" && (
+        <EntryDialog label={`Preparando el espacio de ${agencyName}`} onClose={() => null}>
+          <AgencyHead agencyName={agencyName} title="Preparando tu espacio de trabajo…" sub={agencyName} />
+          <p className="pe-note" role="status">
+            <Loader2 size={14} className="spin" aria-hidden="true" /> En un momento seguís donde estabas.
+          </p>
+        </EntryDialog>
+      )}
+
+      {step === "account" && signedInEmail && claimed && (
+        <EntryDialog label={`${agencyName} ya tiene un espacio`} onClose={() => guest("cuenta")}>
+          <AgencyHead agencyName={agencyName} title={`${agencyName} ya tiene un espacio en Habita.`} />
+          <p className="pe-sub">Podés solicitar acceso para trabajar con las propiedades de esta inmobiliaria.</p>
           <p className="pe-who">
             <UserRound size={16} aria-hidden="true" /> Entraste como <b>{signedInEmail}</b>
           </p>
-          <p className="pe-sub">
-            {claimed
-              ? `${agencyName} ya tiene quien la administra en habita. Pedile que te sume desde «Usuarios» en su panel.`
-              : `${agencyName} todavía no tiene cuenta. Si es tu inmobiliaria, quedás como administrador con esta misma cuenta, sin registrarte de nuevo.${gift}`}
-          </p>
           <div className="pe-stack">
-            {!claimed && (
-              <button type="button" className="button button-primary" disabled={busy} onClick={() => void claimWithThisAccount()}>
-                {busy ? "Un momento…" : `Usar esta cuenta para ${agencyName}`}
-              </button>
-            )}
-            <button type="button" className="button button-outline" disabled={busy} onClick={() => void otherAccount()}>
+            <a className="button button-primary" href="/panel/solicitar-acceso" {...cta("visit_request_access", "visit_dialog", "workspace_access_request", "habita_b2b")}>
+              Solicitar acceso
+            </a>
+            <button type="button" className="button button-outline" onClick={() => void otherAccount()}>
               Usar otra cuenta
             </button>
           </div>
+        </EntryDialog>
+      )}
+
+      {step === "account" && signedInEmail && !claimed && (
+        <EntryDialog label={`Panel de ${agencyName}`} onClose={() => setStep(null)}>
+          <AgencyHead agencyName={agencyName} title="No pudimos preparar tu espacio" />
           {error && (
             <p className="inline-error" role="alert">
               {error}
             </p>
           )}
-          <button type="button" className="text-link pe-keep" onClick={() => guest("cuenta")}>
-            Ver como invitado
+          <p className="pe-who">
+            <UserRound size={16} aria-hidden="true" /> Entraste como <b>{signedInEmail}</b>
+          </p>
+          <div className="pe-stack">
+            <button type="button" className="button button-primary" onClick={() => void activate("retry")}>
+              Reintentar
+            </button>
+            <button type="button" className="button button-outline" onClick={() => void otherAccount()}>
+              Usar otra cuenta
+            </button>
+          </div>
+          <button type="button" className="text-link pe-keep" onClick={() => setStep(null)}>
+            Seguir explorando
           </button>
         </EntryDialog>
       )}

@@ -2038,12 +2038,17 @@ export function AgencyOnboarding({
     setBusy(true);
     setError("");
     form.submitted();
+    const entry = demo ? "demo" : code ? "invitation" : "direct";
+    if (kind === "claimed") track("workspace_access_started", { entry_point: entry, is_existing_workspace: false, ...(demo ? { agency_id: demo.agencyId, demo_id: demo.id } : {}) });
     try {
       const summary =
         kind === "claimed"
           ? await api<PanelSummary>("/api/panel/reclamar", { method: "POST", body: JSON.stringify({ code }) })
           : await api<PanelSummary>("/api/panel", { method: "POST", body: JSON.stringify({ name }) });
       registerAgency(summary.agency.id);
+      const workspace = { agency_id: summary.agency.id, entry_point: entry, user_role: "owner", is_first_member: true, is_existing_workspace: false, ...(demo ? { demo_id: demo.id } : {}) };
+      track("workspace_created", workspace);
+      if (kind === "claimed") track("workspace_access_completed", workspace, true);
       track(kind === "claimed" ? "agency_claimed" : "agency_created", { origin, agency_id: summary.agency.id, ...(demo ? { demo_id: demo.id } : {}) }, true);
       // Funnel (spec §8): the panel is the agency's now. The server records the exact method for the team.
       if (kind === "claimed") track("panel_claim_completed", { agency_id: summary.agency.id, method: autoClaim ? "google" : "signed_in", ...(demo ? { demo_id: demo.id } : {}) }, true);
@@ -2064,7 +2069,8 @@ export function AgencyOnboarding({
       router.refresh();
     } catch (e) {
       form.failed(e instanceof ApiError ? `api_${e.status}` : "network");
-      setError(message(e, kind === "claimed" ? "No pudimos pasar las demos a tu cuenta." : "No pudimos crear tu inmobiliaria."));
+      if (kind === "claimed") track("workspace_access_denied", { entry_point: entry, reason: e instanceof ApiError ? `api_${e.status}` : "network", ...(demo ? { agency_id: demo.agencyId, demo_id: demo.id } : {}) });
+      setError(message(e, kind === "claimed" ? "No pudimos preparar tu espacio de trabajo." : "No pudimos crear tu inmobiliaria."));
     } finally {
       setBusy(false);
     }
@@ -2122,7 +2128,7 @@ export function AgencyOnboarding({
   return (
     <div className="account-page container ap-start">
       <span className="eyebrow">habita para inmobiliarias</span>
-      <h1>{code ? "Quedate con tus demos" : "Creá tu inmobiliaria"}</h1>
+      <h1>{code ? (autoClaim && !error ? "Preparando tu espacio de trabajo…" : "Tu espacio de trabajo") : "Creá tu inmobiliaria"}</h1>
       {demo && !code && (
         <p>
           Viste la demo de <strong>{demo.title}</strong>. En tu panel podés traer todas tus propiedades y transformarlas así.
@@ -2133,7 +2139,11 @@ export function AgencyOnboarding({
           {error}
         </p>
       )}
-      {code ? (
+      {code && autoClaim && !error ? (
+        <p className="account-panel ap-start-form" role="status">
+          En un momento entrás a tu panel con tus propiedades, fotos y créditos.
+        </p>
+      ) : code ? (
         <form
           className="account-panel ap-start-form"
           onSubmit={(e) => {
@@ -2141,12 +2151,9 @@ export function AgencyOnboarding({
             void run("claimed");
           }}
         >
-          <p>
-            El equipo de habita te envió este enlace para que tus demos, con sus fotos y ambientaciones, pasen a tu cuenta. Tu cuenta va a ser la
-            dueña de la inmobiliaria y sus créditos pagarán las ambientaciones nuevas.
-          </p>
+          <p>Tus propiedades, fotos y créditos te esperan en el espacio de tu inmobiliaria.</p>
           <button className="button button-primary" disabled={busy}>
-            {busy ? "Un momento…" : "Pasar las demos a mi cuenta"}
+            {busy ? "Un momento…" : error ? "Reintentar" : "Empezar a trabajar"}
           </button>
         </form>
       ) : (

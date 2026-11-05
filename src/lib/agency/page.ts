@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { currentUser } from "@/lib/supabase/server";
 import { cloudConfigured, cloudEnabled } from "@/lib/supabase/config";
 import { membershipFor } from "./server";
-import { visitorMembership } from "./visit";
+import { currentVisit, visitorMembership } from "./visit";
 
 /**
  * Gate of the agency panel's pages, with the same rules as its API: a
@@ -23,6 +23,9 @@ export async function requirePanelPage(next: string) {
   if (verified && membership) return { user: verified, membership };
   const visit = await visitorMembership();
   if (visit) return { user: verified, membership: visit };
+  // A visit to an agency that already has its team: sign in, or ask to join it. Never a new agency.
+  const claimed = await currentVisit().catch(() => null);
+  if (claimed?.claimed) redirect(verified ? "/panel/solicitar-acceso" : `/acceso?${new URLSearchParams({ next: "/panel/solicitar-acceso" })}`);
   if (!verified) redirect(`/acceso?modo=registro&next=${encodeURIComponent(next)}`);
   redirect("/panel/empezar");
 }

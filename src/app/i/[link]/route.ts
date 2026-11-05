@@ -13,9 +13,10 @@ export const runtime = "nodejs";
  * The agency's fixed link to its panel: /i/<inmobiliaria>-<codigo>. It always
  * lands on the home of that agency's panel (docs/ACCESO_PANEL.md):
  * - its own members, signed in: their panel, nothing asked;
- * - anyone else: the panel as a guest, with the welcome (sign in, create the
- *   account or look around); a signed-in account outside the agency is
- *   offered to take it over (no owner yet) or told it already has one;
+ * - anyone else, while the agency has no account: the panel as a guest, with
+ *   the welcome (sign in, create the account or look around); a signed-in
+ *   account outside the agency starts working there with one click;
+ * - once the agency has its team: signing in, or «Solicitar acceso»;
  * - the team: the same panel in its support view (read only, audited).
  * A changed or unknown link gets a short notice, never the sign-up or /admin.
  * ?enlace= tells the panel how it was opened, for analytics only.
@@ -41,6 +42,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ link
   }
   // A member of another agency keeps its own panel: the visit would not show over it.
   if (own) return to("/panel?enlace=otra");
+  // The agency already has its team: its private panel is for its members. Sign in
+  // (back here: a member goes straight in) or ask to join it (Journey C).
+  if (visit.claimed) {
+    const ask = `/panel/solicitar-acceso?${new URLSearchParams({ codigo: code })}`;
+    return to(verified ? ask : `/acceso?${new URLSearchParams({ next: url.pathname })}`);
+  }
   await startVisit(code, visit);
   return to(`/panel?enlace=${verified ? "sesion" : "invitado"}`);
 }

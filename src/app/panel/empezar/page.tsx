@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { InvitationSignup } from "@/components/agency-invitation";
 import { AgencyOnboarding } from "@/components/agency-panel";
 import { invitationOf } from "@/lib/agency/invitation";
+import { entrySpace } from "@/lib/agency/workspace-entry";
 import { membershipOf } from "@/lib/agency/server";
 import { intentDestination, intentOf, presentationPath, withIntent } from "@/lib/agency/demo-invite";
 import { isAdmin } from "@/lib/commerce/http";
@@ -43,8 +44,18 @@ export default async function StartPage({ searchParams }: Props) {
   const demo = token ? await publishedDemo(token).catch(() => null) : null;
   // Someone who already works for that demo's agency goes straight to the property, not through a form.
   if (demo && membership && membership.agency.id === demo.agencyId) redirect(intentDestination(demo.id, intent, false));
-  // The team checks an invitation the way the agency will meet it: its demo, with the way into the panel.
   const team = isAdmin(user?.email);
+  // A demo of an agency that already exists, without a usable invitation, never creates another agency
+  // with its name: the person asks to join its space (Journey C). The team keeps its previews.
+  const usable = code ? await invitationOf(code).catch(() => null) : null;
+  if (!team && !chosenPlan && !membership && !usable && (demo || code)) {
+    const space = await entrySpace({ demoToken: token, code }).catch(() => null);
+    // An invitation that expired for an agency still without its space: signed out, its page says so
+    // (InvitationSignup); signed in, the same request reaches the team.
+    if (space && (space.agency.ownerId || !code || signedIn))
+      redirect(`/panel/solicitar-acceso?${new URLSearchParams({ ...(token ? { demo: token } : {}), ...(code ? { codigo: code } : {}) })}`);
+  }
+  // The team checks an invitation the way the agency will meet it: its demo, with the way into the panel.
   // Coming from a plan, the team sees the sign-up step as the agency will (a preview, nothing is created).
   if (code && token && demo && team && !chosenPlan) redirect(presentationPath(token, code));
   // The team's invitation: only an e-mail and a password to enter.
@@ -82,7 +93,8 @@ export default async function StartPage({ searchParams }: Props) {
   }
   return (
     <AgencyOnboarding
-      autoClaim={one(q.continuar) === "google"}
+      // Signed in with a valid invitation: the space is activated at once (Journey A), never a «claim» form.
+      autoClaim={one(q.continuar) === "google" || (signedIn && !membership && Boolean(usable))}
       signedIn={signedIn}
       hasAgency={Boolean(membership)}
       code={code}
