@@ -228,6 +228,8 @@ export async function commercialRows(only: string | null = null): Promise<Commer
       // Demos come newest first: the first published one with its token.
       shareDemo: share?.token ? { id: share.id, token: share.token } : null,
       demos: own.map((d) => ({
+        id: d.id,
+        sent: Boolean(d.sent_at),
         createdAt: d.created_at,
         step: funnelStep({
           sentAt: d.sent_at,

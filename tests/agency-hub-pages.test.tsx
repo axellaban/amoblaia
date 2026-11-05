@@ -141,6 +141,15 @@ describe("«Inmobiliarias», the team's single list", () => {
     expect(html).toContain("Todavía no tiene una demo publicada");
     expect(html).toContain("Copiar el link: panel");
   });
+  it("lets the team change a demo between «Creada» and «Enviada» from the list", async () => {
+    const saved = rows[0].demos;
+    rows[0].demos = [{ id: "d1", sent: false, createdAt: "2026-10-30T15:00:00Z", step: 0 }];
+    const html = renderToStaticMarkup(await List({ searchParams: Promise.resolve({}) }));
+    rows[0].demos = saved;
+    expect(html).toContain('title="Cambiar el estado de la demo"');
+    // A demo past «Enviada» (Del Mar's reached «Suscripta») is not changeable by hand.
+    expect(html.match(/Cambiar el estado de la demo/g)).toHaveLength(1);
+  });
   it("lists only agencies with a demo in the «Con demo creada» tab", async () => {
     const html = renderToStaticMarkup(await List({ searchParams: Promise.resolve({ etapa: "con-demo" }) }));
     expect(html).toContain("Demaio Estudio Inmobiliario");

@@ -21034,6 +21034,157 @@ body:has(.pv-root) .pb-root {
   background: var(--ah-green-soft);
   color: var(--ah-green);
 }
+/* The demo step, changeable by hand: a popover on the computer, a sheet from the bottom on the phone. */
+.ah-stepmenu {
+  position: relative;
+}
+.ah-demo-step.is-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.ah-demo-step.is-button:hover,
+.ah-demo-step.is-button:focus-visible,
+.ah-stepmenu.is-open .ah-demo-step.is-button {
+  border-color: currentColor;
+}
+.ah-stepmenu-dim,
+.ah-stepmenu-grab,
+.ah-stepmenu-title,
+.ah-stepmenu-cancel {
+  display: none;
+}
+.ah-stepmenu-pop {
+  position: fixed;
+  top: var(--at-top, 0);
+  left: var(--at-left, 0);
+  z-index: 60;
+  display: grid;
+  gap: 2px;
+  width: 290px;
+  padding: 8px;
+  background: #fff;
+  border: 1px solid var(--pr-line, #dde3d7);
+  border-radius: 14px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+  text-align: left;
+  white-space: normal;
+}
+.ah-stepmenu-opt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ah-stepmenu-opt:hover:not(:disabled),
+.ah-stepmenu-opt:focus-visible {
+  background: #f6f5f1;
+}
+.ah-stepmenu-opt strong {
+  display: block;
+  font-size: 14px;
+}
+.ah-stepmenu-opt small {
+  display: block;
+  font-size: 12px;
+  color: #5f665f;
+}
+.ah-stepmenu-dot {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border: 2px solid #c9cdc4;
+  border-radius: 50%;
+}
+.ah-stepmenu-opt.is-on .ah-stepmenu-dot {
+  border: 6px solid var(--ah-green);
+}
+.ah-stepmenu-note {
+  margin: 4px 0 0;
+  padding: 8px 10px 4px;
+  border-top: 1px solid #eeeae2;
+  font-size: 12px;
+  color: #5f665f;
+}
+@media (max-width: 720px) {
+  .ah-stepmenu-dim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    background: rgba(20, 24, 20, 0.45);
+  }
+  .ah-stepmenu-pop {
+    position: fixed;
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 61;
+    width: auto;
+    gap: 10px;
+    padding: 10px 16px calc(18px + env(safe-area-inset-bottom));
+    border: 0;
+    border-radius: 22px 22px 0 0;
+  }
+  .ah-stepmenu-grab {
+    display: block;
+    width: 44px;
+    height: 5px;
+    margin: 2px auto 4px;
+    border-radius: 3px;
+    background: #d8d6cf;
+  }
+  .ah-stepmenu-title {
+    display: grid;
+    gap: 2px;
+    margin: 0 0 4px;
+  }
+  .ah-stepmenu-title strong {
+    font-size: 17px;
+  }
+  .ah-stepmenu-title span {
+    font-size: 13px;
+    color: #5f665f;
+  }
+  .ah-stepmenu-opt {
+    padding: 16px 12px;
+    border-color: var(--pr-line, #dde3d7);
+    border-radius: 14px;
+  }
+  .ah-stepmenu-opt.is-on {
+    border-color: var(--ah-green);
+    background: var(--ah-green-soft);
+  }
+  .ah-stepmenu-opt strong {
+    font-size: 16px;
+  }
+  .ah-stepmenu-note {
+    border: 0;
+    padding: 0 4px;
+  }
+  .ah-stepmenu-cancel {
+    display: block;
+    padding: 14px;
+    border: 0;
+    background: none;
+    font: inherit;
+    font-weight: 700;
+    color: #5f665f;
+  }
+}
 .ah-toolbar {
   display: flex;
   align-items: center;

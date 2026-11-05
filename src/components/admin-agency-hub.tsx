@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import {
   Check,
+  ChevronDown,
   Home,
   KeyRound,
   LayoutDashboard,
@@ -266,6 +267,118 @@ export function RowQuickActions({ agencyId, name, phone, demo, claimed }: { agen
         link={async () => (await api<{ url: string }>(panel, { method: "POST", body: "{}" })).url}
       />
     </>
+  );
+}
+
+/**
+ * The list's demo step, changeable by hand while it is «Creada» or «Enviada»:
+ * «Enviada» marks every unsent demo of the agency as sent (one sent demo is
+ * enough for the commercial cycle); «Creada» unmarks them all. The later steps
+ * come from what the agency did, so they are not offered. A popover on the
+ * computer, a sheet from the bottom on the phone.
+ */
+export function DemoStepMenu({ name, step, label, demos }: { name: string; step: 0 | 1; label: string; demos: { id: string; sent: boolean }[] }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  // Where the popover goes on the computer: fixed under the button, so the table's scroll does not cut it.
+  const [at, setAt] = useState<{ top: number; left: number } | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+  const id = useId();
+  function toggle(e: ReactMouseEvent<HTMLButtonElement>) {
+    const r = e.currentTarget.getBoundingClientRect();
+    setAt({ top: Math.min(r.bottom + 6, window.innerHeight - 300), left: Math.min(r.left, window.innerWidth - 300) });
+    setOpen(!open);
+  }
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onScroll = () => setOpen(false);
+    window.addEventListener("scroll", onScroll, true);
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("scroll", onScroll, true);
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+  async function choose(next: 0 | 1) {
+    if (next === step) return setOpen(false);
+    setBusy(true);
+    setError("");
+    try {
+      const targets = demos.filter((d) => (next === 1 ? !d.sent : d.sent));
+      for (const d of targets)
+        await api(`/api/admin/demos/${d.id}`, { method: "PATCH", body: JSON.stringify({ action: "sent", sent: next === 1, via: "manual" }) });
+      setOpen(false);
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No pudimos cambiar el estado.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  const options = [
+    { value: 0 as const, title: "Creada", help: "Todavía no se la mandamos" },
+    { value: 1 as const, title: "Enviada", help: "Ya se la mandamos (por WhatsApp u otro medio)" },
+  ];
+  return (
+    <div className={`ah-stepmenu${open ? " is-open" : ""}`} ref={ref}>
+      <button
+        type="button"
+        className={`ah-demo-step is-step-${step} is-button`}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-controls={id}
+        title="Cambiar el estado de la demo"
+        onClick={toggle}
+      >
+        {label} <ChevronDown size={13} aria-hidden="true" />
+      </button>
+      {open && (
+        <>
+          <div className="ah-stepmenu-dim" aria-hidden="true" onClick={() => setOpen(false)} />
+          <div id={id} className="ah-stepmenu-pop" role="dialog" style={at ? ({ "--at-top": `${at.top}px`, "--at-left": `${at.left}px` } as CSSProperties) : undefined} aria-label={`Estado de la demo de ${name}`}>
+            <span className="ah-stepmenu-grab" aria-hidden="true" />
+            <p className="ah-stepmenu-title">
+              <strong>Demo de {name}</strong>
+              <span>¿En qué estado está?</span>
+            </p>
+            {options.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                role="radio"
+                aria-checked={step === o.value}
+                className={`ah-stepmenu-opt${step === o.value ? " is-on" : ""}`}
+                disabled={busy}
+                onClick={() => void choose(o.value)}
+              >
+                <span className="ah-stepmenu-dot" aria-hidden="true" />
+                <span>
+                  <strong>{o.title}</strong>
+                  <small>{o.help}</small>
+                </span>
+              </button>
+            ))}
+            {error && (
+              <span className="inline-error" role="alert">
+                {error}
+              </span>
+            )}
+            <p className="ah-stepmenu-note">Con visita, interacción, cuenta y suscripción se marcan solos.</p>
+            <button type="button" className="ah-stepmenu-cancel" onClick={() => setOpen(false)}>
+              {busy ? "Guardando…" : "Cancelar"}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 

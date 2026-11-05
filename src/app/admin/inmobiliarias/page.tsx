@@ -22,7 +22,7 @@ import {
 } from "@/lib/agency/commercial";
 import { commercialRows } from "@/lib/agency/commercial-server";
 import { FUNNEL_STEPS, PERIODS, STEP_LABEL, demosInPeriod, funnelCounts, inPeriod, parsePeriod, shortDay, type Period } from "@/lib/agency/demo-funnel";
-import { AccountPill, AgencyThumb, MoreMenu, RecalcScores, RowQuickActions, ScorePill, StagePill } from "@/components/admin-agency-hub";
+import { AccountPill, AgencyThumb, DemoStepMenu, MoreMenu, RecalcScores, RowQuickActions, ScorePill, StagePill } from "@/components/admin-agency-hub";
 import { SupportViewButton } from "@/components/admin-agencies";
 import { requireAdminPage } from "@/lib/demos/admin-page";
 export const dynamic = "force-dynamic";
@@ -462,7 +462,17 @@ function AgencyList({
                         const v = view.get(r.id)!;
                         return v.latest && v.step !== null ? (
                           <span className="ah-demo">
-                            <span className={`ah-demo-step is-step-${v.step}`}>{STEP_LABEL[v.step]}</span>
+                            {/* «Creada» and «Enviada» change by hand; the later steps come from what the agency did. */}
+                            {v.step <= 1 && r.demos.every((d) => d.step <= 1 && d.id) ? (
+                              <DemoStepMenu
+                                name={r.name}
+                                step={v.step as 0 | 1}
+                                label={STEP_LABEL[v.step]}
+                                demos={r.demos.map((d) => ({ id: d.id!, sent: Boolean(d.sent) }))}
+                              />
+                            ) : (
+                              <span className={`ah-demo-step is-step-${v.step}`}>{STEP_LABEL[v.step]}</span>
+                            )}
                             <small>
                               {shortDay(v.latest)}
                               {v.count > 1 ? ` · ${v.count} demos` : ""}
