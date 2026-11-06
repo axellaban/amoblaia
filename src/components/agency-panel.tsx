@@ -64,6 +64,7 @@ import { CreditsMenu } from "./credits-menu";
 import { videoEnabled } from "@/lib/agency/flags";
 import { StartPicker, toolPath, type StartTool } from "./start-picker";
 import { PanelTour, continuingWork } from "./panel-tour";
+import { Loop, LoopVideo } from "./loop-art";
 
 type Section = PanelSection;
 export { PanelNav };
@@ -154,6 +155,58 @@ function nextStep(d: PanelSummary): { text: string; href: string; action: string
  * what that tool really does and «Comenzar» asks first which images to start
  * with (§1.3). Video only where it is enabled: its page does not exist otherwise.
  */
+/**
+ * The picture of each «Inicio» card, animated in a short loop like a GIF:
+ * the demo's before/after slider moving on its own, the studio taking the
+ * furniture out of a room and a real video made with habita.
+ */
+function ToolArt({ tool }: { tool: StartTool }) {
+  if (tool === "demo")
+    return (
+      <Loop className="ap-tool-art hb-loop-demo">
+        <img src="/ejemplos/living-before.webp" alt="" loading="lazy" />
+        <img className="hb-loop-after" src="/ejemplos/living-scandinavian.webp" alt="" loading="lazy" />
+        <span className="hb-loop-handle">
+          <span>
+            <ChevronsLeftRight size={16} />
+          </span>
+        </span>
+        <em className="hb-loop-tag is-top is-left">Antes</em>
+        <em className="hb-loop-tag is-top is-right">Después</em>
+      </Loop>
+    );
+  if (tool === "editar")
+    return (
+      <Loop className="ap-tool-art hb-loop-studio">
+        <img src="/ejemplos/living-modern.webp" alt="" loading="lazy" />
+        <img className="hb-loop-empty" src="/ejemplos/living-before.webp" alt="" loading="lazy" />
+        <span className="hb-loop-scan" />
+        <em className="hb-loop-tag is-left hb-loop-step is-1">Foto original</em>
+        <em className="hb-loop-tag is-left hb-loop-step is-2">Quitando muebles…</em>
+        <em className="hb-loop-tag is-left hb-loop-step is-3">Listo: ambiente vacío</em>
+      </Loop>
+    );
+  return (
+    <Loop className="ap-tool-art ap-tool-video">
+      {(running) => (
+        <>
+          <LoopVideo
+            running={running}
+            poster="/home/recorrido.webp"
+            sources={[
+              { src: "/home/recorrido.webm", type: "video/webm" },
+              { src: "/home/recorrido.mp4", type: "video/mp4" },
+            ]}
+          />
+          <span className="ap-tool-play">
+            <Play size={22} fill="currentColor" />
+          </span>
+        </>
+      )}
+    </Loop>
+  );
+}
+
 function HomeCards({ creator, onStart }: { creator: boolean; onStart: (tool: StartTool) => void }) {
   if (!creator) return null;
   const cards: {
@@ -161,7 +214,6 @@ function HomeCards({ creator, onStart }: { creator: boolean; onStart: (tool: Sta
     title: string;
     text: string;
     icon: typeof Sparkles;
-    art: { src: string; before?: string; play?: boolean };
     features: [typeof Sparkles, string][];
   }[] = [
     {
@@ -169,7 +221,6 @@ function HomeCards({ creator, onStart }: { creator: boolean; onStart: (tool: Sta
       title: "Crear demostración interactiva",
       text: "Ambientá con IA tus fotos y creá una experiencia para compartir con tus clientes.",
       icon: Layers,
-      art: { before: "/ejemplos/living-before.webp", src: "/ejemplos/living-scandinavian.webp" },
       features: [
         [ImageIcon, "Antes / después"],
         [Layers, "Distintos estilos"],
@@ -181,7 +232,6 @@ function HomeCards({ creator, onStart }: { creator: boolean; onStart: (tool: Sta
       title: "Estudio de imágenes",
       text: "Mejorá y transformá tus fotos para que se vean más atractivas.",
       icon: ImageIcon,
-      art: { src: "/ejemplos/living-modern.webp" },
       features: [
         [Sun, "Mejorar luz y color"],
         [Eraser, "Quitar objetos"],
@@ -195,7 +245,6 @@ function HomeCards({ creator, onStart }: { creator: boolean; onStart: (tool: Sta
             title: "Crear video",
             text: "Generá videos de tus propiedades listos para publicar y compartir.",
             icon: Clapperboard,
-            art: { src: "/ejemplos/outdoor-modern.webp", play: true },
             features: [
               [PlayCircle, "Recorridos con fotos"],
               [Clapperboard, "Movimiento y transiciones"],
@@ -208,22 +257,9 @@ function HomeCards({ creator, onStart }: { creator: boolean; onStart: (tool: Sta
   return (
     <>
       <ul className="ap-tools">
-        {cards.map(({ id, title, text, icon: Icon, art, features }, i) => (
+        {cards.map(({ id, title, text, icon: Icon, features }, i) => (
           <li key={id} className={`ap-tool ${i === 0 ? "is-featured" : ""}`} data-tour={`tool-${id}`}>
-            <span className={`ap-tool-art ${art.before ? "is-compare" : ""}`} aria-hidden="true">
-              {art.before && <img src={art.before} alt="" loading="lazy" />}
-              <img src={art.src} alt="" loading="lazy" />
-              {art.before && (
-                <span className="ap-tool-handle">
-                  <ChevronsLeftRight size={16} />
-                </span>
-              )}
-              {art.play && (
-                <span className="ap-tool-play">
-                  <Play size={22} fill="currentColor" />
-                </span>
-              )}
-            </span>
+            <ToolArt tool={id} />
             <div className="ap-tool-head">
               <span className="ap-tool-icon" aria-hidden="true">
                 <Icon size={22} />
