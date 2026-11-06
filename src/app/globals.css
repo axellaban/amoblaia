@@ -26510,3 +26510,401 @@ dialog.pt-layer::backdrop {
     transition: none;
   }
 }
+
+/* «El impacto en tu negocio» (src/components/business-impact.tsx): three
+   industry figures and the calculator, in the home, prices, the panel's home
+   and the agency's demo. Mobile first: one figure per row. */
+.bi-block,
+.bi {
+  width: 100%;
+  min-width: 0;
+  --bi-green: #24382e;
+  --bi-sage: #e4e9da;
+  --bi-line: #e6dfd3;
+  --bi-muted: #5d625d;
+  --bi-accent: #4f7a3f;
+}
+.bi-band {
+  background: var(--bi-green);
+  color: #f8f5ef;
+  border-radius: 20px;
+  padding: 22px 20px 8px;
+}
+.bi-kicker,
+.bi-calc-kicker {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1.35;
+}
+.bi-kicker {
+  padding-bottom: 12px;
+}
+.bi .bi-band .bi-kicker {
+  color: #f8f5ef;
+}
+.bi-stats {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.bi-stat {
+  display: grid;
+  grid-template-columns: 26px auto minmax(0, 1fr);
+  column-gap: 10px;
+  align-items: center;
+  padding: 12px 0;
+  border-top: 1px solid rgba(248, 245, 239, 0.16);
+}
+.bi-icon {
+  width: 22px;
+  height: 22px;
+  color: #cfe0c4;
+}
+.bi-value {
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+.bi-label {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: #e9eee2;
+}
+.bi-text {
+  display: none;
+}
+.bi-source {
+  grid-column: 2 / 4;
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.bi-source:hover {
+  color: #cfe0c4;
+}
+.bi-note {
+  margin: 12px 4px 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--bi-muted);
+}
+/* Home: title and lead come from the section. */
+.bi.is-hero .bi-stat:first-child {
+  border-top: 0;
+}
+/* Under the demo on a phone: light, with its own title. */
+.bi.is-strip .bi-band {
+  background: #eef1e6;
+  color: var(--bi-green);
+}
+.bi.is-strip .bi-title {
+  margin: 0 0 6px;
+  font-family: var(--font-display);
+  font-size: 20px;
+  line-height: 1.2;
+  font-weight: 800;
+  color: var(--bi-green);
+}
+.bi.is-strip .bi-stat {
+  border-top-color: #d5dccb;
+}
+.bi.is-strip .bi-icon {
+  color: #3b6e3a;
+}
+.bi.is-strip .bi-label {
+  color: var(--bi-green);
+}
+.bi.is-strip .bi-source:hover {
+  color: #3b6e3a;
+}
+/* The demo: the side column on a computer, the strip further down on a phone. */
+.bi-demo-aside {
+  margin-top: 16px;
+}
+.bi-demo-aside .bi-band {
+  border-radius: 16px;
+}
+.bi-demo-aside .bi-note {
+  font-size: 11px;
+}
+.bi-demo-strip {
+  margin: 24px 0;
+}
+@media (max-width: 900px) {
+  .bi-demo-aside {
+    display: none;
+  }
+}
+@media (min-width: 901px) {
+  .bi-demo-strip {
+    display: none;
+  }
+}
+
+.bi-calc {
+  margin-top: 16px;
+  background: #fff;
+  border: 1px solid var(--bi-line);
+  border-radius: 20px;
+  padding: 22px 20px;
+  display: grid;
+  gap: 18px;
+  color: var(--ink);
+}
+.bi-calc-kicker {
+  color: var(--bi-accent);
+}
+.bi-calc-head h3 {
+  margin: 8px 0 0;
+  font-family: var(--font-display);
+  font-size: 21px;
+  line-height: 1.2;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--bi-green);
+}
+.bi-calc-head p:last-child {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--bi-muted);
+}
+.bi-calc-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 118px;
+  column-gap: 14px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.bi-calc-row label {
+  grid-column: 1;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.bi-calc-row input[type="range"] {
+  grid-column: 1;
+  width: 100%;
+  margin: 0;
+  accent-color: #3b6e3a;
+}
+.bi-calc-box {
+  grid-column: 2;
+  grid-row: 1 / 3;
+  border: 1px solid var(--bi-line);
+  border-radius: 12px;
+  padding: 9px 12px;
+  font-weight: 700;
+  font-size: 14px;
+  text-align: right;
+  white-space: nowrap;
+  background: #fbfaf6;
+}
+.bi-calc-result {
+  background: var(--bi-sage);
+  border-radius: 16px;
+  padding: 18px 20px;
+  display: grid;
+  color: var(--bi-green);
+}
+.bi-calc-result span {
+  font-size: 13px;
+  font-weight: 600;
+}
+.bi-calc-result strong {
+  font-family: var(--font-display);
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin: 2px 0 12px;
+}
+.bi-calc-result strong.is-small {
+  font-size: 24px;
+  margin-bottom: 0;
+}
+
+@media (min-width: 761px) {
+  .bi-band .bi-stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .bi-band {
+    display: grid;
+    grid-template-columns: 200px minmax(0, 1fr);
+    align-items: center;
+    padding: 26px 30px;
+  }
+  .bi-band .bi-kicker {
+    padding: 0 16px 0 0;
+    font-size: 13px;
+  }
+  .bi-band .bi-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    padding: 0 24px;
+    border-top: 0;
+    border-left: 1px solid rgba(248, 245, 239, 0.18);
+  }
+  .bi-band .bi-icon {
+    width: 28px;
+    height: 28px;
+    margin-bottom: 6px;
+  }
+  .bi-band .bi-value {
+    font-size: 40px;
+  }
+  .bi-band .bi-label {
+    font-size: 14px;
+  }
+  .bi-band .bi-source {
+    margin-top: 10px;
+    font-size: 12px;
+  }
+  .bi.is-hero .bi-band {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 34px 10px;
+  }
+  .bi.is-hero .bi-stat:first-child {
+    border-left: 0;
+  }
+  .bi.is-hero .bi-value {
+    font-size: 52px;
+  }
+  .bi.is-hero .bi-label {
+    font-size: 16px;
+  }
+  .bi.is-hero .bi-text {
+    display: block;
+    margin-top: 6px;
+    font-size: 13px;
+    line-height: 1.4;
+    color: rgba(248, 245, 239, 0.72);
+  }
+  /* The side column keeps one figure per row. */
+  .bi.is-aside .bi-band {
+    display: block;
+    padding: 20px 20px 8px;
+  }
+  .bi.is-aside .bi-band .bi-kicker {
+    padding: 0 0 10px;
+    font-size: 12px;
+  }
+  .bi.is-aside .bi-band .bi-stats {
+    display: block;
+  }
+  .bi.is-aside .bi-band .bi-stat {
+    display: grid;
+    padding: 12px 0;
+    border-left: 0;
+    border-top: 1px solid rgba(248, 245, 239, 0.16);
+  }
+  .bi.is-aside .bi-band .bi-icon {
+    width: 22px;
+    height: 22px;
+    margin: 0;
+  }
+  .bi.is-aside .bi-band .bi-value {
+    font-size: 26px;
+  }
+  .bi.is-aside .bi-band .bi-label {
+    font-size: 13px;
+  }
+  .bi.is-aside .bi-band .bi-source {
+    margin-top: 4px;
+    font-size: 11px;
+  }
+  .bi-calc {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 1fr);
+    gap: 28px;
+    align-items: center;
+    padding: 26px 30px;
+  }
+  .bi-calc-head h3 {
+    font-size: 24px;
+  }
+  .bi-calc-result strong {
+    font-size: 32px;
+  }
+  .bi-calc-result strong.is-small {
+    font-size: 26px;
+  }
+}
+@media (min-width: 761px) and (max-width: 1100px) {
+  .bi-band {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .bi-band .bi-kicker {
+    padding-bottom: 16px;
+  }
+  .bi-band .bi-stat:first-child {
+    border-left: 0;
+    padding-left: 0;
+  }
+  .bi-calc {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .bi-calc-head {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Home section around the figures. */
+.hb-impact-home {
+  padding-block: 48px;
+}
+.hb-impact-home .hb-impact-kicker {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--bi-accent, #4f7a3f);
+}
+.hb .hb-impact-home h2 {
+  margin: 8px 0 12px;
+  max-width: 760px;
+}
+.hb .hb-impact-home .hb-impact-lead {
+  max-width: 700px;
+  margin: 0 0 26px;
+  color: var(--hb-muted);
+  font-size: 17px;
+}
+@media (min-width: 761px) {
+  .hb-impact-home {
+    padding-block: 80px;
+  }
+}
+/* Panel home: a title over the figures. */
+.ap-impact {
+  margin-top: 32px;
+}
+.ap-impact .ap-impact-kicker {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #4f7a3f;
+}
+.ap-page .hg .ap-impact > h3 {
+  margin: 6px 0 16px;
+  font-size: 24px;
+  letter-spacing: -0.02em;
+}
+.pricing-impact {
+  margin-top: 24px;
+}

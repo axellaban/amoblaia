@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { Comparison } from "./comparison";
 import { Loop } from "./loop-art";
+import { ImpactStats } from "./business-impact";
 import { rooms, styles } from "@/lib/catalog";
 import { exampleRooms, exampleStyles, examplePath } from "@/lib/examples";
 
@@ -482,35 +483,15 @@ export function Landing({ scenes, trial }: { scenes: string[]; trial: boolean })
         </div>
       </section>
 
-      {/* 6. Why it matters: industry figures, never habita.'s own results. */}
-      <section className="hb-wrap-wide" aria-labelledby="hb-why">
-        <div className="hb-why">
-          <h2 id="hb-why">Por qué es importante para tu negocio</h2>
-          <div className="hb-stats">
-            {[
-              ["83 %", "de los agentes de compradores", "dice que ambientar ayuda a imaginar la propiedad como un futuro hogar."],
-              ["49 %", "de los agentes de vendedores", "vio que ambientar redujo el tiempo de la propiedad en el mercado."],
-              ["29 %", "de los agentes de vendedores", "recibió ofertas entre 1 % y 10 % más altas con la propiedad ambientada."],
-            ].map(([n, who, what]) => (
-              <div key={what}>
-                <strong>{n}</strong>
-                <b>{who}</b>
-                <p>{what}</p>
-              </div>
-            ))}
-          </div>
-          <p className="hb-source">
-            Fuente:{" "}
-            <a
-              href="https://www.nar.realtor/press-releases/nar-report-reveals-home-staging-boosts-sale-prices-and-reduces-time-on-market"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              NAR, 2025 Profile of Home Staging
-            </a>{" "}
-            (Estados Unidos). Se refieren al staging en general; no son resultados medidos de habita.
-          </p>
-        </div>
+      {/* 6. The impact on the business: industry figures, never habita.'s own results. */}
+      <section className="hb-wrap hb-impact-home" aria-labelledby="hb-why">
+        <p className="hb-impact-kicker">El impacto en tu negocio</p>
+        <h2 id="hb-why">Una mejor presentación puede transformar tus resultados.</h2>
+        <p className="hb-impact-lead">
+          Estudios internacionales muestran que el staging y la presentación visual de propiedades pueden generar más valor, más consultas y ventas más
+          rápidas.
+        </p>
+        <ImpactStats variant="hero" where="home" />
       </section>
 
       {/* 7. Close. */}

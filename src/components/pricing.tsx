@@ -17,17 +17,15 @@ import {
   ChevronDown,
   CircleHelp,
   Copy,
-  ExternalLink,
   House,
   Layers,
   MessageCircle,
   Share2,
   ShieldCheck,
   Sparkles,
-  TrendingUp,
-  Zap,
 } from "lucide-react";
 import { formatARS, type Product } from "@/lib/commerce/catalog";
+import { BusinessImpact } from "./business-impact";
 import {
   creditPackages,
   FREE_MONTHLY_CREDITS,
@@ -76,18 +74,6 @@ const SHEET_VIDEO_MODES: VideoMode[] = ["classic", "clip", "cinematic"];
 const PRICING_UX = `v${UX_VERSIONS.pricing}`;
 /** The collapsible sections, by the anchor that opens each one (#como-funcionan-los-creditos is linked from the credits menu). */
 const MORE_IDS = ["como-funcionan-los-creditos", "que-incluye", "preguntas-frecuentes"] as const;
-
-/**
- * NAR, 2025 Profile of Home Staging (encuesta a REALTORS® de EE. UU., febrero
- * de 2025): respuestas de agentes sobre el home staging en general. No son
- * resultados de Habita ni del virtual staging con IA, y así se dice en pantalla.
- */
-const STAGING_SOURCE = "https://www.nar.realtor/research-and-statistics/research-reports/profile-of-home-staging";
-const STAGING_STATS = [
-  { value: "83%", icon: House, text: "de los agentes de compradores dice que el staging ayuda a imaginar la propiedad como su futuro hogar." },
-  { value: "49%", icon: Zap, text: "de los agentes de vendedores reporta que el staging redujo el tiempo que la propiedad estuvo a la venta." },
-  { value: "29%", icon: TrendingUp, text: "de los agentes de vendedores reporta un aumento de entre 1% y 10% en el valor ofrecido." },
-] as const;
 
 const ars = (cents: number) => formatARS(cents).replace(/\s/g, "");
 const pct = (discount: number) => Math.round(discount * 100);
@@ -331,30 +317,11 @@ export function PricingPlans({
   );
 }
 
-/** What agents report about home staging (NAR 2025), said for what it is. */
+/** «El impacto en tu negocio»: the figures and the calculator, under the plans. */
 function StagingImpact({ where }: { where: string }) {
   return (
-    <section className="hb-impact" aria-labelledby="hb-impact-title">
-      <h2 id="hb-impact-title">Qué dicen los agentes inmobiliarios sobre el home staging</h2>
-      <ul>
-        {STAGING_STATS.map(({ value, icon: Icon, text }) => (
-          <li key={value}>
-            <strong>
-              <Icon size={20} aria-hidden="true" /> {value}
-            </strong>
-            <span>{text}</span>
-          </li>
-        ))}
-      </ul>
-      <p className="hb-impact-note">
-        Respuestas de agentes de Estados Unidos sobre el home staging en general, de una encuesta de la NAR (2025). No son resultados medidos de
-        Habita ni del virtual staging con IA.{" "}
-        <a href={STAGING_SOURCE} target="_blank" rel="noopener noreferrer" {...cta("pricing_staging_source", `${where}_impact`, "external_source", "content")}>
-          Fuente: NAR, 2025 Profile of Home Staging
-          <ExternalLink size={14} aria-hidden="true" />
-          <span className="visually-hidden"> (se abre en otra pestaña)</span>
-        </a>
-      </p>
+    <section className="pricing-impact" aria-label="El impacto en tu negocio">
+      <BusinessImpact where={where} />
     </section>
   );
 }
