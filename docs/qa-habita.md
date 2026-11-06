@@ -76,6 +76,19 @@ Sin nombres, teléfonos, emails, enlaces a grabaciones, IDs de sesión, tasas de
 
 ### QA 2026-11-06 pm
 
+- Inicio: 2026-11-06T18:45:59-03:00 · Fin: 2026-11-06T19:05:00-03:00
+- Commit: 524d432 (#171) · Despliegue: dpl_gh85qNy14a1E7WhRZbDhgZrwNm5a (production, READY) · Estado: parcial
+- Tipo: liviana · Pantallas: ninguna
+- Flujos revisados: errores de Vercel (24 h: ninguno); PostHog por consulta agregada de tráfico en `/demo/*` y `/panel*` desde el corte anterior.
+- Sin revisar: todos los de Playwright (sesión de QA, demos públicas, panel en celular), porque el proxy del sandbox responde 403 a www.habitaia.app y a Supabase y `qa-login` falla con «fetch failed»; logs de Postgres (el esquema de `query_logs` rechazó las consultas); el análisis fino de PostHog (rebote, fotos, comparación, conversión, embudo del panel) por poco tráfico externo.
+- Bugs encontrados: ninguno · Corregidos: ninguno
+- Observaciones nuevas: ninguna · Propuestas nuevas: ninguna. Siguen abiertas UX-001, UX-002 y UX-003
+- PRs de usabilidad abiertos: ninguno con título `UX:`
+- PostHog revisado hasta: 2026-11-06T19:00:00-03:00 · cobertura: parcial · conteo de fricción en demos y panel: sin clics repetidos. En el proyecto no existen los eventos de clics muertos ni de excepciones, así que no se pueden medir.
+- Esperado, no es bug: el bloqueo del proxy es del entorno, no de producción.
+
+### QA 2026-11-06 pm
+
 - Inicio: 2026-11-06T17:51:56-03:00 · Fin: 2026-11-06T18:10:00-03:00
 - Commit: 1e3170a (#170) · Despliegue: dpl_Gjy4XeEqZF4qLT2dY52Rs3zBXXo4 (production, READY) · Estado: parcial
 - Tipo: liviana · Pantallas: escritorio 1366×900, iPhone 13, Galaxy S8 (también con red lenta y con user agent de WhatsApp para la demo pública)
