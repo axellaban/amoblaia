@@ -176,7 +176,7 @@ export function CheckoutReturn({
       )}
       <div className="checkout-result-actions">
         {approved ? (
-          <Link href="/estudio" className="button button-primary">
+          <Link href="/inicio?ir=imagenes" className="button button-primary">
             Crear un diseño <ArrowUpRight size={17} />
           </Link>
         ) : result?.url ? (
