@@ -9,6 +9,17 @@ Objetivo: encontrar en producción errores reales **y problemas de usabilidad** 
 
 Claude responde por lo técnico: bugs y regresiones. Astra analiza la conversión todos los días, lee `docs/qa-habita.md` por su cuenta y decide qué cambios de usabilidad proponer. No suponer que esta corrida ocurre a una hora determinada: registrar siempre la hora real.
 
+## ⚠️ OBLIGATORIO: EJECUTAR ESTE SKILL AL 100 %, DE PUNTA A PUNTA
+
+**ES CONDICIÓN NECESARIA Y OBLIGATORIA EJECUTAR TODO LO QUE ESTE SKILL PIDE EXPLÍCITAMENTE, AL 100 %, PASO POR PASO, DEL PRINCIPIO AL FIN, SEGÚN EL TIPO DE CORRIDA (COMPLETA O LIVIANA). NO SE RECORTA NADA.**
+
+- **NO SE SALTEA, ACORTA NI SIMPLIFICA NINGÚN PASO, CONTROL, PANTALLA, FLUJO O CONSULTA POR CRITERIO PROPIO.** No valen como motivo: «hay poco tráfico», «los números dieron bien», «no hubo cambios en ese flujo», «lleva tiempo», «es redundante».
+- **CADA CAPTURA SE MIRA. CADA INTERACCIÓN SE EJECUTA** (galería, comparación con clic y con arrastre, CTA, WhatsApp, formularios, teclado, zonas táctiles). Abrir una página y medir no reemplaza recorrerla.
+- **POSTHOG SE ANALIZA COMPLETO** (paso 3, todos sus puntos), excluyendo el tráfico interno y chequeando las grabaciones, haya mucho o poco tráfico.
+- **LAS ÚNICAS EXCEPCIONES** son las que este mismo skill marca (reglas de plata y generaciones, flujos que la corrida liviana excluye) y los **bloqueos reales** (sin acceso, sin credenciales, conector caído). Un bloqueo se reintenta y se busca la causa antes de darlo por perdido. Si una consulta falla, se corrige (por ejemplo, listando el esquema) y se vuelve a correr.
+- **ANTES DE REGISTRAR, REPASAR ESTE SKILL PUNTO POR PUNTO** y comparar contra lo hecho. **«ESTADO: COMPLETO» SOLO SI SE HIZO EL 100 %.** Si faltó cualquier cosa, el estado es `parcial` y se lista **cada** punto que faltó y su motivo. Marcar `completo` sin haberlo hecho todo es una falta grave: Astra decide en base a ese campo.
+- **SI EL TIEMPO O EL CONTEXTO NO ALCANZAN, SE SIGUE TRABAJANDO**, no se cierra antes. Si de verdad no se puede terminar, se registra `parcial` y se avisa en el resumen y en la notificación.
+
 ## Reglas que no se rompen
 
 - **Plata:** no comprar créditos ni planes y no completar pagos. Si algo pide pago, frenar ese flujo y anotarlo.
@@ -151,6 +162,8 @@ Corregir los de la categoría 1. Los de 2 y 3 no se implementan: van a «Propues
 - Si el deploy queda en ERROR: leer los logs de build, corregir o revertir con un PR nuevo. Nunca dejar producción rota.
 
 ### 9. Registrar
+**ANTES DE ESCRIBIR EL REGISTRO: REPASAR ESTE SKILL COMPLETO, PASO POR PASO, Y CONFIRMAR QUE SE EJECUTÓ EL 100 %. SI FALTÓ ALGO, VOLVER Y HACERLO; SI NO SE PUEDE, EL ESTADO ES `parcial` CON CADA FALTANTE Y SU MOTIVO.**
+
 Agregar en `docs/qa-habita.md`, debajo de «Resultados» y arriba de los anteriores, una sección con la plantilla de ese archivo. El título es siempre `### QA AAAA-MM-DD <am|pm>`, con la fecha de Argentina, para que Astra encuentre la del día. Si la corrida se corta, registrar igual lo hecho con estado `parcial` o `fallido`. Campos:
 - Inicio y fin, con hora real y zona horaria.
 - Commit y despliegue analizados.
