@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { INVITE_CODE, INVITE_PARAM, intentDestination, intentOf, type DemoIntent } from "@/lib/agency/demo-invite";
 import { membershipOf } from "@/lib/agency/server";
+import { joinPath } from "@/lib/agency/join";
 import { startSupport } from "@/lib/agency/support";
 import { liveInvitation, startVisit, type LiveInvitation } from "@/lib/agency/visit";
 import { isAdmin } from "@/lib/commerce/http";
@@ -76,5 +77,7 @@ export async function GET(request: Request) {
   const own = verified ? await membershipOf(verified.id).catch(() => null) : null;
   if (own) return to("/panel");
   await startVisit(code, invitation);
-  return to(await landing(invitation, intent));
+  const place = await landing(invitation, intent);
+  // Already signed in with an account of its own: it enters the agency at once.
+  return to(verified ? joinPath(place) : place);
 }

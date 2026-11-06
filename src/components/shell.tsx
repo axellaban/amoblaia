@@ -162,13 +162,16 @@ export function Header() {
                   >
                     Ingresar
                   </Link>
-                  <Link
-                    href="/panel/empezar"
-                    className="button button-primary"
-                    onClick={() => setOpen(false)}
-                  >
-                    Empezar
-                  </Link>
+                  {/* Inside the panel (its sign-up, its visit) «Empezar» would leave the agency's own way in. */}
+                  {!inPanel && (
+                    <Link
+                      href="/panel/empezar"
+                      className="button button-primary"
+                      onClick={() => setOpen(false)}
+                    >
+                      Empezar
+                    </Link>
+                  )}
                 </>
               )}
             </div>
@@ -198,12 +201,14 @@ export function Header() {
               >
                 Ingresar
               </Link>
-              <Link
-                href="/panel/empezar"
-                className={`button button-small ${signedIn === null ? "nav-pending" : ""}`}
-              >
-                Empezar
-              </Link>
+              {!inPanel && (
+                <Link
+                  href="/panel/empezar"
+                  className={`button button-small ${signedIn === null ? "nav-pending" : ""}`}
+                >
+                  Empezar
+                </Link>
+              )}
             </>
           )}
           {privatePage && (
