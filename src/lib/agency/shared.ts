@@ -109,6 +109,8 @@ export type PanelSummary = {
   imports: PanelImport[];
   /** A team member looking at this panel in a support view (read only). */
   support?: boolean;
+  /** The agency's visit from its link, before its account (read only). */
+  visitor?: boolean;
 };
 
 /** One user of the agency in "Usuarios": an account that joined, or an access whose link is not used yet. */

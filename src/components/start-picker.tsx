@@ -57,6 +57,7 @@ export function StartPicker({
   onClose,
   initialSource = null,
   team = null,
+  preview = false,
 }: {
   tool: StartTool;
   existingCount: number;
@@ -64,6 +65,8 @@ export function StartPicker({
   /** Opened on one of the three ways in (the video page lists them itself). */
   initialSource?: Source | null;
   team?: TeamStart | null;
+  /** Shown by the panel's welcome tour: the same picker, not counted as an opening (the tour blocks any action in it). */
+  preview?: boolean;
 }) {
   const router = useRouter();
   const uid = useId();
@@ -95,7 +98,7 @@ export function StartPicker({
   const openPath = (id: string) => (team ? teamEditorPath(team, id) : toolPath(tool, id));
   useEffect(() => {
     ref.current?.showModal();
-    note("panel_start_picker_opened", { tool });
+    if (!preview) note("panel_start_picker_opened", { tool });
     // Once per opening.
   }, [tool]);
 
