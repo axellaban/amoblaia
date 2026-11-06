@@ -22215,6 +22215,18 @@ body:has(.pv-root) .pb-root {
   align-items: center;
   gap: 4px;
 }
+/* The hand nudges sideways a few times: only transform, so it costs nothing. */
+.comparison-hint-gesture svg:nth-child(2) {
+  animation: comparison-hint-nudge 1.4s ease-in-out 0.6s 4;
+}
+@keyframes comparison-hint-nudge {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .comparison-hint-gesture svg:nth-child(2) { animation: none; }
+}
 @keyframes comparison-hint-in {
   from {
     opacity: 0;

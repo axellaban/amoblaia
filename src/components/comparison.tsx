@@ -3,12 +3,10 @@ import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { ArrowLeft, ArrowRight, ChevronsLeftRight, Pointer } from "lucide-react";
 import type { EventProperties } from "@/lib/analytics";
 import { reportSlider, SliderGesture } from "@/lib/interaction-tracking";
-/** Set once this browser has been shown how the comparison works. */
-const TAUGHT_KEY = "habita:comparison-taught";
 const SWEEP_MS = 1300;
 /** Anything the visitor does ends the lesson. */
 const STOP_EVENTS = ["pointerdown", "keydown", "wheel", "touchstart"] as const;
-/** The sweep runs once per visit even with blocked storage. */
+/** The sweep runs once per visit: the first comparison the visitor sees. */
 let sweptThisVisit = false;
 /** Once the visitor moved a comparison, the help stays away for the rest of the visit. */
 let learnedThisVisit = false;
@@ -47,8 +45,8 @@ export function Comparison({
   analytics?: EventProperties;
   /**
    * The help of the mockup: «Deslizá para comparar» on the photo until the
-   * visitor moves the line, and, the first time this browser sees a
-   * comparison, one short sweep (none with reduced motion; any interaction
+   * visitor moves the line, and, once per visit, one short sweep when the
+   * photo is loaded and on screen (none with reduced motion; any interaction
    * stops it).
    */
   teach?: boolean;
@@ -82,47 +80,65 @@ export function Comparison({
     if (gesture.current && gesture.current.input !== input) finish();
     gesture.current ??= new SliderGesture(input, where.current);
   };
+  const afterImg = useRef<HTMLImageElement>(null);
   useEffect(() => {
     if (!teach || learnedThisVisit) return;
     // The help («Deslizá para comparar») stays on the photo until the visitor moves the line.
     setHint(true);
-    // The sweep: only the first time this browser sees a comparison.
-    let first = !sweptThisVisit;
-    try {
-      if (localStorage.getItem(TAUGHT_KEY)) first = false;
-      localStorage.setItem(TAUGHT_KEY, "1");
-    } catch {
-      // Blocked storage: once per visit.
-    }
-    sweptThisVisit = true;
+    // The sweep: once per visit, on the first comparison the visitor actually sees.
+    if (sweptThisVisit) return;
     const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    if (!first || reduced) return;
+    if (reduced) return;
     let frame = 0;
     let timer = 0;
+    let observer: IntersectionObserver | undefined;
+    const img = afterImg.current;
     const stop = () => {
       window.cancelAnimationFrame(frame);
       window.clearTimeout(timer);
+      observer?.disconnect();
+      img?.removeEventListener("load", whenLoaded);
       for (const type of STOP_EVENTS) window.removeEventListener(type, stop, true);
     };
     stopTeaching.current = stop;
-    // Any interaction stops the sweep at once.
-    for (const type of STOP_EVENTS) window.addEventListener(type, stop, { capture: true, passive: true });
     // One sweep: a little to each side and back where it was.
-    const from = where.current;
-    const amp = Math.min(14, from, 100 - from);
-    timer = window.setTimeout(() => {
-      const t0 = performance.now();
-      const step = (now: number) => {
-        const t = Math.min(1, (now - t0) / SWEEP_MS);
-        setPosition(from + amp * Math.sin(t * 2 * Math.PI) * (1 - t * 0.15));
-        if (t < 1) frame = window.requestAnimationFrame(step);
-        else {
-          setPosition(from);
-          stop();
-        }
-      };
-      frame = window.requestAnimationFrame(step);
-    }, 700);
+    const sweep = () => {
+      if (sweptThisVisit || learnedThisVisit) return stop();
+      sweptThisVisit = true;
+      // Any interaction stops the sweep at once (scrolling before it starts does not cancel it).
+      for (const type of STOP_EVENTS) window.addEventListener(type, stop, { capture: true, passive: true });
+      const from = where.current;
+      const amp = Math.min(14, from, 100 - from);
+      timer = window.setTimeout(() => {
+        const t0 = performance.now();
+        const step = (now: number) => {
+          const t = Math.min(1, (now - t0) / SWEEP_MS);
+          setPosition(from + amp * Math.sin(t * 2 * Math.PI) * (1 - t * 0.15));
+          if (t < 1) frame = window.requestAnimationFrame(step);
+          else {
+            setPosition(from);
+            stop();
+          }
+        };
+        frame = window.requestAnimationFrame(step);
+      }, 450);
+    };
+    // Only once the photo is on screen and loaded: a sweep nobody sees teaches nothing.
+    function whenLoaded() {
+      if (!box.current || typeof IntersectionObserver === "undefined") return sweep();
+      observer = new IntersectionObserver(
+        (entries) => {
+          if (entries.some((e) => e.isIntersecting)) {
+            observer?.disconnect();
+            sweep();
+          }
+        },
+        { threshold: 0.6 },
+      );
+      observer.observe(box.current);
+    }
+    if (!img || (img.complete && img.naturalWidth > 0)) whenLoaded();
+    else img.addEventListener("load", whenLoaded, { once: true });
     return stop;
     // Once per mount.
   }, [teach]);
@@ -225,7 +241,7 @@ export function Comparison({
         finish();
       }}
     >
-      <img src={after} alt={alt} draggable={false} onError={onAfterError} style={afterFilter ? { filter: afterFilter } : undefined} />
+      <img ref={afterImg} src={after} alt={alt} draggable={false} onError={onAfterError} style={afterFilter ? { filter: afterFilter } : undefined} />
       <div
         className="comparison-before"
         style={{ clipPath: `inset(0 ${100 - position}% 0 0)` }}
