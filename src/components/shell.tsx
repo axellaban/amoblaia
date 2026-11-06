@@ -54,7 +54,10 @@ export function Header() {
   // The app links already include "Mi cuenta", and the studio linking to
   // itself would only reload it.
   const account = signedIn && !appNav;
-  const create = signedIn && !studio;
+  // «Ir a mi inmobiliaria»: /inicio picks the panel, the team's agencies or
+  // creating one. Not inside the panel, where it would lead to itself.
+  const inPanel = pathname === "/panel" || pathname.startsWith("/panel/");
+  const create = signedIn && !studio && !inPanel;
   // A demo is the agency's listing: its own header, no habita. navigation.
   if (isDemoPage(pathname)) return null;
   return (
@@ -69,9 +72,6 @@ export function Header() {
         >
           {appNav ? (
             <>
-              <Link href="/proyectos" onClick={() => setOpen(false)}>
-                Mis fotos
-              </Link>
               <Link
                 className={pathname.startsWith("/panel") ? "active" : ""}
                 href="/panel"
@@ -145,11 +145,11 @@ export function Header() {
                   )}
                   {create && (
                     <Link
-                      href="/estudio"
+                      href="/inicio"
                       className="button button-primary"
                       onClick={() => setOpen(false)}
                     >
-                      Ir al estudio
+                      Ir a mi inmobiliaria
                     </Link>
                   )}
                 </>
@@ -183,8 +183,8 @@ export function Header() {
                 </Link>
               )}
               {create && (
-                <Link href="/estudio" className="button button-small">
-                  Ir al estudio
+                <Link href="/inicio" className="button button-small">
+                  Ir a mi inmobiliaria
                 </Link>
               )}
             </>

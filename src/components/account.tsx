@@ -270,7 +270,7 @@ export function AccountDashboard() {
                       ? `Te quedan ${account.credits} de ${period.total} fotos${period.renews ? ` hasta el ${date(period.renews)}` : ""}. Cada foto incluye sus regeneraciones.`
                       : "Regeneraciones incluidas durante tu período pago."}
               </p>
-              <Link href="/estudio" className="button button-primary">
+              <Link href="/inicio?ir=imagenes" className="button button-primary">
                 Crear un diseño
                 <ArrowUpRight size={17} />
               </Link>
