@@ -13,7 +13,7 @@ Guía para retomar el QA de www.habitaia.app en cada sesión nueva.
 Las credenciales de QA están en Vercel (proyecto amoblaia, producción): `HABITA_QA_EMAIL` y `HABITA_QA_PASSWORD`.
 
 1. Si la sesión no tiene esas variables en su entorno, leerlas de Vercel y pasarlas solo en el comando, sin guardarlas en disco.
-2. Correr `node scripts/qa-login.mjs <sesion.json> --check`.
+2. Correr `NODE_USE_ENV_PROXY=1 node scripts/qa-login.mjs <sesion.json> --check` (sin esa variable, el `fetch` de Node no pasa por el proxy del sandbox y falla con «fetch failed»).
    - «OK: /admin abre (200)»: listo.
    - «Invalid login credentials»: la contraseña de Vercel no coincide con la de la cuenta.
 3. Usar el archivo de sesión con Playwright (`storageState`) y borrarlo al terminar.
@@ -40,13 +40,14 @@ Buscá `### QA <fecha de hoy> am` o `pm`, con la fecha de Argentina. Si no está
 - **OBS-002** La nota «Generar crea otra» junto a «(sin costo)» puede confundir (`src/components/editor-photos.tsx`).
 - **OBS-003** Los estilos de video Equilibrado y Cinematográfico figuran como «No disponible» en la cuenta y no se probaron.
 - **OBS-004** En Android chico (Galaxy S8), el selector «¿Con qué querés empezar?» pasa la cruz de cerrar a una segunda línea bajo el título y la miniatura de «Seguir con …» se vio vacía en la captura (posible carga diferida). Aislado; ver si se repite.
+- **OBS-005** En la presentación de la demo pública en Android chico (Galaxy S8), la fila de pestañas «Sobre la propiedad / Galería / Contacto» queda cortada a la derecha (sin indicio de que se desliza) y debajo queda un bloque vacío alto. Visto en la demo de QA, que no tiene descripción; ver si pasa en una demo con datos completos.
 
 ### Propuestas UX pendientes
 
 Para que Astra las evalúe. Claude no las implementa sin aprobación.
 
 - **UX-001** Contraste bajo en la guía de la home del panel (`panel-guide.tsx`): el texto gris de «Por qué importa» sobre el verde bosque (`.hg-why-lead`, `.hg-why-note`) y las notas chicas sobre arena (`.hg-social-art small`, `.hg-reel-copy small`) no llegan a 4.5:1 (axe `color-contrast`, serious). Escritorio; se repitió en celular el 6/11 pm. Reproducido.
-- **UX-002** La demo pública (`/demo/<token>` y `/presentacion`) tarda más de 5 s en cargar en Android chico con red de celular lenta, sin un indicador de avance claro durante la espera. Reproducido una vez; medir de nuevo.
+- **UX-002** La demo pública (`/demo/<token>` y `/presentacion`) tarda más de 5 s en cargar en Android chico con red de celular lenta, sin un indicador de avance claro durante la espera. Reproducido una vez. Se midió de nuevo el 6/11 pm (segunda corrida): la imagen principal aparece en menos de 5 s, pero la página termina de cargar recién después de 9 s; sigue abierta para confirmar con datos reales.
 - **UX-003** La demo pública tiene un atributo ARIA prohibido (axe `aria-prohibited-attr`, serious) en todas las pantallas, y un texto de bajo contraste en celular (`color-contrast`, serious). Reproducido en `/demo/<token>` y `/presentacion`.
 - OBS-002 sigue siendo candidata.
 
@@ -73,6 +74,19 @@ Para que Astra las evalúe. Claude no las implementa sin aprobación.
 Sin nombres, teléfonos, emails, enlaces a grabaciones, IDs de sesión, tasas de conversión ni cantidades de usuarios o sesiones.
 
 ## Resultados
+
+### QA 2026-11-06 pm (reintento)
+
+- Inicio: 2026-11-06T18:52:02-03:00 · Fin: 2026-11-06T19:00:00-03:00
+- Commit: 5faaed3 (#173) · Despliegue: producción READY · Estado: completo (lo que corresponde a la corrida liviana)
+- Tipo: liviana · Pantallas: escritorio 1366×900, iPhone 13, Galaxy S8 (también con red lenta y con user agent de WhatsApp)
+- Flujos revisados: sesión de QA (OK, con `NODE_USE_ENV_PROXY=1`); demo publicada de QA (`/demo/<token>` y `/presentacion`) en las tres pantallas, con red lenta y con WhatsApp: 200, sin errores de consola ni de red, sin scroll horizontal, sin imágenes rotas ni placeholders, `og:*` presentes; `/demo/<token-inexistente>` muestra el 404 propio, claro; `/panel` en escritorio y iPhone 13 y `/panel/propiedades` en iPhone 13: sin errores. Axe y capturas en cada pantalla.
+- Sin revisar: estudio de imágenes, video y crear demo (corrida liviana, sin cambios en esos flujos); logs de Postgres.
+- Bugs encontrados: ninguno · Corregidos: ninguno. El intento anterior falló por la red del entorno (ya habilitada) y porque el `fetch` de Node no usaba el proxy; el skill ahora corre `qa-login` con `NODE_USE_ENV_PROXY=1`.
+- Observaciones nuevas: OBS-005 · Propuestas nuevas: ninguna. Se repiten UX-001 (contraste en `/panel`, escritorio y celular), UX-002 (medida de nuevo) y UX-003 (ARIA prohibido y contraste en la demo, todas las pantallas). En escritorio, la primera carga de la demo superó los 3 s; las siguientes quedaron debajo.
+- PRs de usabilidad abiertos: ninguno con título `UX:`
+- PostHog revisado hasta: 2026-11-06T19:00:00-03:00 · cobertura: parcial · sin cambios respecto del registro anterior.
+- Esperado, no es bug: la demo de QA se titula «Propiedad nueva» porque no tiene título (OBS-001).
 
 ### QA 2026-11-06 pm
 

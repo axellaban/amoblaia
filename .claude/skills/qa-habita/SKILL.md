@@ -85,9 +85,9 @@ Qué tiene que revisar: lo que hacen los usuarios reales, no la cuenta de QA. Cl
 
 ### 4. Sesión de QA
 ```bash
-node scripts/qa-login.mjs "$SCRATCH/qa-session.json" --check
+NODE_USE_ENV_PROXY=1 node scripts/qa-login.mjs "$SCRATCH/qa-session.json" --check
 ```
-Debe decir «OK: /admin abre (200)». Usar el archivo con `browser.newContext({ storageState })`.
+Debe decir «OK: /admin abre (200)». `NODE_USE_ENV_PROXY=1` hace falta porque el `fetch` de Node no usa el proxy del sandbox por sí solo; sin esa variable, el login falla con «fetch failed». Si en cambio `curl -I https://www.habitaia.app` da 403 del proxy, el bloqueo es de la política de red del entorno de la nube. Usar el archivo con `browser.newContext({ storageState })`.
 
 ### 5. Flujos con Playwright
 
