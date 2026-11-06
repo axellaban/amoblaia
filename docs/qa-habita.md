@@ -85,7 +85,7 @@ Sin nombres, teléfonos, emails, enlaces a grabaciones, IDs de sesión, tasas de
 - Bugs encontrados: ninguno · Corregidos: ninguno. El intento anterior falló por la red del entorno (ya habilitada) y porque el `fetch` de Node no usaba el proxy; el skill ahora corre `qa-login` con `NODE_USE_ENV_PROXY=1`.
 - Observaciones nuevas: OBS-005 · Propuestas nuevas: ninguna. Se repiten UX-001 (contraste en `/panel`, escritorio y celular), UX-002 (medida de nuevo) y UX-003 (ARIA prohibido y contraste en la demo, todas las pantallas). En escritorio, la primera carga de la demo superó los 3 s; las siguientes quedaron debajo.
 - PRs de usabilidad abiertos: ninguno con título `UX:`
-- PostHog revisado hasta: 2026-11-06T19:00:00-03:00 · cobertura: parcial · sin cambios respecto del registro anterior.
+- PostHog revisado hasta: 2026-11-06T18:55:00-03:00 · cobertura: parcial · sin cambios respecto del registro anterior.
 - Esperado, no es bug: la demo de QA se titula «Propiedad nueva» porque no tiene título (OBS-001).
 
 ### QA 2026-11-06 pm
