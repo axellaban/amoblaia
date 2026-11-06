@@ -374,7 +374,7 @@ function MoreAbout() {
   }, []);
   const item = (id: (typeof MORE_IDS)[number]) => ({
     id,
-    className: "hb-more-item",
+    className: "hb-fold-item",
     open: openId === id,
     onToggle: (e: SyntheticEvent<HTMLDetailsElement>) => {
       const isOpen = e.currentTarget.open;
@@ -382,14 +382,14 @@ function MoreAbout() {
     },
   });
   return (
-    <div className="hb-more">
+    <div className="hb-fold">
       <details {...item("como-funcionan-los-creditos")}>
         <summary>
           <Layers size={20} aria-hidden="true" />
           <span>¿Cómo funcionan los créditos?</span>
-          <ChevronDown size={20} className="hb-more-chevron" aria-hidden="true" />
+          <ChevronDown size={20} className="hb-fold-chevron" aria-hidden="true" />
         </summary>
-        <div className="hb-more-body">
+        <div className="hb-fold-body">
           <ol className="hb-how-steps">
             <li>
               <House size={22} aria-hidden="true" />
@@ -434,9 +434,9 @@ function MoreAbout() {
         <summary>
           <Sparkles size={20} aria-hidden="true" />
           <span>¿Qué incluye Habita?</span>
-          <ChevronDown size={20} className="hb-more-chevron" aria-hidden="true" />
+          <ChevronDown size={20} className="hb-fold-chevron" aria-hidden="true" />
         </summary>
-        <div className="hb-more-body">
+        <div className="hb-fold-body">
           <div className="hb-sheet-free-list">
             <p>Incluido gratis, sin usar créditos</p>
             <ul>
@@ -467,9 +467,9 @@ function MoreAbout() {
         <summary>
           <CircleHelp size={20} aria-hidden="true" />
           <span>Preguntas frecuentes</span>
-          <ChevronDown size={20} className="hb-more-chevron" aria-hidden="true" />
+          <ChevronDown size={20} className="hb-fold-chevron" aria-hidden="true" />
         </summary>
-        <div className="hb-more-body">
+        <div className="hb-fold-body">
           <dl className="hb-faq">
             {faqs.map(([q, a]) => (
               <div key={q}>

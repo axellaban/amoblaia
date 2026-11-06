@@ -25062,7 +25062,7 @@ body:has(.pv-root) .pb-root {
   padding: 44px 0 56px;
 }
 .hb-pricing-head {
-  max-width: 720px;
+  max-width: 920px;
   margin-bottom: 36px;
 }
 .hb-pricing-head .eyebrow {
@@ -25390,18 +25390,18 @@ body:has(.pv-root) .pb-root {
 }
 
 /* «¿Cómo funcionan los créditos?», «¿Qué incluye Habita?» and the FAQ, folded. */
-.hb-more {
+.hb-fold {
   display: grid;
   gap: 10px;
   margin-top: 24px;
 }
-.hb-more-item {
+.hb-fold-item {
   border-radius: 14px;
   background: #fff;
   border: 1px solid var(--line);
   scroll-margin-top: 90px;
 }
-.hb-more-item summary {
+.hb-fold-item summary {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -25413,27 +25413,27 @@ body:has(.pv-root) .pb-root {
   list-style: none;
   border-radius: 14px;
 }
-.hb-more-item summary::-webkit-details-marker {
+.hb-fold-item summary::-webkit-details-marker {
   display: none;
 }
-.hb-more-item summary:focus-visible {
+.hb-fold-item summary:focus-visible {
   outline: 3px solid #8fb79a;
   outline-offset: 2px;
 }
-.hb-more-item summary > svg {
+.hb-fold-item summary > svg {
   flex: none;
   color: var(--forest);
 }
-.hb-more-item summary > span {
+.hb-fold-item summary > span {
   flex: 1;
 }
-.hb-more-chevron {
+.hb-fold-chevron {
   transition: transform 0.2s;
 }
-.hb-more-item[open] .hb-more-chevron {
+.hb-fold-item[open] .hb-fold-chevron {
   transform: rotate(180deg);
 }
-.hb-more-body {
+.hb-fold-body {
   padding: 0 18px 18px;
 }
 .hb-how-steps {
@@ -25521,7 +25521,8 @@ body:has(.pv-root) .pb-root {
   font-size: 13.5px;
   color: var(--subtle);
 }
-.ap-balance strong {
+.ap-page .ap-balance strong {
+  color: var(--ink);
   font-size: 22px;
   font-weight: 800;
   line-height: 1.25;
@@ -25947,13 +25948,13 @@ body:has(.pv-root) .pb-root {
   .hb-how-steps {
     grid-template-columns: minmax(0, 1fr);
   }
-  .hb-more-item summary {
+  .hb-fold-item summary {
     padding: 12px 14px;
   }
-  .hb-more-body {
+  .hb-fold-body {
     padding: 0 14px 14px;
   }
-  .ap-balance strong {
+  .ap-page .ap-balance strong {
     font-size: 19px;
   }
   .hb-done h2 {
