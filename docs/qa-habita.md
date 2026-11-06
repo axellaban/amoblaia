@@ -45,8 +45,9 @@ Buscá `### QA <fecha de hoy> am` o `pm`, con la fecha de Argentina. Si no está
 
 Para que Astra las evalúe. Claude no las implementa sin aprobación.
 
-- **UX-001** Contraste bajo en la guía de la home del panel (`panel-guide.tsx`): el texto gris de «Por qué importa» sobre el verde bosque (`.hg-why-lead`, `.hg-why-note`) y las notas chicas sobre arena (`.hg-social-art small`, `.hg-reel-copy small`) no llegan a 4.5:1 (axe `color-contrast`, serious). Escritorio. Reproducido.
+- **UX-001** Contraste bajo en la guía de la home del panel (`panel-guide.tsx`): el texto gris de «Por qué importa» sobre el verde bosque (`.hg-why-lead`, `.hg-why-note`) y las notas chicas sobre arena (`.hg-social-art small`, `.hg-reel-copy small`) no llegan a 4.5:1 (axe `color-contrast`, serious). Escritorio; se repitió en celular el 6/11 pm. Reproducido.
 - **UX-002** La demo pública (`/demo/<token>` y `/presentacion`) tarda más de 5 s en cargar en Android chico con red de celular lenta, sin un indicador de avance claro durante la espera. Reproducido una vez; medir de nuevo.
+- **UX-003** La demo pública tiene un atributo ARIA prohibido (axe `aria-prohibited-attr`, serious) en todas las pantallas, y un texto de bajo contraste en celular (`color-contrast`, serious). Reproducido en `/demo/<token>` y `/presentacion`.
 - OBS-002 sigue siendo candidata.
 
 ### PRs de usabilidad abiertos
@@ -72,6 +73,19 @@ Para que Astra las evalúe. Claude no las implementa sin aprobación.
 Sin nombres, teléfonos, emails, enlaces a grabaciones, IDs de sesión, tasas de conversión ni cantidades de usuarios o sesiones.
 
 ## Resultados
+
+### QA 2026-11-06 pm
+
+- Inicio: 2026-11-06T17:51:56-03:00 · Fin: 2026-11-06T18:10:00-03:00
+- Commit: 1e3170a (#170) · Despliegue: dpl_Gjy4XeEqZF4qLT2dY52Rs3zBXXo4 (production, READY) · Estado: parcial
+- Tipo: liviana · Pantallas: escritorio 1366×900, iPhone 13, Galaxy S8 (también con red lenta y con user agent de WhatsApp para la demo pública)
+- Flujos revisados: errores de Vercel (24 h: ninguno) y logs de Postgres (solo un error de sintaxis de una consulta suelta); sesión de QA (OK); `/panel` en escritorio y celular; demo publicada de QA (`/demo/<token>` y `/presentacion`) en las pantallas anteriores: carga 200, sin errores de consola ni de red, sin scroll horizontal, sin imágenes rotas, sin placeholders, `og:title`, `og:description` y `og:image` presentes; en escritorio el LCP queda debajo de 2 s.
+- Sin revisar: PostHog (el conector no está disponible en esta sesión); estudio de imágenes, video y crear demo (corrida liviana, sin cambios de código en esos flujos); caminos de error de subida; `/admin`.
+- Bugs encontrados: ninguno · Corregidos: ninguno
+- Observaciones nuevas: ninguna · Propuestas nuevas: UX-003. Se repiten UX-001 (ahora también en celular) y UX-002
+- PRs de usabilidad abiertos: ninguno con título `UX:`
+- PostHog revisado hasta: sin cambios · cobertura: sin acceso
+- Esperado, no es bug: los borradores de demo dan 404 en `/demo/<token>` hasta publicarse.
 
 ### QA 2026-11-06 am
 
