@@ -13,6 +13,8 @@ import {
   filterRows,
   listTotals,
   sortFromParam,
+  ACTIVITY_HINT,
+  DEFAULT_SORT,
   sortParam,
   sortRows,
   type ListSort,
@@ -434,6 +436,28 @@ function AgencyList({
         </details>
       </div>
 
+      {/* On the phone the table's headers are hidden: the order is chosen here. */}
+      <nav className="ah-sortbar" aria-label="Ordenar la lista">
+        <span>Ordenar por</span>
+        {(
+          [
+            ["actividad", "Última actividad"],
+            ["score", "Lead score"],
+            ["creada", "Más nuevas"],
+          ] as const
+        ).map(([by, label]) => {
+          const on = sort.by === by;
+          // «Más nuevas» is the default order: one tap only, no reverse.
+          const next: ListSort = by === "creada" ? DEFAULT_SORT : { by, dir: on && sort.dir === "desc" ? "asc" : "desc" };
+          return (
+            <Link key={by} href={href({ orden: sortParam(next) || null })} className={`ah-sortchip${on ? " is-on" : ""}`} aria-current={on ? "true" : undefined}>
+              {label}
+              {on && by !== "creada" ? (sort.dir === "desc" ? " ↓" : " ↑") : ""}
+            </Link>
+          );
+        })}
+      </nav>
+
       {(periodOn || step !== null) && (
         <p className="ah-scope">
           {shown.length} {shown.length === 1 ? "inmobiliaria" : "inmobiliarias"}
@@ -484,7 +508,7 @@ function AgencyList({
                   {sortHead("score", <span title="Engagement de visitantes externos con sus demos (0 a 100). No es probabilidad de compra. Tocá para ordenar.">Lead score ⓘ</span>)}
                 </th>
                 <th scope="col" aria-sort={sort.by === "actividad" ? (sort.dir === "desc" ? "descending" : "ascending") : undefined}>
-                  {sortHead("actividad", "Última actividad")}
+                  {sortHead("actividad", <span title={`${ACTIVITY_HINT} Tocá para ordenar.`}>Última actividad ⓘ</span>)}
                 </th>
                 <th scope="col" className="is-actions">
                   Acciones
@@ -541,12 +565,14 @@ function AgencyList({
                     </td>
                     <td className="is-when">
                       {r.lastActivity ? (
-                        <span className="ah-when">
+                        <span className="ah-when" title={ACTIVITY_HINT}>
                           {agoText(r.lastActivity.at)}
                           <small>{r.lastActivity.text}</small>
                         </span>
                       ) : (
-                        "—"
+                        <span className="ah-when is-none" title={ACTIVITY_HINT}>
+                          <small>Sin actividad suya</small>
+                        </span>
                       )}
                     </td>
                     <td className="is-actions">

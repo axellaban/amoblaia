@@ -64,10 +64,11 @@ describe("the public pricing (/precios)", () => {
     for (const source of ["RESA · 2023", "Lemon &amp; Lime · 2025", "Matterport · Real Estate"]) expect(html).toContain(source);
     expect(t).toContain("No son resultados medidos de habita");
     expect(t).toContain("¿Cuánto podrías ganar con una mejor venta?");
-    expect(t).toContain("+US$ 15.000");
-    expect(t).toContain("+US$ 450");
+    expect(t).toContain("Aumento en volumen de ventas +30%");
+    expect(t).toContain("+US$ 19.500");
+    expect(t).toContain("Beneficio incremental +US$ 585");
     expect(t).toContain("≈ US$ 11");
-    expect(t).toContain("42x");
+    expect(t).toContain("Retorno sobre inversión 55x");
     expect(t).toContain("Asumiendo 20 créditos (imágenes ambientadas) por propiedad.");
     expect(html).toContain('href="https://matterport.com/industries/real-estate"');
     expect(html).toMatch(/rel="noopener noreferrer"/);

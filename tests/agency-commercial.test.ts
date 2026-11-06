@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   agoText,
   commercialStage,
+  demoVisitFact,
   filterRows,
   lastActivity,
   listTotals,
@@ -55,6 +56,23 @@ describe("helpers", () => {
   it("keeps the latest fact", () => {
     expect(lastActivity([null, { at: "2026-11-01T10:00:00Z", text: "a" }, { at: "2026-11-02T10:00:00Z", text: "b" }])?.text).toBe("b");
     expect(lastActivity([])).toBeNull();
+  });
+  it("counts only external visits of the demos, said by what they were", () => {
+    const v = (last_event_at: string, o: Partial<{ is_internal: boolean; score: number; visitor_type: string }> = {}) => ({
+      last_event_at,
+      is_internal: false,
+      score: 0,
+      visitor_type: "unknown",
+      ...o,
+    });
+    // The team (QA) opening the demo later never counts.
+    expect(demoVisitFact([v("2026-11-01T10:00:00Z"), v("2026-11-05T10:00:00Z", { is_internal: true, score: 50 })])).toEqual({
+      at: "2026-11-01T10:00:00Z",
+      text: "Abrió la demo",
+    });
+    expect(demoVisitFact([v("2026-11-02T10:00:00Z", { score: 30 })])?.text).toBe("Interactuó con la demo");
+    expect(demoVisitFact([v("2026-11-02T10:00:00Z", { visitor_type: "buyer", score: 30 })])?.text).toBe("Un comprador vio su demo");
+    expect(demoVisitFact([v("2026-11-02T10:00:00Z", { is_internal: true })])).toBeNull();
   });
   it("says how long ago in the team's words", () => {
     const now = Date.parse("2026-11-03T12:00:00Z");

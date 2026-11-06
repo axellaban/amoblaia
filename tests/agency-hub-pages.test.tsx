@@ -22,8 +22,8 @@ const ID = "11111111-1111-4111-8111-111111111111";
 const recent = new Date(Date.now() - 2 * 3600000).toISOString();
 const rows: CommercialRow[] = [
   { id: ID, name: "Demaio Estudio Inmobiliario", coverPhotoId: null, stage: "interacted", hasOwner: false, subscribed: false, prospect: true, properties: 3, published: 2, score: 72, lastActivity: { at: recent, text: "Vio una demo" }, createdAt: "2026-10-01T00:00:00Z", test: false, demos: [{ createdAt: "2026-10-30T15:00:00Z", step: 3 }] },
-  { id: "22222222-2222-4222-8222-222222222222", name: "Del Mar Propiedades", coverPhotoId: null, stage: "client", hasOwner: true, subscribed: true, prospect: false, properties: 12, published: 12, score: 91, lastActivity: { at: recent, text: "Se editó una propiedad" }, createdAt: "2026-09-01T00:00:00Z", test: false, demos: [{ createdAt: "2026-09-02T15:00:00Z", step: 6 }] },
-  { id: "33333333-3333-4333-8333-333333333333", name: "Bianchi Propiedades", coverPhotoId: null, stage: "prospect", hasOwner: false, subscribed: false, prospect: true, properties: 1, published: 0, score: 18, lastActivity: { at: "2026-10-28T00:00:00Z", text: "Creada en adquisición" }, createdAt: "2026-10-28T00:00:00Z", test: false, demos: [] },
+  { id: "22222222-2222-4222-8222-222222222222", name: "Del Mar Propiedades", coverPhotoId: null, stage: "client", hasOwner: true, subscribed: true, prospect: false, properties: 12, published: 12, score: 91, lastActivity: { at: recent, text: "Importó una propiedad" }, createdAt: "2026-09-01T00:00:00Z", test: false, demos: [{ createdAt: "2026-09-02T15:00:00Z", step: 6 }] },
+  { id: "33333333-3333-4333-8333-333333333333", name: "Bianchi Propiedades", coverPhotoId: null, stage: "prospect", hasOwner: false, subscribed: false, prospect: true, properties: 1, published: 0, score: 18, lastActivity: null, createdAt: "2026-10-28T00:00:00Z", test: false, demos: [] },
 ];
 const demo = (over: Partial<DemoSummary>): DemoSummary => ({
   id: "44444444-4444-4444-8444-444444444444",
@@ -101,6 +101,15 @@ describe("«Inmobiliarias», the team's single list", () => {
       expect(html).toContain(text);
     // The funnel has no reply step.
     expect(html).not.toContain("Saludo respondido");
+  });
+  it("shows only the agency's own activity and lets the phone choose the order", async () => {
+    const html = renderToStaticMarkup(await List({ searchParams: Promise.resolve({ orden: "actividad" }) }));
+    // Bianchi did nothing yet: what the team did (create it, its demo) is not its activity.
+    expect(html).toContain("Sin actividad suya");
+    expect(html).not.toContain("Se editó una propiedad");
+    expect(html).toContain("Ordenar por");
+    expect(html).toContain('href="/admin/inmobiliarias?orden=actividad-asc"');
+    expect(html).toContain('href="/admin/inmobiliarias?orden=score"');
   });
   it("filters by the stage in the URL", async () => {
     const html = renderToStaticMarkup(await List({ searchParams: Promise.resolve({ etapa: "clientes" }) }));
