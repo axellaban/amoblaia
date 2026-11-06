@@ -26,7 +26,9 @@ export const UX_VERSIONS: Record<FlowName, number> = {
   studio: 1,
   signup: 1,
   panel: 2,
-  pricing: 1,
+  // v2 (rediseño de precios): los paquetes, su precio por crédito y el ahorro se ven
+  // de entrada; 25 créditos «Recomendado» y preseleccionado; el resto, desplegable.
+  pricing: 2,
   account: 1,
   auth: 1,
   agency_site: 1,

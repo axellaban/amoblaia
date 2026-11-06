@@ -100,10 +100,11 @@ CTAs instrumentados:
 | `create_agency` | Crear mi inmobiliaria gratis | `agency_signup` |
 | `banner_by_habita` | «Por habita.» de la franja | `habita_studio` |
 | `pricing_buy_pack`, `pricing_buy_plan`, `pricing_buy_first_pack` | Comprar en /precios y en la sección Precios de la demo (`cta_location` con prefijo `demo_prices_`) | `checkout` o `signup_invitation` |
+| `pricing_start_free`, `pricing_buy_credits`, `pricing_staging_source` | Precios en /precios, en el panel y en la demo (`cta_location` `<superficie>_free`, `<superficie>_buy`, `<superficie>_impact`). `pricing_buy_credits` lleva en `plan` el paquete elegido. `pricing_sheet_pack` (tarjeta de precios) dejó de existir con `pricing` `v2` | `panel` o `signup_invitation`; `checkout` o `signup_invitation`; `external_source` |
 | `contact_whatsapp`, `contact_url`, `contact_phone`, `contact_email`, `contact_listing`, `schedule_visit`, `agency_website`, `open_map` | Contacto del comprador con la inmobiliaria | canal |
 | `nav_property`, `nav_location`, `nav_contact` | Navegación de secciones | sección |
 | `signup_create_account`, `signup_have_account`, `go_to_panel`, `invitation_google`, `invitation_back_to_demo`, `google_signin` | Alta y acceso | `auth_signup`, `auth_login`, `panel_home`, `google_oauth`, `demo` |
-| `panel_nav_*`, `panel_next_step`, `panel_credits`, `buy_credits`, `import_images_*`, `imported_images`, `import_many_urls` | Panel de la inmobiliaria | sección / importación / precios |
+| `panel_nav_*`, `panel_next_step`, `panel_credits`, `buy_credits` (hasta `pricing` `v2`: ahora la compra del panel es `pricing_buy_credits` con `cta_location = panel_buy`), `import_images_*`, `imported_images`, `import_many_urls` | Panel de la inmobiliaria | sección / importación / precios |
 
 ### Comparador antes/después: `comparison_slider_used`
 

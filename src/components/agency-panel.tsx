@@ -13,6 +13,7 @@ import {
   ChevronsLeftRight,
   Clapperboard,
   CloudSun,
+  Coins,
   Download,
   Eraser,
   ExternalLink,
@@ -60,7 +61,6 @@ import { adminPhotoUrl } from "@/lib/demos/shared";
 import { leadFromDemoRef } from "@/lib/leads/client";
 import { PanelNav, PanelTopbar, type PanelSection } from "./panel-shell";
 import { CreditsMenu } from "./credits-menu";
-import { openCreditsPurchase } from "./credits-purchase";
 import { videoEnabled } from "@/lib/agency/flags";
 import { StartPicker, toolPath, type StartTool } from "./start-picker";
 import { PanelTour, continuingWork } from "./panel-tour";
@@ -109,17 +109,15 @@ export function AgencyPanel({ section, plans = null }: { section: Section; /** T
       <PanelNav section={section} agencyName={data?.agency.name} role={data?.role} credits={data?.credits} tour={Boolean(data && !data.support && !data.visitor)} />
       <div className="account-page container ap-page">
         {error && <RetryRow error={error} busy={loading} onRetry={() => void load()} />}
-        {!data ? (
+        {section === "creditos" ? (
+          // The prices do not wait for the rest of the panel: they are shown right away.
+          <CreditsSection plans={plans} />
+        ) : !data ? (
           !error && <p role="status">Cargando tu panel…</p>
         ) : section === "inicio" ? (
           <PanelHome data={data} reload={load} continuing={continuing} />
         ) : section === "propiedades" ? (
           <PropertiesSection data={data} reload={load} />
-        ) : section === "creditos" ? (
-          <>
-            <CreditsSection />
-            {plans && <div className="ap-plans">{plans}</div>}
-          </>
         ) : (
           <SiteSection data={data} setData={setData} reload={load} />
         )}
@@ -1654,8 +1652,13 @@ const REASONS: Record<string, string> = {
   trial: "Prueba",
 };
 
-/** The agency's credits: one balance, its owner's; the owner manages plans and purchases. */
-function CreditsSection() {
+/**
+ * The agency's credits: its real balance (one balance, its owner's), then the
+ * packs to buy more (`plans`, the pricing of /precios in its panel variant),
+ * then who pays and the movements. How credits work lives once, in the
+ * pricing's «¿Cómo funcionan los créditos?».
+ */
+function CreditsSection({ plans }: { plans?: React.ReactNode }) {
   const [info, setInfo] = useState<CreditsInfo | null>(null);
   const [error, setError] = useState("");
   const load = useCallback(async () => {
@@ -1669,40 +1672,58 @@ function CreditsSection() {
   useEffect(() => {
     void load();
   }, [load]);
-  if (!info) return error ? <RetryRow error={error} onRetry={() => void load()} /> : <p role="status">Cargando créditos…</p>;
-  const owner = info.role === "owner";
-  const grants = (info.grants ?? []).filter((g) => !g.revoked);
+  const owner = info?.role === "owner";
+  const grants = (info?.grants ?? []).filter((g) => !g.revoked);
   return (
     <>
       <div className="ap-head">
         <div>
-          <span className="eyebrow">Créditos IA de {info.payer.agency}</span>
-          <h1>{info.credits === null ? "Saldo no disponible" : `${info.credits} ${info.credits === 1 ? "crédito disponible" : "créditos disponibles"}`}</h1>
+          <span className="eyebrow">{info ? `Créditos IA de ${info.payer.agency}` : "Precios y créditos"}</span>
+          <h1>Tus créditos</h1>
         </div>
-        {owner && !info.support && (
-          <button type="button" className="button button-primary" {...cta("buy_credits", "panel_credits", "checkout")} onClick={() => openCreditsPurchase({ source: "panel_credits" })}>
-            Comprar créditos
-          </button>
-        )}
       </div>
-      {info.creditsError && <RetryRow error="No pudimos consultar el saldo ahora. No significa que no tengas créditos." onRetry={() => void load()} />}
-      <section className="account-panel">
-        <h2>Quién paga</h2>
-        <p>
-          Las ambientaciones de las propiedades de {info.payer.agency} usan un solo saldo: el de la cuenta dueña de la inmobiliaria
-          {info.payer.isYou ? " (tu cuenta)" : ""}.{" "}
-          {owner ? "Lo que compres con esta cuenta suma a ese saldo." : "Para sumar créditos, pedíselo al dueño de la inmobiliaria."}
-        </p>
-      </section>
-      <section className="account-panel">
-        <h2>Cómo se usan</h2>
-        <p>
-          Cada foto que transformás con IA usa 1 crédito la primera vez. Las demás versiones y estilos de esa misma foto no consumen créditos
-          mientras el crédito esté vigente. Los créditos gratis del mes se usan primero y vencen a fin de mes; los comprados duran 12 meses. Si una generación falla por un problema técnico, el crédito vuelve solo. Importar propiedades,
-          publicarlas y compartirlas no usa créditos.
-        </p>
-      </section>
-      {owner && (
+      {!info ? (
+        error ? (
+          <RetryRow error={error} onRetry={() => void load()} />
+        ) : (
+          <p className="ap-balance" role="status">
+            <span className="ap-balance-icon" aria-hidden="true">
+              <Coins size={24} />
+            </span>
+            <span>
+              <small>Tu saldo actual</small>
+              <strong>Consultando saldo…</strong>
+            </span>
+          </p>
+        )
+      ) : (
+        <>
+          <p className="ap-balance">
+            <span className="ap-balance-icon" aria-hidden="true">
+              <Coins size={24} />
+            </span>
+            <span>
+              <small>{info.payer.isYou ? "Tu saldo actual" : `Saldo de ${info.payer.agency}`}</small>
+              <strong>
+                {info.credits === null ? "Saldo no disponible" : `${info.credits} ${info.credits === 1 ? "crédito disponible" : "créditos disponibles"}`}
+              </strong>
+            </span>
+          </p>
+          {info.creditsError && <RetryRow error="No pudimos consultar el saldo ahora. No significa que no tengas créditos." onRetry={() => void load()} />}
+        </>
+      )}
+      {plans && <div className="ap-plans">{plans}</div>}
+      {info && (
+        <section className="account-panel">
+          <h2>Quién paga</h2>
+          <p>
+            Las ambientaciones de las propiedades de {info.payer.agency} usan un solo saldo: el de la cuenta dueña de la inmobiliaria
+            {info.payer.isYou ? " (tu cuenta)" : ""}.{" "}
+            {owner ? "Lo que compres con esta cuenta suma a ese saldo." : "Para sumar créditos, pedíselo al dueño de la inmobiliaria."}
+          </p>
+        </section>
+      )}
+      {info && owner && (
         <section className="account-panel" id="movimientos">
           <h2>Saldo y movimientos</h2>
           {grants.length ? (

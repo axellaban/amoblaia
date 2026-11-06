@@ -1,16 +1,45 @@
 "use client";
-// Pricing, simplified: «Gratis» and «Comprar créditos» (pago único, sin
-// suscripción). Shared by /precios, the panel's «Créditos» and an agency's
-// demo. Buying opens the credits selector (credits-purchase.tsx), which pays
-// through the existing Mercado Pago checkout.
+// Pricing: «Gratis» and «Comprar créditos» (pago único, sin suscripción).
+// One component, two variants: the public one (/precios and an agency's demo)
+// shows the free plan next to the packs; the panel's («Precios y créditos»)
+// shows only the packs, since the agency already has its account and its
+// balance is shown right above by the panel. The packs, their price per
+// credit and their saving come from the catalog. Buying opens the credits
+// selector (credits-purchase.tsx) with the chosen pack, which pays through
+// the existing Mercado Pago checkout.
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
-import { ArrowUpRight, Check, Copy, House, Layers, Minus, Plus, BadgeCheck, Share2 } from "lucide-react";
+import { useEffect, useId, useRef, useState, type SyntheticEvent } from "react";
+import {
+  ArrowRight,
+  BadgeCheck,
+  CalendarDays,
+  Check,
+  ChevronDown,
+  CircleHelp,
+  Copy,
+  ExternalLink,
+  House,
+  Layers,
+  MessageCircle,
+  Share2,
+  ShieldCheck,
+  Sparkles,
+  TrendingUp,
+  Zap,
+} from "lucide-react";
 import { formatARS, type Product } from "@/lib/commerce/catalog";
-import { creditPackages, FREE_MONTHLY_CREDITS, PRICES_PATH, type CreditPackage } from "@/lib/commerce/credit-packs";
+import {
+  creditPackages,
+  FREE_MONTHLY_CREDITS,
+  PRICES_PATH,
+  recommendedPackage,
+  validityLabel,
+  type CreditPackage,
+} from "@/lib/commerce/credit-packs";
 import { track } from "@/lib/analytics";
 import { MODE_INFO, VIDEO_CREDITS, type VideoMode } from "@/lib/video/plan";
 import { cta } from "@/lib/interaction-tracking";
+import { UX_VERSIONS } from "@/lib/ux-context";
 import { openCreditsPurchase } from "./credits-purchase";
 
 const faqs = [
@@ -43,7 +72,25 @@ const faqs = [
 const FREE_FEATURES = ["Propiedades", "Usuarios del equipo", "Sitio web propio", "Demos para compartir"];
 /** The video styles the video studio offers today, in its order and with its names. */
 const SHEET_VIDEO_MODES: VideoMode[] = ["classic", "clip", "cinematic"];
+/** The pricing design on every pricing event, also where it is embedded in another flow (panel, demo). */
+const PRICING_UX = `v${UX_VERSIONS.pricing}`;
+/** The collapsible sections, by the anchor that opens each one (#como-funcionan-los-creditos is linked from the credits menu). */
+const MORE_IDS = ["como-funcionan-los-creditos", "que-incluye", "preguntas-frecuentes"] as const;
+
+/**
+ * NAR, 2025 Profile of Home Staging (encuesta a REALTORS® de EE. UU., febrero
+ * de 2025): respuestas de agentes sobre el home staging en general. No son
+ * resultados de Habita ni del virtual staging con IA, y así se dice en pantalla.
+ */
+const STAGING_SOURCE = "https://www.nar.realtor/research-and-statistics/research-reports/profile-of-home-staging";
+const STAGING_STATS = [
+  { value: "83%", icon: House, text: "de los agentes de compradores dice que el staging ayuda a imaginar la propiedad como su futuro hogar." },
+  { value: "49%", icon: Zap, text: "de los agentes de vendedores reporta que el staging redujo el tiempo que la propiedad estuvo a la venta." },
+  { value: "29%", icon: TrendingUp, text: "de los agentes de vendedores reporta un aumento de entre 1% y 10% en el valor ofrecido." },
+] as const;
+
 const ars = (cents: number) => formatARS(cents).replace(/\s/g, "");
+const pct = (discount: number) => Math.round(discount * 100);
 
 export function PricingPlans({
   products,
@@ -69,25 +116,54 @@ export function PricingPlans({
   /** A pack chosen before signing in or creating the account: its selector opens right away. */
   initialSku?: string;
   userId?: string;
-  /** The signed-in account's balance, when known. */
+  /** The signed-in account's balance, when known (shown on the public page; the panel shows the agency's own). */
   balance?: number | null;
   /** Where this page is shown, for analytics. */
   surface?: "precios" | "panel" | "demo";
 }) {
   const packages = creditPackages(products);
-  const cheapest = packages[0];
-  const best = packages.reduce((m, p) => (p.discount > (m?.discount ?? 0) ? p : m), packages[0]);
-  const [faq, setFaq] = useState<number | null>(null);
+  const recommended = recommendedPackage(packages);
   const where = signupHref ? "demo" : surface;
+  /** The agency's panel: no free plan to start (it has its account) and no page heading (the panel has its own). */
+  const panel = where === "panel";
+  const [selected, setSelected] = useState(() => packages.find((p) => p.sku === initialSku)?.sku ?? recommended?.sku ?? "");
+  const pkg = packages.find((p) => p.sku === selected) ?? recommended;
   const open = (source: string, sku?: string) => openCreditsPurchase({ source: `${where}_${source}`, sku, signupHref });
+  const packsName = useId();
 
   // Once per page view (a remount of the same page does not count twice).
   const viewed = useRef(false);
   useEffect(() => {
     if (viewed.current) return;
     viewed.current = true;
-    track("pricing_viewed", { surface: where, signed_in: Boolean(email), packages: packages.length });
+    track("pricing_viewed", { surface: where, signed_in: Boolean(email), packages: packages.length, pricing_ux_version: PRICING_UX });
   }, [where, email, packages.length]);
+
+  // The packs really seen: most of them on screen, once per page view.
+  const packsRef = useRef<HTMLFieldSetElement>(null);
+  const packsSeen = useRef(false);
+  const recommendedSku = recommended?.sku;
+  useEffect(() => {
+    const el = packsRef.current;
+    if (!el || packsSeen.current || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (packsSeen.current || !entries.some((e) => e.isIntersecting)) return;
+        packsSeen.current = true;
+        io.disconnect();
+        track("pricing_packages_viewed", {
+          surface: where,
+          signed_in: Boolean(email),
+          packages: packages.length,
+          recommended: recommendedSku ?? "none",
+          pricing_ux_version: PRICING_UX,
+        });
+      },
+      { threshold: 0.6 },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [where, email, packages.length, recommendedSku]);
 
   // Back from signing in (or creating the account) with a pack chosen: its selector opens once.
   const reopened = useRef(false);
@@ -98,31 +174,52 @@ export function PricingPlans({
     openCreditsPurchase({ source: `${where}_return`, sku: initialSku });
   }, [initialSku, email, signupHref, packages, where]);
 
+  function choose(p: CreditPackage) {
+    if (p.sku === selected) return;
+    setSelected(p.sku);
+    track("pricing_package_selected", {
+      surface: where,
+      sku: p.sku,
+      credits: p.credits,
+      discount_pct: pct(p.discount),
+      recommended: p.sku === recommendedSku,
+      pricing_ux_version: PRICING_UX,
+    });
+  }
+
   const freeHref = signupHref || (email ? "/panel" : "/acceso?next=%2Fpanel");
   const ready = packages.length > 0 && (enabled || Boolean(signupHref) || !email);
+  const validity = validityLabel(packages[0]?.validDays);
 
   return (
-    <div className="pricing-page hb-pricing">
+    <div className={`pricing-page hb-pricing${panel ? " hb-pricing-panel" : ""}`}>
       <div className="container">
-        <header className="hb-pricing-head">
-          <span className="eyebrow">
-            <BadgeCheck size={16} aria-hidden="true" /> SIN SUSCRIPCIÓN · PAGO CON MERCADO PAGO
-          </span>
-          <h1>
-            Empezá gratis.
-            <br />
-            Pagá cuando lo necesites.
-          </h1>
-          <p>Transformá tus propiedades con IA, probá diferentes estilos y compartí los resultados.</p>
-          {typeof balance === "number" && (
-            <p className="hb-pricing-balance">
-              <Layers size={16} aria-hidden="true" />
-              <span>
-                Tenés <strong>{balance}</strong> {balance === 1 ? "crédito disponible" : "créditos disponibles"}
-              </span>
-            </p>
-          )}
-        </header>
+        {!panel && (
+          <header className="hb-pricing-head">
+            <span className="eyebrow">Precios</span>
+            <h1>Precios simples. Sin suscripción.</h1>
+            <p>Empezá gratis y comprá créditos solo cuando los necesites.</p>
+            <ul className="hb-pricing-points">
+              <li>
+                <BadgeCheck size={18} aria-hidden="true" /> IA para ambientar tus propiedades
+              </li>
+              <li>
+                <BadgeCheck size={18} aria-hidden="true" /> Demos interactivas y sitio web
+              </li>
+              <li>
+                <BadgeCheck size={18} aria-hidden="true" /> Pago único, sin renovación
+              </li>
+            </ul>
+            {typeof balance === "number" && (
+              <p className="hb-pricing-balance">
+                <Layers size={16} aria-hidden="true" />
+                <span>
+                  Tenés <strong>{balance}</strong> {balance === 1 ? "crédito disponible" : "créditos disponibles"}
+                </span>
+              </p>
+            )}
+          </header>
+        )}
 
         {currentSku && (
           <p className="hb-pricing-legacy" role="note">
@@ -134,85 +231,177 @@ export function PricingPlans({
           </p>
         )}
 
-        <div className="hb-plans">
-          <article className="hb-plan">
-            <h2>Gratis</h2>
-            <p className="hb-plan-for">Para descubrir Habita</p>
-            <div className="hb-plan-price">$0</div>
-            <ul>
-              <li>
-                <Check size={17} aria-hidden="true" /> {FREE_MONTHLY_CREDITS} créditos con IA por mes
-              </li>
-              <li>
-                <Check size={17} aria-hidden="true" /> Para inmobiliarias verificadas
-              </li>
-              <li>
-                <Check size={17} aria-hidden="true" /> Demo interactiva y sitio de la inmobiliaria
-              </li>
-              <li>
-                <Check size={17} aria-hidden="true" /> Compartir resultados
-              </li>
-              <li>
-                <Check size={17} aria-hidden="true" /> Sin tarjeta
-              </li>
-            </ul>
-            <Link
-              href={freeHref}
-              className="button button-outline hb-plan-cta"
-              {...cta("pricing_start_free", `${where}_free`, signupHref ? "signup_invitation" : "panel", "habita_b2b")}
-            >
-              Empezar gratis
-            </Link>
-          </article>
+        <div className={`hb-offer${panel ? " hb-offer-panel" : ""}`}>
+          {!panel && (
+            <article className="hb-free" aria-labelledby="hb-free-title">
+              <h2 id="hb-free-title">Plan Gratis</h2>
+              <p className="hb-free-price">$0</p>
+              <ul>
+                <li>
+                  <Check size={16} aria-hidden="true" /> {FREE_MONTHLY_CREDITS} créditos con IA por mes
+                </li>
+                <li>
+                  <Check size={16} aria-hidden="true" /> Demos interactivas y sitio web
+                </li>
+                <li>
+                  <Check size={16} aria-hidden="true" /> Para inmobiliarias verificadas
+                </li>
+                <li>
+                  <Check size={16} aria-hidden="true" /> Sin tarjeta
+                </li>
+              </ul>
+              <Link
+                href={freeHref}
+                className="button button-outline hb-free-cta"
+                {...cta("pricing_start_free", `${where}_free`, signupHref ? "signup_invitation" : "panel", "habita_b2b")}
+              >
+                Empezar gratis
+              </Link>
+            </article>
+          )}
 
-          <article className="hb-plan hb-plan-buy">
-            <h2>Comprar créditos</h2>
-            <p className="hb-plan-for">Para seguir creando</p>
-            <div className="hb-plan-from">{cheapest ? "Desde" : " "}</div>
-            <div className="hb-plan-price">{cheapest ? ars(cheapest.cents) : "Próximamente"}</div>
-            <ul>
-              <li>
-                <Check size={17} aria-hidden="true" /> {cheapest ? `Paquetes de ${packages.map((p) => p.credits).join(", ").replace(/, (\d+)$/, " o $1")} créditos` : "Paquetes de créditos"}
-              </li>
-              <li>
-                <Check size={17} aria-hidden="true" /> Sin suscripción
-              </li>
-              <li>
-                <Check size={17} aria-hidden="true" /> Pagás una sola vez
-              </li>
-              <li>
-                <Check size={17} aria-hidden="true" /> Se suman a tu saldo
-              </li>
-              <li>
-                <Check size={17} aria-hidden="true" /> {best && best.discount >= 0.01 ? `Hasta ${Math.round(best.discount * 100)}% menos por volumen` : "Comprás cuando quieras"}
-              </li>
-            </ul>
+          <section className="hb-buy" id="precios" aria-labelledby="hb-buy-title">
+            <h2 id="hb-buy-title">{panel ? "Sumá créditos cuando quieras" : "Comprá créditos cuando quieras"}</h2>
+            <p className="hb-buy-sub">1 crédito = 1 foto transformada con IA</p>
+            {packages.length > 0 ? (
+              <fieldset className="hb-packs-grid" ref={packsRef}>
+                <legend className="visually-hidden">Elegí un paquete de créditos</legend>
+                {packages.map((p) => {
+                  const on = p.sku === pkg?.sku;
+                  const rec = p.sku === recommendedSku;
+                  return (
+                    <label key={p.sku} className={`hb-pack${on ? " is-selected" : ""}${rec ? " is-recommended" : ""}`}>
+                      <input type="radio" className="visually-hidden" name={packsName} value={p.sku} checked={on} onChange={() => choose(p)} />
+                      {rec && <span className="hb-pack-badge">Recomendado</span>}
+                      <span className="hb-pack-credits">
+                        <strong>{p.credits}</strong> créditos
+                      </span>
+                      <span className="hb-pack-price">{ars(p.cents)}</span>
+                      <span className="hb-pack-unit">{ars(p.unitCents)} por crédito</span>
+                      {p.discount >= 0.01 ? (
+                        <span className="hb-pack-save">Ahorrás {pct(p.discount)}%</span>
+                      ) : (
+                        <span className="hb-pack-save is-base">Precio base</span>
+                      )}
+                    </label>
+                  );
+                })}
+              </fieldset>
+            ) : (
+              <p className="hb-buy-soon">Los paquetes de créditos van a estar disponibles muy pronto.</p>
+            )}
             <button
               type="button"
-              className="button button-primary hb-plan-cta"
-              disabled={!ready}
-              {...cta("pricing_buy_credits", `${where}_buy`, signupHref ? "signup_invitation" : "checkout", "habita_b2b")}
-              onClick={() => open("buy_card")}
+              className="button button-primary hb-buy-cta"
+              disabled={!ready || !pkg}
+              {...cta("pricing_buy_credits", `${where}_buy`, signupHref ? "signup_invitation" : "checkout", "habita_b2b", pkg ? { plan: pkg.sku } : {})}
+              onClick={() => open("buy_card", pkg?.sku)}
             >
-              {ready ? "Comprar créditos" : "Disponible pronto"} <ArrowUpRight size={18} aria-hidden="true" />
+              {ready ? "Comprar créditos" : "Disponible pronto"}
+              {ready && pkg && (
+                <span className="visually-hidden">
+                  : {pkg.credits} créditos por {ars(pkg.cents)}
+                </span>
+              )}
+              <ArrowRight size={18} aria-hidden="true" />
             </button>
-          </article>
+            <ul className="hb-buy-trust">
+              <li>
+                <ShieldCheck size={16} aria-hidden="true" /> Pagás con Mercado Pago
+              </li>
+              <li>
+                <Check size={16} aria-hidden="true" /> Pago único
+              </li>
+              {validity && (
+                <li>
+                  <CalendarDays size={16} aria-hidden="true" /> Créditos válidos por {validity}
+                </li>
+              )}
+            </ul>
+          </section>
         </div>
 
-        {packages.length > 0 && <PriceSheet packages={packages} ready={ready} where={where} onBuy={(sku) => open("price_sheet", sku)} />}
+        <StagingImpact where={where} />
 
-        <section className="hb-how" id="como-funcionan-los-creditos" aria-labelledby="hb-how-title">
-          <h2 id="hb-how-title">Cómo funcionan los créditos</h2>
-          <ol>
+        <MoreAbout />
+
+        <ShareLink where={where} />
+      </div>
+    </div>
+  );
+}
+
+/** What agents report about home staging (NAR 2025), said for what it is. */
+function StagingImpact({ where }: { where: string }) {
+  return (
+    <section className="hb-impact" aria-labelledby="hb-impact-title">
+      <h2 id="hb-impact-title">Qué dicen los agentes inmobiliarios sobre el home staging</h2>
+      <ul>
+        {STAGING_STATS.map(({ value, icon: Icon, text }) => (
+          <li key={value}>
+            <strong>
+              <Icon size={20} aria-hidden="true" /> {value}
+            </strong>
+            <span>{text}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="hb-impact-note">
+        Respuestas de agentes de Estados Unidos sobre el home staging en general, de una encuesta de la NAR (2025). No son resultados medidos de
+        Habita ni del virtual staging con IA.{" "}
+        <a href={STAGING_SOURCE} target="_blank" rel="noopener noreferrer" {...cta("pricing_staging_source", `${where}_impact`, "external_source", "content")}>
+          Fuente: NAR, 2025 Profile of Home Staging
+          <ExternalLink size={14} aria-hidden="true" />
+          <span className="visually-hidden"> (se abre en otra pestaña)</span>
+        </a>
+      </p>
+    </section>
+  );
+}
+
+/** How credits work, what is included and the FAQ: each said once, folded until asked for. */
+function MoreAbout() {
+  const [openId, setOpenId] = useState<string | null>(null);
+  // A link to one of them (the credits menu's «Cómo funcionan») opens it, also on the same page.
+  useEffect(() => {
+    const fromHash = () => {
+      const id = window.location.hash.slice(1);
+      if ((MORE_IDS as readonly string[]).includes(id)) setOpenId(id);
+    };
+    fromHash();
+    window.addEventListener("hashchange", fromHash);
+    return () => window.removeEventListener("hashchange", fromHash);
+  }, []);
+  const item = (id: (typeof MORE_IDS)[number]) => ({
+    id,
+    className: "hb-fold-item",
+    open: openId === id,
+    onToggle: (e: SyntheticEvent<HTMLDetailsElement>) => {
+      const isOpen = e.currentTarget.open;
+      setOpenId((current) => (isOpen ? id : current === id ? null : current));
+    },
+  });
+  return (
+    <div className="hb-fold">
+      <details {...item("como-funcionan-los-creditos")}>
+        <summary>
+          <Layers size={20} aria-hidden="true" />
+          <span>¿Cómo funcionan los créditos?</span>
+          <ChevronDown size={20} className="hb-fold-chevron" aria-hidden="true" />
+        </summary>
+        <div className="hb-fold-body">
+          <ol className="hb-how-steps">
             <li>
               <House size={22} aria-hidden="true" />
               <strong>1 crédito = 1 foto transformada</strong>
-              <span>Las demás versiones y estilos de esa foto no usan otro crédito.</span>
+              <span>Las demás versiones y estilos de esa foto no usan otro crédito mientras esté vigente.</span>
             </li>
             <li>
               <Layers size={22} aria-hidden="true" />
               <strong>Un solo saldo</strong>
-              <span>Los {FREE_MONTHLY_CREDITS} gratis del mes se usan primero; después, los que compraste.</span>
+              <span>
+                Los {FREE_MONTHLY_CREDITS} gratis del mes se usan primero y vencen a fin de mes; después, los que compraste, que duran 12 meses.
+              </span>
             </li>
             <li>
               <BadgeCheck size={22} aria-hidden="true" />
@@ -220,150 +409,133 @@ export function PricingPlans({
               <span>Si una generación falla por un problema técnico, el crédito vuelve solo.</span>
             </li>
           </ol>
-        </section>
-
-        <section className="faq-layout pricing-faq">
-          <div>
-            <span className="eyebrow">PREGUNTAS FRECUENTES</span>
-            <h2>
-              ¿Tenés dudas?
-              <br />
-              <span>Te respondemos.</span>
-            </h2>
-          </div>
-          <div className="faq-list">
-            {faqs.map(([q, a], i) => (
-              <div className={`faq-item ${faq === i ? "open" : ""}`} key={q}>
-                <h3>
-                  <button onClick={() => setFaq(faq === i ? null : i)} aria-expanded={faq === i} aria-controls={`pricing-faq-${i}`}>
-                    {q}
-                    {faq === i ? <Minus size={18} /> : <Plus size={18} />}
-                  </button>
-                </h3>
-                <div id={`pricing-faq-${i}`} hidden={faq !== i}>
-                  <p>{a}</p>
+          <div className="hb-sheet-uses" aria-label="Cuántos créditos usa cada cosa">
+            <p>Imagen</p>
+            <dl>
+              <div>
+                <dt>Foto transformada con IA</dt>
+                <dd>1 crédito</dd>
+              </div>
+            </dl>
+            <p>Video</p>
+            <dl>
+              {SHEET_VIDEO_MODES.map((m) => (
+                <div key={m}>
+                  <dt>{MODE_INFO[m].name}</dt>
+                  <dd className={VIDEO_CREDITS[m] ? "" : "is-free"}>{VIDEO_CREDITS[m] ? `${VIDEO_CREDITS[m]} créditos` : "Sin créditos"}</dd>
                 </div>
+              ))}
+            </dl>
+          </div>
+        </div>
+      </details>
+
+      <details {...item("que-incluye")}>
+        <summary>
+          <Sparkles size={20} aria-hidden="true" />
+          <span>¿Qué incluye Habita?</span>
+          <ChevronDown size={20} className="hb-fold-chevron" aria-hidden="true" />
+        </summary>
+        <div className="hb-fold-body">
+          <div className="hb-sheet-free-list">
+            <p>Incluido gratis, sin usar créditos</p>
+            <ul>
+              {FREE_FEATURES.map((f) => (
+                <li key={f}>
+                  <Check size={14} aria-hidden="true" /> {f}
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div className="hb-sheet-free-list">
+            <p>Con créditos</p>
+            <ul>
+              <li>
+                <Check size={14} aria-hidden="true" /> Ambientación de fotos con IA
+              </li>
+              {SHEET_VIDEO_MODES.filter((m) => VIDEO_CREDITS[m] > 0).map((m) => (
+                <li key={m}>
+                  <Check size={14} aria-hidden="true" /> Video: {MODE_INFO[m].name}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </details>
+
+      <details {...item("preguntas-frecuentes")}>
+        <summary>
+          <CircleHelp size={20} aria-hidden="true" />
+          <span>Preguntas frecuentes</span>
+          <ChevronDown size={20} className="hb-fold-chevron" aria-hidden="true" />
+        </summary>
+        <div className="hb-fold-body">
+          <dl className="hb-faq">
+            {faqs.map(([q, a]) => (
+              <div key={q}>
+                <dt>{q}</dt>
+                <dd>{a}</dd>
               </div>
             ))}
-          </div>
-        </section>
-      </div>
+          </dl>
+        </div>
+      </details>
     </div>
   );
 }
 
 /**
- * All the prices in one card, made to be sent as a screenshot or a link
- * (people ask for them a lot). The link, /panel/precios, opens this card in
- * the agency's own panel, or on /precios for someone without one.
+ * The link to the prices, to send by WhatsApp (people ask for them a lot).
+ * /panel/precios opens them in the agency's own panel, or on /precios for
+ * someone without one.
  */
-function PriceSheet({
-  packages,
-  ready,
-  where,
-  onBuy,
-}: {
-  packages: CreditPackage[];
-  ready: boolean;
-  where: string;
-  onBuy: (sku: string) => void;
-}) {
+function ShareLink({ where }: { where: string }) {
   const [copied, setCopied] = useState(false);
   const [canShare, setCanShare] = useState(false);
   useEffect(() => setCanShare(typeof navigator !== "undefined" && typeof navigator.share === "function"), []);
   const link = () => `${window.location.origin}${PRICES_PATH}`;
+  const text = `Los precios de habita.: ${FREE_MONTHLY_CREDITS} créditos gratis por mes y paquetes de créditos sin suscripción.`;
   async function copy() {
     try {
       await navigator.clipboard.writeText(link());
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
-      track("pricing_link_copied", { surface: where });
+      track("pricing_link_copied", { surface: where, pricing_ux_version: PRICING_UX });
     } catch {
       window.prompt("Copiá el link de precios:", link());
     }
   }
+  function whatsapp() {
+    window.open(`https://wa.me/?text=${encodeURIComponent(`${text} ${link()}`)}`, "_blank", "noopener,noreferrer");
+    track("pricing_link_shared", { surface: where, channel: "whatsapp", pricing_ux_version: PRICING_UX });
+  }
   async function share() {
     try {
-      await navigator.share({ title: "Precios de habita.", text: "Los precios de habita.: 10 créditos gratis por mes y paquetes de créditos sin suscripción.", url: link() });
-      track("pricing_link_shared", { surface: where });
+      await navigator.share({ title: "Precios de habita.", text, url: link() });
+      track("pricing_link_shared", { surface: where, channel: "native", pricing_ux_version: PRICING_UX });
     } catch {
       /* Closed without sharing. */
     }
   }
   return (
-    <section className="hb-sheet-wrap" id="precios" aria-labelledby="hb-sheet-title">
-      <div className="hb-sheet">
-        <header>
-          <span className="hb-sheet-brand">habita.</span>
-          <h2 id="hb-sheet-title">Precios</h2>
-        </header>
-        <div className="hb-sheet-free">
-          <div>
-            <strong>Gratis</strong>
-            <span>{FREE_MONTHLY_CREDITS} créditos por mes · sin tarjeta</span>
-          </div>
-          <b>$0</b>
-        </div>
-        <p className="hb-sheet-label">Paquetes de créditos · pago único</p>
-        <ul>
-          {packages.map((p) => (
-            <li key={p.sku}>
-              <button type="button" disabled={!ready} onClick={() => onBuy(p.sku)} {...cta("pricing_sheet_pack", `${where}_sheet`, "checkout", "habita_b2b", { plan: p.sku })}>
-                <span className="hb-sheet-amount">
-                  <strong>{p.credits}</strong> créditos
-                </span>
-                <span className="hb-sheet-unit">
-                  {ars(p.unitCents)} c/u
-                  {p.discount >= 0.01 && <em>−{Math.round(p.discount * 100)}%</em>}
-                </span>
-                <b>{ars(p.cents)}</b>
-              </button>
-            </li>
-          ))}
-        </ul>
-        <div className="hb-sheet-uses" aria-label="Cuántos créditos usa cada cosa">
-          <p>Imagen</p>
-          <dl>
-            <div>
-              <dt>Foto transformada con IA</dt>
-              <dd>1 crédito</dd>
-            </div>
-          </dl>
-          <p>Video</p>
-          <dl>
-            {SHEET_VIDEO_MODES.map((m) => (
-              <div key={m}>
-                <dt>{MODE_INFO[m].name}</dt>
-                <dd className={VIDEO_CREDITS[m] ? "" : "is-free"}>{VIDEO_CREDITS[m] ? `${VIDEO_CREDITS[m]} créditos` : "Sin créditos"}</dd>
-              </div>
-            ))}
-          </dl>
-        </div>
-        <div className="hb-sheet-free-list">
-          <p>Incluido gratis, sin usar créditos</p>
-          <ul>
-            {FREE_FEATURES.map((f) => (
-              <li key={f}>
-                <Check size={14} aria-hidden="true" /> {f}
-              </li>
-            ))}
-          </ul>
-        </div>
-        <footer>
-          <span>Sin suscripción · Pagás con Mercado Pago · Los créditos duran 12 meses</span>
-        </footer>
-      </div>
-      <div className="hb-sheet-share">
-        <button type="button" className="button button-outline" onClick={() => void copy()}>
+    <div className="hb-share">
+      <p>¿Te pidieron los precios? Compartí este link:</p>
+      <div className="hb-share-actions">
+        <button type="button" className="button button-outline button-small" onClick={() => void copy()}>
           {copied ? <Check size={17} aria-hidden="true" /> : <Copy size={17} aria-hidden="true" />} {copied ? "¡Link copiado!" : "Copiar link de precios"}
         </button>
+        <button type="button" className="button button-outline button-small" onClick={whatsapp}>
+          <MessageCircle size={17} aria-hidden="true" /> Enviar por WhatsApp
+        </button>
         {canShare && (
-          <button type="button" className="button button-outline" onClick={() => void share()}>
+          <button type="button" className="button button-outline button-small" onClick={() => void share()}>
             <Share2 size={17} aria-hidden="true" /> Compartir
           </button>
         )}
-        <small>Tip: hacé una captura de esta tarjeta para mandarla por WhatsApp.</small>
       </div>
-    </section>
+      <span className="visually-hidden" role="status">
+        {copied ? "Link de precios copiado" : ""}
+      </span>
+    </div>
   );
 }

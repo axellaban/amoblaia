@@ -25053,15 +25053,16 @@ body:has(.pv-root) .pb-root {
 }
 
 /* ---------------------------------------------------------------------------
-   Simplified pricing: «Gratis» + «Comprar créditos», the credits selector,
-   the panel's balance menu and the purchase result. Prefixed hb- so the
+   Simplified pricing: «Gratis» + «Comprar créditos» (the packs right away,
+   the rest folded), the credits selector, the panel's balance menu and the
+   purchase result. Prefixed hb- so the
    older pricing rules above never reach them.
    ------------------------------------------------------------------------- */
 .hb-pricing {
-  padding: 56px 0 24px;
+  padding: 44px 0 56px;
 }
 .hb-pricing-head {
-  max-width: 720px;
+  max-width: 920px;
   margin-bottom: 36px;
 }
 .hb-pricing-head .eyebrow {
@@ -25102,135 +25103,439 @@ body:has(.pv-root) .pb-root {
   border: 1px solid var(--line);
   font-size: 15px;
 }
-.hb-plans {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 20px;
-  max-width: 880px;
+.hb-pricing-points {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  margin: 18px 0 0;
+  padding: 0;
+  font-size: 14.5px;
 }
-.hb-plan {
+.hb-pricing-points li {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.hb-pricing-points svg {
+  flex: none;
+  color: var(--forest);
+}
+
+/* The offer: the free plan (public only) next to the packs. */
+.hb-offer {
+  display: grid;
+  grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
+  gap: 20px;
+  align-items: stretch;
+}
+.hb-offer-panel {
+  grid-template-columns: minmax(0, 1fr);
+}
+.hb-free {
   display: flex;
   flex-direction: column;
-  padding: 28px;
+  padding: 22px;
   border-radius: 18px;
-  background: #fff;
+  background: #f3eee4;
   border: 1px solid var(--line);
 }
-.hb-plan-buy {
-  background: #eef2ea;
-  border-color: #d5dfd1;
-}
-.hb-plan h2 {
-  font-size: 26px;
+.hb-free h2 {
   margin: 0;
+  font-size: 18px;
+  font-weight: 800;
 }
-.hb-plan-for {
-  margin: 4px 0 18px;
-  color: var(--subtle);
-  font-size: 15px;
-}
-.hb-plan-from {
-  font-size: 14px;
-  color: var(--subtle);
-  min-height: 20px;
-}
-.hb-plan-price {
-  font-size: 44px;
+.hb-free-price {
+  margin: 4px 0 14px;
+  font-size: 40px;
   font-weight: 800;
   line-height: 1.1;
   letter-spacing: -0.02em;
-  margin-bottom: 18px;
+  color: var(--forest);
 }
-.hb-plan:not(.hb-plan-buy) .hb-plan-price {
-  margin-top: 20px;
-}
-.hb-plan ul {
+.hb-free ul {
   list-style: none;
-  padding: 0;
-  margin: 0 0 24px;
   display: grid;
-  gap: 10px;
-  font-size: 15px;
+  gap: 8px;
+  margin: 0 0 20px;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1.4;
 }
-.hb-plan li {
+.hb-free li {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   align-items: flex-start;
 }
-.hb-plan li svg {
+.hb-free li svg {
   flex: none;
-  margin-top: 3px;
-  color: #3f8a4f;
+  margin-top: 2px;
+  color: var(--forest);
 }
-.hb-plan-cta {
+.hb-free .hb-free-cta {
+  width: 100%;
   margin-top: auto;
-  width: 100%;
-}
-.hb-plan-cta.button-outline {
-  border-color: var(--ink);
-  background: #fff;
-}
-.hb-packs {
-  margin-top: 40px;
-  max-width: 880px;
-}
-.hb-packs h2,
-.hb-how h2 {
-  font-size: 22px;
-  margin: 0 0 14px;
-}
-.hb-packs ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-}
-.hb-packs button {
-  width: 100%;
-  display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: center;
-  gap: 4px 8px;
-  text-align: left;
-  padding: 16px;
-  border-radius: 14px;
-  border: 1px solid var(--line);
-  background: #fff;
-  color: var(--ink);
-  font: inherit;
-  cursor: pointer;
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-.hb-packs button:hover:not(:disabled) {
   border-color: var(--forest);
-  box-shadow: 0 4px 16px #24382e14;
+  color: var(--forest);
+  background: #fff;
 }
-.hb-packs button:disabled {
-  cursor: default;
-  opacity: 0.7;
+.hb-free .hb-free-cta:hover {
+  background: #eef2ea;
 }
-.hb-packs-amount {
-  font-size: 15px;
+.hb-buy {
+  min-width: 0;
+  padding: 22px 22px 18px;
+  border-radius: 18px;
+  background: #fff;
+  border: 1px solid var(--line);
+  box-shadow: 0 10px 40px #24382e0f;
+  scroll-margin-top: 90px;
 }
-.hb-packs-amount strong {
-  font-size: 22px;
-}
-.hb-packs-price {
-  grid-column: 1 / -1;
+.hb-buy h2 {
+  margin: 0;
   font-size: 20px;
   font-weight: 800;
 }
-.hb-packs button small {
-  grid-column: 1 / -1;
-  color: var(--subtle);
-  font-size: 13px;
-}
-.hb-packs-note {
-  margin: 12px 0 0;
+.hb-buy-sub {
+  margin: 2px 0 8px;
   font-size: 14px;
   color: var(--subtle);
+}
+.hb-buy-soon {
+  margin: 12px 0 16px;
+  color: var(--subtle);
+}
+.hb-packs-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  min-width: 0;
+  margin: 0 0 16px;
+  padding: 12px 0 0;
+  border: 0;
+}
+.hb-pack {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 20px 8px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: #fff;
+  text-align: center;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s,
+    background 0.15s;
+}
+.hb-pack:hover {
+  border-color: #a9bbad;
+}
+.hb-pack.is-recommended {
+  border-color: #a9bbad;
+}
+.hb-pack.is-selected {
+  border-color: var(--forest);
+  background: #f4f7f1;
+  box-shadow: 0 0 0 1px var(--forest);
+}
+.hb-pack:has(input:focus-visible) {
+  outline: 3px solid #8fb79a;
+  outline-offset: 2px;
+}
+.hb-pack-badge {
+  position: absolute;
+  top: -11px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--forest);
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+.hb-pack-credits {
+  font-size: 13px;
+  color: var(--subtle);
+  line-height: 1.2;
+}
+.hb-pack-credits strong {
+  display: block;
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--ink);
+  line-height: 1.1;
+}
+.hb-pack-price {
+  margin-top: 8px;
+  font-size: 21px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.hb-pack-unit {
+  font-size: 12.5px;
+  color: var(--subtle);
+}
+.hb-pack-save {
+  margin-top: 8px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: #dfeedd;
+  color: #2f6b3c;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+.hb-pack-save.is-base {
+  background: transparent;
+  color: var(--subtle);
+  font-weight: 500;
+}
+.hb-buy .hb-buy-cta {
+  width: 100%;
+  min-height: 50px;
+  font-size: 16px;
+  gap: 10px;
+}
+.hb-buy-trust {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px 18px;
+  margin: 12px 0 0;
+  padding: 0;
+  font-size: 13px;
+  color: var(--subtle);
+}
+.hb-buy-trust li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.hb-buy-trust svg {
+  flex: none;
+  color: var(--forest);
+}
+
+/* What agents report about home staging (NAR 2025), with its source. */
+.hb-impact {
+  display: grid;
+  grid-template-columns: minmax(170px, 230px) minmax(0, 1fr);
+  gap: 8px 24px;
+  align-items: center;
+  margin-top: 24px;
+  padding: 22px 24px 18px;
+  border-radius: 18px;
+  background: #f3eee4;
+  border: 1px solid var(--line);
+}
+.hb-impact h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.3;
+  color: var(--forest);
+}
+.hb-impact ul {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+  padding: 0;
+}
+.hb-impact li {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding: 0 18px;
+  border-left: 1px solid #dcd2c2;
+}
+.hb-impact li strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--forest);
+}
+.hb-impact li span {
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+.hb-impact-note {
+  grid-column: 1 / -1;
+  margin: 10px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid #dcd2c2;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--subtle);
+}
+.hb-impact-note a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--forest);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* «¿Cómo funcionan los créditos?», «¿Qué incluye Habita?» and the FAQ, folded. */
+.hb-fold {
+  display: grid;
+  gap: 10px;
+  margin-top: 24px;
+}
+.hb-fold-item {
+  border-radius: 14px;
+  background: #fff;
+  border: 1px solid var(--line);
+  scroll-margin-top: 90px;
+}
+.hb-fold-item summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 12px 18px;
+  font-size: 15.5px;
+  font-weight: 700;
+  cursor: pointer;
+  list-style: none;
+  border-radius: 14px;
+}
+.hb-fold-item summary::-webkit-details-marker {
+  display: none;
+}
+.hb-fold-item summary:focus-visible {
+  outline: 3px solid #8fb79a;
+  outline-offset: 2px;
+}
+.hb-fold-item summary > svg {
+  flex: none;
+  color: var(--forest);
+}
+.hb-fold-item summary > span {
+  flex: 1;
+}
+.hb-fold-chevron {
+  transition: transform 0.2s;
+}
+.hb-fold-item[open] .hb-fold-chevron {
+  transform: rotate(180deg);
+}
+.hb-fold-body {
+  padding: 0 18px 18px;
+}
+.hb-how-steps {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+}
+.hb-how-steps li {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--cream);
+  font-size: 14px;
+}
+.hb-how-steps svg {
+  color: var(--forest);
+  margin-bottom: 4px;
+}
+.hb-how-steps span {
+  color: var(--subtle);
+}
+.hb-faq {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+}
+.hb-faq dt {
+  font-weight: 700;
+  font-size: 15px;
+}
+.hb-faq dd {
+  margin: 2px 0 0;
+  font-size: 14.5px;
+  color: var(--subtle);
+}
+.hb-share {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  margin-top: 24px;
+}
+.hb-share p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--subtle);
+}
+.hb-share-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.hb-share .button {
+  gap: 8px;
+  background: #fff;
+}
+
+/* In the panel: the pricing sits in the panel's own column, under the balance. */
+.ap-plans .hb-pricing {
+  padding: 0;
+}
+.ap-plans .hb-pricing > .container {
+  max-width: none;
+  padding: 0;
+}
+.ap-balance {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 0 0 22px;
+  padding: 16px 20px;
+  border-radius: 16px;
+  background: #f3eee4;
+  border: 1px solid var(--line);
+}
+.ap-balance > span:last-child {
+  display: grid;
+}
+.ap-balance small {
+  font-size: 13.5px;
+  color: var(--subtle);
+}
+.ap-page .ap-balance strong {
+  color: var(--ink);
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+.ap-balance-icon {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: #fff;
+  color: var(--forest);
 }
 .hb-credits-off {
   display: inline-block;
@@ -25241,34 +25546,6 @@ body:has(.pv-root) .pb-root {
   font-size: 13px;
   font-weight: 700;
   justify-self: end;
-}
-.hb-how {
-  margin-top: 40px;
-  max-width: 880px;
-}
-.hb-how ol {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-}
-.hb-how li {
-  display: grid;
-  gap: 4px;
-  padding: 18px;
-  border-radius: 14px;
-  background: #fff;
-  border: 1px solid var(--line);
-  font-size: 14px;
-}
-.hb-how li svg {
-  color: var(--forest);
-  margin-bottom: 6px;
-}
-.hb-how li span {
-  color: var(--subtle);
 }
 
 /* The selector. */
@@ -25596,19 +25873,89 @@ body:has(.pv-root) .pb-root {
 
 @media (max-width: 760px) {
   .hb-pricing {
-    padding-top: 32px;
+    padding-top: 28px;
   }
-  .hb-plans {
-    grid-template-columns: 1fr;
+  .hb-pricing-head {
+    margin-bottom: 22px;
   }
-  .hb-packs ul {
+  .hb-pricing-points {
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 14px;
+  }
+  /* The packs first: the prices are what the visitor came for; the free plan right after. */
+  .hb-offer {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+  }
+  .hb-free {
+    order: 2;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: baseline;
+    column-gap: 12px;
+    padding: 18px;
+  }
+  .hb-free-price {
+    margin: 0;
+    font-size: 30px;
+  }
+  .hb-free ul {
+    grid-column: 1 / -1;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px 10px;
+    margin: 10px 0 14px;
+    font-size: 13.5px;
   }
-  .hb-how ol {
-    grid-template-columns: 1fr;
+  .hb-free .hb-free-cta {
+    grid-column: 1 / -1;
   }
-  .hb-plan {
-    padding: 22px;
+  .hb-buy {
+    padding: 18px 16px 16px;
+  }
+  .hb-packs-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px 10px;
+  }
+  .hb-pack {
+    padding: 18px 6px 12px;
+  }
+  .hb-pack-credits strong {
+    font-size: 23px;
+  }
+  .hb-pack-price {
+    margin-top: 6px;
+    font-size: 19px;
+  }
+  .hb-impact {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 18px 16px 14px;
+  }
+  .hb-impact ul {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .hb-impact li {
+    grid-template-columns: 92px minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+    padding: 10px 0;
+    border-left: 0;
+    border-top: 1px solid #dcd2c2;
+  }
+  .hb-impact li strong {
+    font-size: 22px;
+  }
+  .hb-how-steps {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .hb-fold-item summary {
+    padding: 12px 14px;
+  }
+  .hb-fold-body {
+    padding: 0 14px 14px;
+  }
+  .ap-page .ap-balance strong {
+    font-size: 19px;
   }
   .hb-done h2 {
     font-size: 26px;
@@ -25648,134 +25995,7 @@ body:has(.pv-root) .pb-root {
   }
 }
 
-/* The price card to share (screenshot or /panel/precios). */
-.hb-sheet-wrap {
-  margin-top: 40px;
-  max-width: 880px;
-  scroll-margin-top: 90px;
-}
-.hb-sheet {
-  max-width: 460px;
-  padding: 26px 24px 20px;
-  border-radius: 22px;
-  background: #fff;
-  border: 1px solid var(--line);
-  box-shadow: 0 10px 40px #24382e14;
-}
-.hb-sheet header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  margin-bottom: 16px;
-}
-.hb-sheet-brand {
-  font-weight: 800;
-  font-size: 20px;
-  color: var(--forest);
-}
-.hb-sheet h2 {
-  margin: 0;
-  font-size: 15px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--subtle);
-}
-.hb-sheet-free {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px 16px;
-  border-radius: 14px;
-  background: #eef2ea;
-}
-.hb-sheet-free div {
-  display: grid;
-}
-.hb-sheet-free strong {
-  font-size: 18px;
-}
-.hb-sheet-free span {
-  font-size: 14px;
-  color: var(--subtle);
-}
-.hb-sheet-free b {
-  font-size: 24px;
-}
-.hb-sheet-label {
-  margin: 18px 0 6px;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--subtle);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-.hb-sheet ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.hb-sheet > ul > li + li {
-  border-top: 1px solid var(--line);
-}
-.hb-sheet li button {
-  width: 100%;
-  display: grid;
-  grid-template-columns: 1fr auto auto;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 4px;
-  border: 0;
-  background: transparent;
-  color: var(--ink);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.hb-sheet li button:hover:not(:disabled) b {
-  color: var(--forest);
-  text-decoration: underline;
-}
-.hb-sheet li button:disabled {
-  cursor: default;
-}
-.hb-sheet-amount {
-  font-size: 15px;
-}
-.hb-sheet-amount strong {
-  font-size: 20px;
-}
-.hb-sheet-unit {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: var(--subtle);
-}
-.hb-sheet-unit em {
-  font-style: normal;
-  font-weight: 700;
-  font-size: 12px;
-  padding: 1px 7px;
-  border-radius: 999px;
-  background: #dfeedd;
-  color: #2f6b3c;
-}
-.hb-sheet li b {
-  font-size: 19px;
-  min-width: 84px;
-  text-align: right;
-}
-.hb-sheet footer {
-  display: grid;
-  gap: 2px;
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px dashed var(--line);
-  font-size: 12.5px;
-  color: var(--subtle);
-  text-align: center;
-}
+/* Inside «¿Cómo funcionan los créditos?» and «¿Qué incluye Habita?»: credits per use and what is free. */
 .hb-sheet-uses {
   margin: 14px 0 0;
   padding: 10px 14px 12px;
@@ -25843,76 +26063,7 @@ body:has(.pv-root) .pb-root {
   flex: none;
   color: #3f8a4f;
 }
-.hb-sheet-share {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  margin-top: 14px;
-  max-width: 460px;
-}
-.hb-sheet-share .button {
-  min-height: 42px;
-  padding: 8px 16px;
-  gap: 8px;
-  background: #fff;
-}
-.hb-sheet-share small {
-  flex-basis: 100%;
-  color: var(--subtle);
-}
 @media (max-width: 480px) {
-  .hb-sheet-wrap {
-    margin-top: 28px;
-  }
-  .hb-sheet {
-    padding: 18px 16px 14px;
-    border-radius: 18px;
-  }
-  .hb-sheet header {
-    margin-bottom: 10px;
-  }
-  .hb-sheet-free {
-    padding: 10px 14px;
-  }
-  .hb-sheet-free strong {
-    font-size: 16px;
-  }
-  .hb-sheet-free span {
-    font-size: 13px;
-  }
-  .hb-sheet-free b {
-    font-size: 20px;
-  }
-  .hb-sheet-label {
-    margin: 12px 0 2px;
-    font-size: 11.5px;
-  }
-  .hb-sheet li button {
-    grid-template-columns: 1fr auto;
-    gap: 0 10px;
-    padding: 7px 2px;
-  }
-  .hb-sheet-amount {
-    font-size: 14px;
-  }
-  .hb-sheet-amount strong {
-    font-size: 17px;
-  }
-  .hb-sheet-unit {
-    grid-row: 2;
-    font-size: 12px;
-  }
-  .hb-sheet li b {
-    grid-row: 1 / span 2;
-    grid-column: 2;
-    font-size: 17px;
-  }
-  .hb-sheet footer {
-    margin-top: 8px;
-    padding-top: 10px;
-    font-size: 11.5px;
-  }
   .hb-sheet-uses {
     margin-top: 10px;
     padding: 10px 12px;
@@ -25930,13 +26081,6 @@ body:has(.pv-root) .pb-root {
   }
   .hb-sheet-free-list ul {
     gap: 2px 8px;
-  }
-  .hb-sheet li button {
-    padding-top: 5px;
-    padding-bottom: 5px;
-  }
-  .hb-sheet-unit {
-    line-height: 1.3;
   }
   .hb-sheet-free-list li {
     font-size: 12px;
