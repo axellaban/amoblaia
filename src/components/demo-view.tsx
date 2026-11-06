@@ -486,11 +486,7 @@ export function DemoView({
           log={log}
           note={note}
           aside={
-            owner ? (
-              <div className="bi-demo-aside">
-                <ImpactStats variant="aside" where="demo_owner" />
-              </div>
-            ) : (
+            owner ? null : (
               <>
                 <div className="dv2-summary" aria-label="Resumen de la propiedad">
                   <p className={`dv2-price ${demo.price ? "" : "is-ask"}`}>
@@ -511,11 +507,6 @@ export function DemoView({
                   </div>
                 )}
                 {!backToDemo && presentation && demo.prospect && invite && <PanelInvite invite={invite} place="lateral" log={log} />}
-                {agencyView && (
-                  <div className="bi-demo-aside">
-                    <ImpactStats variant="aside" where="demo_presentation" />
-                  </div>
-                )}
               </>
             )
           }
@@ -541,6 +532,10 @@ export function DemoView({
         {owner && source.kind === "public" && (
           <>
             <AnotherProperty owner={owner} log={log} />
+            {/* «El impacto en tu negocio»: right under «¿Querés probarlo con otra propiedad?», horizontal on a computer. */}
+            <div className="bi-demo">
+              <ImpactStats where="demo_owner" />
+            </div>
             <nav className="dv2-tabs" aria-label="La ficha de la propiedad">
               <a href="#sobre">Sobre la propiedad</a>
               <a href="#propiedad">Galería</a>
@@ -678,10 +673,10 @@ export function DemoView({
           </section>
         )}
 
-        {/* «El impacto en tu negocio» for the agency, on a phone: further down, after the property, never for buyers. */}
-        {(owner || agencyView) && (
-          <div className="bi-demo-strip">
-            <ImpactStats variant="strip" where={owner ? "demo_owner" : "demo_presentation"} />
+        {/* «El impacto en tu negocio» on the team's presentation to an agency, never for buyers. */}
+        {agencyView && (
+          <div className="bi-demo">
+            <ImpactStats where="demo_presentation" />
           </div>
         )}
 

@@ -40,29 +40,24 @@ export const IMPACT_STATS = [
 export const IMPACT_NOTE =
   "Estudios internacionales sobre staging y presentación visual en general (RESA y Lemon & Lime: staging; Matterport: recorridos 3D). No son resultados medidos de habita.";
 
-type Variant = "band" | "hero" | "aside" | "strip";
+type Variant = "band" | "hero";
 
 /**
- * The three figures. «band»: the dark strip with its label (prices, panel);
- * «hero»: the same strip with a line under each figure (home); «aside»: one
- * figure per row for the demo's side column; «strip»: light, under the demo
- * on a phone.
+ * The three figures. «band»: the dark strip with its label (prices, panel,
+ * the agency's demo); «hero»: the same strip with a line under each figure
+ * (home). On a phone, one figure per row.
  */
 export function ImpactStats({ variant = "band", where, note = true }: { variant?: Variant; where: string; note?: boolean }) {
   const titleId = useId();
   return (
     <div className={`bi is-${variant}`}>
       <div className="bi-band">
-        {variant === "strip" ? (
-          <h3 className="bi-title">Una mejor presentación puede hacer la diferencia.</h3>
-        ) : (
-          variant !== "hero" && (
-            <p className="bi-kicker" id={titleId}>
-              El impacto en tu negocio
-            </p>
-          )
+        {variant === "band" && (
+          <p className="bi-kicker" id={titleId}>
+            El impacto en tu negocio
+          </p>
         )}
-        <ul className="bi-stats" aria-labelledby={variant === "band" || variant === "aside" ? titleId : undefined}>
+        <ul className="bi-stats" aria-labelledby={variant === "band" ? titleId : undefined}>
           {IMPACT_STATS.map(({ id, icon: Icon, value, label, text, source, href }) => (
             <li key={id} className="bi-stat">
               <Icon className="bi-icon" size={26} aria-hidden="true" />
