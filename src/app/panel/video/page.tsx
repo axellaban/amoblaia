@@ -40,7 +40,7 @@ export default async function Page({ searchParams }: Props) {
   const credits = ai && id ? await agencyCredits(membership.agency.owner_id) : null;
   return (
     <>
-      <PanelNav section="video" agencyName={membership.agency.name} role={membership.role} />
+      <PanelNav section="video" agencyName={membership.agency.name} role={membership.role} tour={!membership.support && !membership.visitor} />
       <div className="account-page container ap-page">
         <VideoStudio
           demoId={id}

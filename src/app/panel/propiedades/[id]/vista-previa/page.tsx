@@ -47,7 +47,7 @@ export default async function PreviewPropertyPage({ params, searchParams }: Prop
   const link = published ? propertyLink("", row, { slug: membership.agency.slug, sitePublished: membership.agency.site_published }) : null;
   return (
     <>
-      <PanelNav section="propiedades" agencyName={membership.agency.name} role={membership.role} />
+      <PanelNav section="propiedades" agencyName={membership.agency.name} role={membership.role} tour={!membership.support && !membership.visitor} />
       <div className="account-page container ap-page pv-page">
         <PreviewBar
           id={id}

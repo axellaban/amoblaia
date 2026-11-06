@@ -13,7 +13,7 @@ export default async function UsersPage() {
   if (!canManage(membership.role)) redirect("/panel");
   return (
     <>
-      <PanelNav section="usuarios" agencyName={membership.agency.name} role={membership.role} />
+      <PanelNav section="usuarios" agencyName={membership.agency.name} role={membership.role} tour={!membership.support && !membership.visitor} />
       <div className="account-page container ap-page">
         <AgencyTeam readOnly={Boolean(membership.support && !membership.acting)} />
       </div>

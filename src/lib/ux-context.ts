@@ -25,7 +25,7 @@ export const UX_VERSIONS: Record<FlowName, number> = {
   demo: 1,
   studio: 1,
   signup: 1,
-  panel: 1,
+  panel: 2,
   pricing: 1,
   account: 1,
   auth: 1,
