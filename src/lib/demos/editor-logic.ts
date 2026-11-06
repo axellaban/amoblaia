@@ -198,3 +198,18 @@ export function initialRoom(photo: Pick<EditorPhoto, "room">, space: PropertySpa
   const fromSpace = space ? stagingRoomOf(space.roomType) : null;
   return { room: fromSpace ?? photo.room, conflict: fromSpace && fromSpace !== photo.room ? photo.room : null };
 }
+
+/* ------------------------------------------------------------------------------------------------
+ * Photo order. The demo shows the visible photos in the property's order (`position`), whatever
+ * their space: the editor shows them by space, each space in that same order.
+ * ---------------------------------------------------------------------------------------------- */
+
+/**
+ * A group (a space, or the batch's list) reordered on screen: its photos take, in their new order,
+ * the places they already had in the whole order. The other spaces' photos stay where they were.
+ */
+export function regroupOrder(order: string[], next: string[]) {
+  const inGroup = new Set(next);
+  const queue = [...next];
+  return order.map((id) => (inGroup.has(id) ? queue.shift()! : id));
+}
