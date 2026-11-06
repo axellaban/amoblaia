@@ -32,3 +32,10 @@ export const IMPACT_STATS = [
 export const IMPACT_NOTE =
   "Estudios internacionales sobre staging y presentación visual en general (RESA y Lemon & Lime: staging; Matterport: recorridos 3D). No son resultados medidos de habita.";
 
+
+/** Credits assumed per property in the calculator's «Costo Habita» (ambiented images). */
+export const CREDITS_PER_PROPERTY = 20;
+/** Pesos per dollar for the calculator's estimate (approximate official rate). */
+export const ARS_PER_USD = 1500;
+/** The recommended pack's price per credit, in cents, when the catalog is not at hand (pack-25: $19.900 / 25). */
+export const DEFAULT_UNIT_CENTS = 79600;
