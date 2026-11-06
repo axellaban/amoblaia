@@ -16,3 +16,13 @@ describe("business impact", () => {
     expect(html).toContain('data-cta="impact_source_precio"');
   });
 });
+
+describe("the /precios preview price", () => {
+  it("is the lowest price per credit among the packs on sale", async () => {
+    const { lowestUnitCents } = await import("@/lib/commerce/credit-packs");
+    const pack = (sku: string, photos: number, cents: number, active = true) => ({ sku, kind: "pack", active, photos, price_cents: cents }) as never;
+    expect(lowestUnitCents([pack("pack-10", 10, 990000), pack("pack-100", 100, 5990000)])).toBe(59900);
+    expect(lowestUnitCents([pack("pack-100", 100, 5990000, false)])).toBeNull();
+    expect(lowestUnitCents([])).toBeNull();
+  });
+});

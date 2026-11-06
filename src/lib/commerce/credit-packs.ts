@@ -78,3 +78,9 @@ export function freeCreditsLine(n: number) {
   if (n > 0) return `Te ${n === 1 ? "queda" : "quedan"} ${n} de tus ${FREE_MONTHLY_CREDITS} créditos gratis de este mes.`;
   return `Ya usaste los ${FREE_MONTHLY_CREDITS} créditos gratis de este mes: el mes que viene tenés ${FREE_MONTHLY_CREDITS} más, o podés comprar créditos.`;
 }
+
+/** The lowest price of one credit among the packs on sale («desde $599»), or null without packs. */
+export function lowestUnitCents(products: Product[]): number | null {
+  const packages = creditPackages(products);
+  return packages.length ? Math.min(...packages.map((p) => p.unitCents)) : null;
+}
