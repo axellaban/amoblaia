@@ -1272,7 +1272,7 @@ function Gallery({
           const link = intentLink({ kind: "generate", photo: photo.id, style: r.style }, "owner_generate", "styles_panel");
           const chosen = r.style === preselected;
           return (
-            <li key={r.style} className={`dv2-style-card is-missing ${chosen ? "is-preselected" : ""}`}>
+            <li key={r.style} className={chosen ? "dv2-style-card is-missing is-preselected" : "dv2-style-card is-missing"}>
               <span className="dv2-style-pick" aria-hidden="true">
                 <img src={urlFor(source, photo.id, null, 480)} alt="" loading="lazy" />
                 <span className="dv2-style-name" title={name(r.style)}>
