@@ -8,11 +8,21 @@
  *
  * Después, ejecutar una vez instalarDisparador() y autorizar el script.
  *
- * Columna «Estado» (alimenta el funnel del panel de Inmobiliarias):
- *   Contactado (o Enviado) → Contactados
- *   Respondió saludo       → Saludo respondido
- *   Interesado             → Interesados
- *   Pendiente / Número incorrecto → no entran al funnel
+ * Columna «Estado» (alimenta el funnel del panel de Inmobiliarias). Se lee
+ * exacto, sin importar mayúsculas ni tildes:
+ *   Pendiente                       → nada
+ *   Contactado                      → Contactados (envío)
+ *   Responde saludo inicial         → + Saludo respondido
+ *   Neutro                          → + respuesta a la propuesta (ni interesado ni perdido)
+ *   Interesado / Demo enviada       → + Interesados
+ *   No interesado                   → + perdida con motivo «No interesado»
+ *   No interesado - cuenta con proveedor de IA
+ *                                   → + perdida con motivo «Cuenta con proveedor de IA»
+ *   Sin WhatsApp / Número incorrecto → contacto inválido, no cuenta como contactado
+ * Un estado que no está en la lista no registra nada (figura en el informe).
+ * El envío se registra con la «Fecha envío»: sin fecha válida la cuenta pasa a
+ * contactada, pero sin un envío fechado.
+ * Correr cada hora no duplica nada: cada hecho se registra una vez por cuenta.
  * Para no esperar a la hora siguiente: menú habita → Sincronizar ahora.
  */
 
@@ -28,7 +38,7 @@ function sincronizarAhora() {
 
 // Debe ser la misma cadena que usaron al importar a mano: si no, cada
 // inmobiliaria figura dos veces.
-const PROSPECT_SOURCE = 'Prospecting amobla IA · Prospectos';
+const PROSPECT_SOURCE = 'Prospecting amobla IA - Prospectos';
 const PROSPECT_TAB = 'Prospectos';
 // Canal de los envíos "Enviado" de la planilla. Ver docs/PROSPECCION.md.
 const PROSPECT_LEGACY_CHANNEL = 'whatsapp';

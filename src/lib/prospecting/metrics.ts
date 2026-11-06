@@ -27,6 +27,13 @@ const sent = (a: OutreachAttempt) => a.status === "sent" && !!a.sent_at;
 /** A human reply that was not corrected away. Auto-replies, bounces and delivery receipts are not replies. */
 export const isHumanReply = (e: ProspectEvent) => e.type === "reply" && e.human !== false && !e.corrected;
 const valid = (e: ProspectEvent) => !e.corrected;
+/**
+ * An answer to the proposal («respondieronPropuesta» in /api/metricas; not a funnel step): an
+ * interest, a «not interested», or a reply marked as one (the sheet's «Neutro»).
+ * Same rule as habita_prospect_proposal_answered in the database.
+ */
+export const isProposalAnswer = (e: ProspectEvent) =>
+  valid(e) && (e.type === "interest" || e.type === "not_interested" || (isHumanReply(e) && e.details?.proposal === true));
 
 export function inScope(a: ProspectAccount, f: Filters) {
   return (!f.sdr || (a.sdr ?? "") === f.sdr) && (!f.campaign || (a.campaign ?? "") === f.campaign) && (!f.zone || (a.zone ?? "") === f.zone);
@@ -174,6 +181,7 @@ export function summarize(ds: Dataset, f: Filters, nowIso = ds.now) {
     subscribed: demoCount((d) => d.level >= 5),
   };
   const replied = stage(isHumanReply);
+  const proposal = stage(isProposalAnswer);
   const interested = stage((e) => e.type === "interest" && valid(e));
   const linkedRows = cohort.filter((r) => r.account.linked);
   const activated = stage((e) => e.type === "activated" && valid(e), linkedRows);
@@ -211,6 +219,7 @@ export function summarize(ds: Dataset, f: Filters, nowIso = ds.now) {
     observing: cohort.filter((r) => !r.mature).length,
     messages,
     replied,
+    proposal,
     interested,
     interestOfReplies,
     demo,

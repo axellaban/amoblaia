@@ -103,7 +103,7 @@ export async function GET(request: Request) {
 }
 
 // El mismo origen que usa scripts/prospeccion-sync.gs (si nunca se importó).
-const DEFAULT_SOURCE = "Prospecting amobla IA · Prospectos";
+const DEFAULT_SOURCE = "Prospecting amobla IA - Prospectos";
 
 type Action = {
   type?: string;

@@ -198,21 +198,78 @@ export function parseDay(s: string) {
   return isDate(out) && d.getUTCDate() === Number(m[1]) ? out : null;
 }
 
-/** «Estado» of the sheet. «replied» and «interested» are sends too (the funnel's «Saludo respondido» and «Interesados»). */
-export type LegacyStatus = "pending" | "sent" | "replied" | "interested" | "invalid" | "unknown" | null;
-/** The sheet says the agency was already written to. */
-export const isSentStatus = (s: LegacyStatus) => s === "sent" || s === "replied" || s === "interested";
+/**
+ * «Estado» of the sheet, as one of the funnel's outcomes:
+ * - pending: nothing recorded;
+ * - sent («Contactado»): the send;
+ * - replied («Responde saludo inicial»): send + reply to the greeting;
+ * - neutral: send + reply + an answer to the proposal, neither interested nor lost;
+ * - interested / demo_sent: send + reply + interest (the demo itself comes from the demos table);
+ * - not_interested / not_interested_ai: send + reply + lost, each with its own reason;
+ * - invalid («Sin WhatsApp», «Número incorrecto»): the contact is invalid, never counted as contacted;
+ * - unknown: a value this list does not know; nothing is recorded.
+ */
+export type LegacyStatus =
+  | "pending"
+  | "sent"
+  | "replied"
+  | "neutral"
+  | "interested"
+  | "demo_sent"
+  | "not_interested"
+  | "not_interested_ai"
+  | "invalid"
+  | "unknown"
+  | null;
+
+/** Lower case, no accents, one space, and any dash written as « - ». */
+const statusKey = (s: string) =>
+  s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s*[-\u2010-\u2015]\s*/g, " - ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+/**
+ * Every value of «Estado», exact (ignoring case and accents). The old names
+ * stay so that past imports keep reading the same: «Presentación enviada»,
+ * «Responde interesado», «Responde neutro» and «Responde no interesado».
+ */
+export const SHEET_STATUSES: Record<string, Exclude<LegacyStatus, null | "unknown">> = {
+  pendiente: "pending",
+  contactado: "sent",
+  "presentacion enviada": "sent",
+  enviado: "sent",
+  "esperando respuesta": "sent",
+  "responde saludo inicial": "replied",
+  "respondio saludo": "replied",
+  "saludo respondido": "replied",
+  neutro: "neutral",
+  "responde neutro": "neutral",
+  interesado: "interested",
+  "responde interesado": "interested",
+  "demo enviada": "demo_sent",
+  "no interesado": "not_interested",
+  "responde no interesado": "not_interested",
+  "no interesado - cuenta con proveedor de ia": "not_interested_ai",
+  "sin whatsapp": "invalid",
+  "numero incorrecto": "invalid",
+};
+
 export function parseStatus(s: string): LegacyStatus {
-  const t = s.trim().toLowerCase();
+  const t = statusKey(s);
   if (!t) return null;
-  if (/^no\b/.test(t)) return "unknown";
-  if (/interesad/.test(t)) return "interested";
-  if (/respondi|respuesta|saludo/.test(t)) return "replied";
-  if (/enviad|contactad/.test(t)) return "sent";
-  if (/pendiente/.test(t)) return "pending";
-  if (/incorrect|inv[aá]lid|equivocad/.test(t)) return "invalid";
-  return "unknown";
+  return SHEET_STATUSES[t] ?? "unknown";
 }
+
+/** The sheet says the agency was already written to (every outcome after «Contactado»). */
+export const isSentStatus = (s: LegacyStatus) =>
+  s === "sent" || s === "replied" || s === "neutral" || s === "interested" || s === "demo_sent" || s === "not_interested" || s === "not_interested_ai";
+
+/** The reason of a loss the sheet records, measured apart in «Motivos de pérdida». */
+export const LOSS_REASONS = { not_interested: "No interesado", not_interested_ai: "Cuenta con proveedor de IA" } as const;
 
 /**
  * Fits a value to its column's limit in the database. The full original
@@ -257,6 +314,8 @@ export type ImportRow = {
   decision_maker: string | null;
   notes: string | null;
   legacy_status: LegacyStatus;
+  /** «Estado» as the sheet writes it, the evidence of what it records (up to 80 characters). */
+  status_text: string | null;
   sent_date: string | null;
   contacts: ImportContact[];
   raw: Record<string, string>;
@@ -308,7 +367,7 @@ export function buildRows(parsed: { headers: string[]; rows: string[][] }, mappi
     const dateText = get("sent_date");
     const sent_date = dateText ? parseDay(dateText) : null;
     if (dateText && !sent_date) messages.push(`Fecha «${dateText}» no reconocida`);
-    if (isSentStatus(legacy_status) && !sent_date) messages.push("Figura como Enviado sin fecha válida: no se registra el envío");
+    if (isSentStatus(legacy_status) && !sent_date) messages.push(`Figura como «${statusText}» sin fecha válida: no se registra el envío`);
     if (isSentStatus(legacy_status) && sent_date) messages.push("Envío histórico: fecha sin hora, canal y variante desconocidos");
 
     const contacts: ImportContact[] = [];
@@ -333,7 +392,7 @@ export function buildRows(parsed: { headers: string[]; rows: string[][] }, mappi
         is_primary: !invalid,
       });
       if (wa.review) messages.push(wa.review);
-    } else if (legacy_status === "invalid") messages.push("Número incorrecto sin número cargado");
+    } else if (legacy_status === "invalid") messages.push(`«${statusText}» sin número cargado`);
     // A cell may hold several addresses ("a@x.com / b@x.com"): one contact each, in their order.
     for (const part of get("email").split(/\s*[/,;]\s*|\s+/).map((p) => p.trim()).filter(Boolean)) {
       const email = part.toLowerCase();
@@ -376,6 +435,7 @@ export function buildRows(parsed: { headers: string[]; rows: string[][] }, mappi
       decision_maker: get("decision_maker") || null,
       notes: get("notes") || null,
       legacy_status,
+      status_text: clip(statusText, 80),
       sent_date,
       contacts,
       raw,
