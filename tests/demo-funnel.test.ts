@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AGENCY_STEPS, agencyStep, demosInPeriod, funnelCounts, prospectStep, funnelStep, inPeriod, isTestAgency, parsePeriod, shortDay, type DemoFunnelFacts } from "@/lib/agency/demo-funnel";
+import { AGENCY_STEPS, agencyStep, barScale, contactedSend, demosInPeriod, legacyProspectStep, funnelCounts, prospectStep, funnelStep, inPeriod, isTestAgency, parsePeriod, shortDay, type DemoFunnelFacts } from "@/lib/agency/demo-funnel";
 
 const none: DemoFunnelFacts = { sentAt: null, activityLevel: 0, hasOwner: false, ownerActive: false, subscribed: false };
 
@@ -86,21 +86,69 @@ describe("periods", () => {
 });
 
 describe("the whole funnel (sheet + demos)", () => {
-  it("puts the three prospecting steps before the demo ones", () => {
-    expect(AGENCY_STEPS.slice(0, 4)).toEqual(["Contactados", "Saludo respondido", "Interesados", "Demos creadas"]);
-    expect(AGENCY_STEPS).toHaveLength(10);
+  it("puts the two prospecting steps before the demo ones: there is no reply step", () => {
+    expect(AGENCY_STEPS.slice(0, 3)).toEqual(["Contactados", "Interesados", "Demos creadas"]);
+    expect(AGENCY_STEPS).not.toContain("Saludo respondido");
+    expect(AGENCY_STEPS).toHaveLength(9);
   });
   it("takes the highest step of each part, and a demo counts in the prospecting steps", () => {
     expect(prospectStep(null)).toBeNull();
     expect(prospectStep({ contacted: false, replied: false, interested: false })).toBeNull();
     expect(prospectStep({ contacted: true, replied: false, interested: false })).toBe(0);
-    expect(prospectStep({ contacted: true, replied: true, interested: false })).toBe(1);
-    expect(prospectStep({ contacted: true, replied: true, interested: true })).toBe(2);
+    // A reply without interest (greeting, «Neutro», «No interesado») stays at «Contactados».
+    expect(prospectStep({ contacted: true, replied: true, interested: false })).toBe(0);
+    expect(prospectStep({ contacted: true, replied: true, interested: true })).toBe(1);
     expect(agencyStep(null, null)).toBeNull();
     expect(agencyStep(1, null)).toBe(1);
-    expect(agencyStep(null, 0)).toBe(3);
-    expect(agencyStep(2, 4)).toBe(7);
-    const f = funnelCounts([0, 1, 2, 3, 9], AGENCY_STEPS);
-    expect(f.map((s) => s.count)).toEqual([5, 4, 3, 2, 1, 1, 1, 1, 1, 1]);
+    expect(agencyStep(null, 0)).toBe(2);
+    expect(agencyStep(1, 4)).toBe(6);
+    const f = funnelCounts([0, 1, 2, 8], AGENCY_STEPS);
+    expect(f.map((s) => s.count)).toEqual([4, 3, 2, 1, 1, 1, 1, 1, 1]);
+  });
+});
+
+describe("barScale", () => {
+  it("cuts the bars that dwarf the rest, so the small steps are not flat, and keeps the order", () => {
+    const counts = [363, 176, 70, 53, 45, 40, 23, 4, 2, 0];
+    const s = barScale(counts);
+    expect(s.breakAt).toBe(78);
+    expect(counts.map((c) => s.isBroken(c))).toEqual([true, true, false, false, false, false, false, false, false, false]);
+    const h = counts.map((c) => s.height(c));
+    expect(h[0]).toBe(100);
+    expect(h[9]).toBe(0);
+    // Every step is lower than the one before it.
+    for (let i = 1; i < h.length; i++) expect(h[i]).toBeLessThan(h[i - 1]);
+    // To scale below the cut: 70 is a bit under it, 23 about a third of 70, and 4 is visible (not 1%).
+    expect(h[2]).toBeGreaterThan(55);
+    expect(h[2]).toBeLessThan(78);
+    expect(h[6] / h[2]).toBeCloseTo(23 / 70, 5);
+    expect(h[7]).toBeGreaterThan(3);
+  });
+  it("draws everything to scale when no bar dwarfs the rest", () => {
+    const s = barScale([10, 8, 6, 3]);
+    expect(s.breakAt).toBeNull();
+    expect(s.height(10)).toBe(100);
+    expect(s.height(5)).toBe(50);
+    expect(s.isBroken(10)).toBe(false);
+    expect(barScale([0, 0]).height(0)).toBe(0);
+  });
+});
+
+describe("contactedSend", () => {
+  it("a send to a channel whose every contact is invalid («Número incorrecto», «Sin WhatsApp») reached no one", () => {
+    expect(contactedSend("whatsapp", [{ channel: "whatsapp", invalid: true }, { channel: "email", invalid: false }])).toBe(false);
+    expect(contactedSend("whatsapp", [{ channel: "whatsapp", invalid: true }, { channel: "whatsapp", invalid: false }])).toBe(true);
+    // No contact of that channel, or an unknown channel: nothing says it failed.
+    expect(contactedSend("whatsapp", [])).toBe(true);
+    expect(contactedSend("unknown", [{ channel: "whatsapp", invalid: true }])).toBe(true);
+    expect(contactedSend(null, [{ channel: "whatsapp", invalid: true }])).toBe(true);
+  });
+});
+
+describe("legacyProspectStep (Chapa Labs)", () => {
+  it("keeps the old three-step encoding Chapa reads: 0 contacted, 1 replied, 2 interested", () => {
+    expect(legacyProspectStep({ step: 0 })).toBe(0);
+    expect(legacyProspectStep({ step: 0, replied: true })).toBe(1);
+    expect(legacyProspectStep({ step: 1, replied: true })).toBe(2);
   });
 });

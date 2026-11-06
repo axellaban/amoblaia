@@ -5,7 +5,7 @@ import { agencyDetail, allScoreRows } from "@/lib/leads/server";
 import { rollupAgency, rollupDemo, type ScoreRow } from "@/lib/leads/rollup";
 import type { Stage as ProspectStage } from "@/lib/prospecting/types";
 import { commercialStage, lastActivity, type ActivityFact, type CommercialRow } from "./commercial";
-import { funnelStep, isTestAgency, prospectStep } from "./demo-funnel";
+import { contactedSend, funnelStep, isTestAgency, prospectStep } from "./demo-funnel";
 
 /**
  * The facts behind the «Inmobiliarias» panel, read in a few light queries:
@@ -108,7 +108,8 @@ async function activeOwners(owners: { id: string; since: string }[]) {
 }
 
 type ProspectRow = { id: string; agency_id: string; stage: ProspectStage; created_at: string };
-type ProspectEventRow = { id: string; account_id: string; type: string; occurred_at: string; human: boolean | null; corrects_event_id: string | null };
+type ProspectEventRow = { id: string; account_id: string; type: string; occurred_at: string; human: boolean | null; channel: string | null; corrects_event_id: string | null };
+type ProspectContactRow = { account_id: string; channel: string; address: string | null; invalid_at: string | null };
 /** Prospecting stages that prove a reply or an interest (the stage only moves forward). */
 const INTERESTED_STAGES: readonly ProspectStage[] = ["interested", "activated", "customer"];
 
@@ -126,37 +127,57 @@ async function prospectStages(agencyId: string | null) {
 /**
  * Each agency's prospecting step for the funnel: contacted (a send, or a
  * stage past «pending»), replied (a human reply) and interested, with the
- * day it was first contacted. Corrected events don't count.
+ * day it was first contacted and whether the account is lost. Corrected
+ * events don't count, nor a send to a channel whose every contact turned out
+ * invalid («Número incorrecto», «Sin WhatsApp»): that message reached no one
+ * (contactedSend, same rule as /admin/prospeccion and /api/metricas).
  */
 async function prospectFunnel(accounts: ProspectRow[]) {
-  const out = new Map<string, { step: number; at: string }>();
+  const out = new Map<string, { step: number; at: string; lost: boolean; replied: boolean }>();
   if (!accounts.length) return out;
-  const events = await optional(() =>
-    all<ProspectEventRow>((from, to) => {
-      let q = adminClient()
-        .from("prospect_events")
-        .select("id,account_id,type,occurred_at,human,corrects_event_id")
-        .in("type", ["sent", "reply", "interest", "correction"])
-        .range(from, to);
-      if (accounts.length === 1) q = q.eq("account_id", accounts[0].id);
-      return q;
-    }, "COMMERCIAL_PROSPECT_EVENTS_FAILED"),
-  );
+  const one = accounts.length === 1 ? accounts[0].id : null;
+  const [events, contacts] = await Promise.all([
+    optional(() =>
+      all<ProspectEventRow>((from, to) => {
+        let q = adminClient()
+          .from("prospect_events")
+          .select("id,account_id,type,occurred_at,human,channel,corrects_event_id")
+          .in("type", ["sent", "reply", "interest", "correction"])
+          .range(from, to);
+        if (one) q = q.eq("account_id", one);
+        return q;
+      }, "COMMERCIAL_PROSPECT_EVENTS_FAILED"),
+    ),
+    optional(() =>
+      all<ProspectContactRow>((from, to) => {
+        let q = adminClient().from("prospect_contacts").select("account_id,channel,address,invalid_at").range(from, to);
+        if (one) q = q.eq("account_id", one);
+        return q;
+      }, "COMMERCIAL_PROSPECT_CONTACTS_FAILED"),
+    ),
+  ]);
   const corrected = new Set(events.map((e) => e.corrects_event_id).filter(Boolean));
   const byAccount = new Map<string, ProspectEventRow[]>();
   for (const e of events)
     if (e.type !== "correction" && !corrected.has(e.id) && !(e.type === "reply" && e.human === false))
       byAccount.set(e.account_id, [...(byAccount.get(e.account_id) ?? []), e]);
+  const contactsOf = new Map<string, ProspectContactRow[]>();
+  for (const c of contacts) contactsOf.set(c.account_id, [...(contactsOf.get(c.account_id) ?? []), c]);
   for (const a of accounts) {
     const own = byAccount.get(a.id) ?? [];
+    const mine = (contactsOf.get(a.id) ?? []).map((c) => ({ channel: c.channel, invalid: !!c.invalid_at }));
+    const sends = own.filter((e) => e.type === "sent");
+    const validSends = sends.filter((e) => contactedSend(e.channel, mine));
     const interested = INTERESTED_STAGES.includes(a.stage) || own.some((e) => e.type === "interest");
     const replied = interested || a.stage === "conversation" || own.some((e) => e.type === "reply");
-    const contacted = replied || own.length > 0 || (a.stage !== "pending" && a.stage !== "discarded");
+    // «Contactado» without a dated send moves the stage alone; a stage that only came from invalid sends does not count.
+    const byStage = a.stage !== "pending" && a.stage !== "discarded" && (a.stage !== "sent" || !sends.length || validSends.length > 0);
+    const contacted = replied || validSends.length > 0 || byStage;
     const step = prospectStep({ contacted, replied, interested });
     if (step === null) continue;
     const at = own.map((e) => e.occurred_at).sort()[0] ?? a.created_at;
     const prev = out.get(a.agency_id);
-    if (!prev || step > prev.step) out.set(a.agency_id, { step, at: prev && prev.at < at ? prev.at : at });
+    if (!prev || step > prev.step) out.set(a.agency_id, { step, at: prev && prev.at < at ? prev.at : at, lost: a.stage === "lost", replied });
   }
   return out;
 }

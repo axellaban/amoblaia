@@ -97,8 +97,10 @@ const detail = async (pestana?: string) =>
 describe("«Inmobiliarias», the team's single list", () => {
   it("shows the demos funnel, one tab per stage and each agency's row", async () => {
     const html = renderToStaticMarkup(await List({ searchParams: Promise.resolve({}) }));
-    for (const text of ["Funnel comercial", "1. Contactados", "4. Demos creadas", "10. Suscripciones", "Con demo creada (2)", "Todas (3)", "Prospectos (1)", "Interactuaron (1)", "Clientes (1)", "Demaio Estudio Inmobiliario", "72 / 100", "Hace 2 horas", "Vio una demo", "Sin cuenta", "Activa", `/admin/inmobiliarias/${ID}`])
+    for (const text of ["Funnel comercial", "1. Contactados", "2. Interesados", "3. Demos creadas", "9. Suscripciones", "Con demo creada (2)", "Todas (3)", "Prospectos (1)", "Interactuaron (1)", "Clientes (1)", "Demaio Estudio Inmobiliario", "72 / 100", "Hace 2 horas", "Vio una demo", "Sin cuenta", "Activa", `/admin/inmobiliarias/${ID}`])
       expect(html).toContain(text);
+    // The funnel has no reply step.
+    expect(html).not.toContain("Saludo respondido");
   });
   it("filters by the stage in the URL", async () => {
     const html = renderToStaticMarkup(await List({ searchParams: Promise.resolve({ etapa: "clientes" }) }));
@@ -106,7 +108,7 @@ describe("«Inmobiliarias», the team's single list", () => {
     expect(html).not.toContain("Bianchi Propiedades");
   });
   it("narrows the funnel and the list by the demo's creation date and step", async () => {
-    const html = renderToStaticMarkup(await List({ searchParams: Promise.resolve({ desde: "2026-10-01", hasta: "2026-10-31", paso: "6" }) }));
+    const html = renderToStaticMarkup(await List({ searchParams: Promise.resolve({ desde: "2026-10-01", hasta: "2026-10-31", paso: "5" }) }));
     // Only Demaio's demo was created in October: one agency, and it reached «Con interacción».
     expect(html).toMatch(/<strong>1<\/strong><small>Base del período<\/small>/);
     expect(html).toContain("Demaio Estudio Inmobiliario");
@@ -120,7 +122,7 @@ describe("«Inmobiliarias», the team's single list", () => {
     ];
     rows.push(...extra);
     try {
-      const html = renderToStaticMarkup(await List({ searchParams: Promise.resolve({ paso: "8" }) }));
+      const html = renderToStaticMarkup(await List({ searchParams: Promise.resolve({ paso: "7" }) }));
       // Del Mar (subscribed) and Costa Brokers (two demos, counted once): 2 in «Cuenta con interacción», 2 listed.
       expect(html).toMatch(/<strong>2<\/strong><small>100% de las cuentas creadas<\/small>/);
       expect(html).toContain("Costa Brokers");
@@ -132,20 +134,20 @@ describe("«Inmobiliarias», the team's single list", () => {
   it("starts with the sheet's prospecting steps, one per agency, and lists who stayed at each", async () => {
     const extra: CommercialRow[] = [
       { ...rows[2], id: "99999999-9999-4999-8999-999999999991", name: "Solo Contactada", prospectFunnel: { step: 0, at: "2026-10-10T15:00:00Z" } },
-      { ...rows[2], id: "99999999-9999-4999-8999-999999999992", name: "Respondió Saludo SA", prospectFunnel: { step: 1, at: "2026-10-11T15:00:00Z" } },
-      { ...rows[2], id: "99999999-9999-4999-8999-999999999993", name: "Interesada Propiedades", prospectFunnel: { step: 2, at: "2026-10-12T15:00:00Z" } },
-      { ...rows[2], id: "99999999-9999-4999-8999-999999999994", name: "QA Prospecto", test: true, prospectFunnel: { step: 2, at: "2026-10-12T15:00:00Z" } },
+      // Replied without interest: stays at «Contactados» (there is no reply step).
+      { ...rows[2], id: "99999999-9999-4999-8999-999999999992", name: "Respondió Saludo SA", prospectFunnel: { step: 0, at: "2026-10-11T15:00:00Z" } },
+      { ...rows[2], id: "99999999-9999-4999-8999-999999999993", name: "Interesada Propiedades", prospectFunnel: { step: 1, at: "2026-10-12T15:00:00Z" } },
+      { ...rows[2], id: "99999999-9999-4999-8999-999999999994", name: "QA Prospecto", test: true, prospectFunnel: { step: 1, at: "2026-10-12T15:00:00Z" } },
     ];
     rows.push(...extra);
     try {
       const all = renderToStaticMarkup(await List({ searchParams: Promise.resolve({}) }));
       // Three from the sheet and two with demos (which count in the prospecting steps too); QA out.
       expect(all).toMatch(/<strong>5<\/strong><small>Base del período<\/small>/);
-      expect(all).toMatch(/<strong>4<\/strong><small>80% de los contactados<\/small>/);
-      expect(all).toMatch(/<strong>3<\/strong><small>75% de los que respondieron<\/small>/);
-      expect(all).toContain("1 no respondieron el saludo");
+      expect(all).toMatch(/<strong>3<\/strong><small>60% de los contactados<\/small>/);
+      expect(all).toContain("2 sin interés todavía");
       expect(all).toContain("1 interesados, sin demo");
-      const stayed = renderToStaticMarkup(await List({ searchParams: Promise.resolve({ paso: "2", quedo: "1" }) }));
+      const stayed = renderToStaticMarkup(await List({ searchParams: Promise.resolve({ paso: "1", quedo: "1" }) }));
       expect(stayed).toContain("Interesada Propiedades");
       expect(stayed).not.toContain("Respondió Saludo SA");
       expect(stayed).not.toContain("QA Prospecto");
@@ -156,12 +158,52 @@ describe("«Inmobiliarias», the team's single list", () => {
       rows.splice(rows.length - extra.length, extra.length);
     }
   });
+  it("shows the lost accounts apart (grey), not as follow-up, and lists them with «quedo=perdidas»", async () => {
+    const extra: CommercialRow[] = [
+      { ...rows[2], id: "99999999-9999-4999-8999-999999999981", name: "Respondió Saludo SA", prospectFunnel: { step: 0, at: "2026-10-11T15:00:00Z" } },
+      { ...rows[2], id: "99999999-9999-4999-8999-999999999982", name: "No Interesada Uno", prospectFunnel: { step: 0, at: "2026-10-11T15:00:00Z", lost: true } },
+      { ...rows[2], id: "99999999-9999-4999-8999-999999999983", name: "No Interesada Dos", prospectFunnel: { step: 0, at: "2026-10-11T15:00:00Z", lost: true } },
+    ];
+    rows.push(...extra);
+    try {
+      const all = renderToStaticMarkup(await List({ searchParams: Promise.resolve({}) }));
+      expect(all).toContain("1 sin interés todavía");
+      expect(all).toContain("2 perdidas");
+      expect(all).toContain("paso=0&amp;quedo=perdidas");
+      const lost = renderToStaticMarkup(await List({ searchParams: Promise.resolve({ paso: "0", quedo: "perdidas" }) }));
+      expect(lost).toContain("No Interesada Uno");
+      expect(lost).toContain("No Interesada Dos");
+      expect(lost).not.toContain("Respondió Saludo SA");
+      expect(lost).toContain("perdidas en «Contactados»");
+      const follow = renderToStaticMarkup(await List({ searchParams: Promise.resolve({ paso: "0", quedo: "1" }) }));
+      expect(follow).toContain("Respondió Saludo SA");
+      expect(follow).not.toContain("No Interesada Uno");
+    } finally {
+      rows.splice(rows.length - extra.length, extra.length);
+    }
+  });
+  it("cuts the bar of a step that dwarfs the rest", async () => {
+    const extra: CommercialRow[] = Array.from({ length: 30 }, (_, k) => ({
+      ...rows[2],
+      id: `99999999-9999-4999-8999-${String(999999999900 + k)}`,
+      name: `Contactada ${k}`,
+      prospectFunnel: { step: 0, at: "2026-10-10T15:00:00Z" },
+    }));
+    rows.push(...extra);
+    try {
+      const html = renderToStaticMarkup(await List({ searchParams: Promise.resolve({}) }));
+      expect(html).toContain("ah-dfunnel-col is-broken");
+      expect(html).toContain("ah-dfunnel-break");
+    } finally {
+      rows.splice(rows.length - extra.length, extra.length);
+    }
+  });
   it("splits each bar in who went on and who stayed, and filters by who stayed", async () => {
     const all = renderToStaticMarkup(await List({ searchParams: Promise.resolve({}) }));
     // Two demos: one stayed at «Con interacción», the other reached «Suscripciones».
     expect(all).toContain("1 interactuaron, sin cuenta");
-    expect(all).toContain("paso=6&amp;quedo=1");
-    const html = renderToStaticMarkup(await List({ searchParams: Promise.resolve({ paso: "6", quedo: "1" }) }));
+    expect(all).toContain("paso=5&amp;quedo=1");
+    const html = renderToStaticMarkup(await List({ searchParams: Promise.resolve({ paso: "5", quedo: "1" }) }));
     expect(html).toContain("Demaio Estudio Inmobiliario");
     expect(html).not.toContain("Del Mar Propiedades");
     expect(html).toContain("sin pasar a «Cuenta creada»");
