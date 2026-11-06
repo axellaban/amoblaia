@@ -1,3 +1,4 @@
+import { IMPACT_STATS } from "@/components/business-impact";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { DemoView } from "@/components/demo-view";
@@ -82,8 +83,10 @@ describe("the agency's own demo, under its panel header", () => {
     expect(panel.every((h) => h === VISIT || h === INVITE || h.startsWith(`${VISIT}&accion=`))).toBe(true);
     expect(panel).toContain(VISIT);
     expect(html).toMatch(/<a class="dv2-owner-save" href="\/panel\/empezar\?codigo=[^"]+"[^>]*>Activar mi cuenta gratis<\/a>/);
-    // The only other ways out are the buyers' view and the plans, both inside the agency's environment.
-    expect(hrefs.filter((h) => !h.startsWith("/panel")).every((h) => h === owner.buyerHref || h === owner.pricesHref || h.startsWith("#") || h.startsWith("/demo/tok/imagen/"))).toBe(true);
+    // The only other ways out are the buyers' view and the plans, both inside the agency's environment,
+    // and the sources of «El impacto en tu negocio», which open in another tab.
+    const sources: string[] = IMPACT_STATS.map((s) => s.href);
+    expect(hrefs.filter((h) => !h.startsWith("/panel")).every((h) => h === owner.buyerHref || h === owner.pricesHref || h.startsWith("#") || h.startsWith("/demo/tok/imagen/") || sources.includes(h))).toBe(true);
     expect(hrefs).not.toContain("/precios");
   });
 

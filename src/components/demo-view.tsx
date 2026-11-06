@@ -58,6 +58,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { requestPublicStaging } from "@/lib/demos/staging-client";
 import { textOn, whatsappNumber, type FactIcon } from "@/lib/demos/branding";
 import { DEMO_STYLES, demoStyleName } from "@/lib/demos/styles";
+import { ImpactStats } from "./business-impact";
 import {
   RETOUCH_STYLE,
   adminPhotoUrl,
@@ -341,6 +342,8 @@ export function DemoView({
   // property is only hidden (a style being generated keeps going) and the browser's back button returns to it.
   const pathname = usePathname();
   const pricesOn = Boolean(owner) && (pathname?.endsWith("/precios") ?? false);
+  // The team's presentation to an agency (not its buyers): it also sees «El impacto en tu negocio».
+  const agencyView = !owner && !backToDemo && presentation && Boolean(demo.prospect);
   const pricesSince = useRef(0);
   const pricesExit = useRef("history");
   const noteRef = useRef(note);
@@ -483,7 +486,11 @@ export function DemoView({
           log={log}
           note={note}
           aside={
-            owner ? null : (
+            owner ? (
+              <div className="bi-demo-aside">
+                <ImpactStats variant="aside" where="demo_owner" />
+              </div>
+            ) : (
               <>
                 <div className="dv2-summary" aria-label="Resumen de la propiedad">
                   <p className={`dv2-price ${demo.price ? "" : "is-ask"}`}>
@@ -504,6 +511,11 @@ export function DemoView({
                   </div>
                 )}
                 {!backToDemo && presentation && demo.prospect && invite && <PanelInvite invite={invite} place="lateral" log={log} />}
+                {agencyView && (
+                  <div className="bi-demo-aside">
+                    <ImpactStats variant="aside" where="demo_presentation" />
+                  </div>
+                )}
               </>
             )
           }
@@ -664,6 +676,13 @@ export function DemoView({
               )}
             </div>
           </section>
+        )}
+
+        {/* «El impacto en tu negocio» for the agency, on a phone: further down, after the property, never for buyers. */}
+        {(owner || agencyView) && (
+          <div className="bi-demo-strip">
+            <ImpactStats variant="strip" where={owner ? "demo_owner" : "demo_presentation"} />
+          </div>
         )}
 
         {/* Only on the team's presentation link of an agency without an account: buyers never see it. */}

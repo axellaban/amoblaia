@@ -8,23 +8,20 @@ import Link from "next/link";
 import { useState } from "react";
 import {
   ArrowRight,
-  ArrowUpRight,
   Check,
   Clapperboard,
-  Eye,
   Globe,
   Image as ImageIcon,
   Layers,
   Link2,
   MessageCircle,
-  MessagesSquare,
   RefreshCw,
   Send,
   Smartphone,
-  Timer,
   Users,
 } from "lucide-react";
 import { Comparison } from "@/components/comparison";
+import { BusinessImpact } from "@/components/business-impact";
 import { cta } from "@/lib/interaction-tracking";
 import { videoEnabled } from "@/lib/agency/flags";
 
@@ -37,38 +34,6 @@ const STYLES = [
   { id: "industrial", label: "Industrial", src: "/ejemplos/living-industrial.webp" },
 ] as const;
 
-const STATS = [
-  {
-    icon: Eye,
-    tag: "Staging en general",
-    value: "83%",
-    who: "de los agentes de compradores",
-    title: "Imaginarse viviendo ahí",
-    text: "Dijo que el staging facilita que un comprador imagine la propiedad como su futuro hogar.",
-    source: "NAR · Profile of Home Staging, 2025",
-    href: "https://www.nar.realtor/research-and-statistics/research-reports/profile-of-home-staging",
-  },
-  {
-    icon: MessagesSquare,
-    tag: "Recorridos virtuales 3D",
-    value: "95%",
-    who: "de las personas encuestadas",
-    title: "Más intención de consultar",
-    text: "Dijo que tendría más probabilidades de llamar por una propiedad con un recorrido virtual 3D.",
-    source: "Matterport · Real Estate",
-    href: "https://matterport.com/industries/real-estate",
-  },
-  {
-    icon: Timer,
-    tag: "Staging en general",
-    value: "49%",
-    who: "de los agentes de vendedores",
-    title: "Menor tiempo en el mercado",
-    text: "Observó que el staging redujo el tiempo que la propiedad permaneció en venta.",
-    source: "NAR · Profile of Home Staging, 2025",
-    href: "https://www.nar.realtor/research-and-statistics/research-reports/profile-of-home-staging",
-  },
-];
 
 function GuideLink({ href, id, children }: { href: string; id: string; children: React.ReactNode }) {
   return (
@@ -384,34 +349,11 @@ export function PanelGuide({ creator }: { creator: boolean }) {
         </p>
       </section>
 
-      {/* 4. Why it matters. */}
-      <section className="hg-why" aria-labelledby="hg-why">
-        <span className="hg-eyebrow">Presentar mejor abre oportunidades</span>
+      {/* 4. Why it matters: the figures and the calculator. */}
+      <section className="ap-impact" aria-labelledby="hg-why">
+        <p className="ap-impact-kicker">Presentar mejor abre oportunidades</p>
         <h3 id="hg-why">Por qué es importante para tu negocio</h3>
-        <p className="hg-why-lead">Ayudar a visualizar, despertar consultas y acompañar la venta: tres indicadores de referencia del mercado inmobiliario.</p>
-        <ul className="hg-stats">
-          {STATS.map(({ icon: Icon, tag, value, who, title, text, source, href }) => (
-            <li key={value}>
-              <span className="hg-stat-tag">
-                <span aria-hidden="true">
-                  <Icon size={16} />
-                </span>
-                {tag}
-              </span>
-              <strong className="hg-stat-value">{value}</strong>
-              <small className="hg-stat-who">{who}</small>
-              <h4>{title}</h4>
-              <p>{text}</p>
-              <a href={href} target="_blank" rel="noopener noreferrer" className="hg-stat-source">
-                {source} <ArrowUpRight size={13} aria-hidden="true" />
-              </a>
-            </li>
-          ))}
-        </ul>
-        <p className="hg-why-note">
-          NAR es la asociación estadounidense de agentes inmobiliarios; Matterport es una empresa de recorridos 3D. Las cifras reflejan respuestas sobre staging en general y recorridos 3D,
-          respectivamente. No son mediciones de Habita ni estudios específicos de ambientación con IA. El 95% expresa intención de consultar, no un aumento del 95% en llamadas.
-        </p>
+        <BusinessImpact where="panel_home" />
       </section>
     </section>
   );

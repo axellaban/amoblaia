@@ -58,11 +58,14 @@ describe("the public pricing (/precios)", () => {
     expect(t).toContain("Créditos válidos por 12 meses");
   });
 
-  it("says what the NAR figures are, and links to the source", () => {
-    for (const figure of ["83%", "49%", "29%"]) expect(t).toContain(figure);
-    expect(t).toContain("home staging en general");
-    expect(t).toContain("No son resultados medidos de Habita ni del virtual staging con IA");
-    expect(html).toContain('href="https://www.nar.realtor/research-and-statistics/research-reports/profile-of-home-staging"');
+  it("shows the impact figures with their sources, says what they are, and adds the calculator", () => {
+    for (const figure of ["+19%", "3×", "95%"]) expect(t).toContain(figure);
+    for (const source of ["RESA · 2023", "Lemon &amp; Lime · 2025", "Matterport · Real Estate"]) expect(html).toContain(source);
+    expect(t).toContain("No son resultados medidos de habita");
+    expect(t).toContain("¿Cuánto podrías ganar con una mejor venta?");
+    expect(t).toContain("+US$ 7.500");
+    expect(t).toContain("+US$ 225");
+    expect(html).toContain('href="https://matterport.com/industries/real-estate"');
     expect(html).toMatch(/rel="noopener noreferrer"/);
   });
 
