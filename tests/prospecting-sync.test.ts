@@ -19,11 +19,11 @@ vi.mock("@/lib/supabase/server", () => ({
   }),
 }));
 
-import { runSheetSync, splitForSync } from "@/lib/prospecting/sync";
+import { runSheetSync, splitForSync, stageRows } from "@/lib/prospecting/sync";
 
 const csv = readFileSync("tests/fixtures/prospeccion-sintetica.csv", "utf8");
 const ACTOR = "8f1c2a3e-4b5d-4e6f-8a7b-9c0d1e2f3a4b";
-const SOURCE = "Prospecting amobla IA · Prospectos";
+const SOURCE = "Prospecting amobla IA - Prospectos";
 
 describe("sheet sync", () => {
   beforeEach(() => {
@@ -56,6 +56,29 @@ describe("sheet sync", () => {
     const call = state.rpcs.find((r) => r.name === "habita_prospect_import")!;
     expect((call.args.p_rows as { agency_id: string | null }[]).every((r) => r.agency_id === null)).toBe(true);
     expect(report).toMatchObject({ held: [expect.objectContaining({ name: "FICTICIA Dos" })] });
+  });
+
+  it("sends each «Estado» as the stage it records, with the sheet's words and the loss reason", () => {
+    const t = parseCsv(
+      "Inmobiliaria,Estado,Fecha envío\n" +
+        ["Pendiente", "Contactado", "Responde saludo inicial", "Neutro", "Interesado", "Demo enviada", "No interesado", "No interesado - cuenta con proveedor de IA", "Sin WhatsApp", "Número incorrecto", "Responde no interesado", "Algo nuevo"]
+          .map((e, i) => `FICTICIA Estado ${i},${e},${i % 2 ? "03/11/2026" : ""}`)
+          .join("\n"),
+    );
+    const out = stageRows(preview(buildRows(t, guessMapping(t.headers)), SOURCE, []));
+    expect(out.map((r) => [r.status, r.stage, r.reason ?? null])).toEqual([
+      ["Contactado", "contacted", null],
+      ["Responde saludo inicial", "replied", null],
+      ["Neutro", "neutral", null],
+      ["Interesado", "interested", null],
+      ["Demo enviada", "interested", null],
+      ["No interesado", "lost", "No interesado"],
+      ["No interesado - cuenta con proveedor de IA", "lost", "Cuenta con proveedor de IA"],
+      ["Responde no interesado", "lost", "No interesado"],
+    ]);
+    // Rows without a date are sent too: the date stays null and the database uses the moment of the sync.
+    expect(out.find((r) => r.status === "Responde saludo inicial")!.date).toBeNull();
+    expect(out.find((r) => r.status === "Contactado")!.date).toBe("2026-11-03");
   });
 
   it("refuses a sheet without a name column", async () => {

@@ -324,9 +324,9 @@ describe("Import", () => {
       { source_key: "nombre:fixture-interesada", stage: "interested", date: "2026-10-20" },
     ];
     const run = () => json<Record<string, number>>("select habita_prospect_sheet_stages($1,'planilla-estados',$2,'whatsapp') as r", [admin, JSON.stringify(stages)]);
-    expect(await run()).toEqual({ contacted: 1, replies: 2, interests: 1 });
+    expect(await run()).toEqual({ contacted: 1, replies: 2, neutral: 0, interests: 1, lost: 0 });
     // Every sync sends the same rows: nothing is recorded twice.
-    expect(await run()).toEqual({ contacted: 0, replies: 0, interests: 0 });
+    expect(await run()).toEqual({ contacted: 0, replies: 0, neutral: 0, interests: 0, lost: 0 });
     const stage = async (k: string) => (await one<{ stage: string }>("select stage from prospect_accounts where source_key=$1", [`nombre:fixture-${k}`]))!.stage;
     expect(await stage("contactada")).toBe("sent");
     expect(await stage("respondio")).toBe("conversation");
@@ -342,6 +342,109 @@ describe("Import", () => {
     // The sheet going back to «Respondió saludo» does not lower the stage.
     await json("select habita_prospect_sheet_stages($1,'planilla-estados',$2,'whatsapp') as r", [admin, JSON.stringify([{ ...stages[2], stage: "replied" }])]);
     expect(await stage("interesada")).toBe("interested");
+  });
+
+  it("the sheet's new states: neutral answers the proposal, each «No interesado» loses the account with its reason", async () => {
+    const keys = ["neutro", "demo", "noint", "noia", "sinfecha"];
+    const rs = keys.map((k, i) => ({
+      row_number: i + 2,
+      source_key: `nombre:fixture-${k}`,
+      name: `Fixture ${k}`,
+      legacy_status: "sent",
+      sent_date: k === "sinfecha" ? null : "2026-11-03",
+      contacts: [],
+      raw: {},
+    }));
+    await json("select habita_prospect_import($1,$2,'planilla-nuevos',null,null,'{}',$3,false,'whatsapp') as r", [admin, id(), JSON.stringify(rs)]);
+    const stages = [
+      { source_key: "nombre:fixture-neutro", stage: "neutral", status: "Neutro", date: "2026-11-03" },
+      { source_key: "nombre:fixture-demo", stage: "interested", status: "Demo enviada", date: "2026-11-03" },
+      { source_key: "nombre:fixture-noint", stage: "lost", status: "No interesado", reason: "No interesado", date: "2026-11-03" },
+      { source_key: "nombre:fixture-noia", stage: "lost", status: "No interesado - cuenta con proveedor de IA", reason: "Cuenta con proveedor de IA", date: "2026-11-03" },
+      // No valid date: contacted and lost all the same, without a dated send.
+      { source_key: "nombre:fixture-sinfecha", stage: "lost", status: "No interesado", reason: "No interesado", date: null },
+      // A loss without its reason is not recorded.
+      { source_key: "nombre:fixture-neutro", stage: "lost", status: "No interesado", date: "2026-11-03" },
+    ];
+    const run = () => json<Record<string, number>>("select habita_prospect_sheet_stages($1,'planilla-nuevos',$2,'whatsapp') as r", [admin, JSON.stringify(stages)]);
+    expect(await run()).toEqual({ contacted: 1, replies: 5, neutral: 1, interests: 1, lost: 3 });
+    // The hourly sync repeats the same rows: no event is duplicated.
+    const events = () => count("select count(*) as n from prospect_events e join prospect_accounts a on a.id=e.account_id where a.source='planilla-nuevos'");
+    const before = await events();
+    expect(await run()).toEqual({ contacted: 0, replies: 0, neutral: 0, interests: 0, lost: 0 });
+    expect(await events()).toBe(before);
+    const acc = async (k: string) =>
+      (await one<{ id: string; stage: string; lost_reason: string | null }>("select id,stage,lost_reason from prospect_accounts where source_key=$1 and source='planilla-nuevos'", [`nombre:fixture-${k}`]))!;
+    const types = async (k: string) =>
+      (await db.query<{ t: string }>("select type || coalesce(':' || (details->>'proposal'), '') as t from prospect_events where account_id=$1 and type in ('reply','interest','not_interested','lost') order by type, t", [(await acc(k)).id])).rows.map((r) => r.t);
+    const answered = async (k: string) => (await one<{ r: boolean }>("select habita_prospect_proposal_answered($1) as r", [(await acc(k)).id]))!.r;
+    // Neutral: replied and answered the proposal, neither interested nor lost.
+    expect(await acc("neutro")).toMatchObject({ stage: "conversation", lost_reason: null });
+    expect(await types("neutro")).toEqual(["reply", "reply:true"]);
+    expect(await answered("neutro")).toBe(true);
+    // «Demo enviada»: reply + interest, with the sheet's words as evidence; no demo is created.
+    expect(await acc("demo")).toMatchObject({ stage: "interested" });
+    expect(await one("select evidence from prospect_events where account_id=$1 and type='interest'", [(await acc("demo")).id])).toEqual({ evidence: "Planilla: Demo enviada" });
+    expect(await count("select count(*) as n from demos where agency_id=(select agency_id from prospect_accounts where id=$1)", [(await acc("demo")).id])).toBe(0);
+    // Each «No interesado»: reply + not_interested + lost, with its own reason.
+    expect(await acc("noint")).toMatchObject({ stage: "lost", lost_reason: "No interesado" });
+    expect(await acc("noia")).toMatchObject({ stage: "lost", lost_reason: "Cuenta con proveedor de IA" });
+    expect(await types("noia")).toEqual(["lost", "not_interested", "reply"]);
+    expect(await answered("noia")).toBe(true);
+    expect(await count("select count(*) as n from prospect_events where account_id=$1 and type='interest'", [(await acc("noia")).id])).toBe(0);
+    expect(await acc("sinfecha")).toMatchObject({ stage: "lost", lost_reason: "No interesado" });
+    expect(await count("select count(*) as n from outreach_attempts where account_id=$1", [(await acc("sinfecha")).id])).toBe(0);
+    // A lost account is left as it is: the sheet saying «Interesado» later does not reopen it.
+    await json("select habita_prospect_sheet_stages($1,'planilla-nuevos',$2,'whatsapp') as r", [admin, JSON.stringify([{ source_key: "nombre:fixture-noint", stage: "interested", status: "Interesado", date: null }])]);
+    expect(await acc("noint")).toMatchObject({ stage: "lost" });
+  });
+
+  it("the history fix corrects interests read from «Responde no interesado», once, and the sync records the current state", async () => {
+    const rs = [
+      { row_number: 2, source_key: "nombre:fixture-bug", name: "Fixture Bug", legacy_status: "sent", sent_date: "2026-11-03", contacts: [], raw: { Estado: "Responde no interesado" } },
+      { row_number: 3, source_key: "nombre:fixture-ok", name: "Fixture Ok", legacy_status: "sent", sent_date: "2026-11-03", contacts: [], raw: { Estado: "Responde interesado" } },
+    ];
+    await json("select habita_prospect_import($1,$2,'planilla-fix',null,null,'{}',$3,false,'whatsapp') as r", [admin, id(), JSON.stringify(rs)]);
+    const acc = async (k: string) => (await one<{ id: string; stage: string }>("select id,stage from prospect_accounts where source='planilla-fix' and source_key=$1", [`nombre:fixture-${k}`]))!;
+    // What the old parser recorded for both rows: a reply and an interest.
+    for (const k of ["bug", "ok"]) {
+      const a = (await acc(k)).id;
+      await db.query(
+        "insert into prospect_events(account_id,type,occurred_at,occurred_precision,actor,source,channel,human,evidence,details) values ($1,'reply',now(),'time',$2,'import','whatsapp',true,'Planilla: Respondió saludo','{\"sheet\":true}'),($1,'interest',now(),'time',$2,'import','whatsapp',null,'Planilla: Interesado','{\"sheet\":true}')",
+        [a, admin],
+      );
+      await db.query("update prospect_accounts set stage='interested' where id=$1", [a]);
+    }
+    const script = readFileSync("supabase/scripts/202611280001_fix_sheet_misparsed.sql", "utf8");
+    const preview = script.slice(script.indexOf("-- 1) PREVIEW"), script.indexOf("-- 2) APPLY"));
+    const apply = script
+      .slice(script.indexOf("-- 2) APPLY"))
+      .split("\n")
+      .filter((l) => l.startsWith("-- "))
+      .slice(1)
+      .map((l) => l.slice(3))
+      .join("\n");
+    const fixRows = async () => (await db.query<{ type: string; eventos: number }>(preview)).rows;
+    // Other tests' sheet events have no «Estado» in their rows and stay; only this account's interest is misparsed.
+    expect((await fixRows()).map((r) => ({ ...r, eventos: Number(r.eventos), cuentas: Number((r as Record<string, unknown>).cuentas) }))).toEqual([
+      { type: "interest", estado_cuando_se_registro: "Responde no interesado", eventos: 1, cuentas: 1 },
+    ]);
+    await db.exec(apply);
+    expect(await fixRows()).toEqual([]);
+    await db.exec(apply); // idempotent
+    const bug = await acc("bug");
+    expect(await count("select count(*) as n from prospect_events where account_id=$1 and type='correction'", [bug.id])).toBe(1);
+    expect(bug.stage).toBe("conversation");
+    expect((await acc("ok")).stage).toBe("interested");
+    // The next sync reads «No interesado» now: lost with its reason, never interested again.
+    await json("select habita_prospect_sheet_stages($1,'planilla-fix',$2,'whatsapp') as r", [
+      admin,
+      JSON.stringify([{ source_key: "nombre:fixture-bug", stage: "lost", status: "No interesado", reason: "No interesado", date: "2026-11-03" }]),
+    ]);
+    expect(await one("select stage,lost_reason from prospect_accounts where id=$1", [bug.id])).toEqual({ stage: "lost", lost_reason: "No interesado" });
+    expect(
+      await count("select count(*) as n from prospect_events e where e.account_id=$1 and e.type='interest' and not exists (select 1 from prospect_events c where c.corrects_event_id=e.id)", [bug.id]),
+    ).toBe(0);
   });
 
   it("imports sheet-verified contacts as verified and past sends with the channel the team states", async () => {

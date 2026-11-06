@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { buildRows, guessMapping, normalizeWhatsapp, parseCsv, parseDay, parseNumber, parseStatus, preview } from "@/lib/prospecting/import";
+import { buildRows, guessMapping, isSentStatus, normalizeWhatsapp, parseCsv, parseDay, parseNumber, parseStatus, preview } from "@/lib/prospecting/import";
 
 // tests/fixtures/prospeccion-sintetica.csv is synthetic: names marked
 // FICTICIA, numbers in a reserved-looking range, .test domains.
@@ -49,20 +49,74 @@ describe("Sheet import", () => {
     expect(rows[2].contacts[0]).toMatchObject({ invalid: true, is_primary: false });
   });
 
-  it("reads the funnel's statuses from «Estado»", () => {
+  it("reads each new «Estado» exactly, ignoring case, accents and the kind of dash", () => {
     for (const [t, v] of [
-      ["Enviado", "sent"],
-      ["Contactado", "sent"],
-      ["Respondió saludo", "replied"],
-      ["Saludo respondido", "replied"],
-      ["Interesado", "interested"],
-      ["Interesada", "interested"],
-      ["No interesado", "unknown"],
       ["Pendiente", "pending"],
+      ["Contactado", "sent"],
+      ["Responde saludo inicial", "replied"],
+      ["Neutro", "neutral"],
+      ["Interesado", "interested"],
+      ["Demo enviada", "demo_sent"],
+      ["No interesado", "not_interested"],
+      ["No interesado - cuenta con proveedor de IA", "not_interested_ai"],
+      ["Sin WhatsApp", "invalid"],
       ["Número incorrecto", "invalid"],
+      // Case, accents, spaces and dashes do not matter.
+      ["  NO INTERESADO  ", "not_interested"],
+      ["no interesado – cuenta con proveedor de ia", "not_interested_ai"],
+      ["No interesado-Cuenta con proveedor de IA", "not_interested_ai"],
+      ["numero incorrecto", "invalid"],
+      ["RESPONDE  SALUDO  INICIAL", "replied"],
       ["", null],
+      ["   ", null],
     ] as const)
-      expect(parseStatus(t)).toBe(v);
+      expect(parseStatus(t), t).toBe(v);
+  });
+
+  it("keeps the old names for the history", () => {
+    for (const [t, v] of [
+      ["Presentación enviada", "sent"],
+      ["Presentacion enviada", "sent"],
+      ["Enviado", "sent"],
+      ["Esperando respuesta", "sent"],
+      ["Respondió saludo", "replied"],
+      ["Responde interesado", "interested"],
+      ["Responde neutro", "neutral"],
+      ["Responde no interesado", "not_interested"],
+    ] as const)
+      expect(parseStatus(t), t).toBe(v);
+  });
+
+  it("never reads a negative or unknown «Estado» as interested", () => {
+    // The old patterns: /^no\b/ sent «No interesado» to unknown and /interesad/ counted «Responde no interesado» as interested.
+    for (const t of ["No interesado", "Responde no interesado", "No interesado - cuenta con proveedor de IA"]) expect(parseStatus(t)).not.toBe("interested");
+    for (const t of ["Interesada", "Demo en preparación", "No contactar", "Saludo", "Enviado ayer"]) expect(parseStatus(t), t).toBe("unknown");
+  });
+
+  it("counts every outcome after «Contactado» as sent, and nothing else", () => {
+    const sent = ["Contactado", "Responde saludo inicial", "Neutro", "Interesado", "Demo enviada", "No interesado", "No interesado - cuenta con proveedor de IA"];
+    for (const t of sent) expect(isSentStatus(parseStatus(t)), t).toBe(true);
+    for (const t of ["Pendiente", "Sin WhatsApp", "Número incorrecto", "Demo en preparación", ""]) expect(isSentStatus(parseStatus(t)), t).toBe(false);
+  });
+
+  it("rows without a valid date keep their status and record no send", () => {
+    const t = parseCsv(
+      "Inmobiliaria,Estado,Fecha envío,Número (sin 0 ni 15)\n" +
+        "FICTICIA Sin Fecha,Interesado,,2230000301\n" +
+        "FICTICIA Fecha Rara,No interesado,mañana,2230000302\n" +
+        "FICTICIA Con Fecha,Neutro,04/11/2026,2230000303\n" +
+        "FICTICIA Sin WA,Sin WhatsApp,04/11/2026,2230000304\n",
+    );
+    const [noDate, badDate, dated, noWa] = buildRows(t, guessMapping(t.headers));
+    expect(noDate).toMatchObject({ legacy_status: "interested", status_text: "Interesado", sent_date: null });
+    expect(noDate.messages.join(" ")).toMatch(/«Interesado» sin fecha válida: no se registra el envío/);
+    expect(badDate).toMatchObject({ legacy_status: "not_interested", sent_date: null });
+    expect(badDate.messages.join(" ")).toMatch(/Fecha «mañana» no reconocida/);
+    expect(dated).toMatchObject({ legacy_status: "neutral", sent_date: "2026-11-04" });
+    // «Sin WhatsApp»: the contact is invalid and the row is not a send, even with a date.
+    expect(noWa.legacy_status).toBe("invalid");
+    expect(isSentStatus(noWa.legacy_status)).toBe(false);
+    expect(noWa.contacts[0]).toMatchObject({ invalid: true, invalid_reason: "Planilla: Sin WhatsApp", is_primary: false });
   });
 
   it("reports errors and repeated rows without dropping them", () => {

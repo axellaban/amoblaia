@@ -1,7 +1,7 @@
 import "server-only";
 import { createHash, randomUUID } from "node:crypto";
 import { HttpError } from "@/lib/commerce/http";
-import { buildRows, guessMapping, isSentStatus, MAX_IMPORT_BYTES, MAX_IMPORT_ROWS, parseCsv, preview, type LegacyChannel, type Mapping, type PreviewRow } from "./import";
+import { buildRows, guessMapping, isSentStatus, LOSS_REASONS, MAX_IMPORT_BYTES, MAX_IMPORT_ROWS, parseCsv, preview, type LegacyChannel, type LegacyStatus, type Mapping, type PreviewRow } from "./import";
 import { existingAgencies, prospectRpc } from "./server";
 
 /** The rows of a preview as the import function receives them. Links to existing agencies are never sent from here. */
@@ -25,7 +25,7 @@ export function importRows(rows: PreviewRow[], links: Record<string, unknown> = 
         address: r.address,
         decision_maker: r.decision_maker,
         notes: r.notes,
-        // «Respondió saludo» and «Interesado» were sent too: the import records the dated send; sheetStages, the rest.
+        // Every outcome after «Contactado» was sent too: the import records the dated send; sheetStages, the rest.
         legacy_status: isSentStatus(r.legacy_status) ? "sent" : r.legacy_status,
         sent_date: r.sent_date,
         contacts: r.contacts,
@@ -36,29 +36,49 @@ export function importRows(rows: PreviewRow[], links: Record<string, unknown> = 
     });
 }
 
+/** What each «Estado» records after the send (habita_prospect_sheet_stages). */
+export type SheetStage = "contacted" | "replied" | "neutral" | "interested" | "lost";
+const STAGE_OF: Partial<Record<NonNullable<LegacyStatus>, SheetStage>> = {
+  sent: "contacted",
+  replied: "replied",
+  neutral: "neutral",
+  interested: "interested",
+  demo_sent: "interested",
+  not_interested: "lost",
+  not_interested_ai: "lost",
+};
+
 /** The rows whose «Estado» moves the prospecting stage (habita_prospect_sheet_stages). */
 export function stageRows(rows: PreviewRow[]) {
   return rows
     .filter((r) => r.action !== "error" && isSentStatus(r.legacy_status))
-    .map((r) => ({
-      source_key: r.source_key,
-      stage: r.legacy_status === "sent" ? "contacted" : r.legacy_status,
-      date: r.sent_date,
-    }));
+    .map((r) => {
+      const status = r.legacy_status!;
+      const reason = status === "not_interested" || status === "not_interested_ai" ? LOSS_REASONS[status] : null;
+      return {
+        source_key: r.source_key,
+        stage: STAGE_OF[status]!,
+        // The sheet's own words, kept as the evidence of each event («Planilla: Demo enviada»).
+        status: r.status_text,
+        date: r.sent_date,
+        ...(reason ? { reason } : {}),
+      };
+    });
 }
 
 /**
- * Records «Contactado», «Respondió saludo» and «Interesado» after an import.
- * Before its migration (202611270001) the import still applies and the
- * report says the stages are pending, instead of failing the whole sync.
+ * Records what the sheet's «Estado» says after an import: the stage, the
+ * reply to the greeting, the answer to the proposal (neutral, interested or
+ * lost with its reason). Before its migration (202611280001) the import still
+ * applies and the report says the stages are pending, instead of failing the whole sync.
  */
 export async function applySheetStages(input: { actor: string; source: string; rows: PreviewRow[]; channel: string }) {
   const rows = stageRows(input.rows);
-  if (!rows.length) return { contacted: 0, replies: 0, interests: 0 };
+  if (!rows.length) return { contacted: 0, replies: 0, neutral: 0, interests: 0, lost: 0 };
   try {
     return await prospectRpc<Record<string, number>>("habita_prospect_sheet_stages", { p_actor: input.actor, p_source: input.source, p_rows: rows, p_channel: input.channel });
   } catch {
-    return { error: "No se registraron los estados de la planilla: falta aplicar la migración 202611270001_prospect_sheet_stages.sql." };
+    return { error: "No se registraron los estados de la planilla: falta aplicar la migración 202611280001_prospect_sheet_outcomes.sql." };
   }
 }
 

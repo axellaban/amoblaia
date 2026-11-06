@@ -73,7 +73,9 @@ Todas las cifras salen del mismo dataset persistido (`habita_prospect_dataset`) 
 | Cohorte | Cuentas cuyo **primer envío confirmado** cae entre las fechas elegidas. Con filtro de canal, cuenta el primer envío por ese canal. |
 | Enviados confirmados | Cuentas únicas de la cohorte con al menos un intento en estado `sent`. Preparar, abrir el chat o el mail, un envío fallido, un rebote, un número inválido o un envío cancelado no cuentan. «Mensajes confirmados» es un conteo aparte. |
 | Respondieron (contacto efectivo) | Cuentas con una respuesta humana registrada a partir del primer envío. Excluye autorrespuestas, rebotes y respuestas corregidas. Una respuesta negativa cuenta; una baja sin respuesta no. |
+| Respondieron la propuesta (solo `/api/metricas`) | Cuentas con una respuesta a la propuesta a partir del primer envío: un interés, un «no interesado» o una respuesta marcada como tal (`details.proposal`, el «Neutro» de la planilla). Excluye eventos corregidos. Misma regla en `isProposalAnswer` (código) y `habita_prospect_proposal_answered` (base). |
 | Interesados | Interés explícito registrado con fecha y evidencia obligatoria. Abrir una demo nunca cuenta como interés. |
+| Motivos de pérdida | Cuentas en etapa perdida, por `lost_reason`. La planilla separa «No interesado» y «Cuenta con proveedor de IA». |
 | Activados | Primera ambientación hecha por un miembro de la inmobiliaria después de sumarse, completada y elegida como versión preferida (`approved_generation_id`) de una foto de esa inmobiliaria. Solo se mide en inmobiliarias con cuenta vinculada (creada por ellas o reclamada con código); las demás figuran como «Sin vincular». |
 | Clientes | Primer pago de un miembro, posterior a sumarse, que el proveedor aprobó. Un reembolso o contracargo agrega un evento `refunded` y conserva la compra. Los pagos de compradores sin membresía nunca se adjudican a la inmobiliaria. |
 | Ventanas | La cuenta se observa 30 días desde el primer envío y el mensaje, 7 días. Con precisión de día, la ventana corre desde el fin de ese día. Las tasas usan solo cuentas o envíos con ventana completa; los demás figuran «en observación». Los eventos fuera de ventana se guardan como tardíos. |
@@ -82,7 +84,23 @@ Todas las cifras salen del mismo dataset persistido (`habita_prospect_dataset`) 
 | Por canal | Cuentas expuestas a cada canal, canal inicial, respuestas por último toque y asistencias. Las bases se superponen y no se suman; el total único está aparte. Muestra conteos sin tasa porque incluye recientes. |
 | Variantes | Se comparan dentro del mismo paso, canal y campaña. «Muestra pequeña» si n<30. No hay ganadora automática ni prueba de significancia. Los mensajes personalizados y los históricos con variante desconocida tienen filas propias y quedan fuera de comparaciones; se informa la cobertura. |
 
-**Estados de la planilla para el funnel.** La columna «Estado» alimenta los tres primeros pasos del funnel de `/admin/inmobiliarias`: «Contactado» (o «Enviado») → Contactados; «Respondió saludo» → Saludo respondido (registra una respuesta humana, `source: import`); «Interesado» → Interesados (registra el interés, con «Planilla: …» como evidencia). Cada estado incluye los anteriores y solo avanza la etapa: si la planilla vuelve atrás, no se baja. La fecha es la de «Fecha de envío» (precisión de día); sin fecha, el momento de la sincronización. Lo aplica `habita_prospect_sheet_stages` (migración `202611270001_prospect_sheet_stages.sql`) después de cada importación o sincronización. El panel lee la base, nunca la planilla: no suma tiempo de carga. En el funnel cuenta una vez cada inmobiliaria (su paso más alto, de prospección o de demo); una con demo cuenta también en los tres pasos de prospección, y el período cuenta la prospección por la fecha del primer contacto.
+**Estados de la planilla para el funnel.** La columna «Estado» alimenta los tres primeros pasos del funnel de `/admin/inmobiliarias` (Contactados → Saludo respondido → Interesados). «Neutro» y los «No interesado» cuentan en Saludo respondido, no en Interesados. La respuesta a la propuesta se mide aparte (`respondieronPropuesta` en `/api/metricas`), sin ser un paso del funnel. Se lee exacto, sin importar mayúsculas, tildes ni el tipo de guion (`parseStatus`); un valor fuera de la lista no registra nada y figura en el informe de la importación.
+
+| Estado | Registra |
+| --- | --- |
+| Pendiente | Nada. |
+| Contactado (antes «Presentación enviada», «Enviado», «Esperando respuesta») | El envío. |
+| Responde saludo inicial (antes «Respondió saludo») | Envío + respuesta humana (Saludo respondido). |
+| Neutro (antes «Responde neutro») | Envío + respuesta + respuesta a la propuesta (`reply` con `details.proposal`). No cuenta como interesado ni como perdido. |
+| Interesado (antes «Responde interesado») | Envío + respuesta + interés. |
+| Demo enviada | Envío + respuesta + interés. No crea demos: la demo real sale de la tabla `demos`. |
+| No interesado (antes «Responde no interesado») | Envío + respuesta + `not_interested` + cuenta perdida con motivo «No interesado». |
+| No interesado - cuenta con proveedor de IA | Envío + respuesta + `not_interested` + cuenta perdida con motivo «Cuenta con proveedor de IA». |
+| Sin WhatsApp, Número incorrecto | El contacto queda inválido. No cuenta como contactado. |
+
+Cada estado incluye los anteriores y solo avanza: si la planilla vuelve atrás, no se baja, y una cuenta perdida o descartada (por el equipo o por una sincronización anterior) no se toca; reabrirla es una decisión del equipo. Cada hecho se registra una sola vez por cuenta, así que la sincronización de cada hora no duplica eventos. La evidencia guarda el texto de la planilla («Planilla: Demo enviada»). El envío se registra con la «Fecha envío» (precisión de día); sin fecha válida la cuenta pasa a contactada (etapa), pero sin un envío fechado: cuenta en el funnel de `/admin/inmobiliarias` y no en la cohorte de `/admin/prospeccion` ni en `/api/metricas`, que parten del primer envío confirmado. Lo aplica `habita_prospect_sheet_stages` (migración `202611280001_prospect_sheet_outcomes.sql`) después de cada importación o sincronización. El panel lee la base, nunca la planilla: no suma tiempo de carga. En el funnel cuenta una vez cada inmobiliaria (su paso más alto, de prospección o de demo); una con demo cuenta también en los tres pasos de prospección, y el período cuenta la prospección por la fecha del primer contacto.
+
+**Corrección del historial (11/2026).** Hasta `202611280001` el estado se leía con patrones sueltos: «Responde no interesado» contaba como interesado y «Esperando respuesta» como respuesta. `supabase/scripts/202611280001_fix_sheet_misparsed.sql` agrega eventos `correction` (`corrects_event_id`) para esos eventos importados; el historial no se borra. Primero se corre su parte de vista previa.
 
 **Cobertura del legado.** Un «Enviado» de la planilla con fecha se registra como intento `legacy`. Tiene precisión de día (00:00 hora Argentina), canal `unknown`, variante nula y paso 1 asumido. Cuenta para enviados de la cohorte. En mensajes aparece como «Sin atribuir (legado)». Una respuesta del mismo día queda sin atribuir.
 
@@ -192,7 +210,7 @@ Flujo:
 Un script dentro de la planilla envía la pestaña «Prospectos» a `POST /api/admin/prospeccion/sincronizar` cada hora. Usa el mismo importador que la carga manual, así que las reglas no cambian: se actualiza por clave de fila, nunca se pisan el historial ni las próximas acciones, y un envío histórico se registra una sola vez.
 
 - **Qué crea y qué no.** Crea cuentas nuevas y actualiza las conocidas. Una fila nueva que se parece a una inmobiliaria existente (mismo nombre o dominio) no se aplica: queda retenida en la respuesta para que el equipo la revise. Nunca vincula ni fusiona sola.
-- **Mismo origen.** El script usa `Prospecting amobla IA · Prospectos`. Si la importación manual se hizo con otro texto de origen, cada inmobiliaria figuraría dos veces: usar el mismo.
+- **Mismo origen.** El script usa `Prospecting amobla IA - Prospectos`. Si la importación manual se hizo con otro texto de origen, cada inmobiliaria figuraría dos veces: usar el mismo.
 - **Canal de los envíos históricos.** El script envía `whatsapp`, según lo definido. Cambiarlo en `PROSPECT_LEGACY_CHANNEL` si corresponde.
 
 Configuración:

@@ -37,11 +37,13 @@ function funnel(ds: Dataset, f: Filters) {
     contactados: s.sent,
     mensajes: s.messages,
     respondieron: s.replied.observed,
+    respondieronPropuesta: s.proposal.observed,
     interesados: s.interested.observed,
     vinculados: s.linked,
     activados: s.activated.observed,
     clientes: s.customers.observed,
     demos: s.demo,
+    perdidas: Object.fromEntries(s.lossReasons),
   };
 }
 
