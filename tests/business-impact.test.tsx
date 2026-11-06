@@ -8,13 +8,16 @@ describe("business impact", () => {
     expect(impactOf(200000, 10, 2.5)).toEqual({ value: 20000, commission: 500 });
   });
 
-  it("starts the improvement (price and volume) at 30%, after the price and the commission", () => {
+  it("grows the price improvement (10% of 0 to 20) by the volume improvement (20% of 0 to 100)", () => {
+    expect(impactOf(150000, 10, 3, 20)).toEqual({ value: 18000, commission: 540 });
     const html = renderToStaticMarkup(<ImpactCalculator where="precios" unitCents={100} />);
-    for (const text of ["Mejora estimada (precio y volumen)", "30%", "+US$ 45.000", "Beneficio incremental", "+US$ 1.350", "Retorno sobre inversión"]) expect(html).toContain(text);
-    expect(html).toMatch(/type="range" min="0" max="100" step="1" aria-valuetext="30%" value="30"/);
+    for (const text of ["+US$ 18.000", "Beneficio incremental", "+US$ 540", "Retorno sobre inversión"]) expect(html).toContain(text);
+    expect(html).toMatch(/type="range" min="0" max="20" step="1" aria-valuetext="10%" value="10"/);
+    expect(html).toMatch(/type="range" min="0" max="100" step="1" aria-valuetext="20%" value="20"/);
     const at = (t: string) => html.indexOf(t);
     expect(at("Precio promedio por propiedad")).toBeLessThan(at("Comisión inmobiliaria"));
-    expect(at("Comisión inmobiliaria")).toBeLessThan(at("Mejora estimada (precio y volumen)"));
+    expect(at("Comisión inmobiliaria")).toBeLessThan(at("Mejora estimada en precio"));
+    expect(at("Mejora estimada en precio")).toBeLessThan(at("Mejora estimada en volumen"));
   });
 
   it("links every figure to its source and says they are not habita.'s results", () => {
