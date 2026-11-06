@@ -55,6 +55,7 @@ import {
   initialView,
   missingTasks,
   photoVersions,
+  regroupOrder,
   versionNumber,
   viewLabel,
   type CellState,
@@ -84,6 +85,7 @@ import { MaskBrush, type BrushHandle } from "./mask-brush";
 import { track } from "@/lib/analytics";
 import { RetouchControls, type ToolsState } from "./retouch-controls";
 import { GenerationProgress } from "./generation-progress";
+import { useSortable } from "./use-sortable";
 
 /** A state of one style of one photo, in words: created, in the queue, failed, uncertain… */
 export function stateLabel(s: CellState) {
@@ -108,6 +110,8 @@ export function stateLabel(s: CellState) {
 export type WorkspaceActions = {
   patchPhoto: (photoId: string, body: Record<string, unknown>) => Promise<boolean>;
   move: (photoId: string, step: number) => void;
+  /** Every photo's id in its new order (what the demo follows); false when it was not saved. */
+  order: (ids: string[]) => Promise<boolean>;
   spaces: (path: string, init: RequestInit, done?: string) => Promise<boolean>;
   cover: (photoId: string | null) => void;
   remove: (photoId: string) => void;
@@ -325,6 +329,9 @@ export function PhotoWorkspace({
   // Every photo in the order of its space (the studio: in their order): what the arrows step through.
   const ordered = groups.flatMap((g) => g.photos);
   const at = ordered.findIndex((p) => p.id === photo.id);
+  /** A space (or the whole gallery) reordered by dragging: the other spaces' photos keep their places. */
+  const sortGroup = (next: string[]) =>
+    void actions.order(regroupOrder([...photos].sort((x, y) => x.position - y.position).map((p) => p.id), next));
   // The photo's own name, else its place in the space ("Vista 2"; the studio: "Foto 3"): never the space's name twice.
   const name = photo.label?.trim() || (flat ? `Foto ${at + 1}` : `Vista ${(activeGroup?.photos.findIndex((p) => p.id === photo.id) ?? 0) + 1}`);
   /** Another photo to work on: the viewer, its versions and the panel follow it. */
@@ -398,7 +405,14 @@ export function PhotoWorkspace({
     <>
       <div className={`pw ${demoUi ? "dx-photos" : ""} ${flat ? "pw-flat" : ""}`} data-testid="photo-workspace">
         {flat ? (
-          <FlatGallery photos={ordered} activeId={photo.id} mainStyle={mainStyle} onPick={(id) => pick(id, "thumb")} onUpload={(f) => actions.upload(f, null)} />
+          <FlatGallery
+            photos={ordered}
+            activeId={photo.id}
+            mainStyle={mainStyle}
+            onSort={sortGroup}
+            onPick={(id) => pick(id, "thumb")}
+            onUpload={(f) => actions.upload(f, null)}
+          />
         ) : demoUi ? (
           <SpaceList
             groups={groups}
@@ -425,6 +439,7 @@ export function PhotoWorkspace({
           mainStyle={mainStyle}
           spacesReady={detail.spacesReady}
           busy={busy}
+          onSort={sortGroup}
           onPick={setActiveId}
           actions={actions}
         />
@@ -559,6 +574,7 @@ export function PhotoWorkspace({
                 coverId={detail.demo.cover?.id ?? null}
                 spaceId={activeGroup?.space?.id ?? null}
                 spaceName={space ? space.name : "Sin organizar"}
+                onSort={sortGroup}
                 onPick={setActiveId}
                 actions={actions}
               />
@@ -967,6 +983,7 @@ export function PhotoWorkspace({
           staging={staging}
           blocked={blocked}
           actions={actions}
+          onSort={sortGroup}
         />
       )}
     </>
@@ -1071,16 +1088,20 @@ function FlatGallery({
   photos,
   activeId,
   mainStyle,
+  onSort,
   onPick,
   onUpload,
 }: {
   photos: EditorPhoto[];
   activeId: string;
   mainStyle: string;
+  onSort: (ids: string[]) => void;
   onPick: (photoId: string) => void;
   onUpload: (files: FileList) => void;
 }) {
   const activeRef = useRef<HTMLButtonElement>(null);
+  const sort = useSortable({ ids: photos.map((p) => p.id), onSort });
+  const byId = new Map(photos.map((p) => [p.id, p]));
   // The active photo stays in sight when the arrows change it.
   useEffect(() => {
     activeRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
@@ -1090,8 +1111,11 @@ function FlatGallery({
       <h3 id="pw-gallery-title" className="pw-gallery-title">
         Todas las fotos <span>({photos.length})</span>
       </h3>
-      <ul className="pw-gallery-grid">
-        {photos.map((p, i) => (
+      <ul className="pw-gallery-grid" ref={sort.containerRef}>
+        {sort.order.map((id, i) => {
+          const p = byId.get(id);
+          if (!p) return null;
+          return (
           <li key={p.id}>
             <button
               ref={p.id === activeId ? activeRef : undefined}
@@ -1099,9 +1123,11 @@ function FlatGallery({
               className="pw-thumb"
               aria-pressed={p.id === activeId}
               aria-label={`Foto ${i + 1}${p.label?.trim() ? `: ${p.label.trim()}` : ""}`}
+              aria-describedby="pw-sort-help"
               onClick={() => onPick(p.id)}
+              {...sort.item(p.id)}
             >
-              <img src={p.shown[mainStyle] ? adminGenerationUrl(p.shown[mainStyle], 480) : adminPhotoUrl(p.id, null, 480)} alt="" loading="lazy" />
+              <img src={p.shown[mainStyle] ? adminGenerationUrl(p.shown[mainStyle], 480) : adminPhotoUrl(p.id, null, 480)} alt="" loading="lazy" draggable={false} />
               {p.id === activeId && (
                 <span className="pw-thumb-check" aria-hidden="true">
                   <Check size={13} strokeWidth={3} />
@@ -1109,11 +1135,14 @@ function FlatGallery({
               )}
             </button>
           </li>
-        ))}
+          );
+        })}
         <li className="pw-gallery-add-item">
           <UploadButton label="Agregar fotos" onFiles={onUpload} />
         </li>
       </ul>
+      <SortHelp />
+      {sort.ghost}
     </nav>
   );
 }
@@ -1205,6 +1234,7 @@ function PhotoNav({
   mainStyle,
   spacesReady,
   busy,
+  onSort,
   onPick,
   actions,
 }: {
@@ -1216,6 +1246,7 @@ function PhotoNav({
   mainStyle: string;
   spacesReady: boolean;
   busy: boolean;
+  onSort: (ids: string[]) => void;
   onPick: (photoId: string) => void;
   actions: WorkspaceActions;
 }) {
@@ -1234,25 +1265,19 @@ function PhotoNav({
             <small>{g.photos.length || "Sin fotos"}</small>
           </h4>
           {g.photos.length > 0 && (
-            <div className="pw-space-photos">
-              {g.photos.map((p, i) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  className="pw-thumb"
-                  aria-pressed={p.id === activeId}
-                  aria-label={`${g.space ? g.space.name : "Sin organizar"}, foto ${i + 1}: ${photoLabel(p)}${p.visible ? "" : " (oculta)"}${p.id === coverId ? " (portada)" : ""}`}
-                  onClick={() => onPick(p.id)}
-                >
-                  <img src={p.shown[mainStyle] ? adminGenerationUrl(p.shown[mainStyle], 480) : adminPhotoUrl(p.id, null, 480)} alt="" loading="lazy" />
-                  {!p.visible && <EyeOff size={13} className="pw-thumb-off" aria-hidden="true" />}
-                  {p.id === coverId && <Star size={12} className="pw-thumb-cover" aria-hidden="true" />}
-                </button>
-              ))}
-            </div>
+            <NavThumbs
+              photos={g.photos}
+              name={g.space ? g.space.name : "Sin organizar"}
+              activeId={activeId}
+              coverId={coverId}
+              mainStyle={mainStyle}
+              onSort={onSort}
+              onPick={onPick}
+            />
           )}
         </section>
       ))}
+      <SortHelp />
       <UploadButton label="Subir fotos" onFiles={(f) => actions.upload(f, activeSpace)} />
       {spacesReady ? (
         adding ? (
@@ -1275,6 +1300,63 @@ function PhotoNav({
       )}
       {current && <SpaceMenu space={current} spaces={spaces} count={groups.find((g) => g.space?.id === current.id)?.photos.length ?? 0} actions={actions} />}
     </nav>
+  );
+}
+
+/** One space's photos in the side list: pick one, or drag to reorder them. */
+function NavThumbs({
+  photos,
+  name,
+  activeId,
+  coverId,
+  mainStyle,
+  onSort,
+  onPick,
+}: {
+  photos: EditorPhoto[];
+  name: string;
+  activeId: string;
+  coverId: string | null;
+  mainStyle: string;
+  onSort: (ids: string[]) => void;
+  onPick: (photoId: string) => void;
+}) {
+  const sort = useSortable({ ids: photos.map((p) => p.id), onSort });
+  const byId = new Map(photos.map((p) => [p.id, p]));
+  return (
+    <div className="pw-space-photos" ref={sort.containerRef}>
+      {sort.order.map((id, i) => {
+        const p = byId.get(id);
+        if (!p) return null;
+        return (
+          <button
+            key={p.id}
+            type="button"
+            className="pw-thumb"
+            aria-pressed={p.id === activeId}
+            aria-label={`${name}, foto ${i + 1}: ${photoLabel(p)}${p.visible ? "" : " (oculta)"}${p.id === coverId ? " (portada)" : ""}`}
+            aria-describedby="pw-sort-help"
+            onClick={() => onPick(p.id)}
+            {...sort.item(p.id)}
+          >
+            <img src={p.shown[mainStyle] ? adminGenerationUrl(p.shown[mainStyle], 480) : adminPhotoUrl(p.id, null, 480)} alt="" loading="lazy" draggable={false} />
+            {!p.visible && <EyeOff size={13} className="pw-thumb-off" aria-hidden="true" />}
+            {p.id === coverId && <Star size={12} className="pw-thumb-cover" aria-hidden="true" />}
+          </button>
+        );
+      })}
+      {sort.ghost}
+    </div>
+  );
+}
+
+/** A quiet line under the thumbnails: they can be dragged (and what screen readers hear on each one). */
+function SortHelp() {
+  return (
+    <p className="pw-sort-help" id="pw-sort-help">
+      Arrastrá las fotos para cambiar el orden.
+      <span className="dv2-sr"> En el celular, mantené apretada una foto y movela. Con teclado: Alt y las flechas.</span>
+    </p>
   );
 }
 
@@ -1941,7 +2023,10 @@ function BatchPanel({
   staging,
   blocked,
   actions,
+  onSort,
 }: {
+  /** A group reordered by dragging. */
+  onSort: (ids: string[]) => void;
   /** Estudio de imágenes: one list with every photo, no spaces. */
   flat?: boolean;
   detail: DemoDetail;
@@ -1997,16 +2082,13 @@ function BatchPanel({
               </button>
             )}
           </legend>
-          <div className="ap-photo-grid">
-            {g.photos.map((p) => (
-              <label key={p.id} className={included.has(p.id) ? "is-on" : ""}>
-                <input type="checkbox" checked={included.has(p.id)} onChange={(e) => toggle(p.id, e.target.checked)} aria-label={`Incluir ${photoLabel(p)}`} />
-                <img src={adminPhotoUrl(p.id, null, 480)} alt="" loading="lazy" />
-              </label>
-            ))}
-          </div>
+          <BatchGrid photos={g.photos} included={included} onToggle={toggle} onSort={onSort} />
         </fieldset>
       ))}
+      <p className="pw-sort-help" id="pw-batch-sort-help">
+        Arrastrá las fotos para cambiar el orden.
+        <span className="dv2-sr"> En el celular, mantené apretada una foto y movela. Con teclado: Alt y las flechas.</span>
+      </p>
       <div className="ed-batch-foot">
         <span>
           {included.size} {included.size === 1 ? "foto elegida" : "fotos elegidas"} · {missing.length}{" "}
@@ -2065,6 +2147,43 @@ function BatchPanel({
       </div>
       {blocked && <p className="dm-help">{blocked}</p>}
     </section>
+  );
+}
+
+/** One group of the batch: tick photos, or drag them to reorder (a drop never ticks one). */
+function BatchGrid({
+  photos,
+  included,
+  onToggle,
+  onSort,
+}: {
+  photos: EditorPhoto[];
+  included: Set<string>;
+  onToggle: (id: string, on: boolean) => void;
+  onSort: (ids: string[]) => void;
+}) {
+  const sort = useSortable({ ids: photos.map((p) => p.id), onSort });
+  const byId = new Map(photos.map((p) => [p.id, p]));
+  return (
+    <div className="ap-photo-grid" ref={sort.containerRef}>
+      {sort.order.map((id) => {
+        const p = byId.get(id);
+        if (!p) return null;
+        return (
+          <label key={p.id} className={included.has(p.id) ? "is-on" : ""} {...sort.item(p.id)}>
+            <input
+              type="checkbox"
+              checked={included.has(p.id)}
+              onChange={(e) => onToggle(p.id, e.target.checked)}
+              aria-label={`Incluir ${photoLabel(p)}`}
+              aria-describedby="pw-batch-sort-help"
+            />
+            <img src={adminPhotoUrl(p.id, null, 480)} alt="" loading="lazy" draggable={false} />
+          </label>
+        );
+      })}
+      {sort.ghost}
+    </div>
   );
 }
 
@@ -2207,6 +2326,7 @@ function SpaceStrip({
   coverId,
   spaceId,
   spaceName,
+  onSort,
   onPick,
   actions,
 }: {
@@ -2216,26 +2336,36 @@ function SpaceStrip({
   coverId: string | null;
   spaceId: string | null;
   spaceName: string;
+  onSort: (ids: string[]) => void;
   onPick: (id: string) => void;
   actions: WorkspaceActions;
 }) {
+  const sort = useSortable({ ids: photos.map((p) => p.id), onSort });
+  const byId = new Map(photos.map((p) => [p.id, p]));
   return (
-    <ul className="dx-strip" aria-label={`Fotos de ${spaceName}`}>
-      {photos.map((p, i) => (
+    <>
+    <ul className="dx-strip" aria-label={`Fotos de ${spaceName}`} ref={sort.containerRef}>
+      {sort.order.map((id, i) => {
+        const p = byId.get(id);
+        if (!p) return null;
+        return (
         <li key={p.id}>
           <button
             type="button"
             className="pw-thumb"
             aria-pressed={p.id === activeId}
             aria-label={`${spaceName}, foto ${i + 1}${p.visible ? "" : " (oculta)"}${p.id === coverId ? " (portada)" : ""}`}
+            aria-describedby="pw-sort-help"
             onClick={() => onPick(p.id)}
+            {...sort.item(p.id)}
           >
-            <img src={p.shown[mainStyle] ? adminGenerationUrl(p.shown[mainStyle], 480) : adminPhotoUrl(p.id, null, 480)} alt="" loading="lazy" />
+            <img src={p.shown[mainStyle] ? adminGenerationUrl(p.shown[mainStyle], 480) : adminPhotoUrl(p.id, null, 480)} alt="" loading="lazy" draggable={false} />
             {!p.visible && <EyeOff size={13} className="pw-thumb-off" aria-hidden="true" />}
             {p.id === coverId && <Star size={12} className="pw-thumb-cover" aria-hidden="true" />}
           </button>
         </li>
-      ))}
+        );
+      })}
       <li>
         <label className="dx-strip-add" title={`Agregar fotos a ${spaceName}`}>
           <Plus size={20} aria-hidden="true" />
@@ -2253,6 +2383,9 @@ function SpaceStrip({
         </label>
       </li>
     </ul>
+    {photos.length > 1 && <SortHelp />}
+    {sort.ghost}
+    </>
   );
 }
 

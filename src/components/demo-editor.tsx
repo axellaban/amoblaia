@@ -528,11 +528,23 @@ export function DemoEditor({
       to = from + step;
     if (to < 0 || to >= ids.length) return;
     [ids[from], ids[to]] = [ids[to], ids[from]];
-    setDetail({ ...detail, photos: ids.map((pid) => detail.photos.find((p) => p.id === pid)!) });
-    await run(async () => {
+    await order(ids);
+  }
+
+  /** The whole order of the photos (what the demo follows), shown at once and saved; undone if it fails. */
+  async function order(ids: string[]) {
+    if (!detail) return false;
+    const before = detail.photos;
+    const byId = new Map(before.map((p) => [p.id, p]));
+    if (ids.length !== before.length || ids.some((pid) => !byId.has(pid))) return false;
+    if (ids.every((pid, i) => before[i].id === pid)) return true;
+    setDetail({ ...detail, photos: ids.map((pid, position) => ({ ...byId.get(pid)!, position })) });
+    const ok = await run(async () => {
       const d = await api<DemoDetail>(base, { method: "PATCH", body: JSON.stringify({ action: "order", ids }) });
       setDetail((cur) => (cur ? { ...cur, photos: d.photos } : d));
     }, undefined, "fotos");
+    if (!ok) setDetail((cur) => (cur ? { ...cur, photos: before } : cur));
+    return ok;
   }
 
   if (!detail || !forms)
@@ -622,6 +634,7 @@ export function DemoEditor({
   const workspaceActions: WorkspaceActions = {
     patchPhoto,
     move: (photoId, step) => void move(photoId, step),
+    order,
     spaces,
     cover: (photoId) => void demoAction({ action: "cover", photoId }, undefined, "fotos"),
     remove: (photoId) => {
