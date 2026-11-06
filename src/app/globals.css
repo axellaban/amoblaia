@@ -26746,6 +26746,33 @@ dialog.pt-layer::backdrop {
   white-space: nowrap;
   background: #fbfaf6;
 }
+/* The volume lift: its two sliders and, under them, the percentage they add up to. */
+.bi-calc-row.is-volume label {
+  color: var(--bi-green);
+}
+.bi-calc-volume {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 118px;
+  column-gap: 14px;
+  align-items: center;
+  padding-top: 12px;
+  border-top: 1px dashed var(--bi-line);
+}
+.bi-calc-volume span {
+  display: grid;
+  font-size: 13px;
+  font-weight: 700;
+}
+.bi-calc-volume small {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--bi-muted);
+}
+.bi-calc-volume .bi-calc-box {
+  grid-row: auto;
+  background: var(--bi-sage);
+  color: var(--bi-green);
+}
 .bi-calc-result {
   background: var(--bi-sage);
   border-radius: 16px;
@@ -26841,9 +26868,15 @@ dialog.pt-layer::backdrop {
   font-size: 16px;
   font-weight: 800;
 }
+.bi-calc-roi span {
+  white-space: nowrap;
+}
+.bi-calc-roi span.is-roi {
+  font-size: 11px;
+}
 .bi-calc-roi b.is-big {
   font-family: var(--font-display);
-  font-size: 24px;
+  font-size: 22px;
   letter-spacing: -0.02em;
 }
 .bi-calc-result p.bi-calc-assume {

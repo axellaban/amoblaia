@@ -1,11 +1,22 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { ImpactStats, impactOf } from "@/components/business-impact";
+import { ImpactCalculator, ImpactStats, impactOf, volumeLift } from "@/components/business-impact";
 
 describe("business impact", () => {
   it("computes the extra sale value and the agency's commission on it", () => {
     expect(impactOf(150000, 5, 3)).toEqual({ value: 7500, commission: 225 });
     expect(impactOf(200000, 10, 2.5)).toEqual({ value: 20000, commission: 500 });
+  });
+
+  it("multiplies more interested buyers by a better conversion, and the benefit by that lift", () => {
+    expect(volumeLift(20, 10)).toBeCloseTo(32);
+    expect(volumeLift(0, 0)).toBe(0);
+    const r = impactOf(150000, 10, 3, 32);
+    expect(r.value).toBeCloseTo(19800);
+    expect(r.commission).toBeCloseTo(594);
+    const html = renderToStaticMarkup(<ImpactCalculator where="precios" unitCents={100} />);
+    for (const text of ["Más interesados", "Mejor conversión de los interesados", "Aumento en volumen de ventas", "+30%", "Beneficio incremental", "+US$ 19.492", "+US$ 585"]) expect(html).toContain(text);
+    expect(html).not.toContain("Tu comisión extra");
   });
 
   it("links every figure to its source and says they are not habita.'s results", () => {
