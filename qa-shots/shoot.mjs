@@ -14,7 +14,8 @@ for (const [name, dev, w, h] of shots) {
   const m = await p.evaluate(() => {
     const g = document.querySelector(".hb-packs-grid")?.getBoundingClientRect();
     const cta = document.querySelector(".hb-buy-cta")?.getBoundingClientRect();
-    return { scrollW: document.documentElement.scrollWidth, innerW: innerWidth, packsBottom: g && Math.round(g.bottom), ctaBottom: cta && Math.round(cta.bottom), font: getComputedStyle(document.body).fontFamily };
+    const wide = [...document.querySelectorAll('body *')].filter(e => e.getBoundingClientRect().right > innerWidth + 1).slice(0, 6).map(e => `${e.tagName}.${[...e.classList].join('.')} r=${Math.round(e.getBoundingClientRect().right)}`);
+    return { wide, scrollW: document.documentElement.scrollWidth, innerW: innerWidth, packsBottom: g && Math.round(g.bottom), ctaBottom: cta && Math.round(cta.bottom), font: getComputedStyle(document.body).fontFamily };
   });
   report.push({ name, dev, ...m });
 }

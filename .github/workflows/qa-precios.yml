@@ -2,6 +2,8 @@ name: QA capturas precios
 on:
   push:
     branches: [qa/precios-capturas]
+permissions:
+  contents: write
 jobs:
   shots:
     runs-on: ubuntu-24.04
@@ -13,5 +15,7 @@ jobs:
       - run: npx vitest run qa-shots/render.test.tsx
       - run: npm i --no-save playwright@1.56.0 && npx playwright install --with-deps chromium
       - run: node qa-shots/shoot.mjs
-      - uses: actions/upload-artifact@v4
-        with: { name: capturas, path: qa-shots/out/*.png }
+      - run: |
+          mkdir -p qa-shots/png && cp qa-shots/out/*.png qa-shots/png/
+          git config user.name qa-bot && git config user.email qa-bot@users.noreply.github.com
+          git add qa-shots/png && git commit -m "QA: capturas [skip ci]" && git push
