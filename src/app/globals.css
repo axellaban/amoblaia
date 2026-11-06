@@ -26605,53 +26605,9 @@ dialog.pt-layer::backdrop {
 .bi.is-hero .bi-stat:first-child {
   border-top: 0;
 }
-/* Under the demo on a phone: light, with its own title. */
-.bi.is-strip .bi-band {
-  background: #eef1e6;
-  color: var(--bi-green);
-}
-.bi.is-strip .bi-title {
-  margin: 0 0 6px;
-  font-family: var(--font-display);
-  font-size: 20px;
-  line-height: 1.2;
-  font-weight: 800;
-  color: var(--bi-green);
-}
-.bi.is-strip .bi-stat {
-  border-top-color: #d5dccb;
-}
-.bi.is-strip .bi-icon {
-  color: #3b6e3a;
-}
-.bi.is-strip .bi-label {
-  color: var(--bi-green);
-}
-.bi.is-strip .bi-source:hover {
-  color: #3b6e3a;
-}
-/* The demo: the side column on a computer, the strip further down on a phone. */
-.bi-demo-aside {
-  margin-top: 16px;
-}
-.bi-demo-aside .bi-band {
-  border-radius: 16px;
-}
-.bi-demo-aside .bi-note {
-  font-size: 11px;
-}
-.bi-demo-strip {
-  margin: 24px 0;
-}
-@media (max-width: 900px) {
-  .bi-demo-aside {
-    display: none;
-  }
-}
-@media (min-width: 901px) {
-  .bi-demo-strip {
-    display: none;
-  }
+/* The agency's demo: under «¿Querés probarlo con otra propiedad?». */
+.bi-demo {
+  margin: 0 0 8px;
 }
 
 .bi-calc {
@@ -26664,7 +26620,8 @@ dialog.pt-layer::backdrop {
   gap: 18px;
   color: var(--ink);
 }
-.bi-calc-kicker {
+.bi-calc-kicker,
+.ap-page .hg .bi-calc-kicker {
   color: var(--bi-accent);
 }
 .bi-calc-head h3 {
@@ -26793,39 +26750,6 @@ dialog.pt-layer::backdrop {
     font-size: 13px;
     line-height: 1.4;
     color: rgba(248, 245, 239, 0.72);
-  }
-  /* The side column keeps one figure per row. */
-  .bi.is-aside .bi-band {
-    display: block;
-    padding: 20px 20px 8px;
-  }
-  .bi.is-aside .bi-band .bi-kicker {
-    padding: 0 0 10px;
-    font-size: 12px;
-  }
-  .bi.is-aside .bi-band .bi-stats {
-    display: block;
-  }
-  .bi.is-aside .bi-band .bi-stat {
-    display: grid;
-    padding: 12px 0;
-    border-left: 0;
-    border-top: 1px solid rgba(248, 245, 239, 0.16);
-  }
-  .bi.is-aside .bi-band .bi-icon {
-    width: 22px;
-    height: 22px;
-    margin: 0;
-  }
-  .bi.is-aside .bi-band .bi-value {
-    font-size: 26px;
-  }
-  .bi.is-aside .bi-band .bi-label {
-    font-size: 13px;
-  }
-  .bi.is-aside .bi-band .bi-source {
-    margin-top: 4px;
-    font-size: 11px;
   }
   .bi-calc {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 1fr);
