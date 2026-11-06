@@ -27,7 +27,8 @@ describe("the public pricing (/precios)", () => {
 
   it("shows the free plan next to the four packs, with total, price per credit and saving", () => {
     expect(t).toContain("Precios simples. Sin suscripción.");
-    expect(t).toContain("Plan Gratis");
+    expect(t).toContain("Plan base");
+    expect(t).toContain("¿Necesitás más? Créditos extra");
     expect(t).toContain("Empezar gratis");
     expect(html.match(/class="hb-pack[ "]/g)).toHaveLength(4);
     for (const price of ["$9.900", "$19.900", "$34.900", "$59.900"]) expect(t).toContain(price);
@@ -63,8 +64,11 @@ describe("the public pricing (/precios)", () => {
     for (const source of ["RESA · 2023", "Lemon &amp; Lime · 2025", "Matterport · Real Estate"]) expect(html).toContain(source);
     expect(t).toContain("No son resultados medidos de habita");
     expect(t).toContain("¿Cuánto podrías ganar con una mejor venta?");
-    expect(t).toContain("+US$ 7.500");
-    expect(t).toContain("+US$ 225");
+    expect(t).toContain("+US$ 15.000");
+    expect(t).toContain("+US$ 450");
+    expect(t).toContain("≈ US$ 11");
+    expect(t).toContain("42x");
+    expect(t).toContain("Asumiendo 20 créditos (imágenes ambientadas) por propiedad.");
     expect(html).toContain('href="https://matterport.com/industries/real-estate"');
     expect(html).toMatch(/rel="noopener noreferrer"/);
   });
@@ -85,7 +89,7 @@ describe("the panel's pricing (/panel/creditos)", () => {
 
   it("offers the packs and the purchase, never «Empezar gratis»", () => {
     expect(t).not.toContain("Empezar gratis");
-    expect(t).not.toContain("Plan Gratis");
+    expect(t).not.toContain("Plan base");
     expect(ids(html)).not.toContain("pricing_start_free");
     expect(html.match(/class="hb-pack[ "]/g)).toHaveLength(4);
     expect(t).toContain("Comprar créditos");

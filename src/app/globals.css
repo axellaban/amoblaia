@@ -25308,6 +25308,11 @@ body:has(.pv-root) .pb-root {
   letter-spacing: -0.02em;
   color: var(--forest);
 }
+.hb-free-sub {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: var(--subtle);
+}
 .hb-free ul {
   list-style: none;
   display: grid;
@@ -26038,13 +26043,12 @@ body:has(.pv-root) .pb-root {
     gap: 6px;
     margin-top: 14px;
   }
-  /* The packs first: the prices are what the visitor came for; the free plan right after. */
+  /* The base plan first, then the extra credits that add to it. */
   .hb-offer {
     grid-template-columns: minmax(0, 1fr);
     gap: 14px;
   }
   .hb-free {
-    order: 2;
     display: grid;
     grid-template-columns: 1fr auto;
     align-items: baseline;
@@ -26063,6 +26067,9 @@ body:has(.pv-root) .pb-root {
     font-size: 13.5px;
   }
   .hb-free .hb-free-cta {
+    grid-column: 1 / -1;
+  }
+  .hb-free-sub {
     grid-column: 1 / -1;
   }
   .hb-buy {
@@ -26690,6 +26697,89 @@ dialog.pt-layer::backdrop {
 .bi-calc-result strong.is-small {
   font-size: 24px;
   margin-bottom: 0;
+}
+.bi-calc-props {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.bi-calc-props label {
+  font-size: 13px;
+  font-weight: 600;
+}
+.bi-calc-stepper {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--bi-line);
+  border-radius: 12px;
+  background: #fbfaf6;
+  overflow: hidden;
+}
+.bi-calc-stepper button {
+  width: 38px;
+  height: 38px;
+  border: 0;
+  background: transparent;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--bi-green);
+  cursor: pointer;
+}
+.bi-calc-stepper button:disabled {
+  color: var(--bi-muted);
+  cursor: default;
+}
+.bi-calc-stepper input {
+  width: 64px;
+  height: 38px;
+  border: 0;
+  background: transparent;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.bi-calc-stepper input::-webkit-outer-spin-button,
+.bi-calc-stepper input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.bi-calc-roi {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #24382e26;
+}
+.bi-calc-roi div {
+  display: grid;
+}
+.bi-calc-roi .is-right {
+  text-align: right;
+}
+.bi-calc-roi span {
+  font-size: 12px;
+  font-weight: 600;
+}
+.bi-calc-roi b {
+  font-size: 16px;
+  font-weight: 800;
+}
+.bi-calc-roi b.is-big {
+  font-family: var(--font-display);
+  font-size: 24px;
+  letter-spacing: -0.02em;
+}
+.bi-calc-result p.bi-calc-assume {
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  font-weight: 500;
 }
 
 @media (min-width: 761px) {

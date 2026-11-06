@@ -6,7 +6,7 @@
 import { useId, useState } from "react";
 import { ArrowUpRight, Clock, TrendingUp, Users } from "lucide-react";
 import { cta } from "@/lib/interaction-tracking";
-import { IMPACT_NOTE, IMPACT_STATS } from "@/lib/business-impact";
+import { ARS_PER_USD, CREDITS_PER_PROPERTY, DEFAULT_UNIT_CENTS, IMPACT_NOTE, IMPACT_STATS } from "@/lib/business-impact";
 
 const ICONS = { precio: TrendingUp, velocidad: Clock, consultas: Users } as const;
 
@@ -61,8 +61,16 @@ export function impactOf(price: number, improvement: number, commission: number)
   return { value, commission: (value * commission) / 100 };
 }
 
+/** habita.'s cost in dollars for a number of properties, at CREDITS_PER_PROPERTY credits each. */
+export function habitaCostUsd(properties: number, unitCents: number = DEFAULT_UNIT_CENTS) {
+  return (properties * CREDITS_PER_PROPERTY * unitCents) / 100 / ARS_PER_USD;
+}
+
+const MAX_PROPERTIES = 10000;
+const clampProps = (n: number) => (Number.isFinite(n) ? Math.min(MAX_PROPERTIES, Math.max(1, Math.round(n))) : 1);
+
 const SLIDERS = [
-  { key: "price", label: "Precio de la propiedad", min: 30000, max: 1000000, step: 5000, show: usd },
+  { key: "price", label: "Precio promedio de la propiedad", min: 30000, max: 1000000, step: 5000, show: usd },
   { key: "improvement", label: "Mejora estimada del precio", min: 1, max: 19, step: 1, show: pct },
   { key: "commission", label: "Comisión inmobiliaria", min: 1, max: 6, step: 0.5, show: pct },
 ] as const;
@@ -70,11 +78,22 @@ const SLIDERS = [
 type Values = Record<(typeof SLIDERS)[number]["key"], number>;
 
 /** «¿Cuánto podrías ganar con una mejor venta?»: an estimate the agency moves with its own numbers. */
-export function ImpactCalculator({ where }: { where: string }) {
+export function ImpactCalculator({ where, unitCents }: { where: string; unitCents?: number }) {
   const id = useId();
-  const [v, setV] = useState<Values>({ price: 150000, improvement: 5, commission: 3 });
+  const [v, setV] = useState<Values>({ price: 150000, improvement: 10, commission: 3 });
+  const [props, setProps] = useState(1);
+  const [propsText, setPropsText] = useState("1");
   const [touched, setTouched] = useState(false);
-  const r = impactOf(v.price, v.improvement, v.commission);
+  const one = impactOf(v.price, v.improvement, v.commission);
+  const r = { value: one.value * props, commission: one.commission * props };
+  const cost = habitaCostUsd(props, unitCents);
+  const roi = cost > 0 ? r.commission / cost : 0;
+  const setCount = (n: number) => {
+    const c = clampProps(n);
+    setProps(c);
+    setPropsText(String(c));
+    setTouched(true);
+  };
   return (
     <section className="bi-calc" aria-labelledby={`${id}-title`} data-impact-calculator={where}>
       <div className="bi-calc-head">
@@ -83,6 +102,34 @@ export function ImpactCalculator({ where }: { where: string }) {
         <p>Movela con una propiedad tuya. Es una estimación, no una promesa.</p>
       </div>
       <div className="bi-calc-inputs">
+        <div className="bi-calc-props">
+          <label htmlFor={`${id}-props`}>Propiedades</label>
+          <div className="bi-calc-stepper">
+            <button type="button" aria-label="Restar una propiedad" onClick={() => setCount(props - 1)} disabled={props <= 1}>
+              −
+            </button>
+            <input
+              id={`${id}-props`}
+              type="number"
+              inputMode="numeric"
+              min={1}
+              max={MAX_PROPERTIES}
+              value={propsText}
+              onChange={(e) => {
+                setPropsText(e.target.value);
+                const n = parseInt(e.target.value, 10);
+                if (!Number.isNaN(n)) {
+                  setProps(clampProps(n));
+                  setTouched(true);
+                }
+              }}
+              onBlur={() => setPropsText(String(props))}
+            />
+            <button type="button" aria-label="Sumar una propiedad" onClick={() => setCount(props + 1)}>
+              +
+            </button>
+          </div>
+        </div>
         {SLIDERS.map(({ key, label, min, max, step, show }) => (
           <div key={key} className="bi-calc-row">
             <label htmlFor={`${id}-${key}`}>{label}</label>
@@ -110,17 +157,28 @@ export function ImpactCalculator({ where }: { where: string }) {
         <strong>+{usd(r.value)}</strong>
         <span>Tu comisión extra</span>
         <strong className="is-small">+{usd(r.commission)}</strong>
+        <div className="bi-calc-roi">
+          <div>
+            <span>Costo Habita estimado</span>
+            <b>≈ {usd(cost)}</b>
+          </div>
+          <div className="is-right">
+            <span>Retorno (ROI)</span>
+            <b className="is-big">{Math.round(roi).toLocaleString("es-AR")}x</b>
+          </div>
+        </div>
+        <p className="bi-calc-assume">Asumiendo {CREDITS_PER_PROPERTY} créditos (imágenes ambientadas) por propiedad.</p>
       </div>
     </section>
   );
 }
 
 /** The figures and, under them, the calculator (prices and the panel's home). */
-export function BusinessImpact({ where }: { where: string }) {
+export function BusinessImpact({ where, unitCents }: { where: string; unitCents?: number }) {
   return (
     <div className="bi-block">
       <ImpactStats variant="band" where={where} note={false} />
-      <ImpactCalculator where={where} />
+      <ImpactCalculator where={where} unitCents={unitCents} />
       <p className="bi-note">{IMPACT_NOTE}</p>
     </div>
   );

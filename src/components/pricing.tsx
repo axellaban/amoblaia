@@ -1,5 +1,5 @@
 "use client";
-// Pricing: «Gratis» and «Comprar créditos» (pago único, sin suscripción).
+// Pricing: «Plan base» (free) and «Créditos extra» (pago único, sin suscripción).
 // One component, two variants: the public one (/precios and an agency's demo)
 // shows the free plan next to the packs; the panel's («Precios y créditos»)
 // shows only the packs, since the agency already has its account and its
@@ -46,7 +46,7 @@ const faqs = [
     "Un crédito transforma una foto con IA. Las demás versiones y estilos de esa misma foto no consumen otro crédito. Si una generación falla por un problema técnico, el crédito vuelve solo a tu saldo.",
   ],
   [
-    "¿Cómo funciona el plan Gratis?",
+    "¿Cómo funciona el plan base?",
     `Cada inmobiliaria verificada recibe ${FREE_MONTHLY_CREDITS} créditos gratis por mes, sin tarjeta. Se renuevan el primer día de cada mes y no se acumulan: los que no usás vencen a fin de mes. Se usan antes que los créditos comprados.`,
   ],
   [
@@ -220,8 +220,9 @@ export function PricingPlans({
         <div className={`hb-offer${panel ? " hb-offer-panel" : ""}`}>
           {!panel && (
             <article className="hb-free" aria-labelledby="hb-free-title">
-              <h2 id="hb-free-title">Plan Gratis</h2>
+              <h2 id="hb-free-title">Plan base</h2>
               <p className="hb-free-price">$0</p>
+              <p className="hb-free-sub">Probá Habita en tus propiedades, sin costo.</p>
               <ul>
                 <li>
                   <Check size={16} aria-hidden="true" /> {FREE_MONTHLY_CREDITS} créditos con IA por mes
@@ -247,8 +248,10 @@ export function PricingPlans({
           )}
 
           <section className="hb-buy" id="precios" aria-labelledby="hb-buy-title">
-            <h2 id="hb-buy-title">{panel ? "Sumá créditos cuando quieras" : "Comprá créditos cuando quieras"}</h2>
-            <p className="hb-buy-sub">1 crédito = 1 foto transformada con IA</p>
+            <h2 id="hb-buy-title">{panel ? "Sumá créditos cuando quieras" : "¿Necesitás más? Créditos extra"}</h2>
+            <p className="hb-buy-sub">
+              {panel ? "1 crédito = 1 foto transformada con IA" : `Se suman a los ${FREE_MONTHLY_CREDITS} de tu plan base · 1 crédito = 1 foto con IA`}
+            </p>
             {packages.length > 0 ? (
               <fieldset className="hb-packs-grid" ref={packsRef}>
                 <legend className="visually-hidden">Elegí un paquete de créditos</legend>
@@ -260,7 +263,7 @@ export function PricingPlans({
                       <input type="radio" className="visually-hidden" name={packsName} value={p.sku} checked={on} onChange={() => choose(p)} />
                       {rec && <span className="hb-pack-badge">Recomendado</span>}
                       <span className="hb-pack-credits">
-                        <strong>{p.credits}</strong> créditos
+                        <strong>+{p.credits}</strong> créditos
                       </span>
                       <span className="hb-pack-price">{ars(p.cents)}</span>
                       <span className="hb-pack-unit">{ars(p.unitCents)} por crédito</span>
@@ -307,7 +310,7 @@ export function PricingPlans({
           </section>
         </div>
 
-        <StagingImpact where={where} />
+        <StagingImpact where={where} unitCents={recommended?.unitCents} />
 
         <MoreAbout />
 
@@ -318,10 +321,10 @@ export function PricingPlans({
 }
 
 /** «El impacto en tu negocio»: the figures and the calculator, under the plans. */
-function StagingImpact({ where }: { where: string }) {
+function StagingImpact({ where, unitCents }: { where: string; unitCents?: number }) {
   return (
     <section className="pricing-impact" aria-label="El impacto en tu negocio">
-      <BusinessImpact where={where} />
+      <BusinessImpact where={where} unitCents={unitCents} />
     </section>
   );
 }
