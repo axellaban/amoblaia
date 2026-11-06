@@ -56,12 +56,11 @@ const usd = (n: number) => `US$ ${Math.round(n).toLocaleString("es-AR")}`;
 const pct = (n: number) => `${String(n).replace(".", ",")}%`;
 
 /**
- * What a better sale could mean: price × estimated improvement, and the
- * agency's commission on it. «volume» is the increase in sales volume (more
- * interested buyers × better conversion), in percent: both grow by it.
+ * What a better sale could mean: price × estimated improvement (in price and
+ * in sales volume, one percentage), and the agency's commission on it.
  */
-export function impactOf(price: number, improvement: number, commission: number, volume = 0) {
-  const value = ((price * improvement) / 100) * (1 + volume / 100);
+export function impactOf(price: number, improvement: number, commission: number) {
+  const value = (price * improvement) / 100;
   return { value, commission: (value * commission) / 100 };
 }
 
@@ -73,12 +72,10 @@ export function habitaCostUsd(properties: number, unitCents: number = DEFAULT_UN
 const MAX_PROPERTIES = 10000;
 const clampProps = (n: number) => (Number.isFinite(n) ? Math.min(MAX_PROPERTIES, Math.max(1, Math.round(n))) : 1);
 
-const plusPct = (n: number) => `+${pct(n)}`;
-const SLIDERS: readonly { key: "price" | "commission" | "improvement" | "volume"; label: string; min: number; max: number; step: number; show: (n: number) => string }[] = [
+const SLIDERS: readonly { key: "price" | "commission" | "improvement"; label: string; min: number; max: number; step: number; show: (n: number) => string }[] = [
   { key: "price", label: "Precio promedio por propiedad", min: 30000, max: 1000000, step: 5000, show: usd },
   { key: "commission", label: "Comisión inmobiliaria", min: 1, max: 6, step: 0.5, show: pct },
-  { key: "improvement", label: "Mejora estimada del precio", min: 1, max: 19, step: 1, show: pct },
-  { key: "volume", label: "Aumento en volumen de ventas", min: 0, max: 100, step: 1, show: plusPct },
+  { key: "improvement", label: "Mejora estimada (precio y volumen)", min: 0, max: 100, step: 1, show: pct },
 ];
 
 type Values = Record<(typeof SLIDERS)[number]["key"], number>;
@@ -86,11 +83,11 @@ type Values = Record<(typeof SLIDERS)[number]["key"], number>;
 /** «¿Cuánto podrías ganar con una mejor venta?»: an estimate the agency moves with its own numbers. */
 export function ImpactCalculator({ where, unitCents }: { where: string; unitCents?: number }) {
   const id = useId();
-  const [v, setV] = useState<Values>({ price: 150000, commission: 3, improvement: 10, volume: 30 });
+  const [v, setV] = useState<Values>({ price: 150000, commission: 3, improvement: 30 });
   const [props, setProps] = useState(1);
   const [propsText, setPropsText] = useState("1");
   const [touched, setTouched] = useState(false);
-  const one = impactOf(v.price, v.improvement, v.commission, v.volume);
+  const one = impactOf(v.price, v.improvement, v.commission);
   const r = { value: one.value * props, commission: one.commission * props };
   const cost = habitaCostUsd(props, unitCents);
   const roi = cost > 0 ? r.commission / cost : 0;
