@@ -25,7 +25,7 @@ Claude responde por lo técnico: bugs y regresiones. Astra analiza la conversió
 
 ## Datos fijos
 
-- Vercel: proyecto `prj_2oV0H7KmtlUAzpq1xdiaiQatoX3b`, equipo `team_KSLdEYQ5MNrnhjPR9G3PxpVO`.
+- Vercel: proyecto `prj_2oV0H7KmtlUAzpq1xdiaiQatoX3b`, equipo `team_DnTysSLh1CQWo2OEYu6cpMQv` (Grego).
 - Supabase: proyecto `cmpfwuycxdleunuumlkm`.
 - PostHog: proyecto 683617, por el conector de PostHog de la tarea (consultas SQL y grabaciones de sesión). Si el conector no está, saltear el paso 3, marcar la cobertura de PostHog como `sin acceso` y avisarlo en el resumen. Recetas y limitaciones: `docs/CRO_INSTRUMENTACION.md`.
 - Panel de QA: `/panel` (inmobiliaria QA_Habita, slug `qa-habita-2`). Inmobiliaria de prueba original: `/admin/inmobiliarias/67b74437-b305-41a3-bada-42205ae090aa`.
