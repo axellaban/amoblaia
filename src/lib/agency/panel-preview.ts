@@ -23,8 +23,6 @@ export type PanelPreview = {
   /** Null when the link no longer opens a panel: a generic preview. */
   agencyName: string | null;
   freeCredits: number;
-  /** The agency already has its account: no «sin crear cuenta». */
-  claimed: boolean;
   /** Its own property's cover (path of the demo's preview image), for the first card. */
   cover: string | null;
 };
@@ -50,7 +48,7 @@ async function coverOf(agencyId: string, demoToken: string | null) {
 }
 
 export async function panelPreview(code: string | null): Promise<PanelPreview> {
-  const generic: PanelPreview = { agencyName: null, freeCredits: 0, claimed: false, cover: null };
+  const generic: PanelPreview = { agencyName: null, freeCredits: 0, cover: null };
   if (!code || !cloudConfigured()) return generic;
   try {
     const visit = await liveVisit(code);
@@ -60,7 +58,7 @@ export async function panelPreview(code: string | null): Promise<PanelPreview> {
       coverOf(visit.agency.id, visit.demoToken).catch(() => null),
     ]);
     const freeCredits = credits.error ? 0 : ((credits.data as { free_credits_pending: number | null } | null)?.free_credits_pending ?? 0);
-    return { agencyName: visit.agency.name, freeCredits, claimed: visit.claimed, cover };
+    return { agencyName: visit.agency.name, freeCredits, cover };
   } catch {
     return generic;
   }
@@ -70,13 +68,9 @@ export async function panelPreview(code: string | null): Promise<PanelPreview> {
 export const creditsLine = (p: Pick<PanelPreview, "freeCredits">) =>
   p.freeCredits > 0 ? `Tenés ${p.freeCredits} ${p.freeCredits === 1 ? "crédito gratis" : "créditos gratis"}` : `${FREE_MONTHLY_CREDITS} créditos gratis por mes`;
 
-export function panelPreviewText(p: PanelPreview) {
-  const title = p.agencyName ? `Tu panel de ${p.agencyName} · habita.` : "Tu panel de habita.";
-  const credits = p.freeCredits > 0 ? `, con ${p.freeCredits} ${p.freeCredits === 1 ? "crédito gratis" : "créditos gratis"}` : "";
-  const description = p.agencyName
-    ? `Ya está creado${credits}: demos interactivas, estudio de imágenes y videos para tus propiedades.${p.claimed ? "" : " Entrá sin crear cuenta todavía."}`
-    : "Demos interactivas, estudio de imágenes y videos para tus propiedades.";
-  return { title, description };
+/** Only a title under the image in WhatsApp: the image already says the rest. */
+export function panelPreviewText(p: Pick<PanelPreview, "agencyName">) {
+  return { title: p.agencyName ? `Tu panel de ${p.agencyName} · habita.` : "Tu panel de habita." };
 }
 
 /** The image of the preview, for one code. */
@@ -88,7 +82,7 @@ const escape = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": 
 export async function panelPreviewResponse(code: string | null, request: Request) {
   const origin = new URL(request.url).origin;
   const p = await panelPreview(code);
-  const { title, description } = panelPreviewText(p);
+  const { title } = panelPreviewText(p);
   const image = `${origin}${panelPreviewImagePath(code)}`;
   const tags = [
     `<meta property="og:type" content="website">`,
@@ -96,7 +90,6 @@ export async function panelPreviewResponse(code: string | null, request: Request
     `<meta property="og:locale" content="es_AR">`,
     `<meta property="og:url" content="${escape(request.url)}">`,
     `<meta property="og:title" content="${escape(title)}">`,
-    `<meta property="og:description" content="${escape(description)}">`,
     `<meta property="og:image" content="${escape(image)}">`,
     `<meta property="og:image:type" content="image/jpeg">`,
     `<meta property="og:image:width" content="1200">`,
@@ -104,26 +97,26 @@ export async function panelPreviewResponse(code: string | null, request: Request
     `<meta name="twitter:card" content="summary_large_image">`,
     `<meta name="robots" content="noindex, nofollow">`,
   ].join("\n");
-  const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${escape(title)}</title><meta name="description" content="${escape(description)}">\n${tags}</head><body><h1>${escape(title)}</h1><p>${escape(description)}</p></body></html>`;
+  const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${escape(title)}</title>\n${tags}</head><body><h1>${escape(title)}</h1></body></html>`;
   return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "private, no-store" } });
 }
 
 /** The same preview as page metadata (/p/…/panel and /presentacion/<codigo>/panel). */
 export async function panelPreviewMetadata(code: string | null): Promise<Metadata> {
-  const { title, description } = panelPreviewText(await panelPreview(code));
+  const { title } = panelPreviewText(await panelPreview(code));
   return {
     title: { absolute: title },
-    description,
+    // null so the site's description is not inherited (WhatsApp would show it under the title).
+    description: null,
     robots: { index: false, follow: false },
     openGraph: {
       type: "website",
       siteName: "habita.",
       locale: "es_AR",
       title,
-      description,
       images: [{ url: panelPreviewImagePath(code), width: 1200, height: 630, type: "image/jpeg", alt: title }],
     },
-    twitter: { card: "summary_large_image", title, description },
+    twitter: { card: "summary_large_image", title },
   };
 }
 

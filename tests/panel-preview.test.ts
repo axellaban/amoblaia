@@ -17,19 +17,15 @@ describe("the preview of a shared panel link", () => {
       expect(preview.isPreviewBot(ua)).toBe(false);
   });
 
-  it("names the agency and its free credits, and says no account is needed while it has none", () => {
-    const text = preview.panelPreviewText({ agencyName: "Inmobiliaria Sur", freeCredits: 3, claimed: false, cover: null });
-    expect(text.title).toBe("Tu panel de Inmobiliaria Sur · habita.");
-    expect(text.description).toContain("con 3 créditos gratis");
-    expect(text.description).toContain("sin crear cuenta");
-    expect(preview.panelPreviewText({ agencyName: "Inmobiliaria Sur", freeCredits: 0, claimed: true, cover: null }).description).not.toContain("sin crear cuenta");
+  it("names the agency in the title, with nothing under it, and its free credits in the image", () => {
+    expect(preview.panelPreviewText({ agencyName: "Inmobiliaria Sur" })).toEqual({ title: "Tu panel de Inmobiliaria Sur · habita." });
     expect(preview.creditsLine({ freeCredits: 1 })).toBe("Tenés 1 crédito gratis");
     expect(preview.creditsLine({ freeCredits: 0 })).toBe("10 créditos gratis por mes");
   });
 
   it("falls back to a generic preview when the link no longer opens a panel", async () => {
-    expect(await preview.panelPreview("abcdefghjk")).toEqual({ agencyName: null, freeCredits: 0, claimed: false, cover: null });
-    expect(preview.panelPreviewText({ agencyName: null, freeCredits: 0, claimed: false, cover: null }).title).toBe("Tu panel de habita.");
+    expect(await preview.panelPreview("abcdefghjk")).toEqual({ agencyName: null, freeCredits: 0, cover: null });
+    expect(preview.panelPreviewText({ agencyName: null }).title).toBe("Tu panel de habita.");
     expect(preview.panelPreviewImagePath("abc")).toBe("/api/vista-panel?codigo=abc");
   });
 
@@ -39,5 +35,6 @@ describe("the preview of a shared panel link", () => {
     expect(res.headers.get("content-type")).toContain("text/html");
     expect(html).toContain('<meta property="og:image" content="https://www.habitaia.app/api/vista-panel?codigo=abcdefghjk">');
     expect(html).toContain('<meta property="og:title" content="Tu panel de habita.">');
+    expect(html).not.toContain("description");
   });
 });
