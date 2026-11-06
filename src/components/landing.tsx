@@ -6,7 +6,6 @@ import {
   ArrowUpRight,
   Box,
   ChevronsLeftRight,
-  CloudSun,
   Clapperboard,
   Film,
   Globe,
@@ -17,7 +16,6 @@ import {
   Play,
   Share2,
   Smartphone,
-  Sun,
   Upload,
 } from "lucide-react";
 import { Comparison } from "./comparison";
@@ -59,20 +57,8 @@ const CLIP_POSTER = "/home/recorrido.webp";
  * (WCAG 2.2.2); with reduced motion it waits for that button. `decorative`
  * drops the button for the small copies that only accompany another view.
  */
-function Clip({
-  label = "Video de un departamento hecho con habita.",
-  decorative = false,
-  format,
-  progress = false,
-}: {
-  label?: string;
-  decorative?: boolean;
-  format?: string;
-  /** A playback bar that moves with the video, so the card reads as a video at a glance. */
-  progress?: boolean;
-}) {
+function Clip({ label = "Video de un departamento hecho con habita.", decorative = false, format }: { label?: string; decorative?: boolean; format?: string }) {
   const ref = useRef<HTMLVideoElement>(null);
-  const fill = useRef<HTMLSpanElement>(null);
   const reduced = useReducedMotion();
   const [paused, setPaused] = useState(false);
   const [visible, setVisible] = useState(false);
@@ -93,17 +79,6 @@ function Clip({
     if (wanted) v.play().catch(() => setPlaying(false));
     else v.pause();
   }, [wanted]);
-  useEffect(() => {
-    const v = ref.current;
-    if (!progress || !playing || !v) return;
-    let frame = 0;
-    const tick = () => {
-      if (fill.current && v.duration) fill.current.style.transform = `scaleX(${v.currentTime / v.duration})`;
-      frame = requestAnimationFrame(tick);
-    };
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, [progress, playing]);
   return (
     <div className={`hb-clip ${decorative ? "is-decorative" : ""}`}>
       <video
@@ -123,11 +98,6 @@ function Clip({
       </video>
       {!decorative && <span className="hb-clip-tag">Video hecho con habita.</span>}
       {format && <span className="hb-clip-format"><Smartphone size={13} aria-hidden="true" /> {format}</span>}
-      {progress && (
-        <span className={`hb-clip-progress ${playing ? "" : "is-idle"}`} aria-hidden="true">
-          <span ref={fill} />
-        </span>
-      )}
       {!decorative && (
         <button
           type="button"
@@ -150,7 +120,18 @@ function Clip({
  * (WCAG 2.2.2). With reduced motion the CSS leaves a still frame and the
  * button is hidden.
  */
-function Loop({ className, label, children }: { className: string; label: string; children: ReactNode }) {
+function Loop({
+  className,
+  label,
+  children,
+  controls,
+}: {
+  className: string;
+  label: string;
+  children: ReactNode;
+  /** Buttons over the photo (the demo's styles), outside the animated picture. */
+  controls?: ReactNode;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
   const [paused, setPaused] = useState(false);
@@ -167,6 +148,7 @@ function Loop({ className, label, children }: { className: string; label: string
       <div className="hb-loop-stage" role="img" aria-label={label}>
         {children}
       </div>
+      {controls}
       <button
         type="button"
         className="hb-loop-toggle"
@@ -179,19 +161,42 @@ function Loop({ className, label, children }: { className: string; label: string
   );
 }
 
-/** Demo card: the before/after slider moving back and forth on its own. */
-function DemoLoop({ room, style }: { room: string; style: string }) {
+/**
+ * Demo card: the same style buttons as before, over a before/after slider
+ * that moves back and forth on its own. A style shows in «Después».
+ */
+function DemoLoop({ has, room }: { has: Has; room: string }) {
+  const [style, setStyle] = useState("modern");
+  const options = ["original", ...exampleStyles.filter((s) => ["modern", "scandinavian", "classic", "minimalist"].includes(s))].filter((s) => has(room, s));
+  const current = options.includes(style) ? style : options[1] || options[0];
+  const compare = current !== "original";
   return (
-    <Loop className="hb-loop-demo" label={`Comparador de la demo: ${roomName(room).toLowerCase()} vacío y amoblado`}>
+    <Loop
+      className={`hb-loop-demo ${compare ? "" : "is-still"}`}
+      label={compare ? `Comparador de la demo: ${roomName(room).toLowerCase()} vacío y en estilo ${styleName(current).toLowerCase()}` : `${roomName(room)}, foto original`}
+      controls={
+        <div className="hb-demo-styles" role="group" aria-label="Estilo">
+          {options.map((s) => (
+            <button key={s} type="button" aria-pressed={s === current} onClick={() => setStyle(s)}>
+              {styleName(s)}
+            </button>
+          ))}
+        </div>
+      }
+    >
       <img src={examplePath(room, "original")} alt="" loading="lazy" />
-      <img className="hb-loop-after" src={examplePath(room, style)} alt="" loading="lazy" />
-      <span className="hb-loop-handle">
-        <span>
-          <ChevronsLeftRight size={16} aria-hidden="true" />
-        </span>
-      </span>
-      <em className="hb-loop-tag is-left">Antes</em>
-      <em className="hb-loop-tag is-right">Después</em>
+      {compare && (
+        <>
+          <img key={current} className="hb-loop-after" src={examplePath(room, current)} alt="" loading="lazy" />
+          <span className="hb-loop-handle">
+            <span>
+              <ChevronsLeftRight size={16} aria-hidden="true" />
+            </span>
+          </span>
+          <em className="hb-loop-tag is-top is-left">Antes</em>
+          <em className="hb-loop-tag is-top is-right">Después</em>
+        </>
+      )}
     </Loop>
   );
 }
@@ -360,7 +365,7 @@ export function Landing({ scenes, trial }: { scenes: string[]; trial: boolean })
           </header>
           <div className="hb-products">
             <article className="hb-card">
-              <DemoLoop room={lead} style={leadStyle} />
+              <DemoLoop has={has} room={demoRooms[0] || lead} />
               <h3>Demostraciones interactivas</h3>
               <p>Una ficha para recorrer, cambiar el estilo de cada ambiente y compartir por WhatsApp.</p>
               <Link href={START} className="hb-more">
@@ -368,12 +373,7 @@ export function Landing({ scenes, trial }: { scenes: string[]; trial: boolean })
               </Link>
             </article>
             <article className="hb-card">
-              <StudioLoop room={second} style={pick(second, "modern", "scandinavian")} />
-              <ul className="hb-loop-tools" aria-label="Herramientas del estudio">
-                <li className="is-on">Vaciar</li>
-                <li><Sun size={13} aria-hidden="true" /> Mejorar luz</li>
-                <li><CloudSun size={13} aria-hidden="true" /> Cielo azul</li>
-              </ul>
+              <StudioLoop room={second} style={pick(second, "scandinavian", "modern")} />
               <h3>Estudio de imágenes</h3>
               <p>Amoblá, vaciá o mejorá tus fotos y descargalas listas para publicar.</p>
               <Link href="/estudio" className="hb-more">
@@ -382,7 +382,7 @@ export function Landing({ scenes, trial }: { scenes: string[]; trial: boolean })
             </article>
             <article className="hb-card">
               <div className="hb-card-media">
-                <Clip format="1:1 · 9:16 · 4:5 · 16:9" progress />
+                <Clip format="1:1 · 9:16 · 4:5 · 16:9" />
               </div>
               <h3>Videos</h3>
               <p>Convertí las fotos en recorridos y videos verticales u horizontales, con música y tu marca.</p>

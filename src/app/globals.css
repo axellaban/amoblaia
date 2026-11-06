@@ -24162,6 +24162,26 @@ body:has(.pv-root) .pb-root {
 .hb-loop-tag.is-right {
   right: 44px;
 }
+.hb-loop-tag.is-top {
+  top: 8px;
+  bottom: auto;
+}
+.hb-loop-tag.is-top.is-right {
+  right: 8px;
+}
+/* The demo keeps its style buttons along the bottom: the pause goes on top. */
+.hb-loop-demo .hb-loop-toggle {
+  top: 6px;
+  bottom: auto;
+  right: 50%;
+  translate: 50% 0;
+}
+.hb-loop-demo.is-still .hb-loop-toggle {
+  display: none;
+}
+.hb-loop .hb-demo-styles {
+  z-index: 3;
+}
 .hb-loop-toggle {
   position: absolute;
   right: 6px;
@@ -24259,51 +24279,6 @@ body:has(.pv-root) .pb-root {
 @keyframes hb-loop-step1 { 0%, 15% { opacity: 1; } 16%, 96% { opacity: 0; } 98%, 100% { opacity: 1; } }
 @keyframes hb-loop-step2 { 0%, 15% { opacity: 0; } 16%, 55% { opacity: 1; } 56%, 100% { opacity: 0; } }
 @keyframes hb-loop-step3 { 0%, 55% { opacity: 0; } 56%, 94% { opacity: 1; } 96%, 100% { opacity: 0; } }
-.hb-loop-tools {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: -2px;
-  margin-bottom: 4px;
-  padding: 0;
-  list-style: none;
-}
-.hb-loop-tools li {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 9px;
-  border-radius: 999px;
-  background: var(--hb-sage);
-  color: var(--hb-green);
-  font-size: 12px;
-  font-weight: 700;
-}
-.hb-loop-tools li.is-on {
-  background: var(--hb-green);
-  color: #fff;
-}
-/* Video card: a playback bar that moves with the video. */
-.hb-clip-progress {
-  position: absolute;
-  left: 12px;
-  right: 64px;
-  bottom: 30px;
-  height: 4px;
-  border-radius: 4px;
-  background: #ffffff59;
-  overflow: hidden;
-}
-.hb-clip-progress span {
-  display: block;
-  height: 100%;
-  background: #fff;
-  transform: scaleX(0);
-  transform-origin: left;
-}
-.hb-clip-progress.is-idle {
-  opacity: 0;
-}
 @media (prefers-reduced-motion: reduce) {
   .hb-loop * {
     animation: none !important;
