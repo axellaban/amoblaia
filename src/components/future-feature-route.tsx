@@ -9,7 +9,7 @@ export async function FutureFeatureRoute({ feature }: { feature: FutureFeature }
   const { membership } = await requirePanelPage(`/panel/${info.slug}`);
   return (
     <>
-      <PanelNav section={feature as PanelSection} agencyName={membership.agency.name} role={membership.role} />
+      <PanelNav section={feature as PanelSection} agencyName={membership.agency.name} role={membership.role} tour={!membership.support && !membership.visitor} />
       <div className="account-page container ap-page">
         <FutureFeaturePage feature={feature} agencyName={membership.agency.name} role={membership.role} readOnly={Boolean(membership.support)} />
       </div>

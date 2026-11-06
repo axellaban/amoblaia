@@ -4,9 +4,12 @@
 // Redes, API) are ordinary items here, without "Próximamente": their own page
 // says it. The site and users stay for the owner and administrators.
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import {
+  ChevronDown,
   CircleHelp,
+  Compass,
+  MessageCircle,
   Code2,
   CreditCard,
   Globe,
@@ -29,7 +32,9 @@ import { cta } from "@/lib/interaction-tracking";
 import { canManage, type AgencyRole } from "@/lib/agency/shared";
 import type { FutureFeature } from "@/lib/agency/future-features";
 import { videoEnabled } from "@/lib/agency/flags";
-import { OPEN_ASSISTANT_EVENT } from "@/lib/assistant/shared";
+import { ASSISTANT_NAME, OPEN_ASSISTANT_EVENT } from "@/lib/assistant/shared";
+import { PANEL_MENU_EVENT } from "@/lib/agency/panel-tour";
+import { reopenTour } from "./panel-tour";
 
 export type PanelSection =
   | "inicio"
@@ -71,7 +76,9 @@ const GROUPS = (): Item[][] => [
 
 const deviceType = () => (typeof window === "undefined" ? "unknown" : window.matchMedia("(max-width: 860px)").matches ? "mobile" : "desktop");
 
-function NavList({ section, role, onNavigate }: { section: PanelSection; role?: AgencyRole; onNavigate?: () => void }) {
+function NavList({ section, role, onNavigate, tour = true }: { section: PanelSection; role?: AgencyRole; onNavigate?: () => void; tour?: boolean }) {
+  const [help, setHelp] = useState(false);
+  const helpId = useId();
   return (
     <>
       {GROUPS().map((group, i) => (
@@ -84,6 +91,7 @@ function NavList({ section, role, onNavigate }: { section: PanelSection; role?: 
                   href={href}
                   className={id === section ? "is-on" : ""}
                   aria-current={id === section ? "page" : undefined}
+                  data-tour={`nav-${id}`}
                   {...cta(`panel_nav_${id}`, "panel_sidebar", `panel_${id}`, "navigation")}
                   onClick={() => {
                     // Opening an upcoming tool counts on choosing it, with or without signing up for its notice.
@@ -119,19 +127,61 @@ function NavList({ section, role, onNavigate }: { section: PanelSection; role?: 
       ))}
       <ul className="ap-side-group ap-side-bottom">
         <li>
-          {/* Help is Miguel Ángel, the assistant: the chat opens here, the page stays. */}
-          <button
-            type="button"
-            className="ap-side-button"
-            {...cta("panel_nav_ayuda", "panel_sidebar", "assistant_open", "navigation")}
-            onClick={() => {
-              onNavigate?.();
-              window.dispatchEvent(new Event(OPEN_ASSISTANT_EVENT));
-            }}
-          >
-            <CircleHelp size={19} aria-hidden="true" />
-            <span>Ayuda</span>
-          </button>
+          {/* Help: Miguel Ángel, the assistant (the chat opens here, the page stays), and the welcome tour again. */}
+          {tour ? (
+            <>
+              <button type="button" className="ap-side-button" aria-expanded={help} aria-controls={helpId} onClick={() => setHelp(!help)}>
+                <CircleHelp size={19} aria-hidden="true" />
+                <span>Ayuda</span>
+                <ChevronDown size={16} aria-hidden="true" className={`ap-side-chevron ${help ? "is-open" : ""}`} />
+              </button>
+              {help && (
+                <ul id={helpId} className="ap-side-sub">
+                  <li>
+                    <button
+                      type="button"
+                      className="ap-side-button"
+                      {...cta("panel_nav_ayuda", "panel_sidebar", "assistant_open", "navigation")}
+                      onClick={() => {
+                        onNavigate?.();
+                        window.dispatchEvent(new Event(OPEN_ASSISTANT_EVENT));
+                      }}
+                    >
+                      <MessageCircle size={17} aria-hidden="true" />
+                      <span>Preguntale a {ASSISTANT_NAME}</span>
+                    </button>
+                  </li>
+                  <li>
+                    <button
+                      type="button"
+                      className="ap-side-button"
+                      onClick={() => {
+                        onNavigate?.();
+                        setHelp(false);
+                        reopenTour("panel_sidebar_help");
+                      }}
+                    >
+                      <Compass size={17} aria-hidden="true" />
+                      <span>Volver a ver el recorrido</span>
+                    </button>
+                  </li>
+                </ul>
+              )}
+            </>
+          ) : (
+            <button
+              type="button"
+              className="ap-side-button"
+              {...cta("panel_nav_ayuda", "panel_sidebar", "assistant_open", "navigation")}
+              onClick={() => {
+                onNavigate?.();
+                window.dispatchEvent(new Event(OPEN_ASSISTANT_EVENT));
+              }}
+            >
+              <CircleHelp size={19} aria-hidden="true" />
+              <span>Ayuda</span>
+            </button>
+          )}
         </li>
         <li>
           <Link
@@ -160,7 +210,7 @@ function Brand() {
 
 function PlansBox({ credits }: { credits?: number | null }) {
   return (
-    <div className="ap-side-plans">
+    <div className="ap-side-plans" data-tour="credits-plans">
       <p>
         {typeof credits === "number" ? (
           <>
@@ -182,8 +232,27 @@ function PlansBox({ credits }: { credits?: number | null }) {
  * give way to it, see globals.css). Mobile: a bar with the agency's name and a
  * drawer with the same items.
  */
-export function PanelNav({ section, agencyName, role, credits }: { section: PanelSection; agencyName?: string; role?: AgencyRole; credits?: number | null }) {
+export function PanelNav({
+  section,
+  agencyName,
+  role,
+  credits,
+  tour = true,
+}: {
+  section: PanelSection;
+  agencyName?: string;
+  role?: AgencyRole;
+  credits?: number | null;
+  /** «Ayuda → Volver a ver el recorrido»: not in the team's support view nor in the agency's visit. */
+  tour?: boolean;
+}) {
   const [open, setOpen] = useState(false);
+  // The welcome tour opens and closes this menu for its steps on a phone.
+  useEffect(() => {
+    const toggle = (e: Event) => setOpen(Boolean((e as CustomEvent<boolean>).detail));
+    window.addEventListener(PANEL_MENU_EVENT, toggle);
+    return () => window.removeEventListener(PANEL_MENU_EVENT, toggle);
+  }, []);
   const closeRef = useRef<HTMLButtonElement>(null);
   const openRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -203,7 +272,7 @@ export function PanelNav({ section, agencyName, role, credits }: { section: Pane
       <aside className="ap-sidebar" aria-label="Panel de la inmobiliaria">
         <Brand />
         <nav aria-label="Secciones del panel">
-          <NavList section={section} role={role} />
+          <NavList section={section} role={role} tour={tour} />
         </nav>
         <PlansBox credits={credits} />
       </aside>
@@ -225,7 +294,7 @@ export function PanelNav({ section, agencyName, role, credits }: { section: Pane
             </div>
             {agencyName && <p className="ap-drawer-agency">{agencyName}</p>}
             <nav aria-label="Secciones del panel">
-              <NavList section={section} role={role} onNavigate={() => setOpen(false)} />
+              <NavList section={section} role={role} tour={tour} onNavigate={() => setOpen(false)} />
             </nav>
             <PlansBox credits={credits} />
           </div>

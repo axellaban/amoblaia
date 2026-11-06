@@ -39,6 +39,24 @@ export function creditPackages(products: Product[]): CreditPackage[] {
   });
 }
 
+/** The pack the pricing highlights as «Recomendado» (and starts selected). */
+export const RECOMMENDED_PACK_SKU = "pack-25";
+
+/** The recommended pack when it is on sale; otherwise the second one, or the only one. */
+export function recommendedPackage(packages: CreditPackage[]): CreditPackage | undefined {
+  return packages.find((p) => p.sku === RECOMMENDED_PACK_SKU) ?? packages[1] ?? packages[0];
+}
+
+/** How long bought credits last, in words: «12 meses», «90 días». From the catalog, never assumed. */
+export function validityLabel(days: number | null | undefined): string | null {
+  if (!days || days <= 0) return null;
+  if (days >= 60) {
+    const months = Math.round(days / 30.4);
+    return `${months} ${months === 1 ? "mes" : "meses"}`;
+  }
+  return `${days} ${days === 1 ? "día" : "días"}`;
+}
+
 /** Where to come back after paying: only our own pages, never another site. */
 export function safeReturnTo(value: unknown): string | null {
   if (typeof value !== "string" || value.length > 300) return null;

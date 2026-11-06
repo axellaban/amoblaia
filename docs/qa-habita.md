@@ -39,12 +39,15 @@ Buscá `### QA <fecha de hoy> am` o `pm`, con la fecha de Argentina. Si no está
 - **OBS-001** El video toma el título «Propiedad nueva» si el borrador no tiene título.
 - **OBS-002** La nota «Generar crea otra» junto a «(sin costo)» puede confundir (`src/components/editor-photos.tsx`).
 - **OBS-003** Los estilos de video Equilibrado y Cinematográfico figuran como «No disponible» en la cuenta y no se probaron.
+- **OBS-004** En Android chico (Galaxy S8), el selector «¿Con qué querés empezar?» pasa la cruz de cerrar a una segunda línea bajo el título y la miniatura de «Seguir con …» se vio vacía en la captura (posible carga diferida). Aislado; ver si se repite.
 
 ### Propuestas UX pendientes
 
 Para que Astra las evalúe. Claude no las implementa sin aprobación.
 
-- Ninguna registrada todavía con este formato. OBS-002 es candidata.
+- **UX-001** Contraste bajo en la guía de la home del panel (`panel-guide.tsx`): el texto gris de «Por qué importa» sobre el verde bosque (`.hg-why-lead`, `.hg-why-note`) y las notas chicas sobre arena (`.hg-social-art small`, `.hg-reel-copy small`) no llegan a 4.5:1 (axe `color-contrast`, serious). Escritorio. Reproducido.
+- **UX-002** La demo pública (`/demo/<token>` y `/presentacion`) tarda más de 5 s en cargar en Android chico con red de celular lenta, sin un indicador de avance claro durante la espera. Reproducido una vez; medir de nuevo.
+- OBS-002 sigue siendo candidata.
 
 ### PRs de usabilidad abiertos
 
@@ -69,6 +72,19 @@ Para que Astra las evalúe. Claude no las implementa sin aprobación.
 Sin nombres, teléfonos, emails, enlaces a grabaciones, IDs de sesión, tasas de conversión ni cantidades de usuarios o sesiones.
 
 ## Resultados
+
+### QA 2026-11-06 am
+
+- Inicio: 2026-11-06T11:35:32-03:00 · Fin: 2026-11-06T11:52:00-03:00
+- Commit: 2c4ab7f (recorrido de bienvenida del panel, axellaban/amoblaia#156) · Despliegue: dpl_3HoYcWotPxCU4KT72dGKErhdexa6 (el conector de Vercel sigue con 403; se confirmó en producción porque `/api/panel/recorrido` pasó de 404 a 200) · Estado: parcial
+- Tipo: completa (recortada, con foco en el recorrido nuevo) · Pantallas: escritorio 1366×900, iPhone 13, Galaxy S8, iPad (gen 7); Galaxy S8 con red lenta y con user agent de WhatsApp para la demo pública
+- Flujos revisados: recorrido de bienvenida con la sesión de QA en las cuatro pantallas (los 7 pasos y la pantalla final, el selector real en el paso 3, el menú lateral en celular, «Ayuda → Volver a ver el recorrido» en la home y desde `/panel/propiedades`, Escape, reaparición solo una vez: la API pasa a «no elegible» después de verlo y se guarda en `profiles`). Sin errores de consola ni de red, sin scroll horizontal, la tarjeta siempre dentro de la pantalla; la única escritura es marcar el recorrido como visto. También: demo publicada de QA (`/demo/<token>` y `/presentacion`) en escritorio, iPhone 13, Galaxy S8 con red lenta y WhatsApp, `og:*` presentes; `/`, `/precios`, `/acceso` y `/demo/<token-inexistente>` (404 claro) en escritorio y celular; axe en `/panel` y en la pantalla final del recorrido; logs de Postgres desde el despliegue.
+- Sin revisar: generaciones (crear demo con fotos, estudio de imágenes, video Clásico), caminos de error de subida y `/admin`, porque el cambio desplegado no toca esos flujos y se evitó gastar créditos; errores de Vercel, por el 403 del conector.
+- Bugs encontrados: ninguno · Corregidos: ninguno
+- Observaciones nuevas: OBS-004 · Propuestas nuevas: UX-001, UX-002
+- PRs de usabilidad abiertos: ninguno
+- PostHog revisado hasta: 2026-11-06T11:50:00-03:00 · cobertura: parcial · conteo agregado de tráfico externo y fricción en demos y panel desde el corte anterior: sin clics repetidos ni excepciones, sin sesiones externas en el panel. Los eventos `panel_tour_*` no se pudieron ver porque la red del sandbox bloquea PostHog; se confirman con la primera inmobiliaria nueva.
+- Esperado, no es bug: la cuenta de QA vio el recorrido por sí solo porque su membresía es reciente (menos de 14 días); en el paso 3 de celular la tarjeta tapa el final del selector porque no entra en otro lugar, y el selector no se puede tocar durante el recorrido.
 
 ### QA 2026-11-06 am
 

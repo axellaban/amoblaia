@@ -146,9 +146,14 @@ describe("Panel navigation and home", () => {
     expect(html.indexOf("<span>Estudio de imágenes</span>")).toBeLessThan(html.indexOf("<span>Usuarios</span>"));
   });
 
-  it("«Ayuda» opens Miguel Ángel (a button, no page) and «Mi cuenta» and the plans stay inside the panel", () => {
+  it("«Ayuda» opens Miguel Ángel and the tour (buttons, no page) and «Mi cuenta» and the plans stay inside the panel", () => {
     const html = renderToStaticMarkup(<PanelNav section="inicio" agencyName="Inmo Sur" role="owner" />);
-    expect(html).toMatch(/<button type="button" class="ap-side-button"[^>]*>[\s\S]*?<span>Ayuda<\/span><\/button>/);
+    // A disclosure: Miguel Ángel and «Volver a ver el recorrido» inside it.
+    expect(html).toMatch(/<button type="button" class="ap-side-button" aria-expanded="false"[^>]*>[\s\S]*?<span>Ayuda<\/span>[\s\S]*?<\/button>/);
+    // Without the tour (support view, visit): «Ayuda» opens Miguel Ángel straight away, as before.
+    const plain = renderToStaticMarkup(<PanelNav section="inicio" agencyName="Inmo Sur" role="owner" tour={false} />);
+    expect(plain).toMatch(/<button type="button" class="ap-side-button"[^>]*>[\s\S]*?<span>Ayuda<\/span><\/button>/);
+    expect(plain).not.toContain("aria-expanded=\"false\" aria-controls");
     expect(html).not.toContain('href="/ayuda"');
     expect(html).toContain('href="/panel/cuenta"');
     expect(html).not.toContain('href="/cuenta"');
@@ -168,7 +173,9 @@ describe("Panel navigation and home", () => {
     // Crear demostración interactiva, Estudio de imágenes (Editar imágenes), Crear video, each opening the start picker.
     expect([...cards.matchAll(/\bid: "([a-z]+)"(?: as const)?,/g)].map((m) => m[1])).toEqual(["demo", "editar", "video"]);
     expect(TOOL_TITLE).toEqual({ demo: "Crear demostración interactiva", ambientar: "Ambientar con IA", editar: "Editar imágenes", video: "Crear video" });
-    expect(cards).toContain("<StartPicker");
+    // «Comenzar» opens the start picker, shown by the home (the welcome tour uses the same one).
+    expect(cards).toContain("onClick={() => onStart(id)}");
+    expect(source.slice(source.indexOf("function PanelHome"), source.indexOf('/** "Ver mi sitio"'))).toContain("<StartPicker");
     const home = source.slice(source.indexOf("function HomeCards"), source.indexOf('/** "Ver mi sitio"'));
     expect(home).not.toMatch(/Tour 360|Planos|Redes|\/panel\/api|Pr[oó]ximamente|Guardar (mi )?panel/);
   });

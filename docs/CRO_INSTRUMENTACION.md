@@ -27,6 +27,16 @@ No lo subas por arreglos que no cambian la intención: un bug, rendimiento, acce
 
 En el PR indicá flujo, versión anterior y nueva, y qué cambió. Sin esto no se pueden comparar cohortes antes y después.
 
+### Historial de versiones
+
+| Flujo | Versión | Desde | Qué cambió |
+| --- | --- | --- | --- |
+| `pricing` | `v1` → `v2` | Rediseño de precios | Los cuatro paquetes con precio total, precio por crédito y ahorro se ven de entrada; 25 créditos marcado «Recomendado» y preseleccionado; el CTA compra el paquete elegido; plan Gratis compacto al lado (solo en la página pública); datos NAR sobre home staging; «Cómo funcionan los créditos», «Qué incluye» y FAQ desplegables; desaparece la tarjeta de precios separada. |
+
+### Precios dentro de otros flujos
+
+El componente de precios también se muestra dentro del panel (`/panel/creditos`, flujo `panel`) y de la demo de una inmobiliaria (flujo `demo`). Ahí `flow_name` y `ux_version` siguen siendo los de la página, para no mover la versión de esos flujos. Para comparar el diseño de precios en cualquier superficie, los eventos propios de precios (`pricing_viewed`, `pricing_packages_viewed`, `pricing_package_selected`, `pricing_link_copied`, `pricing_link_shared`) llevan además `pricing_ux_version` (hoy `v2`) y `surface` (`precios`, `panel` o `demo`).
+
 ### Experimentos
 
 `setExperimentVariant("experimento", "variante")` en `src/lib/analytics.ts`, y `setExperimentVariant(null)` al terminar.
@@ -45,7 +55,7 @@ Los eventos se capturan en el navegador salvo que se indique otra cosa. Estado: 
 | 6 | Cuenta creada | `account_created`, `agency_created`, `agency_claimed`, `panel_claim_completed` | Parcial. `account_created` puede ser anterior a confirmar el e-mail |
 | 7 | Primera interacción en el panel | `panel_start_picker_chosen`, `property_import_started`, `studio_opened`, `video_section_viewed`, `cta_clicked` con `surface = panel` | Parcial. No hay un evento único: se toma el primero de estos |
 | 8 | Activado | Ver sección 3 | Parcial en PostHog; completo en la base |
-| 9 | Vio precios | `pricing_viewed`, `limite_planes_visto`, `$pageview` en `/precios` | Completo |
+| 9 | Vio precios | `pricing_viewed`, `limite_planes_visto`, `$pageview` en `/precios`. Desde `pricing` `v2`: `pricing_packages_viewed` (los paquetes estuvieron al menos un 60 % en pantalla, una vez por vista) y `pricing_package_selected` (eligió otro paquete; `sku`, `credits`, `discount_pct`, `recommended`) | Completo. `pricing_package_selected` no se dispara si compra el preseleccionado: en ese caso el paquete está en `plan` del `cta_clicked` de `pricing_buy_credits` |
 | 10 | Checkout iniciado | `credits_checkout_started`, `checkout_creado`, `plan_click` | Completo |
 | 11 | Pago confirmado | `compra_confirmada`; en el servidor, `payments_commercial` | Parcial. El evento solo sale si la persona vuelve a la página de retorno. La fuente de verdad es la base |
 
@@ -59,6 +69,25 @@ Una visita, un clic, abrir el estudio, importar una propiedad o generar sin eleg
 
 - **Fuente de verdad:** la base (`approved_generation_id`), por `src/lib/prospecting/metrics.ts`.
 - **Aproximado en PostHog:** `first_generation_completed`. Es una condición necesaria, no suficiente: PostHog no ve la elección de la versión preferida. Sirve para encontrar grabaciones, no para informar activados.
+
+## 3 bis. Recorrido de bienvenida del panel
+
+Desde `panel` `v2`. Recorrido de 7 pasos sobre la home real del panel (`src/components/panel-tour.tsx`). Arranca solo una vez por cuenta (miembros que se sumaron hace 14 días o menos y no lo vieron, guardado en `profiles.panel_tour_seen_at`) y se vuelve a abrir desde «Ayuda → Volver a ver el recorrido». No arranca solo si la persona llega a seguir trabajando (enlace de la demo para importar, `?continuar=`, `?accion=`, un ancla de la home): espera a la próxima sesión.
+
+| Evento | Cuándo | Propiedades |
+| --- | --- | --- |
+| `panel_tour_started` | Empieza el recorrido (no al reanudarlo tras recargar) | `tour_version`, `origin` (`auto` o `help`), `steps_total`, `role`, `device_type` |
+| `panel_tour_step_viewed` | Se muestra un paso | Las anteriores y `step_id` (`welcome`, `demo`, `start`, `studio`, `video`, `demos`, `credits`), `step_index` (desde 1) |
+| `panel_tour_completed` | Llega a la pantalla final | Las de `started` |
+| `panel_tour_skipped` | Sale antes de la pantalla final | Las de `started`, `step_id`, `step_index`, `method` (`button`, `close`, `escape`) |
+| `panel_tour_reopened` | Elige «Volver a ver el recorrido» en Ayuda | `tour_version`, `source_surface`, `device_type` |
+| `panel_tour_primary_cta_clicked` | «Crear mi primera demostración» en la pantalla final | Las de `started` y `cta` |
+
+`steps_total` cambia según el rol y lo disponible: sin herramientas para quien no puede crear (solo vista, o limitado a algunas propiedades) y sin video donde no está habilitado. Comparar `step_index` solo dentro del mismo `steps_total`.
+
+El paso 3 muestra el selector real sin contar `panel_start_picker_opened`: el recorrido no ejecuta acciones. Después del CTA principal el selector se abre de verdad y sí lo cuenta.
+
+Completar el recorrido no es activación. Para medir su efecto, comparar la activación (sección 3, `approved_generation_id`) de quienes lo vieron con la de quienes lo saltaron o no lo vieron, no `panel_tour_completed`.
 
 ## 4. Identificadores
 
