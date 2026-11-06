@@ -77,7 +77,7 @@ Sin nombres, teléfonos, emails, enlaces a grabaciones, IDs de sesión, tasas de
 
 ### QA 2026-11-06 pm (reintento)
 
-- Inicio: 2026-11-06T18:52:02-03:00 · Fin: 2026-11-06T19:00:00-03:00
+- Inicio: 2026-11-06T18:52:02-03:00 · Fin: 2026-11-06T18:55:00-03:00
 - Commit: 5faaed3 (#173) · Despliegue: producción READY · Estado: completo (lo que corresponde a la corrida liviana)
 - Tipo: liviana · Pantallas: escritorio 1366×900, iPhone 13, Galaxy S8 (también con red lenta y con user agent de WhatsApp)
 - Flujos revisados: sesión de QA (OK, con `NODE_USE_ENV_PROXY=1`); demo publicada de QA (`/demo/<token>` y `/presentacion`) en las tres pantallas, con red lenta y con WhatsApp: 200, sin errores de consola ni de red, sin scroll horizontal, sin imágenes rotas ni placeholders, `og:*` presentes; `/demo/<token-inexistente>` muestra el 404 propio, claro; `/panel` en escritorio y iPhone 13 y `/panel/propiedades` en iPhone 13: sin errores. Axe y capturas en cada pantalla.
