@@ -1,7 +1,8 @@
 // The preview of www.habitaia.app/precios when it is shared (WhatsApp, redes):
-// the same living before and after, «Empezá gratis» with the free monthly
-// credits, the lowest price per credit from the catalog and the three figures
-// of «El impacto en tu negocio». Generated, so the prices are never stale.
+// the living before and after, «Presentá mejor tus propiedades con IA» with the
+// lowest price per image (one credit) from the catalog, the free plan's monthly credits and
+// the three figures of «El impacto en tu negocio». Generated, so the prices are
+// never stale.
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ImageResponse } from "next/og";
@@ -12,7 +13,7 @@ import { FREE_MONTHLY_CREDITS, lowestUnitCents } from "@/lib/commerce/credit-pac
 import { cloudConfigured } from "@/lib/supabase/config";
 import { adminClient } from "@/lib/supabase/server";
 
-export const alt = "Precios de habita.: empezá gratis con créditos por mes y comprá créditos sin suscripción";
+export const alt = "Precios de habita.: presentá mejor tus propiedades con IA, desde un precio por imagen y con créditos gratis por mes";
 export const size = { width: 1200, height: 630 };
 // JPEG and light: WhatsApp skips preview images much heavier than ~300 KB.
 export const contentType = "image/jpeg";
@@ -59,10 +60,6 @@ const icon = (id: string, color: string, px: number) => {
   );
 };
 
-const tag = (text: string, side: "left" | "right", background: string) => (
-  <div style={{ position: "absolute", bottom: 22, [side]: 22, display: "flex", padding: "7px 14px", borderRadius: 999, fontSize: 17, fontWeight: 600, color: "#fff", background }}>{text}</div>
-);
-
 export default async function Image() {
   // Literal paths, so the build bundles these files with the route.
   const [photo, semi, bold, price] = await Promise.all([
@@ -74,59 +71,61 @@ export default async function Image() {
   const photoSrc = `data:image/jpeg;base64,${photo.toString("base64")}`;
   const png = new ImageResponse(
     (
-      <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", background: CREAM, fontFamily: "Manrope" }}>
-        <div style={{ display: "flex", height: 480 }}>
+      <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", background: CREAM, color: GREEN, fontFamily: "Manrope" }}>
+        <div style={{ display: "flex", height: 390 }}>
           {/* The living, before and after. */}
-          <div style={{ position: "relative", display: "flex", width: 660, height: 480 }}>
-            <img src={photoSrc} width={660} height={480} alt="" />
-            <div style={{ position: "absolute", top: 0, bottom: 0, left: 329, width: 3, background: "#fff", display: "flex" }} />
-            <div style={{ position: "absolute", top: 210, left: 300, width: 60, height: 60, borderRadius: 30, background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 6px 18px rgba(0,0,0,0.25)" }}>
+          <div style={{ position: "relative", display: "flex", width: 600, height: 390 }}>
+            <img src={photoSrc} width={600} height={390} alt="" />
+            <div style={{ position: "absolute", top: 0, bottom: 0, left: 299, width: 3, background: "#fff", display: "flex" }} />
+            <div style={{ position: "absolute", top: 165, left: 270, width: 60, height: 60, borderRadius: 30, background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 6px 18px rgba(0,0,0,0.25)" }}>
               <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke={GREEN} strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
                 <path d="m9 7-5 5 5 5" />
                 <path d="m15 7 5 5-5 5" />
               </svg>
             </div>
             <div style={{ position: "absolute", top: 22, left: 26, display: "flex", fontSize: 42, fontWeight: 800, color: "#fff", letterSpacing: -1.2, textShadow: "0 2px 14px rgba(0,0,0,0.35)" }}>habita.</div>
-            {tag("Antes", "left", "rgba(36,40,36,0.78)")}
-            {tag("Después", "right", "#6f8f5a")}
           </div>
           {/* The offer. */}
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", padding: "0 48px", background: GREEN, color: CREAM }}>
-            <div style={{ display: "flex", fontSize: 60, fontWeight: 800, letterSpacing: -1.8, lineHeight: 1 }}>Empezá gratis</div>
-            <div style={{ display: "flex", alignItems: "center", marginTop: 26, padding: "16px 20px", borderRadius: 18, background: CREAM, color: GREEN }}>
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#3b6e3a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="8" width="18" height="4" rx="1" />
-                <path d="M12 8v13" />
-                <path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7" />
-                <path d="M7.5 8a2.5 2.5 0 0 1 0-5A4.8 8 0 0 1 12 8a4.8 8 0 0 1 4.5-5 2.5 2.5 0 0 1 0 5" />
-              </svg>
-              <div style={{ display: "flex", flexDirection: "column", marginLeft: 16 }}>
-                <div style={{ display: "flex", fontSize: 27, fontWeight: 800 }}>{`${FREE_MONTHLY_CREDITS} créditos por mes`}</div>
-                <div style={{ display: "flex", fontSize: 18, fontWeight: 600, color: "#5d625d" }}>Sin tarjeta · sin suscripción</div>
-              </div>
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "flex-start", padding: "0 44px", background: GREEN, color: CREAM }}>
+            <div style={{ display: "flex", flexDirection: "column", fontSize: 50, fontWeight: 800, letterSpacing: -1.4, lineHeight: 1.08 }}>
+              <div style={{ display: "flex" }}>Presentá mejor</div>
+              <div style={{ display: "flex" }}>tus propiedades</div>
+              <div style={{ display: "flex" }}>con IA</div>
             </div>
             {price ? (
-              <div style={{ display: "flex", flexDirection: "column", marginTop: 24 }}>
-                <div style={{ display: "flex", fontSize: 19, fontWeight: 600, color: "#cfe0c4" }}>Después, créditos desde</div>
-                <div style={{ display: "flex", alignItems: "baseline", marginTop: 2 }}>
-                  <div style={{ display: "flex", fontSize: 58, fontWeight: 800, letterSpacing: -1.6 }}>{price}</div>
-                  <div style={{ display: "flex", fontSize: 22, fontWeight: 600, color: "#e9eee2", marginLeft: 12 }}>por crédito</div>
-                </div>
+              <div style={{ display: "flex", alignItems: "center", marginTop: 26, padding: "10px 24px", borderRadius: 999, background: CREAM, color: GREEN }}>
+                <div style={{ display: "flex", fontSize: 22, fontWeight: 600 }}>Desde</div>
+                <div style={{ display: "flex", fontSize: 44, fontWeight: 800, letterSpacing: -1.2, margin: "0 12px" }}>{price}</div>
+                <div style={{ display: "flex", fontSize: 22, fontWeight: 600 }}>por imagen</div>
               </div>
             ) : (
-              <div style={{ display: "flex", marginTop: 24, fontSize: 22, fontWeight: 600, color: "#cfe0c4" }}>Después, comprá créditos sin suscripción</div>
+              <div style={{ display: "flex", marginTop: 26, padding: "14px 24px", borderRadius: 999, background: CREAM, color: GREEN, fontSize: 24, fontWeight: 800 }}>Comprá créditos cuando los necesites</div>
             )}
+            <div style={{ display: "flex", marginTop: 12, marginLeft: 24, fontSize: 20, fontWeight: 600, color: "#cfe0c4" }}>Sin suscripción</div>
           </div>
         </div>
+        {/* The free plan. */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 84, background: "#e4e9da" }}>
+          <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#3b6e3a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="8" width="18" height="4" rx="1" />
+            <path d="M12 8v13" />
+            <path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7" />
+            <path d="M7.5 8a2.5 2.5 0 0 1 0-5A4.8 8 0 0 1 12 8a4.8 8 0 0 1 4.5-5 2.5 2.5 0 0 1 0 5" />
+          </svg>
+          <div style={{ display: "flex", marginLeft: 14, fontSize: 28, fontWeight: 600 }}>Probalo con</div>
+          <div style={{ display: "flex", marginLeft: 8, fontSize: 28, fontWeight: 800 }}>{`${FREE_MONTHLY_CREDITS} créditos gratis por mes`}</div>
+          <div style={{ display: "flex", width: 2, height: 36, background: "#c5cfb6", margin: "0 26px" }} />
+          <div style={{ display: "flex", fontSize: 22, fontWeight: 600, color: "#3c453d" }}>Para inmobiliarias verificadas</div>
+        </div>
         {/* «El impacto en tu negocio». */}
-        <div style={{ flex: 1, display: "flex", alignItems: "center", padding: "0 30px", background: "#eef1e6" }}>
+        <div style={{ flex: 1, display: "flex", alignItems: "center", padding: "0 30px" }}>
           {IMPACT_STATS.map(({ id, value, label }, i) => (
-            <div key={id} style={{ flex: 1, display: "flex", alignItems: "center", padding: "0 24px", borderLeft: i ? "2px solid #d5dccb" : "none", color: GREEN }}>
-              {icon(id, "#3b6e3a", 40)}
-              <div style={{ display: "flex", flexDirection: "column", marginLeft: 14 }}>
-                <div style={{ display: "flex", fontSize: 42, fontWeight: 800, letterSpacing: -1.2, lineHeight: 1 }}>{value}</div>
-                <div style={{ display: "flex", fontSize: 19, fontWeight: 600, color: "#3c453d", marginTop: 2 }}>{label.replace("mayor ", "")}</div>
+            <div key={id} style={{ flex: 1, display: "flex", flexDirection: "column", padding: "0 28px", borderLeft: i ? "2px solid #e0dacd" : "none" }}>
+              <div style={{ display: "flex", alignItems: "center" }}>
+                {icon(id, "#3b6e3a", 38)}
+                <div style={{ display: "flex", marginLeft: 14, fontSize: 50, fontWeight: 800, letterSpacing: -1.4, lineHeight: 1 }}>{value}</div>
               </div>
+              <div style={{ display: "flex", marginTop: 6, fontSize: 21, fontWeight: 600, color: "#3c453d" }}>{label.replace("mayor ", "")}</div>
             </div>
           ))}
         </div>

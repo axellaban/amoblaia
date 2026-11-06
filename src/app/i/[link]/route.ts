@@ -3,6 +3,7 @@ import { shortLinkCode } from "@/lib/agency/demo-invite";
 import { membershipOf } from "@/lib/agency/server";
 import { startSupport } from "@/lib/agency/support";
 import { liveVisit, startVisit } from "@/lib/agency/visit";
+import { isPreviewBot, panelPreviewResponse } from "@/lib/agency/panel-preview";
 import { isAdmin } from "@/lib/commerce/http";
 import { currentUser } from "@/lib/supabase/server";
 import { cloudConfigured, cloudEnabled } from "@/lib/supabase/config";
@@ -19,12 +20,15 @@ export const runtime = "nodejs";
  * - the team: the same panel in its support view (read only, audited).
  * A changed or unknown link gets a short notice, never the sign-up or /admin.
  * ?enlace= tells the panel how it was opened, for analytics only.
+ * Link-preview bots get the panel's preview instead (lib/agency/panel-preview.ts).
  */
 export async function GET(request: Request, { params }: { params: Promise<{ link: string }> }) {
   const url = new URL(request.url);
   const to = (path: string) => NextResponse.redirect(new URL(path, url.origin));
-  if (!cloudEnabled() || !cloudConfigured()) return to("/");
   const code = shortLinkCode((await params).link);
+  // WhatsApp and the other link previews get «Tu panel de …», not a visit.
+  if (isPreviewBot(request.headers.get("user-agent"))) return panelPreviewResponse(code, request);
+  if (!cloudEnabled() || !cloudConfigured()) return to("/");
   const visit = code ? await liveVisit(code).catch(() => null) : null;
   if (!code || !visit || visit.source !== "link") return to("/i/inactivo");
   const user = await currentUser().catch(() => null);

@@ -4,6 +4,7 @@ import { membershipOf } from "@/lib/agency/server";
 import { startSupport } from "@/lib/agency/support";
 import { liveInvitation, startVisit, type LiveInvitation } from "@/lib/agency/visit";
 import { isAdmin } from "@/lib/commerce/http";
+import { isPreviewBot, panelPreviewResponse } from "@/lib/agency/panel-preview";
 import { adminClient, currentUser } from "@/lib/supabase/server";
 import { cloudConfigured, cloudEnabled } from "@/lib/supabase/config";
 export const dynamic = "force-dynamic";
@@ -53,8 +54,10 @@ async function landing(invitation: LiveInvitation, intent: DemoIntent) {
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const to = (path: string) => NextResponse.redirect(new URL(path, url.origin));
-  if (!cloudEnabled() || !cloudConfigured()) return to("/");
   const code = url.searchParams.get(INVITE_PARAM) ?? "";
+  // WhatsApp and the other link previews get «Tu panel de …», not a visit.
+  if (isPreviewBot(request.headers.get("user-agent"))) return panelPreviewResponse(INVITE_CODE.test(code) ? code : null, request);
+  if (!cloudEnabled() || !cloudConfigured()) return to("/");
   if (!INVITE_CODE.test(code)) return to("/panel");
   const invitation = await liveInvitation(code).catch(() => null);
   if (!invitation) return to(`/panel/empezar?${new URLSearchParams({ [INVITE_PARAM]: code })}`);

@@ -1,5 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { visitPath } from "@/lib/agency/demo-invite";
+import { fromPreviewBot, panelPreviewMetadata } from "@/lib/agency/panel-preview";
+import { PanelPreviewPage } from "@/components/panel-preview-page";
 import { PublicDemo, publicDemoMetadata } from "../../public-demo";
 
 // The agency's link: /demo/<token>/presentacion, or /demo/<token>/presentacion/<codigo>
@@ -23,7 +25,9 @@ function viewOf(rest: string[] = []) {
 }
 
 export async function generateMetadata({ params }: Props) {
-  const { token } = await params;
+  const { token, rest } = await params;
+  const view = viewOf(rest);
+  if (view && "panel" in view && view.code) return panelPreviewMetadata(view.code);
   return publicDemoMetadata(token, true);
 }
 
@@ -31,6 +35,10 @@ export default async function PresentationPage({ params }: Props) {
   const { token, rest } = await params;
   const view = viewOf(rest);
   if (!view) notFound();
-  if ("panel" in view && view.code) redirect(visitPath(view.code));
+  if ("panel" in view && view.code) {
+    // WhatsApp and the other link previews read «Tu panel de …» from the metadata; people go straight in.
+    if (await fromPreviewBot()) return <PanelPreviewPage />;
+    redirect(visitPath(view.code));
+  }
   return <PublicDemo token={token} presentation code={view.code} ficha={view.ficha} prices={view.prices} />;
 }
