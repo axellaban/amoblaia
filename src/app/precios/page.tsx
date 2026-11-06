@@ -1,14 +1,13 @@
 import type { Metadata } from "next";
 import { PricingPlans } from "@/components/pricing";
 import { pricingProps } from "@/lib/commerce/pricing-page";
-import { FREE_MONTHLY_CREDITS } from "@/lib/commerce/credit-packs";
 export const metadata: Metadata = {
   title: "Precios y créditos",
-  description: `Empezá gratis con ${FREE_MONTHLY_CREDITS} créditos por mes, sin tarjeta. Después, comprá créditos cuando los necesites, sin suscripción.`,
-  // The image is ./opengraph-image.tsx; title and text are the ones WhatsApp shows under it.
+  // No text under the title in WhatsApp's preview: the image already says it all.
+  // null so the site's description is not inherited (WhatsApp would show it).
+  description: null,
   openGraph: {
-    title: "Precios de habita. · Presentá mejor tus propiedades con IA",
-    description: `Comprá créditos cuando los necesites, sin suscripción. Probalo con ${FREE_MONTHLY_CREDITS} créditos gratis por mes.`,
+    title: "Precios de habita.",
     url: "/precios",
     locale: "es_AR",
     siteName: "habita.",
