@@ -7,7 +7,7 @@ import { HttpError } from "@/lib/commerce/http";
 import { analyzeListing, type ReadMeta } from "@/lib/listings/analyze";
 import { decodeHtml } from "@/lib/listings/charset";
 import { FetchFailure, publicAddress, safeFetch, type FetchErrorCode } from "@/lib/listings/fetch";
-import { ownPhotos, propertyPart } from "@/lib/listings/photos";
+import { baseOf, ownPhotos, propertyPart, sameFileKey } from "@/lib/listings/photos";
 import { renderProvider } from "@/lib/listings/render";
 import { cleanText, cleanUrl } from "./shared";
 import { toDemo, type ImportedDemo } from "./import";
@@ -162,7 +162,7 @@ function largest(srcset: string) {
 const fullSize = (url: string) => url.replace(/_thumb(\.\w+)(\?|$)/i, "$1$2");
 /** Resized copies (WordPress "-300x200", "_small"…) share the key of the original. */
 const SIZED = /[-_](\d{2,4}x\d{2,4}|thumb|small|medium|large|scaled)(?=\.\w+$)/i;
-const photoKey = (url: string) => url.replace(/[?#].*$/, "").replace(SIZED, "").toLowerCase();
+const photoKey = (url: string) => sameFileKey(url.replace(/[?#].*$/, "")).replace(SIZED, "").toLowerCase();
 
 function siteName(host: string) {
   const base = host.replace(/^www\./, "").split(".")[0];
@@ -326,11 +326,18 @@ export function parseListing(html: string, pageUrl: string): Listing {
   const rest = parts.withoutBlocks.replace(/<(img|source|a)\b[^>]*>/gi, " ");
   for (const m of rest.matchAll(/https?:\\?\/\\?\/[^"'\s()<>]+?\.(?:jpe?g|png|webp)(?:\?[^"'\s()<>]*)?/gi))
     candidates.push(m[0].replace(/\\\//g, "/"));
+  // Gallery lists kept in an inline script with relative paths ({ 'src': 'img/propiedades/img-6685.jpg', 'thumb': … }):
+  // the full picture of each entry, never its thumbnail.
+  for (const script of parts.withoutBlocks.matchAll(/<script\b(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi))
+    for (const m of script[1].matchAll(/["']?\b(?:src|full|original|large|big|zoom|image)["']?\s*:\s*["']([^"'\s]+?\.(?:jpe?g|png|webp)(?:\?[^"'\s]*)?)["']/gi))
+      if (!/^https?:/i.test(m[1])) candidates.push(m[1].replace(/\\\//g, "/"));
 
+  // Relative addresses resolve against the page's <base href>, as the browser does.
+  const base = baseOf(html, page.toString());
   const seen = new Map<string, number>();
   const images: string[] = [];
   for (const raw of candidates) {
-    const url = absolute(raw, page.toString());
+    const url = absolute(raw, base);
     if (!url || /^data:/i.test(raw) || /\.(svg|gif|ico)(\?|$)/i.test(url)) continue;
     const full = fullSize(url);
     if (NOT_A_PHOTO.test(new URL(full).pathname)) continue;
@@ -386,6 +393,37 @@ const PAGE_ERRORS: Record<FetchErrorCode, [number, string]> = {
   http_error: [502, "La publicación respondió con un error. Revisá la URL."],
 };
 
+/**
+ * Why one photo could not be downloaded, in words the panel shows next to it
+ * (the site's answer included), never just "it failed".
+ */
+export function imageError(code: FetchErrorCode, upstream: number | null): [number, string] {
+  const said = upstream ? ` (error ${upstream})` : "";
+  switch (code) {
+    case "too_large":
+      return [413, "La foto pesa más de 15 MB."];
+    case "invalid_url":
+    case "not_public":
+      return PAGE_ERRORS[code];
+    case "dns":
+      return [502, "No encontramos el servidor de la foto."];
+    case "network":
+      return [502, "Se cortó la conexión con el sitio al bajar la foto."];
+    case "timeout":
+      return [504, "El sitio tardó demasiado en enviar la foto."];
+    case "too_many_redirects":
+      return [502, "El sitio redirige la foto demasiadas veces."];
+    case "challenge":
+      return [502, "El sitio pide una verificación anti-robots que no salteamos: subí la foto a mano."];
+    case "blocked":
+      return [502, `El sitio no deja bajar la foto desde nuestro servidor${said}: subí la foto a mano.`];
+    case "http_error":
+      if (upstream === 404 || upstream === 410) return [502, `La foto ya no está en el sitio${said}.`];
+      if (upstream === 406) return [502, `El sitio rechazó la descarga desde nuestro servidor${said}: subí la foto a mano.`];
+      return [502, `El sitio respondió con un error al pedir la foto${said}.`];
+  }
+}
+
 /** The failure as the API answers it, keeping the code for diagnostics and analytics. */
 export class ListingFetchError extends HttpError {
   constructor(
@@ -393,7 +431,7 @@ export class ListingFetchError extends HttpError {
     readonly upstreamStatus: number | null,
     kind: "page" | "image",
   ) {
-    const [status, message] = kind === "page" ? PAGE_ERRORS[code] : code === "too_large" ? [413, "La foto es demasiado grande."] : PAGE_ERRORS[code][0] === 400 ? PAGE_ERRORS[code] : [502, "No pudimos descargar la foto."];
+    const [status, message] = kind === "page" ? PAGE_ERRORS[code] : imageError(code, upstreamStatus);
     super(status, code === "http_error" && kind === "page" && upstreamStatus ? `La publicación respondió con error ${upstreamStatus}. Revisá la URL.` : message);
   }
 }

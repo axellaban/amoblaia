@@ -8,7 +8,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { ImagePlus, Upload } from "lucide-react";
 import { ApiError, api } from "./admin-demos";
-import { syncPhotos } from "./demo-import";
+import { failedPhotoLines, syncPhotos } from "./demo-import";
 import type { ImportedDemo } from "@/lib/demos/import";
 import { MAX_UPLOAD_BYTES } from "@/lib/photo-limits";
 import type { PanelProperty } from "@/lib/agency/shared";
@@ -185,7 +185,7 @@ export function ImportImages({ initialMethod = "url", studioPath }: { initialMet
       const sync = await syncPhotos(`/api/admin/demos/${item.demoId}`, item.pending, setBusy);
       const done = await api<{ photosDone: number; photosTotal: number; status: string }>("/api/panel/importar", {
         method: "PATCH",
-        body: JSON.stringify({ importId: item.importId, done: sync.done, failed: sync.failedUrls }),
+        body: JSON.stringify({ importId: item.importId, done: sync.done, failed: sync.failedUrls, reasons: sync.reasons }),
       });
       const pending = item.pending.filter((src) => !sync.done.includes(src));
       return {
@@ -194,7 +194,9 @@ export function ImportImages({ initialMethod = "url", studioPath }: { initialMet
         done: done.photosDone,
         total: done.photosTotal,
         status: pending.length ? "partial" : "done",
-        error: sync.failed ? `${plural(sync.failed, "foto no se pudo descargar", "fotos no se pudieron descargar")}. Podés reintentarlas.` : undefined,
+        error: sync.failed
+          ? `${plural(sync.failed, "foto no se pudo descargar", "fotos no se pudieron descargar")}: ${failedPhotoLines(sync.failedUrls, sync.reasons).join(" · ")}. Podés reintentarlas.`
+          : undefined,
       };
     } catch (e) {
       return { ...item, status: "partial", error: message(e, "No pudimos terminar de descargar las fotos.") };

@@ -1,0 +1,27 @@
+{
+  "_about": "Fichas reales del caso del 05/11/2026 (importador sin fotos), guardadas tal como las sirvió cada sitio el 06/11/2026 con el User-Agent del importador. Los tests las leen sin red.",
+  "gordin-7904": {
+    "url": "https://www.inmobiliariagordin.com.ar/ver-propiedad-venta.asp?id=Venta-de-Casa-4-ambientes-en-Miramar&codigo=7904",
+    "contentType": "text/html",
+    "obtained": "2026-11-06",
+    "bytes": 41866
+  },
+  "paradiso-7557": {
+    "url": "https://www.paradisobienesraices.com.ar/ver-propiedad-venta.asp?id=Venta-de-Departamento-en-Miramar&codigo=7557",
+    "contentType": "text/html",
+    "obtained": "2026-11-06",
+    "bytes": 41697
+  },
+  "mardelinmueble-daneff": {
+    "url": "https://daneffpropiedades.com/inmueble/venta/departamento/2-ambientes-externo-reciclado/10753",
+    "contentType": "text/html; charset=utf-8",
+    "obtained": "2026-11-06",
+    "bytes": 3849
+  },
+  "bistolfi-305": {
+    "url": "https://www.bistolfi.com.ar/ventas/1-departamento/25-2-ambientes/305-dpto_2_amb_centrico_con_gran_balcon_/",
+    "contentType": "text/html; charset=UTF-8",
+    "obtained": "2026-11-06",
+    "bytes": 18195
+  }
+}

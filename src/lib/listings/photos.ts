@@ -88,12 +88,89 @@ export function keepOwnCode(images: string[], pageUrl: string) {
   return images;
 }
 
-/** The property's own photos among those found: no maps, no other listing's files. */
+/**
+ * Pictures a site draws for the visitor, never photos of the property: QR
+ * codes and charts ("llevala en tu celular", chart.apis.google.com?cht=qr…).
+ */
+export function isSiteGraphic(src: string) {
+  try {
+    const u = new URL(src);
+    if (/^(chart\.apis\.google\.com|chart\.googleapis\.com|api\.qrserver\.com|quickchart\.io)$/i.test(u.hostname)) return true;
+    return u.searchParams.get("cht") === "qr" || /(^|[/_.-])qr(code)?([/_.-]|$)/i.test(u.pathname);
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * The address relative links of the page resolve against: its <base href>
+ * when it declares one (Bistolfi: <base href="https://www.bistolfi.com.ar/">
+ * with photos at "img/propiedades/…"), otherwise the page itself.
+ */
+export function baseOf(html: string, pageUrl: string) {
+  const href = html.match(/<base\b[^>]*\bhref\s*=\s*["']([^"']+)["']/i)?.[1]?.trim();
+  if (!href) return pageUrl;
+  try {
+    const base = new URL(href.replace(/&amp;/g, "&"), pageUrl);
+    return ["http:", "https:"].includes(base.protocol) ? base.toString() : pageUrl;
+  } catch {
+    return pageUrl;
+  }
+}
+
+/** The same file on the site with or without "www.": one photo, not two. */
+export const sameFileKey = (src: string) => {
+  try {
+    const u = new URL(src);
+    return `${u.hostname.toLowerCase().replace(/^www\./, "")}${u.pathname}${u.search}`;
+  } catch {
+    return src;
+  }
+};
+
+/**
+ * The full picture when the page only links a platform's thumbnail. Mardel
+ * Inmueble (Daneff, Analía Verga…) puts in og:image a 400 px copy under
+ * /uploads/inmuebles/thumbnails/; the original, in the same folder without
+ * "thumbnails/", is the one that can be staged (600 px minimum).
+ */
+export function fullSizePhoto(src: string) {
+  try {
+    const u = new URL(src);
+    if (/^api\.mardelinmueble\.com$/i.test(u.hostname) && /^\/uploads\/inmuebles\/thumbnails\//i.test(u.pathname)) {
+      u.pathname = u.pathname.replace(/\/thumbnails\//i, "/");
+      return u.toString();
+    }
+  } catch {
+    // Not an address: left as is (and dropped later).
+  }
+  return src;
+}
+
+/** The property's own photos among those found: no maps, no QR codes, no other listing's files, no repeats. */
 export function ownPhotos(images: string[], pageUrl: string) {
-  return keepOwnCode(
-    images.filter((s) => !isMapImage(s)),
-    pageUrl,
-  );
+  let pageHost = "";
+  try {
+    pageHost = new URL(pageUrl).hostname.toLowerCase();
+  } catch {
+    // Kept as found.
+  }
+  const onPage = (src: string) => {
+    try {
+      return new URL(src).hostname.toLowerCase() === pageHost;
+    } catch {
+      return false;
+    }
+  };
+  // In the order first found; of the same file with and without www, the copy on the listing's own host.
+  const kept = new Map<string, string>();
+  for (const src of images.map(fullSizePhoto)) {
+    if (isMapImage(src) || isSiteGraphic(src)) continue;
+    const k = sameFileKey(src);
+    const prev = kept.get(k);
+    if (prev === undefined || (!onPage(prev) && onPage(src))) kept.set(k, src);
+  }
+  return keepOwnCode([...kept.values()], pageUrl);
 }
 
 /**

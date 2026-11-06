@@ -6,6 +6,7 @@
 // JSON and Next.js payloads are parsed as data).
 import { decode, moneyIn, norm, type Money, type Pair } from "@/lib/demos/listing-details";
 import type { Extracted, PlatformId } from "./types";
+import { baseOf } from "./photos";
 
 const squash = (s: string) => decode(s.replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim();
 const meta = (html: string, key: string) =>
@@ -414,10 +415,26 @@ function aspFicha(html: string, pageUrl: string): Extracted {
   const own = ownPart(html);
   const head = squash(byClass(own, ["portfolio-title"])[0]?.match(/<h[1-3]\b[^>]*>([\s\S]*?)<\/h[1-3]>/i)?.[1] ?? "");
   const docTitle = squash(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "");
-  // "Casa en Venta en La Baliza, Miramar. u$s 65000" → the title before the price.
-  const title = (head || docTitle.split(/\s+\|\s+/)[0]).split(/\.?\s+(?=(?:u\$s|us\$|usd|\$|consultar)\b)/i)[0].replace(/\.$/, "").trim() || null;
+  // "Casa en Venta en La Baliza, Miramar. u$s 65000" → the title before the price;
+  // "… Miramar. ID: #7904" or "… (Cód. 7904)" → before the code.
+  const bare = (t: string) =>
+    t.split(/\.?\s+(?=(?:u\$s|us\$|usd|\$|consultar)\b)/i)[0].replace(/\.?\s*(?:ID:\s*#?\d+|\(C[oó]d\.?\s*\d+\))\s*$/i, "").replace(/\.$/, "").trim();
+  // Another variant of the same platform (Gordin) has no portfolio-title and a <title> that only names
+  // the site ("Venta de Propiedades - Inmobiliaria Gordin"): the first text that reads
+  // "<kind> en Venta en <place>" — a heading, the breadcrumb, the inquiry's subject, the photos' alt.
+  const candidates = [
+    head,
+    docTitle.split(/\s+\|\s+/)[0],
+    ...[...own.matchAll(/<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]>/gi)].map((m) => squash(m[1])),
+    ...[...own.matchAll(/<li\b[^>]*class=["'][^"']*pull-left[^"']*["'][^>]*>([\s\S]*?)<\/li>/gi)].map((m) => squash(m[1])),
+    ...[...own.matchAll(/<input\b[^>]*name=["']asunto2["'][^>]*value=["']([^"']+)["']/gi)].map((m) => decode(m[1])),
+    ...[...own.matchAll(/<img\b[^>]*class=["'][^"']*imagen_principal[^"']*["'][^>]*alt=["']([^"']+)["']/gi)].map((m) => decode(m[1])),
+  ].map(bare);
+  const title = candidates.find((t) => kindOpPlace(t)) ?? (bare(head || docTitle.split(/\s+\|\s+/)[0]) || null);
   const k = kindOpPlace(title);
-  const [price] = moneyIn(head);
+  // The price in the heading, or in the template's price tag (<span class="sale-tag price">u$s 92000</span>).
+  const priceTag = squash(byClass(own, ["price"])[0] ?? "");
+  const [price] = [...moneyIn(head), ...moneyIn(priceTag)];
   const pairs: Pair[] = [];
   const pair = (label: string, value: string | undefined | null) => {
     const v = value?.trim();
@@ -447,20 +464,31 @@ function aspFicha(html: string, pageUrl: string): Extracted {
       .replace(/[ \t]+/g, " ")
       .replace(/\s*Notas Adicionales:\s*$/i, "")
       .trim() || null;
+  // The listing's photos are the files named after its code in the photos folder
+  // (fotos/ventas/7904_….webp), whichever gallery shows them: swipebox links
+  // (Freijo), a Swiper of <img class="imagen_principal"> (Gordin) or mfp-gallery
+  // links (Paradiso). The site's logo, the QR code and other listings' files never match.
+  const base = baseOf(html, pageUrl);
+  const code = new URL(pageUrl).searchParams.get("codigo")?.trim() ?? "";
   const images: string[] = [];
-  for (const m of own.matchAll(/<a\b[^>]*href=["']([^"']+\.(?:jpe?g|png|webp))["'][^>]*class=["'][^"']*\bswipebox\b/gi)) {
+  const add = (raw: string) => {
     try {
-      images.push(new URL(decode(m[1]), pageUrl).toString());
+      images.push(new URL(decode(raw), base).toString());
     } catch {
       // Not an address.
     }
-  }
+  };
+  if (/^\d{2,12}$/.test(code))
+    for (const m of own.matchAll(new RegExp(`(?:href|src|data-background-image|content)\\s*=\\s*["']([^"']*\\bfotos\\/[\\w-]+\\/${code}_[^"'/]+\\.(?:jpe?g|png|webp))["']`, "gi")))
+      add(m[1]);
+  if (!images.length)
+    for (const m of own.matchAll(/<a\b[^>]*href=["']([^"']+\.(?:jpe?g|png|webp))["'][^>]*class=["'][^"']*\bswipebox\b/gi)) add(m[1]);
   const agencyName = docTitle.split(/\s+\|\s+/)[1]?.trim() || null;
   return {
     title,
     location: k?.place ?? null,
     price: price ?? null,
-    priceOnRequest: !price && /consultar/i.test(head),
+    priceOnRequest: !price && /consultar/i.test(`${head} ${priceTag}`),
     operation: k?.operation ?? null,
     propertyKind: k?.kind ?? null,
     description,

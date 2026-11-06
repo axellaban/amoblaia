@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import type { FieldStatus, ImportedDemo, ReportRow } from "@/lib/demos/import";
 import type { ImportDiagnostics } from "@/lib/listings/types";
 import type { EditorPhoto } from "@/lib/demos/shared";
-import { AgencyWhatsappField, api } from "./admin-demos";
+import { AgencyWhatsappField, ApiError, api } from "./admin-demos";
 
 const STATUS: Record<FieldStatus, string> = {
   found: "Encontrado",
@@ -246,14 +246,20 @@ export function MapReview({ data, value, onChange }: { data: ImportedDemo; value
 }
 
 /** The listing's own photos in a demo: added if missing (the ones already there keep their stagings), in the listing's order. */
-/** Where the photo download goes: how many are done of how many, and which failed so far. */
-export type PhotoProgress = { done: number; total: number; failed: string[] };
+/** Where the photo download goes: how many are done of how many, and which failed so far (with why). */
+export type PhotoProgress = { done: number; total: number; failed: string[]; reasons: Record<string, string> };
 
+/**
+ * Downloads the listing's photos into the demo, one per request, and says for
+ * each one that failed why (the server's answer: "El sitio respondió 404",
+ * "La foto es demasiado chica (400×533 px…)"), not only its file name.
+ */
 export async function syncPhotos(base: string, images: string[], onStatus: (text: string) => void, onProgress?: (p: PhotoProgress) => void) {
   const ids: string[] = [];
   const done: string[] = [];
   const failedUrls: string[] = [];
-  onProgress?.({ done: 0, total: images.length, failed: [] });
+  const reasons: Record<string, string> = {};
+  onProgress?.({ done: 0, total: images.length, failed: [], reasons: {} });
   for (const [i, url] of images.entries()) {
     onStatus(`Fotos de la publicación: ${i + 1} de ${images.length}…`);
     try {
@@ -263,13 +269,18 @@ export async function syncPhotos(base: string, images: string[], onStatus: (text
       });
       if (!ids.includes(id)) ids.push(id);
       done.push(url);
-    } catch {
+    } catch (e) {
       failedUrls.push(url);
+      reasons[url] = e instanceof ApiError ? e.message : "No hubo respuesta del servidor (conexión cortada).";
     }
-    onProgress?.({ done: i + 1, total: images.length, failed: [...failedUrls] });
+    onProgress?.({ done: i + 1, total: images.length, failed: [...failedUrls], reasons: { ...reasons } });
   }
-  return { ids, failed: failedUrls.length, done, failedUrls };
+  return { ids, failed: failedUrls.length, done, failedUrls, reasons };
 }
+
+/** "7904_….webp: La foto ya no está en el sitio (error 404)." — each failed photo with its cause. */
+export const failedPhotoLines = (urls: string[], reasons: Record<string, string> = {}) =>
+  urls.map((u) => (reasons[u] ? `${photoName(u)}: ${reasons[u]}` : photoName(u)));
 
 /** "7674_20260619161744290.webp": the file name of a photo's address, to say which one failed. */
 export function photoName(url: string) {

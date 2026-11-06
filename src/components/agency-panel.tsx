@@ -37,7 +37,7 @@ import {
   Wand2,
 } from "lucide-react";
 import { ApiError, api } from "./admin-demos";
-import { ImportPreview, MapReview, exceptions, initialMapChoice, mapOverride, photoName, syncPhotos, type MapChoice, type PhotoProgress } from "./demo-import";
+import { ImportPreview, MapReview, exceptions, initialMapChoice, mapOverride, failedPhotoLines, syncPhotos, type MapChoice, type PhotoProgress } from "./demo-import";
 import { track, trackMilestone } from "@/lib/analytics";
 import { cta } from "@/lib/interaction-tracking";
 import { registerAgency, useSignupTracking } from "@/lib/signup-tracking";
@@ -411,7 +411,7 @@ function ImportIssue({ item, onDone }: { item: PanelImport; onDone: () => Promis
     setError("");
     try {
       const sync = await syncPhotos(`/api/admin/demos/${item.propertyId}`, item.pendingImages, setStatus);
-      await api("/api/panel/importar", { method: "PATCH", body: JSON.stringify({ importId: item.id, done: sync.done, failed: sync.failedUrls }) });
+      await api("/api/panel/importar", { method: "PATCH", body: JSON.stringify({ importId: item.id, done: sync.done, failed: sync.failedUrls, reasons: sync.reasons }) });
       await onDone();
     } catch (e) {
       setError(message(e, "No pudimos reintentar."));
@@ -425,9 +425,12 @@ function ImportIssue({ item, onDone }: { item: PanelImport; onDone: () => Promis
         <strong>{shortUrl(item.url)}</strong>
         <small>
           {item.status === "partial"
-            ? `Importada parcialmente: ${item.photosDone} de ${item.photosTotal} fotos${item.settingsSaved ? "" : " y faltan los datos de la ficha"}.`
+            ? item.photosDone === 0 && item.photosTotal > 0
+              ? `Borrador sin fotos: no entró ninguna de las ${item.photosTotal}${item.settingsSaved ? "" : " y faltan los datos de la ficha"}.`
+              : `Importada parcialmente: ${item.photosDone} de ${item.photosTotal} fotos${item.settingsSaved ? "" : " y faltan los datos de la ficha"}.`
             : (item.error ?? "No se pudo importar.")}
         </small>
+        {item.status === "partial" && item.error && <small>{item.error}</small>}
         {status && <small role="status">{status}</small>}
         {error && <small className="ap-error-text">{error}</small>}
       </span>
@@ -961,7 +964,7 @@ function PropertyRow({
   );
 }
 
-type Preview = ImportedDemo & { listingUrl: string; duplicateOf: string | null; snapshot: string };
+type Preview = ImportedDemo & { listingUrl: string; duplicateOf: string | null; snapshot: string; /** An empty draft of a failed attempt of this listing: this import completes it. */ fillsDraft?: string | null };
 
 /**
  * An import a guest of the panel reviewed and confirmed before having its
@@ -1021,16 +1024,19 @@ type Created = {
   photosTotal: number;
   photosDone: number;
   images: string[];
+  /** Why each photo still missing failed in this session (the server's answer), by address. */
+  reasons?: Record<string, string>;
 };
 
 /** Downloads the photos of a created import and reports them: what it says is what happened. */
 async function finishPhotos(made: Created, onStatus: (t: string) => void, endpoint = "/api/panel/importar", onProgress?: (p: PhotoProgress) => void) {
   if (!made.id) return made;
   const sync = await syncPhotos(`/api/admin/demos/${made.id}`, made.images, onStatus, onProgress);
-  return api<Created>(endpoint, {
+  const after = await api<Created>(endpoint, {
     method: "PATCH",
-    body: JSON.stringify({ importId: made.importId, done: sync.done, failed: sync.failedUrls }),
+    body: JSON.stringify({ importId: made.importId, done: sync.done, failed: sync.failedUrls, reasons: sync.reasons }),
   });
+  return { ...after, reasons: sync.reasons };
 }
 
 const hostOf = (url: string) => {
@@ -1326,12 +1332,27 @@ export function ImportProperty({
       )}
       {partial && (
         <div className="ap-import-result" role="status">
-          <p>
-            <strong>Importada parcialmente:</strong> {partial.photosDone} de {partial.photosTotal} fotos
-            {partial.settingsSaved ? "" : ", y faltan los datos de la ficha"}. La propiedad quedó como borrador.
-          </p>
+          {partial.photosDone === 0 && partial.photosTotal > 0 ? (
+            <p className="inline-error">
+              <strong>No entró ninguna foto ({partial.photosTotal}).</strong> La propiedad quedó como borrador sin fotos
+              {partial.settingsSaved ? "" : " y sin los datos de la ficha"}. Podés reintentar, subirlas a mano desde la propiedad o volver a
+              importar el mismo enlace más tarde: se completa este borrador, no se crea otro.
+            </p>
+          ) : (
+            <p>
+              <strong>Importada parcialmente:</strong> {partial.photosDone} de {partial.photosTotal} fotos
+              {partial.settingsSaved ? "" : ", y faltan los datos de la ficha"}. La propiedad quedó como borrador.
+            </p>
+          )}
           {partial.images.length > 0 && !progress && (
-            <p className="dm-help">No se pudieron traer: {partial.images.map(photoName).join(", ")}.</p>
+            <>
+              <p className="dm-help">No se pudieron traer:</p>
+              <ul className="dm-help ap-failed-photos">
+                {failedPhotoLines(partial.images, partial.reasons).map((line, i) => (
+                  <li key={i}>{line}</li>
+                ))}
+              </ul>
+            </>
           )}
           {progress && !preview && (
             <div className="ap-import-progress" role="status" aria-live="polite">
@@ -1363,6 +1384,11 @@ export function ImportProperty({
           {preview.duplicateOf ? (
             <p className="inline-notice">
               Esta propiedad ya está en {where}. <Link href={openPath(preview.duplicateOf)}>Abrirla</Link>
+            </p>
+          ) : preview.fillsDraft ? (
+            <p className="inline-notice">
+              Un intento anterior dejó esta propiedad como borrador sin fotos. Al importar se completa ese borrador: no se crea otra.{" "}
+              <Link href={openPath(preview.fillsDraft)}>Ver el borrador</Link>
             </p>
           ) : null}
           <ImportPreview data={{ ...preview, images: preview.images.filter((src) => keep.has(src)) }} />
@@ -1447,7 +1473,7 @@ export function ImportProperty({
               </span>
               {progress.failed.length > 0 && (
                 <span className="inline-error">
-                  No se pudo traer {progress.failed.length === 1 ? "la foto" : "las fotos"} {progress.failed.map(photoName).join(", ")}: se puede reintentar al terminar.
+                  No se pudo traer {progress.failed.length === 1 ? "la foto" : "las fotos"} {failedPhotoLines(progress.failed, progress.reasons).join(" · ")}. Se puede reintentar al terminar.
                 </span>
               )}
             </div>

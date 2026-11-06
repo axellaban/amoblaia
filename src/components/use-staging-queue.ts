@@ -11,6 +11,17 @@ import { cellState, isLive, taskKey, type Task } from "@/lib/demos/editor-logic"
 import type { DemoDetail, EditorPhoto } from "@/lib/demos/shared";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/**
+ * The account admits one live generation. Another tab (or another demo of
+ * the same account) running one answers 409 { code: "busy" }: nothing was
+ * reserved, so this tab waits its turn and sends the same version again,
+ * instead of dropping its whole queue as before (which left "N versiones
+ * faltantes" with only a passing message).
+ */
+export const isBusy = (e: unknown) => e instanceof ApiError && e.status === 409 && e.body?.code === "busy";
+export const BUSY_RETRY_MS = 8000;
+/** After this long waiting for the other generation, the queue stops and says so. */
+export const BUSY_GIVE_UP_MS = 20 * 60 * 1000;
 /** Answers that would repeat for the next versions too: the rest of the queue is not sent. */
 const STOPS = new Set([401, 402, 403, 409, 429, 503]);
 
@@ -53,6 +64,7 @@ export function useStagingQueue(opts: {
     running.current = true;
     let failures = 0;
     let done = 0;
+    let waitingSince: number | null = null;
     while (queueRef.current.length) {
       const task = queueRef.current.shift()!;
       setQueue([...queueRef.current]);
@@ -67,6 +79,7 @@ export function useStagingQueue(opts: {
           method: "POST",
           body: JSON.stringify({ key, room: task.room ?? photo.room, mode: task.mode ?? photo.mode, style: task.style }),
         });
+        waitingSince = null;
         let latest = await poll(task.photoId);
         while (latest && isLive(latest, task.style)) {
           await sleep(4000);
@@ -78,6 +91,21 @@ export function useStagingQueue(opts: {
         if (newest?.status === "succeeded") done++;
         else failures++;
       } catch (e) {
+        if (isBusy(e) && (waitingSince === null || Date.now() - waitingSince < BUSY_GIVE_UP_MS)) {
+          // Back at the front of the queue, with the same key (nothing was reserved).
+          if (waitingSince === null) {
+            waitingSince = Date.now();
+            report({
+              tone: "notice",
+              text: "Hay otra versión creándose en tu cuenta (en otra pestaña o en otra demo): esta tanda espera su turno y sigue sola. No cierres esta pestaña.",
+            });
+          }
+          queueRef.current.unshift(task);
+          setQueue([...queueRef.current]);
+          setCurrent(null);
+          await sleep(BUSY_RETRY_MS);
+          continue;
+        }
         failures++;
         // The server answered: that attempt is over. No answer: the same key is kept for the retry.
         if (e instanceof ApiError) keys.current.delete(k);
