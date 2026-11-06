@@ -13,7 +13,7 @@ export default async function Page() {
   if (membership.visitor) redirect("/panel/visita/cuenta");
   return (
     <>
-      <PanelNav section="cuenta" agencyName={membership.agency.name} role={membership.role} />
+      <PanelNav section="cuenta" agencyName={membership.agency.name} role={membership.role} tour={!membership.support && !membership.visitor} />
       <div className="ap-account">
         <AccountDashboard />
       </div>

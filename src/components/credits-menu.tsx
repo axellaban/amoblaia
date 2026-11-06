@@ -27,7 +27,7 @@ export function CreditsMenu({ credits, canBuy, source }: { credits: number; canB
   }, [open]);
   const label = `${credits} ${credits === 1 ? "crédito" : "créditos"}`;
   return (
-    <div className="hb-balance" ref={ref}>
+    <div className="hb-balance" ref={ref} data-tour="credits-balance">
       <button
         type="button"
         className={`hb-balance-chip${credits <= 0 ? " empty" : ""}`}

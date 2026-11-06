@@ -70,6 +70,25 @@ Una visita, un clic, abrir el estudio, importar una propiedad o generar sin eleg
 - **Fuente de verdad:** la base (`approved_generation_id`), por `src/lib/prospecting/metrics.ts`.
 - **Aproximado en PostHog:** `first_generation_completed`. Es una condición necesaria, no suficiente: PostHog no ve la elección de la versión preferida. Sirve para encontrar grabaciones, no para informar activados.
 
+## 3 bis. Recorrido de bienvenida del panel
+
+Desde `panel` `v2`. Recorrido de 7 pasos sobre la home real del panel (`src/components/panel-tour.tsx`). Arranca solo una vez por cuenta (miembros que se sumaron hace 14 días o menos y no lo vieron, guardado en `profiles.panel_tour_seen_at`) y se vuelve a abrir desde «Ayuda → Volver a ver el recorrido». No arranca solo si la persona llega a seguir trabajando (enlace de la demo para importar, `?continuar=`, `?accion=`, un ancla de la home): espera a la próxima sesión.
+
+| Evento | Cuándo | Propiedades |
+| --- | --- | --- |
+| `panel_tour_started` | Empieza el recorrido (no al reanudarlo tras recargar) | `tour_version`, `origin` (`auto` o `help`), `steps_total`, `role`, `device_type` |
+| `panel_tour_step_viewed` | Se muestra un paso | Las anteriores y `step_id` (`welcome`, `demo`, `start`, `studio`, `video`, `demos`, `credits`), `step_index` (desde 1) |
+| `panel_tour_completed` | Llega a la pantalla final | Las de `started` |
+| `panel_tour_skipped` | Sale antes de la pantalla final | Las de `started`, `step_id`, `step_index`, `method` (`button`, `close`, `escape`) |
+| `panel_tour_reopened` | Elige «Volver a ver el recorrido» en Ayuda | `tour_version`, `source_surface`, `device_type` |
+| `panel_tour_primary_cta_clicked` | «Crear mi primera demostración» en la pantalla final | Las de `started` y `cta` |
+
+`steps_total` cambia según el rol y lo disponible: sin herramientas para quien no puede crear (solo vista, o limitado a algunas propiedades) y sin video donde no está habilitado. Comparar `step_index` solo dentro del mismo `steps_total`.
+
+El paso 3 muestra el selector real sin contar `panel_start_picker_opened`: el recorrido no ejecuta acciones. Después del CTA principal el selector se abre de verdad y sí lo cuenta.
+
+Completar el recorrido no es activación. Para medir su efecto, comparar la activación (sección 3, `approved_generation_id`) de quienes lo vieron con la de quienes lo saltaron o no lo vieron, no `panel_tour_completed`.
+
 ## 4. Identificadores
 
 | Necesidad | Cómo | Límite |

@@ -23,7 +23,7 @@ export default async function ImagesPage({ searchParams }: { searchParams: Promi
   const tab = pestana === "url" || (typeof metodo === "string" && METHODS.includes(metodo as Method)) ? "url" : "fotos";
   return (
     <>
-      <PanelNav section="imagenes" agencyName={membership.agency.name} role={membership.role} />
+      <PanelNav section="imagenes" agencyName={membership.agency.name} role={membership.role} tour={!membership.support && !membership.visitor} />
       <div className="account-page container ap-page st-page">
         <ImageStudio initialTab={tab} initialMethod={method} initialId={typeof fotos === "string" && isUuid(fotos) ? fotos : null} />
       </div>

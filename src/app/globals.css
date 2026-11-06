@@ -26105,3 +26105,253 @@ body:has(.pv-root) .pb-root {
     font-size: 22px;
   }
 }
+
+/* Panel: «Ayuda» opens two options, Miguel Ángel and the welcome tour again. */
+.ap-side-chevron {
+  margin-left: auto;
+  transition: transform 0.2s;
+}
+.ap-side-chevron.is-open {
+  transform: rotate(180deg);
+}
+.ap-side-sub {
+  list-style: none;
+  margin: 2px 0 4px;
+  padding: 0 0 0 18px;
+  display: grid;
+  gap: 2px;
+}
+.ap-side-sub .ap-side-button {
+  min-height: 40px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* The panel's welcome tour (panel-tour.tsx): a soft dark overlay with the real
+   element cut out, and a card next to it in the panel's own style. */
+dialog.pt-layer {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  overflow: hidden;
+  color: var(--ink);
+}
+dialog.pt-layer::backdrop {
+  background: transparent;
+}
+.pt-shade {
+  position: absolute;
+  inset: 0;
+  background: rgba(20, 30, 24, 0.55);
+}
+.pt-spot {
+  position: fixed;
+  border-radius: 16px;
+  border: 3px solid #cfe3c8;
+  box-shadow:
+    0 0 0 9999px rgba(20, 30, 24, 0.55),
+    0 0 26px rgba(207, 227, 200, 0.7);
+  pointer-events: none;
+  transition:
+    top 0.25s ease,
+    left 0.25s ease,
+    width 0.25s ease,
+    height 0.25s ease;
+}
+/* Over the start picker, whose own backdrop already darkens the page. */
+.pt-layer.is-picker .pt-spot {
+  box-shadow:
+    0 0 0 9999px rgba(20, 30, 24, 0.2),
+    0 0 26px rgba(207, 227, 200, 0.7);
+}
+.pt-card {
+  position: fixed;
+  width: min(380px, calc(100vw - 24px));
+  padding: 22px 22px 18px;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.25);
+}
+.pt-card h2 {
+  margin: 0 30px 8px 0;
+  font-size: 20px;
+  line-height: 1.25;
+  color: var(--forest);
+}
+.pt-card p {
+  margin: 0 0 18px;
+  font-size: 15px;
+  line-height: 1.55;
+  color: #3d433e;
+}
+.pt-card::before {
+  content: "";
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  background: #fff;
+  transform: rotate(45deg);
+  display: none;
+}
+.pt-card.is-bottom::before,
+.pt-card.is-top::before {
+  display: block;
+  left: clamp(18px, calc(var(--pt-arrow, 50%) - 7px), calc(100% - 32px));
+}
+.pt-card.is-bottom::before {
+  top: -7px;
+}
+.pt-card.is-top::before {
+  bottom: -7px;
+}
+.pt-card.is-right::before,
+.pt-card.is-left::before {
+  display: block;
+  top: clamp(18px, calc(var(--pt-arrow, 50%) - 7px), calc(100% - 32px));
+}
+.pt-card.is-right::before {
+  left: -7px;
+}
+.pt-card.is-left::before {
+  right: -7px;
+}
+.pt-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.pt-close:hover {
+  background: var(--cream);
+  color: var(--ink);
+}
+.pt-foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.pt-nav {
+  display: flex;
+  gap: 8px;
+}
+.pt-count {
+  margin-right: auto;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.pt-skip {
+  min-height: 40px;
+  padding: 0 8px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.pt-skip:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+.pt-card .button-small {
+  gap: 6px;
+  padding: 8px 16px;
+  font-size: 14px;
+}
+.pt-card :focus-visible {
+  outline: 2px solid var(--forest);
+  outline-offset: 2px;
+}
+.pt-card.is-final {
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(520px, calc(100vw - 32px));
+  padding: 34px 30px 26px;
+  text-align: center;
+}
+.pt-card.is-final h2 {
+  margin: 0 0 10px;
+  font-size: 26px;
+}
+.pt-card.is-final p {
+  margin: 0 auto 22px;
+  max-width: 400px;
+  font-size: 16px;
+}
+.pt-done {
+  display: inline-grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  margin-bottom: 16px;
+  border-radius: 50%;
+  background: var(--forest);
+  color: #fff;
+}
+.pt-final-actions {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+}
+.pt-final-actions .button {
+  width: 100%;
+  max-width: 360px;
+}
+.pt-explore {
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--forest);
+  cursor: pointer;
+}
+@media (max-width: 860px) {
+  .pt-card:not(.is-final) {
+    padding: 16px 16px 14px;
+  }
+  .pt-nav {
+    flex: 1 0 100%;
+  }
+  .pt-nav .button {
+    flex: 1 1 0;
+  }
+  .pt-card h2 {
+    font-size: 17px;
+  }
+  .pt-card p {
+    margin-bottom: 12px;
+    font-size: 14px;
+  }
+  .pt-card.is-final {
+    padding: 28px 20px 20px;
+  }
+  .pt-card.is-final h2 {
+    font-size: 22px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pt-spot,
+  .ap-side-chevron {
+    transition: none;
+  }
+}

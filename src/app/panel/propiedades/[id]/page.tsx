@@ -14,7 +14,7 @@ export default async function PropertyPage({ params }: { params: Promise<{ id: s
   if (!demo || demo.agency_id !== membership.agency.id || !inScope(membership, demo.property_id)) notFound();
   return (
     <>
-      <PanelNav section="propiedades" agencyName={membership.agency.name} role={membership.role} />
+      <PanelNav section="propiedades" agencyName={membership.agency.name} role={membership.role} tour={!membership.support && !membership.visitor} />
       <DemoEditor id={id} mode="agency" />
     </>
   );
