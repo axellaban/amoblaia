@@ -5,6 +5,7 @@ import {
   ArrowRight,
   ArrowUpRight,
   Box,
+  ChevronsLeftRight,
   Clapperboard,
   Film,
   Globe,
@@ -111,6 +112,106 @@ function Clip({ label = "Video de un departamento hecho con habita.", decorative
         </button>
       )}
     </div>
+  );
+}
+
+/**
+ * Runs a card's CSS loop only while it is on screen, with a button to stop it
+ * (WCAG 2.2.2). With reduced motion the CSS leaves a still frame and the
+ * button is hidden.
+ */
+function Loop({
+  className,
+  label,
+  children,
+  controls,
+}: {
+  className: string;
+  label: string;
+  children: ReactNode;
+  /** Buttons over the photo (the demo's styles), outside the animated picture. */
+  controls?: ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(false);
+  const [paused, setPaused] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const io = new IntersectionObserver(([e]) => setVisible(e.isIntersecting), { threshold: 0.2 });
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+  const running = visible && !paused;
+  return (
+    <div ref={ref} className={`hb-card-media hb-loop ${className} ${running ? "is-running" : ""}`}>
+      <div className="hb-loop-stage" role="img" aria-label={label}>
+        {children}
+      </div>
+      {controls}
+      <button
+        type="button"
+        className="hb-loop-toggle"
+        onClick={() => setPaused(!paused)}
+        aria-label={paused ? "Reanudar la animación" : "Pausar la animación"}
+      >
+        {paused ? <Play size={14} /> : <Pause size={14} />}
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Demo card: the same style buttons as before, over a before/after slider
+ * that moves back and forth on its own. A style shows in «Después».
+ */
+function DemoLoop({ has, room }: { has: Has; room: string }) {
+  const [style, setStyle] = useState("modern");
+  const options = ["original", ...exampleStyles.filter((s) => ["modern", "scandinavian", "classic", "minimalist"].includes(s))].filter((s) => has(room, s));
+  const current = options.includes(style) ? style : options[1] || options[0];
+  const compare = current !== "original";
+  return (
+    <Loop
+      className={`hb-loop-demo ${compare ? "" : "is-still"}`}
+      label={compare ? `Comparador de la demo: ${roomName(room).toLowerCase()} vacío y en estilo ${styleName(current).toLowerCase()}` : `${roomName(room)}, foto original`}
+      controls={
+        <div className="hb-demo-styles" role="group" aria-label="Estilo">
+          {options.map((s) => (
+            <button key={s} type="button" aria-pressed={s === current} onClick={() => setStyle(s)}>
+              {styleName(s)}
+            </button>
+          ))}
+        </div>
+      }
+    >
+      <img src={examplePath(room, "original")} alt="" loading="lazy" />
+      {compare && (
+        <>
+          <img key={current} className="hb-loop-after" src={examplePath(room, current)} alt="" loading="lazy" />
+          <span className="hb-loop-handle">
+            <span>
+              <ChevronsLeftRight size={16} aria-hidden="true" />
+            </span>
+          </span>
+          <em className="hb-loop-tag is-top is-left">Antes</em>
+          <em className="hb-loop-tag is-top is-right">Después</em>
+        </>
+      )}
+    </Loop>
+  );
+}
+
+/** Studio card: a line of light sweeps the photo and takes the furniture out. */
+function StudioLoop({ room, style }: { room: string; style: string }) {
+  return (
+    <Loop className="hb-loop-studio" label={`Estudio de imágenes: ${roomName(room).toLowerCase()} amoblado que queda vacío`}>
+      <img src={examplePath(room, style)} alt="" loading="lazy" />
+      <img className="hb-loop-empty" src={examplePath(room, "original")} alt="" loading="lazy" />
+      <span className="hb-loop-scan" />
+      <em className="hb-loop-tag is-left hb-loop-step is-1">Foto original</em>
+      <em className="hb-loop-tag is-left hb-loop-step is-2">Quitando muebles…</em>
+      <em className="hb-loop-tag is-left hb-loop-step is-3">Listo: ambiente vacío</em>
+    </Loop>
   );
 }
 
@@ -264,9 +365,7 @@ export function Landing({ scenes, trial }: { scenes: string[]; trial: boolean })
           </header>
           <div className="hb-products">
             <article className="hb-card">
-              <div className="hb-card-media">
-                <DemoViewer has={has} demoRooms={demoRooms.slice(0, 1)} compact />
-              </div>
+              <DemoLoop has={has} room={demoRooms[0] || lead} />
               <h3>Demostraciones interactivas</h3>
               <p>Una ficha para recorrer, cambiar el estilo de cada ambiente y compartir por WhatsApp.</p>
               <Link href={START} className="hb-more">
@@ -274,16 +373,7 @@ export function Landing({ scenes, trial }: { scenes: string[]; trial: boolean })
               </Link>
             </article>
             <article className="hb-card">
-              <div className="hb-card-media hb-split" aria-hidden="true">
-                <span>
-                  <img src={examplePath(second, "original")} alt="" loading="lazy" />
-                  <em>Antes</em>
-                </span>
-                <span>
-                  <img src={examplePath(second, pick(second, "scandinavian", "modern"))} alt="" loading="lazy" />
-                  <em>Después</em>
-                </span>
-              </div>
+              <StudioLoop room={second} style={pick(second, "scandinavian", "modern")} />
               <h3>Estudio de imágenes</h3>
               <p>Amoblá, vaciá o mejorá tus fotos y descargalas listas para publicar.</p>
               <Link href="/estudio" className="hb-more">

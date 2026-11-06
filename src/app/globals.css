@@ -24117,33 +24117,177 @@ body:has(.pv-root) .pb-root {
   font-size: 14.5px;
   line-height: 1.5;
 }
-.hb-split {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 4px;
+/* Demo and studio cards: a short CSS loop over two example photos, like a GIF.
+   It only runs while on screen (.is-running) and stops with its button or
+   with reduced motion, which leaves a still frame. */
+.hb-loop {
+  position: relative;
   aspect-ratio: 3 / 2;
+  max-width: 100%;
   border-radius: 10px;
   overflow: hidden;
+  background: var(--hb-sage);
 }
-.hb-split span {
-  position: relative;
-}
-.hb-split img {
+.hb-loop-stage,
+.hb-loop img {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
+}
+.hb-loop img {
   object-fit: cover;
 }
-.hb-split em {
+.hb-loop * {
+  animation-play-state: paused !important;
+}
+.hb-loop.is-running * {
+  animation-play-state: running !important;
+}
+.hb-loop-tag {
   position: absolute;
-  left: 8px;
   bottom: 8px;
+  z-index: 3;
   padding: 2px 9px;
   border-radius: 6px;
   background: #ffffffe6;
   color: var(--hb-green);
   font-style: normal;
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 700;
+}
+.hb-loop-tag.is-left {
+  left: 8px;
+}
+.hb-loop-tag.is-right {
+  right: 44px;
+}
+.hb-loop-tag.is-top {
+  top: 8px;
+  bottom: auto;
+}
+.hb-loop-tag.is-top.is-right {
+  right: 8px;
+}
+/* The demo keeps its style buttons along the bottom: the pause goes on top. */
+.hb-loop-demo .hb-loop-toggle {
+  top: 6px;
+  bottom: auto;
+  right: 50%;
+  translate: 50% 0;
+}
+.hb-loop-demo.is-still .hb-loop-toggle {
+  display: none;
+}
+.hb-loop .hb-demo-styles {
+  z-index: 3;
+}
+.hb-loop-toggle {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 50%;
+  background: #1b2b22b3;
+  color: #fff;
+  cursor: pointer;
+}
+/* Demo: the slider goes to «Después» and back. */
+.hb-loop-after {
+  clip-path: inset(0 0 0 82%);
+  animation: hb-loop-wipe 7s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+.hb-loop-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 82%;
+  z-index: 2;
+  width: 2px;
+  margin-left: -1px;
+  background: #fff;
+  animation: hb-loop-handle 7s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+.hb-loop-handle span {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  translate: -50% -50%;
+  border-radius: 50%;
+  background: #fff;
+  color: var(--hb-green);
+  box-shadow: 0 4px 14px #0000003a;
+}
+@keyframes hb-loop-wipe {
+  0%, 10% { clip-path: inset(0 0 0 82%); }
+  45%, 58% { clip-path: inset(0 0 0 16%); }
+  92%, 100% { clip-path: inset(0 0 0 82%); }
+}
+@keyframes hb-loop-handle {
+  0%, 10% { left: 82%; }
+  45%, 58% { left: 16%; }
+  92%, 100% { left: 82%; }
+}
+/* Studio: a line of light takes the furniture out, then it starts again. */
+.hb-loop-empty {
+  clip-path: inset(0 100% 0 0);
+  animation: hb-loop-erase 8s cubic-bezier(0.55, 0, 0.35, 1) infinite;
+}
+.hb-loop-scan {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 2;
+  width: 90px;
+  margin-left: -90px;
+  opacity: 0;
+  background: linear-gradient(90deg, #c9f27a00, #c9f27a33 70%, #f4ffd9 97%, #fff);
+  animation: hb-loop-scan 8s cubic-bezier(0.55, 0, 0.35, 1) infinite;
+}
+.hb-loop-step {
+  opacity: 0;
+}
+.hb-loop-step.is-1 { animation: hb-loop-step1 8s infinite; }
+.hb-loop-step.is-2 { animation: hb-loop-step2 8s infinite; }
+.hb-loop-step.is-3 {
+  background: var(--hb-green);
+  color: #fff;
+  animation: hb-loop-step3 8s infinite;
+}
+@keyframes hb-loop-erase {
+  0%, 16% { clip-path: inset(0 100% 0 0); opacity: 1; }
+  56%, 88% { clip-path: inset(0 0 0 0); opacity: 1; }
+  97% { clip-path: inset(0 0 0 0); opacity: 0; }
+  100% { clip-path: inset(0 100% 0 0); opacity: 0; }
+}
+@keyframes hb-loop-scan {
+  0%, 15% { left: 0; opacity: 0; }
+  17% { left: 0; opacity: 1; }
+  55% { left: 100%; opacity: 1; }
+  58%, 100% { left: 100%; opacity: 0; }
+}
+@keyframes hb-loop-step1 { 0%, 15% { opacity: 1; } 16%, 96% { opacity: 0; } 98%, 100% { opacity: 1; } }
+@keyframes hb-loop-step2 { 0%, 15% { opacity: 0; } 16%, 55% { opacity: 1; } 56%, 100% { opacity: 0; } }
+@keyframes hb-loop-step3 { 0%, 55% { opacity: 0; } 56%, 94% { opacity: 1; } 96%, 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .hb-loop * {
+    animation: none !important;
+  }
+  .hb-loop-after { clip-path: inset(0 0 0 50%); }
+  .hb-loop-handle { left: 50%; }
+  .hb-loop-empty { clip-path: none; }
+  .hb-loop-step.is-3 { opacity: 1; }
+  .hb-loop-toggle { display: none; }
 }
 
 /* 3. The visit */
