@@ -42,25 +42,47 @@ export function funnelStep(f: DemoFunnelFacts): FunnelStep {
 }
 
 /**
- * The panel's whole funnel: the three prospecting steps of the sheet, then
+ * The panel's whole funnel: the two prospecting steps of the sheet, then
  * the demo's seven. Counted per agency: its highest step, prospecting or demo.
  */
-export const PROSPECT_STEPS = ["Contactados", "Saludo respondido", "Interesados"] as const;
+export const PROSPECT_STEPS = ["Contactados", "Interesados"] as const;
 export const AGENCY_STEPS = [...PROSPECT_STEPS, ...FUNNEL_STEPS] as const;
 
-/** What prospecting knows of an agency: 0 contacted, 1 replied to the greeting, 2 interested; null: never contacted. */
-export type ProspectFacts = { contacted: boolean; replied: boolean; interested: boolean };
+/**
+ * What prospecting knows of an agency: 0 contacted, 1 interested; null: never
+ * contacted. A reply without interest (the greeting, «Neutro», «No
+ * interesado») stays at «Contactados»: the funnel has no reply step.
+ */
+export type ProspectFacts = { contacted: boolean; replied?: boolean; interested: boolean };
 export function prospectStep(f: ProspectFacts | null): number | null {
   if (!f) return null;
-  if (f.interested) return 2;
-  if (f.replied) return 1;
-  return f.contacted ? 0 : null;
+  if (f.interested) return 1;
+  return f.contacted || f.replied ? 0 : null;
+}
+
+/**
+ * The step in the old three-step encoding (0 contacted, 1 replied, 2
+ * interested) that Chapa Labs still reads from /api/prospeccion?vista=inmobiliarias.
+ * Kept until its panel drops the reply step too, so its labels stay right.
+ */
+export const legacyProspectStep = (p: { step: number; replied?: boolean }) => (p.step >= 1 ? 2 : p.replied ? 1 : 0);
+
+/**
+ * Whether a send reached someone: not when it went to a channel (WhatsApp or
+ * email) whose every contact of the account is invalid, as the sheet's
+ * «Número incorrecto» and «Sin WhatsApp» mark them. A channel without
+ * contacts, or an unknown one, counts: nothing says it failed.
+ */
+export function contactedSend(channel: string | null, contacts: { channel: string; invalid: boolean }[]) {
+  if (channel !== "whatsapp" && channel !== "email") return true;
+  const same = contacts.filter((c) => c.channel === channel);
+  return !same.length || same.some((c) => !c.invalid);
 }
 
 /**
  * An agency's step in the whole funnel, or null when it is in neither part.
  * A demo is the step after «Interesados»: an agency with a demo counts in the
- * three prospecting steps too, so every step holds the ones after it.
+ * prospecting steps too, so every step holds the ones after it.
  */
 export function agencyStep(prospect: number | null, demo: FunnelStep | null): number | null {
   const fromDemo = demo === null ? null : demo + PROSPECT_STEPS.length;
@@ -133,4 +155,27 @@ export function demosInPeriod(demos: { createdAt: string; step: FunnelStep }[], 
     step: list.length ? Math.max(...list.map((d) => d.step)) : null,
     latest: list.map((d) => d.createdAt).sort().at(-1) ?? null,
   };
+}
+
+/**
+ * The bars' vertical scale, with a break when the first steps dwarf the rest
+ * (e.g. 363 contacted against 4 accounts created): without it the last steps
+ * are flat. Counts up to `limit` are drawn to scale in the lower `breakAt`%
+ * of the plot; the taller ones are cut at that line and their part above it
+ * is compressed (logarithmically, so a bigger count is still taller) into the
+ * rest. `limit` is a little above the largest count that is at most
+ * `share` of the tallest. Without such a gap every bar is to scale.
+ */
+export function barScale(counts: number[], { share = 0.3, breakAt = 78, headroom = 1.25 } = {}) {
+  const max = Math.max(0, ...counts);
+  const below = counts.filter((c) => c > 0 && c <= max * share);
+  const limit = below.length ? Math.max(...below) * headroom : max;
+  const broken = max > 0 && limit < max / 3;
+  const height = (count: number) => {
+    if (count <= 0 || max <= 0) return 0;
+    if (!broken) return (count / max) * 100;
+    if (count <= limit) return (count / limit) * breakAt;
+    return breakAt + ((100 - breakAt) * Math.log(count / limit)) / Math.log(max / limit);
+  };
+  return { height, breakAt: broken ? breakAt : null, isBroken: (count: number) => broken && count > limit };
 }

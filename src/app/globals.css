@@ -20837,6 +20837,8 @@ body:has(.pv-root) .pb-root {
 .ah-dfunnel {
   --ah-stayed: #e2a54a;
   --ah-stayed-on: #c9852a;
+  --ah-lost: #b9b6ad;
+  --ah-lost-on: #96938a;
 }
 .ah-dfunnel-legend {
   display: flex;
@@ -20861,9 +20863,12 @@ body:has(.pv-root) .pb-root {
 .ah-dfunnel-legend li.is-stayed::before {
   background: var(--ah-stayed);
 }
+.ah-dfunnel-legend li.is-lost::before {
+  background: var(--ah-lost);
+}
 .ah-dfunnel-chart {
   display: grid;
-  grid-template-columns: repeat(10, minmax(0, 1fr));
+  grid-template-columns: repeat(9, minmax(0, 1fr));
   gap: 10px;
   margin: 0;
   padding: 0;
@@ -20910,6 +20915,7 @@ body:has(.pv-root) .pb-root {
   background: repeating-linear-gradient(to top, #f0eee8 0 1px, transparent 1px 55px);
 }
 .ah-dfunnel-col {
+  position: relative;
   display: flex;
   flex-direction: column;
   width: 72%;
@@ -20950,8 +20956,25 @@ body:has(.pv-root) .pb-root {
 .ah-dfunnel-seg.is-stayed.is-on {
   background-color: var(--ah-stayed-on);
 }
-.ah-dfunnel-seg.is-on {
-  box-shadow: inset 0 0 0 3px #1c211d;
+.ah-dfunnel-seg.is-lost {
+  background: var(--ah-lost);
+  color: #34322d;
+}
+.ah-dfunnel-seg.is-lost.is-on {
+  background: var(--ah-lost-on);
+}
+/* The cut of a bar that is not to scale above it (barScale): a slanted white band across the bar. */
+.ah-dfunnel-break {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  height: 7px;
+  margin: 0 -6px;
+  background: #fff;
+  transform: skewY(-9deg);
+}
+.ah-dfunnel-break + .ah-dfunnel-seg {
+  border-top: 0;
 }
 .ah-dfunnel-zero {
   display: block;
@@ -20977,6 +21000,9 @@ body:has(.pv-root) .pb-root {
 .ah-dfunnel-label small.is-went {
   color: var(--ah-green);
 }
+.ah-dfunnel-label small.is-lost {
+  color: #77746c;
+}
 .ah-dfunnel-note {
   margin: 0;
   font-size: 12px;
@@ -20985,7 +21011,7 @@ body:has(.pv-root) .pb-root {
 @media (max-width: 1280px) and (min-width: 761px) {
   .ah-dfunnel-chart {
     overflow-x: auto;
-    grid-template-columns: repeat(10, minmax(96px, 1fr));
+    grid-template-columns: repeat(9, minmax(96px, 1fr));
     padding-bottom: 6px;
   }
 }
@@ -21053,6 +21079,9 @@ body:has(.pv-root) .pb-root {
     width: 100%;
     height: 100%;
     border-radius: 8px;
+  }
+  .ah-dfunnel-break {
+    display: none;
   }
 }
 /* The list's «Demo» column: the step its demos reached and when the latest was created. */

@@ -6,6 +6,7 @@ import "server-only";
 import { HttpError } from "@/lib/commerce/http";
 import { claimsToReview, createClaim } from "@/lib/agency/admin";
 import { commercialRow, commercialRows } from "@/lib/agency/commercial-server";
+import { legacyProspectStep } from "@/lib/agency/demo-funnel";
 import { agencyPanelLink } from "@/lib/agency/panel-link";
 import { demoRow, adminImagePaths, renderImage } from "@/lib/demos/server";
 import { normalizeArNumber } from "@/lib/demos/send";
@@ -16,7 +17,15 @@ import { adminClient } from "@/lib/supabase/server";
 /** Las filas de la lista y los reclamos a revisar. `wa`: el número para wa.me (null sin uno válido). */
 export async function agencyList() {
   const [rows, toReview] = await Promise.all([commercialRows(), claimsToReview().catch(() => [])]);
-  return { rows: rows.map((r) => ({ ...r, wa: normalizeArNumber(r.whatsapp ?? null) })), toReview };
+  // Chapa still reads the prospecting step in the old three-step encoding (with «Saludo respondido»).
+  return {
+    rows: rows.map((r) => ({
+      ...r,
+      prospectFunnel: r.prospectFunnel ? { ...r.prospectFunnel, step: legacyProspectStep(r.prospectFunnel) } : r.prospectFunnel,
+      wa: normalizeArNumber(r.whatsapp ?? null),
+    })),
+    toReview,
+  };
 }
 
 /** La portada de una demo, chica, para la lista (la misma imagen que muestra /admin/inmobiliarias). */

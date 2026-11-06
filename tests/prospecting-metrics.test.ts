@@ -71,6 +71,20 @@ describe("Account funnel", () => {
     expect(wa.assisted).toBe(1);
   });
 
+  it("a send to a WhatsApp that turned out invalid («Número incorrecto», «Sin WhatsApp») is not a contact, unless they answered", () => {
+    const invalidWa = (a: ProspectAccount) => ({ ...a, contacts: a.contacts.map((c) => ({ ...c, invalid: true, is_primary: false })) });
+    const ok = account(), wrong = invalidWa(account()), answered = invalidWa(account());
+    const data = ds([ok, wrong, answered], [
+      send(ok, "2026-10-02T10:00:00-03:00"),
+      send(wrong, "2026-10-02T10:00:00-03:00"),
+      send(answered, "2026-10-02T10:00:00-03:00"),
+    ], [event(answered, "reply", "2026-10-03T10:00:00-03:00")]);
+    const s = summarize(data, {});
+    expect(s.sent).toBe(2);
+    expect(s.messages).toBe(2);
+    expect(s.replied.observed).toBe(1);
+  });
+
   it("losing the account later keeps its reply and interest", () => {
     const a = account({ stage: "lost", lost_reason: "Otro proveedor" });
     const data = ds([a], [send(a, "2026-10-02T10:00:00-03:00")], [

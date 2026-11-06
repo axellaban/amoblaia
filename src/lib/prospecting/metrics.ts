@@ -2,6 +2,7 @@
 // same functions run in tests and in the panel, so the summary and the
 // message report always share data, filters and rules. Rules are documented
 // in docs/PROSPECCION.md (diccionario de métricas).
+import { contactedSend } from "@/lib/agency/demo-funnel";
 import { artDate, dayEnd, dayStart, days, isDate } from "./time";
 import type { AttemptChannel, Dataset, DemoProgress, OutreachAttempt, ProspectAccount, ProspectEvent } from "./types";
 
@@ -138,7 +139,9 @@ export function summarize(ds: Dataset, f: Filters, nowIso = ds.now) {
   let messages = 0;
   let unknownChannel = 0;
   for (const account of scope) {
-    const all = idx.sends.get(account.id) ?? [];
+    // A send to a channel whose every contact turned out invalid reached no one, unless the account answered anyway.
+    const answered = (idx.events.get(account.id) ?? []).some(isHumanReply);
+    const all = (idx.sends.get(account.id) ?? []).filter((s) => answered || contactedSend(s.channel, account.contacts));
     const list = channel ? all.filter((s) => s.channel === channel) : all;
     if (!list.length) continue;
     const first = list[0];
