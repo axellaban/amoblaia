@@ -1,5 +1,7 @@
 // The listing pages of the Habita V2 QA list (spec §3.4), the only ones the
-// preview QA endpoint reads. Same list as tests/fixtures/listings/manifest.json.
+// preview QA endpoint reads: the 16 of tests/fixtures/listings/manifest.json,
+// then (16–19) the cases of 05/11/2026 whose photos did not come in
+// (tests/fixtures/listings-nov5).
 export const QA_LISTING_URLS: readonly string[] = [
   "https://www.emmanuelscagliola.com/propiedad/santa-fe-1624/",
   "https://grandepropiedades.com/property/casa-de-4-ambientes-con-escritorio-garaje-y-patio/",
@@ -16,5 +18,9 @@ export const QA_LISTING_URLS: readonly string[] = [
   "https://www.claudiamendiondo.com.ar/p/12446118-Departamento-en-Venta-en-chauvin-cordoba-al-3200",
   "https://www.tormespropiedades.com/p/8634397-Departamento-en-Venta-en-Plaza-Mitre-Bolivar-al-2600",
   "https://www.sanzyordoqui.com.ar/propiedad/venta-departamento-cuatro-ambientes-con-dependencia-santiago-del-estero-2329--13217780",
-  "https://pigliainmuebles.com.ar/local-venta-mar-del-plata/8116994"
+  "https://pigliainmuebles.com.ar/local-venta-mar-del-plata/8116994",
+  "https://www.inmobiliariagordin.com.ar/ver-propiedad-venta.asp?id=Venta-de-Casa-4-ambientes-en-Miramar&codigo=7904",
+  "https://www.paradisobienesraices.com.ar/ver-propiedad-venta.asp?id=Venta-de-Departamento-en-Miramar&codigo=7557",
+  "https://daneffpropiedades.com/inmueble/venta/departamento/2-ambientes-externo-reciclado/10753",
+  "https://www.bistolfi.com.ar/ventas/1-departamento/25-2-ambientes/305-dpto_2_amb_centrico_con_gran_balcon_/",
 ];

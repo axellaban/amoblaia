@@ -1,4 +1,3 @@
-import sharp from "sharp";
 import { failure, HttpError, rpc } from "@/lib/commerce/http";
 import { requireDemoAccess } from "@/lib/agency/server";
 import { auditAgencyEdit } from "@/lib/agency/edit-context";
@@ -6,28 +5,33 @@ import { MAX_BYTES } from "@/lib/commerce/images";
 import { addPhoto } from "@/lib/demos/server";
 import { assignPhotos } from "@/lib/demos/spaces";
 import { readJson } from "@/lib/demos/input";
-import { fetchPublic } from "@/lib/demos/listing";
+import { fetchPublic, ListingFetchError } from "@/lib/demos/listing";
+import { checkPhoto } from "@/lib/listings/photo-check";
 import { cleanUrl } from "@/lib/demos/shared";
 export const runtime = "nodejs";
-
-/** Smaller pictures on a listing are thumbnails or site graphics, not photos worth staging. */
-const MIN_SIDE = 600;
 
 /** A photo downloaded from the listing: { url } in JSON. */
 async function fromUrl(request: Request) {
   const body = await readJson(request);
   const address = cleanUrl(body.url);
   if (!address) throw new HttpError(400, "Dirección de foto inválida.");
-  const image = await fetchPublic(address, "image");
-  if (image.type && !/^image\//i.test(image.type))
-    throw new HttpError(422, "No es una foto.");
-  const meta = await sharp(image.body, { limitInputPixels: 40_000_000 })
-    .metadata()
-    .catch(() => null);
-  if (!meta?.width || !meta.height || !["jpeg", "png", "webp", "avif"].includes(meta.format ?? ""))
-    throw new HttpError(422, "No es una foto.");
-  if (Math.max(meta.width, meta.height) < MIN_SIDE)
-    throw new HttpError(422, "La foto es demasiado chica.");
+  let image: Awaited<ReturnType<typeof fetchPublic>>;
+  try {
+    image = await fetchPublic(address, "image");
+    await checkPhoto(image.body, image.type);
+  } catch (e) {
+    // The real cause in the function logs (host, code, the site's status), never the full address.
+    const host = (() => {
+      try {
+        return new URL(address).hostname;
+      } catch {
+        return "?";
+      }
+    })();
+    const detail = e instanceof ListingFetchError ? `${e.code} ${e.upstreamStatus ?? ""}`.trim() : e instanceof HttpError ? e.message : "unknown";
+    console.warn("IMPORT_PHOTO_FAILED", host, detail);
+    throw e;
+  }
   const file = new URL(image.url).pathname.split("/").pop() || "";
   let name = file;
   try {

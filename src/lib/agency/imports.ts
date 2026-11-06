@@ -177,7 +177,27 @@ export const importStatus = (r: { settings_saved: boolean | null; pending_images
  * The photos the panel downloaded (or could not) for an import of this
  * agency. Only listed photos of that import count; the rest is ignored.
  */
-export async function reportPhotos(agencyId: string, importId: string, done: unknown, failed: unknown) {
+/**
+ * The import's error from the photos that failed, with their causes: the most
+ * common first ("14 fotos no se pudieron descargar: El sitio rechazó la
+ * descarga desde nuestro servidor (error 406)…"), within the column's 300.
+ */
+export function photosError(failedUrls: string[], reasons: unknown) {
+  const n = failedUrls.length;
+  if (!n) return null;
+  const head = `${n} ${n === 1 ? "foto no se pudo descargar" : "fotos no se pudieron descargar"}`;
+  const by = reasons && typeof reasons === "object" ? (reasons as Record<string, unknown>) : {};
+  const counts = new Map<string, number>();
+  for (const url of failedUrls) {
+    const why = typeof by[url] === "string" ? (by[url] as string).replace(/\s+/g, " ").trim().slice(0, 160) : "";
+    if (why) counts.set(why, (counts.get(why) ?? 0) + 1);
+  }
+  const causes = [...counts].sort((a, b) => b[1] - a[1]).map(([why, c]) => (counts.size > 1 ? `${why} (${c})` : why));
+  const text = causes.length ? `${head}: ${causes.join(" · ")}` : `${head}.`;
+  return text.length <= 300 ? text : `${text.slice(0, 299)}…`;
+}
+
+export async function reportPhotos(agencyId: string, importId: string, done: unknown, failed: unknown, reasons?: unknown) {
   const db = adminClient();
   const { data, error } = await db.from("property_imports").select(FIELDS).eq("id", importId).eq("agency_id", agencyId).maybeSingle();
   if (error) throw new Error("IMPORT_LOOKUP_FAILED");
@@ -186,12 +206,12 @@ export async function reportPhotos(agencyId: string, importId: string, done: unk
   const list = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
   const ok = new Set(list(done));
   const pending = (row.pending_images ?? []).filter((src) => !ok.has(src));
-  const failedNow = list(failed).filter((src) => pending.includes(src)).length;
+  const failedNow = list(failed).filter((src) => pending.includes(src));
   const total = row.photos_total ?? pending.length;
   const next = {
     pending_images: pending,
     photos_done: total - pending.length,
-    error: failedNow ? `${failedNow} ${failedNow === 1 ? "foto no se pudo descargar" : "fotos no se pudieron descargar"}.` : row.settings_saved === false ? row.error : null,
+    error: failedNow.length ? photosError(failedNow, reasons) : row.settings_saved === false ? row.error : null,
     finished_at: new Date().toISOString(),
   };
   const status = importStatus({ settings_saved: row.settings_saved, pending_images: pending });
@@ -200,24 +220,31 @@ export async function reportPhotos(agencyId: string, importId: string, done: unk
 }
 
 /**
- * An empty property that a failed import of this agency left (it has no
- * photos, and every import linked to it failed): a new attempt of the same
- * listing fills it instead of being refused as a duplicate. Null otherwise.
+ * An empty property that a failed import of this agency left: it has no
+ * photos, and every import linked to it failed or ended with none of its
+ * photos downloaded. A new attempt of the same listing fills it instead of
+ * being refused as a duplicate or creating a second one. Null otherwise
+ * (a photo uploaded by hand, or one import that brought photos, makes it a
+ * real property).
  */
 export async function leftoverOf(agencyId: string, demoId: string) {
   const db = adminClient();
   const [imports, demo] = await Promise.all([
-    db.from("property_imports").select("status").eq("agency_id", agencyId).eq("demo_id", demoId),
+    db.from("property_imports").select("status,photos_done").eq("agency_id", agencyId).eq("demo_id", demoId),
     db.from("demos").select("id,property_id").eq("id", demoId).eq("agency_id", agencyId).maybeSingle(),
   ]);
   if (imports.error || demo.error || !demo.data) return null;
-  const rows = (imports.data ?? []) as { status: string }[];
-  if (!rows.length || rows.some((r) => r.status !== "failed")) return null;
+  const rows = (imports.data ?? []) as { status: string; photos_done: number | null }[];
+  if (!rows.length || !rows.every(emptyAttempt)) return null;
   const propertyId = (demo.data as { property_id: string }).property_id;
   const photos = await db.from("demo_photos").select("id", { count: "exact", head: true }).eq("property_id", propertyId);
   if (photos.error || (photos.count ?? 0) > 0) return null;
   return { demoId, propertyId };
 }
+
+/** An import that left nothing worth keeping: it failed, or none of its photos came in. */
+export const emptyAttempt = (r: { status: string; photos_done: number | null }) =>
+  r.status === "failed" || (r.status === "partial" && !r.photos_done);
 
 /** After the property's data was completed from its listing: its imports no longer miss it. */
 export async function markSettingsSaved(demoId: string) {

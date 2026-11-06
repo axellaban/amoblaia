@@ -132,7 +132,9 @@ export async function rpc<T>(
       ],
     };
     for (const [key, [status, message]] of Object.entries(messages))
-      if (error.message.includes(key)) throw new HttpError(status, message);
+      if (error.message.includes(key))
+        // BUSY carries its code: the editor's queue waits its turn instead of dropping the batch.
+        throw key === "BUSY" ? Object.assign(new HttpError(status, message), { code: "busy" }) : new HttpError(status, message);
     throw new Error(`DATABASE_${error.code}`);
   }
   return data as T;

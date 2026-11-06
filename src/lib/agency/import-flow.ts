@@ -19,6 +19,7 @@ const result = (row: ImportRow, extra: Record<string, unknown> = {}) => ({
   photosTotal: row.photos_total ?? 0,
   photosDone: row.photos_done ?? 0,
   images: row.pending_images ?? [],
+  photoError: row.error ?? null,
   ...extra,
 });
 
@@ -56,9 +57,17 @@ export async function importListing(request: Request, target: ListingTarget, onC
     ctx = target.userId ? { agencyId: target.agencyId, userId: target.userId, url: pasted } : null;
     if (body.preview === true) {
       const listing = await readListing(pasted);
-      const duplicateOf = await existingImport(target.agencyId, listing.listingUrl);
+      const found = await existingImport(target.agencyId, listing.listingUrl);
+      // An empty draft left by a failed attempt is completed by this import, not a duplicate.
+      const leftover = found ? await leftoverOf(target.agencyId, found) : null;
       return Response.json(
-        { ...listing.imported, listingUrl: listing.listingUrl, duplicateOf, snapshot: snapshotOf(listing.imported) },
+        {
+          ...listing.imported,
+          listingUrl: listing.listingUrl,
+          duplicateOf: leftover ? null : found,
+          fillsDraft: leftover ? leftover.demoId : null,
+          snapshot: snapshotOf(listing.imported),
+        },
         { headers: PRIVATE },
       );
     }
@@ -145,6 +154,18 @@ export async function importListing(request: Request, target: ListingTarget, onC
       const { error } = await adminClient().from("demo_properties").update(property).eq("id", reuse.propertyId);
       if (error) throw new Error("IMPORT_REUSE_FAILED");
       id = reuse.demoId;
+      // The earlier empty attempts are closed: this one is the import of that property now,
+      // so the panel does not list them as pending retries of the same photos.
+      await adminClient()
+        .from("property_imports")
+        .update({ status: "failed", pending_images: [], error: "Se volvió a importar: el intento más nuevo completa este borrador." })
+        .eq("agency_id", target.agencyId)
+        .eq("demo_id", id)
+        .neq("id", row.id)
+        .then(
+          () => null,
+          () => null,
+        );
     } else id = await createDemo({ actorId: userId, agencyId: target.agencyId, agency: null, property });
     created = id;
     // From here the property exists: whatever fails is recorded as missing, never lost,
@@ -208,10 +229,10 @@ async function recordCreated(id: string, patch: Parameters<typeof updateImport>[
   }
 }
 
-/** The photos the browser downloaded for an import of this agency: { importId, done: [...], failed: [...] }. */
+/** The photos the browser downloaded for an import of this agency: { importId, done: [...], failed: [...], reasons: { url: why } }. */
 export async function reportImportPhotos(request: Request, agencyId: string) {
   const body = await readJson(request, 65536);
   if (!isUuid(body.importId)) throw new HttpError(400, "Importación inválida.");
-  const row = await reportPhotos(agencyId, body.importId, body.done, body.failed);
+  const row = await reportPhotos(agencyId, body.importId, body.done, body.failed, body.reasons);
   return Response.json(result(row), { headers: PRIVATE });
 }

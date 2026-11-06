@@ -8,7 +8,7 @@
 export type Money = { text: string; currency: "USD" | "$"; amount: number };
 export type Pair = { label: string; value: string; section: string };
 export type FeatureGroup = { title: string; items: string[] };
-import { otherListingsAt, withoutOtherBlocks } from "@/lib/listings/photos";
+import { baseOf, otherListingsAt, withoutOtherBlocks } from "@/lib/listings/photos";
 import { agentName } from "./agent-name";
 import { extractLocation, type GeoMap, type GeoResult } from "./geo";
 
@@ -351,7 +351,8 @@ export function extractDetails(html: string, pageUrl: string): ListingDetails {
       const file = (t.match(/src\s*=\s*"([^"]+)"/i)?.[1] ?? "").split(/[?#]/)[0].split("/").pop() ?? "";
       return /logo/i.test(t) && Boolean(file) && !/(tokko|whatsapp|facebook|instagram|mercado|zonaprop|argenprop)/i.test(file);
     });
-  const logoUrl = logo ? absolute(logo.match(/src\s*=\s*"([^"]+)"/i)?.[1] ?? "", page.toString()) : null;
+  const base = baseOf(html, page.toString());
+  const logoUrl = logo ? absolute(logo.match(/src\s*=\s*"([^"]+)"/i)?.[1] ?? "", base) : null;
   const footerHtml = html.slice(ownHtmlEnd);
   const used = new Set([agent?.email, agent?.phone, agent?.whatsapp].filter(Boolean));
   const fMail = [...html.matchAll(/mailto:([^"?]+)/gi)].map((m) => decode(m[1]).trim()).find((e) => !used.has(e)) ?? null;
@@ -370,7 +371,7 @@ export function extractDetails(html: string, pageUrl: string): ListingDetails {
   const images: string[] = [];
   if (propertyId) {
     for (const raw of urls) {
-      const url = absolute(raw, page.toString());
+      const url = absolute(raw, base);
       if (!url) continue;
       const file = decodeURIComponent(new URL(url).pathname.split("/").pop() ?? "");
       if (!file.startsWith(`${propertyId}_`) || /_(thumb|og)\./i.test(file)) continue;
