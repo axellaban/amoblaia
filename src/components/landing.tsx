@@ -19,6 +19,7 @@ import {
   Upload,
 } from "lucide-react";
 import { Comparison } from "./comparison";
+import { Loop } from "./loop-art";
 import { rooms, styles } from "@/lib/catalog";
 import { exampleRooms, exampleStyles, examplePath } from "@/lib/examples";
 
@@ -116,52 +117,6 @@ function Clip({ label = "Video de un departamento hecho con habita.", decorative
 }
 
 /**
- * Runs a card's CSS loop only while it is on screen, with a button to stop it
- * (WCAG 2.2.2). With reduced motion the CSS leaves a still frame and the
- * button is hidden.
- */
-function Loop({
-  className,
-  label,
-  children,
-  controls,
-}: {
-  className: string;
-  label: string;
-  children: ReactNode;
-  /** Buttons over the photo (the demo's styles), outside the animated picture. */
-  controls?: ReactNode;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [visible, setVisible] = useState(false);
-  const [paused, setPaused] = useState(false);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const io = new IntersectionObserver(([e]) => setVisible(e.isIntersecting), { threshold: 0.2 });
-    io.observe(el);
-    return () => io.disconnect();
-  }, []);
-  const running = visible && !paused;
-  return (
-    <div ref={ref} className={`hb-card-media hb-loop ${className} ${running ? "is-running" : ""}`}>
-      <div className="hb-loop-stage" role="img" aria-label={label}>
-        {children}
-      </div>
-      {controls}
-      <button
-        type="button"
-        className="hb-loop-toggle"
-        onClick={() => setPaused(!paused)}
-        aria-label={paused ? "Reanudar la animación" : "Pausar la animación"}
-      >
-        {paused ? <Play size={14} /> : <Pause size={14} />}
-      </button>
-    </div>
-  );
-}
-
-/**
  * Demo card: the same style buttons as before, over a before/after slider
  * that moves back and forth on its own. A style shows in «Después».
  */
@@ -172,7 +127,7 @@ function DemoLoop({ has, room }: { has: Has; room: string }) {
   const compare = current !== "original";
   return (
     <Loop
-      className={`hb-loop-demo ${compare ? "" : "is-still"}`}
+      className={`hb-card-media hb-loop-demo ${compare ? "" : "is-still"}`}
       label={compare ? `Comparador de la demo: ${roomName(room).toLowerCase()} vacío y en estilo ${styleName(current).toLowerCase()}` : `${roomName(room)}, foto original`}
       controls={
         <div className="hb-demo-styles" role="group" aria-label="Estilo">
@@ -204,7 +159,7 @@ function DemoLoop({ has, room }: { has: Has; room: string }) {
 /** Studio card: a line of light sweeps the photo and takes the furniture out. */
 function StudioLoop({ room, style }: { room: string; style: string }) {
   return (
-    <Loop className="hb-loop-studio" label={`Estudio de imágenes: ${roomName(room).toLowerCase()} amoblado que queda vacío`}>
+    <Loop className="hb-card-media hb-loop-studio" label={`Estudio de imágenes: ${roomName(room).toLowerCase()} amoblado que queda vacío`}>
       <img src={examplePath(room, style)} alt="" loading="lazy" />
       <img className="hb-loop-empty" src={examplePath(room, "original")} alt="" loading="lazy" />
       <span className="hb-loop-scan" />

@@ -15426,13 +15426,6 @@ main:has(.ap-sidebar) {
   object-fit: cover;
   display: block;
 }
-/* Before | after, split in the middle with the comparison's handle. */
-.ap-tool-art.is-compare {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 2px;
-  background: #fff;
-}
 .ap-tool-handle,
 .ap-tool-play {
   position: absolute;
@@ -15449,6 +15442,24 @@ main:has(.ap-sidebar) {
   background: #fff;
   color: var(--forest);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+}
+/* The animated pictures (Loop): same size and corners as the photos they replace. */
+.ap-tool-art.hb-loop {
+  aspect-ratio: 16 / 7.5;
+  border-radius: 12px;
+}
+.ap-tool-video video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.ap-tool-video .ap-tool-play {
+  z-index: 2;
+}
+.ap-tool-video.is-running .ap-tool-play {
+  display: none;
 }
 .ap-tool-play {
   width: 52px;
@@ -24126,7 +24137,7 @@ body:has(.pv-root) .pb-root {
   max-width: 100%;
   border-radius: 10px;
   overflow: hidden;
-  background: var(--hb-sage);
+  background: var(--hb-sage, #e4e9da);
 }
 .hb-loop-stage,
 .hb-loop img {
@@ -24151,7 +24162,7 @@ body:has(.pv-root) .pb-root {
   padding: 2px 9px;
   border-radius: 6px;
   background: #ffffffe6;
-  color: var(--hb-green);
+  color: var(--hb-green, #24382e);
   font-style: normal;
   font-size: 12.5px;
   font-weight: 700;
@@ -24224,7 +24235,7 @@ body:has(.pv-root) .pb-root {
   translate: -50% -50%;
   border-radius: 50%;
   background: #fff;
-  color: var(--hb-green);
+  color: var(--hb-green, #24382e);
   box-shadow: 0 4px 14px #0000003a;
 }
 @keyframes hb-loop-wipe {
@@ -24260,7 +24271,7 @@ body:has(.pv-root) .pb-root {
 .hb-loop-step.is-1 { animation: hb-loop-step1 8s infinite; }
 .hb-loop-step.is-2 { animation: hb-loop-step2 8s infinite; }
 .hb-loop-step.is-3 {
-  background: var(--hb-green);
+  background: var(--hb-green, #24382e);
   color: #fff;
   animation: hb-loop-step3 8s infinite;
 }
