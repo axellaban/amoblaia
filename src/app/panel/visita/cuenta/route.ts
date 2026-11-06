@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { invitationPath, INVITE_PARAM } from "@/lib/agency/demo-invite";
 import { claimCodeFromVisit, currentVisit } from "@/lib/agency/visit";
 import { safeNext } from "@/lib/commerce/redirect";
+import { joinPath } from "@/lib/agency/join";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
@@ -19,7 +20,8 @@ export async function GET(request: Request) {
   const back = safeNext(url.searchParams.get("volver"), "/panel");
   const visit = await currentVisit();
   if (!visit) return NextResponse.redirect(new URL("/acceso?modo=registro&next=%2Fpanel", origin));
-  if (visit.claimed) return NextResponse.redirect(new URL(`/acceso?${new URLSearchParams({ next: back })}`, origin));
+  // An agency with its owner: the account is created (or signed in) and enters it as an editor.
+  if (visit.claimed) return NextResponse.redirect(new URL(`/acceso?${new URLSearchParams({ modo: "registro", next: joinPath(back) })}`, origin));
   const code = await claimCodeFromVisit(visit).catch(() => null);
   if (!code) return NextResponse.redirect(new URL("/panel", origin));
   const path = visit.demoToken

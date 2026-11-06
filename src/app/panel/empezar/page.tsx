@@ -3,6 +3,8 @@ import { notFound, redirect } from "next/navigation";
 import { InvitationSignup } from "@/components/agency-invitation";
 import { AgencyOnboarding } from "@/components/agency-panel";
 import { invitationOf } from "@/lib/agency/invitation";
+import { JOIN_PATH } from "@/lib/agency/join";
+import { currentVisit } from "@/lib/agency/visit";
 import { membershipOf } from "@/lib/agency/server";
 import { intentDestination, intentOf, presentationPath, withIntent } from "@/lib/agency/demo-invite";
 import { isAdmin } from "@/lib/commerce/http";
@@ -45,6 +47,8 @@ export default async function StartPage({ searchParams }: Props) {
   if (demo && membership && membership.agency.id === demo.agencyId) redirect(intentDestination(demo.id, intent, false));
   // The team checks an invitation the way the agency will meet it: its demo, with the way into the panel.
   const team = isAdmin(user?.email);
+  // Came through an agency's link and signed in: it enters that agency, it is never offered to create another.
+  if (signedIn && !membership && !team && (await currentVisit().catch(() => null))) redirect(JOIN_PATH);
   // Coming from a plan, the team sees the sign-up step as the agency will (a preview, nothing is created).
   if (code && token && demo && team && !chosenPlan) redirect(presentationPath(token, code));
   // The team's invitation: only an e-mail and a password to enter.
@@ -82,7 +86,7 @@ export default async function StartPage({ searchParams }: Props) {
   }
   return (
     <AgencyOnboarding
-      autoClaim={one(q.continuar) === "google"}
+      autoClaim={one(q.continuar) === "google" || (signedIn && !membership && Boolean(code))}
       signedIn={signedIn}
       hasAgency={Boolean(membership)}
       code={code}
