@@ -7,8 +7,8 @@ export const metadata: Metadata = {
   description: `Empezá gratis con ${FREE_MONTHLY_CREDITS} créditos por mes, sin tarjeta. Después, comprá créditos cuando los necesites, sin suscripción.`,
   // The image is ./opengraph-image.tsx; title and text are the ones WhatsApp shows under it.
   openGraph: {
-    title: "Precios de habita. · Empezá gratis",
-    description: `${FREE_MONTHLY_CREDITS} créditos gratis por mes, sin tarjeta. Después, comprá créditos cuando los necesites. Sin suscripción.`,
+    title: "Precios de habita. · Presentá mejor tus propiedades con IA",
+    description: `Comprá créditos cuando los necesites, sin suscripción. Probalo con ${FREE_MONTHLY_CREDITS} créditos gratis por mes.`,
     url: "/precios",
     locale: "es_AR",
     siteName: "habita.",

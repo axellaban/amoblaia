@@ -1,6 +1,8 @@
 import { notFound, redirect } from "next/navigation";
 import { cache } from "react";
 import { shortLinkCode, visitPath } from "@/lib/agency/demo-invite";
+import { fromPreviewBot, panelPreviewMetadata } from "@/lib/agency/panel-preview";
+import { PanelPreviewPage } from "@/components/panel-preview-page";
 import { shortLinkDemoToken } from "@/lib/agency/invitation";
 import { cloudConfigured } from "@/lib/supabase/config";
 import { PublicDemo, publicDemoMetadata } from "../../../demo/[token]/public-demo";
@@ -35,8 +37,9 @@ function viewOf(rest: string[] = []) {
 }
 
 export async function generateMetadata({ params }: Props) {
-  const { link } = await params;
+  const { link, rest } = await params;
   const code = shortLinkCode(link);
+  if (viewOf(rest)?.panel) return panelPreviewMetadata(code);
   const token = code ? await tokenOf(code) : null;
   return publicDemoMetadata(token ?? "", true);
 }
@@ -46,7 +49,11 @@ export default async function ShortLinkPage({ params }: Props) {
   const code = shortLinkCode(link);
   const view = viewOf(rest);
   if (!code || !view) notFound();
-  if (view.panel) redirect(visitPath(code));
+  if (view.panel) {
+    // WhatsApp and the other link previews read «Tu panel de …» from the metadata; people go straight in.
+    if (await fromPreviewBot()) return <PanelPreviewPage />;
+    redirect(visitPath(code));
+  }
   const token = await tokenOf(code);
   if (!token) notFound();
   return <PublicDemo token={token} presentation code={code} ficha={view.ficha} prices={view.prices} shortPath={`/p/${link}`} />;
