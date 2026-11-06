@@ -87,7 +87,7 @@ export function Gallery() {
             />
             Comparar antes y después con deslizador
           </label>
-          <Link href="/estudio" className="button button-primary">
+          <Link href="/inicio?ir=imagenes" className="button button-primary">
             Subir mi foto <ArrowUpRight size={18} />
           </Link>
         </div>

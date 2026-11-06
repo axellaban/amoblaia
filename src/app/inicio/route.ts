@@ -1,18 +1,23 @@
 import { NextResponse } from "next/server";
 import { membershipOf } from "@/lib/agency/server";
+import { startDestination, type StartLookup } from "@/lib/start-destination";
 import { currentUser } from "@/lib/supabase/server";
 export const dynamic = "force-dynamic";
 
-/**
- * Where a sign-in lands when it was not heading anywhere: an agency's account
- * to its panel, any other account to its photos. The query (ad click IDs) is
- * kept. A failed lookup is not a reason to hide the photos: it goes there.
- */
+/** The signed-in home: see startDestination. The query (ad click IDs) is kept, without ?ir. */
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const user = await currentUser().catch(() => null);
-  const agency = user && !user.is_anonymous ? await membershipOf(user.id).catch(() => null) : null;
-  const to = new URL(agency ? "/panel" : "/proyectos", url.origin);
+  let lookup: StartLookup = "none";
+  if (user && !user.is_anonymous) {
+    lookup = await membershipOf(user.id).then(
+      (m): StartLookup => (m ? "agency" : "none"),
+      (): StartLookup => "failed",
+    );
+  }
+  const images = url.searchParams.get("ir") === "imagenes";
+  url.searchParams.delete("ir");
+  const to = new URL(startDestination(user, lookup, images), url.origin);
   to.search = url.search;
   return NextResponse.redirect(to);
 }
