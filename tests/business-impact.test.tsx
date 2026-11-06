@@ -13,7 +13,7 @@ describe("business impact", () => {
     expect(r.value).toBeCloseTo(19500);
     expect(r.commission).toBeCloseTo(585);
     const html = renderToStaticMarkup(<ImpactCalculator where="precios" unitCents={100} />);
-    for (const text of ["Aumento en volumen de ventas", "(más interesados × mejor conversión)", "+30%", "Beneficio incremental", "+US$ 19.500", "+US$ 585", "Retorno sobre inversión"]) expect(html).toContain(text);
+    for (const text of ["Aumento en volumen de ventas", "+30%", "Beneficio incremental", "+US$ 19.500", "+US$ 585", "Retorno sobre inversión"]) expect(html).toContain(text);
     expect(html).not.toContain("Tu comisión extra");
     // The order: price, commission, improvement, volume.
     const at = (t: string) => html.indexOf(t);

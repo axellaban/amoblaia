@@ -74,11 +74,11 @@ const MAX_PROPERTIES = 10000;
 const clampProps = (n: number) => (Number.isFinite(n) ? Math.min(MAX_PROPERTIES, Math.max(1, Math.round(n))) : 1);
 
 const plusPct = (n: number) => `+${pct(n)}`;
-const SLIDERS: readonly { key: "price" | "commission" | "improvement" | "volume"; label: string; hint?: string; min: number; max: number; step: number; show: (n: number) => string }[] = [
+const SLIDERS: readonly { key: "price" | "commission" | "improvement" | "volume"; label: string; min: number; max: number; step: number; show: (n: number) => string }[] = [
   { key: "price", label: "Precio promedio por propiedad", min: 30000, max: 1000000, step: 5000, show: usd },
   { key: "commission", label: "Comisión inmobiliaria", min: 1, max: 6, step: 0.5, show: pct },
   { key: "improvement", label: "Mejora estimada del precio", min: 1, max: 19, step: 1, show: pct },
-  { key: "volume", label: "Aumento en volumen de ventas", hint: "(más interesados × mejor conversión)", min: 0, max: 100, step: 1, show: plusPct },
+  { key: "volume", label: "Aumento en volumen de ventas", min: 0, max: 100, step: 1, show: plusPct },
 ];
 
 type Values = Record<(typeof SLIDERS)[number]["key"], number>;
@@ -136,12 +136,9 @@ export function ImpactCalculator({ where, unitCents }: { where: string; unitCent
             </button>
           </div>
         </div>
-        {SLIDERS.map(({ key, label, hint, min, max, step, show }) => (
+        {SLIDERS.map(({ key, label, min, max, step, show }) => (
           <div key={key} className="bi-calc-row">
-            <label htmlFor={`${id}-${key}`}>
-              {label}
-              {hint && <small>{hint}</small>}
-            </label>
+            <label htmlFor={`${id}-${key}`}>{label}</label>
             <input
               id={`${id}-${key}`}
               type="range"

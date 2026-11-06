@@ -26746,13 +26746,6 @@ dialog.pt-layer::backdrop {
   white-space: nowrap;
   background: #fbfaf6;
 }
-/* A slider's explanation, under its name («Aumento en volumen de ventas»). */
-.bi-calc-row label small {
-  display: block;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--bi-muted);
-}
 .bi-calc-result {
   background: var(--bi-sage);
   border-radius: 16px;
