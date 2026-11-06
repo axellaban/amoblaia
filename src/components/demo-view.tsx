@@ -1230,6 +1230,10 @@ function Gallery({
       ]
     : photo.versions.map((v) => ({ style: v.style, version: v as PhotoVersion | null }));
   const visibleCount = owner ? OWNER_VISIBLE_STYLES : VISIBLE_STYLES;
+  // With gift credits left, «Generar» opens «Ambientá con IA» over the demo; without them, the panel.
+  const inDemo = Boolean(owner) && source.kind === "public" && credits > 0;
+  // A photo still without a staging: its first style to generate comes preselected, and «Ambientar con IA» generates it.
+  const preselected = owner && photo.versions.length === 0 && !videoOn ? (rows.find((r) => !r.version)?.style ?? null) : null;
   const cards = allStyles ? rows : rows.filter((r, i) => i < visibleCount || (r.version && r.style === state.style));
   // «Mostrar selector de estilos» off: buyers see the opening style only (the agency's own view keeps its picker).
   const stylesCard = rows.length > 0 && (owner || demo.styleSelector !== false) && (
@@ -1266,16 +1270,20 @@ function Gallery({
               </li>
             );
           const link = intentLink({ kind: "generate", photo: photo.id, style: r.style }, "owner_generate", "styles_panel");
-          // With gift credits left, «Generar» opens «Ambientá con IA» over the demo; without them, the panel.
-          const inDemo = Boolean(owner) && source.kind === "public" && credits > 0;
+          const chosen = r.style === preselected;
           return (
-            <li key={r.style} className="dv2-style-card is-missing">
+            <li key={r.style} className={`dv2-style-card is-missing ${chosen ? "is-preselected" : ""}`}>
               <span className="dv2-style-pick" aria-hidden="true">
                 <img src={urlFor(source, photo.id, null, 480)} alt="" loading="lazy" />
                 <span className="dv2-style-name" title={name(r.style)}>
                   {name(r.style)}
                 </span>
               </span>
+              {chosen && (
+                <span className="dv2-style-check" aria-hidden="true">
+                  <Check size={13} strokeWidth={3} />
+                </span>
+              )}
               {inDemo ? (
                 <button
                   type="button"
@@ -1367,7 +1375,7 @@ function Gallery({
   const hiddenPhotos = entries.length - listedEntries.length;
   // The agency's photo still without a staging: its original is free to see; staging it is in its panel.
   const pending = Boolean(owner) && photo.versions.length === 0 && !videoOn;
-  const pendingLink = pending ? intentLink({ kind: "stage", photo: photo.id }, "owner_stage_photo", "gallery_stage") : null;
+  const pendingLink = pending && preselected && !inDemo ? intentLink({ kind: "generate", photo: photo.id, style: preselected }, "owner_stage_photo", "gallery_stage") : null;
 
   return (
     <div className="dv2-gallery has-panel">
@@ -1496,9 +1504,24 @@ function Gallery({
               </>
             )}
           </div>
+          {/* «Ambientar con IA»: exactly what «Generar» does on the preselected style below. */}
+          {pending && preselected && inDemo && (
+            <button
+              type="button"
+              className="dv2-pending-cta"
+              aria-haspopup="dialog"
+              {...cta("owner_stage_photo", "gallery_stage", "generation_modal", "habita_b2b", { photo: photo.id, style: preselected, intent: "generate" })}
+              onClick={() => {
+                setGenerate({ photoId: photo.id, style: preselected });
+                log("demo_style_generation_cta_clicked", { photo_id: photo.id, style_id: preselected, credits_left: credits, origen: "gallery_stage" });
+              }}
+            >
+              <Sparkles size={15} aria-hidden="true" /> Ambientar con IA
+            </button>
+          )}
           {pendingLink && (
             <a className="dv2-pending-cta" {...pendingLink}>
-              <Lock size={15} aria-hidden="true" /> Creá tu panel y ambientá esta foto con IA
+              <Sparkles size={15} aria-hidden="true" /> Ambientar con IA
             </a>
           )}
           {entries.length > 1 && (
@@ -1559,24 +1582,17 @@ function Gallery({
                   );
                 const p = photos[entry.index];
                 const on = !videoOn && entry.index === index;
-                const locked = Boolean(owner) && p.versions.length === 0;
                 return (
                   <li key={p.id}>
                     <button
                       type="button"
                       data-entry={n}
-                      aria-label={locked ? `Ver foto ${entry.index + 1} (original, todavía sin ambientar)` : `Ver foto ${entry.index + 1}`}
+                      aria-label={`Ver foto ${entry.index + 1}`}
                       aria-current={on ? "true" : undefined}
-                      className={`${on ? "is-on" : ""} ${locked ? "is-locked" : ""}`}
+                      className={on ? "is-on" : ""}
                       onClick={() => show(entry, "thumbnail")}
                     >
                       <img src={urlFor(source, p.id, null, 480)} alt="" loading="lazy" />
-                      {locked && (
-                        <span className="dv2-thumb-lock" aria-hidden="true">
-                          <Lock size={15} />
-                          <span>Creá tu panel y ambientá esta foto con IA</span>
-                        </span>
-                      )}
                     </button>
                   </li>
                 );

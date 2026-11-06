@@ -259,11 +259,11 @@ describe("a photo still without a staging, in the agency's demo", () => {
     pricesHref: "/demo/tok/presentacion/codigo/precios",
     panelHref: VISIT,
   };
-  it("keeps its original free to see, dimmed in the strip with the way to stage it in the panel", () => {
+  it("keeps its original free to see, without a lock in the strip", () => {
     pathname = owner.demoHref;
     const html = renderToStaticMarkup(<DemoView demo={demo} source={{ kind: "public", token: "tok" }} presentation owner={owner} />);
-    expect(html).toMatch(/aria-label="Ver foto 2 \(original, todavía sin ambientar\)"[^>]*class=" is-locked"/);
-    expect(html).toContain("Creá tu panel y ambientá esta foto con IA");
+    expect(html).toContain('aria-label="Ver foto 2"');
+    for (const text of ["is-locked", "dv2-thumb-lock", "Creá tu panel y ambientá"]) expect(html).not.toContain(text);
   });
   it("is never offered to buyers", () => {
     const html = renderToStaticMarkup(<DemoView demo={demo} source={{ kind: "public", token: "tok" }} />);

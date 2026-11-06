@@ -18771,6 +18771,11 @@ main:has(.ap-sidebar) {
   text-decoration: none;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
 }
+button.dv2-pending-cta {
+  border: 0;
+  font-family: inherit;
+  cursor: pointer;
+}
 .dv2-pending-cta:hover {
   background: #fff;
 }
@@ -22349,6 +22354,24 @@ body:has(.pv-root) .pb-root {
 }
 .dv2-styles.is-owner .dv2-style-card.is-missing .dv2-style-name {
   color: var(--muted);
+}
+/* The style «Ambientar con IA» generates: still to generate, marked as chosen. */
+.dv2-styles.is-owner .dv2-style-card.is-missing.is-preselected {
+  border-style: dashed;
+  border-color: var(--forest);
+  box-shadow: 0 0 0 1px var(--forest);
+}
+.dv2-styles.is-owner .dv2-style-card.is-preselected .dv2-style-name {
+  color: var(--forest);
+  font-weight: 800;
+}
+.dv2-styles.is-owner .dv2-style-card.is-preselected .dv2-style-generate-pill {
+  background: var(--forest);
+  color: #fff;
+}
+.dv2-styles.is-owner .dv2-style-card.is-preselected .dv2-style-check {
+  z-index: 2;
+  pointer-events: none;
 }
 .dv2-styles.is-owner a.dv2-style-generate {
   position: absolute;
