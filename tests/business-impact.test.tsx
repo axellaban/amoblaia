@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { ImpactCalculator, ImpactStats, impactOf, volumeLift } from "@/components/business-impact";
+import { ImpactCalculator, ImpactStats, impactOf } from "@/components/business-impact";
 
 describe("business impact", () => {
   it("computes the extra sale value and the agency's commission on it", () => {
@@ -8,15 +8,18 @@ describe("business impact", () => {
     expect(impactOf(200000, 10, 2.5)).toEqual({ value: 20000, commission: 500 });
   });
 
-  it("multiplies more interested buyers by a better conversion, and the benefit by that lift", () => {
-    expect(volumeLift(20, 10)).toBeCloseTo(32);
-    expect(volumeLift(0, 0)).toBe(0);
-    const r = impactOf(150000, 10, 3, 32);
-    expect(r.value).toBeCloseTo(19800);
-    expect(r.commission).toBeCloseTo(594);
+  it("grows the benefit by the increase in sales volume, 30% by default", () => {
+    const r = impactOf(150000, 10, 3, 30);
+    expect(r.value).toBeCloseTo(19500);
+    expect(r.commission).toBeCloseTo(585);
     const html = renderToStaticMarkup(<ImpactCalculator where="precios" unitCents={100} />);
-    for (const text of ["Más interesados", "Mejor conversión de los interesados", "Aumento en volumen de ventas", "+30%", "Beneficio incremental", "+US$ 19.492", "+US$ 585"]) expect(html).toContain(text);
+    for (const text of ["Aumento en volumen de ventas", "(más interesados × mejor conversión)", "+30%", "Beneficio incremental", "+US$ 19.500", "+US$ 585", "Retorno sobre inversión"]) expect(html).toContain(text);
     expect(html).not.toContain("Tu comisión extra");
+    // The order: price, commission, improvement, volume.
+    const at = (t: string) => html.indexOf(t);
+    expect(at("Precio promedio por propiedad")).toBeLessThan(at("Comisión inmobiliaria"));
+    expect(at("Comisión inmobiliaria")).toBeLessThan(at("Mejora estimada del precio"));
+    expect(at("Mejora estimada del precio")).toBeLessThan(at("Aumento en volumen de ventas"));
   });
 
   it("links every figure to its source and says they are not habita.'s results", () => {

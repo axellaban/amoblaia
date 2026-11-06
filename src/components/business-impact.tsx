@@ -56,16 +56,9 @@ const usd = (n: number) => `US$ ${Math.round(n).toLocaleString("es-AR")}`;
 const pct = (n: number) => `${String(n).replace(".", ",")}%`;
 
 /**
- * More sales: more interested buyers, and more of them converting. Both add
- * up multiplied, as a percentage: +20% interested and +10% conversion is +32%.
- */
-export function volumeLift(interested: number, conversion: number) {
-  return ((1 + interested / 100) * (1 + conversion / 100) - 1) * 100;
-}
-
-/**
  * What a better sale could mean: price × estimated improvement, and the
- * agency's commission on it; with the volume lift (volumeLift), both grow by it.
+ * agency's commission on it. «volume» is the increase in sales volume (more
+ * interested buyers × better conversion), in percent: both grow by it.
  */
 export function impactOf(price: number, improvement: number, commission: number, volume = 0) {
   const value = ((price * improvement) / 100) * (1 + volume / 100);
@@ -80,28 +73,24 @@ export function habitaCostUsd(properties: number, unitCents: number = DEFAULT_UN
 const MAX_PROPERTIES = 10000;
 const clampProps = (n: number) => (Number.isFinite(n) ? Math.min(MAX_PROPERTIES, Math.max(1, Math.round(n))) : 1);
 
-const SLIDERS = [
-  { key: "price", label: "Precio promedio de la propiedad", min: 30000, max: 1000000, step: 5000, show: usd },
-  { key: "improvement", label: "Mejora estimada del precio", min: 1, max: 19, step: 1, show: pct },
+const plusPct = (n: number) => `+${pct(n)}`;
+const SLIDERS: readonly { key: "price" | "commission" | "improvement" | "volume"; label: string; hint?: string; min: number; max: number; step: number; show: (n: number) => string }[] = [
+  { key: "price", label: "Precio promedio por propiedad", min: 30000, max: 1000000, step: 5000, show: usd },
   { key: "commission", label: "Comisión inmobiliaria", min: 1, max: 6, step: 0.5, show: pct },
-  { key: "interested", label: "Más interesados", min: 0, max: 100, step: 1, show: pct },
-  { key: "conversion", label: "Mejor conversión de los interesados", min: 0, max: 100, step: 1, show: pct },
-] as const;
-/** The two sliders whose lift the volume row sums up (volumeLift); by default ≈ +30% (1,15 × 1,13). */
-const VOLUME_KEYS: readonly string[] = ["interested", "conversion"];
-const pctRound = (n: number) => `${Math.round(n).toLocaleString("es-AR")}%`;
+  { key: "improvement", label: "Mejora estimada del precio", min: 1, max: 19, step: 1, show: pct },
+  { key: "volume", label: "Aumento en volumen de ventas", hint: "(más interesados × mejor conversión)", min: 0, max: 100, step: 1, show: plusPct },
+];
 
 type Values = Record<(typeof SLIDERS)[number]["key"], number>;
 
 /** «¿Cuánto podrías ganar con una mejor venta?»: an estimate the agency moves with its own numbers. */
 export function ImpactCalculator({ where, unitCents }: { where: string; unitCents?: number }) {
   const id = useId();
-  const [v, setV] = useState<Values>({ price: 150000, improvement: 10, commission: 3, interested: 15, conversion: 13 });
+  const [v, setV] = useState<Values>({ price: 150000, commission: 3, improvement: 10, volume: 30 });
   const [props, setProps] = useState(1);
   const [propsText, setPropsText] = useState("1");
   const [touched, setTouched] = useState(false);
-  const volume = volumeLift(v.interested, v.conversion);
-  const one = impactOf(v.price, v.improvement, v.commission, volume);
+  const one = impactOf(v.price, v.improvement, v.commission, v.volume);
   const r = { value: one.value * props, commission: one.commission * props };
   const cost = habitaCostUsd(props, unitCents);
   const roi = cost > 0 ? r.commission / cost : 0;
@@ -147,9 +136,12 @@ export function ImpactCalculator({ where, unitCents }: { where: string; unitCent
             </button>
           </div>
         </div>
-        {SLIDERS.map(({ key, label, min, max, step, show }) => (
-          <div key={key} className={`bi-calc-row${VOLUME_KEYS.includes(key) ? " is-volume" : ""}`}>
-            <label htmlFor={`${id}-${key}`}>{label}</label>
+        {SLIDERS.map(({ key, label, hint, min, max, step, show }) => (
+          <div key={key} className="bi-calc-row">
+            <label htmlFor={`${id}-${key}`}>
+              {label}
+              {hint && <small>{hint}</small>}
+            </label>
             <input
               id={`${id}-${key}`}
               type="range"
@@ -168,20 +160,12 @@ export function ImpactCalculator({ where, unitCents }: { where: string; unitCent
             </output>
           </div>
         ))}
-        <div className="bi-calc-volume">
-          <span>
-            Aumento en volumen de ventas
-            <small>Más interesados × mejor conversión</small>
-          </span>
-          <output className="bi-calc-box">+{pctRound(volume)}</output>
-        </div>
       </div>
       <div className="bi-calc-result" aria-live={touched ? "polite" : "off"}>
         <span>Mayor valor de venta</span>
         <strong>+{usd(r.value)}</strong>
         <span>Beneficio incremental</span>
         <strong className="is-small">+{usd(r.commission)}</strong>
-        <p className="bi-calc-assume">Incluye +{pctRound(volume)} de ventas por más interesados y mejor conversión.</p>
         <div className="bi-calc-roi">
           <div>
             <span>Costo Habita estimado</span>
