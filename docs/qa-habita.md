@@ -70,6 +70,18 @@ Sin nombres, teléfonos, emails, enlaces a grabaciones, IDs de sesión, tasas de
 
 ## Resultados
 
+### QA 2026-11-06 am
+
+- Inicio: 2026-11-06T08:51:52-03:00 · Fin: 2026-11-06T08:52:27-03:00
+- Commit: 5aa52ec · Despliegue: no se pudo consultar (Vercel 403) · Estado: fallido
+- Tipo: completa (mañana) · Pantallas: ninguna
+- Flujos revisados: ninguno · Sin revisar: todos los de Playwright, porque el sandbox no tiene `HABITA_QA_EMAIL`/`HABITA_QA_PASSWORD` y el proxy rechaza el acceso a www.habitaia.app; errores de Vercel, por 403 del conector (hay que autorizar el acceso al equipo)
+- Bugs encontrados: ninguno · Corregidos: ninguno
+- Observaciones nuevas: ninguna · Propuestas nuevas: ninguna
+- PRs de usabilidad abiertos: ninguno
+- PostHog revisado hasta: 2026-11-06T08:52:27-03:00 · cobertura: parcial · solo un conteo agregado de fricción en demos y panel (clics repetidos en la presentación de la demo, aislados); falta el análisis de rebote, fotos, comparación, conversión y embudo del panel. Los eventos de clics muertos y excepciones no existen en el proyecto, así que no se pueden medir
+- Esperado, no es bug: nada nuevo
+
 Las corridas nuevas van acá, la más reciente primero. Las anteriores al 6/11/2026 conservan su formato original.
 
 ## Resultado del QA del 5/11/2026 pm (segunda corrida)
