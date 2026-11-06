@@ -72,6 +72,19 @@ Sin nombres, teléfonos, emails, enlaces a grabaciones, IDs de sesión, tasas de
 
 Las corridas nuevas van acá, la más reciente primero. Las anteriores al 6/11/2026 conservan su formato original.
 
+### QA 2026-11-06 am
+
+- Inicio: 2026-11-06T08:52-03:00 · Fin: 2026-11-06T09:20-03:00
+- Commit: 5aa52ec · Despliegue: dpl_FhRwPCYmtCyJ69wDMoxEx9TBuAxK (READY) · Estado: parcial
+- Tipo: completa (recortada) · Pantallas: escritorio 1366×900, iPhone 13, Galaxy S8, iPad (gen 7)
+- Flujos revisados: errores de Vercel (24 h) y logs de Postgres; con sesión de QA, `/`, `/precios`, `/acceso`, `/panel`, `/panel/propiedades`, `/admin`, `/admin/inmobiliarias`, `/admin/prospeccion`, demo publicada (`/demo/<token>` y `/presentacion`) y `/demo/<token-inexistente>` en las cuatro pantallas: sin errores de consola ni de red, sin scroll horizontal, sin placeholders; `og:title`, `og:description` y `og:image` presentes.
+- Sin revisar: generaciones (crear demo, estudio de imágenes, video Clásico) porque no hubo cambios de código en esos flujos desde el 3/11 y se evitó gastar créditos; caminos de error de subida; red lenta y user agent de WhatsApp; accesibilidad y capturas; PostHog (sin conector en esta sesión).
+- Bugs encontrados: ninguno nuevo · Corregidos: ninguno
+- Observaciones nuevas: ninguna · Propuestas nuevas: ninguna
+- PRs de usabilidad abiertos: no consultados
+- PostHog revisado hasta: sin cambios · cobertura: sin acceso
+- Esperado, no es bug: `window is not defined` en `/admin/inmobiliarias/[id]` y `IMPORT_UPDATE_FAILED` tienen su último registro el 5/11, anterior a los deploys actuales (arreglados en #140 y #152). El cron muestra un 429 `local_rate_limited` de Mercado Pago en la conciliación de checkouts (diferida, se reintenta; no se tocó por ser de cobros). Los errores de Postgres de la noche son consultas sueltas de sesiones anteriores (columnas inexistentes) y `BUSY`.
+
 ## Resultado del QA del 5/11/2026 pm (segunda corrida)
 
 Corrida liviana (17:51 h Argentina). Sin bugs nuevos; no hubo nada que corregir.
