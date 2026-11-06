@@ -172,6 +172,7 @@ export function useStagingQueue(opts: {
           return false;
         }
         const photoIds = [...new Set(todo.map((t) => t.photoId))];
+        let credits: number | undefined;
         if (d.staging?.payer === "agency" && !quoted) {
           // What it costs, from the server, before anything starts.
           let quote: Quote;
@@ -198,8 +199,14 @@ export function useStagingQueue(opts: {
             ].join("\n"),
           );
           if (!ok) return false;
-          if (trackAgency) track("property_ai_generation_started", { photos: photoIds.length, versions: todo.length, credits: n });
-          if (trackAgency) trackMilestone("first_generation_started", { versions: todo.length, source: "panel" });
+          credits = n;
+        }
+        // Every start from the agency's panel, also when the dialog already
+        // showed and confirmed the cost (quoted): before, only this queue's own
+        // confirmation counted, and the editor's main paths never sent it.
+        if (trackAgency) {
+          track("property_ai_generation_started", { photos: photoIds.length, versions: todo.length, ...(credits === undefined ? {} : { credits }) });
+          trackMilestone("first_generation_started", { versions: todo.length, source: "panel" });
         }
         if (fresh) for (const t of todo) keys.current.delete(taskKey(t));
         queueRef.current.push(...todo);
