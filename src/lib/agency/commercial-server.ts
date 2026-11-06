@@ -4,7 +4,7 @@ import { internalUserIds } from "@/lib/internal/server";
 import { agencyDetail, allScoreRows } from "@/lib/leads/server";
 import { rollupAgency, rollupDemo, type ScoreRow } from "@/lib/leads/rollup";
 import type { Stage as ProspectStage } from "@/lib/prospecting/types";
-import { commercialStage, lastActivity, type ActivityFact, type CommercialRow } from "./commercial";
+import { commercialStage, demoVisitFact, lastActivity, type ActivityFact, type CommercialRow } from "./commercial";
 import { contactedSend, funnelStep, isTestAgency, prospectStep } from "./demo-funnel";
 
 /**
@@ -88,23 +88,28 @@ async function subscribedOwners(owners: string[]) {
 /**
  * Owners that did something in their panel after creating their account: an
  * image generated or a property imported (a property they created themselves
- * is read from the demos). One light count per owner; a failed read is «no».
+ * is read from the demos), with the latest of those. One light read per owner
+ * and table; a failed read is «nothing».
  */
-async function activeOwners(owners: { id: string; since: string }[]) {
+const OWNER_ACTION: Record<"generations" | "property_imports", string> = {
+  generations: "Generó una imagen en su panel",
+  property_imports: "Importó una propiedad",
+};
+async function ownerActions(owners: { id: string; since: string }[]) {
   const db = adminClient();
-  const active = new Set<string>();
+  const latest = new Map<string, ActivityFact>();
   await Promise.all(
     owners.map(async ({ id, since }) => {
       for (const table of ["generations", "property_imports"] as const) {
-        const { count, error } = await db.from(table).select("id", { count: "exact", head: true }).eq("user_id", id).gt("created_at", since);
-        if (!error && (count ?? 0) > 0) {
-          active.add(id);
-          return;
-        }
+        const { data, error } = await db.from(table).select("created_at").eq("user_id", id).gt("created_at", since).order("created_at", { ascending: false }).limit(1);
+        const at = (data as { created_at: string }[] | null)?.[0]?.created_at;
+        if (error || !at) continue;
+        const prev = latest.get(id);
+        if (!prev || at > prev.at) latest.set(id, { at, text: OWNER_ACTION[table] });
       }
     }),
   );
-  return active;
+  return latest;
 }
 
 type ProspectRow = { id: string; agency_id: string; stage: ProspectStage; created_at: string };
@@ -134,7 +139,9 @@ async function prospectStages(agencyId: string | null) {
  */
 async function prospectFunnel(accounts: ProspectRow[]) {
   const out = new Map<string, { step: number; at: string; lost: boolean; replied: boolean }>();
-  if (!accounts.length) return out;
+  /** Each agency's latest reply or interest: its own engagement for «Última actividad». */
+  const replies = new Map<string, ActivityFact>();
+  if (!accounts.length) return { funnel: out, replies };
   const one = accounts.length === 1 ? accounts[0].id : null;
   const [events, contacts] = await Promise.all([
     optional(() =>
@@ -175,11 +182,16 @@ async function prospectFunnel(accounts: ProspectRow[]) {
     const contacted = replied || validSends.length > 0 || byStage;
     const step = prospectStep({ contacted, replied, interested });
     if (step === null) continue;
+    for (const e of own) {
+      if (e.type !== "reply" && e.type !== "interest") continue;
+      const prev = replies.get(a.agency_id);
+      if (!prev || e.occurred_at > prev.at) replies.set(a.agency_id, { at: e.occurred_at, text: e.type === "interest" ? "Mostró interés" : "Respondió el mensaje" });
+    }
     const at = own.map((e) => e.occurred_at).sort()[0] ?? a.created_at;
     const prev = out.get(a.agency_id);
     if (!prev || step > prev.step) out.set(a.agency_id, { step, at: prev && prev.at < at ? prev.at : at, lost: a.stage === "lost", replied });
   }
-  return out;
+  return { funnel: out, replies };
 }
 
 /** Each agency's contact WhatsApp; optional (before its migration, nothing). */
@@ -229,14 +241,13 @@ export async function commercialRows(only: string | null = null): Promise<Commer
   // no «Cuenta creada», no activity, no subscription. Its demos' visits still count.
   const agencies = agenciesRaw.map((a) => (a.owner_id && team.has(a.owner_id) ? { ...a, owner_id: null, claimed_at: null } : a));
   const claimed = agencies.filter((a): a is AgencyRow & { owner_id: string } => Boolean(a.owner_id));
-  const [subscribed, scores, active, funnelOf] = await Promise.all([
+  const [subscribed, scores, actions, prospecting] = await Promise.all([
     subscribedOwners([...new Set(claimed.map((a) => a.owner_id))]),
     scoreRows(only ? demos.map((d) => d.id) : null),
-    optional(async () => [
-      ...(await activeOwners(claimed.map((a) => ({ id: a.owner_id, since: a.claimed_at ?? a.created_at })))),
-    ]).then((ids) => new Set(ids)),
+    ownerActions(claimed.map((a) => ({ id: a.owner_id, since: a.claimed_at ?? a.created_at }))).catch(() => new Map<string, ActivityFact>()),
     prospectFunnel(prospects.accounts),
   ]);
+  const funnelOf = prospecting.funnel;
   const byAgency = new Map<string, DemoRow[]>();
   for (const d of demos) byAgency.set(d.agency_id, [...(byAgency.get(d.agency_id) ?? []), d]);
   // The demo decides its agency (the score row only keeps a copy).
@@ -251,22 +262,27 @@ export async function commercialRows(only: string | null = null): Promise<Commer
     const isSubscribed = Boolean(a.owner_id && subscribed.has(a.owner_id));
     const level = Math.max(0, ...own.map((d) => d.activity_level ?? 0));
     const sent = own.map((d) => d.sent_at).filter((v): v is string => Boolean(v)).sort().at(-1) ?? null;
-    const edited = own.map((d) => d.updated_at).filter((v): v is string => Boolean(v)).sort().at(-1) ?? null;
     const published = own.filter((d) => d.status === "published");
     const since = a.claimed_at ?? a.created_at;
     const share = published.find((d) => d.token);
     // Its account worked in its panel: an image, an import, or a property it created itself.
-    const ownerActive = Boolean(
-      a.owner_id && (active.has(a.owner_id) || own.some((d) => d.created_by === a.owner_id && d.created_at > since)),
-    );
+    const ownerAction = a.owner_id ? actions.get(a.owner_id) ?? null : null;
+    const created = own
+      .filter((d) => a.owner_id && d.created_by === a.owner_id && d.created_at > since)
+      .map((d) => d.created_at)
+      .sort()
+      .at(-1);
+    const ownerActive = Boolean(ownerAction || created);
     // The cover of its latest published demo, else of any demo.
     const cover = [...published, ...own].find((d) => d.cover_photo_id)?.cover_photo_id ?? null;
+    // Only what the agency did (ACTIVITY_HINT): never the team creating, editing or sending.
+    const ownIds = new Set(own.map((d) => d.id));
     const facts: (ActivityFact | null)[] = [
-      rollup?.last_activity_at ? { at: rollup.last_activity_at, text: "Vio una demo" } : null,
-      sent ? { at: sent, text: "Recibió la demo" } : null,
+      demoVisitFact(fixed.filter((r) => r.agency_id === a.id && ownIds.has(r.demo_id))),
+      prospecting.replies.get(a.id) ?? null,
       a.claimed_at ? { at: a.claimed_at, text: "Creó su cuenta" } : null,
-      edited ? { at: edited, text: "Se editó una propiedad" } : null,
-      { at: a.created_at, text: prospectStage ? "Creada en adquisición" : "Inmobiliaria creada" },
+      ownerAction,
+      created ? { at: created, text: "Creó una propiedad en su panel" } : null,
     ];
     return {
       id: a.id,
