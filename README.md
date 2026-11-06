@@ -37,7 +37,8 @@ Virtual staging para Latinoamérica. MVP en español inspirado en la experiencia
 
 5. Confirmá que **Fluid compute** esté habilitado. La ruta de generación declara `maxDuration = 300`, con timeout del proveedor a los 270 segundos. Los archivos se optimizan para quedar debajo del límite de 4.5 MB de Vercel Functions.
 6. Desplegá o hacé **Redeploy** después de agregar o cambiar variables. Las variables privadas se leen en el servidor; el enlace público de contacto se incorpora al build.
-7. Abrí `/estudio`, subí una foto, ingresá la contraseña del piloto, aceptá el envío al proveedor y generá un diseño. La primera verificación con una API real debe hacerse con una foto de prueba autorizada.
+7. Cada merge a `main` despliega producción solo si la cuenta de GitHub que hace el merge es miembro del equipo de Vercel dueño del proyecto. Si no lo es, Vercel marca «Deployment failed» y producción queda en la versión anterior: sumá esa cuenta en **Settings → Members** del equipo y hacé **Redeploy** del último commit de `main`. Revisalo cada vez que el proyecto cambie de equipo.
+8. Abrí `/estudio`, subí una foto, ingresá la contraseña del piloto, aceptá el envío al proveedor y generá un diseño. La primera verificación con una API real debe hacerse con una foto de prueba autorizada.
 
 La API de imágenes tiene costo y puede requerir verificación de la organización. El costo se factura en la cuenta configurada, no en ChatGPT. La contraseña del piloto protege el endpoint; el modo piloto no tiene cupos individuales. La capa comercial agrega autenticación individual, saldo persistente, una generación simultánea por cuenta y límite diario global. Habilitá las cuentas solo después de configurar el proveedor de acceso y comprobar el presupuesto de consumo.
 
