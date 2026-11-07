@@ -89,6 +89,21 @@ Sin nombres, teléfonos, emails, enlaces a grabaciones, IDs de sesión, tasas de
 
 ## Resultados
 
+### QA 2026-11-07 am (2)
+
+- Inicio: 2026-11-07T08:51:40-03:00 · Fin: 2026-11-07T09:30:00-03:00
+- Commit: 1224a0d (#183) · Despliegue: dpl_B9PxsqZ1LDkVKRDC1iGSpsruy4b3 (production, READY) · Estado: parcial (ver «Sin revisar»)
+- Tipo: completa (mañana), segunda corrida del día, sobre el mismo código que la primera (desde entonces solo cambió este archivo) · Pantallas: escritorio 1366×900, iPhone 13, Galaxy S8 (también con red lenta y con el navegador de WhatsApp) e iPad (gen 7)
+- Paso 2: errores de Vercel en 24 h: dos de Mercado Pago por límite de consultas (429 local) en el cron, ya diferidos por el propio código (sin acción), y el `lead_recompute_failed` aislado (OBS-011, no se repitió). Sin errores SSR.
+- Sesión de QA: OK. Demo pública publicada de QA (`/demo/<token>` y `/presentacion`) en las seis variantes: 200, sin errores de consola, de JavaScript ni de red, sin scroll horizontal, sin imágenes rotas ni placeholders, `og:title`, `og:description` y `og:image` presentes, galería («Siguiente») y comparación con arrastre, enlaces de WhatsApp con destino `wa.me`. Con red lenta: carga completa en unos 7 s, imagen principal en menos de 3 s. Se miraron las capturas de la demo y de `/panel` en iPhone 13.
+- Paso 5, resto: `/`, `/precios`, `/acceso`, `/panel`, `/panel/propiedades`, `/panel/imagenes`, `/admin`, `/admin/inmobiliarias`, `/admin/prospeccion` en las cuatro pantallas: 200, sin errores, sin scroll horizontal ni placeholders. Axe: solo `color-contrast` (UX-001) y, en la demo, `aria-prohibited-attr` (UX-003).
+- Bugs encontrados: ninguno · Corregidos: ninguno
+- Observaciones nuevas: ninguna · Propuestas nuevas: ninguna. Se repiten UX-001 y UX-003.
+- PRs de usabilidad abiertos: ninguno con título `UX:`
+- PostHog revisado hasta: sin cambios respecto de la corrida anterior · cobertura: sin acceso · el conector de PostHog no estaba disponible en esta sesión, no se analizaron sesiones ni grabaciones.
+- Sin revisar: PostHog completo (sin conector); crear demo, estudio de imágenes, video y caminos de error (se hicieron completos hace una hora sobre el mismo código y no se repitieron para no gastar generaciones); pestañas internas de la ficha en `/admin`; interacción con CTA, teclado y gesto táctil en esta corrida. Nada que borrar: la corrida no creó demos ni propiedades.
+- Esperado, no es bug: la demo de QA publicada (slug `qa-habita-2`) se titula «Propiedad nueva»; las demos más recientes de esa cuenta están en borrador y dan 404 público, como corresponde.
+
 ### QA 2026-11-07 am (completa)
 
 - Inicio: 2026-11-07T07:38:49-03:00 · Fin: 2026-11-07T08:35:00-03:00
