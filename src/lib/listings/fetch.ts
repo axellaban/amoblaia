@@ -130,11 +130,32 @@ function pinnedLookup(policy: FetchPolicy): LookupFunction {
   };
 }
 
-/** Pages that answer with a bot challenge instead of the listing (Cloudflare, captchas). */
+const visibleText = (html: string) =>
+  html
+    .replace(/<(script|style|noscript|template)\b[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+/**
+ * Pages that answer with a bot challenge instead of the listing (Cloudflare,
+ * AWS WAF, captchas). AWS WAF (Argenprop, from datacenter addresses) answers
+ * its challenge with 202 and its captcha with 405, and the page only says
+ * "JavaScript is disabled": read as a listing, that became the title.
+ */
 export function looksLikeChallenge(status: number, headers: http.IncomingHttpHeaders, body: string) {
   if (headers["cf-mitigated"] === "challenge") return true;
-  if (![403, 429, 503].includes(status)) return false;
-  return /cf-chl|challenge-platform|just a moment|attention required|captcha|are you a robot|ddos-guard|px-captcha/i.test(body.slice(0, 20000));
+  const waf = String(headers["x-amzn-waf-action"] ?? "").toLowerCase();
+  if (waf === "challenge" || waf === "captcha") return true;
+  const head = body.slice(0, 20000);
+  // The interstitial itself: AWS WAF's script and almost no text. A real page
+  // that loads the same script (Argenprop's fichas do) has plenty of text.
+  if (/awsWafCookieDomainList|gokuProps|awswaf\.com\/[^"']*\/(?:challenge|captcha)\.js|javascript is disabled|not a robot/i.test(body.slice(0, 200000))) {
+    const text = visibleText(body.replace(/<\/?noscript\b[^>]*>/gi, " "));
+    if (text.length < 800 && (/awswaf|gokuProps/i.test(body) || /verify that you'?re not a robot|javascript is disabled/i.test(text))) return true;
+  }
+  if (![403, 405, 429, 503].includes(status)) return false;
+  return /cf-chl|challenge-platform|just a moment|attention required|captcha|are you a robot|ddos-guard|px-captcha/i.test(head);
 }
 
 type RawResponse = { status: number; headers: http.IncomingHttpHeaders; body: Buffer };
@@ -229,8 +250,8 @@ export type FetchResult = {
 /**
  * GET from the public internet only, following up to 4 redirects (each one
  * checked again), with size caps and a deadline for the whole request.
- * 401/403/429/503 are "blocked" (or "challenge" when the page is a bot
- * check); any other error status is "http_error".
+ * 401/403/429/503 are "blocked"; a bot check is "challenge" whatever its
+ * status (AWS WAF answers 202); any other error status is "http_error".
  */
 export async function safeFetch(
   raw: string | URL,
@@ -248,9 +269,10 @@ export async function safeFetch(
       url = checkUrl(new URL(location, url), policy);
       continue;
     }
+    const text = kind === "page" ? res.body.toString("latin1") : "";
+    // A challenge can come with a success status (AWS WAF: 202): never read as the listing.
+    if (looksLikeChallenge(res.status, res.headers, text)) throw new FetchFailure("challenge", res.status);
     if (res.status < 200 || res.status >= 300) {
-      const text = kind === "page" ? res.body.toString("latin1") : "";
-      if (looksLikeChallenge(res.status, res.headers, text)) throw new FetchFailure("challenge", res.status);
       if ([401, 403, 429, 503].includes(res.status)) throw new FetchFailure("blocked", res.status);
       throw new FetchFailure("http_error", res.status);
     }

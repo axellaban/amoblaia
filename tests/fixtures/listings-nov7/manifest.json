@@ -1,0 +1,17 @@
+{
+  "argenprop-20179647": {
+    "url": "https://www.argenprop.com/departamento-en-venta-en-palermo-2-ambientes--20179647",
+    "gallery": "https://www.argenprop.com/aviso/gallerypartial?idAviso=20179647",
+    "contentType": "text/html; charset=utf-8",
+    "note": "Read on 07/11/2026 from an address Argenprop does not challenge; from Vercel it answered the AWS WAF page instead."
+  },
+  "zonaprop-60302623-challenge": {
+    "url": "https://www.zonaprop.com.ar/propiedades/clasificado/veclapin-departamento-en-venta-2-ambientes-full-amenities-60302623.html",
+    "status": 403,
+    "headers": { "cf-mitigated": "challenge", "server": "cloudflare" },
+    "contentType": "text/html; charset=UTF-8"
+  },
+  "aws-waf-challenge": {
+    "note": "The shape of AWS WAF's challenge interstitial (202, x-amzn-waf-action: challenge), with tokens shortened: what Argenprop answers our servers."
+  }
+}
