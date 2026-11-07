@@ -3,27 +3,13 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { ChevronRight, ClipboardCopy, KeyRound, Link2, MessageCircle, Pencil, Plus } from "lucide-react";
+import { ChevronRight, ClipboardCopy, KeyRound, Link2, MessageCircle, Pencil, Plus, Send } from "lucide-react";
 import { api } from "@/components/admin-demos";
 import { CTA_KEYS, CTA_LABEL, FOLLOWUP_STAGES, OUT, VARIABLES, pct, type Channel, type Cta, type VersionStatus } from "@/lib/followup/stages";
-import type { QueueItem, StageView } from "@/lib/followup/server";
+import { GROUPS, SITUATIONS, actionLabel, actionsOf, type Action, type Situation } from "@/lib/followup/plan";
+import type { Prepared, QueueItem, QueueSummary, StageView } from "@/lib/followup/server";
 
 type Version = StageView["versions"][number];
-type Prepared = {
-  agencyId: string;
-  versionId: string;
-  version: number;
-  channel: Channel;
-  ctas: Cta[];
-  notes: string;
-  person: string | null;
-  phone: string | null;
-  message: string;
-  ready: boolean;
-  warnings: string[];
-  whatsappUrl: string | null;
-  links: { demo: string | null; panel: string | null; createDemo: string };
-};
 type Exec = QueueItem["execution"];
 
 const STATUS_LABEL: Record<VersionStatus | "draft", string> = { active: "Activa", test: "A prueba", archived: "Archivada", draft: "Borrador" };
@@ -45,20 +31,28 @@ async function copy(text: string) {
   }
 }
 
-/** /admin/follow-up: one band per funnel stage, with its next best action, the agencies waiting in it and each version's numbers. */
-export function FollowupBoard({ stages }: { stages: StageView[] }) {
-  const [open, setOpen] = useState<string | null>(() => stages.find((s) => s.queue.length)?.key ?? null);
-  const waiting = stages.reduce((n, s) => n + s.queue.filter((q) => q.execution?.status !== "sent").length, 0);
+/** /admin/follow-up: the execution queue on top, then one band per funnel stage with its next best action, its agencies and each version's numbers. */
+export function FollowupBoard({ stages, queue, summary }: { stages: StageView[]; queue: QueueItem[]; summary: QueueSummary }) {
+  const [open, setOpen] = useState<string | null>(null);
   const all = stages.flatMap((s) => s.versions);
   const executions = all.reduce((n, v) => n + v.stats.executions, 0);
   const conversions = all.reduce((n, v) => n + v.stats.conversions, 0);
-  const tests = stages.filter((s) => s.versions.some((v) => v.status === "test")).length;
   return (
     <>
-      <div className="fu-summary">
-        <div>
-          <b>{waiting}</b>
-          <span>inmobiliarias esperando una acción</span>
+      <div className="fu-summary fu-summary-5">
+        <div data-testid="followup-kpi-ready">
+          <b>{summary.ready}</b>
+          <span>listas para ejecutar ahora</span>
+        </div>
+        <div data-testid="followup-kpi-blocked">
+          <b>{summary.blocked}</b>
+          <span>bloqueadas (con motivo)</span>
+        </div>
+        <div data-testid="followup-kpi-new">
+          <b>
+            {summary.newToday}/{summary.cap}
+          </b>
+          <span>conversaciones nuevas en 24 h</span>
         </div>
         <div>
           <b>{executions}</b>
@@ -68,11 +62,9 @@ export function FollowupBoard({ stages }: { stages: StageView[] }) {
           <b>{conversions}</b>
           <span>avanzaron de etapa después</span>
         </div>
-        <div>
-          <b>{tests}</b>
-          <span>{tests === 1 ? "etapa con prueba A/B" : "etapas con prueba A/B"}</span>
-        </div>
       </div>
+      <ExecQueue queue={queue} summary={summary} />
+      <h2 className="fu-h2">Etapas del embudo</h2>
       <div className="fu-stages">
         {stages.map((s, i) => (
           <StageBand key={s.key} stage={s} index={i + 1} open={open === s.key} onToggle={() => setOpen(open === s.key ? null : s.key)} />
@@ -82,9 +74,114 @@ export function FollowupBoard({ stages }: { stages: StageView[] }) {
   );
 }
 
+const QPAGE = 15;
+/** Una sola cola de todas las etapas: solo lo que se puede ejecutar ahora, por grupo, score y antigüedad. */
+function ExecQueue({ queue, summary }: { queue: QueueItem[]; summary: QueueSummary }) {
+  const router = useRouter();
+  const [state, setState] = useState<Record<string, Exec>>({});
+  const [open, setOpen] = useState<string | null>(null);
+  const [shown, setShown] = useState(QPAGE);
+  const statusOf = (q: QueueItem) => (q.agencyId in state ? state[q.agencyId] : q.execution);
+  const list = queue.slice(0, shown);
+  const nextAfter = (id: string) => queue.find((x) => x.agencyId !== id && statusOf(x)?.status !== "sent" && !(x.claim && x.claim.until > new Date().toISOString()));
+  return (
+    <section className="fu-execq" data-testid="followup-queue">
+      <div className="fu-qhead">
+        <span className="fu-lbl">Cola de ejecución · {queue.length}</span>
+        <span className="fu-qprog">
+          {summary.claimed > 0 && <>{summary.claimed} tomadas por otra sesión · </>}
+          primero respuestas, después demos, seguimientos y contactos nuevos ·{" "}
+          <button type="button" className="fu-link" onClick={() => router.refresh()}>
+            Actualizar
+          </button>
+        </span>
+      </div>
+      {queue.length === 0 ? (
+        <p className="fu-empty">No hay nada para ejecutar ahora. Las bloqueadas figuran en cada etapa con su motivo.</p>
+      ) : (
+        <div className="fu-qlist">
+          <div className="fu-qwide fu-qwide-q">
+            <div className="fu-qrow fu-qrow-q fu-qth" aria-hidden="true">
+              <span>Score</span>
+              <span>Inmobiliaria</span>
+              <span>Etapa</span>
+              <span>Situación</span>
+              <span>Próxima acción</span>
+              <span>Última acción</span>
+              <span>WhatsApp</span>
+              <span>Prioridad</span>
+              <span />
+            </div>
+            {list.map((q) => {
+              const exec = statusOf(q);
+              const status = exec?.status ?? "pending";
+              const taken = q.claim && q.claim.until > new Date().toISOString();
+              const isOpen = open === q.agencyId;
+              return (
+                <div key={q.agencyId} className={`fu-qi${isOpen ? " is-on" : ""}`} data-testid="followup-queue-item" data-agency={q.agencyId} data-stage={q.stage} data-action={q.action ?? ""} data-situation={q.situation} data-status={status}>
+                  <div className="fu-qrow fu-qrow-q">
+                    <span className="fu-score">{score(q.score)}</span>
+                    <div className="fu-qname">
+                      <Link href={`/admin/inmobiliarias/${q.agencyId}`}>{q.name}</Link>
+                      <span>{q.person ?? "Sin decisor cargado"}</span>
+                    </div>
+                    <span className="fu-cell">{stageTitle(q.stage)}</span>
+                    <span className="fu-cell">{SITUATIONS[q.situation]}</span>
+                    <span className="fu-cell fu-bold">{q.actionLabel}</span>
+                    <div className="fu-qact">
+                      <span>{q.lastAction ? q.lastAction.text : "Sin acciones"}</span>
+                      <span>{q.lastAction ? `${day(q.lastAction.at)} · ${ago(q.lastAction.at)}` : "—"}</span>
+                    </div>
+                    <div className="fu-qcontact">
+                      <span className="fu-mono">{q.phone ?? "—"}</span>
+                      <span>{q.needsReview ? "Sin validar" : "Validado"}</span>
+                    </div>
+                    <span className={`fu-qst is-${status}`}>{status === "pending" ? GROUPS[q.group] : EXEC_LABEL[status]}</span>
+                    <button
+                      type="button"
+                      className={`button button-small${status === "pending" && !isOpen && !taken ? " button-primary" : " button-outline"}`}
+                      data-testid="followup-execute"
+                      title={taken ? `La está ejecutando ${q.claim!.by}` : undefined}
+                      disabled={Boolean(taken) && !isOpen}
+                      onClick={() => setOpen(isOpen ? null : q.agencyId)}
+                    >
+                      {isOpen ? "Cerrar" : taken ? "Tomada" : status === "sent" ? "Ver" : "Ejecutar"}
+                    </button>
+                  </div>
+                  {isOpen && (
+                    <Execute
+                      item={q}
+                      exec={exec}
+                      onDone={(e) => setState((st) => ({ ...st, [q.agencyId]: e }))}
+                      onClose={() => setOpen(null)}
+                      onNext={() => {
+                        const next = nextAfter(q.agencyId);
+                        setOpen(next?.agencyId ?? null);
+                        if (next && queue.indexOf(next) >= shown) setShown(queue.indexOf(next) + 1);
+                      }}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {queue.length > shown && (
+            <button type="button" className="fu-more" onClick={() => setShown(shown + QPAGE)}>
+              Ver {Math.min(QPAGE, queue.length - shown)} más · quedan {queue.length - shown}
+            </button>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+const stageTitle = (key: string) => FOLLOWUP_STAGES.find((s) => s.key === key)?.title ?? key;
+
 function StageBand({ stage, index, open, onToggle }: { stage: StageView; index: number; open: boolean; onToggle: () => void }) {
-  const active = stage.versions.find((v) => v.status === "active") ?? null;
-  const test = stage.versions.find((v) => v.status === "test") ?? null;
+  const principal = stage.versions.filter((v) => (v.action ?? "principal") === "principal");
+  const active = principal.find((v) => v.status === "active") ?? null;
+  const test = principal.find((v) => v.status === "test") ?? null;
   const pending = stage.queue.filter((q) => q.execution?.status !== "sent").length;
   return (
     <section className={`fu-stage${open ? " is-open" : ""}`} data-testid="followup-stage" data-stage={stage.key}>
@@ -116,9 +213,17 @@ function StageBand({ stage, index, open, onToggle }: { stage: StageView; index: 
       </button>
       {open && (
         <div className="fu-body">
-          <Editor stage={stage} />
+          {actionsOf(stage.key).map((a) => {
+            const view = { ...stage, versions: stage.versions.filter((v) => (v.action ?? "principal") === a) };
+            return (
+              <div key={a} className="fu-action" data-testid="followup-action" data-action={a}>
+                {actionsOf(stage.key).length > 1 && <h3 className="fu-h3">{actionLabel(stage.key, a)}{a === "presentacion" ? " · cuando confirma el número" : a === "precios" ? " · cuando pregunta precios" : " · sin respuesta"}</h3>}
+                <Editor stage={view} action={a} />
+                <VersionTable stage={view} />
+              </div>
+            );
+          })}
           <Queue stage={stage} />
-          <VersionTable stage={stage} />
         </div>
       )}
     </section>
@@ -130,7 +235,7 @@ type Draft = { channel: Channel; trigger: string; body: string; ctas: Cta[]; not
 const EMPTY: Draft = { channel: "whatsapp", trigger: "", body: "", ctas: ["whatsapp", "copy"], notes: "" };
 const draftOf = (v: Version, editing?: string): Draft => ({ channel: v.channel, trigger: v.trigger_label, body: v.body, ctas: [...v.ctas], notes: v.notes ?? "", editing });
 
-function Editor({ stage }: { stage: StageView }) {
+function Editor({ stage, action }: { stage: StageView; action: Action }) {
   const router = useRouter();
   const live = stage.versions.find((v) => v.status === "active") ?? stage.versions.at(-1) ?? null;
   const [selected, setSelected] = useState<string | null>(live?.id ?? null);
@@ -141,7 +246,7 @@ function Editor({ stage }: { stage: StageView }) {
   const shown: Draft | Version | null = draft ?? current;
   const active = stage.versions.find((v) => v.status === "active");
   const nextNumber = Math.max(0, ...stage.versions.map((v) => v.version)) + 1;
-  const bodyId = `fu-body-${stage.key}`;
+  const bodyId = `fu-body-${stage.key}-${action}`;
   const editing = draft?.editing ? stage.versions.find((v) => v.id === draft.editing) ?? null : null;
 
   async function run(work: () => Promise<unknown>) {
@@ -158,7 +263,7 @@ function Editor({ stage }: { stage: StageView }) {
   }
   const save = (status: "active" | "test") =>
     run(async () => {
-      const v = await api<Version>("/api/admin/follow-up/versiones", { method: "POST", body: JSON.stringify({ stage: stage.key, ...draft, status }) });
+      const v = await api<Version>("/api/admin/follow-up/versiones", { method: "POST", body: JSON.stringify({ stage: stage.key, action, ...draft, status }) });
       setDraft(null);
       setSelected(v.id);
     });
@@ -240,6 +345,7 @@ function Editor({ stage }: { stage: StageView }) {
                 <input value={`Pasa a «${stage.goal}»`} readOnly />
               </label>
             </div>
+            <p className="fu-note">Para mandar varios mensajes seguidos (como la presentación), separalos con una línea que diga solo «---».</p>
             <label className="fu-textarea">
               <span>{editing ? `Next best action · editando V${editing.version}` : "Next best action"}</span>
               <textarea id={bodyId} value={shown.body} readOnly={!draft} maxLength={4000} onChange={(e) => draft && setDraft({ ...draft, body: e.target.value })} />
@@ -366,14 +472,12 @@ function Queue({ stage }: { stage: StageView }) {
   const done = stage.queue.filter((q) => statusOf(q)?.status === "sent").length;
   const list = stage.queue.slice(0, shown);
   const editable = stage.key === "no-contactado";
-  function finished(q: QueueItem, exec: Exec) {
-    setState((s) => ({ ...s, [q.agencyId]: exec }));
-    if (exec?.status === "sent") {
-      // The next one still to do, so the team (or the extension) goes on without searching.
-      const next = stage.queue.find((x) => x.agencyId !== q.agencyId && (x.agencyId in state ? state[x.agencyId] : x.execution)?.status !== "sent");
-      setOpen(next?.agencyId ?? null);
-      if (next && stage.queue.indexOf(next) >= shown) setShown(stage.queue.indexOf(next) + 1);
-    }
+  // A confirmed row stays where it is (nothing moves under the cursor); «Siguiente pendiente» opens the next one.
+  const finished = (q: QueueItem, exec: Exec) => setState((s) => ({ ...s, [q.agencyId]: exec }));
+  function next(q: QueueItem) {
+    const n = stage.queue.find((x) => x.agencyId !== q.agencyId && !x.blocked && x.action && statusOf(x)?.status !== "sent");
+    setOpen(n?.agencyId ?? null);
+    if (n && stage.queue.indexOf(n) >= shown) setShown(stage.queue.indexOf(n) + 1);
   }
   return (
     <div className="fu-queue">
@@ -402,13 +506,14 @@ function Queue({ stage }: { stage: StageView }) {
               <span>Web</span>
               <span>Prop.</span>
               <span>Estado</span>
+              <span>Situación</span>
               <span>Última acción y fecha</span>
               <span>WhatsApp</span>
               <span>Acción</span>
               <span />
             </div>
             {list.map((q) => (
-              <QueueRow key={q.agencyId} stage={stage} item={q} exec={statusOf(q)} open={open === q.agencyId} onToggle={() => setOpen(open === q.agencyId ? null : q.agencyId)} onDone={(e) => finished(q, e)} />
+              <QueueRow key={q.agencyId} stage={stage} item={q} exec={statusOf(q)} open={open === q.agencyId} onToggle={() => setOpen(open === q.agencyId ? null : q.agencyId)} onDone={(e) => finished(q, e)} onNext={() => next(q)} />
             ))}
           </div>
           {stage.queue.length > shown && (
@@ -497,8 +602,42 @@ function StageCell({ stage, item: q }: { stage: StageView; item: QueueItem }) {
   );
 }
 
-function QueueRow({ stage, item: q, exec, open, onToggle, onDone }: { stage: StageView; item: QueueItem; exec: Exec; open: boolean; onToggle: () => void; onDone: (e: Exec) => void }) {
+function SituationCell({ item: q }: { item: QueueItem }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  async function change(situacion: Situation) {
+    if (situacion === q.situation) return;
+    const texto = ["sin_respuesta", "sin_whatsapp", "numero_incorrecto"].includes(situacion) ? "" : (window.prompt("Texto de su respuesta (opcional, queda como evidencia)") ?? "");
+    setBusy(true);
+    setError("");
+    try {
+      const r = await api<{ warning: string | null }>("/api/admin/follow-up/inmobiliarias", { method: "POST", body: JSON.stringify({ accion: "situacion", inmobiliaria: q.agencyId, situacion, texto }) });
+      if (r.warning) window.alert(r.warning);
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No pudimos guardar la situación.");
+      setBusy(false);
+    }
+  }
+  return (
+    <span className="fu-stagecell">
+      <select data-testid="followup-situation-select" value={q.situation} disabled={busy} aria-label={`Situación de ${q.name}`} title={error || q.situationNote || undefined} onChange={(e) => change(e.target.value as Situation)}>
+        {(Object.keys(SITUATIONS) as Situation[]).map((k) => (
+          <option key={k} value={k}>
+            {SITUATIONS[k]}
+          </option>
+        ))}
+      </select>
+      {error ? <small className="fu-error">{error}</small> : q.situationManual ? <small title={q.situationNote ?? undefined}>Marcada a mano</small> : null}
+    </span>
+  );
+}
+
+function QueueRow({ stage, item: q, exec, open, onToggle, onDone, onNext }: { stage: StageView; item: QueueItem; exec: Exec; open: boolean; onToggle: () => void; onDone: (e: Exec) => void; onNext: () => void }) {
   const status = exec?.status ?? "pending";
+  const taken = Boolean(q.claim && q.claim.until > new Date().toISOString());
+  const blocked = status !== "sent" ? q.blocked : null;
   const version = stage.versions.find((v) => v.id === q.versionId);
   const testing = stage.versions.some((v) => v.status === "test");
   const late = q.lastAction ? daysSince(q.lastAction.at) > LATE_DAYS : false;
@@ -514,6 +653,9 @@ function QueueRow({ stage, item: q, exec, open, onToggle, onDone }: { stage: Sta
       data-last-action={q.lastAction?.text ?? ""}
       data-last-action-at={q.lastAction?.at ?? ""}
       data-last-action-source={q.lastAction?.source ?? ""}
+      data-situation={q.situation}
+      data-action={q.action ?? ""}
+      data-blocked={blocked ?? ""}
     >
       <div className="fu-qrow">
         <ScoreCell key={`${q.agencyId}-${q.score}`} item={q} />
@@ -536,6 +678,7 @@ function QueueRow({ stage, item: q, exec, open, onToggle, onDone }: { stage: Sta
         </div>
         <span className="fu-props">{q.properties}</span>
         <StageCell stage={stage} item={q} />
+        <SituationCell item={q} />
         <div className="fu-qact" data-testid="followup-last-action">
           <span title={q.lastAction ? `Última acción · ${SOURCE_LABEL[q.lastAction.source]}` : undefined}>{q.lastAction ? q.lastAction.text : "Sin acciones"}</span>
           <span className={late ? "is-late" : undefined}>{q.lastAction ? `${day(q.lastAction.at)} · ${ago(q.lastAction.at)}` : "—"}</span>
@@ -543,16 +686,30 @@ function QueueRow({ stage, item: q, exec, open, onToggle, onDone }: { stage: Sta
         <div className="fu-qcontact">
           <span className="fu-mono">{q.phone ?? "Sin WhatsApp"}</span>
           <span>
-            {q.needsReview ? "Número por revisar" : q.hasDemo ? "Con demo publicada" : "Sin demo publicada"}
-            {version ? ` · V${version.version}${testing ? (version.status === "test" ? " (prueba)" : " (activa)") : ""}` : ""}
+            {q.needsReview ? "Número sin validar" : q.wa ? "Validado" : "—"}
+            {version ? ` · ${q.actionLabel} V${version.version}${testing ? (version.status === "test" ? " (prueba)" : " (activa)") : ""}` : q.actionLabel ? ` · ${q.actionLabel}` : ""}
           </span>
         </div>
-        <span className={`fu-qst is-${status}`}>{EXEC_LABEL[status]}</span>
-        <button type="button" className={`button button-small${status === "pending" && !open ? " button-primary" : " button-outline"}`} data-testid="followup-execute" onClick={onToggle} disabled={!version}>
+        <span className={`fu-qst is-${blocked ? "blocked" : status}`} title={blocked ?? undefined} data-testid="followup-row-status">
+          {blocked ? "Bloqueada" : taken && status !== "sent" ? "Tomada" : EXEC_LABEL[status]}
+        </span>
+        <button
+          type="button"
+          className={`button button-small${status === "pending" && !open && !blocked && !taken ? " button-primary" : " button-outline"}`}
+          data-testid="followup-execute"
+          onClick={onToggle}
+          disabled={(!open && (Boolean(blocked) || taken)) || (!version && status !== "sent")}
+          title={blocked ?? (taken ? `La está ejecutando ${q.claim!.by}` : undefined)}
+        >
           {open ? "Cerrar" : status === "sent" ? "Ver" : version?.channel === "task" ? "Hacer tarea" : "Ejecutar"}
         </button>
       </div>
-      {open && <Execute stage={stage} item={q} exec={exec} onDone={onDone} />}
+      {blocked && (
+        <p className="fu-blocked" data-testid="followup-blocked">
+          {blocked}
+        </p>
+      )}
+      {open && <Execute item={q} exec={exec} onDone={onDone} onClose={onToggle} onNext={onNext} />}
     </div>
   );
 }
@@ -647,62 +804,130 @@ function AddAgency({ stage, onClose }: { stage: StageView; onClose: () => void }
   );
 }
 
-function Execute({ stage, item, exec, onDone }: { stage: StageView; item: QueueItem; exec: Exec; onDone: (e: Exec) => void }) {
+const FAIL_KINDS = { sin_whatsapp: "No tiene WhatsApp", numero_incorrecto: "Número incorrecto", otro: "Otro motivo" } as const;
+
+/**
+ * Ejecutar con una inmobiliaria: la toma 10 minutos (otra sesión no puede),
+ * arma el mensaje y guía los pasos. Abrir WhatsApp no cuenta como enviado:
+ * cuenta «Confirmar envío», después de verlo salir en el chat.
+ */
+function Execute({ item, exec, onDone, onClose, onNext }: { item: QueueItem; exec: Exec; onDone: (e: Exec) => void; onClose?: () => void; onNext?: () => void }) {
+  const router = useRouter();
   const [prepared, setPrepared] = useState<Prepared | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [failing, setFailing] = useState(false);
+  const [kind, setKind] = useState<keyof typeof FAIL_KINDS>("otro");
   const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState(exec?.status ?? "pending");
+  const sent = status === "sent";
 
   useEffect(() => {
     let alive = true;
-    api<Prepared>("/api/admin/follow-up/ejecuciones", { method: "POST", body: JSON.stringify({ accion: "preparar", inmobiliaria: item.agencyId, etapa: stage.key }) })
+    if (exec?.status === "sent") {
+      setError("");
+      return;
+    }
+    api<Prepared>("/api/admin/follow-up/ejecuciones", { method: "POST", body: JSON.stringify({ accion: "preparar", inmobiliaria: item.agencyId }) })
       .then((p) => alive && setPrepared(p))
       .catch((e) => alive && setError(e instanceof Error ? e.message : "No pudimos armar el mensaje."));
     return () => {
       alive = false;
     };
-  }, [item.agencyId, stage.key]);
+  }, [item.agencyId, exec?.status]);
+
   async function mark(estado: "opened" | "sent" | "failed") {
     if (!prepared) return;
     setError("");
+    setBusy(true);
     try {
       const r = await api<{ execution: NonNullable<Exec>; warning: string | null }>("/api/admin/follow-up/ejecuciones", {
         method: "POST",
-        body: JSON.stringify({ accion: "registrar", inmobiliaria: item.agencyId, etapa: stage.key, version: prepared.versionId, estado, motivo: reason, texto: prepared.message }),
+        body: JSON.stringify({
+          accion: "registrar",
+          inmobiliaria: item.agencyId,
+          etapa: prepared.stage,
+          tarea: prepared.action,
+          version: prepared.versionId,
+          estado,
+          motivo: reason,
+          tipo: kind === "otro" ? null : kind,
+          texto: prepared.message,
+        }),
       });
       setStatus(r.execution.status);
       if (r.warning) setNotice(r.warning);
-      if (estado !== "opened") onDone({ status: r.execution.status, at: r.execution.at, reason: estado === "failed" ? reason : null });
+      if (estado !== "opened") onDone({ status: r.execution.status, at: r.execution.at, reason: estado === "failed" ? reason || FAIL_KINDS[kind] : null });
+      if (estado === "failed") setFailing(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "No pudimos registrarlo.");
+    } finally {
+      setBusy(false);
     }
+  }
+  async function close() {
+    if (prepared && !sent) await api("/api/admin/follow-up/ejecuciones", { method: "POST", body: JSON.stringify({ accion: "soltar", inmobiliaria: item.agencyId }) }).catch(() => undefined);
+    onClose?.();
   }
   async function copyText(text: string, what: string) {
     setNotice((await copy(text)) ? `${what} copiado.` : `No pudimos copiarlo: ${text}`);
   }
+  async function rename() {
+    const name = window.prompt("Nombre corto para {{inmobiliaria}} (vacío: el de la ficha sin paréntesis)", item.shortName);
+    if (name === null) return;
+    try {
+      await api("/api/admin/follow-up/inmobiliarias", { method: "POST", body: JSON.stringify({ accion: "nombre", inmobiliaria: item.agencyId, nombre: name }) });
+      setPrepared(null);
+      const p = await api<Prepared>("/api/admin/follow-up/ejecuciones", { method: "POST", body: JSON.stringify({ accion: "preparar", inmobiliaria: item.agencyId }) });
+      setPrepared(p);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No pudimos cambiar el nombre.");
+    }
+  }
 
-  if (!prepared && !error) return <div className="fu-exec fu-note">Armando el mensaje y sus links…</div>;
+  if (sent && !prepared)
+    return (
+      <div className="fu-exec fu-note" data-testid="followup-done">
+        Confirmado {exec?.at ? `el ${day(exec.at)}` : ""}. {onNext && <button type="button" className="fu-link" onClick={onNext}>Siguiente pendiente →</button>}
+      </div>
+    );
+  if (!prepared && !error) return <div className="fu-exec fu-note">Tomando la inmobiliaria y armando el mensaje…</div>;
   if (!prepared)
     return (
       <div className="fu-exec">
-        <p className="fu-error" role="alert">
+        <p className="fu-error" role="alert" data-testid="followup-error">
           {error}
         </p>
+        <button type="button" className="fu-link" onClick={() => router.refresh()}>
+          Actualizar la lista
+        </button>
       </div>
     );
   const task = prepared.channel === "task";
-  const sent = status === "sent";
+  const many = prepared.messages.length > 1;
   return (
-    <div className="fu-exec">
+    <div className="fu-exec" data-testid="followup-exec" data-action={prepared.action ?? ""} data-version={prepared.version}>
       <div className="fu-exec-msg">
         <p className="fu-to">
-          Para <b>{prepared.person ?? item.name}</b> · {task ? "tarea del equipo" : <>WhatsApp <b className="fu-mono">{prepared.phone ?? "sin número"}</b></>} · V{prepared.version}
+          <b>{prepared.actionLabel}</b> para <b>{prepared.person ?? item.name}</b> · {task ? "tarea del equipo" : <>WhatsApp <b className="fu-mono" data-testid="followup-phone">{prepared.phone ?? "sin número"}</b></>} · V{prepared.version} · nombre en el mensaje: «{item.shortName}»{" "}
+          <button type="button" className="fu-link" data-testid="followup-short-name" onClick={rename}>
+            cambiar
+          </button>
         </p>
-        <div className="fu-msg" data-testid="followup-message">
-          {prepared.message}
-        </div>
+        {prepared.messages.map((m, i) => (
+          <div key={i} className="fu-msgwrap">
+            {many && <span className="fu-lbl">Mensaje {i + 1} de {prepared.messages.length}</span>}
+            <div className="fu-msg" data-testid="followup-message" data-index={i}>
+              {m}
+            </div>
+            {many && (
+              <button type="button" className="fu-link" data-testid="followup-copy-part" onClick={() => copyText(m, `Mensaje ${i + 1}`)}>
+                Copiar mensaje {i + 1}
+              </button>
+            )}
+          </div>
+        ))}
         {prepared.notes && (
           <div className="fu-obs" data-testid="followup-notes">
             <b>Observaciones</b>
@@ -710,7 +935,7 @@ function Execute({ stage, item, exec, onDone }: { stage: StageView; item: QueueI
           </div>
         )}
         {prepared.warnings.map((w) => (
-          <p key={w} className="fu-warn">
+          <p key={w} className="fu-warn" data-testid="followup-check">
             {w}
           </p>
         ))}
@@ -720,7 +945,7 @@ function Execute({ stage, item, exec, onDone }: { stage: StageView; item: QueueI
           </p>
         )}
         {error && (
-          <p className="fu-error" role="alert">
+          <p className="fu-error" role="alert" data-testid="followup-error">
             {error}
           </p>
         )}
@@ -733,7 +958,7 @@ function Execute({ stage, item, exec, onDone }: { stage: StageView; item: QueueI
                 <Plus size={16} aria-hidden="true" /> Crear demo
               </Link>
             )}
-            <button type="button" className="button button-small button-outline" data-testid="followup-confirm" disabled={sent} onClick={() => mark("sent")}>
+            <button type="button" className="button button-small button-outline" data-testid="followup-confirm" disabled={sent || busy} onClick={() => mark("sent")}>
               {sent ? "Hecha" : "Marcar hecha"}
             </button>
           </>
@@ -744,27 +969,34 @@ function Execute({ stage, item, exec, onDone }: { stage: StageView; item: QueueI
                 className={`button button-small${status === "pending" || status === "failed" ? " button-primary" : " button-outline"}`}
                 data-testid="followup-open"
                 href={prepared.whatsappUrl}
-                target="_blank"
+                target="habita-whatsapp"
                 rel="noreferrer"
                 onClick={() => !sent && void mark("opened")}
               >
-                <MessageCircle size={16} aria-hidden="true" /> 1. Abrir WhatsApp con el mensaje
+                <MessageCircle size={16} aria-hidden="true" /> 1. Abrir WhatsApp{many ? " con el mensaje 1" : " con el mensaje"}
               </a>
             ) : (
               <span className="button button-small button-outline is-disabled" data-testid="followup-open" aria-disabled="true">
                 <MessageCircle size={16} aria-hidden="true" /> 1. Abrir WhatsApp
               </span>
             )}
-            <button type="button" className={`button button-small${status === "opened" ? " button-primary" : " button-outline"}`} data-testid="followup-confirm" disabled={sent || !prepared.ready} onClick={() => mark("sent")}>
-              {sent ? "Enviado" : "2. Confirmar envío"}
+            <button type="button" className={`button button-small${status === "opened" ? " button-primary" : " button-outline"}`} data-testid="followup-confirm" disabled={sent || busy || !prepared.ready} onClick={() => mark("sent")}>
+              <Send size={15} aria-hidden="true" /> {sent ? "Enviado" : many ? "2. Confirmar: salieron todos" : "2. Confirmar envío"}
             </button>
           </>
         )}
         {!sent &&
           (failing ? (
             <div className="fu-fail">
-              <input data-testid="followup-failed-reason" value={reason} maxLength={300} placeholder="Por qué no salió" onChange={(e) => setReason(e.target.value)} aria-label="Por qué no salió" />
-              <button type="button" className="button button-small button-outline" data-testid="followup-failed-save" disabled={!reason.trim()} onClick={() => mark("failed")}>
+              <select data-testid="followup-failed-kind" value={kind} onChange={(e) => setKind(e.target.value as keyof typeof FAIL_KINDS)} aria-label="Qué pasó">
+                {Object.entries(FAIL_KINDS).map(([k, label]) => (
+                  <option key={k} value={k}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+              <input data-testid="followup-failed-reason" value={reason} maxLength={300} placeholder={kind === "otro" ? "Por qué no salió" : "Detalle (opcional)"} onChange={(e) => setReason(e.target.value)} aria-label="Por qué no salió" />
+              <button type="button" className="button button-small button-outline" data-testid="followup-failed-save" disabled={busy || (kind === "otro" && !reason.trim())} onClick={() => mark("failed")}>
                 Guardar
               </button>
             </div>
@@ -774,7 +1006,7 @@ function Execute({ stage, item, exec, onDone }: { stage: StageView; item: QueueI
             </button>
           ))}
         {!task && prepared.ctas.includes("copy") && (
-          <button type="button" className="button button-small button-outline" onClick={() => copyText(prepared.message, "Mensaje")}>
+          <button type="button" className="button button-small button-outline" onClick={() => copyText(prepared.message.replace(/^\s*-{3,}\s*$/gm, ""), "Mensaje")}>
             <ClipboardCopy size={16} aria-hidden="true" /> Copiar mensaje
           </button>
         )}
@@ -786,6 +1018,16 @@ function Execute({ stage, item, exec, onDone }: { stage: StageView; item: QueueI
         {prepared.ctas.includes("panel") && prepared.links.panel && (
           <button type="button" className="button button-small button-outline" data-testid="followup-link-panel" onClick={() => copyText(prepared.links.panel!, "Link panel")}>
             <KeyRound size={16} aria-hidden="true" /> Copiar link panel
+          </button>
+        )}
+        {(sent || status === "failed") && onNext && (
+          <button type="button" className="button button-small button-primary" data-testid="followup-next" onClick={onNext}>
+            Siguiente pendiente →
+          </button>
+        )}
+        {onClose && !sent && (
+          <button type="button" className="fu-link" data-testid="followup-release" onClick={close}>
+            Soltar sin hacer nada
           </button>
         )}
       </div>

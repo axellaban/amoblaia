@@ -27527,14 +27527,76 @@ dialog.pt-layer::backdrop {
   overflow-x: auto;
 }
 .fu-qwide {
-  min-width: 1240px;
+  min-width: 1400px;
+}
+.fu-qwide-q {
+  min-width: 1180px;
+}
+.fu-qrow.fu-qrow-q {
+  grid-template-columns: 52px minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 0.9fr) minmax(0, 0.9fr) minmax(0, 1.3fr) minmax(0, 1fr) 132px 104px;
+}
+.fu-summary.fu-summary-5 {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+.fu-execq {
+  background: #fff;
+  border: 1px solid var(--pr-line, #dde3d7);
+  border-radius: 12px;
+  padding: 16px 18px;
+  display: grid;
+  gap: 10px;
+  margin-bottom: 22px;
+}
+.fu-h2 {
+  font-size: 17px;
+  margin: 4px 0 10px;
+}
+.fu-h3 {
+  font-size: 14px;
+  margin: 0;
+  padding: 14px 18px 0;
+}
+.fu-action + .fu-action {
+  border-top: 1px solid var(--pr-line, #dde3d7);
+}
+.fu-cell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fu-bold {
+  font-weight: 700;
+}
+.fu-qst.is-blocked {
+  color: #8a5a00;
+  border: 1px solid #f1dfae;
+  background: #fff8e6;
+}
+.fu-blocked {
+  margin: 0;
+  padding: 0 12px 10px 86px;
+  font-size: 12px;
+  color: #8a5a00;
+}
+.fu-msgwrap {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.fu-fail select {
+  font: inherit;
+  font-size: 13px;
+  border: 1px solid var(--pr-line, #dde3d7);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: #fff;
 }
 .fu-qwide .fu-qi:last-child {
   border-bottom: 0;
 }
 .fu-qrow {
   display: grid;
-  grid-template-columns: 62px minmax(0, 1.3fr) minmax(0, 1.2fr) minmax(0, 0.9fr) 44px 168px minmax(0, 1.4fr) minmax(0, 1fr) 78px 104px;
+  grid-template-columns: 62px minmax(0, 1.3fr) minmax(0, 1.1fr) minmax(0, 0.9fr) 44px 160px 150px minmax(0, 1.4fr) minmax(0, 1fr) 84px 104px;
   gap: 12px;
   align-items: center;
   padding: 10px 12px;
@@ -27835,7 +27897,8 @@ dialog.pt-layer::backdrop {
   margin-left: 6px;
 }
 @media (max-width: 900px) {
-  .fu-summary {
+  .fu-summary,
+  .fu-summary.fu-summary-5 {
     grid-template-columns: 1fr 1fr;
   }
   .fu-row {

@@ -4,6 +4,7 @@
 // lo comparten el servidor, el navegador y los tests.
 
 import { AGENCY_STEPS } from "@/lib/agency/demo-funnel";
+import { isAction, type Action } from "./plan";
 
 export const FOLLOWUP_STAGES = [
   { key: "no-contactado", step: -1, title: "No contactado", goal: "Contactado" },
@@ -46,6 +47,8 @@ export type VersionStatus = "active" | "test" | "archived";
 export type FollowupVersion = {
   id: string;
   stage: StageKey;
+  /** La acción dentro de la etapa: la principal, o la presentación y los precios en «Contactado, no responde». */
+  action: Action;
   version: number;
   channel: Channel;
   trigger_label: string;
@@ -64,6 +67,7 @@ export type FollowupExecution = {
   id: string;
   version_id: string;
   stage: StageKey;
+  action?: Action;
   agency_id: string;
   from_step: number;
   status: ExecutionStatus;
@@ -134,13 +138,14 @@ function hash(text: string) {
  * (opened, sent or failed) while it is still offered, else the active one or,
  * with a test running, half of the agencies get the test.
  */
-export function versionFor(agencyId: string, versions: FollowupVersion[], previous: FollowupExecution[] = []) {
+export function versionFor(agencyId: string, versions: FollowupVersion[], previous: FollowupExecution[] = [], action: Action = "principal") {
   const live = versions.filter((v) => v.status !== "archived");
   const active = live.find((v) => v.status === "active") ?? null;
   const test = live.find((v) => v.status === "test") ?? null;
   const started = [...previous].sort((a, b) => b.updated_at.localeCompare(a.updated_at)).find((e) => live.some((v) => v.id === e.version_id));
   if (started) return live.find((v) => v.id === started.version_id)!;
-  if (test && active) return hash(`${agencyId}:${active.stage}`) % 2 ? test : active;
+  // The principal action keeps its old key, so no agency changes version.
+  if (test && active) return hash(action === "principal" ? `${agencyId}:${active.stage}` : `${agencyId}:${active.stage}:${action}`) % 2 ? test : active;
   return active ?? test;
 }
 
@@ -206,7 +211,7 @@ export type VersionStats = ReturnType<typeof versionStats>[number];
 export const pct = (r: number | null) => (r === null ? "—" : `${(r * 100).toFixed(r < 0.1 && r > 0 ? 1 : 0).replace(".", ",")}%`);
 
 /** Validates a new version (or an edit of one) from the panel. Returns the clean fields or an error message. */
-export function cleanVersion(input: { stage?: unknown; channel?: unknown; trigger?: unknown; body?: unknown; ctas?: unknown; status?: unknown; notes?: unknown }) {
+export function cleanVersion(input: { stage?: unknown; action?: unknown; channel?: unknown; trigger?: unknown; body?: unknown; ctas?: unknown; status?: unknown; notes?: unknown }) {
   if (!isStageKey(input.stage)) return { error: "Etapa desconocida." } as const;
   const channel = input.channel === "task" ? "task" : input.channel === "whatsapp" ? "whatsapp" : null;
   if (!channel) return { error: "El canal es WhatsApp o tarea del equipo." } as const;
@@ -220,7 +225,10 @@ export function cleanVersion(input: { stage?: unknown; channel?: unknown; trigge
   const status = input.status === "test" ? "test" : "active";
   const notes = typeof input.notes === "string" ? input.notes.trim() : "";
   if (notes.length > 4000) return { error: "Las observaciones superan los 4000 caracteres." } as const;
-  return { stage: input.stage, channel, trigger, body, ctas, status, notes } as const;
+  const action: Action = input.action === undefined || input.action === null ? "principal" : isAction(input.action) ? input.action : ("" as Action);
+  if (!action) return { error: "Acción desconocida." } as const;
+  if (action !== "principal" && input.stage !== "no-responde") return { error: "La presentación y los precios van en «Contactado, no responde»." } as const;
+  return { stage: input.stage, action, channel, trigger, body, ctas, status, notes } as const;
 }
 
 export type LastActionSource = "followup" | "adquisicion" | "inmobiliaria";
