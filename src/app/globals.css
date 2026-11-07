@@ -27581,7 +27581,7 @@ dialog.pt-layer::backdrop {
 .fu-exec {
   padding: 4px 12px 14px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 260px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 300px);
   gap: 14px;
 }
 .fu-exec .fu-steps {
@@ -27591,6 +27591,12 @@ dialog.pt-layer::backdrop {
 .fu-exec .fu-steps .button {
   justify-content: flex-start;
   gap: 8px;
+  width: 100%;
+  white-space: normal;
+  text-align: left;
+}
+.fu-fail {
+  min-width: 0;
 }
 .fu-steps .is-disabled {
   opacity: 0.45;
