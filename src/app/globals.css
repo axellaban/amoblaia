@@ -15569,7 +15569,7 @@ main:has(.ap-sidebar) {
 .ap-import-bar .ap-import-help {
   color: #3e4a42;
 }
-/* «Mis demostraciones recientes»: three cards, each with its four actions in view. */
+/* «Mis propiedades» on the home: the demo first, then the ones waiting for their photos. */
 .ap-recents {
   margin-bottom: 40px;
 }
@@ -15585,140 +15585,9 @@ main:has(.ap-sidebar) {
   gap: 4px;
   font-weight: 700;
 }
-.ap-recent-list {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
-  margin: 14px 0 0;
-  padding: 0;
-  list-style: none;
-}
-.ap-recent {
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  background: #fff;
-  overflow: hidden;
-}
-.ap-recent-top {
-  display: grid;
-  grid-template-columns: 136px minmax(0, 1fr);
-  gap: 14px;
-  align-items: center;
-  padding: 12px;
-  flex: 1;
-}
-.ap-recent-photo {
-  display: grid;
-  place-items: center;
-  aspect-ratio: 4 / 3;
-  border-radius: 12px;
-  overflow: hidden;
-  background: #eef1ec;
-  color: var(--muted);
-  font-size: 12px;
-  text-decoration: none;
-}
-.ap-recent-hint,
-.ap-recent > .ap-card-message {
-  margin: 0;
-  padding: 0 12px 10px;
-  font-size: 12.5px;
-}
-.ap-recent-hint {
-  color: #6d4a0c;
-}
-.ap-recent-actions {
-  display: grid;
-  grid-auto-columns: minmax(0, 1fr);
-  grid-auto-flow: column;
-  border-top: 1px solid var(--line);
-}
-.ap-recent-actions > a,
-.ap-recent-actions > button {
-  display: grid;
-  justify-items: center;
-  gap: 4px;
-  padding: 10px 4px 11px;
-  border: 0;
-  background: transparent;
-  color: var(--ink);
-  font: inherit;
-  font-size: 12.5px;
-  font-weight: 700;
-  text-decoration: none;
-  cursor: pointer;
-}
-.ap-recent-actions > * + * {
-  border-left: 1px solid var(--line);
-}
-.ap-recent-actions > .is-main {
-  color: var(--forest);
-}
-.ap-recent-actions > a:hover,
-.ap-recent-actions > button:hover:not(:disabled) {
-  background: var(--cream);
-}
-.ap-recent-actions > button:disabled {
-  color: #a9a59b;
-  cursor: not-allowed;
-}
-.ap-recent-photo img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.ap-recent-body {
-  display: grid;
-  justify-items: start;
-  gap: 4px;
-  min-width: 0;
-}
-.ap-page .ap-recent-body h3 {
-  margin: 0;
-  max-width: 100%;
-  font-size: 16px;
-  font-weight: 800;
-  line-height: 1.3;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ap-recent-body h3 a {
-  color: inherit;
-  text-decoration: none;
-}
-.ap-recent-location {
-  max-width: 100%;
-  margin: 0;
-  font-size: 13px;
-  color: var(--muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ap-state {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  margin-top: 2px;
-  padding: 3px 10px;
-  border-radius: 8px;
-  font-size: 12.5px;
-  font-weight: 700;
-}
-.ap-state.is-live {
-  background: #e4f0de;
-  color: #23502f;
-}
-.ap-state.is-draft {
-  background: #fbefd5;
-  color: #6d4a0c;
-}
 @media (max-width: 1100px) {
   .ap-tools,
-  .ap-recent-list {
+  .ap-prop-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -15728,7 +15597,7 @@ main:has(.ap-sidebar) {
     display: none;
   }
   .ap-tools,
-  .ap-recent-list {
+  .ap-prop-list {
     grid-template-columns: 1fr;
     gap: 12px;
   }
@@ -17074,7 +16943,7 @@ main:has(.ap-sidebar) {
   display: grid;
   grid-template-columns: auto 1fr;
   align-items: center;
-  gap: 8px 10px;
+  gap: 8px;
 }
 .vs-progress progress {
   grid-column: 1 / -1;
@@ -20804,7 +20673,7 @@ body:has(.pv-root) .pb-root {
 .ah-period {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 10px;
+  gap: 8px;
   align-items: center;
   font-size: 13px;
   color: #5f665f;
@@ -27031,4 +26900,290 @@ dialog.pt-layer::backdrop {
   margin: 6px 0 0;
   font-size: 12px;
   color: var(--muted);
+}
+
+/* «Mis propiedades» (home and its section): one card per property, by its stage. */
+.ap-section-sub {
+  margin: 4px 0 0;
+  font-size: 14px;
+  color: var(--muted);
+}
+.ap-prop-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.ap-prop {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: #fff;
+  overflow: hidden;
+}
+.ap-prop.is-demo {
+  border: 2px solid var(--forest);
+}
+.ap-prop-photo {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  height: 168px;
+  overflow: hidden;
+  background: #ece6dc;
+  color: var(--muted);
+  font-size: 13px;
+  text-decoration: none;
+}
+.ap-prop-photo img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: filter 0.4s, opacity 0.4s;
+}
+/* Not imported yet: the listing's photo, dimmed. */
+.ap-prop.is-pending .ap-prop-photo img {
+  filter: grayscale(0.55) brightness(1.04);
+  opacity: 0.7;
+}
+.ap-prop-tag,
+.ap-prop-count {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 99px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.ap-prop-tag {
+  top: 12px;
+  left: 12px;
+}
+.ap-prop-tag.is-demo {
+  background: var(--forest);
+  color: #fff;
+}
+.ap-prop-tag.is-waiting {
+  background: #fbf1dc;
+  color: #7a4f00;
+}
+.ap-prop-tag.is-busy {
+  background: #fff;
+  color: var(--forest);
+}
+.ap-prop-tag.is-done {
+  background: #dfe9dc;
+  color: #2d4a33;
+}
+.ap-prop-count {
+  right: 12px;
+  bottom: 12px;
+  background: rgba(36, 40, 36, 0.8);
+  color: #fff;
+  font-weight: 600;
+}
+.ap-prop-body {
+  display: grid;
+  gap: 3px;
+  padding: 16px 18px 6px;
+  min-width: 0;
+}
+.ap-page .ap-prop-body h3 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ap-prop-body h3 a {
+  color: inherit;
+  text-decoration: none;
+}
+.ap-prop-meta {
+  margin: 0;
+  font-size: 14px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ap-prop-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 12.5px;
+  color: var(--muted);
+  text-decoration: none;
+}
+.ap-prop-source strong {
+  color: var(--ink);
+}
+.ap-prop > .ap-card-message {
+  margin: 0;
+  padding: 0 18px 6px;
+  font-size: 12.5px;
+}
+.ap-prop-foot {
+  display: grid;
+  gap: 8px;
+  margin-top: auto;
+  padding: 12px 18px 18px;
+}
+.ap-prop-main {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  width: 100%;
+}
+.ap-prop-note {
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+.ap-prop-foot .ap-import-progress {
+  margin: 0;
+}
+.ap-prop-progress-head {
+  display: flex;
+  justify-content: space-between;
+  font-weight: 700;
+}
+.ap-prop-foot .ap-error-text {
+  margin: 0;
+  font-size: 12.5px;
+}
+.ap-prop-rows {
+  display: grid;
+  gap: 8px;
+  margin-top: auto;
+  padding: 8px 18px 18px;
+}
+.ap-prop-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--forest);
+}
+.ap-prop-row.is-todo {
+  border-style: dashed;
+  border-color: #c9bfae;
+  background: #fbf9f5;
+}
+.ap-prop-row-text {
+  display: grid;
+  flex: 1 1 80px;
+  min-width: 0;
+  color: var(--ink);
+}
+.ap-prop-row-text strong {
+  font-size: 14px;
+}
+.ap-prop-row-text small {
+  font-size: 12px;
+  color: var(--muted);
+}
+.ap-prop-row-text small.is-ok {
+  color: #3f5c43;
+  font-weight: 600;
+}
+.ap-page .ap-prop-row .button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 36px;
+  padding: 6px 12px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.ap-stages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 4px 0 6px;
+}
+.ap-stages button {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.ap-stages button[aria-pressed="true"] {
+  border-color: var(--forest);
+  background: var(--forest);
+  color: #fff;
+}
+.ap-step-saved {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ap-later {
+  justify-self: start;
+  margin-top: 6px;
+  min-height: 40px;
+}
+.np-preload {
+  margin-top: 20px;
+}
+.np-preload-form {
+  display: grid;
+  gap: 12px;
+  max-width: 640px;
+}
+.np-preload-form label {
+  display: grid;
+  gap: 4px;
+  font-weight: 700;
+  font-size: 14px;
+}
+.np-preload-form input {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font: inherit;
+  font-weight: 400;
+}
+.np-preload-form small {
+  font-weight: 500;
+}
+.np-preload-form .button {
+  justify-self: start;
+}
+@media (max-width: 1100px) {
+  .ap-page .ap-prop-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 860px) {
+  .ap-page .ap-prop-list {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .ap-page .ap-prop-row .button {
+    min-height: 44px;
+  }
 }

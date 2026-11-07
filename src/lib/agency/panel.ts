@@ -46,6 +46,8 @@ export type PropertyQuery = {
   kind?: "ficha" | "fotos";
   /** Only these properties (demo_properties.id): a user limited to some of them. */
   scope?: string[] | null;
+  /** «Listas para importar» (saved from the listing, photos not brought in) or the rest. */
+  stage?: "importar" | "importadas" | null;
 };
 type DemoListRow = {
   id: string;
@@ -73,6 +75,13 @@ export async function agencyProperties(agencyId: string, query: PropertyQuery = 
     .eq("agency_id", agencyId)
     .eq("kind", query.kind ?? "ficha");
   if (query.scope) list = list.in("property_id", query.scope);
+  if (query.stage === "importar" || query.stage === "importadas") {
+    const waiting = await pendingDemoIds(agencyId);
+    if (query.stage === "importar") {
+      if (!waiting.length) return { items: [], total: 0 };
+      list = list.in("id", waiting);
+    } else if (waiting.length) list = list.not("id", "in", `(${waiting.join(",")})`);
+  }
   if (query.status === "draft" || query.status === "published") list = list.eq("status", query.status);
   const op = query.operation?.trim().slice(0, 40);
   if (op) list = list.eq("settings->>operation", op);
@@ -85,6 +94,18 @@ export async function agencyProperties(agencyId: string, query: PropertyQuery = 
   return { items: await withPhotos(demos), total: res.count ?? demos.length };
 }
 
+/** Imports that saved a property from its listing and brought none of its photos yet. */
+const PENDING_IMPORTS = (db: ReturnType<typeof adminClient>) =>
+  db.from("property_imports").select("id,demo_id,pending_images,created_at").eq("status", "partial").eq("photos_done", 0);
+
+/** The agency's properties saved from their listing whose photos are still to import (bounded). */
+async function pendingDemoIds(agencyId: string) {
+  const res = await PENDING_IMPORTS(adminClient()).eq("agency_id", agencyId).not("demo_id", "is", null).limit(500);
+  if (res.error) throw new Error("PANEL_PENDING_FAILED");
+  const rows = (res.data ?? []) as { demo_id: string | null; pending_images: string[] | null }[];
+  return [...new Set(rows.filter((r) => r.demo_id && r.pending_images?.length).map((r) => r.demo_id as string))];
+}
+
 /**
  * Photos, spaces and the real state of their versions for a page of
  * properties (bounded by the page size): ready, still running and failed or
@@ -94,14 +115,20 @@ async function withPhotos(demos: DemoListRow[]): Promise<PanelProperty[]> {
   if (!demos.length) return [];
   const db = adminClient();
   const propertyIds = demos.map((d) => d.property_id);
-  const [photoRes, spaceRes] = await Promise.all([
+  const demoIds = demos.map((d) => d.id);
+  const [photoRes, spaceRes, pendingRes, videoRes] = await Promise.all([
     db
       .from("demo_photos")
       .select("id,property_id,project_id,position,visible,discarded")
       .in("property_id", propertyIds)
       .limit(2000),
     db.from("property_spaces").select("property_id").in("property_id", propertyIds).limit(2000),
+    PENDING_IMPORTS(db).in("demo_id", demoIds).order("created_at", { ascending: false }).limit(500),
+    db.from("property_videos").select("demo_id").in("demo_id", demoIds).in("status", ["queued", "processing", "completed"]).limit(2000),
   ]);
+  // Unknown (a failed lookup) is shown as nothing to import and no count of videos, never as zero.
+  const pendingRows = pendingRes.error ? [] : ((pendingRes.data ?? []) as { id: string; demo_id: string | null; pending_images: string[] | null }[]);
+  const videoRows = videoRes.error ? null : ((videoRes.data ?? []) as { demo_id: string }[]);
   const photos = check(photoRes, "PANEL_PHOTOS_FAILED") as {
     id: string;
     property_id: string;
@@ -146,6 +173,8 @@ async function withPhotos(demos: DemoListRow[]): Promise<PanelProperty[]> {
       }
     }
     const settings = readSettings(d.settings);
+    // The newest import of this property still waiting for every one of its photos.
+    const waiting = own.length ? null : pendingRows.find((r) => r.demo_id === d.id && r.pending_images?.length);
     return {
       id: d.id,
       title: d.demo_properties?.title ?? "Propiedad",
@@ -163,6 +192,8 @@ async function withPhotos(demos: DemoListRow[]): Promise<PanelProperty[]> {
       coverPhotoId: d.cover_photo_id ?? own.find((p) => p.visible)?.id ?? null,
       listingUrl: d.demo_properties?.listing_url ?? null,
       createdAt: d.created_at,
+      pending: waiting ? { importId: waiting.id, images: waiting.pending_images ?? [] } : null,
+      videos: videoRows ? videoRows.filter((v) => v.demo_id === d.id).length : null,
     };
   });
 }

@@ -6,8 +6,8 @@
 // panel's own: one infrastructure, tested by the team before the agencies use it.
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
-import { api } from "./admin-demos";
+import { useEffect, useRef, useState } from "react";
+import { ApiError, api } from "./admin-demos";
 import { AdminEditBanner, useAgencyEdit } from "./admin-edit-context";
 import { StartPicker } from "./start-picker";
 import { safeReturn } from "@/lib/agency/shared";
@@ -61,8 +61,83 @@ export function AgencyStartDemo({ agency }: { agency: { id: string; name: string
           onClose={() => setOpen(false)}
         />
       )}
+      {ready && <PreloadListings agencyId={agency.id} />}
       <p className="dm-help">Importar o subir fotos no genera imágenes ni consume créditos.</p>
     </div>
+  );
+}
+
+const PRELOADS = 2;
+type Preload = { url: string; state: "idle" | "saving" | "done" | "error"; text?: string };
+
+/**
+ * Two more of the agency's listings left in its panel next to its demo: saved
+ * with the listing's data and its photos still to import («Lista para
+ * importar»), so the agency imports each one with one click. Each link is
+ * saved once (its request key); the same listing twice is not a second one.
+ */
+export function PreloadListings({ agencyId }: { agencyId: string }) {
+  const [rows, setRows] = useState<Preload[]>(() => Array.from({ length: PRELOADS }, () => ({ url: "", state: "idle" })));
+  const keys = useRef<string[]>(Array.from({ length: PRELOADS }, () => crypto.randomUUID()));
+  const update = (i: number, patch: Partial<Preload>) => setRows((all) => all.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const busy = rows.some((r) => r.state === "saving");
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    for (const [i, row] of rows.entries()) {
+      if (!row.url.trim() || row.state === "done") continue;
+      update(i, { state: "saving", text: "Leyendo la publicación…" });
+      try {
+        const made = await api<{ title?: string; photosTotal: number }>(`/api/admin/inmobiliarias/${agencyId}/importar`, {
+          method: "POST",
+          body: JSON.stringify({ url: row.url.trim(), key: keys.current[i] }),
+        });
+        update(i, {
+          state: "done",
+          text: `${made.title ?? "Propiedad"}: lista para importar (${made.photosTotal} ${made.photosTotal === 1 ? "foto" : "fotos"}).`,
+        });
+      } catch (err) {
+        const body = err instanceof ApiError ? err.body : null;
+        // Another attempt gets a new key: a failed one is not replayed.
+        keys.current[i] = crypto.randomUUID();
+        update(i, {
+          state: body?.duplicateOf ? "done" : "error",
+          text: body?.duplicateOf ? "Ya estaba en su panel." : err instanceof Error ? err.message : "No pudimos leer la publicación.",
+        });
+      }
+    }
+  }
+  return (
+    <section className="account-panel np-preload" aria-labelledby="np-preload-title">
+      <h2 id="np-preload-title">Dejar 2 propiedades precargadas</h2>
+      <p className="dm-help">
+        Pegá dos publicaciones más de la inmobiliaria. Quedan en su panel, en «Mis propiedades», con sus datos cargados y las fotos sin importar: las importa con
+        un clic. No se ambienta nada ni se usan créditos.
+      </p>
+      <form onSubmit={save} className="np-preload-form">
+        {rows.map((row, i) => (
+          <label key={i}>
+            Publicación {i + 1}
+            <input
+              type="text"
+              inputMode="url"
+              maxLength={500}
+              placeholder="https://www.zonaprop.com.ar/propiedades/…"
+              value={row.url}
+              disabled={row.state === "saving" || row.state === "done"}
+              onChange={(e) => update(i, { url: e.target.value, state: "idle", text: undefined })}
+            />
+            {row.text && (
+              <small className={row.state === "error" ? "ap-error-text" : ""} role={row.state === "error" ? "alert" : "status"}>
+                {row.text}
+              </small>
+            )}
+          </label>
+        ))}
+        <button className="button button-outline" disabled={busy || !rows.some((r) => r.url.trim() && r.state !== "done")}>
+          {busy ? "Guardando…" : "Dejarlas precargadas"}
+        </button>
+      </form>
+    </section>
   );
 }
 
