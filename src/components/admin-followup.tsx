@@ -6,8 +6,8 @@ import { useEffect, useState } from "react";
 import { ChevronRight, ClipboardCopy, KeyRound, Link2, MessageCircle, Pencil, Plus, Send } from "lucide-react";
 import { api } from "@/components/admin-demos";
 import { CTA_KEYS, CTA_LABEL, FOLLOWUP_STAGES, OUT, VARIABLES, pct, type Channel, type Cta, type VersionStatus } from "@/lib/followup/stages";
-import { GROUPS, SITUATIONS, actionLabel, actionsOf, type Action, type Situation } from "@/lib/followup/plan";
-import type { Prepared, QueueItem, QueueSummary, StageView } from "@/lib/followup/server";
+import { GROUPS, REPLY_CLASSES, SITUATIONS, actionLabel, actionWhen, actionsOf, type Action, type ReplyClass, type Situation } from "@/lib/followup/plan";
+import type { InboxItem, Prepared, QueueItem, QueueSummary, StageView } from "@/lib/followup/server";
 
 type Version = StageView["versions"][number];
 type Exec = QueueItem["execution"];
@@ -31,21 +31,21 @@ async function copy(text: string) {
   }
 }
 
-type View = "cola" | Mode;
-const VIEWS: { key: View | "respuestas"; label: string; soon?: string }[] = [
+type View = "cola" | "respuestas" | Mode;
+const VIEWS: { key: View; label: string; soon?: string }[] = [
   { key: "cola", label: "Cola de ejecución" },
-  { key: "respuestas", label: "Respuestas", soon: "Fase 2" },
+  { key: "respuestas", label: "Respuestas" },
   { key: "embudo", label: "Embudo" },
   { key: "reglas", label: "Mensajes y reglas" },
   { key: "resultados", label: "Resultados" },
 ];
 
 /** /admin/follow-up: pestañas como en la especificación; la cola de ejecución es la pantalla principal. */
-export function FollowupBoard({ stages, queue, blocked, summary }: { stages: StageView[]; queue: QueueItem[]; blocked: QueueItem[]; summary: QueueSummary }) {
+export function FollowupBoard({ stages, queue, blocked, summary, inbox }: { stages: StageView[]; queue: QueueItem[]; blocked: QueueItem[]; summary: QueueSummary; inbox: InboxItem[] }) {
   const [view, setView] = useState<View>(() => {
     if (typeof window === "undefined") return "cola";
     const v = new URLSearchParams(window.location.search).get("vista");
-    return v === "embudo" || v === "reglas" || v === "resultados" ? v : "cola";
+    return v === "respuestas" || v === "embudo" || v === "reglas" || v === "resultados" ? v : "cola";
   });
   const [open, setOpen] = useState<string | null>(null);
   function go(v: View) {
@@ -67,19 +67,22 @@ export function FollowupBoard({ stages, queue, blocked, summary }: { stages: Sta
           ) : (
             <button key={t.key} type="button" className={`fu-tab${view === t.key ? " is-on" : ""}`} aria-current={view === t.key ? "page" : undefined} data-testid={`followup-tab-${t.key}`} onClick={() => go(t.key as View)}>
               {t.label}
+              {t.key === "respuestas" && inbox.length > 0 ? ` · ${inbox.length}` : ""}
             </button>
           ),
         )}
       </nav>
       {view === "cola" ? (
-        <ExecCenter queue={queue} blocked={blocked} summary={summary} />
+        <ExecCenter queue={queue} blocked={blocked} summary={summary} onReplies={() => go("respuestas")} />
+      ) : view === "respuestas" ? (
+        <Inbox inbox={inbox} agencies={[...queue, ...blocked]} />
       ) : (
         <>
           <p className="fu-note fu-viewnote">
             {view === "embudo"
               ? "Cada etapa con las inmobiliarias que esperan en ella. Desde acá se corrige el estado, la situación y el score."
               : view === "reglas"
-                ? "El mensaje de cada acción, sus versiones A/B, sus observaciones para la extensión y sus call to actions."
+                ? "El mensaje de cada paso, sus versiones A/B, sus observaciones para la extensión y sus call to actions. La versión es la variante del mensaje; el paso (seguimiento 1, 2…) es el momento de la secuencia."
                 : "Ejecuciones, conversiones y tasa de cada versión. Las métricas por ventana de 7 y 14 días y por cohorte llegan en la Fase 4."}
           </p>
           <div className="fu-stages">
@@ -96,10 +99,10 @@ export function FollowupBoard({ stages, queue, blocked, summary }: { stages: Sta
 type Filter = "listas" | "respuestas" | "demos" | "bloqueadas";
 const QPAGE = 25;
 const PRIORITY_LABEL = { alta: "Alta", media: "Media", baja: "Baja" } as const;
-const isReply = (q: QueueItem) => q.group === "respuestas" || ["neutro", "mas_adelante", "derivo", "interesado"].includes(q.situation);
+const isReply = (q: QueueItem) => q.group === "respuestas";
 
 /** Centro de ejecución: los 4 números de la especificación (cada uno filtra), la cola y, al ejecutar, el detalle en 3 sectores. */
-function ExecCenter({ queue, blocked, summary }: { queue: QueueItem[]; blocked: QueueItem[]; summary: QueueSummary }) {
+function ExecCenter({ queue, blocked, summary, onReplies }: { queue: QueueItem[]; blocked: QueueItem[]; summary: QueueSummary; onReplies: () => void }) {
   const router = useRouter();
   const [filter, setFilter] = useState<Filter>("listas");
   const [group, setGroup] = useState<string>("todas");
@@ -165,9 +168,9 @@ function ExecCenter({ queue, blocked, summary }: { queue: QueueItem[]; blocked: 
 
   const kpis: { key: Filter; label: string; value: number; hint: string }[] = [
     { key: "listas", label: "Acciones para hoy", value: summary.ready, hint: summary.claimed ? `listas ahora · ${summary.claimed} tomadas por otra sesión` : "listas para ejecutar ahora" },
-    { key: "respuestas", label: "Respuestas nuevas", value: summary.replies, hint: "respondieron y esperan acción" },
+    { key: "respuestas", label: "Respuestas nuevas", value: summary.replies, hint: "en la bandeja y por contestar" },
     { key: "demos", label: "Demos pendientes", value: summary.demos, hint: "por crear o por enviar" },
-    { key: "bloqueadas", label: "Bloqueadas", value: summary.blocked, hint: "cada una con su motivo" },
+    { key: "bloqueadas", label: "Bloqueadas", value: summary.blocked, hint: summary.scheduled ? `con motivo · ${summary.scheduled} programadas` : "cada una con su motivo" },
   ];
   const reasons = Object.entries(
     blocked.reduce<Record<string, number>>((acc, q) => {
@@ -188,6 +191,7 @@ function ExecCenter({ queue, blocked, summary }: { queue: QueueItem[]; blocked: 
             data-testid={`followup-kpi-${k.key}`}
             aria-pressed={filter === k.key}
             onClick={() => {
+              if (k.key === "respuestas" && filter === "respuestas") return onReplies();
               setFilter(k.key);
               setGroup("todas");
               setShown(QPAGE);
@@ -199,6 +203,15 @@ function ExecCenter({ queue, blocked, summary }: { queue: QueueItem[]; blocked: 
           </button>
         ))}
       </div>
+      {filter === "respuestas" && (
+        <p className="fu-note">
+          Las que confirmaron el número o preguntaron precios, listas para contestar. Las respuestas sin clasificar están en la{" "}
+          <button type="button" className="fu-link" onClick={onReplies}>
+            bandeja
+          </button>
+          .
+        </p>
+      )}
       <p className="fu-note">
         Conversaciones nuevas en 24 h: <b>{summary.newToday}</b> de {summary.cap} · confirmadas hoy: <b>{summary.doneToday}</b> ·{" "}
         <button type="button" className="fu-link" onClick={() => router.refresh()}>
@@ -736,6 +749,219 @@ function ExecDetail({
   );
 }
 
+/**
+ * Bandeja de respuestas (Fase 2): las que la extensión registró sin
+ * clasificar o mandó a Facu. Clasificarla aplica la situación (con el texto
+ * como evidencia) y la cola sabe qué hacer después.
+ */
+function Inbox({ inbox, agencies }: { inbox: InboxItem[]; agencies: QueueItem[] }) {
+  const router = useRouter();
+  const [selected, setSelected] = useState<string | null>(inbox[0]?.id ?? null);
+  const [adding, setAdding] = useState(false);
+  const r = inbox.find((x) => x.id === selected) ?? null;
+  const pendientes = inbox.filter((x) => x.status === "pendiente").length;
+  return (
+    <section className="fu-inbox" data-testid="followup-inbox">
+      <div className="fu-kpis">
+        <div className="fu-kpi">
+          <span>Sin clasificar</span>
+          <b>{pendientes}</b>
+          <small>la extensión no estaba segura o no las clasificó</small>
+        </div>
+        <div className="fu-kpi">
+          <span>Para Facu</span>
+          <b>{inbox.length - pendientes}</b>
+          <small>audios, preguntas no cubiertas, confianza baja</small>
+        </div>
+        <div className="fu-kpi">
+          <span>Mínimo para aplicar sola</span>
+          <b>70%</b>
+          <small>de confianza en la clasificación</small>
+        </div>
+        <button type="button" className="fu-kpi" data-testid="followup-reply-add" onClick={() => setAdding(!adding)} aria-expanded={adding}>
+          <span>¿Llegó una respuesta?</span>
+          <b>+</b>
+          <small>Registrala a mano</small>
+        </button>
+      </div>
+      {adding && <ReplyForm agencies={agencies} onDone={() => (setAdding(false), router.refresh())} />}
+      {inbox.length === 0 ? (
+        <p className="fu-empty">No hay respuestas sin resolver. Las que la extensión clasifica con confianza se aplican solas.</p>
+      ) : (
+        <div className="fu-inboxgrid">
+          <div className="fu-convs" aria-label="Respuestas">
+            {inbox.map((x) => (
+              <button key={x.id} type="button" className={`fu-conv${x.id === selected ? " is-on" : ""}`} data-testid="followup-reply" data-reply={x.id} data-status={x.status} onClick={() => setSelected(x.id)}>
+                <span className="fu-convhead">
+                  <b>{x.name}</b>
+                  <span>{when(x.received_at)}</span>
+                </span>
+                <span className="fu-convtext">«{x.body}»</span>
+                <span className="fu-convtags">
+                  <span className={`fu-pill ${x.status === "facu" ? "is-media" : "is-sit"}`}>{x.status === "facu" ? "Para Facu" : x.classification ? REPLY_CLASSES[x.classification] : "Sin clasificar"}</span>
+                  {x.confidence !== null && <small>confianza {Math.round(x.confidence * 100)}%</small>}
+                </span>
+              </button>
+            ))}
+          </div>
+          {r && <ReplyDetail key={r.id} reply={r} onDone={() => router.refresh()} />}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ReplyDetail({ reply: r, onDone }: { reply: InboxItem; onDone: () => void }) {
+  const [c, setC] = useState<ReplyClass | "">(r.classification ?? "");
+  const [until, setUntil] = useState("");
+  const [contactName, setContactName] = useState("");
+  const [contactWa, setContactWa] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  async function send(body: Record<string, unknown>) {
+    setBusy(true);
+    setError("");
+    try {
+      const res = await api<{ warning: string | null }>("/api/admin/followup/reply", { method: "POST", body: JSON.stringify({ id: r.id, ...body }) });
+      if (res.warning) setNotice(res.warning);
+      onDone();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No pudimos guardarlo.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="fu-card fu-replydetail" data-testid="followup-reply-detail">
+      <div className="fu-convhead">
+        <span>
+          <Link href={`/admin/inmobiliarias/${r.agency_id}`}>
+            <b>{r.name}</b>
+          </Link>
+          <span className="fu-mono"> {r.phone ?? ""}</span>
+        </span>
+        <span>{r.stage ? `Etapa ${stageTitle(r.stage)}` : ""}</span>
+      </div>
+      <div className="fu-bubble">
+        {r.body}
+        <small>{when(r.received_at)}</small>
+      </div>
+      {r.note && <p className="fu-note">Nota: {r.note}</p>}
+      <fieldset className="fu-classes">
+        <legend>
+          Clasificación
+          {r.classification && r.confidence !== null ? ` · la extensión sugirió «${REPLY_CLASSES[r.classification]}» con ${Math.round(r.confidence * 100)}%` : ""}
+        </legend>
+        {(Object.keys(REPLY_CLASSES) as ReplyClass[]).map((k) => (
+          <label key={k} className={`fu-class${c === k ? " is-on" : ""}`}>
+            <input type="radio" name={`clase-${r.id}`} checked={c === k} onChange={() => setC(k)} /> {REPLY_CLASSES[k]}
+          </label>
+        ))}
+      </fieldset>
+      {c === "mas_adelante" && (
+        <label className="fu-form">
+          <span className="fu-lbl">¿Para cuándo? (opcional)</span>
+          <input type="date" value={until} onChange={(e) => setUntil(e.target.value)} />
+        </label>
+      )}
+      {c === "derivo" && (
+        <div className="fu-form">
+          <span className="fu-lbl">Contacto nuevo (queda en la misma inmobiliaria)</span>
+          <input value={contactName} placeholder="Nombre" maxLength={120} onChange={(e) => setContactName(e.target.value)} />
+          <input value={contactWa} placeholder="WhatsApp" inputMode="tel" maxLength={40} onChange={(e) => setContactWa(e.target.value)} />
+        </div>
+      )}
+      {notice && <p className="fu-warn">{notice}</p>}
+      {error && (
+        <p className="fu-error" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="fu-actions">
+        <button
+          type="button"
+          className="button button-primary button-small"
+          data-testid="followup-reply-save"
+          disabled={busy || !c}
+          onClick={() => send({ clasificacion: c, hasta: until ? new Date(`${until}T09:00:00-03:00`).toISOString() : null, contactoNombre: contactName, contactoWhatsapp: contactWa })}
+        >
+          Guardar y pasar a la cola
+        </button>
+        {r.status !== "facu" && (
+          <button type="button" className="button button-small button-outline" data-testid="followup-reply-facu" disabled={busy} onClick={() => send({ facu: true })}>
+            Asignar a Facu
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ReplyForm({ agencies, onDone }: { agencies: QueueItem[]; onDone: () => void }) {
+  const [agency, setAgency] = useState("");
+  const [text, setText] = useState("");
+  const [c, setC] = useState<ReplyClass | "">("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const options = [...agencies].sort((a, b) => a.name.localeCompare(b.name));
+  async function save() {
+    setBusy(true);
+    setError("");
+    try {
+      await api("/api/admin/followup/reply", { method: "POST", body: JSON.stringify({ inmobiliaria: agency, texto: text, clasificacion: c || null, confianza: c ? 1 : null }) });
+      onDone();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No pudimos registrarla.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="fu-add" data-testid="followup-reply-form">
+      <p className="fu-lbl">Registrar una respuesta</p>
+      <div className="fu-add-grid">
+        <label>
+          <span>Inmobiliaria</span>
+          <select value={agency} onChange={(e) => setAgency(e.target.value)}>
+            <option value="">Elegí…</option>
+            {options.map((q) => (
+              <option key={q.agencyId} value={q.agencyId}>
+                {q.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>Clasificación (vacía: queda en la bandeja)</span>
+          <select value={c} onChange={(e) => setC(e.target.value as ReplyClass | "")}>
+            <option value="">Sin clasificar</option>
+            {(Object.keys(REPLY_CLASSES) as ReplyClass[]).map((k) => (
+              <option key={k} value={k}>
+                {REPLY_CLASSES[k]}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <label className="fu-textarea">
+        <span>Lo que respondió (tal cual)</span>
+        <textarea value={text} maxLength={4000} onChange={(e) => setText(e.target.value)} />
+      </label>
+      {error && (
+        <p className="fu-error" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="fu-actions">
+        <button type="button" className="button button-primary button-small" disabled={busy || !agency || !text.trim()} onClick={save}>
+          Registrar
+        </button>
+      </div>
+    </div>
+  );
+}
+
 const stageTitle = (key: string) => FOLLOWUP_STAGES.find((s) => s.key === key)?.title ?? key;
 
 type Mode = "embudo" | "reglas" | "resultados";
@@ -779,7 +1005,9 @@ function StageBand({ stage, index, open, onToggle, mode }: { stage: StageView; i
             const view = { ...stage, versions: stage.versions.filter((v) => (v.action ?? "principal") === a) };
             return (
               <div key={a} className="fu-action" data-testid="followup-action" data-action={a}>
-                {actionsOf(stage.key).length > 1 && <h3 className="fu-h3">{actionLabel(stage.key, a)}{a === "presentacion" ? " · cuando confirma el número" : a === "precios" ? " · cuando pregunta precios" : " · sin respuesta"}</h3>}
+                <h3 className="fu-h3">
+                  {actionLabel(stage.key, a)} <small>· {actionWhen(stage.key, a)}</small>
+                </h3>
                 {mode === "reglas" ? <Editor stage={view} action={a} /> : <VersionTable stage={view} />}
               </div>
             );

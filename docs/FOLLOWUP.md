@@ -155,3 +155,36 @@ Migración `202612030001_followup_priority.sql`.
 - **Reprogramada**: sale de la cola hasta la fecha (`snooze_until`) y figura en Bloqueadas con «Volver a la cola».
 - API: `POST /api/admin/followup/snooze` `{ inmobiliaria, hasta?, motivo? }` (o `{ inmobiliaria, volver: true }`) y `POST /api/admin/followup/priority` `{ inmobiliaria, prioridad }`. `claim` devuelve además `checklist`, `history` y `context`.
 - Selectores: `followup-tabs`, `followup-tab-<vista>`, `followup-kpi-listas|respuestas|demos|bloqueadas`, `followup-take-next`, `followup-detail`, `followup-back`, `followup-history`, `followup-checklist` (cada `li` con `data-check` y `data-ok`), `followup-snooze`, `followup-snooze-form`, `followup-snooze-save`, `followup-unsnooze`, `followup-priority`, `followup-stop`, `followup-block-reasons`. Cada `followup-queue-item` suma `data-priority` y `data-blocked`.
+
+## Fase 2 — Bandeja de respuestas y seguimientos programados
+
+Migración `202612040001_followup_replies.sql`. Construida a pedido antes de la aprobación de la tanda de la Fase 1.
+
+### Secuencias (fijas por código, `nextAction` en `plan.ts`)
+
+La acción es el momento de la secuencia y la versión, la variante del mensaje: cada paso tiene sus propias versiones A/B.
+
+| Situación | Pasos | Espera desde nuestro último mensaje |
+| --- | --- | --- |
+| No contactado | Saludo | — |
+| Sin respuesta, Neutro o Pide más adelante («Contactado, no responde») | Saludo sin respuesta → Seguimiento 2 → fin | 48 h, después 72 h |
+| Enviada, no abrió | Seguimiento de demo 1 → Seguimiento de demo 2 → fin | 24 h, después 72 h |
+| Confirmó número o Derivó | Presentación → Presentación sin respuesta → fin | ya, después 48 h |
+| Pregunta precios | Precios → esperar | ya |
+| Otras etapas | Su next best action → fin | 48 h |
+| Interesado | nada: preparar la demo | — |
+| Rechazo, No contactar, Sin WhatsApp, Número incorrecto | nada | — |
+
+Un paso que todavía no venció queda **Programado** («Programada para el …») y no entra a la cola; el vencimiento se calcula al leer la cola, sin cron. Si avanza de etapa (visita, cuenta) o responde, la secuencia cambia sola. Después del último paso, la secuencia termina: no hay reintentos infinitos. Los textos de «Saludo sin respuesta», «Presentación sin respuesta» y el segundo seguimiento de demo los define Facu: sin texto, la acción queda bloqueada y no se manda nada.
+
+### Bandeja de respuestas
+
+`followup_replies`: cada respuesta de WhatsApp con su texto original, la hora, la clasificación y la confianza.
+
+- La extensión la registra con `POST /api/admin/followup/reply` `{ inmobiliaria, texto, hora?, clasificacion?, confianza?, hasta?, contactoNombre?, contactoWhatsapp? }`. Clasificaciones: confirmo_numero, interesado, neutro, pregunta_precios, mas_adelante, derivo, rechazo, proveedor_ia, no_contactar, audio, pregunta_no_cubierta.
+- Con clasificación y confianza ≥ 70 % se aplica sola: la situación (registrada en Adquisición con el texto como evidencia) y la próxima acción. Un audio, una pregunta no cubierta o confianza baja va **a Facu** y no se manda nada. Sin clasificación queda en la bandeja.
+- Mientras tenga una respuesta sin resolver, la inmobiliaria queda bloqueada en la cola y se suelta si alguien la tenía tomada.
+- «Pide más adelante» con fecha la reprograma. «Derivó» con un contacto nuevo lo suma a la misma inmobiliaria (cuenta de prospección), como contacto principal, sin duplicarla.
+- Resolver una de la bandeja: `POST …/reply` `{ id, clasificacion, … }` o `{ id, facu: true }`. Listarla: `GET /api/admin/followup/replies`.
+- Pestaña **Respuestas**: la lista y el detalle (texto, clasificación sugerida y su confianza, fecha o contacto nuevo según el caso, «Guardar y pasar a la cola», «Asignar a Facu») y «Registrar una respuesta» a mano.
+- Selectores: `followup-inbox`, `followup-reply` (`data-reply`, `data-status`), `followup-reply-detail`, `followup-reply-save`, `followup-reply-facu`, `followup-reply-add`, `followup-reply-form`.

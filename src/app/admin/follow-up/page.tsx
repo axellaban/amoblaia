@@ -27,7 +27,7 @@ export default async function FollowupPage() {
         </div>
       </header>
       {data && typeof data === "object" ? (
-        <FollowupBoard stages={data.stages} queue={data.queue} blocked={data.blocked} summary={data.summary} />
+        <FollowupBoard stages={data.stages} queue={data.queue} blocked={data.blocked} summary={data.summary} inbox={data.inbox} />
       ) : (
         <div className="account-panel" role="alert">
           <h2>No pudimos cargar Follow-up</h2>

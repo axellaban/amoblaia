@@ -24,18 +24,86 @@ export const isSituation = (v: unknown): v is Situation => typeof v === "string"
 
 /** Situaciones que sacan a la inmobiliaria de la cola: no se le escribe más. */
 export const CLOSED_SITUATIONS: Situation[] = ["rechazo", "proveedor_ia", "no_contactar", "sin_whatsapp", "numero_incorrecto"];
-/** Situaciones que en la Fase 1 se resuelven a mano (la bandeja llega en la Fase 2). */
-export const MANUAL_SITUATIONS: Situation[] = ["neutro", "mas_adelante", "derivo"];
+/** Clasificaciones de una respuesta: las situaciones, más las que van a Facu sin mandar nada. */
+export const REPLY_CLASSES = {
+  confirmo_numero: "Confirmó número",
+  interesado: "Interesado",
+  neutro: "Neutro",
+  pregunta_precios: "Pregunta precios",
+  mas_adelante: "Pide más adelante",
+  derivo: "Derivó a otra persona",
+  rechazo: "Rechazo",
+  proveedor_ia: "No interesado (con proveedor)",
+  no_contactar: "No contactar",
+  audio: "Audio",
+  pregunta_no_cubierta: "Pregunta no cubierta",
+} as const;
+export type ReplyClass = keyof typeof REPLY_CLASSES;
+export const isReplyClass = (v: unknown): v is ReplyClass => typeof v === "string" && v in REPLY_CLASSES;
+/** Van a Facu sin mandar nada: un audio, una pregunta que el script no cubre, o una clasificación con poca confianza. */
+export const FACU_CLASSES: ReplyClass[] = ["audio", "pregunta_no_cubierta"];
+export const MIN_CONFIDENCE = 0.7;
+export function replyRoute(c: ReplyClass | null, confidence: number | null): "aplicar" | "facu" | "revisar" {
+  if (!c) return "revisar";
+  if (FACU_CLASSES.includes(c)) return "facu";
+  if (confidence !== null && confidence < MIN_CONFIDENCE) return "facu";
+  return "aplicar";
+}
 
 /** Acciones con su propio mensaje dentro de una etapa. «principal» es la next best action de la etapa. */
-export const ACTIONS = { principal: "Next best action", presentacion: "Presentación", precios: "Precios" } as const;
+export const ACTIONS = {
+  principal: "Next best action",
+  seguimiento_2: "Seguimiento 2",
+  presentacion: "Presentación",
+  presentacion_seguimiento: "Presentación sin respuesta",
+  precios: "Precios",
+} as const;
 export type Action = keyof typeof ACTIONS;
 export const isAction = (v: unknown): v is Action => typeof v === "string" && v in ACTIONS;
-/** Las acciones de cada etapa: la presentación y los precios responden en «Contactado, no responde». */
-export const ACTIONS_OF: Partial<Record<StageKey, Action[]>> = { "no-responde": ["principal", "presentacion", "precios"] };
+/**
+ * Las acciones de cada etapa. Cada una tiene sus versiones A/B: la versión es
+ * la variante del mensaje; la acción es el momento de la secuencia (seguimiento
+ * 1 y 2 son dos acciones, no dos versiones).
+ */
+export const ACTIONS_OF: Partial<Record<StageKey, Action[]>> = {
+  "no-responde": ["principal", "seguimiento_2", "presentacion", "presentacion_seguimiento", "precios"],
+  "no-abrio": ["principal", "seguimiento_2"],
+};
 export const actionsOf = (stage: StageKey): Action[] => ACTIONS_OF[stage] ?? ["principal"];
 /** Nombre de la acción para el equipo: en «No contactado», la principal es el saludo. */
-export const actionLabel = (stage: StageKey, action: Action) => (action === "principal" && stage === "no-contactado" ? "Saludo" : ACTIONS[action]);
+export function actionLabel(stage: StageKey, action: Action) {
+  if (action === "principal") return stage === "no-contactado" ? "Saludo" : stage === "no-responde" ? "Saludo sin respuesta" : stage === "no-abrio" ? "Seguimiento de demo 1" : ACTIONS.principal;
+  if (action === "seguimiento_2") return stage === "no-abrio" ? "Seguimiento de demo 2" : "Seguimiento 2";
+  return ACTIONS[action];
+}
+/** Cuándo se dispara cada acción, para el equipo. */
+export function actionWhen(stage: StageKey, action: Action) {
+  const step = SEQUENCE_OF(stage).find((x) => x.action === action);
+  if (action === "presentacion") return "Cuando confirma el número";
+  if (action === "precios") return "Cuando pregunta precios";
+  if (action === "presentacion_seguimiento") return `Presentación sin respuesta · a las ${PRESENTATION_FOLLOW_UP_HOURS} h`;
+  if (stage === "no-contactado") return "Primer contacto";
+  return step ? `Sin respuesta · a las ${step.afterHours} h del último mensaje` : "Sin respuesta";
+}
+
+/**
+ * Las secuencias de seguimiento (Fase 2), fijas por código: cuántas horas
+ * después de nuestro último mensaje sale cada paso. Después del último, la
+ * secuencia termina: no hay reintentos infinitos.
+ */
+export const PRESENTATION_FOLLOW_UP_HOURS = 48;
+const SEQUENCES: Partial<Record<StageKey, { action: Action; afterHours: number }[]>> = {
+  "no-contactado": [{ action: "principal", afterHours: 0 }],
+  "no-responde": [
+    { action: "principal", afterHours: 48 },
+    { action: "seguimiento_2", afterHours: 72 },
+  ],
+  "no-abrio": [
+    { action: "principal", afterHours: 24 },
+    { action: "seguimiento_2", afterHours: 72 },
+  ],
+};
+export const SEQUENCE_OF = (stage: StageKey) => SEQUENCES[stage] ?? [{ action: "principal" as Action, afterHours: 48 }];
 
 /** «Estado» de la hoja de prospección (source_data), sin tildes ni mayúsculas. */
 const sheetKey = (s: string | null | undefined) =>
@@ -75,19 +143,36 @@ export function currentSituation(derived: Situation, manual: { situation: Situat
   return manual && manual.step === step ? { situation: manual.situation, manual: true } : { situation: derived, manual: false };
 }
 
+export type Planned = { action: Action | null; afterHours: number; reason: string | null };
+
 /**
- * La próxima acción, fija por código en la Fase 1: la de la etapa, salvo que la
- * situación pida otra (confirmó el número → presentación; preguntó precios →
- * precios). Null: no hay nada que mandar (cerrada) o se resuelve a mano.
+ * La próxima acción, fija por código: la situación y la etapa dicen qué
+ * secuencia corre, y `done` qué pasos ya salieron. `afterHours` es la espera
+ * desde nuestro último mensaje (0: ya). Null: nada que mandar, con el motivo.
+ *
+ * - Confirmó número (o derivó a otra persona): presentación; sin respuesta, la presentación sin respuesta a las 48 h.
+ * - Pregunta precios: la respuesta de precios.
+ * - Neutro, pide más adelante o sin respuesta: la secuencia de seguimientos de su etapa.
+ * - Interesado: se prepara la demo (pasa a «Interesado, sin demo»).
+ * - Rechazo, no contactar, sin WhatsApp: nada.
  */
-export function nextAction(stage: StageKey, situation: Situation): { action: Action | null; reason: string | null } {
-  if (CLOSED_SITUATIONS.includes(situation)) return { action: null, reason: `${SITUATIONS[situation]}: no se le escribe más.` };
+export function nextAction(stage: StageKey, situation: Situation, done: Partial<Record<Action, boolean>> = {}): Planned {
+  const none = (reason: string): Planned => ({ action: null, afterHours: 0, reason });
+  if (CLOSED_SITUATIONS.includes(situation)) return none(`${SITUATIONS[situation]}: no se le escribe más.`);
   const early = stage === "no-contactado" || stage === "no-responde";
-  if (early && situation === "confirmo_numero") return { action: "presentacion", reason: null };
-  if (early && situation === "pregunta_precios") return { action: "precios", reason: null };
-  if (early && situation === "interesado") return { action: null, reason: "Interesado: preparar la demo (pasa a «Interesado, sin demo»)." };
-  if (MANUAL_SITUATIONS.includes(situation)) return { action: null, reason: `${SITUATIONS[situation]}: seguí el script a mano (la bandeja de respuestas llega en la Fase 2).` };
-  return { action: "principal", reason: null };
+  if (early && (situation === "confirmo_numero" || situation === "derivo")) {
+    if (!done.presentacion) return { action: "presentacion", afterHours: 0, reason: null };
+    if (!done.presentacion_seguimiento) return { action: "presentacion_seguimiento", afterHours: PRESENTATION_FOLLOW_UP_HOURS, reason: null };
+    return none("Secuencia terminada: no respondió a la presentación ni a su seguimiento.");
+  }
+  if (early && situation === "pregunta_precios") {
+    if (!done.precios) return { action: "precios", afterHours: 0, reason: null };
+    return none("Ya se le respondió por precios: esperá su respuesta.");
+  }
+  if (early && situation === "interesado") return none("Interesado: preparar la demo (pasa a «Interesado, sin demo»).");
+  const next = SEQUENCE_OF(stage).find((x) => !done[x.action]);
+  if (!next) return none(`Secuencia terminada: ${SEQUENCE_OF(stage).length === 1 ? "ya se mandó su acción" : `sin respuesta después de ${SEQUENCE_OF(stage).length} mensajes`}.`);
+  return { action: next.action, afterHours: next.afterHours, reason: null };
 }
 
 /** Grupos de la cola, en orden. Dentro de cada uno, por score y antigüedad. */
@@ -101,6 +186,7 @@ export type Group = keyof typeof GROUPS;
 const GROUP_ORDER: Group[] = ["respuestas", "demos", "seguimientos", "nuevos"];
 export function groupOf(stage: StageKey, action: Action | null): Group {
   if (action === "presentacion" || action === "precios") return "respuestas";
+  if (action === "presentacion_seguimiento") return "seguimientos";
   if (stage === "sin-demo" || stage === "sin-enviar") return "demos";
   if (stage === "no-contactado") return "nuevos";
   return "seguimientos";

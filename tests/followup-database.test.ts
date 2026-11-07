@@ -39,6 +39,8 @@ describe("followup migration", () => {
     // The first one ran before the later ones changed its constraints; the later ones re-run on top.
     await db.exec(readFileSync("supabase/migrations/202612010001_followup_edit.sql", "utf8"));
     await db.exec(readFileSync("supabase/migrations/202612020001_followup_queue.sql", "utf8"));
+    await db.exec(readFileSync("supabase/migrations/202612030001_followup_priority.sql", "utf8"));
+    await db.exec(readFileSync("supabase/migrations/202612040001_followup_replies.sql", "utf8"));
     expect((await one<{ n: number }>("select count(*)::int as n from followup_versions"))!.n).toBe(9);
   });
 
@@ -125,8 +127,25 @@ describe("followup migration", () => {
     expect((await one<{ n: number }>("select count(*)::int as n from followup_claims where agency_id = $1", [a]))!.n).toBe(0);
   });
 
+  it("accepts the sequence's steps as their own actions", async () => {
+    const v = (await one<{ action: string; version: number }>("select * from habita_followup_create(null, 'no-abrio', 'whatsapp', '', 'Segundo', '{whatsapp}', 'active', 'seguimiento_2')"))!;
+    expect(v).toMatchObject({ action: "seguimiento_2", version: 1 });
+    expect(await fails("select habita_followup_create(null, 'no-abrio', 'whatsapp', '', 'x', '{}', 'active', 'tercero')")).not.toBeNull();
+  });
+
+  it("keeps each reply once, with its classification and status", async () => {
+    const a = await agency();
+    const add = (key: string, cls: string | null = "neutro", conf: number | null = 0.8) =>
+      db.query("insert into followup_replies(agency_id, body, received_at, classification, confidence, client_key) values($1, 'Lo consulto', now(), $2, $3, $4)", [a, cls, conf, key]);
+    await add("reply-key-1");
+    expect(await fails("insert into followup_replies(agency_id, body, received_at, client_key) values($1, 'otra', now(), 'reply-key-1')", [a])).not.toBeNull();
+    expect(await fails("insert into followup_replies(agency_id, body, received_at, classification, client_key) values($1, 'x', now(), 'fax', 'reply-key-2')", [a])).not.toBeNull();
+    expect(await fails("insert into followup_replies(agency_id, body, received_at, confidence, client_key) values($1, 'x', now(), 1.5, 'reply-key-3')", [a])).not.toBeNull();
+    expect((await one<{ status: string }>("select status from followup_replies where client_key = 'reply-key-1'"))!.status).toBe("pendiente");
+  });
+
   it("is closed to anonymous and signed-in users", async () => {
-    const grants = (await db.query<{ grantee: string }>("select grantee from information_schema.role_table_grants where table_name in ('followup_versions', 'followup_executions', 'followup_claims', 'followup_agencies', 'followup_script') and grantee in ('anon', 'authenticated')")).rows;
+    const grants = (await db.query<{ grantee: string }>("select grantee from information_schema.role_table_grants where table_name in ('followup_versions', 'followup_executions', 'followup_claims', 'followup_agencies', 'followup_script', 'followup_replies') and grantee in ('anon', 'authenticated')")).rows;
     expect(grants).toEqual([]);
   });
 });
