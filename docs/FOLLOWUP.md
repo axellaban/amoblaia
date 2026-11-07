@@ -188,3 +188,36 @@ Un paso que todavía no venció queda **Programado** («Programada para el …»
 - Resolver una de la bandeja: `POST …/reply` `{ id, clasificacion, … }` o `{ id, facu: true }`. Listarla: `GET /api/admin/followup/replies`.
 - Pestaña **Respuestas**: la lista y el detalle (texto, clasificación sugerida y su confianza, fecha o contacto nuevo según el caso, «Guardar y pasar a la cola», «Asignar a Facu») y «Registrar una respuesta» a mano.
 - Selectores: `followup-inbox`, `followup-reply` (`data-reply`, `data-status`), `followup-reply-detail`, `followup-reply-save`, `followup-reply-facu`, `followup-reply-add`, `followup-reply-form`.
+
+## Fase 3 — Reglas configurables, demos en la cola y auditoría
+
+Migración `202612050001_followup_rules.sql`.
+
+### Reglas (`followup_rules`, `src/lib/followup/rules.ts`)
+
+La next best action sale de reglas guardadas en la base, editables en **Mensajes y reglas** sin deploy. Una regla: etapa, situaciones (vacía: cualquiera), paso, espera en horas desde nuestro último mensaje, paso previo (opcional), orden, ventana horaria (hora de Argentina) y días, activa o apagada. Gana la primera regla (por orden) que corresponde a la situación, cuyo paso no salió y cuyo paso previo sí; sin ninguna, la secuencia terminó.
+
+- Se sembraron iguales a las reglas fijas de la Fase 2 (`DEFAULT_RULES`; un test compara la migración con el código), salvo **crear demo** y **enviar demo**, que pasan a salir enseguida.
+- Fijo en código, por seguridad: a un rechazo, un «no contactar» o un número sin WhatsApp no se le escribe nunca, haya la regla que haya; un interesado en las dos primeras etapas pasa a preparar la demo.
+- La ventana horaria de la regla reemplaza a la general.
+- `GET` y `PUT /api/admin/follow-up/reglas` (`{ key?, stage, situations, action, after_hours, after_action, position, enabled, hours_from, hours_to, days }`).
+
+### Mensajes
+
+- Cada paso tiene su editor con **vista previa** resuelta con una inmobiliaria de la etapa; marca las variables que quedarían sin resolver.
+- Una versión con una variable desconocida no se guarda.
+
+### Demos en la cola
+
+- **Demo prometida**: una inmobiliaria que mostró interés con la demo por crear o por enviar va primera en la cola, con prioridad alta, y el checklist marca si van más de 30 minutos desde el interés.
+- «Interesado, sin demo»: el checklist suma «Propiedad elegida e importada» y «Demo generada, revisada y publicada», que el panel verifica solo; al publicarla pasa sola a «Demo creada, sin enviar», cuyo paso (enviar la demo) sale enseguida.
+
+### Embudo y etapas
+
+La pestaña **Embudo**: las 9 etapas en tarjetas con cuántas esperan y qué parte de las que llegaron pasó a la siguiente; la elegida muestra sus reglas (situaciones, paso, espera, versión activa, conversión, prueba A/B) y sus inmobiliarias.
+
+### Auditoría (`followup_audit`)
+
+Quién cambió qué y cuándo: etapa, situación (con el texto), score, prioridad, reprogramación, nombre corto, reglas y versiones. Los cambios de cada inmobiliaria aparecen en sus «Últimas acciones»; los de reglas y mensajes, al pie de Mensajes y reglas.
+
+Selectores: `followup-funnel`, `followup-funnel-stage`, `followup-funnel-rule`, `followup-rules`, `followup-rule`, `followup-rule-edit`, `followup-rule-form`, `followup-rule-hours`, `followup-rule-save`, `followup-rule-add`, `followup-preview`, `followup-changes`.

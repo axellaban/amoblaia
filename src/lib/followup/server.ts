@@ -68,6 +68,7 @@ import {
   type Group,
   type Situation,
 } from "./plan";
+import { DEFAULT_RULES, cleanRule, outsideWindow, type Rule } from "./rules";
 
 /**
  * Follow-up (/admin/follow-up): each funnel stage with its next best action,
@@ -119,6 +120,22 @@ const extras = async (agencyId?: string) => {
   if (error) throw missing(error) ? new HttpError(409, MISSING) : new Error("FOLLOWUP_READ_FAILED");
   return new Map(((data ?? []) as AgencyExtra[]).map((x) => [x.agency_id, { ...x, score: x.score === null ? null : Number(x.score) }]));
 };
+
+/** Las reglas activas e inactivas (Fase 3). Sin la tabla, la migración falta. */
+async function readRules(): Promise<Rule[]> {
+  const { data, error } = await adminClient().from("followup_rules").select("key,stage,situations,action,after_hours,after_action,position,enabled,hours_from,hours_to,days").limit(500);
+  if (error) throw missing(error) || /followup_rules/.test(error.message ?? "") ? new HttpError(409, MISSING) : new Error("FOLLOWUP_READ_FAILED");
+  return ((data ?? []) as Rule[]).map((r) => ({ ...r, after_hours: Number(r.after_hours) }));
+}
+
+/** Deja constancia de un cambio a mano: quién, qué y cuándo. Nunca frena el cambio. */
+async function audit(subject: string, actor: { id: string; name?: string }, f: { agencyId?: string | null; ref?: string | null; from?: unknown; to?: unknown }) {
+  const text = (v: unknown) => (v === undefined || v === null ? null : String(typeof v === "object" ? JSON.stringify(v) : v).slice(0, 2000));
+  await adminClient()
+    .from("followup_audit")
+    .insert({ agency_id: f.agencyId ?? null, subject, ref: f.ref ?? null, old_value: text(f.from), new_value: text(f.to), actor_id: actor.id, actor_name: actor.name ?? "" })
+    .then(() => undefined, () => undefined);
+}
 
 /** What the prospecting sheet said of the account: its «Estado» and its «Fecha envío». */
 type SheetFacts = { status: string | null; sentDate: string | null };
@@ -250,6 +267,12 @@ export type QueueItem = {
   priorityManual: boolean;
   /** Reprogramada: no entra a la cola hasta esta fecha. */
   snoozedUntil: string | null;
+  /** La regla que eligió su acción (null: fija por código). */
+  ruleKey: string | null;
+  /** Ventana horaria de esa regla. */
+  window: { hours_from: number; hours_to: number; days: number[] } | null;
+  /** Demo prometida: cuándo mostró interés (va primera; a los 30 minutos está atrasada). */
+  promisedAt: string | null;
   /** Por qué no hay acción (secuencia terminada, rechazo…). */
   actionReason: string | null;
   /** Horas de espera de su paso de la secuencia desde nuestro último mensaje. */
@@ -303,7 +326,7 @@ const whenText = (iso: string) => new Date(iso).toLocaleString("es-AR", { day: "
  * so the counters match the rows.
  */
 async function board(now = new Date()) {
-  const [rows, ds, vs, ex, extra, info, held, open] = await Promise.all([
+  const [rows, ds, vs, ex, extra, info, held, open, rules] = await Promise.all([
     commercialRows(),
     prospectDataset().catch(() => null),
     versions(),
@@ -312,6 +335,7 @@ async function board(now = new Date()) {
     details(),
     claims(),
     openReplies(),
+    readRules(),
   ]);
   const accounts = accountsByAgency(ds);
   const exOf = new Map<string, FollowupExecution[]>();
@@ -338,9 +362,11 @@ async function board(now = new Date()) {
   for (const [agency, list] of sendsOf) for (const t of list) later(lastOurs, agency, t.sent_at);
   for (const e of ex) if (e.status === "sent") later(lastOurs, e.agency_id, e.sent_at);
   const lastReply = new Map<string, number>();
+  const lastInterest = new Map<string, number>();
   for (const e of ds?.events ?? []) {
     const agency = agencyOfAccount.get(e.account_id);
     if (agency && !e.corrected && (e.type === "reply" || e.type === "interest" || e.type === "not_interested")) later(lastReply, agency, e.occurred_at);
+    if (agency && !e.corrected && e.type === "interest") later(lastInterest, agency, e.occurred_at);
   }
 
   const stepNow = new Map<string, number>();
@@ -373,7 +399,13 @@ async function board(now = new Date()) {
   const items = new Map<string, QueueItem>();
   for (const { r, account, own, at } of base) {
     if (!at.stage) continue;
-    const it = item(r, account, own, info, at, vs, exOf.get(r.id) ?? [], sendsOf.get(r.id) ?? []);
+    const it = item(r, account, own, info, at, vs, exOf.get(r.id) ?? [], sendsOf.get(r.id) ?? [], rules);
+    // A promised demo (interested, the demo still to make or to send) goes first; past 30 minutes it is late.
+    const interest = lastInterest.get(r.id);
+    if (interest && (it.stage === "sin-demo" || it.stage === "sin-enviar") && it.execution?.status !== "sent") {
+      it.promisedAt = new Date(interest).toISOString();
+      it.priority = own?.priority ?? "alta";
+    }
     const claim = held.get(r.id);
     it.claim = claim ? { actorId: claim.actor_id, by: claim.actor_name || "otra sesión", until: claim.locked_until } : null;
     const version = vs.find((v) => v.id === it.versionId);
@@ -404,7 +436,7 @@ async function board(now = new Date()) {
     });
     items.set(r.id, it);
   }
-  return { items, vs, ex, stepNow, newToday: fresh.size, open, names: new Map(rows.map((r) => [r.id, r.name])) };
+  return { items, vs, ex, stepNow, newToday: fresh.size, open, names: new Map(rows.map((r) => [r.id, r.name])), rules };
 }
 
 /** Why it cannot be executed now (in order of what to fix first), or null. */
@@ -426,7 +458,7 @@ function blockReason(
   const channel = it.versionChannel;
   if (channel === "whatsapp" && !it.wa) return "Sin WhatsApp: cargalo en la ficha o marcala «Sin WhatsApp».";
   if (channel === "whatsapp" && it.group === "nuevos" && f.newToday >= DAILY_NEW_CAP) return `Tope de ${DAILY_NEW_CAP} conversaciones nuevas en 24 horas alcanzado.`;
-  if (channel === "whatsapp") return outsideHours(it.group, f.now);
+  if (channel === "whatsapp") return it.window ? outsideWindow(it.window, f.now) : outsideHours(it.group, f.now);
   return null;
 }
 
@@ -440,6 +472,7 @@ function item(
   vs: FollowupVersion[],
   executionsOf: FollowupExecution[],
   sends: { status: string; sent_at: string | null; step: number }[],
+  rules: Rule[] = DEFAULT_RULES,
 ): QueueItem {
   const stage = at.stage!;
   const agency = info.agency.get(r.id);
@@ -458,7 +491,9 @@ function item(
   const stageSent = executionsOf.filter((e) => e.stage === stage && e.status === "sent").sort((a, b) => (b.sent_at ?? "").localeCompare(a.sent_at ?? ""));
   const doneMap: Partial<Record<Action, boolean>> = {};
   for (const e of stageSent) doneMap[(e.action ?? "principal") as Action] = true;
-  const next = nextAction(stage, sit.situation, doneMap);
+  const next = nextAction(stage, sit.situation, doneMap, rules);
+  // The rule's window, or the one of the rule that sent the last step (for the row of a finished sequence).
+  const window = next.rule ?? rules.find((x) => x.stage === stage && x.action === (stageSent[0]?.action ?? "principal")) ?? null;
   // Nothing left to send but something went out: the row shows that last one as sent.
   const action = next.action ?? (!CLOSED_SITUATIONS.includes(sit.situation) && stageSent[0] ? ((stageSent[0].action ?? "principal") as Action) : null);
   const mine = executionsOf.filter((e) => e.stage === stage && (e.action ?? "principal") === (action ?? "principal"));
@@ -502,6 +537,9 @@ function item(
     actionLabel: action ? actionLabel(stage, action) : null,
     group: groupOf(stage, action),
     afterHours: next.action ? next.afterHours : 0,
+    ruleKey: next.rule?.key ?? null,
+    window: window ? { hours_from: window.hours_from, hours_to: window.hours_to, days: window.days } : null,
+    promisedAt: null,
     actionReason: next.reason,
     dueAt: null,
     priority: own?.priority ?? defaultPriority(groupOf(stage, action)),
@@ -518,8 +556,10 @@ function item(
 }
 
 /** The whole page: one view per stage, with its versions measured and its agencies (score from highest to lowest), and the execution queue. */
-export async function followupOverview(): Promise<{ stages: StageView[]; queue: QueueItem[]; blocked: QueueItem[]; summary: QueueSummary; inbox: InboxItem[] }> {
-  const b = await board();
+export type FunnelStep = { key: StageKey; title: string; goal: string; waiting: number; reached: number; rate: number | null };
+export type Change = Awaited<ReturnType<typeof auditOf>>[number];
+export async function followupOverview(): Promise<{ stages: StageView[]; queue: QueueItem[]; blocked: QueueItem[]; summary: QueueSummary; inbox: InboxItem[]; funnel: FunnelStep[]; rules: Rule[]; changes: Change[] }> {
+  const [b, changes] = await Promise.all([board(), auditOf(null, 20)]);
   const all = [...b.items.values()];
   const inboxItems = inboxOf(b);
   return {
@@ -538,7 +578,20 @@ export async function followupOverview(): Promise<{ stages: StageView[]; queue: 
     blocked: all.filter((q) => pending(q) && q.blocked).sort(byPriority),
     summary: summarize(all, b.newToday, inboxItems.length),
     inbox: inboxItems,
+    funnel: funnelOf(b, all),
+    rules: [...b.rules].sort((x, y) => x.position - y.position),
+    changes,
   };
+}
+
+/** Las etapas como en el embudo: cuántas esperan en cada una y qué parte de las que llegaron pasó a la siguiente. */
+function funnelOf(b: Awaited<ReturnType<typeof board>>, all: QueueItem[]): FunnelStep[] {
+  const steps = [...b.stepNow.values()];
+  const reach = (step: number) => steps.filter((x) => x >= step).length;
+  return FOLLOWUP_STAGES.map((s) => {
+    const here = reach(s.step);
+    return { key: s.key, title: s.title, goal: s.goal, waiting: all.filter((q) => q.stage === s.key).length, reached: here, rate: here ? reach(s.step + 1) / here : null };
+  });
 }
 
 const pending = (q: QueueItem) => q.action !== null && q.execution?.status !== "sent";
@@ -652,7 +705,7 @@ async function prepare(it: QueueItem, origin: string, actor: { id: string; name:
   const ready = !holes.length && (v.channel === "task" || Boolean(it.wa));
   const messages = splitMessages(message);
   const history = await historyOf(it.agencyId, account?.id ?? null, vs);
-  const hours = v.channel === "whatsapp" ? outsideHours(it.group) : null;
+  const hours = v.channel === "whatsapp" ? (it.window ? outsideWindow(it.window) : outsideHours(it.group)) : null;
   const linkOk = (!need.demo || Boolean(demo)) && (!need.panel || Boolean(panel));
   // Lo que el agente revisa antes de mandar. «Número validado» queda pendiente con un número sin validar: se valida al confirmar.
   const checklist = [
@@ -664,6 +717,16 @@ async function prepare(it: QueueItem, origin: string, actor: { id: string; name:
     { key: "enlaces", label: "Enlaces listos", ok: linkOk, note: need.demo || need.panel ? (linkOk ? "Demo y panel armados" : "No se pudo armar un enlace") : "Este mensaje no lleva enlaces" },
     { key: "mensaje", label: "Mensaje listo", ok: ready, note: `${messages.length} ${messages.length === 1 ? "mensaje" : "mensajes"} · V${v.version}` },
   ];
+  // A demo to make: what the panel can check by itself, and the promise (30 minutes at most).
+  if (it.stage === "sin-demo" || it.stage === "sin-enviar") {
+    const late = it.promisedAt ? Math.round((Date.now() - Date.parse(it.promisedAt)) / 60000) : null;
+    if (late !== null) checklist.unshift({ key: "promesa", label: "Demo prometida a tiempo", ok: late <= 30, note: `Mostró interés hace ${late} min · máximo 30` });
+    if (it.stage === "sin-demo")
+      checklist.push(
+        { key: "propiedad", label: "Propiedad elegida e importada", ok: it.properties > 0, note: it.properties ? `${it.properties} en su panel` : "Buscá una en su web e importala" },
+        { key: "publicada", label: "Demo generada, revisada y publicada", ok: it.hasDemo, note: it.hasDemo ? "Publicada" : "Al publicarla pasa sola a «Demo creada, sin enviar»" },
+      );
+  }
   return {
     agencyId: it.agencyId,
     name: it.name,
@@ -710,14 +773,20 @@ async function prepare(it: QueueItem, origin: string, actor: { id: string; name:
 /** Las últimas acciones con la inmobiliaria, de Follow-up, de Adquisición (envíos y respuestas, con su texto) y de ella misma. */
 async function historyOf(agencyId: string, accountId: string | null, vs: FollowupVersion[]) {
   const db = adminClient();
-  const [ex, sends, events] = await Promise.all([
+  const [ex, sends, events, changes] = await Promise.all([
     db.from("followup_executions").select("stage,action,version_id,status,reason,updated_at,sent_at").eq("agency_id", agencyId).order("updated_at", { ascending: false }).limit(10),
     accountId ? db.from("outreach_attempts").select("step,status,sent_at,body").eq("account_id", accountId).eq("status", "sent").order("sent_at", { ascending: false }).limit(10) : Promise.resolve({ data: [] }),
     accountId
       ? db.from("prospect_events").select("type,occurred_at,evidence,details,source").eq("account_id", accountId).in("type", ["reply", "interest", "not_interested", "lost", "imported", "suppressed"]).order("occurred_at", { ascending: false }).limit(10)
       : Promise.resolve({ data: [] }),
+    auditOf(agencyId, 10),
   ]);
   const out: { at: string; text: string; kind: "nuestro" | "suyo" | "dato" }[] = [];
+  const SUBJECT: Record<string, string> = { stage: "Etapa corregida", situation: "Situación", score: "Score", priority: "Prioridad", snooze: "Reprogramada", short_name: "Nombre en el mensaje" };
+  for (const c of changes) {
+    const value = c.subject === "situation" && c.new_value ? (SITUATIONS[c.new_value.split(" · ")[0] as Situation] ?? c.new_value) + (c.new_value.includes(" · ") ? ` ${c.new_value.slice(c.new_value.indexOf(" · "))}` : "") : c.subject === "stage" && c.new_value && isStageKey(c.new_value) ? stageInfo(c.new_value).title : c.subject === "snooze" && c.new_value && /^\d{4}-/.test(c.new_value) ? `hasta el ${whenText(c.new_value.slice(0, 24))}${c.new_value.includes(" · ") ? ` (${c.new_value.split(" · ")[1]})` : ""}` : c.new_value;
+    out.push({ at: c.created_at, text: `${SUBJECT[c.subject] ?? c.subject}: ${value ?? "—"}${c.actor_name ? ` · ${c.actor_name}` : ""}`, kind: "dato" });
+  }
   for (const e of (ex.data ?? []) as { stage: string; action: string; version_id: string; status: string; reason: string | null; updated_at: string; sent_at: string | null }[]) {
     if (e.status === "opened") continue;
     const v = vs.find((x) => x.id === e.version_id);
@@ -732,7 +801,7 @@ async function historyOf(agencyId: string, accountId: string | null, vs: Followu
     const quote = e.evidence?.replace(/^WhatsApp: /, "").trim();
     out.push({ at: e.occurred_at, text: `${label[e.type] ?? e.type}${quote && e.type !== "imported" && !quote.startsWith("Follow-up:") ? `: ${quote}` : ""}`, kind: e.type === "imported" ? "dato" : "suyo" });
   }
-  return out.sort((a, b) => b.at.localeCompare(a.at)).slice(0, 8);
+  return out.sort((a, b) => b.at.localeCompare(a.at)).slice(0, 10);
 }
 
 /** «Omitir o reprogramar»: sale de la cola hasta esa fecha (sin fecha: mañana a las 9), con el motivo. La suelta. */
@@ -750,21 +819,24 @@ export async function snooze(agencyId: string, rawUntil: unknown, rawReason: unk
   if (until.getTime() > Date.now() + 90 * DAY_MS) throw new HttpError(400, "Se reprograma hasta 90 días.");
   await saveExtra(agencyId, { snooze_until: until.toISOString(), snooze_reason: reason || null }, actor.id);
   await release(agencyId, actor.id).catch(() => undefined);
+  await audit("snooze", actor, { agencyId, to: `${until.toISOString()}${reason ? ` · ${reason}` : ""}` });
   return { snoozedUntil: until.toISOString(), reason: reason || null };
 }
 
 /** Saca la reprogramación: vuelve a la cola. */
-export async function unsnooze(agencyId: string, actorId: string) {
+export async function unsnooze(agencyId: string, actorId: string, actorName = "") {
   if (!isUuid(agencyId)) throw new HttpError(404, "No encontramos la inmobiliaria.");
   await saveExtra(agencyId, { snooze_until: null, snooze_reason: null }, actorId);
+  await audit("snooze", { id: actorId, name: actorName }, { agencyId, to: "vuelve a la cola" });
   return { snoozedUntil: null };
 }
 
 /** Prioridad a mano (Alta, Media, Baja); null vuelve a la del grupo. */
-export async function setPriority(agencyId: string, raw: unknown, actorId: string) {
+export async function setPriority(agencyId: string, raw: unknown, actorId: string, actorName = "") {
   if (!isUuid(agencyId)) throw new HttpError(404, "No encontramos la inmobiliaria.");
   if (raw !== null && raw !== "" && !isPriority(raw)) throw new HttpError(400, "La prioridad es alta, media o baja.");
   await saveExtra(agencyId, { priority: isPriority(raw) ? raw : null }, actorId);
+  await audit("priority", { id: actorId, name: actorName }, { agencyId, to: isPriority(raw) ? raw : "automática" });
   return { priority: isPriority(raw) ? raw : null };
 }
 export type Prepared = Awaited<ReturnType<typeof prepare>>;
@@ -894,6 +966,7 @@ export async function setSituation(agencyId: string, raw: unknown, note: unknown
   const text = typeof note === "string" ? note.trim().slice(0, 2000) : "";
   const { at, account } = await now(agencyId);
   await saveExtra(agencyId, { situation, situation_step: stepValue(at.derived.reached), situation_note: text || null, situation_at: new Date().toISOString() }, actor.id);
+  await audit("situation", actor, { agencyId, to: `${situation}${text ? ` · «${text.slice(0, 200)}»` : ""}` });
   let warning: string | null = null;
   if (account) {
     try {
@@ -1065,12 +1138,51 @@ export async function processReply(
   return { reply: { ...reply, status: "procesada" as const, classification: c }, warning: warnings.join(" ") || null, replayed: false };
 }
 
+// ------------------------------------------------------------------ reglas (Fase 3)
+
+/** Las reglas, por etapa y orden, para «Mensajes y reglas». */
+export async function listRules() {
+  return (await readRules()).sort((a, b) => a.stage.localeCompare(b.stage) || a.position - b.position);
+}
+
+/**
+ * Guarda una regla (o crea una con `key` vacía). Cambia la cola sin deploy:
+ * la próxima lectura ya la usa. Queda en la auditoría.
+ */
+export async function saveRule(key: unknown, input: Record<string, unknown>, actor: { id: string; name: string }) {
+  const clean = cleanRule(input, Object.keys(SITUATIONS).filter((x) => !CLOSED_SITUATIONS.includes(x as Situation)), ["principal", "seguimiento_2", "presentacion", "presentacion_seguimiento", "precios"], FOLLOWUP_STAGES.map((x) => x.key));
+  if ("error" in clean) throw new HttpError(400, clean.error);
+  const db = adminClient();
+  const id = typeof key === "string" && key ? key : `${clean.stage}:${clean.action}:${Date.now().toString(36)}`;
+  if (id.length > 80) throw new HttpError(400, "Regla desconocida.");
+  const before = typeof key === "string" && key ? (await db.from("followup_rules").select("*").eq("key", key).maybeSingle()).data : null;
+  if (typeof key === "string" && key && !before) throw new HttpError(404, "No encontramos esa regla.");
+  const { data, error } = await db
+    .from("followup_rules")
+    .upsert({ key: id, ...clean, updated_by: actor.id, updated_at: new Date().toISOString() }, { onConflict: "key" })
+    .select("key,stage,situations,action,after_hours,after_action,position,enabled,hours_from,hours_to,days")
+    .single();
+  if (error) throw missing(error) ? new HttpError(409, MISSING) : error.code === "23514" ? new HttpError(400, "La base rechazó la regla: revisá los valores.") : new Error("FOLLOWUP_SAVE_FAILED");
+  await audit("rule", actor, { ref: id, from: before, to: clean });
+  return { ...(data as Rule), after_hours: Number((data as Rule).after_hours) };
+}
+
+/** Los cambios a mano de una inmobiliaria (o de las reglas y versiones, sin `agencyId`), del más nuevo al más viejo. */
+export async function auditOf(agencyId: string | null, limit = 20) {
+  let q = adminClient().from("followup_audit").select("subject,ref,old_value,new_value,actor_name,created_at").order("created_at", { ascending: false }).limit(limit);
+  q = agencyId ? q.eq("agency_id", agencyId) : q.is("agency_id", null);
+  const { data, error } = await q;
+  if (error) return [];
+  return (data ?? []) as { subject: string; ref: string | null; old_value: string | null; new_value: string | null; actor_name: string; created_at: string }[];
+}
+
 /** El nombre corto para {{inmobiliaria}}. Vacío: vuelve al de la ficha sin paréntesis. */
-export async function setShortName(agencyId: string, raw: unknown, actorId: string) {
+export async function setShortName(agencyId: string, raw: unknown, actorId: string, actorName = "") {
   if (!isUuid(agencyId)) throw new HttpError(404, "No encontramos la inmobiliaria.");
   const name = typeof raw === "string" ? raw.trim().replace(/\s+/g, " ") : "";
   if (name.length > 80) throw new HttpError(400, "El nombre corto va hasta 80 caracteres.");
   await saveExtra(agencyId, { short_name: name || null }, actorId);
+  await audit("short_name", { id: actorId, name: actorName }, { agencyId, to: name || "el de la ficha" });
   return { shortName: name || null };
 }
 
@@ -1114,7 +1226,7 @@ export async function createVersion(input: Record<string, unknown>, actorId: str
  * the text changed (the observations alone don't count). To compare two texts,
  * a new version.
  */
-export async function updateVersion(id: unknown, input: Record<string, unknown>) {
+export async function updateVersion(id: unknown, input: Record<string, unknown>, actor: { id: string; name?: string } = { id: "" }) {
   if (!isUuid(id)) throw new HttpError(404, "No encontramos esa versión.");
   const db = adminClient();
   const found = await db.from("followup_versions").select(VERSION_FIELDS).eq("id", id).maybeSingle();
@@ -1131,6 +1243,7 @@ export async function updateVersion(id: unknown, input: Record<string, unknown>)
     .select(VERSION_FIELDS)
     .single();
   if (saved.error) throw rpcFailure(saved.error);
+  if (actor.id) await audit("version", actor, { ref: `${old.stage}:${old.action ?? "principal"}:V${old.version}`, from: old.body, to: v.body });
   return saved.data as unknown as FollowupVersion;
 }
 
@@ -1164,12 +1277,13 @@ async function saveExtra(agencyId: string, fields: Partial<Omit<AgencyExtra, "ag
  * execution). Choosing the funnel's own stage removes the correction. It holds
  * while the funnel says the same; «fuera» takes it out of Follow-up.
  */
-export async function setStage(agencyId: string, stage: unknown, actorId: string) {
+export async function setStage(agencyId: string, stage: unknown, actorId: string, actorName = "") {
   if (!isOverrideStage(stage)) throw new HttpError(400, "Etapa desconocida.");
   const { at } = await now(agencyId);
   const funnelStep = at.derived.reached === null ? -1 : at.derived.reached;
   if (stage === at.derived.stage) await saveExtra(agencyId, { stage_override: null, override_step: null }, actorId);
   else await saveExtra(agencyId, { stage_override: stage, override_step: funnelStep }, actorId);
+  await audit("stage", { id: actorId, name: actorName }, { agencyId, from: at.stage ?? "fuera", to: stage });
   return { stage: stage === OUT ? null : stage, manual: stage !== at.derived.stage };
 }
 
@@ -1179,7 +1293,7 @@ export async function setStage(agencyId: string, stage: unknown, actorId: string
  * rest of prospecting; without an account (added by hand), Follow-up's own.
  * The other stages show the lead score, which is not edited.
  */
-export async function setScore(agencyId: string, raw: unknown, actorId: string) {
+export async function setScore(agencyId: string, raw: unknown, actorId: string, actorName = "") {
   const score = raw === null || raw === "" ? null : Number(raw);
   if (score !== null && (!Number.isFinite(score) || score < 0 || score > 100)) throw new HttpError(400, "El score va de 0 a 100.");
   const { at, account } = await now(agencyId);
@@ -1187,6 +1301,7 @@ export async function setScore(agencyId: string, raw: unknown, actorId: string) 
   const value = score === null ? null : Math.round(score * 100) / 100;
   if (account) await prospectRpc("habita_prospect_update", { p_actor: actorId, p_account: account.id, p_version: account.version, p_patch: { score: value } });
   else await saveExtra(agencyId, { score: value }, actorId);
+  await audit("score", { id: actorId, name: actorName }, { agencyId, from: account?.score ?? null, to: value });
   return { score: value };
 }
 
