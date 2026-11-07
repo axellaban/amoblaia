@@ -136,7 +136,7 @@ describe("Interest in upcoming tools (API)", () => {
 describe("Panel navigation and home", () => {
   it("the sidebar has Sitio web and the four upcoming tools as plain items, without «Próximamente»", () => {
     const html = renderToStaticMarkup(<PanelNav section="inicio" agencyName="Inmo Sur" role="owner" credits={3} />);
-    for (const label of ["Inicio", "Mis demostraciones", "Estudio de imágenes", "Video", "Sitio web", "Tour 360", "Planos", "Redes", "API", "Precios y créditos", "Usuarios", "Ayuda"])
+    for (const label of ["Inicio", "Mis propiedades", "Mis demostraciones", "Estudio de imágenes", "Video", "Sitio web", "Tour 360", "Planos", "Redes", "API", "Precios y créditos", "Usuarios", "Ayuda"])
       expect(html).toContain(`<span>${label}</span>`);
     for (const slug of ["tour-360", "planos", "redes", "api"]) expect(html).toContain(`href="/panel/${slug}"`);
     expect(html).not.toMatch(/Pr[oó]ximamente/i);
@@ -169,7 +169,7 @@ describe("Panel navigation and home", () => {
 
   it("the home offers exactly three large cards and never the upcoming tools", () => {
     const source = readFileSync("src/components/agency-panel.tsx", "utf8");
-    const cards = source.slice(source.indexOf("function HomeCards"), source.indexOf("function HomeProperty"));
+    const cards = source.slice(source.indexOf("function HomeCards"), source.indexOf("/** The site a listing is on"));
     // Crear demostración interactiva, Estudio de imágenes (Editar imágenes), Crear video, each opening the start picker.
     expect([...cards.matchAll(/\bid: "([a-z]+)"(?: as const)?,/g)].map((m) => m[1])).toEqual(["demo", "editar", "video"]);
     expect(TOOL_TITLE).toEqual({ demo: "Crear demostración interactiva", ambientar: "Ambientar con IA", editar: "Editar imágenes", video: "Crear video" });
