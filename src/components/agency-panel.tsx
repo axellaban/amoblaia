@@ -27,7 +27,6 @@ import {
   Link2,
   MonitorPlay,
   MoreHorizontal,
-  Pencil,
   Play,
   PlayCircle,
   Search,
@@ -37,7 +36,7 @@ import {
   Sun,
   Wand2,
 } from "lucide-react";
-import { ApiError, api } from "./admin-demos";
+import { ApiError, api, isVisiting } from "./admin-demos";
 import { ImportPreview, MapReview, exceptions, initialMapChoice, mapOverride, failedPhotoLines, syncPhotos, type MapChoice, type PhotoProgress } from "./demo-import";
 import { track, trackMilestone } from "@/lib/analytics";
 import { cta } from "@/lib/interaction-tracking";
@@ -48,6 +47,7 @@ import {
   canEdit,
   canManage,
   propertyLink,
+  propertyStage,
   ROLE_LABEL,
   type AgencyRole,
   type PanelImport,
@@ -119,6 +119,8 @@ export function AgencyPanel({ section, plans = null }: { section: Section; /** T
           <PanelHome data={data} reload={load} continuing={continuing} />
         ) : section === "propiedades" ? (
           <PropertiesSection data={data} reload={load} />
+        ) : section === "mis_propiedades" ? (
+          <MyPropertiesSection data={data} reload={load} />
         ) : (
           <SiteSection data={data} setData={setData} reload={load} />
         )}
@@ -292,53 +294,245 @@ function HomeCards({ creator, onStart }: { creator: boolean; onStart: (tool: Sta
   );
 }
 
+/** The site a listing is on, for its card: «zonaprop.com.ar». */
+const sourceOf = (url: string | null) => {
+  if (!url) return null;
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return null;
+  }
+};
+
 /**
- * A recent demo on the home: a bigger photo, title, place and state, and its
- * four actions always in view. A draft has no public link yet: «Compartir» and
- * «Copiar link» wait for it to be published. «Vista previa» opens the buyer's
- * page inside the panel. Publishing and deleting stay in «Mis demostraciones».
+ * One property of «Mis propiedades» (home and its own section), by where it
+ * really stands:
+ * - saved from its listing, photos not imported yet: its data, the listing's
+ *   first photo dimmed and «Importar fotos con un clic» (no credits);
+ * - imported, no demo yet: «Ambientar y crear demostración»;
+ * - with its demo: one row per tool, demo (edit, share), images (edit) and
+ *   video (create, or edit when it has one).
  */
-function HomeProperty({ p, agency, reload, canWork }: { p: PanelProperty; agency: PanelSummary["agency"]; reload: () => Promise<unknown>; canWork: boolean }) {
-  const actions = usePropertyActions(p, agency, reload);
-  const edit = editorLink(p.id, "fotos", "/panel");
+export function PropertyTile({
+  p,
+  agency,
+  reload,
+  canWork,
+  backTo = "/panel",
+}: {
+  p: PanelProperty;
+  agency: PanelSummary["agency"];
+  reload: () => Promise<unknown>;
+  canWork: boolean;
+  backTo?: string;
+}) {
+  return propertyStage(p) === "pending" ? (
+    <PendingTile p={p} reload={reload} canWork={canWork} />
+  ) : (
+    <WorkTile p={p} agency={agency} reload={reload} canWork={canWork} backTo={backTo} />
+  );
+}
+
+/** «Lista para importar»: the property is saved with its listing's data; one click brings its photos. */
+function PendingTile({ p, reload, canWork }: { p: PanelProperty; reload: () => Promise<unknown>; canWork: boolean }) {
+  const pending = p.pending!;
+  const total = pending.images.length;
+  const [progress, setProgress] = useState<PhotoProgress | null>(null);
+  const [error, setError] = useState("");
+  const source = sourceOf(p.listingUrl);
+  async function importNow() {
+    if (progress) return;
+    setError("");
+    setProgress({ done: 0, total, failed: [], reasons: {} });
+    track("preloaded_property_import_started", { property_id: p.id, photos: total });
+    try {
+      const sync = await syncPhotos(`/api/admin/demos/${p.id}`, pending.images, () => undefined, setProgress);
+      await api("/api/panel/importar", {
+        method: "PATCH",
+        body: JSON.stringify({ importId: pending.importId, done: sync.done, failed: sync.failedUrls, reasons: sync.reasons }),
+      });
+      track("preloaded_property_import_completed", { property_id: p.id, photos_done: sync.done.length, photos_total: total });
+      if (sync.done.length) leadFromDemoRef("demo_property_import_completed");
+      else setError("No se pudo traer ninguna foto de la publicación. Probá de nuevo más tarde o subilas a mano desde la propiedad.");
+      await reload();
+    } catch (e) {
+      setError(message(e, "No pudimos importar las fotos."));
+    } finally {
+      setProgress(null);
+    }
+  }
   return (
-    <li className="ap-recent">
-      <div className="ap-recent-top">
-        <Link href={edit} className="ap-recent-photo" tabIndex={-1} aria-hidden="true">
-          {p.coverPhotoId ? <img src={adminPhotoUrl(p.coverPhotoId, null, 320)} alt="" loading="lazy" /> : <span>Sin fotos</span>}
-        </Link>
-        <div className="ap-recent-body">
-          <h3>
-            <Link href={edit}>{p.title}</Link>
-          </h3>
-          {p.location && <p className="ap-recent-location">{p.location}</p>}
-          <span className={`ap-state ${actions.live ? "is-live" : "is-draft"}`}>
-            {actions.live ? <Check size={14} aria-hidden="true" /> : <Pencil size={14} aria-hidden="true" />}
-            {actions.live ? "Publicada" : "Borrador"}
+    <li className="ap-prop is-pending">
+      <div className="ap-prop-photo">
+        {pending.images[0] ? <img src={pending.images[0]} alt="" loading="lazy" referrerPolicy="no-referrer" /> : <span>Sin vista previa</span>}
+        <span className={`ap-prop-tag ${progress ? "is-busy" : "is-waiting"}`}>{progress ? "Importando fotos…" : "Lista para importar"}</span>
+        {!progress && (
+          <span className="ap-prop-count">
+            {total} {total === 1 ? "foto" : "fotos"} en la publicación
           </span>
-        </div>
-      </div>
-      {!actions.live && <p className="ap-recent-hint">Publicala para compartir su link.</p>}
-      <ActionNote note={actions.note} />
-      <div className="ap-recent-actions" role="group" aria-label={`Acciones de ${p.title}`}>
-        <button type="button" className="is-main" disabled={!actions.live} onClick={() => void actions.share()}>
-          <Share2 size={18} aria-hidden="true" /> Compartir
-        </button>
-        <button type="button" disabled={!actions.live} onClick={() => void actions.copy()}>
-          <Link2 size={18} aria-hidden="true" /> Copiar link
-        </button>
-        {canWork && (
-          <Link href={edit}>
-            <Pencil size={18} aria-hidden="true" /> Editar
-          </Link>
         )}
-        <Link href={previewLink(p.id, "/panel")}>
-          <Eye size={18} aria-hidden="true" /> Vista previa
-        </Link>
+      </div>
+      <div className="ap-prop-body">
+        <h3>{p.title}</h3>
+        <p className="ap-prop-meta">{[p.location, p.price].filter(Boolean).join(" · ") || "Sin ubicación ni precio"}</p>
+        {source && p.listingUrl && (
+          <a className="ap-prop-source" href={p.listingUrl} target="_blank" rel="noopener noreferrer">
+            <Link2 size={14} aria-hidden="true" /> <strong>{source}</strong>
+          </a>
+        )}
+      </div>
+      <div className="ap-prop-foot">
+        {progress ? (
+          <div className="ap-import-progress" role="status" aria-live="polite">
+            <span className="ap-prop-progress-head">
+              <span>Trayendo las fotos</span>
+              <span>
+                {progress.done} de {progress.total}
+              </span>
+            </span>
+            <progress max={progress.total || 1} value={progress.done} aria-label="Fotos importadas" />
+            <small>Quedate en esta página hasta que termine.</small>
+          </div>
+        ) : canWork ? (
+          <>
+            <button type="button" className="button button-primary ap-prop-main" onClick={() => void importNow()} {...cta("preloaded_property_import", "panel_my_properties", "property_import")}>
+              <Download size={17} aria-hidden="true" /> Importar fotos con un clic
+            </button>
+            <small className="ap-prop-note">No usa créditos. Después elegís si ambientar con IA.</small>
+          </>
+        ) : (
+          <small className="ap-prop-note">Todavía no se importaron sus fotos.</small>
+        )}
+        {error && (
+          <p className="ap-error-text" role="alert">
+            {error}
+          </p>
+        )}
       </div>
     </li>
   );
 }
+
+/** A property with its photos: imported (next, staging) or with its demo (a row per tool). */
+function WorkTile({
+  p,
+  agency,
+  reload,
+  canWork,
+  backTo,
+}: {
+  p: PanelProperty;
+  agency: PanelSummary["agency"];
+  reload: () => Promise<unknown>;
+  canWork: boolean;
+  backTo: string;
+}) {
+  const actions = usePropertyActions(p, agency, reload);
+  const stage = propertyStage(p);
+  const photos = editorLink(p.id, "fotos", backTo);
+  const video = videoEnabled() && p.photos > 0;
+  return (
+    <li className={`ap-prop ${stage === "demo" ? "is-demo" : ""}`}>
+      <Link href={photos} className="ap-prop-photo" tabIndex={-1} aria-hidden="true">
+        {p.coverPhotoId ? <img src={adminPhotoUrl(p.coverPhotoId, null, 480)} alt="" loading="lazy" /> : <span>Sin fotos</span>}
+        {stage === "demo" ? (
+          <span className="ap-prop-tag is-demo">
+            <Check size={13} strokeWidth={3} aria-hidden="true" /> Demo creada
+          </span>
+        ) : stage === "imported" ? (
+          <span className="ap-prop-tag is-done">
+            Importada · {p.photos} {p.photos === 1 ? "foto" : "fotos"}
+          </span>
+        ) : null}
+      </Link>
+      <div className="ap-prop-body">
+        <h3>
+          <Link href={photos}>{p.title}</Link>
+        </h3>
+        <p className="ap-prop-meta">{[p.location, p.price].filter(Boolean).join(" · ") || "Sin ubicación ni precio"}</p>
+      </div>
+      <ActionNote note={actions.note} />
+      {stage === "demo" ? (
+        <div className="ap-prop-rows" role="group" aria-label={`Acciones de ${p.title}`}>
+          <div className="ap-prop-row">
+            <Layers size={19} aria-hidden="true" />
+            <span className="ap-prop-row-text">
+              <strong>Demostración</strong>
+              <small className={actions.live ? "is-ok" : ""}>{actions.live ? "Publicada" : "Borrador: publicala para compartirla"}</small>
+            </span>
+            {canWork && (
+              <Link href={editorLink(p.id, "publicacion", backTo)} className="button button-small button-outline">
+                {actions.live ? "Editar" : "Publicar"}
+              </Link>
+            )}
+            {actions.live && (
+              <button type="button" className="button button-small button-primary" onClick={() => void actions.share()}>
+                <Share2 size={14} aria-hidden="true" /> Compartir
+              </button>
+            )}
+          </div>
+          <div className="ap-prop-row">
+            <ImageIcon size={19} aria-hidden="true" />
+            <span className="ap-prop-row-text">
+              <strong>Imágenes</strong>
+              <small>
+                {p.staged} {p.staged === 1 ? "ambientada" : "ambientadas"} de {p.photos}
+                {p.versions.active ? ` · ${p.versions.active} en curso` : ""}
+              </small>
+            </span>
+            {canWork && (
+              <Link href={editorLink(p.id, "fotos", backTo, "editar")} className="button button-small button-outline">
+                Editar
+              </Link>
+            )}
+          </div>
+          {video && (
+            <div className={`ap-prop-row ${p.videos ? "" : "is-todo"}`}>
+              <PlayCircle size={19} aria-hidden="true" />
+              <span className="ap-prop-row-text">
+                <strong>Video</strong>
+                <small>{p.videos ? `${p.videos} ${p.videos === 1 ? "video" : "videos"}` : "Todavía no creaste uno"}</small>
+              </span>
+              {canWork && (
+                <Link href={toolPath("video", p.id)} className="button button-small button-outline">
+                  {p.videos ? "Editar" : "Crear video"}
+                </Link>
+              )}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="ap-prop-foot">
+          {canWork && (
+            <Link href={photos} className="button button-primary ap-prop-main" {...cta("panel_property_stage", "panel_my_properties", "property_editor")}>
+              {p.photos ? "Ambientar y crear demostración" : "Agregar fotos"}
+            </Link>
+          )}
+          <Link href={previewLink(p.id, backTo)} className="button button-small button-outline">
+            <Eye size={14} aria-hidden="true" /> Vista previa
+          </Link>
+        </div>
+      )}
+    </li>
+  );
+}
+
+/**
+ * The home's «Mis propiedades»: the property with its demo always first (on
+ * the left), then the ones saved from their listing waiting for their photos,
+ * then the rest of the latest.
+ */
+function homeOrder(list: PanelProperty[]) {
+  const waiting = list.filter((p) => propertyStage(p) === "pending");
+  const rest = list.filter((p) => propertyStage(p) !== "pending");
+  const first = rest.find((p) => propertyStage(p) === "demo") ?? rest[0];
+  const others = rest.filter((p) => p !== first);
+  return [...(first ? [first] : []), ...waiting.slice(0, 2), ...others, ...waiting.slice(2)].slice(0, 3);
+}
+
+/** An import shown as a card of «Mis propiedades» (or one closed by a newer attempt) is not a pending issue. */
+const shownAsCard = (i: PanelImport) =>
+  (i.status === "partial" && i.photosDone === 0 && i.pendingImages.length > 0 && i.settingsSaved) || (i.error ?? "").startsWith("Se volvió a importar");
 
 function PanelHome({ data, reload, continuing }: { data: PanelSummary; reload: () => Promise<unknown>; continuing: boolean }) {
   const editor = canEdit(data.role);
@@ -346,7 +540,9 @@ function PanelHome({ data, reload, continuing }: { data: PanelSummary; reload: (
   // The start picker of the three cards; the welcome tour shows the same one (preview: nothing is done there).
   const [picker, setPicker] = useState<{ tool: StartTool; preview: boolean } | null>(null);
   const step = editor ? nextStep(data) : null;
-  const shown = data.properties.slice(0, 3);
+  const shown = homeOrder(data.properties);
+  const waiting = shown.filter((p) => propertyStage(p) === "pending").length;
+  const issues = data.imports.filter((i) => !shownAsCard(i));
   return (
     <>
       <PanelTopbar agencyName={data.agency.name} logo={data.agency.logo}>
@@ -376,11 +572,11 @@ function PanelHome({ data, reload, continuing }: { data: PanelSummary; reload: (
           <ImportProperty onDone={reload} existingCount={data.counts.total} bar />
         </section>
       )}
-      {creator && data.imports.length > 0 && (
+      {creator && issues.length > 0 && (
         <section className="account-panel" aria-labelledby="ap-imports-title">
           <h2 id="ap-imports-title">Importaciones pendientes</h2>
           <ul className="ap-failed">
-            {data.imports.map((i) => (
+            {issues.map((i) => (
               <ImportIssue key={i.id} item={i} onDone={reload} />
             ))}
           </ul>
@@ -396,17 +592,26 @@ function PanelHome({ data, reload, continuing }: { data: PanelSummary; reload: (
       )}
       <section className="ap-recents" aria-labelledby="ap-props-title" data-tour="recents">
         <div className="ap-section-head">
-          <h2 id="ap-props-title">Mis demostraciones recientes</h2>
+          <div>
+            <h2 id="ap-props-title">Mis propiedades</h2>
+            {waiting > 0 && editor && (
+              <p className="ap-section-sub">
+                {waiting === 1
+                  ? "Tenés 1 propiedad lista para importar: ya tiene sus datos cargados. Traé sus fotos con un clic."
+                  : `Tenés ${waiting} propiedades listas para importar: ya tienen sus datos cargados. Traé sus fotos con un clic.`}
+              </p>
+            )}
+          </div>
           {data.counts.total > 0 && (
-            <Link href="/panel/propiedades" className="text-link ap-see-all">
+            <Link href="/panel/mis-propiedades" className="text-link ap-see-all">
               Ver todas <ArrowRight size={16} aria-hidden="true" />
             </Link>
           )}
         </div>
         {shown.length ? (
-          <ul className="ap-recent-list">
+          <ul className="ap-prop-list">
             {shown.map((p) => (
-              <HomeProperty key={p.id} p={p} agency={data.agency} reload={reload} canWork={canEdit(data.role)} />
+              <PropertyTile key={p.id} p={p} agency={data.agency} reload={reload} canWork={canEdit(data.role)} />
             ))}
           </ul>
         ) : (
@@ -503,6 +708,124 @@ function ImportIssue({ item, onDone }: { item: PanelImport; onDone: () => Promis
 }
 
 const PER_PAGE = 24;
+
+const STAGES = [
+  { id: "", label: "Todas" },
+  { id: "importar", label: "Listas para importar" },
+  { id: "importadas", label: "Con fotos" },
+] as const;
+
+/**
+ * «Mis propiedades»: every property with what was already made for it (the
+ * same cards as the home), paged on the server with its real total. The
+ * stage filter lives in the URL.
+ */
+function MyPropertiesSection({ data, reload }: { data: PanelSummary; reload: () => Promise<unknown> }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const params = useSearchParams();
+  const stage = params.get("etapa") ?? "";
+  const page = Math.max(1, Number(params.get("pagina")) || 1);
+  const [result, setResult] = useState<{ items: PanelProperty[]; total: number } | null>(null);
+  const [error, setError] = useState("");
+  const [adding, setAdding] = useState(false);
+  const go = (patch: { etapa?: string; pagina?: number }) => {
+    const next = new URLSearchParams();
+    const e = patch.etapa ?? stage;
+    if (e) next.set("etapa", e);
+    if (patch.pagina && patch.pagina > 1) next.set("pagina", String(patch.pagina));
+    router.replace(`${pathname}${next.size ? `?${next}` : ""}`, { scroll: false });
+  };
+  const seq = useRef(0);
+  const load = useCallback(async () => {
+    const query = new URLSearchParams({ pagina: String(page), por: String(PER_PAGE) });
+    if (stage) query.set("etapa", stage);
+    const n = ++seq.current;
+    try {
+      const got = await api<{ items: PanelProperty[]; total: number }>(`/api/panel/propiedades?${query}`);
+      if (n !== seq.current) return;
+      setResult(got);
+      setError("");
+    } catch (e) {
+      if (n === seq.current) setError(message(e, "No pudimos cargar tus propiedades."));
+    }
+  }, [page, stage]);
+  useEffect(() => {
+    void load();
+  }, [load]);
+  const refresh = async () => {
+    await Promise.all([load(), reload()]);
+  };
+  const pages = result ? Math.max(1, Math.ceil(result.total / PER_PAGE)) : 1;
+  const backHere = `${pathname}${params.toString() ? `?${params}` : ""}`;
+  return (
+    <>
+      <div className="ap-head">
+        <div>
+          <span className="eyebrow">{data.agency.name}</span>
+          <h1>Mis propiedades</h1>
+          <p className="ap-section-sub">Todas tus propiedades, con lo que ya creaste para cada una.</p>
+        </div>
+        {canCreate(data) && (
+          <button type="button" className="button button-primary" aria-expanded={adding} onClick={() => setAdding((a) => !a)}>
+            + Importar propiedad
+          </button>
+        )}
+      </div>
+      {adding && (
+        <section className="ap-import-hero">
+          <ImportProperty onDone={refresh} existingCount={data.counts.total} />
+        </section>
+      )}
+      <div className="ap-stages" role="group" aria-label="Filtrar por estado">
+        {STAGES.map((s) => (
+          <button key={s.id} type="button" aria-pressed={stage === s.id} onClick={() => go({ etapa: s.id })}>
+            {s.label}
+          </button>
+        ))}
+      </div>
+      {error && <RetryRow error={error} onRetry={() => void load()} />}
+      {!result ? (
+        !error && <p role="status">Cargando propiedades…</p>
+      ) : result.items.length ? (
+        <>
+          <p className="ap-count" role="status">
+            {result.total} {result.total === 1 ? "propiedad" : "propiedades"}
+            {stage === "importar" ? " listas para importar" : stage === "importadas" ? " con fotos" : ""}
+          </p>
+          <ul className="ap-prop-list">
+            {result.items.map((p) => (
+              <PropertyTile key={p.id} p={p} agency={data.agency} reload={refresh} canWork={canEdit(data.role)} backTo={backHere} />
+            ))}
+          </ul>
+          {pages > 1 && (
+            <nav className="ap-pages" aria-label="Páginas">
+              <button type="button" className="button button-small button-outline" disabled={page <= 1} onClick={() => go({ pagina: page - 1 })}>
+                Anterior
+              </button>
+              <span>
+                Página {page} de {pages}
+              </span>
+              <button type="button" className="button button-small button-outline" disabled={page >= pages} onClick={() => go({ pagina: page + 1 })}>
+                Siguiente
+              </button>
+            </nav>
+          )}
+        </>
+      ) : (
+        <p className="ap-empty">
+          {stage === "importar"
+            ? "No tenés propiedades esperando sus fotos."
+            : data.counts.total
+              ? "Ninguna propiedad en este estado."
+              : data.scope
+                ? "Todavía no te asignaron propiedades."
+                : "Todavía no cargaste propiedades. Pegá el enlace de una publicación para empezar."}
+        </p>
+      )}
+    </>
+  );
+}
 
 /**
  * "Mis demostraciones": paged and filtered on the server with the real total;
@@ -1107,7 +1430,15 @@ export function ImportProperty({
   existingCount,
   inputId = "ap-import-url",
   bar = false,
+  autoSave = true,
 }: {
+  /**
+   * Step 1 saves the property as soon as its listing is read («Lista para
+   * importar» in «Mis propiedades»): if the person goes no further, it waits
+   * there with its data and one click brings its photos. Never for the
+   * agency's visit before its account.
+   */
+  autoSave?: boolean;
   /** The home's one-line bar: «Importar una propiedad», the field and «Importar»; the review opens below it. */
   bar?: boolean;
   /** The URL field's id: the home already has one importer, the start picker brings another. */
@@ -1168,6 +1499,11 @@ export function ImportProperty({
   const [progress, setProgress] = useState<PhotoProgress | null>(null);
   // One key per confirmed preview: sending it twice creates one property.
   const key = useRef("");
+  // Step 1: the property saved with what the listing says, before any photo (see autoSave).
+  const draft = useRef<Promise<Created | null> | null>(null);
+  const draftOf = useRef("");
+  const [saved, setSaved] = useState<"no" | "saving" | "yes" | "before">("no");
+  const [later, setLater] = useState("");
   // The preview on screen is the listing as it changed: confirming it imports what the listing shows then.
   const accept = useRef(false);
   const busy = Boolean(status);
@@ -1197,6 +1533,9 @@ export function ImportProperty({
     setNotice("");
     setPartial(null);
     setPreview(null);
+    setLater("");
+    setSaved("no");
+    draft.current = null;
     accept.current = false;
     setStatus("Leyendo la publicación…");
     track("property_import_started", { source: hostOf(url), mode: "single" });
@@ -1208,6 +1547,8 @@ export function ImportProperty({
     try {
       const data = await api<Preview>(endpoint, { method: "POST", body: JSON.stringify({ url, preview: true }) });
       show(data);
+      if (data.fillsDraft) setSaved("before");
+      else if (autoSave && !resume && !data.duplicateOf && !isVisiting()) saveDraft(data);
       if (resume) {
         // Back from signing in: the same review, with what the person had corrected and chosen.
         setFields(resume.fields);
@@ -1229,6 +1570,53 @@ export function ImportProperty({
     }
   }
 
+  /** What the review would import: the same as the saved draft needs no second request. */
+  const reviewed = (f: typeof fields, photos: string[], map: MapChoice | null) => JSON.stringify([f, photos, map]);
+
+  /** Step 1: the property saved as the listing reads, every photo still to import. Quietly skipped if it fails. */
+  function saveDraft(data: Preview) {
+    const initial = {
+      title: data.title,
+      location: data.location ?? "",
+      price: data.priceConflict ? "" : (data.price ?? ""),
+      operation: data.operation ?? "",
+      description: data.description ?? "",
+    };
+    const map = initialMapChoice(data);
+    draftOf.current = reviewed(initial, data.images, map);
+    setSaved("saving");
+    draft.current = api<Created>(endpoint, {
+      method: "POST",
+      body: JSON.stringify({
+        url: data.listingUrl,
+        key: crypto.randomUUID(),
+        snapshot: data.snapshot,
+        overrides: { ...initial, map: map ? mapOverride(data, map) : undefined },
+        images: data.images,
+      }),
+    })
+      .then((made) => {
+        setSaved("yes");
+        track("listing_import_draft_saved", { source: hostOf(data.listingUrl), photos: data.images.length });
+        void onDone?.();
+        return made;
+      })
+      .catch(() => {
+        setSaved("no");
+        return null;
+      });
+  }
+
+  /** «Lo hago después»: the review closes; the property waits in «Mis propiedades». */
+  function leaveForLater() {
+    if (!preview) return;
+    track("listing_import_left_for_later", { source: hostOf(preview.listingUrl), photos: preview.images.length });
+    setPreview(null);
+    setUrl("");
+    setLater("Listo: quedó en Mis propiedades, lista para importar. Cuando quieras, traé sus fotos con un clic.");
+    void onDone?.();
+  }
+
   async function create() {
     if (!preview) return;
     setError("");
@@ -1236,8 +1624,14 @@ export function ImportProperty({
     setStatus("Creando la propiedad…");
     track("listing_import_confirmed", importEventProps(preview.diagnostics, { source: hostOf(preview.listingUrl), mode: "single", photos_kept: keep.size }));
     let made: Created;
+    // Step 1 already saved it: unchanged, its photos come in now; changed, the same draft is completed with the review.
+    const before = draft.current ? await draft.current : null;
+    const chosen = preview.images.filter((src) => keep.has(src));
     try {
-      made = await api<Created>(endpoint, {
+      made =
+        before?.id && draftOf.current === reviewed(fields, chosen, mapChoice)
+          ? before
+          : await api<Created>(endpoint, {
         method: "POST",
         body: JSON.stringify({
           url: preview.listingUrl,
@@ -1245,7 +1639,7 @@ export function ImportProperty({
           snapshot: preview.snapshot,
           accept: accept.current,
           overrides: { ...fields, map: mapChoice ? mapOverride(preview, mapChoice) : undefined },
-          images: preview.images.filter((src) => keep.has(src)),
+          images: chosen,
         }),
       });
     } catch (err) {
@@ -1357,6 +1751,11 @@ export function ImportProperty({
           </button>
         )}
       </form>
+      {later && !preview && (
+        <p className="inline-notice ap-step-saved" role="status">
+          <Check size={15} strokeWidth={3} aria-hidden="true" /> {later}
+        </p>
+      )}
       {carried && !preview && (
         <p className="inline-notice" role="status">
           {carried}
@@ -1428,9 +1827,17 @@ export function ImportProperty({
               Esta propiedad ya está en {where}. <Link href={openPath(preview.duplicateOf)}>Abrirla</Link>
             </p>
           ) : preview.fillsDraft ? (
-            <p className="inline-notice">
-              Un intento anterior dejó esta propiedad como borrador sin fotos. Al importar se completa ese borrador: no se crea otra.{" "}
-              <Link href={openPath(preview.fillsDraft)}>Ver el borrador</Link>
+            <p className="inline-notice ap-step-saved">
+              <Check size={15} strokeWidth={3} aria-hidden="true" /> Esta propiedad ya está en Mis propiedades, lista para importar. Al importar se completa esa: no
+              se crea otra.
+            </p>
+          ) : saved === "yes" ? (
+            <p className="inline-notice ap-step-saved" role="status">
+              <Check size={15} strokeWidth={3} aria-hidden="true" /> Guardada en Mis propiedades con estos datos. Si no seguís ahora, queda lista para importar.
+            </p>
+          ) : saved === "saving" ? (
+            <p className="dm-help" role="status">
+              Guardándola en Mis propiedades…
             </p>
           ) : null}
           <ImportPreview data={{ ...preview, images: preview.images.filter((src) => keep.has(src)) }} />
@@ -1507,6 +1914,11 @@ export function ImportProperty({
           >
             {progress ? `Importando fotos: ${progress.done} de ${progress.total}` : busy ? "Importando…" : `Importar con ${keep.size} ${keep.size === 1 ? "foto" : "fotos"}`}
           </button>
+          {!busy && (saved === "yes" || saved === "before") && (
+            <button type="button" className="text-link ap-later" onClick={leaveForLater}>
+              Lo hago después
+            </button>
+          )}
           {progress && (
             <div className="ap-import-progress" role="status" aria-live="polite">
               <progress max={progress.total || 1} value={progress.done} aria-label="Fotos importadas" />

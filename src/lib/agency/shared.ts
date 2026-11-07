@@ -68,7 +68,26 @@ export type PanelProperty = {
   coverPhotoId: string | null;
   listingUrl: string | null;
   createdAt: string;
+  /**
+   * Saved from its listing with its data, its photos not imported yet
+   * («Lista para importar»): the import that holds them, retried with one click.
+   * Only while the property has no photos. Absent where it was not looked up.
+   */
+  pending?: PanelPending | null;
+  /** Its videos, ready or being made; absent or null when unknown. */
+  videos?: number | null;
 };
+
+/** The photos of a property saved from its listing that are still to be brought in. */
+export type PanelPending = { importId: string; images: string[] };
+
+/** Where a property stands in «Mis propiedades». */
+export type PropertyStage = "pending" | "imported" | "demo" | "empty";
+export function propertyStage(p: Pick<PanelProperty, "pending" | "photos" | "staged" | "status">): PropertyStage {
+  if (p.pending && p.pending.images.length && !p.photos) return "pending";
+  if (p.staged > 0 || p.status === "published") return "demo";
+  return p.photos ? "imported" : "empty";
+}
 
 export type PanelImport = {
   id: string;

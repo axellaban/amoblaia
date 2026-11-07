@@ -6,6 +6,7 @@
 import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
 import {
+  Building2,
   ChevronDown,
   CircleHelp,
   Compass,
@@ -38,6 +39,7 @@ import { reopenTour } from "./panel-tour";
 
 export type PanelSection =
   | "inicio"
+  | "mis_propiedades"
   | "propiedades"
   | "imagenes"
   | "video"
@@ -56,6 +58,7 @@ type Item = { id: PanelSection; href: string; label: string; icon: typeof Home; 
 const GROUPS = (): Item[][] => [
   [
     { id: "inicio", href: "/panel", label: "Inicio", icon: Home },
+    { id: "mis_propiedades", href: "/panel/mis-propiedades", label: "Mis propiedades", icon: Building2 },
     { id: "propiedades", href: "/panel/propiedades", label: "Mis demostraciones", icon: LayoutGrid },
     { id: "imagenes", href: "/panel/imagenes", label: "Estudio de imágenes", icon: Images },
     ...(videoEnabled() ? [{ id: "video", href: "/panel/video", label: "Video", icon: PlayCircle, future: "video" } as Item] : []),

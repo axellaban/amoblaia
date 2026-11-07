@@ -60,6 +60,8 @@ let visiting = false;
 export function setVisiting(on: boolean) {
   visiting = on;
 }
+/** Whether this page is that visit: nothing is saved on its behalf without asking. */
+export const isVisiting = () => visiting;
 export const VISIT_ACCOUNT_EVENT = "habita:visita-cuenta";
 
 /** fetch for the admin API: JSON in and out, the server's message on errors. */
