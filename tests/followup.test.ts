@@ -6,6 +6,7 @@ const base = { lost: false, test: false, suppressed: false, pendingProspect: fal
 const v = (id: string, version: number, status: FollowupVersion["status"], body = "Hola {{decisor}}"): FollowupVersion => ({
   id,
   stage: "no-responde",
+  action: "principal",
   version,
   channel: "whatsapp",
   trigger_label: "",
@@ -110,6 +111,7 @@ describe("messages", () => {
     expect("error" in cleanVersion({ stage: "otra", channel: "whatsapp", body: "Hola" })).toBe(true);
     expect(cleanVersion({ stage: "sin-uso", channel: "whatsapp", body: " Tu panel: {{panel}} ", ctas: ["panel", "nada"], status: "test", trigger: " 2 días " })).toEqual({
       stage: "sin-uso",
+      action: "principal",
       channel: "whatsapp",
       trigger: "2 días",
       body: "Tu panel: {{panel}}",

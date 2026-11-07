@@ -36,13 +36,18 @@ describe("followup migration", () => {
   });
 
   it("is idempotent", async () => {
-    await db.exec(readFileSync("supabase/migrations/202611300001_followup.sql", "utf8"));
+    // The first one ran before the later ones changed its constraints; the later ones re-run on top.
+    await db.exec(readFileSync("supabase/migrations/202612010001_followup_edit.sql", "utf8"));
+    await db.exec(readFileSync("supabase/migrations/202612020001_followup_queue.sql", "utf8"));
     expect((await one<{ n: number }>("select count(*)::int as n from followup_versions"))!.n).toBe(9);
   });
 
-  it("never edits or deletes a saved version: only its status changes", async () => {
+  it("never deletes a saved version nor changes its stage, action or number (the text can be edited)", async () => {
     const v = await active("no-responde");
-    expect(await fails("update followup_versions set body = 'otro' where id = $1", [v.id])).toContain("FOLLOWUP_VERSION_FROZEN");
+    expect(await fails("update followup_versions set stage = 'sin-uso' where id = $1", [v.id])).toContain("FOLLOWUP_VERSION_FROZEN");
+    expect(await fails("update followup_versions set action = 'precios' where id = $1", [v.id])).toContain("FOLLOWUP_VERSION_FROZEN");
+    expect(await fails("update followup_versions set version = 7 where id = $1", [v.id])).toContain("FOLLOWUP_VERSION_FROZEN");
+    expect(await fails("update followup_versions set body = 'otro texto' where id = $1", [v.id])).toBeNull();
     expect(await fails("delete from followup_versions where id = $1", [v.id])).toContain("FOLLOWUP_VERSION_FROZEN");
   });
 
@@ -83,8 +88,45 @@ describe("followup migration", () => {
     expect((await one<{ n: number }>("select count(*)::int as n from followup_executions where agency_id = $1", [a]))!.n).toBe(1);
   });
 
+  it("keeps each action's versions apart: the presentation does not archive the stage's message", async () => {
+    const before = await active("no-responde");
+    const p1 = (await one<{ id: string; version: number; action: string; status: string }>("select * from habita_followup_create(null, 'no-responde', 'whatsapp', '', 'Uno\n---\nDos', '{whatsapp}', 'active', 'presentacion')"))!;
+    expect(p1).toMatchObject({ version: 1, action: "presentacion", status: "active" });
+    expect((await active("no-responde")).id).toBe(before.id);
+    const p2 = (await one<{ version: number }>("select * from habita_followup_create(null, 'no-responde', 'whatsapp', '', 'Otra', '{whatsapp}', 'active', 'presentacion')"))!;
+    expect(p2.version).toBe(2);
+    expect((await one<{ status: string }>("select status from followup_versions where id = $1", [p1.id]))!.status).toBe("archived");
+    expect(await fails("select habita_followup_create(null, 'no-responde', 'whatsapp', '', 'x', '{}', 'active', 'fax')")).not.toBeNull();
+  });
+
+  it("records the action and the text that went out", async () => {
+    const a = await agency();
+    const p = (await one<{ id: string }>("select id from followup_versions where stage = 'no-responde' and action = 'presentacion' and status = 'active'"))!;
+    const e = (await one<{ action: string; body: string; status: string }>("select * from habita_followup_mark(null, $1, $2, 0, 'sent', null, 'Uno y dos')", [p.id, a]))!;
+    expect(e).toMatchObject({ action: "presentacion", body: "Uno y dos", status: "sent" });
+  });
+
+  it("lets only one session take an agency until its lock expires", async () => {
+    const a = await agency();
+    const [u1, u2] = ["11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"];
+    await db.query("insert into auth.users(id) values($1),($2) on conflict do nothing", [u1, u2]);
+    await db.query("insert into profiles(id) values($1),($2) on conflict do nothing", [u1, u2]).catch(() => undefined);
+    const claim = (u: string) => one<{ actor_id: string }>("select * from habita_followup_claim($1, 'x', $2, 'no-contactado', 'principal', 600)", [u, a]);
+    expect((await claim(u1))!.actor_id).toBe(u1);
+    expect((await claim(u1))!.actor_id).toBe(u1);
+    expect(await fails("select habita_followup_claim($1, 'x', $2, 'no-contactado', 'principal', 600)", [u2, a])).toContain("FOLLOWUP_LOCKED");
+    // Expired: the other session can take it.
+    await db.query("update followup_claims set locked_until = now() - interval '1 second' where agency_id = $1", [a]);
+    expect((await claim(u2))!.actor_id).toBe(u2);
+    // Only the holder releases it.
+    await db.query("select habita_followup_release($1, $2)", [u1, a]);
+    expect((await one<{ n: number }>("select count(*)::int as n from followup_claims where agency_id = $1", [a]))!.n).toBe(1);
+    await db.query("select habita_followup_release($1, $2)", [u2, a]);
+    expect((await one<{ n: number }>("select count(*)::int as n from followup_claims where agency_id = $1", [a]))!.n).toBe(0);
+  });
+
   it("is closed to anonymous and signed-in users", async () => {
-    const grants = (await db.query<{ grantee: string }>("select grantee from information_schema.role_table_grants where table_name in ('followup_versions', 'followup_executions') and grantee in ('anon', 'authenticated')")).rows;
+    const grants = (await db.query<{ grantee: string }>("select grantee from information_schema.role_table_grants where table_name in ('followup_versions', 'followup_executions', 'followup_claims', 'followup_agencies', 'followup_script') and grantee in ('anon', 'authenticated')")).rows;
     expect(grants).toEqual([]);
   });
 });

@@ -88,3 +88,58 @@ Flujo: leer el script (`GET /api/admin/follow-up/script`), abrir la etapa, revis
 ## Migraciones
 
 `202611300001_followup.sql` (versiones y ejecuciones) y `202612010001_followup_edit.sql` (versiones editables con observaciones, `followup_agencies` y `followup_script`).
+
+## Fase 1 — Cola de ejecución confiable
+
+Primera de las fases del brief «Follow-up Execution Center» (aprobación por tanda real de 10 inmobiliarias antes de la siguiente). Migración `202612020001_followup_queue.sql`.
+
+### Modelo
+
+Cada inmobiliaria tiene cuatro datos independientes; el embudo sigue con sus 9 etapas.
+
+- **Etapa** (`stage`): la del embudo, como antes (o la corregida a mano).
+- **Situación** (`situation`): qué pasó en la conversación. Sin respuesta, Confirmó número, Interesado, Neutro, Pregunta precios, Pide más adelante, Derivó, Rechazo, No interesado (con proveedor), No contactar, Sin WhatsApp, Número incorrecto. Sale de los datos (`derivedSituation` en `src/lib/followup/plan.ts`: baja, cuenta perdida con su motivo, «Estado» de la hoja, números inválidos, etapa de prospección), así la hoja queda migrada sin copiarla. Una situación marcada a mano vale mientras el embudo siga en el mismo paso, y además se registra en Adquisición: respuesta, interés, pérdida, baja o número inválido.
+- **Próxima acción** (`action`, fija por código en esta fase, `nextAction`): la de la etapa («Saludo» en No contactado). Confirmó número → **Presentación**. Pregunta precios → **Precios**. Interesado, Neutro, Pide más adelante y Derivó se resuelven a mano (la bandeja llega en la Fase 2). Las cerradas no tienen acción. Presentación y Precios son acciones de «Contactado, no responde» con sus propias versiones A/B; un texto con líneas `---` son varios mensajes seguidos.
+- **Estado de ejecución**: pendiente, tomada, abierta, enviada, no salió, bloqueada.
+
+### La cola
+
+Arriba de las etapas, una sola cola con lo que se puede ejecutar ahora, por grupo (respuestas, demos, seguimientos, contactos nuevos) y dentro de cada uno por score y antigüedad. Queda afuera, con el motivo a la vista en su etapa (**Bloqueada**):
+
+- sin acción para su situación, o sin texto para la acción;
+- No contactado que ya fue contactado (fecha de envío en la hoja, o un envío nuestro);
+- posible duplicado (mismo número o mismo nombre que otra ya contactada; solo en el primer contacto);
+- respuesta ya contestada (le escribimos después de su última respuesta);
+- seguimiento a menos de 48 h de nuestro último mensaje;
+- el mensaje lleva `{{demo}}` y no tiene demo publicada;
+- sin WhatsApp;
+- tope de 50 conversaciones nuevas en 24 h;
+- fuera de horario (hora de Argentina: contactos nuevos de lunes a sábado de 9 a 18; el resto hasta las 19).
+
+Un número «por revisar» no bloquea: el agente confirma en el chat que es la inmobiliaria y **al confirmar el envío el número queda validado** (y el envío se registra en Adquisición). Si el número no tiene WhatsApp, «No se envió» con «No tiene WhatsApp» o «Número incorrecto» lo invalida y la saca de la cola.
+
+`{{inmobiliaria}}` usa el **nombre corto**: el cargado a mano o el de la ficha sin lo que va entre paréntesis ni la forma societaria (`shortName`). Se cambia desde el detalle de ejecución.
+
+### Tomar una inmobiliaria
+
+Al ejecutar, la sesión la toma 10 minutos (`followup_claims`, `habita_followup_claim`). Otra sesión ve «Tomada» y no puede tomarla. Al confirmar, marcar que no salió o soltarla, queda libre; si la sesión se corta, vuelve a la cola al vencer y, si ya se había abierto WhatsApp, avisa «revisá el chat antes de reenviar». Confirmar es idempotente. La fila confirmada no se mueve: «Siguiente pendiente» abre la próxima. «Abrir WhatsApp» usa `web.whatsapp.com/send` en una sola pestaña (ventana con nombre `habita-whatsapp`).
+
+### API del agente (`/api/admin/followup/*`, sesión del equipo, JSON)
+
+- `GET queue?limite=50` → `{ summary, next, queue, blocked }`: la próxima libre para esta sesión, las ejecutables en orden y las bloqueadas con su motivo.
+- `POST claim` `{ inmobiliaria? }` → la toma y devuelve el mensaje armado (`messages`, `whatsappUrl`, `warnings`, `notes`, `versionId`, `action`). Sin `inmobiliaria`, la próxima libre: dos sesiones que piden a la vez reciben inmobiliarias distintas. `null` si no queda ninguna.
+- `POST open` `{ inmobiliaria, etapa, tarea, version }` → abierta (no cuenta como enviada).
+- `POST confirm` `{ inmobiliaria, etapa, tarea, version, texto }` → la ejecución, el aviso si algo no se pudo registrar y la inmobiliaria como quedó.
+- `POST fail` `{ inmobiliaria, etapa, tarea, version, motivo, tipo? }` (`sin_whatsapp`, `numero_incorrecto`).
+- `POST situation` `{ inmobiliaria, situacion, texto? }` (texto original de la respuesta).
+- `POST release` `{ inmobiliaria }`.
+
+Si la etapa, la acción o la versión cambiaron desde que se leyó la cola, la API responde 409 con el motivo: el agente actualiza y sigue.
+
+### Selectores nuevos
+
+`followup-queue`, `followup-queue-item` (`data-agency`, `data-stage`, `data-action`, `data-situation`, `data-status`), `followup-situation-select`, `followup-blocked`, `followup-row-status`, `followup-exec`, `followup-phone`, `followup-message` (uno por mensaje, `data-index`), `followup-copy-part`, `followup-check`, `followup-error`, `followup-failed-kind`, `followup-next`, `followup-release`, `followup-short-name`, `followup-kpi-ready`, `followup-kpi-blocked`, `followup-kpi-new`. Cada `followup-item` suma `data-situation`, `data-action` y `data-blocked`.
+
+### Corrección del 07/11
+
+De las 10 ejecuciones del 07/11, 9 no se habían registrado en Adquisición (número «por revisar»). Se registraron como saludo enviado, con el número validado y la hora real en la evidencia.

@@ -8,10 +8,11 @@ import { agencyDemoLink, setDemosSent } from "@/lib/agency/external";
 import { agencyPanelLink } from "@/lib/agency/panel-link";
 import { normalizeArNumber } from "@/lib/demos/send";
 import { isUuid } from "@/lib/demos/shared";
-import { contactFor } from "@/lib/prospecting/external";
+import { contactFor, stableUuid } from "@/lib/prospecting/external";
 import { recordSend } from "@/lib/prospecting/record-send";
 import { prospectDataset, prospectRpc } from "@/lib/prospecting/server";
-import type { Dataset, ProspectAccount } from "@/lib/prospecting/types";
+import type { Dataset, OutreachAttempt, ProspectAccount } from "@/lib/prospecting/types";
+import { artDate } from "@/lib/prospecting/time";
 import { adminClient } from "@/lib/supabase/server";
 import {
   FOLLOWUP_STAGES,
@@ -31,6 +32,8 @@ import {
   type OverrideStage,
   versionFor,
   versionStats,
+  stepValue,
+  type Channel,
   type ExecutionStatus,
   type FollowupExecution,
   type FollowupVersion,
@@ -38,6 +41,25 @@ import {
   type StageKey,
   type VersionStats,
 } from "./stages";
+import {
+  CLOSED_SITUATIONS,
+  DAILY_NEW_CAP,
+  SITUATIONS,
+  actionLabel,
+  byPriority,
+  currentSituation,
+  derivedSituation,
+  groupOf,
+  isSituation,
+  nameKey,
+  nextAction,
+  outsideHours,
+  shortName,
+  splitMessages,
+  type Action,
+  type Group,
+  type Situation,
+} from "./plan";
 
 /**
  * Follow-up (/admin/follow-up): each funnel stage with its next best action,
@@ -62,42 +84,70 @@ async function readAll<T>(table: string, columns: string) {
   }
   return out;
 }
-const VERSION_FIELDS = "id,stage,version,channel,trigger_label,body,ctas,status,created_at,status_at,notes,edited_at";
+const VERSION_FIELDS = "id,stage,action,version,channel,trigger_label,body,ctas,status,created_at,status_at,notes,edited_at";
 const versions = () => readAll<FollowupVersion>("followup_versions", VERSION_FIELDS);
 
 /** What Follow-up keeps of each agency: its corrected stage, and the address, zone and score of the ones added by hand. */
-type AgencyExtra = { agency_id: string; stage_override: OverrideStage | null; override_step: number | null; address: string | null; zone: string | null; score: number | null };
+type AgencyExtra = {
+  agency_id: string;
+  stage_override: OverrideStage | null;
+  override_step: number | null;
+  address: string | null;
+  zone: string | null;
+  score: number | null;
+  situation: Situation | null;
+  situation_step: number | null;
+  situation_note: string | null;
+  situation_at: string | null;
+  short_name: string | null;
+};
 const extras = async (agencyId?: string) => {
-  let q = adminClient().from("followup_agencies").select("agency_id,stage_override,override_step,address,zone,score");
+  let q = adminClient().from("followup_agencies").select("agency_id,stage_override,override_step,address,zone,score,situation,situation_step,situation_note,situation_at,short_name");
   if (agencyId) q = q.eq("agency_id", agencyId);
   const { data, error } = await q.limit(20000);
   if (error) throw missing(error) ? new HttpError(409, MISSING) : new Error("FOLLOWUP_READ_FAILED");
   return new Map(((data ?? []) as AgencyExtra[]).map((x) => [x.agency_id, { ...x, score: x.score === null ? null : Number(x.score) }]));
 };
 
+/** What the prospecting sheet said of the account: its «Estado» and its «Fecha envío». */
+type SheetFacts = { status: string | null; sentDate: string | null };
+function sheetFacts(row: Record<string, unknown>): SheetFacts {
+  const find = (re: RegExp) => {
+    const k = Object.keys(row).find((x) => re.test(x.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim()));
+    const v = k ? row[k] : null;
+    return typeof v === "string" && v.trim() ? v.trim() : null;
+  };
+  return { status: find(/^estado$/), sentDate: find(/^fecha (de )?envio$/) };
+}
+
 /** The agency's web and contact name, and its prospecting account's address (optional sources: missing reads as nothing). */
 async function details(agencyId?: string) {
   const [agencies, accounts] = await Promise.all([
     readAll<{ id: string; website: string | null; contact_name: string | null }>("agencies", "id,website,contact_name").catch(() => []),
-    readAll<{ agency_id: string; address: string | null }>("prospect_accounts", "agency_id,address").catch(() => []),
+    readAll<{ agency_id: string; address: string | null; stage: string; source_data: Record<string, unknown> | null }>("prospect_accounts", "agency_id,address,stage,source_data").catch(() => []),
   ]);
   const only = <T extends { id?: string; agency_id?: string }>(list: T[]) => (agencyId ? list.filter((x) => (x.id ?? x.agency_id) === agencyId) : list);
   return {
     agency: new Map(only(agencies).map((a) => [a.id, a])),
     address: new Map(only(accounts).filter((a) => a.address).map((a) => [a.agency_id, a.address])),
+    sheet: new Map(
+      only(accounts)
+        .filter((a) => a.source_data && a.stage !== "lost" && a.stage !== "discarded")
+        .map((a) => [a.agency_id, sheetFacts(a.source_data!)] as const),
+    ),
   };
 }
 const executions = (agencyId?: string) =>
   agencyId
     ? adminClient()
         .from("followup_executions")
-        .select("id,version_id,stage,agency_id,from_step,status,reason,created_at,updated_at,sent_at")
+        .select("id,version_id,stage,action,agency_id,from_step,status,reason,created_at,updated_at,sent_at")
         .eq("agency_id", agencyId)
         .then(({ data, error }) => {
           if (error) throw missing(error) ? new HttpError(409, MISSING) : new Error("FOLLOWUP_READ_FAILED");
           return (data ?? []) as FollowupExecution[];
         })
-    : readAll<FollowupExecution>("followup_executions", "id,version_id,stage,agency_id,from_step,status,reason,created_at,updated_at,sent_at");
+    : readAll<FollowupExecution>("followup_executions", "id,version_id,stage,action,agency_id,from_step,status,reason,created_at,updated_at,sent_at");
 
 /** The prospecting account of each agency: an open one before a lost or discarded one. */
 function accountsByAgency(ds: Dataset | null) {
@@ -145,6 +195,9 @@ function recipient(r: CommercialRow, account: ProspectAccount | undefined, conta
 export type QueueItem = {
   agencyId: string;
   name: string;
+  /** El nombre para {{inmobiliaria}}: el corto cargado a mano, o el de la ficha sin paréntesis ni forma societaria. */
+  shortName: string;
+  shortNameManual: boolean;
   person: string | null;
   phone: string | null;
   wa: string | null;
@@ -163,9 +216,27 @@ export type QueueItem = {
   website: string | null;
   /** Its properties (demos), as in /admin/inmobiliarias. */
   properties: number;
+  stage: StageKey;
+  /** The funnel step that counts (the corrected stage's, when it was corrected by hand). */
+  step: number;
   /** Its stage was corrected by hand (by the team or the extension). */
   manual: boolean;
+  situation: Situation;
+  situationManual: boolean;
+  situationNote: string | null;
+  /** La próxima acción (fija por código en la Fase 1); null: nada que mandar. */
+  action: Action | null;
+  actionLabel: string | null;
+  group: Group;
+  /** Por qué no se puede ejecutar ahora; null: está en la cola. */
+  blocked: string | null;
+  /** Lo que el agente revisa antes de mandar (número sin validar, un WhatsApp abierto sin confirmar). */
+  checks: string[];
+  /** Otra sesión la tiene tomada (o esta misma). */
+  claim: { actorId: string; by: string; until: string } | null;
   versionId: string | null;
+  /** The channel of its version (WhatsApp or a team task). */
+  versionChannel: Channel | null;
   execution: { status: ExecutionStatus; at: string; reason: string | null } | null;
 };
 export type StageView = {
@@ -175,43 +246,134 @@ export type StageView = {
   versions: (FollowupVersion & { stats: VersionStats })[];
   queue: QueueItem[];
 };
+export type QueueSummary = { ready: number; blocked: number; claimed: number; doneToday: number; newToday: number; cap: number };
 
-/** The whole page: one view per stage, with its versions measured and its queue (score from highest to lowest). */
-export async function followupOverview(): Promise<{ stages: StageView[] }> {
-  const [rows, ds, vs, ex, extra, info] = await Promise.all([commercialRows(), prospectDataset().catch(() => null), versions(), executions(), extras(), details()]);
+type Claim = { agency_id: string; actor_id: string; actor_name: string; stage: string; action: string; locked_until: string };
+const claims = async () => {
+  const { data, error } = await adminClient().from("followup_claims").select("agency_id,actor_id,actor_name,stage,action,locked_until").gt("locked_until", new Date().toISOString()).limit(5000);
+  if (error) throw missing(error) ? new HttpError(409, MISSING) : new Error("FOLLOWUP_READ_FAILED");
+  return new Map(((data ?? []) as Claim[]).map((c) => [c.agency_id, c]));
+};
+
+const DAY_MS = 86_400_000;
+const whenText = (iso: string) => new Date(iso).toLocaleString("es-AR", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "America/Argentina/Buenos_Aires" });
+
+/**
+ * Everything Follow-up knows of every agency, computed once: its stage,
+ * situation, next action, whether it can be executed now and why not. The
+ * page, the agent's queue and each claim or confirmation read the same thing,
+ * so the counters match the rows.
+ */
+async function board(now = new Date()) {
+  const [rows, ds, vs, ex, extra, info, held] = await Promise.all([commercialRows(), prospectDataset().catch(() => null), versions(), executions(), extras(), details(), claims()]);
   const accounts = accountsByAgency(ds);
-  const stepNow = new Map<string, number>();
-  const byStage = new Map<StageKey, QueueItem[]>(FOLLOWUP_STAGES.map((s) => [s.key, []]));
   const exOf = new Map<string, FollowupExecution[]>();
   for (const e of ex) exOf.set(e.agency_id, [...(exOf.get(e.agency_id) ?? []), e]);
-  const accountIds = new Map<string, Set<string>>();
-  for (const a of ds?.accounts ?? []) accountIds.set(a.agency_id, (accountIds.get(a.agency_id) ?? new Set()).add(a.id));
-  const sendsOf = new Map<string, NonNullable<typeof ds>["attempts"]>();
-  for (const t of ds?.attempts ?? []) if (t.status === "sent") sendsOf.set(t.account_id, [...(sendsOf.get(t.account_id) ?? []), t]);
+  const agencyOfAccount = new Map((ds?.accounts ?? []).map((a) => [a.id, a.agency_id]));
+  const sendsOf = new Map<string, OutreachAttempt[]>();
+  for (const t of ds?.attempts ?? []) {
+    const agency = agencyOfAccount.get(t.account_id);
+    if (t.status === "sent" && agency) sendsOf.set(agency, [...(sendsOf.get(agency) ?? []), t]);
+  }
+
+  // New conversations in the last 24 hours: a first send (Follow-up's greeting or the sequence's step 1), once per agency.
+  const since24 = now.getTime() - DAY_MS;
+  const fresh = new Set<string>();
+  for (const e of ex) if (e.stage === "no-contactado" && e.status === "sent" && e.sent_at && Date.parse(e.sent_at) >= since24) fresh.add(e.agency_id);
+  for (const [agency, list] of sendsOf) if (list.some((t) => t.step === 1 && t.sent_at && Date.parse(t.sent_at) >= since24)) fresh.add(agency);
+
+  // Our last message and their last reply, per agency: a follow-up waits, a reply is answered once.
+  const lastOurs = new Map<string, number>();
+  const later = (m: Map<string, number>, id: string, iso: string | null) => {
+    const t = iso ? Date.parse(iso) : NaN;
+    if (Number.isFinite(t) && t > (m.get(id) ?? 0)) m.set(id, t);
+  };
+  for (const [agency, list] of sendsOf) for (const t of list) later(lastOurs, agency, t.sent_at);
+  for (const e of ex) if (e.status === "sent") later(lastOurs, e.agency_id, e.sent_at);
+  const lastReply = new Map<string, number>();
+  for (const e of ds?.events ?? []) {
+    const agency = agencyOfAccount.get(e.account_id);
+    if (agency && !e.corrected && (e.type === "reply" || e.type === "interest" || e.type === "not_interested")) later(lastReply, agency, e.occurred_at);
+  }
+
+  const stepNow = new Map<string, number>();
+  const base: { r: CommercialRow; account: ProspectAccount | undefined; own: AgencyExtra | undefined; at: ReturnType<typeof place> }[] = [];
   for (const r of rows) {
     const account = accounts.get(r.id);
     const own = extra.get(r.id);
     const at = place(r, account, own);
     stepNow.set(r.id, at.step);
-    if (!at.stage) continue;
-    const sends = [...(accountIds.get(r.id) ?? [])].flatMap((id) => sendsOf.get(id) ?? []);
-    byStage.get(at.stage)!.push(item(r, account, own, info, at, vs, exOf.get(r.id) ?? [], sends));
+    base.push({ r, account, own, at });
   }
-  return {
-    stages: FOLLOWUP_STAGES.map((s) => {
-      const own = vs.filter((v) => v.stage === s.key).sort((a, b) => a.version - b.version);
-      const stats = versionStats(own, ex.filter((e) => e.stage === s.key), stepNow);
-      return {
-        key: s.key,
-        title: s.title,
-        goal: s.goal,
-        versions: own.map((v, i) => ({ ...v, stats: stats[i] })),
-        queue: byStage.get(s.key)!.sort(byScore),
-      };
-    }),
+
+  // Possible duplicates: another agency with the same number or the same name that was already contacted.
+  const contacted = (id: string) => (stepNow.get(id) ?? -1) >= 0 || (sendsOf.get(id)?.length ?? 0) > 0 || (exOf.get(id) ?? []).some((e) => e.status === "sent");
+  const byWa = new Map<string, string[]>();
+  const byName = new Map<string, string[]>();
+  const nameOf = new Map<string, string>();
+  for (const { r, account } of base) {
+    const wa = recipient(r, account).wa;
+    if (wa) byWa.set(wa, [...(byWa.get(wa) ?? []), r.id]);
+    const key = nameKey(r.name);
+    if (key.length >= 4) byName.set(key, [...(byName.get(key) ?? []), r.id]);
+    nameOf.set(r.id, r.name);
+  }
+  const duplicateOf = (id: string, wa: string | null, name: string) => {
+    const other = [...(wa ? byWa.get(wa) ?? [] : []), ...(byName.get(nameKey(name)) ?? [])].find((x) => x !== id && contacted(x));
+    return other ? nameOf.get(other)! : null;
   };
+
+  const items = new Map<string, QueueItem>();
+  for (const { r, account, own, at } of base) {
+    if (!at.stage) continue;
+    const it = item(r, account, own, info, at, vs, exOf.get(r.id) ?? [], sendsOf.get(r.id) ?? []);
+    const claim = held.get(r.id);
+    it.claim = claim ? { actorId: claim.actor_id, by: claim.actor_name || "otra sesión", until: claim.locked_until } : null;
+    const version = vs.find((v) => v.id === it.versionId);
+    it.blocked = blockReason(it, {
+      account,
+      sheet: info.sheet.get(r.id),
+      duplicate: it.stage === "no-contactado" ? duplicateOf(r.id, it.wa, r.name) : null,
+      newToday: fresh.size,
+      now,
+      lastOurs: lastOurs.get(r.id) ?? null,
+      lastReply: lastReply.get(r.id) ?? null,
+      needsDemo: Boolean(version && /\{\{\s*demo\s*\}\}/.test(version.body)),
+    });
+    items.set(r.id, it);
+  }
+  return { items, vs, ex, stepNow, newToday: fresh.size };
 }
 
+/** Minimum wait after our last message before a follow-up (the programmed ones, with their own times, come in Fase 2). */
+export const FOLLOW_UP_GAP_HOURS = 48;
+
+/** Why it cannot be executed now (in order of what to fix first), or null. */
+function blockReason(
+  it: QueueItem,
+  f: { account: ProspectAccount | undefined; sheet: SheetFacts | undefined; duplicate: string | null; newToday: number; now: Date; lastOurs: number | null; lastReply: number | null; needsDemo: boolean },
+) {
+  if (!it.action) return nextAction(it.stage, it.situation).reason ?? "Sin acción para esta situación.";
+  if (it.execution?.status === "sent") return null;
+  if (!it.versionId) return `Falta el texto de «${it.actionLabel}»: cargalo en la etapa «${stageInfo(it.stage).title}».`;
+  if (it.stage === "no-contactado") {
+    if (f.sheet?.sentDate) return `Ya contactada: la hoja tiene fecha de envío ${f.sheet.sentDate}. Corregí su estado.`;
+    if (f.lastOurs) return `Ya le escribimos el ${whenText(new Date(f.lastOurs).toISOString())}. Corregí su estado.`;
+  }
+  if (f.duplicate) return `Posible duplicado de «${f.duplicate}», que ya fue contactada.`;
+  if (it.group === "respuestas" && f.lastOurs && (!f.lastReply || f.lastOurs > f.lastReply))
+    return `Ya le escribimos después de su última respuesta (${whenText(new Date(f.lastOurs).toISOString())}): esperá que conteste.`;
+  if (it.group !== "respuestas" && it.group !== "nuevos" && f.lastOurs && f.now.getTime() - f.lastOurs < FOLLOW_UP_GAP_HOURS * 3600_000)
+    return `Le escribimos hace menos de ${FOLLOW_UP_GAP_HOURS} h (${whenText(new Date(f.lastOurs).toISOString())}).`;
+  if (f.needsDemo && !it.hasDemo) return "Variable incompleta: el mensaje lleva {{demo}} y todavía no tiene una demo publicada.";
+  const channel = it.versionChannel;
+  if (channel === "whatsapp" && !it.wa) return "Sin WhatsApp: cargalo en la ficha o marcala «Sin WhatsApp».";
+  if (channel === "whatsapp" && it.group === "nuevos" && f.newToday >= DAILY_NEW_CAP) return `Tope de ${DAILY_NEW_CAP} conversaciones nuevas en 24 horas alcanzado.`;
+  if (channel === "whatsapp") return outsideHours(it.group, f.now);
+  return null;
+}
+
+/** The agency's place, situation and next action, with its version and what was done. */
 function item(
   r: CommercialRow,
   account: ProspectAccount | undefined,
@@ -223,16 +385,36 @@ function item(
   sends: { status: string; sent_at: string | null; step: number }[],
 ): QueueItem {
   const stage = at.stage!;
-  const mine = executionsOf.filter((e) => e.stage === stage);
-  const version = versionFor(r.id, vs.filter((v) => v.stage === stage), mine);
-  const done = version ? mine.find((e) => e.version_id === version.id) : undefined;
   const agency = info.agency.get(r.id);
   const to = recipient(r, account, agency?.contact_name);
+  const waContacts = account?.contacts.filter((c) => c.channel === "whatsapp") ?? [];
+  const derived = derivedSituation({
+    suppressed: Boolean(account?.suppressed),
+    accountStage: account?.stage ?? null,
+    lostReason: account?.lost_reason ?? null,
+    sheetStatus: info.sheet.get(r.id)?.status ?? null,
+    hasNumber: Boolean(to.wa),
+    allInvalid: waContacts.length > 0 && waContacts.every((c) => c.invalid),
+  });
+  const sit = currentSituation(derived, own?.situation && own.situation_step !== null ? { situation: own.situation, step: own.situation_step } : null, stepValue(at.derived.reached));
+  const next = nextAction(stage, sit.situation);
+  const action = next.action;
+  const mine = executionsOf.filter((e) => e.stage === stage && (e.action ?? "principal") === (action ?? "principal"));
+  const offered = vs.filter((v) => v.stage === stage && (v.action ?? "principal") === (action ?? "principal"));
+  const sent = mine.find((e) => e.status === "sent");
+  const version = action ? (sent ? offered.find((v) => v.id === sent.version_id) ?? null : versionFor(r.id, offered, mine, action)) : null;
+  const done = sent ?? (version ? mine.find((e) => e.version_id === version.id) : undefined);
   const uncontacted = stage === "no-contactado";
   const lastAction = lastActionOf({ executions: executionsOf, versions: vs, attempts: sends, activity: r.lastActivity });
+  const checks: string[] = [];
+  if (version?.channel === "whatsapp" && to.wa && to.needsReview) checks.push("Número sin validar: confirmá en el chat que es la inmobiliaria; al confirmar el envío queda validado.");
+  if (done?.status === "opened") checks.push(`Se abrió WhatsApp el ${whenText(done.updated_at)} sin confirmar: revisá el chat antes de reenviar.`);
+  const short = own?.short_name?.trim() || shortName(r.name);
   return {
     agencyId: r.id,
     name: r.name,
+    shortName: short,
+    shortNameManual: Boolean(own?.short_name?.trim()),
     person: to.person,
     phone: to.phone,
     wa: to.wa,
@@ -248,119 +430,341 @@ function item(
     zone: account?.zone ?? own?.zone ?? null,
     website: agency?.website ?? account?.website ?? null,
     properties: r.properties,
+    stage,
+    step: at.step,
     manual: at.manual,
+    situation: sit.situation,
+    situationManual: sit.manual,
+    situationNote: sit.manual ? (own?.situation_note ?? null) : null,
+    action,
+    actionLabel: action ? actionLabel(stage, action) : null,
+    group: groupOf(stage, action),
+    blocked: null,
+    checks,
+    claim: null,
     versionId: version?.id ?? null,
+    versionChannel: version?.channel ?? null,
     execution: done ? { status: done.status, at: done.updated_at, reason: done.reason } : null,
   };
 }
 
-/** One agency, as it is now: its row, its prospecting account, its stage and its follow-up so far. */
-async function current(agencyId: string, stage: unknown) {
+/** The whole page: one view per stage, with its versions measured and its agencies (score from highest to lowest), and the execution queue. */
+export async function followupOverview(): Promise<{ stages: StageView[]; queue: QueueItem[]; summary: QueueSummary }> {
+  const b = await board();
+  const all = [...b.items.values()];
+  return {
+    stages: FOLLOWUP_STAGES.map((s) => {
+      const own = b.vs.filter((v) => v.stage === s.key).sort((x, y) => (x.action ?? "").localeCompare(y.action ?? "") || x.version - y.version);
+      const stats = versionStats(own, b.ex.filter((e) => e.stage === s.key), b.stepNow);
+      return {
+        key: s.key,
+        title: s.title,
+        goal: s.goal,
+        versions: own.map((v, i) => ({ ...v, stats: stats[i] })),
+        queue: all.filter((q) => q.stage === s.key).sort(byScore),
+      };
+    }),
+    queue: executable(all),
+    summary: summarize(all, b.newToday),
+  };
+}
+
+const pending = (q: QueueItem) => q.action !== null && q.execution?.status !== "sent";
+/** The ones that can be executed now, in priority order (taken ones included: the page shows who has them). */
+const executable = (all: QueueItem[]) => all.filter((q) => pending(q) && !q.blocked).sort(byPriority);
+function summarize(all: QueueItem[], newToday: number): QueueSummary {
+  const today = artDate(new Date());
+  const live = new Date().toISOString();
+  return {
+    ready: all.filter((q) => pending(q) && !q.blocked && !(q.claim && q.claim.until > live)).length,
+    blocked: all.filter((q) => pending(q) && q.blocked).length,
+    claimed: all.filter((q) => pending(q) && !q.blocked && q.claim && q.claim.until > live).length,
+    doneToday: all.filter((q) => q.execution?.status === "sent" && artDate(q.execution.at) === today).length,
+    newToday,
+    cap: DAILY_NEW_CAP,
+  };
+}
+
+// ------------------------------------------------------------------ the agent's API
+
+const strip = (q: QueueItem) => q;
+
+/** GET /api/admin/followup/queue: what's left, in order, and the next one free for this session. */
+export async function agentQueue(actorId: string, limit = 50) {
+  const b = await board();
+  const all = [...b.items.values()];
+  const live = new Date().toISOString();
+  const ready = executable(all);
+  const free = ready.filter((q) => !q.claim || q.claim.until <= live || q.claim.actorId === actorId);
+  return {
+    summary: summarize(all, b.newToday),
+    next: free[0] ? strip(free[0]) : null,
+    queue: ready.slice(0, Math.max(1, Math.min(limit, 500))).map(strip),
+    blocked: all.filter((q) => pending(q) && q.blocked).slice(0, 200).map((q) => ({ agencyId: q.agencyId, name: q.name, stage: q.stage, situation: q.situation, blocked: q.blocked })),
+  };
+}
+
+/** The agency as Follow-up sees it now (the same computation as the page). */
+async function itemOf(agencyId: string) {
   if (!isUuid(agencyId)) throw new HttpError(404, "No encontramos la inmobiliaria.");
-  if (!isStageKey(stage)) throw new HttpError(400, "Etapa desconocida.");
-  const [row, ds, vs, ex, extra, info] = await Promise.all([commercialRow(agencyId), prospectDataset().catch(() => null), versions(), executions(agencyId), extras(agencyId), details(agencyId)]);
-  if (!row) throw new HttpError(404, "No encontramos la inmobiliaria.");
-  const account = accountsByAgency(ds).get(agencyId);
-  const at = place(row, account, extra.get(agencyId));
-  if (at.stage !== stage)
-    throw new HttpError(409, at.stage ? `Ya no está en «${stageInfo(stage).title}»: pasó a «${stageInfo(at.stage).title}». Actualizá la lista.` : `Ya no está en «${stageInfo(stage).title}». Actualizá la lista.`);
-  const own = vs.filter((v) => v.stage === stage);
-  const mine = ex.filter((e) => e.stage === stage);
-  return { row, ds, account, step: at.step, contactName: info.agency.get(agencyId)?.contact_name ?? null, versions: own, mine, version: versionFor(agencyId, own, mine) };
+  const b = await board();
+  const it = b.items.get(agencyId);
+  if (!it) throw new HttpError(409, "Ya no está en Follow-up (avanzó, se perdió o se sacó). Actualizá la lista.");
+  return { it, b };
 }
 
 /**
- * «Ejecutar»: the message for this agency, with its links resolved (the same
- * ones as «Link demo» and «Link panel» in the list), its WhatsApp and the
- * version it gets. Nothing is recorded yet.
+ * POST …/claim: takes an agency for 10 minutes and returns its message ready.
+ * Without `inmobiliaria`, the next one free in the queue: two sessions asking
+ * at the same time get different ones (the lock is taken in the database).
  */
-export async function prepareExecution(agencyId: string, stage: unknown, origin: string, actor: { id: string; name: string }) {
-  const c = await current(agencyId, stage);
-  const v = c.version;
-  if (!v) throw new HttpError(409, "Esta etapa no tiene una versión activa: creá una arriba.");
+export async function claimNext(input: { agencyId?: unknown }, origin: string, actor: { id: string; name: string }) {
+  if (typeof input.agencyId === "string" && input.agencyId) {
+    const { it } = await itemOf(input.agencyId);
+    if (it.execution?.status === "sent") throw new HttpError(409, `Ya se confirmó «${it.actionLabel}» con ${it.name}.`);
+    if (it.blocked) throw new HttpError(409, it.blocked);
+    await lock(it, actor);
+    return prepare(it, origin, actor);
+  }
+  const { queue } = await agentQueue(actor.id, 500);
+  for (const it of queue) {
+    if (it.claim && it.claim.until > new Date().toISOString() && it.claim.actorId !== actor.id) continue;
+    try {
+      await lock(it, actor);
+      return prepare(it, origin, actor);
+    } catch (e) {
+      if (e instanceof HttpError && e.status === 409) continue;
+      throw e;
+    }
+  }
+  return null;
+}
+
+async function lock(it: QueueItem, actor: { id: string; name: string }) {
+  const { error } = await adminClient().rpc("habita_followup_claim", { p_actor: actor.id, p_actor_name: actor.name, p_agency: it.agencyId, p_stage: it.stage, p_action: it.action, p_seconds: 600 });
+  if (!error) return;
+  if (error.message?.includes("FOLLOWUP_LOCKED")) throw new HttpError(409, `${it.name} la está ejecutando ${it.claim?.by ?? "otra sesión"}.`);
+  throw missing(error) ? new HttpError(409, MISSING) : new Error("FOLLOWUP_CLAIM_FAILED");
+}
+async function release(agencyId: string, actorId: string) {
+  await adminClient().rpc("habita_followup_release", { p_actor: actorId, p_agency: agencyId });
+}
+
+/**
+ * The message for this agency, with its links resolved (the same ones as
+ * «Link demo» and «Link panel»), its WhatsApp and the version it gets. A text
+ * with «---» lines is several messages, sent one after the other.
+ */
+async function prepare(it: QueueItem, origin: string, actor: { id: string; name: string }) {
+  const vs = await versions();
+  const v = vs.find((x) => x.id === it.versionId);
+  if (!v) throw new HttpError(409, `Falta el texto de «${it.actionLabel}».`);
   const need = linksNeeded(v);
-  const [demo, panel] = await Promise.all([
-    need.demo ? agencyDemoLink(agencyId, actor.id, origin).then((l) => l.url).catch(() => null) : null,
-    need.panel ? agencyPanelLink(agencyId, actor.id, origin).then((l) => l.url).catch(() => null) : null,
+  const [demo, panel, account] = await Promise.all([
+    need.demo ? agencyDemoLink(it.agencyId, actor.id, origin).then((l) => l.url).catch(() => null) : null,
+    need.panel ? agencyPanelLink(it.agencyId, actor.id, origin).then((l) => l.url).catch(() => null) : null,
+    prospectDataset()
+      .then((ds) => accountsByAgency(ds).get(it.agencyId))
+      .catch(() => undefined),
   ]);
-  const to = recipient(c.row, c.account, c.contactName);
-  const message = fillMessage(v.body, {
-    inmobiliaria: c.row.name,
-    decisor: to.person,
-    sdr: c.account?.sdr || actor.name,
-    demo,
-    panel,
-  });
+  const message = fillMessage(v.body, { inmobiliaria: it.shortName, decisor: it.person, sdr: account?.sdr || actor.name, demo, panel });
   const holes = missingVariables(message);
-  const prospectStage = v.stage === "no-contactado" || v.stage === "no-responde";
-  const warnings: string[] = [];
+  const warnings: string[] = [...it.checks];
   if (holes.includes("demo")) warnings.push("Todavía no tiene una demo publicada: publicala antes de mandar este mensaje.");
   if (holes.includes("panel")) warnings.push("No pudimos armar el link a su panel.");
-  if (v.channel === "whatsapp" && !to.wa) warnings.push("Falta su WhatsApp: cargalo en la ficha de la inmobiliaria.");
-  if (v.channel === "whatsapp" && prospectStage && c.account && to.needsReview) warnings.push("El número está por revisar: verificalo en Adquisición para que el envío se registre.");
-  const ready = !holes.length && (v.channel === "task" || Boolean(to.wa));
-  const previous = c.mine.find((e) => e.version_id === v.id);
+  if (holes.some((h) => h !== "demo" && h !== "panel")) warnings.push(`Variable sin completar: ${holes.map((h) => `{{${h}}}`).join(", ")}.`);
+  if (v.channel === "whatsapp" && !it.wa) warnings.push("Falta su WhatsApp: cargalo en la ficha de la inmobiliaria.");
+  const ready = !holes.length && (v.channel === "task" || Boolean(it.wa));
+  const messages = splitMessages(message);
   return {
-    agencyId,
-    stage: v.stage,
+    agencyId: it.agencyId,
+    name: it.name,
+    stage: it.stage,
+    action: it.action,
+    actionLabel: it.actionLabel,
+    situation: it.situation,
     versionId: v.id,
     version: v.version,
     channel: v.channel,
     ctas: v.ctas,
     notes: v.notes,
-    person: to.person,
-    phone: to.phone,
+    person: it.person,
+    phone: it.phone,
     message,
+    messages,
     ready,
     warnings,
-    whatsappUrl: v.channel === "whatsapp" && to.wa && ready ? `https://wa.me/${to.wa}?text=${encodeURIComponent(message)}` : null,
-    links: { demo, panel, createDemo: `/admin/inmobiliarias/${agencyId}/propiedades/nueva` },
-    execution: previous ? { status: previous.status, at: previous.updated_at } : null,
+    // web.whatsapp.com reuses the same tab (the page opens it in a named window); the first message goes prefilled.
+    whatsappUrl: v.channel === "whatsapp" && it.wa && ready ? `https://web.whatsapp.com/send?phone=${it.wa}&text=${encodeURIComponent(messages[0] ?? message)}` : null,
+    links: { demo, panel, createDemo: `/admin/inmobiliarias/${it.agencyId}/propiedades/nueva` },
+    execution: it.execution,
+    lockedUntil: new Date(Date.now() + 600_000).toISOString(),
   };
+}
+export type Prepared = Awaited<ReturnType<typeof prepare>>;
+
+/** Same agency, same action, same version: or the queue moved under the agent's feet. */
+async function sameTask(input: { agencyId: unknown; stage?: unknown; action?: unknown; versionId?: unknown }, actorId: string) {
+  if (typeof input.agencyId !== "string") throw new HttpError(400, "Falta la inmobiliaria.");
+  const { it, b } = await itemOf(input.agencyId);
+  if (input.stage !== undefined && input.stage !== it.stage) throw new HttpError(409, `Ya no está en «${isStageKey(input.stage) ? stageInfo(input.stage).title : input.stage}»: ahora está en «${stageInfo(it.stage).title}». Actualizá la lista.`);
+  if (input.action !== undefined && input.action !== (it.action ?? null)) throw new HttpError(409, `La próxima acción cambió: ahora es «${it.actionLabel ?? "ninguna"}». Actualizá la lista.`);
+  const v = b.vs.find((x) => x.id === input.versionId);
+  if (!v || v.stage !== it.stage || (v.action ?? "principal") !== it.action) throw new HttpError(409, "Esa versión ya no corresponde a esta acción. Actualizá la lista.");
+  if (it.claim && it.claim.until > new Date().toISOString() && it.claim.actorId !== actorId) throw new HttpError(409, `${it.name} la está ejecutando ${it.claim.by}.`);
+  return { it, v };
+}
+
+async function mark(it: QueueItem, v: FollowupVersion, status: ExecutionStatus, actorId: string, reason?: string | null, body?: string | null) {
+  const { data, error } = await adminClient().rpc("habita_followup_mark", {
+    p_actor: actorId,
+    p_version: v.id,
+    p_agency: it.agencyId,
+    p_from_step: it.step,
+    p_status: status,
+    p_reason: reason || null,
+    p_body: body || null,
+  });
+  if (error) throw missing(error) ? new HttpError(409, MISSING) : new Error("FOLLOWUP_MARK_FAILED");
+  return data as FollowupExecution;
+}
+
+/** «Abrir WhatsApp»: queda como abierto (no cuenta como enviado). */
+export async function openExecution(input: { agencyId: unknown; stage?: unknown; action?: unknown; versionId?: unknown }, actor: { id: string; name: string }) {
+  const { it, v } = await sameTask(input, actor.id);
+  await lock(it, actor);
+  const e = await mark(it, v, "opened", actor.id);
+  return { execution: { status: e.status, at: e.updated_at } };
 }
 
 /**
- * Records what happened with the agency: «opened» (WhatsApp opened with the
- * message), «sent» (confirmed: it counts as an execution) or «failed» (it did
- * not go out). A confirmed send also moves what the rest of the panel reads:
- * a prospecting send in the first two stages, the demo marked as sent in
- * «Demo creada, sin enviar». Those are best effort: the execution counts
- * anyway and the answer says what could not be registered.
+ * POST …/confirm: the message went out (the agent saw it in the chat). Counts
+ * as an execution, validates the number (it reached a WhatsApp), records the
+ * send in Adquisición (first two stages), marks the demo as sent («Demo
+ * creada, sin enviar»), frees the agency and returns it as it is now.
+ * Idempotent: confirming twice changes nothing.
  */
-export async function markExecution(
-  input: { agencyId: string; stage: unknown; versionId: unknown; status: unknown; reason?: unknown; text?: unknown },
-  actor: { id: string; name: string },
-) {
-  const status = input.status === "opened" || input.status === "sent" || input.status === "failed" ? (input.status as ExecutionStatus) : null;
-  if (!status) throw new HttpError(400, "Estado desconocido.");
-  const c = await current(input.agencyId, input.stage);
-  const v = c.versions.find((x) => x.id === input.versionId);
-  if (!v) throw new HttpError(409, "Esa versión ya no está en esta etapa. Actualizá la lista.");
-  const reason = typeof input.reason === "string" ? input.reason.trim().slice(0, 300) : "";
-  if (status === "failed" && !reason) throw new HttpError(400, "Contá por qué no salió.");
-  const { data, error } = await adminClient().rpc("habita_followup_mark", {
-    p_actor: actor.id,
-    p_version: v.id,
-    p_agency: input.agencyId,
-    p_from_step: c.step,
-    p_status: status,
-    p_reason: reason || null,
-  });
-  if (error) throw missing(error) ? new HttpError(409, MISSING) : new Error("FOLLOWUP_MARK_FAILED");
-  const execution = data as FollowupExecution;
-  let warning: string | null = null;
-  if (status === "sent" && execution.status === "sent") {
-    const text = typeof input.text === "string" ? input.text.trim().slice(0, 4000) : "";
+export async function confirmExecution(input: { agencyId: unknown; stage?: unknown; action?: unknown; versionId?: unknown; text?: unknown }, actor: { id: string; name: string }) {
+  if (typeof input.agencyId === "string") {
+    const before = await itemOf(input.agencyId).catch(() => null);
+    if (before?.it.execution?.status === "sent" && before.it.versionId === input.versionId)
+      return { execution: { status: "sent" as const, at: before.it.execution.at }, warning: null, item: strip(before.it), replayed: true };
+  }
+  const { it, v } = await sameTask(input, actor.id);
+  const text = typeof input.text === "string" ? input.text.trim().slice(0, 8000) : "";
+  const e = await mark(it, v, "sent", actor.id, null, text || null);
+  const warnings: string[] = [];
+  const early = it.stage === "no-contactado" || it.stage === "no-responde";
+  if (v.channel === "whatsapp" && early) {
     try {
-      if ((v.stage === "no-contactado" || v.stage === "no-responde") && v.channel === "whatsapp" && c.account && c.ds)
-        await recordSend(actor.id, c.ds, c.account, { channel: "whatsapp", text: text || v.body }, actor.name, "Follow-up");
-      if (v.stage === "sin-enviar") await setDemosSent(input.agencyId, true, actor.id, "followup");
-    } catch (e) {
-      warning = `La ejecución quedó registrada, pero no el envío en Adquisición: ${e instanceof HttpError ? e.message : "probá registrarlo desde su ficha."}`;
+      const ds = await prospectDataset();
+      let account = accountsByAgency(ds).get(it.agencyId);
+      const contact = account ? contactFor(account, "whatsapp") : null;
+      if (account && contact?.needs_review) {
+        await prospectRpc("habita_prospect_contact", { p_actor: actor.id, p_account: account.id, p_contact: contact.id, p_fields: { verified: true } });
+        const fresh = await prospectDataset();
+        account = accountsByAgency(fresh).get(it.agencyId);
+        if (account) await recordSend(actor.id, fresh, account, { channel: "whatsapp", text: text || v.body }, actor.name, "Follow-up");
+      } else if (account) await recordSend(actor.id, ds, account, { channel: "whatsapp", text: text || v.body }, actor.name, "Follow-up");
+    } catch (err) {
+      warnings.push(`La ejecución quedó registrada, pero no el envío en Adquisición: ${err instanceof HttpError ? err.message : "probá registrarlo desde su ficha."}`);
     }
   }
-  return { execution: { status: execution.status, at: execution.updated_at }, warning };
+  if (it.stage === "sin-enviar") await setDemosSent(it.agencyId, true, actor.id, "followup").catch(() => warnings.push("No pudimos marcar su demo como enviada."));
+  await release(it.agencyId, actor.id).catch(() => undefined);
+  const after = await itemOf(it.agencyId).catch(() => null);
+  return { execution: { status: e.status, at: e.updated_at }, warning: warnings.join(" ") || null, item: after ? strip(after.it) : null, replayed: false };
 }
+
+/**
+ * POST …/fail: it did not go out (with the reason). `kind` «sin_whatsapp» or
+ * «numero_incorrecto» also marks the number invalid in Adquisición and the
+ * situation, so it leaves the queue. Frees the agency.
+ */
+export async function failExecution(
+  input: { agencyId: unknown; stage?: unknown; action?: unknown; versionId?: unknown; reason?: unknown; kind?: unknown },
+  actor: { id: string; name: string },
+) {
+  const { it, v } = await sameTask(input, actor.id);
+  const kind = input.kind === "sin_whatsapp" || input.kind === "numero_incorrecto" ? input.kind : null;
+  const reason = (typeof input.reason === "string" ? input.reason.trim().slice(0, 300) : "") || (kind ? SITUATIONS[kind] : "");
+  if (!reason) throw new HttpError(400, "Contá por qué no salió.");
+  const e = await mark(it, v, "failed", actor.id, reason);
+  let warning: string | null = null;
+  if (kind) warning = (await setSituation(it.agencyId, kind, reason, actor)).warning;
+  await release(it.agencyId, actor.id).catch(() => undefined);
+  return { execution: { status: e.status, at: e.updated_at, reason }, warning };
+}
+
+/** «Cerrar» sin hacer nada: la inmobiliaria vuelve a quedar libre. */
+export async function releaseClaim(agencyId: unknown, actorId: string) {
+  if (typeof agencyId !== "string" || !isUuid(agencyId)) throw new HttpError(400, "Falta la inmobiliaria.");
+  await release(agencyId, actorId);
+  return { released: true };
+}
+
+/** Lo que cada situación registra en Adquisición, para que el embudo y la hoja digan lo mismo. */
+const SITUATION_FACT: Partial<Record<Situation, "reply" | "interest" | "lost">> = {
+  confirmo_numero: "reply",
+  neutro: "reply",
+  pregunta_precios: "reply",
+  mas_adelante: "reply",
+  derivo: "reply",
+  interesado: "interest",
+  rechazo: "lost",
+  proveedor_ia: "lost",
+};
+
+/**
+ * POST …/situation: what happened in the conversation, with the original
+ * text. It holds while the funnel stays in the same step. It is also recorded
+ * in Adquisición where it means something there (a reply, interest, a loss, a
+ * do-not-contact, an invalid number), best effort: the answer says what could
+ * not be recorded.
+ */
+export async function setSituation(agencyId: string, raw: unknown, note: unknown, actor: { id: string; name: string }) {
+  if (!isSituation(raw)) throw new HttpError(400, "Situación desconocida.");
+  const situation = raw;
+  const text = typeof note === "string" ? note.trim().slice(0, 2000) : "";
+  const { at, account } = await now(agencyId);
+  await saveExtra(agencyId, { situation, situation_step: stepValue(at.derived.reached), situation_note: text || null, situation_at: new Date().toISOString() }, actor.id);
+  let warning: string | null = null;
+  if (account) {
+    try {
+      const evidence = text ? `WhatsApp: «${text}»` : `Follow-up: ${SITUATIONS[situation]}`;
+      const fact = SITUATION_FACT[situation];
+      const key = stableUuid(`followup-situation:${agencyId}:${situation}:${text}`);
+      if (fact === "reply")
+        await prospectRpc("habita_prospect_record", { p_actor: actor.id, p_key: key, p_account: account.id, p_type: "reply", p_occurred_at: new Date().toISOString(), p_precision: "time", p_channel: "whatsapp", p_contact: null, p_attempt: null, p_evidence: evidence, p_details: { situation, proposal: situation === "neutro" }, p_corrects: null });
+      if (fact === "interest")
+        await prospectRpc("habita_prospect_record", { p_actor: actor.id, p_key: key, p_account: account.id, p_type: "interest", p_occurred_at: new Date().toISOString(), p_precision: "time", p_channel: "whatsapp", p_contact: null, p_attempt: null, p_evidence: evidence, p_details: { situation }, p_corrects: null });
+      if (fact === "lost")
+        await prospectRpc("habita_prospect_record", { p_actor: actor.id, p_key: key, p_account: account.id, p_type: "lost", p_occurred_at: new Date().toISOString(), p_precision: "time", p_channel: "whatsapp", p_contact: null, p_attempt: null, p_evidence: evidence, p_details: { situation, reason: situation === "proveedor_ia" ? "Cuenta con proveedor de IA" : "No interesado" }, p_corrects: null });
+      if (situation === "no_contactar" && !account.suppressed)
+        await prospectRpc("habita_prospect_suppress", { p_actor: actor.id, p_account: account.id, p_scope: "account", p_channel: null, p_contact: null, p_reason: text || "Pidió no ser contactada (Follow-up)" });
+      if (situation === "sin_whatsapp" || situation === "numero_incorrecto") {
+        const contact = contactFor(account, "whatsapp") ?? account.contacts.find((c) => c.channel === "whatsapp" && !c.invalid);
+        if (contact) await prospectRpc("habita_prospect_contact", { p_actor: actor.id, p_account: account.id, p_contact: contact.id, p_fields: { invalid: true, invalid_reason: SITUATIONS[situation] } });
+      }
+    } catch (e) {
+      warning = `La situación quedó guardada, pero no se pudo registrar en Adquisición: ${e instanceof HttpError ? e.message : "probá desde su ficha."}`;
+    }
+  }
+  // A closed conversation frees whoever had it: nothing else goes out.
+  if (CLOSED_SITUATIONS.includes(situation)) await adminClient().from("followup_claims").delete().eq("agency_id", agencyId);
+  const after = await itemOf(agencyId).catch(() => null);
+  return { situation, warning, item: after ? strip(after.it) : null };
+}
+
+/** El nombre corto para {{inmobiliaria}}. Vacío: vuelve al de la ficha sin paréntesis. */
+export async function setShortName(agencyId: string, raw: unknown, actorId: string) {
+  if (!isUuid(agencyId)) throw new HttpError(404, "No encontramos la inmobiliaria.");
+  const name = typeof raw === "string" ? raw.trim().replace(/\s+/g, " ") : "";
+  if (name.length > 80) throw new HttpError(400, "El nombre corto va hasta 80 caracteres.");
+  await saveExtra(agencyId, { short_name: name || null }, actorId);
+  return { shortName: name || null };
+}
+
 
 const RPC_ERRORS: Record<string, [number, string]> = {
   FOLLOWUP_ACTIVE_REQUIRED: [409, "La versión activa no se archiva sola: activá otra primero."],
@@ -385,6 +789,7 @@ export async function createVersion(input: Record<string, unknown>, actorId: str
     p_body: v.body,
     p_ctas: v.ctas,
     p_status: v.status,
+    p_action: v.action,
   });
   if (error) throw rpcFailure(error);
   const made = data as FollowupVersion;
