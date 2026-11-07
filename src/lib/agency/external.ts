@@ -41,7 +41,7 @@ export async function agencyThumb(photoId: string, width: unknown) {
  * «Creada» ↔ «Enviada», como DemoStepMenu: «Enviada» marca todas sus demos sin enviar (con una
  * enviada alcanza para el ciclo comercial) y «Creada» las desmarca. Queda en la auditoría.
  */
-export async function setDemosSent(agencyId: string, sent: boolean, actorId: string) {
+export async function setDemosSent(agencyId: string, sent: boolean, actorId: string, from = "chapa") {
   if (!isUuid(agencyId)) throw new HttpError(404, "No encontramos la inmobiliaria.");
   const db = adminClient();
   const { data, error } = await db.from("demos").select("id,sent_at").eq("agency_id", agencyId);
@@ -51,7 +51,7 @@ export async function setDemosSent(agencyId: string, sent: boolean, actorId: str
     const update = db.from("demos").update({ sent_at: sent ? new Date().toISOString() : null }).eq("id", d.id);
     const saved = await (sent ? update.is("sent_at", null) : update);
     if (saved.error) throw new Error("DEMO_SENT_FAILED");
-    await db.from("admin_audit").insert({ actor_id: actorId, action: sent ? "demo_sent" : "demo_unsent", subject_id: d.id, details: { by: "manual", from: "chapa" } });
+    await db.from("admin_audit").insert({ actor_id: actorId, action: sent ? "demo_sent" : "demo_unsent", subject_id: d.id, details: { by: "manual", from } });
   }
   return targets.length;
 }

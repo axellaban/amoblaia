@@ -1,7 +1,8 @@
 import { HttpError, isAdmin } from "@/lib/commerce/http";
 import { demoUrl, isUuid } from "@/lib/demos/shared";
-import { activity, contactFor, HEADER, stableUuid, stepFor, toRow } from "@/lib/prospecting/external";
-import { NO_STORE, ProspectError, prospectDataset, prospectFailure, prospectRpc } from "@/lib/prospecting/server";
+import { activity, contactFor, HEADER, stableUuid, toRow } from "@/lib/prospecting/external";
+import { recordSend } from "@/lib/prospecting/record-send";
+import { NO_STORE, prospectDataset, prospectFailure, prospectRpc } from "@/lib/prospecting/server";
 import { runSheetSync } from "@/lib/prospecting/sync";
 import { agencyDemoLink, agencyList, agencyPanel, agencyThumb, recalcScores, setDemosSent } from "@/lib/agency/external";
 import type { Dataset, ProspectAccount } from "@/lib/prospecting/types";
@@ -124,56 +125,6 @@ const minute = () => new Date().toISOString().slice(0, 16);
 /** Fecha «AAAA-MM-DD» del panel de Chapa como el inicio de ese día en Buenos Aires. */
 const dayIso = (d: string) => (/^\d{4}-\d{2}-\d{2}/.test(d) ? new Date(`${d.slice(0, 10)}T00:00:00-03:00`).toISOString() : null);
 
-async function send(actor: string, ds: Dataset, a: ProspectAccount, act: Action, by: string) {
-  const channel = act.channel === "email" ? "email" : act.channel === "whatsapp" || !act.channel ? "whatsapp" : null;
-  if (!channel) throw new HttpError(400, "En habita. se registran envíos por WhatsApp o email. Las llamadas y visitas van como nota.");
-  const step = stepFor(ds, a, act);
-  if (step > 3) throw new HttpError(409, "Ya se mandaron los tres pasos de la secuencia: no se escribe más hasta que responda.");
-  const done = ds.attempts.find((t) => t.account_id === a.id && t.status === "sent" && t.step === step && step >= 1);
-  // El registro en lote (o un reintento) de un paso que ya está no suma nada.
-  if (done) return;
-  // Un intento que quedó vivo en el panel del equipo: si está abierto o incierto, el mensaje es ese;
-  // si solo estaba preparado, se cancela y se registra el que salió desde Chapa.
-  const live = ds.attempts.find((t) => t.account_id === a.id && ["prepared", "opened", "uncertain"].includes(t.status));
-  let attemptId = live && live.status !== "prepared" ? live.id : null;
-  if (live && live.status === "prepared") await prospectRpc("habita_prospect_resolve", { p_actor: actor, p_attempt: live.id, p_outcome: "cancelled", p_reason: "Enviado desde Chapa Labs" });
-  if (!attemptId) {
-    const contact = contactFor(a, channel);
-    if (!contact) throw new HttpError(409, channel === "email" ? "La cuenta no tiene un email que se pueda usar." : "La cuenta no tiene un WhatsApp que se pueda usar (falta, es inválido o tiene baja).");
-    if (contact.needs_review) throw new ProspectError(409, "El número está por revisar: verificalo en la ficha de habita. antes de registrar el envío.", "CONTACT_NEEDS_REVIEW");
-    const body = str(act.text, 4000) || `Mensaje enviado desde Chapa Labs${act.template ? ` (${act.template})` : ""}.`;
-    const prepared = await prospectRpc<{ id: string; version: number; status: string }>("habita_prospect_prepare", {
-      p_actor: actor,
-      // Misma cuenta, paso e historia: un reintento devuelve el mismo intento.
-      p_key: stableUuid(`send:${a.id}:${step}:${channel}:${ds.attempts.filter((t) => t.account_id === a.id).length}`),
-      p_account: a.id,
-      p_contact: contact.id,
-      p_step: step,
-      p_campaign: a.campaign,
-      p_template_version: null,
-      p_custom: true,
-      p_subject: channel === "email" ? str(act.subject, 200) || "habita." : null,
-      p_body: body,
-      p_sender: by,
-      p_reviewed: true,
-    });
-    if (prepared.status === "sent") return;
-    attemptId = prepared.id;
-    if (prepared.status === "prepared") {
-      const opened = await prospectRpc<{ status: string }>("habita_prospect_open", { p_actor: actor, p_attempt: prepared.id, p_version: prepared.version, p_lease_seconds: 600 });
-      if (opened.status === "cancelled") throw new HttpError(409, "Hay una baja vigente o el contacto quedó inválido: no se registró el envío.");
-    }
-  }
-  await prospectRpc("habita_prospect_confirm", {
-    p_actor: actor,
-    p_attempt: attemptId,
-    p_method: "manual",
-    p_sent_at: null,
-    p_external_id: null,
-    p_evidence: `Confirmado en Chapa Labs por ${by}`,
-  });
-}
-
 async function record(actor: string, a: ProspectAccount, type: string, by: string, act: Action, extra: Record<string, unknown> = {}) {
   const evidence = str(act.detail, 1000) || str(act.text, 1000) || `Registrado en Chapa Labs por ${by}`;
   await prospectRpc("habita_prospect_record", {
@@ -202,7 +153,7 @@ const EDIT: Record<string, string> = { zone: "zone", sdr: "sdr", priority: "prio
 async function apply(actor: string, ds: Dataset, a: ProspectAccount, act: Action, by: string) {
   switch (act.type) {
     case "sent":
-      return send(actor, ds, a, act, by);
+      return recordSend(actor, ds, a, act, by);
     case "call":
     case "visit":
       return record(actor, a, "note", by, { ...act, channel: act.type === "call" ? "phone" : "other", detail: `${act.type === "call" ? "Llamada" : "Visita"}${act.detail ? `: ${act.detail}` : ""}` });
