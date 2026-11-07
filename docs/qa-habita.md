@@ -45,12 +45,14 @@ Buscá `### QA <fecha de hoy> am` o `pm`, con la fecha de Argentina. Si no está
 - **OBS-007** Una inmobiliaria intentó importar la misma publicación varias veces seguidas y recibió el aviso de que ya estaba en su panel (409 `duplicateOf`). Funciona como debe; ver si el aviso se entiende o si se repite.
 - **OBS-008** El 404 dentro del panel (ficha que no existe o no es de la inmobiliaria) muestra la cabecera y el pie del sitio público y «Volver al inicio» lleva a la home, no al panel. Visto con un enlace inválido.
 - **OBS-009** Un 520 aislado de Storage al subir una foto de propiedad (5/11 a la noche). No se repitió.
+- **OBS-010** (7/11 am) La consulta de grabaciones de PostHog (`session_replay_events`) no devolvió ninguna sesión en las últimas 72 h, ni siquiera internas. Las corridas anteriores sí tenían grabaciones. Ver si es de la consulta o si la grabación se cortó (`docs/CRO_INSTRUMENTACION.md`, receta de grabaciones).
+- **OBS-011** (7/11 am) Un `lead_recompute_failed` aislado en `POST /api/demo/<token>/leads` (6/11 a la noche). Es el recálculo de puntaje «mejor esfuerzo»: se registra y el siguiente lote lo corrige. Ver si se repite.
 
 ### Propuestas UX pendientes
 
 Para que Astra las evalúe. Claude no las implementa sin aprobación.
 
-- **UX-001** Contraste bajo en la guía de la home del panel (`panel-guide.tsx`): el texto gris de «Por qué importa» sobre el verde bosque (`.hg-why-lead`, `.hg-why-note`) y las notas chicas sobre arena (`.hg-social-art small`, `.hg-reel-copy small`) no llegan a 4.5:1 (axe `color-contrast`, serious). Escritorio; se repitió en celular el 6/11 pm. Reproducido.
+- **UX-001** Contraste bajo en la guía de la home del panel (`panel-guide.tsx`): el texto gris de «Por qué importa» sobre el verde bosque (`.hg-why-lead`, `.hg-why-note`) y las notas chicas sobre arena (`.hg-social-art small`, `.hg-reel-copy small`) no llegan a 4.5:1 (axe `color-contrast`, serious). Escritorio; se repitió en celular el 6/11 pm. Reproducido. **Se repite** el 7/11 am: el mismo contraste bajo (axe `color-contrast`, serious) también en `/`, `/acceso`, `/admin` e `/admin/inmobiliarias` en las cuatro pantallas.
 - **UX-002** La demo pública (`/demo/<token>` y `/presentacion`) tarda más de 5 s en cargar en Android chico con red de celular lenta, sin un indicador de avance claro durante la espera. Reproducido una vez. Se midió de nuevo el 6/11 pm (segunda corrida): la imagen principal aparece en menos de 5 s, pero la página termina de cargar recién después de 9 s; sigue abierta para confirmar con datos reales. El 6/11 pm (completa): con red lenta el contenido aparece antes de 1,5 s con espacios grises en las miniaturas, y el botón de WhatsApp está listo en unos 4 s (debajo de 5 s). No se reprodujo; Astra decide si se cierra.
 - **UX-003** La demo pública tiene un atributo ARIA prohibido (axe `aria-prohibited-attr`, serious) en todas las pantallas, y un texto de bajo contraste en celular (`color-contrast`, serious). Reproducido en `/demo/<token>` y `/presentacion`. **Se repite** el 6/11 pm (completa): el ARIA prohibido está en `.dv2-owner-habita` y el contraste en `.after-label` (etiqueta «Después», escritorio).
 - **UX-004** La demo pública carga lento en escritorio: en sesiones reales la imagen principal (LCP) aparece bastante después de 3 s, y en el recorrido la primera carga en 1366×900 tardó más de 5 s (las siguientes, menos de 2 s). Evidencia real (PostHog, `$web_vitals`) y reproducido. Repetido.
@@ -59,6 +61,9 @@ Para que Astra las evalúe. Claude no las implementa sin aprobación.
 - **UX-007** Zonas táctiles chicas en la demo pública en celular: flechas «Anterior» y «Siguiente» de la galería (34×34 px), «Ver en pantalla completa» (40×40), el enlace «Contacto» del pie (61×22) y «Por habita.» en `/presentacion` (67×18). Menos de 44×44 px. Reproducido.
 - **UX-008** En celular, si se lleva el control de la comparación cerca del borde derecho, queda encima de la flecha «Siguiente» de la galería y se superponen. Reproducido en iPhone 13 y Galaxy S8.
 - OBS-002 sigue siendo candidata.
+
+- **UX-009** Guardar la ficha sin conexión muestra «Failed to fetch» en inglés y sin explicar qué hacer (el reintento sí funciona). Pantalla: editor de la propiedad, pestaña «Datos» (escritorio). Falla el punto 7 de la lista (mensajes de error en castellano). Reproducido.
+- **UX-010** Dejar vacío el título de la propiedad y guardar muestra solo el aviso nativo del navegador («Please fill out this field.» en un navegador en inglés), sin un mensaje propio junto al campo. Punto 7 de la lista. Reproducido en escritorio con navegador en inglés.
 
 ### PRs de usabilidad abiertos
 
@@ -83,6 +88,24 @@ Para que Astra las evalúe. Claude no las implementa sin aprobación.
 Sin nombres, teléfonos, emails, enlaces a grabaciones, IDs de sesión, tasas de conversión ni cantidades de usuarios o sesiones.
 
 ## Resultados
+
+### QA 2026-11-07 am (completa)
+
+- Inicio: 2026-11-07T07:38:49-03:00 · Fin: 2026-11-07T08:20:00-03:00
+- Commit: 7c12054 (#181) · Despliegue: dpl_FvhUxkmULpCi3E28kDE8WEPhrQDs (production, READY) · Estado: parcial (ver «Sin revisar»)
+- Tipo: completa (mañana) · Pantallas: escritorio 1366×900, iPhone 13, Galaxy S8 (también con red lenta y con el navegador de WhatsApp) e iPad (gen 7) para demos públicas y páginas del panel y del admin. Crear demo, estudio de imágenes, video y caminos de error: solo escritorio.
+- Paso 2: errores de Vercel en 24 h: dos de Mercado Pago por límite de consultas (429 local) en el cron, ya diferidos por el propio código (sin acción), y un `lead_recompute_failed` aislado (OBS-011). Sin errores SSR.
+- Paso 5, demos públicas (`/demo/<token>`, `/presentacion`, token inexistente) en las seis variantes: 200, sin errores de consola, de JavaScript ni de red, sin scroll horizontal, sin imágenes rotas ni placeholders. Galería, comparación con arrastre de mouse y con gesto táctil (la página no se mueve), CTA «Agendar visita», WhatsApp con destino `wa.me`, foco visible con Tab. Vista previa del enlace con `og:title`, `og:description`, `og:image` (200, JPEG) y `twitter:card`. `/demo/<token-inexistente>`: 404 propio y claro. Con red lenta: carga completa en unos 9 s, imagen principal en menos de 4 s.
+- Paso 5, panel y admin (`/`, `/precios`, `/acceso`, `/panel`, propiedades, imágenes, créditos, `/admin`, inmobiliarias, ficha de la inmobiliaria de prueba, prospección, ficha de una propiedad) en cuatro pantallas: 200, sin errores, sin scroll horizontal. Se miraron las capturas de la lista del skill.
+- Crear demo (escritorio): subir 2 fotos, borrador en unos 10 s, doble clic en «Continuar» no duplicó la propiedad, título y ubicación guardados y persistidos tras recargar y tras volver atrás, doble clic en «Guardar» envió un solo pedido, guardar sin conexión mostró mensaje y el reintento guardó (UX-009). Errores de subida: HEIC, foto de más de 3 MB (el límite real) y `.txt` muestran un mensaje claro por archivo y no rompen nada. Título vacío: lo frena el navegador (UX-010).
+- Estudio de imágenes (escritorio): costo estimado de 1 crédito leído antes, una generación del estilo Moderno, un solo pedido con doble clic, lista en unos 9 s y comparación antes/después.
+- Video (escritorio, estilo Clásico, sin créditos): se genera en unos 12 s y el MP4 descarga con nombre de la propiedad.
+- Bugs encontrados: (1) doble clic en «Generar video» creaba dos videos, porque la guarda `busy` cambia después de varios `await`; (2) «Ambientar con IA» quedaba cortado en el botón del editor (columna de 316 px con `white-space: nowrap`); (3) `/admin/prospeccion`: `aria-controls` apuntaba a un panel inexistente (axe `aria-valid-attr-value`, critical) · Corregidos: PR de esta corrida (ver abajo), con tests de regresión `tests/video-double-click.test.ts`, `tests/global-css.test.ts` y `tests/prospecting-tabs-aria.test.tsx`. No tocan cobros.
+- Observaciones nuevas: OBS-010, OBS-011 · Propuestas nuevas: UX-009, UX-010; se repiten UX-001 (más páginas), UX-003, UX-004 (primera carga en escritorio, imagen principal cerca de 5 s) y UX-005 (la pestaña de fotos del editor tarda unos 6 s mostrando «Cargando la propiedad…»); UX-002 no se reprodujo.
+- PRs de usabilidad abiertos: ninguno con título `UX:`.
+- PostHog revisado hasta: 2026-11-07T08:10:00-03:00 · cobertura: parcial · ventana desde el corte anterior. Filtro de tráfico interno verificado (sin visitas externas a `/admin`). Demos, panel, rebote, comparación, clics repetidos y web vitals: casi sin tráfico externo nuevo, no alcanza para patrones. Grabaciones: ninguna en 72 h (OBS-010), así que no se pudieron chequear las grabaciones. Los eventos `$dead_click` y `$exception` siguen sin existir en el proyecto.
+- Sin revisar: crear demo, estudio y video en celular, Android chico y tablet; subir fotos con red lenta; volver atrás en medio de un paso del estudio; pestañas internas de la ficha en `/admin`; borrar la demo de prueba por la UI (se anota abajo si quedó hecho). Motivo: tiempo de la corrida.
+- Esperado, no es bug: el límite de subida es de 3 MB por foto (el mensaje lo dice); los errores de Mercado Pago 429 son límite local de consultas y el cron los difiere; la demo de QA sigue titulada «Propiedad nueva».
 
 ### QA 2026-11-06 pm (completa)
 

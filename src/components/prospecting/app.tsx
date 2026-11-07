@@ -116,7 +116,7 @@ export function ProspectingApp({ initialTab }: { initialTab: Tab }) {
               type="button"
               role="tab"
               aria-selected={tab === id}
-              aria-controls={`pr-panel-${id}`}
+              aria-controls={ds && tab === id ? `pr-panel-${id}` : undefined}
               tabIndex={tab === id ? 0 : -1}
               className={tab === id ? "is-active" : ""}
               onClick={() => select(id)}
