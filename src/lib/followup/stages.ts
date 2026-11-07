@@ -186,3 +186,34 @@ export function cleanVersion(input: { stage?: unknown; channel?: unknown; trigge
   const status = input.status === "test" ? "test" : "active";
   return { stage: input.stage, channel, trigger, body, ctas, status } as const;
 }
+
+export type LastActionSource = "followup" | "adquisicion" | "inmobiliaria";
+export type LastAction = { at: string; text: string; source: LastActionSource };
+
+/**
+ * «Última acción»: lo más reciente que pasó con la inmobiliaria, sea del equipo
+ * (un envío confirmado o fallido de Follow-up, un mensaje de la secuencia de
+ * Adquisición) o de ella (su última actividad, la misma de /admin/inmobiliarias).
+ * Los envíos abiertos sin confirmar no cuentan: no se sabe si salieron.
+ */
+export function lastActionOf(f: {
+  executions: Pick<FollowupExecution, "stage" | "status" | "reason" | "updated_at" | "sent_at" | "version_id">[];
+  versions?: Pick<FollowupVersion, "id" | "version">[];
+  attempts: { status: string; sent_at: string | null; step: number }[];
+  activity: { at: string; text: string } | null;
+}): LastAction | null {
+  const facts: LastAction[] = [];
+  for (const e of f.executions) {
+    const title = isStageKey(e.stage) ? stageInfo(e.stage).title : "Follow-up";
+    const v = f.versions?.find((x) => x.id === e.version_id);
+    const tag = v ? ` (V${v.version})` : "";
+    if (e.status === "sent" && e.sent_at) facts.push({ at: e.sent_at, text: `Follow-up enviado: ${title}${tag}`, source: "followup" });
+    else if (e.status === "failed") facts.push({ at: e.updated_at, text: `Follow-up no salió${e.reason ? `: ${e.reason}` : ""}`, source: "followup" });
+  }
+  for (const t of f.attempts)
+    if (t.status === "sent" && t.sent_at) facts.push({ at: t.sent_at, text: t.step >= 1 ? `Mensaje ${t.step} de la secuencia (Adquisición)` : "Mensaje enviado (Adquisición)", source: "adquisicion" });
+  if (f.activity) facts.push({ ...f.activity, source: "inmobiliaria" });
+  let best: LastAction | null = null;
+  for (const x of facts) if (!best || new Date(x.at).getTime() > new Date(best.at).getTime()) best = x;
+  return best;
+}
