@@ -33,6 +33,8 @@ function ago(iso: string) {
   const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
   return days <= 0 ? "hoy" : days === 1 ? "hace 1 día" : `hace ${days} días`;
 }
+const SOURCE_LABEL = { followup: "Follow-up", adquisicion: "Adquisición", inmobiliaria: "La inmobiliaria" } as const;
+const day = (iso: string) => new Date(iso).toLocaleDateString("es-AR", { day: "numeric", month: "short", timeZone: "America/Argentina/Buenos_Aires" });
 async function copy(text: string) {
   try {
     await navigator.clipboard.writeText(text);
@@ -362,9 +364,9 @@ function QueueRow({ stage, item: q, exec, open, onToggle, onDone }: { stage: Sta
           <span>{q.needsReview ? "Número por revisar" : q.hasDemo ? "Con demo publicada" : "Sin demo publicada"}</span>
         </div>
         <div className="fu-qact">
-          <span>{q.lastActivity ? `${q.lastActivity.text}` : "Sin actividad"}</span>
+          <span title={q.lastAction ? `Última acción · ${SOURCE_LABEL[q.lastAction.source]}` : undefined}>{q.lastAction ? q.lastAction.text : "Sin acciones"}</span>
           <span>
-            {ago(q.since)}
+            {q.lastAction ? `${ago(q.lastAction.at)} · ${day(q.lastAction.at)}` : ago(q.since)}
             {version ? ` · V${version.version}${testing ? (version.status === "test" ? " (prueba)" : " (activa)") : ""}` : ""}
           </span>
         </div>

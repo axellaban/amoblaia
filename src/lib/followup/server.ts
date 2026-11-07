@@ -20,6 +20,7 @@ import {
   linksNeeded,
   missingVariables,
   personName,
+  lastActionOf,
   stageInfo,
   stageOf,
   stepValue,
@@ -28,6 +29,7 @@ import {
   type ExecutionStatus,
   type FollowupExecution,
   type FollowupVersion,
+  type LastAction,
   type StageKey,
   type VersionStats,
 } from "./stages";
@@ -114,6 +116,8 @@ export type QueueItem = {
   hasDemo: boolean;
   hasAccount: boolean;
   lastActivity: { at: string; text: string } | null;
+  /** Lo más reciente entre Follow-up, Adquisición y lo que hizo la inmobiliaria. */
+  lastAction: LastAction | null;
   since: string;
   versionId: string | null;
   execution: { status: ExecutionStatus; at: string; reason: string | null } | null;
@@ -134,6 +138,10 @@ export async function followupOverview(): Promise<{ stages: StageView[] }> {
   const byStage = new Map<StageKey, QueueItem[]>(FOLLOWUP_STAGES.map((s) => [s.key, []]));
   const exOf = new Map<string, FollowupExecution[]>();
   for (const e of ex) exOf.set(e.agency_id, [...(exOf.get(e.agency_id) ?? []), e]);
+  const accountIds = new Map<string, Set<string>>();
+  for (const a of ds?.accounts ?? []) accountIds.set(a.agency_id, (accountIds.get(a.agency_id) ?? new Set()).add(a.id));
+  const sendsOf = new Map<string, NonNullable<typeof ds>["attempts"]>();
+  for (const t of ds?.attempts ?? []) if (t.status === "sent") sendsOf.set(t.account_id, [...(sendsOf.get(t.account_id) ?? []), t]);
   for (const r of rows) {
     const account = accounts.get(r.id);
     const { reached, stage } = place(r, account);
@@ -143,6 +151,12 @@ export async function followupOverview(): Promise<{ stages: StageView[] }> {
     const version = versionFor(r.id, vs.filter((v) => v.stage === stage), mine);
     const done = version ? mine.find((e) => e.version_id === version.id) : undefined;
     const to = recipient(r, account);
+    const lastAction = lastActionOf({
+      executions: exOf.get(r.id) ?? [],
+      versions: vs,
+      attempts: [...(accountIds.get(r.id) ?? [])].flatMap((id) => sendsOf.get(id) ?? []),
+      activity: r.lastActivity,
+    });
     byStage.get(stage)!.push({
       agencyId: r.id,
       name: r.name,
@@ -153,7 +167,8 @@ export async function followupOverview(): Promise<{ stages: StageView[] }> {
       hasDemo: Boolean(r.shareDemo),
       hasAccount: r.hasOwner,
       lastActivity: r.lastActivity,
-      since: r.lastActivity?.at ?? r.prospectFunnel?.at ?? r.createdAt,
+      lastAction,
+      since: lastAction?.at ?? r.prospectFunnel?.at ?? r.createdAt,
       versionId: version?.id ?? null,
       execution: done ? { status: done.status, at: done.updated_at, reason: done.reason } : null,
     });

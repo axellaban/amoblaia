@@ -31,7 +31,9 @@ El paso de cada inmobiliaria es el mismo cálculo que `/admin/inmobiliarias` (`c
 
 ## Ejecución
 
-Cada etapa lista sus inmobiliarias: primero las pendientes con WhatsApp, después las que no tienen número y al final las ya enviadas; dentro de cada grupo, las que esperan hace más tiempo. «Ejecutar» arma el mensaje para esa inmobiliaria (su WhatsApp, sus links) sin registrar nada. Después:
+Cada etapa lista sus inmobiliarias: primero las pendientes con WhatsApp, después las que no tienen número y al final las ya enviadas; dentro de cada grupo, las que esperan hace más tiempo.
+
+Cada fila muestra la **última acción y su fecha**: lo más reciente entre Follow-up (envío confirmado o «No se envió», en cualquier etapa), Adquisición (mensajes de la secuencia enviados) y lo que hizo la inmobiliaria (la misma «Última actividad» de `/admin/inmobiliarias`). Se calcula en el servidor (`lastActionOf` en `stages.ts`) y es la que ordena «las que esperan hace más tiempo». Un envío solo abierto no cuenta. «Ejecutar» arma el mensaje para esa inmobiliaria (su WhatsApp, sus links) sin registrar nada. Después:
 
 1. **Abrir WhatsApp con el mensaje**: `wa.me` con el número y el texto. Queda como «Abierto».
 2. **Confirmar envío**: cuenta como ejecución y abre la siguiente inmobiliaria pendiente.
