@@ -7,7 +7,8 @@ import { ChevronRight, ClipboardCopy, KeyRound, Link2, MessageCircle, Pencil, Pl
 import { api } from "@/components/admin-demos";
 import { CTA_KEYS, CTA_LABEL, FOLLOWUP_STAGES, OUT, VARIABLES, fillMessage, missingVariables, pct, type Channel, type Cta, type StageKey, type VersionStatus } from "@/lib/followup/stages";
 import { GROUPS, REPLY_CLASSES, SITUATIONS, actionLabel, actionWhen, actionsOf, type Action, type ReplyClass, type Situation } from "@/lib/followup/plan";
-import type { Change, FunnelStep, InboxItem, Prepared, QueueItem, QueueSummary, StageView } from "@/lib/followup/server";
+import type { Change, FunnelStep, InboxItem, Prepared, QueueItem, QueueSummary, Results, StageView } from "@/lib/followup/server";
+import type { CohortRow, WindowKey } from "@/lib/followup/results";
 import { daysText, type Rule } from "@/lib/followup/rules";
 
 type Version = StageView["versions"][number];
@@ -51,6 +52,7 @@ export function FollowupBoard({
   funnel,
   rules,
   changes,
+  results,
 }: {
   stages: StageView[];
   queue: QueueItem[];
@@ -60,6 +62,7 @@ export function FollowupBoard({
   funnel: FunnelStep[];
   rules: Rule[];
   changes: Change[];
+  results: Results;
 }) {
   const [view, setView] = useState<View>(() => {
     if (typeof window === "undefined") return "cola";
@@ -97,6 +100,8 @@ export function FollowupBoard({
         <Inbox inbox={inbox} agencies={[...queue, ...blocked]} />
       ) : view === "embudo" ? (
         <Funnel funnel={funnel} stages={stages} rules={rules} onRules={() => go("reglas")} />
+      ) : view === "resultados" ? (
+        <ResultsView results={results} />
       ) : (
         <>
           <p className="fu-note fu-viewnote">
@@ -1224,6 +1229,192 @@ function ChangeLog({ changes }: { changes: Change[] }) {
           </li>
         ))}
       </ol>
+    </section>
+  );
+}
+
+const WINDOW_LABEL: Record<WindowKey, string> = { "7": "7 días", "14": "14 días", todo: "Sin límite" };
+const COHORT_COLS = [
+  ["respondio", "Respondieron"],
+  ["interes", "Interesadas"],
+  ["demo", "Demo enviada"],
+  ["cuenta", "Cuenta creada"],
+  ["suscripcion", "Suscripción"],
+] as const;
+const weekLabel = (w: string) => new Date(`${w}T12:00:00Z`).toLocaleDateString("es-AR", { day: "numeric", month: "short", timeZone: "UTC" });
+const hoursText = (h: number | null) => (h === null ? "—" : h < 48 ? `${Math.round(h)} h` : `${(h / 24).toFixed(1).replace(".", ",")} días`);
+
+/** Resultados (Fase 4): qué acción y qué versión mueven inmobiliarias, con ventana de atribución, cohortes y bloqueos. */
+function ResultsView({ results }: { results: Results }) {
+  const [win, setWin] = useState<WindowKey>("7");
+  const [cohortBy, setCohortBy] = useState<"contacto" | "respuesta" | "version">("contacto");
+  const data = results.windows[win];
+  const maxWeek = Math.max(1, ...data.weekly.map((w) => w.executed));
+  const maxBlock = Math.max(1, ...results.blocks.map((b) => b.n));
+  const rows: CohortRow[] = results.cohorts[cohortBy];
+  return (
+    <section className="fu-results" data-testid="followup-results">
+      <div className="fu-filters">
+        <span className="fu-lbl">Ventana de conversión</span>
+        {(Object.keys(WINDOW_LABEL) as WindowKey[]).map((k) => (
+          <button key={k} type="button" className={`fu-chip${win === k ? " is-on" : ""}`} aria-pressed={win === k} data-testid={`followup-window-${k}`} onClick={() => setWin(k)}>
+            {WINDOW_LABEL[k]}
+          </button>
+        ))}
+      </div>
+      <div className="fu-kpis fu-kpis-5">
+        <div className="fu-kpi">
+          <span>Ejecutadas</span>
+          <b>{results.totals.executed30}</b>
+          <small>confirmadas, últimos 30 días</small>
+        </div>
+        <div className="fu-kpi">
+          <span>Respondieron por primera vez</span>
+          <b>{results.totals.replies30}</b>
+          <small>últimos 30 días</small>
+        </div>
+        <div className="fu-kpi">
+          <span>Acciones pendientes</span>
+          <b>{results.totals.pending}</b>
+          <small>{results.totals.blocked} bloqueadas o programadas</small>
+        </div>
+        <div className="fu-kpi">
+          <span>No salieron</span>
+          <b>{results.totals.failed}</b>
+          <small>marcadas «No se envió»</small>
+        </div>
+      </div>
+      <div className="fu-rgrid">
+        <div className="fu-card">
+          <b className="fu-cardtitle">Evolución semanal · {WINDOW_LABEL[win].toLowerCase()}</b>
+          <div className="fu-legend">
+            <span><i className="is-ex" /> Ejecutadas</span>
+            <span><i className="is-cv" /> Conversiones atribuidas</span>
+          </div>
+          <div className="fu-bars" role="img" aria-label="Ejecutadas y conversiones por semana">
+            {data.weekly.map((w) => (
+              <div key={w.week} className="fu-barcol">
+                <small>
+                  {w.executed} · {w.conversions}
+                </small>
+                <div className="fu-barpair">
+                  <span className="is-ex" style={{ height: `${Math.round((w.executed / maxWeek) * 140)}px` }} />
+                  <span className="is-cv" style={{ height: `${Math.max(w.conversions ? 3 : 0, Math.round((w.conversions / maxWeek) * 140))}px` }} />
+                </div>
+                <small>{weekLabel(w.week)}</small>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="fu-card">
+          <b className="fu-cardtitle">Motivos de bloqueo</b>
+          {results.blocks.length === 0 ? (
+            <p className="fu-note">Nada bloqueado.</p>
+          ) : (
+            <ul className="fu-blockbars" data-testid="followup-results-blocks">
+              {results.blocks.slice(0, 8).map((b) => (
+                <li key={b.reason}>
+                  <span>
+                    {b.reason} <b>{b.n}</b>
+                  </span>
+                  <i style={{ width: `${Math.max(3, Math.round((b.n / maxBlock) * 100))}%` }} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+      <div className="fu-card">
+        <b className="fu-cardtitle">Por regla y versión · {WINDOW_LABEL[win].toLowerCase()}</b>
+        <div className="fu-tbl">
+          <table data-testid="followup-results-versions">
+            <thead>
+              <tr>
+                <th>Paso</th>
+                <th>Versión</th>
+                <th>Elegibles</th>
+                <th>Ejecutadas</th>
+                <th>Conversiones</th>
+                <th>Tasa</th>
+                <th>Tiempo</th>
+                <th>No salieron</th>
+                <th>Muestra</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.versions.map((v) => (
+                <tr key={v.versionId}>
+                  <td>
+                    <b>{actionLabel(v.stage as StageKey, v.action as Action)}</b>
+                    <small>{stageTitle(v.stage)}</small>
+                  </td>
+                  <td>
+                    V{v.version} <span className={`fu-st is-${v.status}`}>{STATUS_LABEL[v.status as VersionStatus] ?? v.status}</span>
+                  </td>
+                  <td>{v.eligible}</td>
+                  <td>{v.executed}</td>
+                  <td>
+                    {v.conversions}
+                    {v.assisted ? <small>+{v.assisted} asistencias</small> : null}
+                  </td>
+                  <td>
+                    <b>{pct(v.rate)}</b>
+                  </td>
+                  <td>{hoursText(v.medianHours)}</td>
+                  <td>{v.failed}</td>
+                  <td>{v.best ? <span className="fu-best">MEJOR</span> : v.executed === 0 ? "—" : v.smallSample ? <small>muestra chica</small> : "OK"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="fu-note">
+          Conversión: la inmobiliaria pasó del paso en que estaba al recibir el mensaje, dentro de la ventana. Si varios mensajes de la misma etapa la precedieron, cuenta solo el último (los otros son asistencias): una conversión nunca suma dos veces. «MEJOR» se marca solo entre versiones con 30 o más ejecutadas. La actividad de producto ya excluye el tráfico interno; las acciones comerciales no se excluyen.
+        </p>
+      </div>
+      <div className="fu-card">
+        <div className="fu-fhead">
+          <b className="fu-cardtitle">Cohortes</b>
+          <span className="fu-grow" />
+          {(
+            [
+              ["contacto", "Por semana de contacto"],
+              ["respuesta", "Por semana de primera respuesta"],
+              ["version", "Por versión del saludo"],
+            ] as const
+          ).map(([k, label]) => (
+            <button key={k} type="button" className={`fu-chip${cohortBy === k ? " is-on" : ""}`} aria-pressed={cohortBy === k} data-testid={`followup-cohort-${k}`} onClick={() => setCohortBy(k)}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="fu-tbl">
+          <table data-testid="followup-results-cohorts">
+            <thead>
+              <tr>
+                <th>{cohortBy === "version" ? "Segmento" : "Semana"}</th>
+                <th>Inmobiliarias</th>
+                {COHORT_COLS.map(([, label]) => (
+                  <th key={label}>{label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.cohort}>
+                  <td>{cohortBy === "version" ? r.cohort : weekLabel(r.cohort)}</td>
+                  <td>{r.size}</td>
+                  {COHORT_COLS.map(([k]) => (
+                    <td key={k}>
+                      {r[k]} <small>{r.size ? pct(r[k] / r.size) : "—"}</small>
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </section>
   );
 }

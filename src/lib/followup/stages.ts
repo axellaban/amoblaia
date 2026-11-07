@@ -75,6 +75,8 @@ export type FollowupExecution = {
   created_at: string;
   updated_at: string;
   sent_at: string | null;
+  /** Cuándo se vio que avanzó después de ella (Fase 4). */
+  converted_at?: string | null;
 };
 
 /**

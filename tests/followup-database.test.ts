@@ -42,6 +42,7 @@ describe("followup migration", () => {
     await db.exec(readFileSync("supabase/migrations/202612030001_followup_priority.sql", "utf8"));
     await db.exec(readFileSync("supabase/migrations/202612040001_followup_replies.sql", "utf8"));
     await db.exec(readFileSync("supabase/migrations/202612050001_followup_rules.sql", "utf8"));
+    await db.exec(readFileSync("supabase/migrations/202612060001_followup_results.sql", "utf8"));
     expect((await one<{ n: number }>("select count(*)::int as n from followup_rules"))!.n).toBe(17);
     expect((await one<{ n: number }>("select count(*)::int as n from followup_versions"))!.n).toBe(9);
   });

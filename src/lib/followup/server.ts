@@ -69,6 +69,7 @@ import {
   type Situation,
 } from "./plan";
 import { DEFAULT_RULES, cleanRule, outsideWindow, type Rule } from "./rules";
+import { WINDOWS, blockReasons, bySegment, cohorts, versionResults, weekly, type VersionResult, type WindowKey } from "./results";
 
 /**
  * Follow-up (/admin/follow-up): each funnel stage with its next best action,
@@ -169,13 +170,13 @@ const executions = (agencyId?: string) =>
   agencyId
     ? adminClient()
         .from("followup_executions")
-        .select("id,version_id,stage,action,agency_id,from_step,status,reason,created_at,updated_at,sent_at")
+        .select("id,version_id,stage,action,agency_id,from_step,status,reason,created_at,updated_at,sent_at,converted_at")
         .eq("agency_id", agencyId)
         .then(({ data, error }) => {
           if (error) throw missing(error) ? new HttpError(409, MISSING) : new Error("FOLLOWUP_READ_FAILED");
           return (data ?? []) as FollowupExecution[];
         })
-    : readAll<FollowupExecution>("followup_executions", "id,version_id,stage,action,agency_id,from_step,status,reason,created_at,updated_at,sent_at");
+    : readAll<FollowupExecution>("followup_executions", "id,version_id,stage,action,agency_id,from_step,status,reason,created_at,updated_at,sent_at,converted_at");
 
 /** The prospecting account of each agency: an open one before a lost or discarded one. */
 function accountsByAgency(ds: Dataset | null) {
@@ -436,7 +437,53 @@ async function board(now = new Date()) {
     });
     items.set(r.id, it);
   }
-  return { items, vs, ex, stepNow, newToday: fresh.size, open, names: new Map(rows.map((r) => [r.id, r.name])), rules };
+  // Fase 4: the moment each execution converted, recorded the first time it is seen (the exact time when known).
+  const firstDemo = new Map<string, number>();
+  for (const r of rows) for (const d of r.demos) if (d.createdAt) later(firstDemo, r.id, d.createdAt);
+  const pendingConv = ex.filter((e) => e.status === "sent" && e.sent_at && !e.converted_at && (stepNow.get(e.agency_id) ?? -1) > e.from_step);
+  await Promise.all(
+    pendingConv.slice(0, 200).map((e) => {
+      const sentAt = Date.parse(e.sent_at!);
+      const interest = lastInterest.get(e.agency_id);
+      const demo = firstDemo.get(e.agency_id);
+      const at = e.from_step < 1 && interest && interest >= sentAt ? interest : e.from_step < 2 && demo && demo >= sentAt ? demo : now.getTime();
+      e.converted_at = new Date(at).toISOString();
+      return adminClient()
+        .from("followup_executions")
+        .update({ converted_at: e.converted_at, converted_step: stepNow.get(e.agency_id) ?? null })
+        .eq("id", e.id)
+        .is("converted_at", null)
+        .then(
+          () => undefined,
+          () => undefined,
+        );
+    }),
+  );
+  // Fase 4: per agency, its first contact and first reply (for the cohorts) and the greeting version it got.
+  const firstReply = new Map<string, number>();
+  for (const e of ds?.events ?? []) {
+    const agency = agencyOfAccount.get(e.account_id);
+    if (agency && !e.corrected && (e.type === "reply" || e.type === "interest")) {
+      const t = Date.parse(e.occurred_at);
+      if (Number.isFinite(t) && (!firstReply.has(agency) || t < firstReply.get(agency)!)) firstReply.set(agency, t);
+    }
+  }
+  const firstContact = new Map<string, number>();
+  const earlier = (id: string, iso: string | null) => {
+    const t = iso ? Date.parse(iso) : NaN;
+    if (Number.isFinite(t) && (!firstContact.has(id) || t < firstContact.get(id)!)) firstContact.set(id, t);
+  };
+  for (const [agency, list] of sendsOf) for (const t of list) earlier(agency, t.sent_at);
+  for (const e of ex) if (e.status === "sent") earlier(e.agency_id, e.sent_at);
+  const greeting = new Map<string, number>();
+  for (const e of ex) if (e.status === "sent" && e.stage === "no-contactado" && (e.action ?? "principal") === "principal") greeting.set(e.agency_id, vs.find((v) => v.id === e.version_id)?.version ?? 0);
+  const facts = [...stepNow.keys()].map((id) => ({
+    firstContact: firstContact.has(id) ? new Date(firstContact.get(id)!).toISOString() : null,
+    firstReply: firstReply.has(id) ? new Date(firstReply.get(id)!).toISOString() : null,
+    step: stepNow.get(id) ?? -1,
+    greetingVersion: greeting.get(id) ?? null,
+  }));
+  return { items, vs, ex, stepNow, newToday: fresh.size, open, names: new Map(rows.map((r) => [r.id, r.name])), rules, facts };
 }
 
 /** Why it cannot be executed now (in order of what to fix first), or null. */
@@ -558,7 +605,37 @@ function item(
 /** The whole page: one view per stage, with its versions measured and its agencies (score from highest to lowest), and the execution queue. */
 export type FunnelStep = { key: StageKey; title: string; goal: string; waiting: number; reached: number; rate: number | null };
 export type Change = Awaited<ReturnType<typeof auditOf>>[number];
-export async function followupOverview(): Promise<{ stages: StageView[]; queue: QueueItem[]; blocked: QueueItem[]; summary: QueueSummary; inbox: InboxItem[]; funnel: FunnelStep[]; rules: Rule[]; changes: Change[] }> {
+export type Results = ReturnType<typeof resultsOf>;
+
+/** La pestaña Resultados: por regla y versión (con ventana de 7, 14 días o sin límite), por semana, cohortes y bloqueos. */
+function resultsOf(b: Awaited<ReturnType<typeof board>>, all: QueueItem[]) {
+  const pendingByVersion = new Map<string, number>();
+  for (const q of all) if (q.versionId && q.execution?.status !== "sent" && q.action) pendingByVersion.set(q.versionId, (pendingByVersion.get(q.versionId) ?? 0) + 1);
+  const windows = Object.fromEntries(
+    (Object.keys(WINDOWS) as WindowKey[]).map((k) => [
+      k,
+      {
+        versions: versionResults(b.vs, b.ex, b.stepNow, WINDOWS[k], pendingByVersion).filter((r) => r.eligible > 0 || r.status !== "archived"),
+        weekly: weekly(b.ex, b.stepNow, WINDOWS[k]),
+      },
+    ]),
+  ) as Record<WindowKey, { versions: VersionResult[]; weekly: ReturnType<typeof weekly> }>;
+  const sent = b.ex.filter((e) => e.status === "sent");
+  const since30 = Date.now() - 30 * DAY_MS;
+  return {
+    windows,
+    totals: {
+      executed30: sent.filter((e) => e.sent_at && Date.parse(e.sent_at) >= since30).length,
+      replies30: b.facts.filter((f) => f.firstReply && Date.parse(f.firstReply) >= since30).length,
+      failed: b.ex.filter((e) => e.status === "failed").length,
+      pending: all.filter((q) => q.action && q.execution?.status !== "sent").length,
+      blocked: all.filter((q) => q.action && q.execution?.status !== "sent" && q.blocked).length,
+    },
+    cohorts: { contacto: cohorts(b.facts, "contacto"), respuesta: cohorts(b.facts, "respuesta"), version: bySegment(b.facts) },
+    blocks: blockReasons(all.filter((q) => q.action && q.execution?.status !== "sent" && q.blocked).map((q) => q.blocked!)),
+  };
+}
+export async function followupOverview(): Promise<{ stages: StageView[]; queue: QueueItem[]; blocked: QueueItem[]; summary: QueueSummary; inbox: InboxItem[]; funnel: FunnelStep[]; rules: Rule[]; changes: Change[]; results: Results }> {
   const [b, changes] = await Promise.all([board(), auditOf(null, 20)]);
   const all = [...b.items.values()];
   const inboxItems = inboxOf(b);
@@ -581,6 +658,7 @@ export async function followupOverview(): Promise<{ stages: StageView[]; queue: 
     funnel: funnelOf(b, all),
     rules: [...b.rules].sort((x, y) => x.position - y.position),
     changes,
+    results: resultsOf(b, all),
   };
 }
 

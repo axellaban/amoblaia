@@ -221,3 +221,19 @@ La pestaña **Embudo**: las 9 etapas en tarjetas con cuántas esperan y qué par
 Quién cambió qué y cuándo: etapa, situación (con el texto), score, prioridad, reprogramación, nombre corto, reglas y versiones. Los cambios de cada inmobiliaria aparecen en sus «Últimas acciones»; los de reglas y mensajes, al pie de Mensajes y reglas.
 
 Selectores: `followup-funnel`, `followup-funnel-stage`, `followup-funnel-rule`, `followup-rules`, `followup-rule`, `followup-rule-edit`, `followup-rule-form`, `followup-rule-hours`, `followup-rule-save`, `followup-rule-add`, `followup-preview`, `followup-changes`.
+
+## Fase 4 — Resultados, atribución y cohortes
+
+Migración `202612060001_followup_results.sql`. Lógica pura en `src/lib/followup/results.ts`.
+
+- **Cuándo convirtió**: el embudo no guarda cuándo se llegó a cada paso. Cada ejecución guarda `converted_at` (y `converted_step`) la primera vez que el panel ve que la inmobiliaria avanzó: la hora exacta cuando se conoce (el interés registrado, la demo creada) o, si no, ese momento. Las conversiones anteriores a esta fase quedan con la hora en que se vieron por primera vez.
+- **Ventana**: 7 días, 14 días o sin límite desde el envío.
+- **Atribución al último mensaje**: si varios mensajes de la misma etapa precedieron a una conversión, cuenta solo el último antes de ella; los otros son asistencias. Una conversión nunca suma dos veces.
+- **Por regla y versión**: elegibles (ejecutadas + las que hoy esperan esa versión), ejecutadas, conversiones (+ asistencias), tasa, tiempo mediano a la conversión, «No salieron» y muestra. «MEJOR» solo entre versiones con 30 o más ejecutadas (el mínimo es a confirmar con Facu).
+- **Evolución semanal**: ejecutadas por semana de envío y conversiones atribuidas por semana de conversión (semanas de lunes a domingo, hora de Argentina).
+- **Cohortes**: por semana de primer contacto, por semana de primera respuesta y por versión del saludo; cuántas respondieron, mostraron interés, recibieron la demo, crearon la cuenta y se suscribieron.
+- **Motivos de bloqueo** agregados.
+- **Tráfico interno**: la actividad de producto (visitas e interacción de las demos) ya lo excluye (`docs/TRAFICO_INTERNO.md`); las acciones comerciales no se excluyen.
+- **Caso I (suscripción)**: una inmobiliaria suscripta sale de Follow-up (no tiene etapa), así que no le queda ninguna tarea de captación; su historial (ejecuciones, respuestas, auditoría) se conserva.
+- **Opcional, decisión aparte**: la API de WhatsApp Business permitiría detectar respuestas sin una pestaña abierta (costo, plantillas aprobadas por Meta y reglas propias).
+- Selectores: `followup-results`, `followup-window-7|14|todo`, `followup-results-versions`, `followup-results-blocks`, `followup-results-cohorts`, `followup-cohort-contacto|respuesta|version`.
