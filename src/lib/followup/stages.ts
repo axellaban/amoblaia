@@ -1,0 +1,166 @@
+// Follow-up: una next best action por etapa del embudo de Inmobiliarias. Las
+// etapas son los que «se quedaron» en cada paso (la parte naranja de cada
+// barra), más las inmobiliarias de prospección todavía sin contactar. Puro:
+// lo comparten el servidor, el navegador y los tests.
+
+import { AGENCY_STEPS } from "@/lib/agency/demo-funnel";
+
+export const FOLLOWUP_STAGES = [
+  { key: "no-contactado", step: -1, title: "No contactado", goal: "Contactado" },
+  { key: "no-responde", step: 0, title: "Contactado, no responde", goal: "Interesado" },
+  { key: "sin-demo", step: 1, title: "Interesado, sin demo", goal: "Demo creada" },
+  { key: "sin-enviar", step: 2, title: "Demo creada, sin enviar", goal: "Enviada" },
+  { key: "no-abrio", step: 3, title: "Enviada, no abrió", goal: "Con visita" },
+  { key: "sin-interaccion", step: 4, title: "Visitó, sin interactuar", goal: "Con interacción" },
+  { key: "sin-cuenta", step: 5, title: "Interactuó, sin cuenta", goal: "Cuenta creada" },
+  { key: "sin-uso", step: 6, title: "Cuenta creada, sin uso", goal: "Cuenta con interacción" },
+  { key: "sin-suscripcion", step: 7, title: "Cuenta activa, sin suscripción", goal: "Suscripción" },
+] as const;
+export type StageKey = (typeof FOLLOWUP_STAGES)[number]["key"];
+export const STAGE_KEYS = FOLLOWUP_STAGES.map((s) => s.key) as StageKey[];
+export const isStageKey = (v: unknown): v is StageKey => typeof v === "string" && (STAGE_KEYS as string[]).includes(v);
+export const stageInfo = (key: StageKey) => FOLLOWUP_STAGES.find((s) => s.key === key)!;
+// The last step (Suscripciones) has nothing after it: no follow-up.
+if (FOLLOWUP_STAGES.at(-1)!.step !== AGENCY_STEPS.length - 2) throw new Error("FOLLOWUP_STAGES out of sync with AGENCY_STEPS");
+
+export type Channel = "whatsapp" | "task";
+export const CTA_KEYS = ["whatsapp", "demo", "panel", "copy", "create_demo"] as const;
+export type Cta = (typeof CTA_KEYS)[number];
+export const CTA_LABEL: Record<Cta, string> = {
+  whatsapp: "Abrir WhatsApp",
+  demo: "Link demo",
+  panel: "Link panel",
+  copy: "Copiar mensaje",
+  create_demo: "Crear demo",
+};
+export const VARIABLES = {
+  inmobiliaria: "Nombre de la inmobiliaria",
+  decisor: "Nombre de quien decide",
+  sdr: "Quien envía",
+  demo: "Link a su demo",
+  panel: "Link a su panel",
+} as const;
+export type MessageContext = Partial<Record<keyof typeof VARIABLES, string | null>>;
+
+export type VersionStatus = "active" | "test" | "archived";
+export type FollowupVersion = {
+  id: string;
+  stage: StageKey;
+  version: number;
+  channel: Channel;
+  trigger_label: string;
+  body: string;
+  ctas: Cta[];
+  status: VersionStatus;
+  created_at: string;
+  status_at: string;
+};
+export type ExecutionStatus = "opened" | "sent" | "failed";
+export type FollowupExecution = {
+  id: string;
+  version_id: string;
+  stage: StageKey;
+  agency_id: string;
+  from_step: number;
+  status: ExecutionStatus;
+  reason: string | null;
+  created_at: string;
+  updated_at: string;
+  sent_at: string | null;
+};
+
+/**
+ * The follow-up stage of an agency, from the same facts as the funnel:
+ * `reached` is its highest step (agencyStep), null when it was never
+ * contacted. A lost or test agency, a suppressed prospect or one that already
+ * subscribed has none. `pendingProspect`: a prospecting account still to
+ * contact (not lost or discarded).
+ */
+export function stageOf(f: { reached: number | null; lost: boolean; test: boolean; suppressed: boolean; pendingProspect: boolean }): StageKey | null {
+  if (f.test || f.lost || f.suppressed) return null;
+  if (f.reached === null) return f.pendingProspect ? "no-contactado" : null;
+  return FOLLOWUP_STAGES.find((s) => s.step === f.reached)?.key ?? null;
+}
+
+/** The step the agency is at for the measurement: -1 before it was contacted. */
+export const stepValue = (reached: number | null) => (reached === null ? -1 : reached);
+
+/** Small stable hash (FNV-1a) for the A/B split: the same agency always gets the same version. */
+function hash(text: string) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h;
+}
+
+/**
+ * The version an agency gets in a stage: the one it already started with
+ * (opened, sent or failed) while it is still offered, else the active one or,
+ * with a test running, half of the agencies get the test.
+ */
+export function versionFor(agencyId: string, versions: FollowupVersion[], previous: FollowupExecution[] = []) {
+  const live = versions.filter((v) => v.status !== "archived");
+  const active = live.find((v) => v.status === "active") ?? null;
+  const test = live.find((v) => v.status === "test") ?? null;
+  const started = [...previous].sort((a, b) => b.updated_at.localeCompare(a.updated_at)).find((e) => live.some((v) => v.id === e.version_id));
+  if (started) return live.find((v) => v.id === started.version_id)!;
+  if (test && active) return hash(`${agencyId}:${active.stage}`) % 2 ? test : active;
+  return active ?? test;
+}
+
+/** Fills the {{variables}}; an unknown or empty one stays visible so the message is never sent with a hole. */
+export function fillMessage(text: string, ctx: MessageContext) {
+  return text.replace(/\{\{\s*(\w+)\s*\}\}/g, (m, key: string) => {
+    const v = ctx[key as keyof MessageContext];
+    return v && v.trim() ? v.trim() : m;
+  });
+}
+export const missingVariables = (text: string) => [...new Set([...text.matchAll(/\{\{\s*(\w+)\s*\}\}/g)].map((m) => m[1]))];
+/** The links a version needs resolved: the ones in its text and its CTAs. */
+export function linksNeeded(v: Pick<FollowupVersion, "body" | "ctas">) {
+  const vars = missingVariables(v.body);
+  return { demo: vars.includes("demo") || v.ctas.includes("demo"), panel: vars.includes("panel") || v.ctas.includes("panel") };
+}
+
+/**
+ * Each version's numbers. Executions: sent, once per agency. Conversions: of
+ * those, the agencies whose step today is past the one they were at when it
+ * was sent (they reached the next step after it). The rate is null without
+ * executions; under `small` executions the sample is small.
+ */
+export function versionStats(versions: FollowupVersion[], executions: FollowupExecution[], stepNow: Map<string, number>, small = 30) {
+  return versions.map((v) => {
+    const sent = executions.filter((e) => e.version_id === v.id && e.status === "sent");
+    const converted = sent.filter((e) => (stepNow.get(e.agency_id) ?? -1) > e.from_step).length;
+    return {
+      id: v.id,
+      executions: sent.length,
+      conversions: converted,
+      rate: sent.length ? converted / sent.length : null,
+      opened: executions.filter((e) => e.version_id === v.id && e.status === "opened").length,
+      smallSample: sent.length > 0 && sent.length < small,
+    };
+  });
+}
+export type VersionStats = ReturnType<typeof versionStats>[number];
+
+/** «12%», «4.5%» under 10%, «—» without executions. */
+export const pct = (r: number | null) => (r === null ? "—" : `${(r * 100).toFixed(r < 0.1 && r > 0 ? 1 : 0).replace(".", ",")}%`);
+
+/** Validates a new version from the panel. Returns the clean fields or an error message. */
+export function cleanVersion(input: { stage?: unknown; channel?: unknown; trigger?: unknown; body?: unknown; ctas?: unknown; status?: unknown }) {
+  if (!isStageKey(input.stage)) return { error: "Etapa desconocida." } as const;
+  const channel = input.channel === "task" ? "task" : input.channel === "whatsapp" ? "whatsapp" : null;
+  if (!channel) return { error: "El canal es WhatsApp o tarea del equipo." } as const;
+  const body = typeof input.body === "string" ? input.body.trim() : "";
+  if (!body) return { error: "Escribí la next best action." } as const;
+  if (body.length > 4000) return { error: "El texto supera los 4000 caracteres." } as const;
+  const unknown = missingVariables(body).filter((v) => !(v in VARIABLES));
+  if (unknown.length) return { error: `Variable desconocida: {{${unknown[0]}}}. Se pueden usar ${Object.keys(VARIABLES).map((k) => `{{${k}}}`).join(", ")}.` } as const;
+  const trigger = typeof input.trigger === "string" ? input.trigger.trim().slice(0, 120) : "";
+  const ctas = Array.isArray(input.ctas) ? CTA_KEYS.filter((k) => (input.ctas as unknown[]).includes(k)) : [];
+  const status = input.status === "test" ? "test" : "active";
+  return { stage: input.stage, channel, trigger, body, ctas, status } as const;
+}
