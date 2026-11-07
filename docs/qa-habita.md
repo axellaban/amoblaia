@@ -91,7 +91,7 @@ Sin nombres, teléfonos, emails, enlaces a grabaciones, IDs de sesión, tasas de
 
 ### QA 2026-11-07 am (2)
 
-- Inicio: 2026-11-07T08:51:40-03:00 · Fin: 2026-11-07T09:30:00-03:00
+- Inicio: 2026-11-07T08:51:40-03:00 · Fin: 2026-11-07T09:00:00-03:00
 - Commit: 1224a0d (#183) · Despliegue: dpl_B9PxsqZ1LDkVKRDC1iGSpsruy4b3 (production, READY) · Estado: parcial (ver «Sin revisar»)
 - Tipo: completa (mañana), segunda corrida del día, sobre el mismo código que la primera (desde entonces solo cambió este archivo) · Pantallas: escritorio 1366×900, iPhone 13, Galaxy S8 (también con red lenta y con el navegador de WhatsApp) e iPad (gen 7)
 - Paso 2: errores de Vercel en 24 h: dos de Mercado Pago por límite de consultas (429 local) en el cron, ya diferidos por el propio código (sin acción), y el `lead_recompute_failed` aislado (OBS-011, no se repitió). Sin errores SSR.
