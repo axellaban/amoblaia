@@ -47,6 +47,7 @@ Buscá `### QA <fecha de hoy> am` o `pm`, con la fecha de Argentina. Si no está
 - **OBS-009** Un 520 aislado de Storage al subir una foto de propiedad (5/11 a la noche). No se repitió.
 - **OBS-010** (7/11 am) La consulta de grabaciones de PostHog (`session_replay_events`) no devolvió ninguna sesión en las últimas 72 h, ni siquiera internas. Las corridas anteriores sí tenían grabaciones. Ver si es de la consulta o si la grabación se cortó (`docs/CRO_INSTRUMENTACION.md`, receta de grabaciones).
 - **OBS-011** (7/11 am) Un `lead_recompute_failed` aislado en `POST /api/demo/<token>/leads` (6/11 a la noche). Es el recálculo de puntaje «mejor esfuerzo»: se registra y el siguiente lote lo corrige. Ver si se repite.
+- **OBS-012** (7/11 pm) Tres «statement timeout» de Postgres (`57014`) en las últimas 24 h: dos juntas en `/api/metricas` (a las 14:12 de Argentina, coincidieron con un deploy) y una en `/api/prospeccion` (13:42). Lecturas completas de `demos`, `demo_activity` y del dataset de prospección. Ver si se repite; si sí, paginar o indexar.
 
 ### Propuestas UX pendientes
 
@@ -88,6 +89,20 @@ Para que Astra las evalúe. Claude no las implementa sin aprobación.
 Sin nombres, teléfonos, emails, enlaces a grabaciones, IDs de sesión, tasas de conversión ni cantidades de usuarios o sesiones.
 
 ## Resultados
+
+### QA 2026-11-07 pm
+
+- Inicio: 2026-11-07T17:52:14-03:00 · Fin: 2026-11-07T18:10:00-03:00
+- Commit: f0c6682 (#193) · Despliegue: dpl_CJRCh26AbWxZqCELaLEj9JZSVJFg (production, READY) · Estado: parcial (ver «Sin revisar»)
+- Tipo: liviana (tarde) · Pantallas: escritorio 1366×900, iPhone 13 y Galaxy S8 (también con el navegador de WhatsApp) para la demo pública, `/presentacion` y token inexistente; panel en escritorio, iPhone 13 y Galaxy S8.
+- Paso 2: errores de Vercel en 24 h: dos timeouts de base de datos (`DATABASE_57014`) en `/api/metricas` y uno en `/api/prospeccion` (OBS-012); dos de Mercado Pago por límite de consultas (429) en el cron, ya diferidos por el código (sin acción); el `lead_recompute_failed` de anoche (OBS-011, no se repitió). Logs de Supabase: sin errores 5xx de la API y solo esos «statement timeout» en Postgres.
+- Sesión de QA: OK. Demo pública, `/presentacion`, token inexistente y `/panel` en las variantes indicadas: 200 (404 propio y claro para el token inexistente), sin errores de JavaScript, sin scroll horizontal ni placeholders, `og:title`, `og:description` y `og:image` presentes. Galería con miniaturas, enlace de WhatsApp con destino `wa.me`. Axe: solo `color-contrast` y, en la demo, `aria-prohibited-attr` (UX-001, UX-003). Se miraron las capturas de la demo y el 404 en celular y del panel en iPhone 13.
+- Bugs encontrados: ninguno · Corregidos: ninguno
+- Observaciones nuevas: OBS-012 · Propuestas nuevas: ninguna. Se repiten UX-001, UX-003 y OBS-005 (pestaña «Contactar» cortada en celular).
+- PRs de usabilidad abiertos: ninguno con título `UX:`
+- PostHog revisado hasta: sin cambios respecto de la corrida anterior · cobertura: sin acceso · el conector de PostHog no estaba disponible en esta sesión.
+- Sin revisar: PostHog completo (sin conector); red lenta; comparación antes/después por clic y arrastre (el control no expone valor accesible, solo se vio en la captura); teclado y zonas táctiles; tablet; crear demo, estudio de imágenes y video (la corrida liviana los excluye y la mañana no dejó arreglos pendientes). Nada que borrar: no se crearon datos.
+- Esperado, no es bug: el 404 de la consola en `/demo/<token-inexistente>`; los tiempos de carga de la corrida (4 a 9 s) incluyen el proxy del entorno y no son comparables con los de usuarios.
 
 ### QA 2026-11-07 am (2)
 
