@@ -3,27 +3,32 @@ import { HttpError } from "@/lib/commerce/http";
 import { agencyStep } from "@/lib/agency/demo-funnel";
 import { commercialRow, commercialRows } from "@/lib/agency/commercial-server";
 import type { CommercialRow } from "@/lib/agency/commercial";
+import { createAgencyRecord } from "@/lib/agency/admin-edit";
 import { agencyDemoLink, setDemosSent } from "@/lib/agency/external";
 import { agencyPanelLink } from "@/lib/agency/panel-link";
 import { normalizeArNumber } from "@/lib/demos/send";
 import { isUuid } from "@/lib/demos/shared";
 import { contactFor } from "@/lib/prospecting/external";
 import { recordSend } from "@/lib/prospecting/record-send";
-import { prospectDataset } from "@/lib/prospecting/server";
+import { prospectDataset, prospectRpc } from "@/lib/prospecting/server";
 import type { Dataset, ProspectAccount } from "@/lib/prospecting/types";
 import { adminClient } from "@/lib/supabase/server";
 import {
   FOLLOWUP_STAGES,
+  OUT,
+  byScore,
   cleanVersion,
+  isOverrideStage,
   fillMessage,
   isStageKey,
   linksNeeded,
   missingVariables,
   personName,
   lastActionOf,
+  placement,
   stageInfo,
   stageOf,
-  stepValue,
+  type OverrideStage,
   versionFor,
   versionStats,
   type ExecutionStatus,
@@ -41,8 +46,8 @@ import {
  * («Todo»), so a stage holds exactly the orange part of that bar.
  */
 
-export const MIGRATION = "202611300001_followup.sql";
-const MISSING = `Para Follow-up falta aplicar la migración ${MIGRATION} en Supabase.`;
+export const MIGRATION = "202612010001_followup_edit.sql";
+const MISSING = `Para Follow-up falta aplicar las migraciones 202611300001_followup.sql y ${MIGRATION} en Supabase.`;
 const missing = (e: { code?: string; message?: string } | null) =>
   Boolean(e && (e.code === "PGRST205" || e.code === "PGRST202" || e.code === "42P01" || e.code === "42883" || /followup_/.test(e.message ?? "")));
 
@@ -57,7 +62,31 @@ async function readAll<T>(table: string, columns: string) {
   }
   return out;
 }
-const versions = () => readAll<FollowupVersion>("followup_versions", "id,stage,version,channel,trigger_label,body,ctas,status,created_at,status_at");
+const VERSION_FIELDS = "id,stage,version,channel,trigger_label,body,ctas,status,created_at,status_at,notes,edited_at";
+const versions = () => readAll<FollowupVersion>("followup_versions", VERSION_FIELDS);
+
+/** What Follow-up keeps of each agency: its corrected stage, and the address, zone and score of the ones added by hand. */
+type AgencyExtra = { agency_id: string; stage_override: OverrideStage | null; override_step: number | null; address: string | null; zone: string | null; score: number | null };
+const extras = async (agencyId?: string) => {
+  let q = adminClient().from("followup_agencies").select("agency_id,stage_override,override_step,address,zone,score");
+  if (agencyId) q = q.eq("agency_id", agencyId);
+  const { data, error } = await q.limit(20000);
+  if (error) throw missing(error) ? new HttpError(409, MISSING) : new Error("FOLLOWUP_READ_FAILED");
+  return new Map(((data ?? []) as AgencyExtra[]).map((x) => [x.agency_id, { ...x, score: x.score === null ? null : Number(x.score) }]));
+};
+
+/** The agency's web and contact name, and its prospecting account's address (optional sources: missing reads as nothing). */
+async function details(agencyId?: string) {
+  const [agencies, accounts] = await Promise.all([
+    readAll<{ id: string; website: string | null; contact_name: string | null }>("agencies", "id,website,contact_name").catch(() => []),
+    readAll<{ agency_id: string; address: string | null }>("prospect_accounts", "agency_id,address").catch(() => []),
+  ]);
+  const only = <T extends { id?: string; agency_id?: string }>(list: T[]) => (agencyId ? list.filter((x) => (x.id ?? x.agency_id) === agencyId) : list);
+  return {
+    agency: new Map(only(agencies).map((a) => [a.id, a])),
+    address: new Map(only(accounts).filter((a) => a.address).map((a) => [a.agency_id, a.address])),
+  };
+}
 const executions = (agencyId?: string) =>
   agencyId
     ? adminClient()
@@ -82,7 +111,7 @@ function accountsByAgency(ds: Dataset | null) {
 }
 
 /** An agency's place in the funnel (the same rule as the «Todo» funnel of /admin/inmobiliarias) and its follow-up stage. */
-function place(r: CommercialRow, account: ProspectAccount | undefined) {
+function derived(r: CommercialRow, account: ProspectAccount | undefined) {
   const demo = r.demos.length ? Math.max(...r.demos.map((d) => d.step)) : null;
   const reached = agencyStep(r.prospectFunnel?.step ?? null, demo);
   const closed = account?.stage === "lost" || account?.stage === "discarded";
@@ -96,13 +125,20 @@ function place(r: CommercialRow, account: ProspectAccount | undefined) {
   return { reached, stage };
 }
 
+/** Where it goes in Follow-up: the funnel's stage, or the one corrected by hand while the funnel still says the same. */
+function place(r: CommercialRow, account: ProspectAccount | undefined, extra: AgencyExtra | undefined) {
+  const d = derived(r, account);
+  const override = extra?.stage_override && extra.override_step !== null ? { stage: extra.stage_override, step: extra.override_step } : null;
+  return { ...placement(d, override), derived: d };
+}
+
 /** Who to write to: the prospecting WhatsApp (the reviewed one first), else the agency's contact WhatsApp. */
-function recipient(r: CommercialRow, account: ProspectAccount | undefined) {
+function recipient(r: CommercialRow, account: ProspectAccount | undefined, contactName?: string | null) {
   const contact = account ? contactFor(account, "whatsapp") : null;
   const raw = contact?.address ?? r.whatsapp ?? null;
   const wa = normalizeArNumber(raw) ?? (raw && /^\d{10,15}$/.test(raw.replace(/\D/g, "")) ? raw.replace(/\D/g, "") : null);
   // The prospecting «decisor» is usually a category («Por confirmar», «Marca comercial»): only a real name counts.
-  const person = personName(contact?.person_name) ?? personName(account?.decision_maker) ?? null;
+  const person = personName(contact?.person_name) ?? personName(account?.decision_maker) ?? personName(contactName) ?? null;
   return { wa, phone: raw, person, needsReview: Boolean(contact?.needs_review), fromProspect: Boolean(contact) };
 }
 
@@ -119,6 +155,16 @@ export type QueueItem = {
   /** Lo más reciente entre Follow-up, Adquisición y lo que hizo la inmobiliaria. */
   lastAction: LastAction | null;
   since: string;
+  /** In «No contactado», its prospecting score (loaded with the list, editable); in the other stages, its lead score. */
+  score: number | null;
+  scoreEditable: boolean;
+  address: string | null;
+  zone: string | null;
+  website: string | null;
+  /** Its properties (demos), as in /admin/inmobiliarias. */
+  properties: number;
+  /** Its stage was corrected by hand (by the team or the extension). */
+  manual: boolean;
   versionId: string | null;
   execution: { status: ExecutionStatus; at: string; reason: string | null } | null;
 };
@@ -130,9 +176,9 @@ export type StageView = {
   queue: QueueItem[];
 };
 
-/** The whole page: one view per stage, with its versions measured and its queue (the ones still to do first, the longest waiting first). */
+/** The whole page: one view per stage, with its versions measured and its queue (score from highest to lowest). */
 export async function followupOverview(): Promise<{ stages: StageView[] }> {
-  const [rows, ds, vs, ex] = await Promise.all([commercialRows(), prospectDataset().catch(() => null), versions(), executions()]);
+  const [rows, ds, vs, ex, extra, info] = await Promise.all([commercialRows(), prospectDataset().catch(() => null), versions(), executions(), extras(), details()]);
   const accounts = accountsByAgency(ds);
   const stepNow = new Map<string, number>();
   const byStage = new Map<StageKey, QueueItem[]>(FOLLOWUP_STAGES.map((s) => [s.key, []]));
@@ -144,37 +190,13 @@ export async function followupOverview(): Promise<{ stages: StageView[] }> {
   for (const t of ds?.attempts ?? []) if (t.status === "sent") sendsOf.set(t.account_id, [...(sendsOf.get(t.account_id) ?? []), t]);
   for (const r of rows) {
     const account = accounts.get(r.id);
-    const { reached, stage } = place(r, account);
-    stepNow.set(r.id, stepValue(reached));
-    if (!stage) continue;
-    const mine = (exOf.get(r.id) ?? []).filter((e) => e.stage === stage);
-    const version = versionFor(r.id, vs.filter((v) => v.stage === stage), mine);
-    const done = version ? mine.find((e) => e.version_id === version.id) : undefined;
-    const to = recipient(r, account);
-    const lastAction = lastActionOf({
-      executions: exOf.get(r.id) ?? [],
-      versions: vs,
-      attempts: [...(accountIds.get(r.id) ?? [])].flatMap((id) => sendsOf.get(id) ?? []),
-      activity: r.lastActivity,
-    });
-    byStage.get(stage)!.push({
-      agencyId: r.id,
-      name: r.name,
-      person: to.person,
-      phone: to.phone,
-      wa: to.wa,
-      needsReview: to.needsReview,
-      hasDemo: Boolean(r.shareDemo),
-      hasAccount: r.hasOwner,
-      lastActivity: r.lastActivity,
-      lastAction,
-      since: lastAction?.at ?? r.prospectFunnel?.at ?? r.createdAt,
-      versionId: version?.id ?? null,
-      execution: done ? { status: done.status, at: done.updated_at, reason: done.reason } : null,
-    });
+    const own = extra.get(r.id);
+    const at = place(r, account, own);
+    stepNow.set(r.id, at.step);
+    if (!at.stage) continue;
+    const sends = [...(accountIds.get(r.id) ?? [])].flatMap((id) => sendsOf.get(id) ?? []);
+    byStage.get(at.stage)!.push(item(r, account, own, info, at, vs, exOf.get(r.id) ?? [], sends));
   }
-  // Still to do and with a WhatsApp first, then the ones without a number, then the ones already sent.
-  const order = (q: QueueItem) => (q.execution?.status === "sent" ? 2 : q.wa ? 0 : 1);
   return {
     stages: FOLLOWUP_STAGES.map((s) => {
       const own = vs.filter((v) => v.stage === s.key).sort((a, b) => a.version - b.version);
@@ -184,9 +206,51 @@ export async function followupOverview(): Promise<{ stages: StageView[] }> {
         title: s.title,
         goal: s.goal,
         versions: own.map((v, i) => ({ ...v, stats: stats[i] })),
-        queue: byStage.get(s.key)!.sort((a, b) => order(a) - order(b) || a.since.localeCompare(b.since)),
+        queue: byStage.get(s.key)!.sort(byScore),
       };
     }),
+  };
+}
+
+function item(
+  r: CommercialRow,
+  account: ProspectAccount | undefined,
+  own: AgencyExtra | undefined,
+  info: Awaited<ReturnType<typeof details>>,
+  at: ReturnType<typeof place>,
+  vs: FollowupVersion[],
+  executionsOf: FollowupExecution[],
+  sends: { status: string; sent_at: string | null; step: number }[],
+): QueueItem {
+  const stage = at.stage!;
+  const mine = executionsOf.filter((e) => e.stage === stage);
+  const version = versionFor(r.id, vs.filter((v) => v.stage === stage), mine);
+  const done = version ? mine.find((e) => e.version_id === version.id) : undefined;
+  const agency = info.agency.get(r.id);
+  const to = recipient(r, account, agency?.contact_name);
+  const uncontacted = stage === "no-contactado";
+  const lastAction = lastActionOf({ executions: executionsOf, versions: vs, attempts: sends, activity: r.lastActivity });
+  return {
+    agencyId: r.id,
+    name: r.name,
+    person: to.person,
+    phone: to.phone,
+    wa: to.wa,
+    needsReview: to.needsReview,
+    hasDemo: Boolean(r.shareDemo),
+    hasAccount: r.hasOwner,
+    lastActivity: r.lastActivity,
+    lastAction,
+    since: lastAction?.at ?? r.prospectFunnel?.at ?? r.createdAt,
+    score: uncontacted ? (account?.score ?? own?.score ?? null) : r.score,
+    scoreEditable: uncontacted,
+    address: info.address.get(r.id) ?? own?.address ?? null,
+    zone: account?.zone ?? own?.zone ?? null,
+    website: agency?.website ?? account?.website ?? null,
+    properties: r.properties,
+    manual: at.manual,
+    versionId: version?.id ?? null,
+    execution: done ? { status: done.status, at: done.updated_at, reason: done.reason } : null,
   };
 }
 
@@ -194,15 +258,15 @@ export async function followupOverview(): Promise<{ stages: StageView[] }> {
 async function current(agencyId: string, stage: unknown) {
   if (!isUuid(agencyId)) throw new HttpError(404, "No encontramos la inmobiliaria.");
   if (!isStageKey(stage)) throw new HttpError(400, "Etapa desconocida.");
-  const [row, ds, vs, ex] = await Promise.all([commercialRow(agencyId), prospectDataset().catch(() => null), versions(), executions(agencyId)]);
+  const [row, ds, vs, ex, extra, info] = await Promise.all([commercialRow(agencyId), prospectDataset().catch(() => null), versions(), executions(agencyId), extras(agencyId), details(agencyId)]);
   if (!row) throw new HttpError(404, "No encontramos la inmobiliaria.");
   const account = accountsByAgency(ds).get(agencyId);
-  const at = place(row, account);
+  const at = place(row, account, extra.get(agencyId));
   if (at.stage !== stage)
     throw new HttpError(409, at.stage ? `Ya no está en «${stageInfo(stage).title}»: pasó a «${stageInfo(at.stage).title}». Actualizá la lista.` : `Ya no está en «${stageInfo(stage).title}». Actualizá la lista.`);
   const own = vs.filter((v) => v.stage === stage);
   const mine = ex.filter((e) => e.stage === stage);
-  return { row, ds, account, reached: at.reached, versions: own, mine, version: versionFor(agencyId, own, mine) };
+  return { row, ds, account, step: at.step, contactName: info.agency.get(agencyId)?.contact_name ?? null, versions: own, mine, version: versionFor(agencyId, own, mine) };
 }
 
 /**
@@ -219,7 +283,7 @@ export async function prepareExecution(agencyId: string, stage: unknown, origin:
     need.demo ? agencyDemoLink(agencyId, actor.id, origin).then((l) => l.url).catch(() => null) : null,
     need.panel ? agencyPanelLink(agencyId, actor.id, origin).then((l) => l.url).catch(() => null) : null,
   ]);
-  const to = recipient(c.row, c.account);
+  const to = recipient(c.row, c.account, c.contactName);
   const message = fillMessage(v.body, {
     inmobiliaria: c.row.name,
     decisor: to.person,
@@ -243,6 +307,7 @@ export async function prepareExecution(agencyId: string, stage: unknown, origin:
     version: v.version,
     channel: v.channel,
     ctas: v.ctas,
+    notes: v.notes,
     person: to.person,
     phone: to.phone,
     message,
@@ -277,7 +342,7 @@ export async function markExecution(
     p_actor: actor.id,
     p_version: v.id,
     p_agency: input.agencyId,
-    p_from_step: stepValue(c.reached),
+    p_from_step: c.step,
     p_status: status,
     p_reason: reason || null,
   });
@@ -300,7 +365,7 @@ export async function markExecution(
 const RPC_ERRORS: Record<string, [number, string]> = {
   FOLLOWUP_ACTIVE_REQUIRED: [409, "La versión activa no se archiva sola: activá otra primero."],
   FOLLOWUP_VERSION_NOT_FOUND: [404, "No encontramos esa versión."],
-  FOLLOWUP_VERSION_FROZEN: [409, "Una versión guardada no se edita: creá una nueva."],
+  FOLLOWUP_VERSION_FROZEN: [409, "Una versión no cambia de etapa ni de número, y no se borra."],
 };
 function rpcFailure(error: { code?: string; message?: string }) {
   if (missing(error)) return new HttpError(409, MISSING);
@@ -322,7 +387,37 @@ export async function createVersion(input: Record<string, unknown>, actorId: str
     p_status: v.status,
   });
   if (error) throw rpcFailure(error);
-  return data as FollowupVersion;
+  const made = data as FollowupVersion;
+  if (!v.notes) return made;
+  const saved = await adminClient().from("followup_versions").update({ notes: v.notes }).eq("id", made.id).select(VERSION_FIELDS).single();
+  if (saved.error) throw rpcFailure(saved.error);
+  return saved.data as unknown as FollowupVersion;
+}
+
+/**
+ * «Editar»: changes a saved version's text, trigger, channel, CTAs or
+ * observations. It keeps its number and its numbers; `edited_at` records that
+ * the text changed (the observations alone don't count). To compare two texts,
+ * a new version.
+ */
+export async function updateVersion(id: unknown, input: Record<string, unknown>) {
+  if (!isUuid(id)) throw new HttpError(404, "No encontramos esa versión.");
+  const db = adminClient();
+  const found = await db.from("followup_versions").select(VERSION_FIELDS).eq("id", id).maybeSingle();
+  if (found.error) throw rpcFailure(found.error);
+  const old = found.data as unknown as FollowupVersion | null;
+  if (!old) throw new HttpError(404, "No encontramos esa versión.");
+  const v = cleanVersion({ ...input, stage: old.stage });
+  if ("error" in v) throw new HttpError(400, v.error!);
+  const changed = v.body !== old.body || v.channel !== old.channel || v.trigger !== old.trigger_label || v.ctas.join() !== old.ctas.join();
+  const saved = await db
+    .from("followup_versions")
+    .update({ body: v.body, channel: v.channel, trigger_label: v.trigger, ctas: v.ctas, notes: v.notes, ...(changed ? { edited_at: new Date().toISOString() } : {}) })
+    .eq("id", id)
+    .select(VERSION_FIELDS)
+    .single();
+  if (saved.error) throw rpcFailure(saved.error);
+  return saved.data as unknown as FollowupVersion;
 }
 
 /** «Hacerla la activa», «Detener prueba», «Probar 50/50». */
@@ -332,4 +427,105 @@ export async function setVersionStatus(id: unknown, status: unknown) {
   const { data, error } = await adminClient().rpc("habita_followup_set_status", { p_version: id, p_status: status });
   if (error) throw rpcFailure(error);
   return data as FollowupVersion;
+}
+
+/** The agency as it is now in Follow-up, for the corrections below. */
+async function now(agencyId: string) {
+  if (!isUuid(agencyId)) throw new HttpError(404, "No encontramos la inmobiliaria.");
+  const [row, ds, extra] = await Promise.all([commercialRow(agencyId), prospectDataset().catch(() => null), extras(agencyId)]);
+  if (!row) throw new HttpError(404, "No encontramos la inmobiliaria.");
+  const account = accountsByAgency(ds).get(agencyId);
+  return { row, account, extra: extra.get(agencyId), at: place(row, account, extra.get(agencyId)) };
+}
+
+async function saveExtra(agencyId: string, fields: Partial<Omit<AgencyExtra, "agency_id">>, actorId: string) {
+  const { error } = await adminClient()
+    .from("followup_agencies")
+    .upsert({ agency_id: agencyId, ...fields, updated_by: actorId, updated_at: new Date().toISOString() }, { onConflict: "agency_id" });
+  if (error) throw missing(error) ? new HttpError(409, MISSING) : new Error("FOLLOWUP_SAVE_FAILED");
+}
+
+/**
+ * «Estado»: corrects the agency's stage (the extension checks it before each
+ * execution). Choosing the funnel's own stage removes the correction. It holds
+ * while the funnel says the same; «fuera» takes it out of Follow-up.
+ */
+export async function setStage(agencyId: string, stage: unknown, actorId: string) {
+  if (!isOverrideStage(stage)) throw new HttpError(400, "Etapa desconocida.");
+  const { at } = await now(agencyId);
+  const funnelStep = at.derived.reached === null ? -1 : at.derived.reached;
+  if (stage === at.derived.stage) await saveExtra(agencyId, { stage_override: null, override_step: null }, actorId);
+  else await saveExtra(agencyId, { stage_override: stage, override_step: funnelStep }, actorId);
+  return { stage: stage === OUT ? null : stage, manual: stage !== at.derived.stage };
+}
+
+/**
+ * The score of an agency still to contact: the one of its prospecting account
+ * (the extension loads it with the list), through the same function as the
+ * rest of prospecting; without an account (added by hand), Follow-up's own.
+ * The other stages show the lead score, which is not edited.
+ */
+export async function setScore(agencyId: string, raw: unknown, actorId: string) {
+  const score = raw === null || raw === "" ? null : Number(raw);
+  if (score !== null && (!Number.isFinite(score) || score < 0 || score > 100)) throw new HttpError(400, "El score va de 0 a 100.");
+  const { at, account } = await now(agencyId);
+  if (at.stage !== "no-contactado") throw new HttpError(409, "El score se edita en «No contactado». En las otras etapas es el lead score.");
+  const value = score === null ? null : Math.round(score * 100) / 100;
+  if (account) await prospectRpc("habita_prospect_update", { p_actor: actorId, p_account: account.id, p_version: account.version, p_patch: { score: value } });
+  else await saveExtra(agencyId, { score: value }, actorId);
+  return { score: value };
+}
+
+/**
+ * «Agregar»: an agency added by hand straight into a stage, with its WhatsApp,
+ * contact, address, zone and web. It is created like «Nueva inmobiliaria»
+ * (with its duplicate check) and stays in that stage until its funnel moves.
+ */
+export async function addAgency(input: Record<string, unknown>, actorId: string) {
+  if (!isStageKey(input.stage)) throw new HttpError(400, "Etapa desconocida.");
+  const text = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
+  const whatsappRaw = text(input.whatsapp, 40);
+  const whatsapp = whatsappRaw ? normalizeArNumber(whatsappRaw) : null;
+  if (whatsappRaw && !whatsapp) throw new HttpError(400, "Revisá el WhatsApp: un celular de Argentina, con el código de área.");
+  const score = input.score === undefined || input.score === null || input.score === "" ? null : Number(input.score);
+  if (score !== null && (!Number.isFinite(score) || score < 0 || score > 100)) throw new HttpError(400, "El score va de 0 a 100.");
+  const made = await createAgencyRecord(actorId, { key: input.key, name: input.name, website: input.website, contactName: input.contact, confirmDuplicates: input.confirmDuplicates });
+  if (made.kind === "duplicates") return { duplicates: made.duplicates };
+  if (whatsapp) {
+    const { error } = await adminClient().from("agencies").update({ contact_whatsapp: `+${whatsapp}` }).eq("id", made.id);
+    if (error) throw new Error("FOLLOWUP_AGENCY_WHATSAPP_FAILED");
+  }
+  const at = (await now(made.id)).at;
+  const funnelStep = at.derived.reached === null ? -1 : at.derived.reached;
+  await saveExtra(
+    made.id,
+    {
+      stage_override: input.stage === at.derived.stage ? null : input.stage,
+      override_step: input.stage === at.derived.stage ? null : funnelStep,
+      address: text(input.address, 200) || null,
+      zone: text(input.zone, 120) || null,
+      score: input.stage === "no-contactado" ? score : null,
+    },
+    actorId,
+  );
+  return { id: made.id, name: made.name };
+}
+
+/** Follow-up → Script: the guide the extension reads before working. */
+export async function readScript() {
+  const { data, error } = await adminClient().from("followup_script").select("body,updated_at").eq("id", 1).maybeSingle();
+  if (error) throw missing(error) ? new HttpError(409, MISSING) : new Error("FOLLOWUP_READ_FAILED");
+  return (data as { body: string; updated_at: string } | null) ?? { body: "", updated_at: null };
+}
+
+export async function saveScript(body: unknown, actorId: string) {
+  if (typeof body !== "string") throw new HttpError(400, "Falta el script.");
+  if (body.length > 20000) throw new HttpError(400, "El script supera los 20.000 caracteres.");
+  const { data, error } = await adminClient()
+    .from("followup_script")
+    .upsert({ id: 1, body, updated_by: actorId, updated_at: new Date().toISOString() }, { onConflict: "id" })
+    .select("body,updated_at")
+    .single();
+  if (error) throw missing(error) ? new HttpError(409, MISSING) : new Error("FOLLOWUP_SAVE_FAILED");
+  return data as { body: string; updated_at: string };
 }

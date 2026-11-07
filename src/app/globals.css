@@ -27523,9 +27523,18 @@ dialog.pt-layer::backdrop {
 .fu-qi.is-on {
   background: var(--fu-soft);
 }
+.fu-qlist {
+  overflow-x: auto;
+}
+.fu-qwide {
+  min-width: 1240px;
+}
+.fu-qwide .fu-qi:last-child {
+  border-bottom: 0;
+}
 .fu-qrow {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.1fr) minmax(0, 1.3fr) 78px 112px;
+  grid-template-columns: 62px minmax(0, 1.3fr) minmax(0, 1.2fr) minmax(0, 0.9fr) 44px 168px minmax(0, 1.4fr) minmax(0, 1fr) 78px 104px;
   gap: 12px;
   align-items: center;
   padding: 10px 12px;
@@ -27547,6 +27556,140 @@ dialog.pt-layer::backdrop {
 }
 .fu-qname a {
   font-weight: 700;
+}
+.fu-qth {
+  position: sticky;
+  top: 0;
+  background: var(--fu-soft);
+  border-bottom: 1px solid var(--pr-line, #dde3d7);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--pr-muted, #5f6f64);
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+.fu-score {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--ah-green);
+}
+.fu-score input {
+  width: 54px;
+  font: inherit;
+  font-weight: 800;
+  color: var(--ah-green);
+  text-align: center;
+  border: 1px solid var(--pr-line, #dde3d7);
+  border-radius: 7px;
+  padding: 5px 4px;
+  background: #fff;
+}
+.fu-score input.is-error {
+  border-color: #b3261e;
+}
+.fu-props {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.fu-muted {
+  color: var(--pr-muted, #5f6f64);
+}
+.fu-stagecell {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.fu-stagecell select {
+  width: 100%;
+  font: inherit;
+  font-size: 12.5px;
+  border: 1px solid var(--pr-line, #dde3d7);
+  border-radius: 7px;
+  padding: 5px 6px;
+  background: #fff;
+}
+.fu-stagecell small {
+  font-size: 11px;
+  color: #8a5a00;
+}
+.fu-stagecell small.fu-error {
+  color: #b3261e;
+}
+.fu-qrow > div span.is-late {
+  color: #b3261e;
+  font-weight: 600;
+}
+.fu-edit {
+  margin-left: auto;
+}
+.fu-notes textarea {
+  min-height: 70px;
+}
+.fu-obs {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: #fff8e6;
+  border: 1px solid #f1dfae;
+  white-space: pre-wrap;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.fu-obs b {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.fu-add {
+  border: 1px solid var(--pr-line, #dde3d7);
+  border-radius: 10px;
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+  background: var(--fu-soft);
+}
+.fu-add .fu-lbl {
+  margin: 0;
+}
+.fu-add-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 10px;
+}
+.fu-add-grid label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--pr-muted, #5f6f64);
+}
+.fu-add-grid input {
+  font: inherit;
+  font-size: 13px;
+  border: 1px solid var(--pr-line, #dde3d7);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #fff;
+  color: var(--pr-ink, #243d36);
+}
+.fu-script {
+  display: grid;
+  gap: 12px;
+}
+.fu-script textarea {
+  width: 100%;
+  min-height: 60vh;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.6;
+  border: 1px solid var(--pr-line, #dde3d7);
+  border-radius: 10px;
+  padding: 14px 16px;
+  background: #fff;
+  resize: vertical;
 }
 .fu-mono {
   font-family: ui-monospace, monospace;
@@ -27703,13 +27846,6 @@ dialog.pt-layer::backdrop {
   }
   .fu-fields {
     grid-template-columns: 1fr;
-  }
-  .fu-qrow {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-  .fu-qrow .fu-qcontact,
-  .fu-qrow .fu-qact {
-    grid-column: 1;
   }
   .fu-exec {
     grid-template-columns: 1fr;

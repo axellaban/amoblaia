@@ -24,16 +24,22 @@ El paso de cada inmobiliaria es el mismo cálculo que `/admin/inmobiliarias` (`c
 
 `followup_versions` (migración `202611300001_followup.sql`): por etapa, el texto, el canal (WhatsApp o tarea del equipo), cuándo se dispara (texto para el equipo) y los call to actions (Abrir WhatsApp, Link demo, Link panel, Copiar mensaje, Crear demo).
 
-- Una versión guardada **no se edita ni se borra** (un trigger lo rechaza). Cambiar algo crea la siguiente: así los números de cada una siguen valiendo.
+- **Editar Vn** cambia el texto, el disparador, el canal, los call to actions y las observaciones de una versión guardada, sin cambiar su número. Si cambia el texto (no las observaciones), queda `edited_at` y la pantalla avisa que sus números juntan el texto anterior y el nuevo. Para comparar dos textos de verdad, **Nueva versión**. Una versión no se borra ni cambia de etapa o de número (un trigger lo rechaza).
+- **Observaciones** (`notes`, debajo del mensaje): indicaciones para la extensión sobre cuándo y cómo mandarlo. Aparecen junto al mensaje al ejecutar (`followup-notes`).
 - Por etapa hay una **activa** y, como mucho, una **a prueba**. Con una prueba, la mitad de las inmobiliarias de la etapa recibe la de prueba (reparto estable por inmobiliaria). Una inmobiliaria que ya empezó con una versión sigue con esa mientras esté vigente.
 - La migración crea la V1 de cada etapa, activa.
 - Variables: `{{inmobiliaria}}`, `{{decisor}}` (el primer nombre del contacto; la planilla suele tener una categoría como «Por confirmar», que no cuenta: sin nombre, la variable se saca con su coma), `{{sdr}}` (el SDR de la cuenta, o el primer nombre de quien envía), `{{demo}}` (su última demo publicada, el mismo link que «Demo» en la lista: con código para reclamarla si no tiene cuenta) y `{{panel}}` (el enlace fijo a su panel). Una variable sin valor queda visible y bloquea el envío.
 
 ## Ejecución
 
-Cada etapa lista sus inmobiliarias: primero las pendientes con WhatsApp, después las que no tienen número y al final las ya enviadas; dentro de cada grupo, las que esperan hace más tiempo.
+Cada etapa lista sus inmobiliarias **ordenadas por score, de mayor a menor** (sin score, al final; a igual score, primero las pendientes con WhatsApp y las que esperan hace más tiempo). Columnas: Score, Inmobiliaria (con decisor), Dirección y zona, Web, Propiedades, Estado, Última acción y fecha, WhatsApp y la acción.
 
-Cada fila muestra la **última acción y su fecha**: lo más reciente entre Follow-up (envío confirmado o «No se envió», en cualquier etapa), Adquisición (mensajes de la secuencia enviados) y lo que hizo la inmobiliaria (la misma «Última actividad» de `/admin/inmobiliarias`). Se calcula en el servidor (`lastActionOf` en `stages.ts`) y es la que ordena «las que esperan hace más tiempo». Un envío solo abierto no cuenta. «Ejecutar» arma el mensaje para esa inmobiliaria (su WhatsApp, sus links) sin registrar nada. Después:
+- **Score**: en «No contactado» es el de la cuenta de prospección (lo carga la extensión con la lista) y se edita en la fila (`habita_prospect_update`; las agregadas a mano sin cuenta lo guardan en `followup_agencies`). En las demás etapas es el lead score, solo lectura.
+- **Dirección, zona y web**: de la cuenta de prospección y de la ficha de la inmobiliaria (las agregadas a mano, de `followup_agencies`).
+- **Estado**: la etapa en Follow-up, editable (o «Sacar de Follow-up»). La extensión lo revisa al ejecutar y lo corrige si no coincide con el chat. Una corrección vale mientras el embudo siga diciendo lo mismo que cuando se hizo; si después pasa algo real (un envío, una visita, una cuenta), vuelve a mandar el embudo. La fila dice «Corregido a mano».
+- **Agregar inmobiliaria**: nombre, WhatsApp, decisor, score (en «No contactado»), dirección, zona y web. Se crea como «Nueva inmobiliaria» (con el control de repetidas) y queda en esa etapa hasta que su embudo avance.
+
+**Última acción y fecha**: cada fila muestra: lo más reciente entre Follow-up (envío confirmado o «No se envió», en cualquier etapa), Adquisición (mensajes de la secuencia enviados) y lo que hizo la inmobiliaria (la misma «Última actividad» de `/admin/inmobiliarias`). Se calcula en el servidor (`lastActionOf` en `stages.ts`) y es la que ordena «las que esperan hace más tiempo». Un envío solo abierto no cuenta. En rojo si pasaron más de 5 días. «Ejecutar» arma el mensaje para esa inmobiliaria (su WhatsApp, sus links) sin registrar nada. Después:
 
 1. **Abrir WhatsApp con el mensaje**: `wa.me` con el número y el texto. Queda como «Abierto».
 2. **Confirmar envío**: cuenta como ejecución y abre la siguiente inmobiliaria pendiente.
@@ -56,17 +62,29 @@ Si eso falla (por ejemplo, el número está por revisar), la ejecución queda re
 
 No hay ventana de tiempo: el embudo no guarda cuándo se llegó a cada paso, así que la conversión es «avanzó después del envío», sin plazo.
 
+## Script
+
+`/admin/script`, debajo de Follow-up en el menú: un solo texto (`followup_script`, hasta 20.000 caracteres) que la extensión lee antes de trabajar. Las indicaciones de cada mensaje van en sus observaciones.
+
 ## Extensión de Chrome
 
 Opera la misma pantalla con la sesión del equipo, como la pestaña Ejecución de Adquisición. Selectores estables:
 
 - `data-testid="followup-stage"` con `data-stage` (la clave de la etapa).
 - `data-testid="followup-item"` con `data-agency`, `data-status` (`pending`, `opened`, `sent`, `failed`) y `data-version`.
+- `followup-item` también trae `data-score`, `data-stage`, `data-last-action`, `data-last-action-at` y `data-last-action-source` (`followup`, `adquisicion`, `inmobiliaria`).
+- `followup-score` (input, solo en «No contactado»), `followup-stage-select`, `followup-last-action`, `followup-add`, `followup-add-form`, `followup-notes`, `followup-edit-version`, `followup-version-notes`, `followup-script`, `followup-script-save`.
 - `followup-execute`, `followup-message`, `followup-open`, `followup-confirm`, `followup-failed`, `followup-failed-reason`, `followup-failed-save`, `followup-link-demo`, `followup-link-panel`.
 
-Flujo: abrir la etapa, «Ejecutar» en la primera pendiente, leer `followup-message`, abrir WhatsApp, enviar, volver y «Confirmar envío». Debe detenerse si el número del chat no coincide con el mostrado, si el mensaje muestra una `{{variable}}` sin completar o si la sesión venció.
+Flujo: leer el script (`GET /api/admin/follow-up/script`), abrir la etapa, revisar estado y última acción, «Ejecutar» en la primera pendiente, leer `followup-message`, abrir WhatsApp, enviar, volver y «Confirmar envío». Debe detenerse si el número del chat no coincide con el mostrado, si el mensaje muestra una `{{variable}}` sin completar o si la sesión venció.
 
 ## API (equipo)
 
 - `POST /api/admin/follow-up/ejecuciones` `{ accion: "preparar", inmobiliaria, etapa }` y `{ accion: "registrar", inmobiliaria, etapa, version, estado, motivo?, texto? }`.
-- `POST /api/admin/follow-up/versiones` `{ stage, channel, trigger, body, ctas, status }` y `PATCH { id, status }`.
+- `POST /api/admin/follow-up/versiones` `{ stage, channel, trigger, body, ctas, status, notes }`, `PUT { id, channel, trigger, body, ctas, notes }` (editar) y `PATCH { id, status }`.
+- `POST /api/admin/follow-up/inmobiliarias` `{ accion: "estado", inmobiliaria, etapa }` (etapa o `fuera`), `{ accion: "score", inmobiliaria, score }` y `{ accion: "agregar", etapa, key, name, whatsapp?, contact?, score?, address?, zone?, website?, confirmDuplicates? }`.
+- `GET` y `PUT { body }` `/api/admin/follow-up/script`.
+
+## Migraciones
+
+`202611300001_followup.sql` (versiones y ejecuciones) y `202612010001_followup_edit.sql` (versiones editables con observaciones, `followup_agencies` y `followup_script`).
