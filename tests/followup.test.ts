@@ -14,6 +14,8 @@ const v = (id: string, version: number, status: FollowupVersion["status"], body 
   status,
   created_at: "2026-11-01T00:00:00Z",
   status_at: "2026-11-01T00:00:00Z",
+  notes: "",
+  edited_at: null,
 });
 const ex = (agency: string, version: string, status: FollowupExecution["status"], from = 0, at = "2026-11-02T00:00:00Z"): FollowupExecution => ({
   id: `${agency}-${version}`,
@@ -113,6 +115,7 @@ describe("messages", () => {
       body: "Tu panel: {{panel}}",
       ctas: ["panel"],
       status: "test",
+      notes: "",
     });
   });
 });

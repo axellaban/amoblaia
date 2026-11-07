@@ -1,5 +1,5 @@
 import { failure, requireAdmin } from "@/lib/commerce/http";
-import { createVersion, setVersionStatus } from "@/lib/followup/server";
+import { createVersion, setVersionStatus, updateVersion } from "@/lib/followup/server";
 export const runtime = "nodejs";
 
 const NO_STORE = { "Cache-Control": "private, no-store" };
@@ -21,6 +21,17 @@ export async function PATCH(request: Request) {
     await requireAdmin(request);
     const b = ((await request.json().catch(() => null)) ?? {}) as Record<string, unknown>;
     return Response.json(await setVersionStatus(b.id, b.status), { headers: NO_STORE });
+  } catch (e) {
+    return failure(e);
+  }
+}
+
+/** Edita una versión guardada (mismo número): { id, channel, trigger, body, ctas, notes }. */
+export async function PUT(request: Request) {
+  try {
+    await requireAdmin(request);
+    const b = ((await request.json().catch(() => null)) ?? {}) as Record<string, unknown>;
+    return Response.json(await updateVersion(b.id, b), { headers: NO_STORE });
   } catch (e) {
     return failure(e);
   }
