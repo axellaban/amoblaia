@@ -253,7 +253,7 @@ function Editor({ stage }: { stage: StageView }) {
                     Guardar V{nextNumber} como activa
                   </button>
                   {active && (
-                    <button type="button" className="button button-small" disabled={busy || !draft.body.trim()} onClick={() => save("test")}>
+                    <button type="button" className="button button-small button-outline" disabled={busy || !draft.body.trim()} onClick={() => save("test")}>
                       Guardar y probar 50/50 contra V{active.version}
                     </button>
                   )}
@@ -270,18 +270,18 @@ function Editor({ stage }: { stage: StageView }) {
                   <button type="button" className="button button-primary button-small" disabled={busy} onClick={() => setStatus(current.id, "active")}>
                     Hacerla la activa
                   </button>
-                  <button type="button" className="button button-small" disabled={busy} onClick={() => setStatus(current.id, "archived")}>
+                  <button type="button" className="button button-small button-outline" disabled={busy} onClick={() => setStatus(current.id, "archived")}>
                     Detener prueba
                   </button>
                   <p className="fu-note">Recibe la mitad de las inmobiliarias de la etapa.</p>
                 </>
               ) : current ? (
                 <>
-                  <button type="button" className="button button-small" disabled={busy} onClick={() => setStatus(current.id, "active")}>
+                  <button type="button" className="button button-small button-outline" disabled={busy} onClick={() => setStatus(current.id, "active")}>
                     Volver a activarla
                   </button>
                   {active && (
-                    <button type="button" className="button button-small" disabled={busy} onClick={() => setStatus(current.id, "test")}>
+                    <button type="button" className="button button-small button-outline" disabled={busy} onClick={() => setStatus(current.id, "test")}>
                       Probar 50/50 contra V{active.version}
                     </button>
                   )}
@@ -369,7 +369,7 @@ function QueueRow({ stage, item: q, exec, open, onToggle, onDone }: { stage: Sta
           </span>
         </div>
         <span className={`fu-qst is-${status}`}>{EXEC_LABEL[status]}</span>
-        <button type="button" className={`button button-small${status === "pending" && !open ? " button-primary" : ""}`} data-testid="followup-execute" onClick={onToggle} disabled={!version}>
+        <button type="button" className={`button button-small${status === "pending" && !open ? " button-primary" : " button-outline"}`} data-testid="followup-execute" onClick={onToggle} disabled={!version}>
           {open ? "Cerrar" : status === "sent" ? "Ver" : version?.channel === "task" ? "Hacer tarea" : "Ejecutar"}
         </button>
       </div>
@@ -458,7 +458,7 @@ function Execute({ stage, item, exec, onDone }: { stage: StageView; item: QueueI
                 <Plus size={16} aria-hidden="true" /> Crear demo
               </Link>
             )}
-            <button type="button" className="button button-small" data-testid="followup-confirm" disabled={sent} onClick={() => mark("sent")}>
+            <button type="button" className="button button-small button-outline" data-testid="followup-confirm" disabled={sent} onClick={() => mark("sent")}>
               {sent ? "Hecha" : "Marcar hecha"}
             </button>
           </>
@@ -466,7 +466,7 @@ function Execute({ stage, item, exec, onDone }: { stage: StageView; item: QueueI
           <>
             {prepared.whatsappUrl ? (
               <a
-                className={`button button-small${status === "pending" || status === "failed" ? " button-primary" : ""}`}
+                className={`button button-small${status === "pending" || status === "failed" ? " button-primary" : " button-outline"}`}
                 data-testid="followup-open"
                 href={prepared.whatsappUrl}
                 target="_blank"
@@ -476,11 +476,11 @@ function Execute({ stage, item, exec, onDone }: { stage: StageView; item: QueueI
                 <MessageCircle size={16} aria-hidden="true" /> 1. Abrir WhatsApp con el mensaje
               </a>
             ) : (
-              <span className="button button-small is-disabled" data-testid="followup-open" aria-disabled="true">
+              <span className="button button-small button-outline is-disabled" data-testid="followup-open" aria-disabled="true">
                 <MessageCircle size={16} aria-hidden="true" /> 1. Abrir WhatsApp
               </span>
             )}
-            <button type="button" className={`button button-small${status === "opened" ? " button-primary" : ""}`} data-testid="followup-confirm" disabled={sent || !prepared.ready} onClick={() => mark("sent")}>
+            <button type="button" className={`button button-small${status === "opened" ? " button-primary" : " button-outline"}`} data-testid="followup-confirm" disabled={sent || !prepared.ready} onClick={() => mark("sent")}>
               {sent ? "Enviado" : "2. Confirmar envío"}
             </button>
           </>
@@ -489,27 +489,27 @@ function Execute({ stage, item, exec, onDone }: { stage: StageView; item: QueueI
           (failing ? (
             <div className="fu-fail">
               <input data-testid="followup-failed-reason" value={reason} maxLength={300} placeholder="Por qué no salió" onChange={(e) => setReason(e.target.value)} aria-label="Por qué no salió" />
-              <button type="button" className="button button-small" data-testid="followup-failed-save" disabled={!reason.trim()} onClick={() => mark("failed")}>
+              <button type="button" className="button button-small button-outline" data-testid="followup-failed-save" disabled={!reason.trim()} onClick={() => mark("failed")}>
                 Guardar
               </button>
             </div>
           ) : (
-            <button type="button" className="button button-small" data-testid="followup-failed" onClick={() => setFailing(true)}>
+            <button type="button" className="button button-small button-outline" data-testid="followup-failed" onClick={() => setFailing(true)}>
               {task ? "No se pudo hacer" : "No se envió"}
             </button>
           ))}
         {!task && prepared.ctas.includes("copy") && (
-          <button type="button" className="button button-small" onClick={() => copyText(prepared.message, "Mensaje")}>
+          <button type="button" className="button button-small button-outline" onClick={() => copyText(prepared.message, "Mensaje")}>
             <ClipboardCopy size={16} aria-hidden="true" /> Copiar mensaje
           </button>
         )}
         {prepared.ctas.includes("demo") && prepared.links.demo && (
-          <button type="button" className="button button-small" data-testid="followup-link-demo" onClick={() => copyText(prepared.links.demo!, "Link demo")}>
+          <button type="button" className="button button-small button-outline" data-testid="followup-link-demo" onClick={() => copyText(prepared.links.demo!, "Link demo")}>
             <Link2 size={16} aria-hidden="true" /> Copiar link demo
           </button>
         )}
         {prepared.ctas.includes("panel") && prepared.links.panel && (
-          <button type="button" className="button button-small" data-testid="followup-link-panel" onClick={() => copyText(prepared.links.panel!, "Link panel")}>
+          <button type="button" className="button button-small button-outline" data-testid="followup-link-panel" onClick={() => copyText(prepared.links.panel!, "Link panel")}>
             <KeyRound size={16} aria-hidden="true" /> Copiar link panel
           </button>
         )}
