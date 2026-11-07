@@ -27,11 +27,11 @@ El paso de cada inmobiliaria es el mismo cálculo que `/admin/inmobiliarias` (`c
 - Una versión guardada **no se edita ni se borra** (un trigger lo rechaza). Cambiar algo crea la siguiente: así los números de cada una siguen valiendo.
 - Por etapa hay una **activa** y, como mucho, una **a prueba**. Con una prueba, la mitad de las inmobiliarias de la etapa recibe la de prueba (reparto estable por inmobiliaria). Una inmobiliaria que ya empezó con una versión sigue con esa mientras esté vigente.
 - La migración crea la V1 de cada etapa, activa.
-- Variables: `{{inmobiliaria}}`, `{{decisor}}` (el primer nombre de quien decide), `{{sdr}}` (el SDR de la cuenta, o el primer nombre de quien envía), `{{demo}}` (su última demo publicada, el mismo link que «Demo» en la lista: con código para reclamarla si no tiene cuenta) y `{{panel}}` (el enlace fijo a su panel). Una variable sin valor queda visible y bloquea el envío.
+- Variables: `{{inmobiliaria}}`, `{{decisor}}` (el primer nombre del contacto; la planilla suele tener una categoría como «Por confirmar», que no cuenta: sin nombre, la variable se saca con su coma), `{{sdr}}` (el SDR de la cuenta, o el primer nombre de quien envía), `{{demo}}` (su última demo publicada, el mismo link que «Demo» en la lista: con código para reclamarla si no tiene cuenta) y `{{panel}}` (el enlace fijo a su panel). Una variable sin valor queda visible y bloquea el envío.
 
 ## Ejecución
 
-Cada etapa lista sus inmobiliarias, primero las pendientes y las que esperan hace más tiempo. «Ejecutar» arma el mensaje para esa inmobiliaria (su WhatsApp, sus links) sin registrar nada. Después:
+Cada etapa lista sus inmobiliarias: primero las pendientes con WhatsApp, después las que no tienen número y al final las ya enviadas; dentro de cada grupo, las que esperan hace más tiempo. «Ejecutar» arma el mensaje para esa inmobiliaria (su WhatsApp, sus links) sin registrar nada. Después:
 
 1. **Abrir WhatsApp con el mensaje**: `wa.me` con el número y el texto. Queda como «Abierto».
 2. **Confirmar envío**: cuenta como ejecución y abre la siguiente inmobiliaria pendiente.

@@ -110,12 +110,34 @@ export function versionFor(agencyId: string, versions: FollowupVersion[], previo
   return active ?? test;
 }
 
-/** Fills the {{variables}}; an unknown or empty one stays visible so the message is never sent with a hole. */
+/**
+ * Fills the {{variables}}; an unknown or empty one stays visible so the
+ * message is never sent with a hole. {{decisor}} is the exception: without a
+ * name it goes away with its comma («Hola {{decisor}}, soy…» → «Hola, soy…»;
+ * «{{decisor}}, te dejo…» → «Te dejo…»).
+ */
 export function fillMessage(text: string, ctx: MessageContext) {
-  return text.replace(/\{\{\s*(\w+)\s*\}\}/g, (m, key: string) => {
+  let out = text;
+  if (!ctx.decisor?.trim())
+    out = out
+      .replace(/[ \t]*\{\{\s*decisor\s*\}\}/g, "")
+      .replace(/^([ \t]*),[ \t]*(\S)/gm, (_, sp: string, c: string) => sp + c.toUpperCase());
+  return out.replace(/\{\{\s*(\w+)\s*\}\}/g, (m, key: string) => {
     const v = ctx[key as keyof MessageContext];
     return v && v.trim() ? v.trim() : m;
   });
+}
+
+/**
+ * A person's first name, or null when the field holds a category instead of
+ * a name: the prospecting sheet writes «Por confirmar», «Familiar (apellido)»,
+ * «Dueño/a con nombre propio», «Marca comercial» or «Franquicia / corporativa».
+ */
+export function personName(v: string | null | undefined) {
+  const t = v?.trim() ?? "";
+  if (!t || t.length > 60 || /[/()@\d]|confirmar|familiar|dueñ|marca|franquicia|corporativ|inmobiliaria|equipo|recepci|administraci|ventas/i.test(t)) return null;
+  const first = t.split(/\s+/)[0];
+  return /^\p{Lu}[\p{L}'-]+$/u.test(first) ? first : null;
 }
 export const missingVariables = (text: string) => [...new Set([...text.matchAll(/\{\{\s*(\w+)\s*\}\}/g)].map((m) => m[1]))];
 /** The links a version needs resolved: the ones in its text and its CTAs. */

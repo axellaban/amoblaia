@@ -19,6 +19,7 @@ import {
   isStageKey,
   linksNeeded,
   missingVariables,
+  personName,
   stageInfo,
   stageOf,
   stepValue,
@@ -98,7 +99,8 @@ function recipient(r: CommercialRow, account: ProspectAccount | undefined) {
   const contact = account ? contactFor(account, "whatsapp") : null;
   const raw = contact?.address ?? r.whatsapp ?? null;
   const wa = normalizeArNumber(raw) ?? (raw && /^\d{10,15}$/.test(raw.replace(/\D/g, "")) ? raw.replace(/\D/g, "") : null);
-  const person = account?.decision_maker || contact?.person_name || null;
+  // The prospecting «decisor» is usually a category («Por confirmar», «Marca comercial»): only a real name counts.
+  const person = personName(contact?.person_name) ?? personName(account?.decision_maker) ?? null;
   return { wa, phone: raw, person, needsReview: Boolean(contact?.needs_review), fromProspect: Boolean(contact) };
 }
 
@@ -156,7 +158,8 @@ export async function followupOverview(): Promise<{ stages: StageView[] }> {
       execution: done ? { status: done.status, at: done.updated_at, reason: done.reason } : null,
     });
   }
-  const order = (q: QueueItem) => (q.execution?.status === "sent" ? 1 : 0);
+  // Still to do and with a WhatsApp first, then the ones without a number, then the ones already sent.
+  const order = (q: QueueItem) => (q.execution?.status === "sent" ? 2 : q.wa ? 0 : 1);
   return {
     stages: FOLLOWUP_STAGES.map((s) => {
       const own = vs.filter((v) => v.stage === s.key).sort((a, b) => a.version - b.version);
@@ -187,8 +190,6 @@ async function current(agencyId: string, stage: unknown) {
   return { row, ds, account, reached: at.reached, versions: own, mine, version: versionFor(agencyId, own, mine) };
 }
 
-const firstName = (name: string | null) => (name ? name.trim().split(/\s+/)[0] : null);
-
 /**
  * «Ejecutar»: the message for this agency, with its links resolved (the same
  * ones as «Link demo» and «Link panel» in the list), its WhatsApp and the
@@ -206,7 +207,7 @@ export async function prepareExecution(agencyId: string, stage: unknown, origin:
   const to = recipient(c.row, c.account);
   const message = fillMessage(v.body, {
     inmobiliaria: c.row.name,
-    decisor: firstName(to.person),
+    decisor: to.person,
     sdr: c.account?.sdr || actor.name,
     demo,
     panel,
@@ -216,7 +217,6 @@ export async function prepareExecution(agencyId: string, stage: unknown, origin:
   const warnings: string[] = [];
   if (holes.includes("demo")) warnings.push("Todavía no tiene una demo publicada: publicala antes de mandar este mensaje.");
   if (holes.includes("panel")) warnings.push("No pudimos armar el link a su panel.");
-  if (holes.includes("decisor")) warnings.push("Falta el nombre de quien decide: cargalo en la ficha o sacá {{decisor}} del mensaje.");
   if (v.channel === "whatsapp" && !to.wa) warnings.push("Falta su WhatsApp: cargalo en la ficha de la inmobiliaria.");
   if (v.channel === "whatsapp" && prospectStage && c.account && to.needsReview) warnings.push("El número está por revisar: verificalo en Adquisición para que el envío se registre.");
   const ready = !holes.length && (v.channel === "task" || Boolean(to.wa));
