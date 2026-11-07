@@ -319,22 +319,25 @@ export function PropertyTile({
   reload,
   canWork,
   backTo = "/panel",
+  readOnly = false,
 }: {
   p: PanelProperty;
   agency: PanelSummary["agency"];
   reload: () => Promise<unknown>;
   canWork: boolean;
   backTo?: string;
+  /** The team's support view: it only reads, so the import is not offered. */
+  readOnly?: boolean;
 }) {
   return propertyStage(p) === "pending" ? (
-    <PendingTile p={p} reload={reload} canWork={canWork} />
+    <PendingTile p={p} reload={reload} canWork={canWork} readOnly={readOnly} />
   ) : (
     <WorkTile p={p} agency={agency} reload={reload} canWork={canWork} backTo={backTo} />
   );
 }
 
 /** «Lista para importar»: the property is saved with its listing's data; one click brings its photos. */
-function PendingTile({ p, reload, canWork }: { p: PanelProperty; reload: () => Promise<unknown>; canWork: boolean }) {
+function PendingTile({ p, reload, canWork, readOnly }: { p: PanelProperty; reload: () => Promise<unknown>; canWork: boolean; readOnly: boolean }) {
   const pending = p.pending!;
   const total = pending.images.length;
   const [progress, setProgress] = useState<PhotoProgress | null>(null);
@@ -393,6 +396,8 @@ function PendingTile({ p, reload, canWork }: { p: PanelProperty; reload: () => P
             <progress max={progress.total || 1} value={progress.done} aria-label="Fotos importadas" />
             <small>Quedate en esta página hasta que termine.</small>
           </div>
+        ) : readOnly ? (
+          <small className="ap-prop-note">Vista de soporte: solo lectura. Para importar sus fotos, entrá como la inmobiliaria.</small>
         ) : canWork ? (
           <>
             <button type="button" className="button button-primary ap-prop-main" onClick={() => void importNow()} {...cta("preloaded_property_import", "panel_my_properties", "property_import")}>
@@ -530,9 +535,16 @@ function homeOrder(list: PanelProperty[]) {
   return [...(first ? [first] : []), ...waiting.slice(0, 2), ...others, ...waiting.slice(2)].slice(0, 3);
 }
 
+/** A page of «Mis propiedades»: the ones with their demo first (on the left), the ones waiting for their photos last. */
+const STAGE_ORDER: Record<ReturnType<typeof propertyStage>, number> = { demo: 0, imported: 1, empty: 2, pending: 3 };
+export const byStage = (list: PanelProperty[]) => [...list].sort((a, b) => STAGE_ORDER[propertyStage(a)] - STAGE_ORDER[propertyStage(b)]);
+
 /** An import shown as a card of «Mis propiedades» (or one closed by a newer attempt) is not a pending issue. */
 const shownAsCard = (i: PanelImport) =>
   (i.status === "partial" && i.photosDone === 0 && i.pendingImages.length > 0 && i.settingsSaved) || (i.error ?? "").startsWith("Se volvió a importar");
+
+/** The latest failed imports on the home; the rest behind «Ver más». */
+const ISSUES_SHOWN = 3;
 
 function PanelHome({ data, reload, continuing }: { data: PanelSummary; reload: () => Promise<unknown>; continuing: boolean }) {
   const editor = canEdit(data.role);
@@ -543,6 +555,7 @@ function PanelHome({ data, reload, continuing }: { data: PanelSummary; reload: (
   const shown = homeOrder(data.properties);
   const waiting = shown.filter((p) => propertyStage(p) === "pending").length;
   const issues = data.imports.filter((i) => !shownAsCard(i));
+  const [allIssues, setAllIssues] = useState(false);
   return (
     <>
       <PanelTopbar agencyName={data.agency.name} logo={data.agency.logo}>
@@ -567,21 +580,6 @@ function PanelHome({ data, reload, continuing }: { data: PanelSummary; reload: (
         <StartPicker key={`${picker.tool}-${picker.preview}`} tool={picker.tool} existingCount={data.counts.total} preview={picker.preview} onClose={() => setPicker(null)} />
       )}
       <PanelTour data={data} creator={creator} continuing={continuing} setPicker={(p) => setPicker(p ? { tool: "demo", preview: p.tour } : null)} />
-      {creator && (
-        <section className="ap-home-import" id="crear" aria-label="Importar una propiedad">
-          <ImportProperty onDone={reload} existingCount={data.counts.total} bar />
-        </section>
-      )}
-      {creator && issues.length > 0 && (
-        <section className="account-panel" aria-labelledby="ap-imports-title">
-          <h2 id="ap-imports-title">Importaciones pendientes</h2>
-          <ul className="ap-failed">
-            {issues.map((i) => (
-              <ImportIssue key={i.id} item={i} onDone={reload} />
-            ))}
-          </ul>
-        </section>
-      )}
       {step && (
         <section className="ap-next" aria-label="Siguiente paso">
           <p>{step.text}</p>
@@ -611,7 +609,7 @@ function PanelHome({ data, reload, continuing }: { data: PanelSummary; reload: (
         {shown.length ? (
           <ul className="ap-prop-list">
             {shown.map((p) => (
-              <PropertyTile key={p.id} p={p} agency={data.agency} reload={reload} canWork={canEdit(data.role)} />
+              <PropertyTile key={p.id} p={p} agency={data.agency} reload={reload} canWork={canEdit(data.role)} readOnly={data.readOnly} />
             ))}
           </ul>
         ) : (
@@ -620,6 +618,27 @@ function PanelHome({ data, reload, continuing }: { data: PanelSummary; reload: (
           </p>
         )}
       </section>
+      {/* Below «Mis propiedades»: the property already there comes first, a new link after. */}
+      {creator && (
+        <section className="ap-home-import" id="crear" aria-label="Importar una propiedad">
+          <ImportProperty onDone={reload} existingCount={data.counts.total} bar />
+        </section>
+      )}
+      {creator && issues.length > 0 && (
+        <section className="account-panel" aria-labelledby="ap-imports-title">
+          <h2 id="ap-imports-title">Importaciones pendientes</h2>
+          <ul className="ap-failed">
+            {(allIssues ? issues : issues.slice(0, ISSUES_SHOWN)).map((i) => (
+              <ImportIssue key={i.id} item={i} onDone={reload} />
+            ))}
+          </ul>
+          {issues.length > ISSUES_SHOWN && (
+            <button type="button" className="text-link ap-more" aria-expanded={allIssues} onClick={() => setAllIssues((v) => !v)}>
+              {allIssues ? "Ver menos" : `Ver más (${issues.length - ISSUES_SHOWN})`}
+            </button>
+          )}
+        </section>
+      )}
       <PanelGuide creator={creator} />
     </>
   );
@@ -794,8 +813,8 @@ function MyPropertiesSection({ data, reload }: { data: PanelSummary; reload: () 
             {stage === "importar" ? " listas para importar" : stage === "importadas" ? " con fotos" : ""}
           </p>
           <ul className="ap-prop-list">
-            {result.items.map((p) => (
-              <PropertyTile key={p.id} p={p} agency={data.agency} reload={refresh} canWork={canEdit(data.role)} backTo={backHere} />
+            {byStage(result.items).map((p) => (
+              <PropertyTile key={p.id} p={p} agency={data.agency} reload={refresh} canWork={canEdit(data.role)} backTo={backHere} readOnly={data.readOnly} />
             ))}
           </ul>
           {pages > 1 && (
@@ -863,7 +882,8 @@ function PropertiesSection({ data, reload }: { data: PanelSummary; reload: () =>
   const seq = useRef(0);
   const inflight = useRef<AbortController | null>(null);
   const load = useCallback(async () => {
-    const query = new URLSearchParams({ pagina: String(page), por: String(PER_PAGE) });
+    // Only what already has its demo: the ones saved from a listing and waiting for their photos live in «Mis propiedades».
+    const query = new URLSearchParams({ pagina: String(page), por: String(PER_PAGE), etapa: "importadas" });
     if (q) query.set("q", q);
     if (status) query.set("estado", status);
     if (operation) query.set("operacion", operation);
@@ -995,7 +1015,17 @@ function PropertiesSection({ data, reload }: { data: PanelSummary; reload: () =>
         </>
       ) : (
         <p className="ap-empty">
-          {data.counts.total ? "Ninguna propiedad coincide con la búsqueda." : data.scope ? "Todavía no te asignaron propiedades." : "Todavía no cargaste propiedades."}
+          {q || status || operation ? (
+            "Ninguna propiedad coincide con la búsqueda."
+          ) : data.scope ? (
+            "Todavía no te asignaron propiedades."
+          ) : data.counts.total ? (
+            <>
+              Todavía no creaste demostraciones. Tus propiedades listas para importar están en <Link href="/panel/mis-propiedades">Mis propiedades</Link>.
+            </>
+          ) : (
+            "Todavía no cargaste propiedades."
+          )}
         </p>
       )}
     </>
@@ -1591,6 +1621,8 @@ export function ImportProperty({
         url: data.listingUrl,
         key: crypto.randomUUID(),
         snapshot: data.snapshot,
+        // Saved as the listing reads now: a site that changes on every visit never leaves it unsaved.
+        accept: true,
         overrides: { ...initial, map: map ? mapOverride(data, map) : undefined },
         images: data.images,
       }),

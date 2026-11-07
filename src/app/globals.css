@@ -27720,3 +27720,7 @@ dialog.pt-layer::backdrop {
     transition: none;
   }
 }
+.ap-more {
+  margin-top: 10px;
+  min-height: 40px;
+}
