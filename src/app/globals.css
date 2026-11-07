@@ -28394,6 +28394,133 @@ dialog.pt-layer::backdrop {
   color: #7d2216;
   line-height: 1.45;
 }
+.fu-h3 small {
+  font-weight: 500;
+  color: var(--pr-muted, #5f6f64);
+}
+.fu-inbox {
+  display: grid;
+  gap: 14px;
+}
+.fu-inboxgrid {
+  display: grid;
+  grid-template-columns: 420px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+.fu-convs {
+  background: #fff;
+  border: 1px solid var(--pr-line, #dde3d7);
+  border-radius: 14px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.fu-conv {
+  font: inherit;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 13px 16px;
+  border: 0;
+  border-bottom: 1px solid #eceFe8;
+  background: #fff;
+  cursor: pointer;
+}
+.fu-conv.is-on {
+  background: var(--fu-soft);
+  box-shadow: inset 3px 0 0 var(--ah-green);
+}
+.fu-convhead {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+}
+.fu-convhead span {
+  color: var(--pr-muted, #5f6f64);
+  font-size: 12px;
+}
+.fu-convtext {
+  font-size: 13px;
+  color: #33433b;
+}
+.fu-convtags {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.fu-convtags small {
+  font-size: 12px;
+  color: var(--pr-muted, #5f6f64);
+}
+.fu-replydetail {
+  display: grid;
+  gap: 12px;
+}
+.fu-bubble {
+  background: #f4f3ee;
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 14px;
+  white-space: pre-wrap;
+  max-width: 80%;
+}
+.fu-bubble small {
+  display: block;
+  font-size: 11px;
+  color: var(--pr-muted, #5f6f64);
+  margin-top: 4px;
+}
+.fu-classes {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.fu-classes legend {
+  font-weight: 700;
+  font-size: 14px;
+  margin-bottom: 8px;
+  padding: 0;
+}
+.fu-class {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 13px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--pr-line, #dde3d7);
+  cursor: pointer;
+  min-height: 40px;
+  box-sizing: border-box;
+}
+.fu-class.is-on {
+  border: 2px solid var(--ah-green);
+  background: var(--fu-soft);
+  font-weight: 700;
+}
+.fu-class input {
+  margin: 0;
+  accent-color: var(--ah-green);
+}
+.fu-add-grid select {
+  font: inherit;
+  font-size: 13px;
+  border: 1px solid var(--pr-line, #dde3d7);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #fff;
+}
+@media (max-width: 1100px) {
+  .fu-inboxgrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 @media (max-width: 1180px) {
   .fu-dgrid {
     grid-template-columns: minmax(0, 1fr);

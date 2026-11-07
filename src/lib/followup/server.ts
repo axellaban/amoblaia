@@ -59,6 +59,11 @@ import {
   defaultPriority,
   isPriority,
   type Priority,
+  FACU_CLASSES,
+  REPLY_CLASSES,
+  isReplyClass,
+  replyRoute,
+  type ReplyClass,
   type Action,
   type Group,
   type Situation,
@@ -245,6 +250,14 @@ export type QueueItem = {
   priorityManual: boolean;
   /** Reprogramada: no entra a la cola hasta esta fecha. */
   snoozedUntil: string | null;
+  /** Por qué no hay acción (secuencia terminada, rechazo…). */
+  actionReason: string | null;
+  /** Horas de espera de su paso de la secuencia desde nuestro último mensaje. */
+  afterHours: number;
+  /** Programada: su paso sale en esta fecha (antes no entra a la cola). */
+  dueAt: string | null;
+  /** Respuestas suyas en la bandeja sin resolver (pendientes o de Facu). */
+  openReplies: number;
   versionId: string | null;
   /** The channel of its version (WhatsApp or a team task). */
   versionChannel: Channel | null;
@@ -264,6 +277,8 @@ export type QueueSummary = {
   replies: number;
   /** Demos pendientes: por crear o por enviar. */
   demos: number;
+  /** Programadas: su paso de la secuencia sale más adelante. */
+  scheduled: number;
   blocked: number;
   claimed: number;
   doneToday: number;
@@ -288,7 +303,16 @@ const whenText = (iso: string) => new Date(iso).toLocaleString("es-AR", { day: "
  * so the counters match the rows.
  */
 async function board(now = new Date()) {
-  const [rows, ds, vs, ex, extra, info, held] = await Promise.all([commercialRows(), prospectDataset().catch(() => null), versions(), executions(), extras(), details(), claims()]);
+  const [rows, ds, vs, ex, extra, info, held, open] = await Promise.all([
+    commercialRows(),
+    prospectDataset().catch(() => null),
+    versions(),
+    executions(),
+    extras(),
+    details(),
+    claims(),
+    openReplies(),
+  ]);
   const accounts = accountsByAgency(ds);
   const exOf = new Map<string, FollowupExecution[]>();
   for (const e of ex) exOf.set(e.agency_id, [...(exOf.get(e.agency_id) ?? []), e]);
@@ -355,9 +379,20 @@ async function board(now = new Date()) {
     const version = vs.find((v) => v.id === it.versionId);
     const snoozed = own?.snooze_until && Date.parse(own.snooze_until) > now.getTime() ? own.snooze_until : null;
     it.snoozedUntil = snoozed;
-    it.blocked = snoozed
+    const replies = open.get(r.id) ?? [];
+    it.openReplies = replies.length;
+    const ours = lastOurs.get(r.id) ?? null;
+    const due = it.afterHours > 0 && ours ? ours + it.afterHours * 3600_000 : null;
+    it.dueAt = due && due > now.getTime() && it.execution?.status !== "sent" ? new Date(due).toISOString() : null;
+    it.blocked = replies.length
+      ? replies.some((x) => x.status === "facu")
+        ? "Asignada a Facu: tiene una respuesta que no se resuelve con el script."
+        : "Tiene una respuesta sin clasificar en la bandeja."
+      : snoozed
       ? `Reprogramada para el ${whenText(snoozed)}${own?.snooze_reason ? `: ${own.snooze_reason}` : ""}.`
-      : blockReason(it, {
+      : it.dueAt
+        ? `Programada para el ${whenText(it.dueAt)} (${it.actionLabel}, a las ${it.afterHours} h de nuestro último mensaje).`
+        : blockReason(it, {
       account,
       sheet: info.sheet.get(r.id),
       duplicate: it.stage === "no-contactado" ? duplicateOf(r.id, it.wa, r.name) : null,
@@ -369,18 +404,15 @@ async function board(now = new Date()) {
     });
     items.set(r.id, it);
   }
-  return { items, vs, ex, stepNow, newToday: fresh.size };
+  return { items, vs, ex, stepNow, newToday: fresh.size, open, names: new Map(rows.map((r) => [r.id, r.name])) };
 }
-
-/** Minimum wait after our last message before a follow-up (the programmed ones, with their own times, come in Fase 2). */
-export const FOLLOW_UP_GAP_HOURS = 48;
 
 /** Why it cannot be executed now (in order of what to fix first), or null. */
 function blockReason(
   it: QueueItem,
   f: { account: ProspectAccount | undefined; sheet: SheetFacts | undefined; duplicate: string | null; newToday: number; now: Date; lastOurs: number | null; lastReply: number | null; needsDemo: boolean },
 ) {
-  if (!it.action) return nextAction(it.stage, it.situation).reason ?? "Sin acción para esta situación.";
+  if (!it.action) return it.actionReason ?? "Sin acción para esta situación.";
   if (it.execution?.status === "sent") return null;
   if (!it.versionId) return `Falta el texto de «${it.actionLabel}»: cargalo en la etapa «${stageInfo(it.stage).title}».`;
   if (it.stage === "no-contactado") {
@@ -390,8 +422,6 @@ function blockReason(
   if (f.duplicate) return `Posible duplicado de «${f.duplicate}», que ya fue contactada.`;
   if (it.group === "respuestas" && f.lastOurs && (!f.lastReply || f.lastOurs > f.lastReply))
     return `Ya le escribimos después de su última respuesta (${whenText(new Date(f.lastOurs).toISOString())}): esperá que conteste.`;
-  if (it.group !== "respuestas" && it.group !== "nuevos" && f.lastOurs && f.now.getTime() - f.lastOurs < FOLLOW_UP_GAP_HOURS * 3600_000)
-    return `Le escribimos hace menos de ${FOLLOW_UP_GAP_HOURS} h (${whenText(new Date(f.lastOurs).toISOString())}).`;
   if (f.needsDemo && !it.hasDemo) return "Variable incompleta: el mensaje lleva {{demo}} y todavía no tiene una demo publicada.";
   const channel = it.versionChannel;
   if (channel === "whatsapp" && !it.wa) return "Sin WhatsApp: cargalo en la ficha o marcala «Sin WhatsApp».";
@@ -424,8 +454,13 @@ function item(
     allInvalid: waContacts.length > 0 && waContacts.every((c) => c.invalid),
   });
   const sit = currentSituation(derived, own?.situation && own.situation_step !== null ? { situation: own.situation, step: own.situation_step } : null, stepValue(at.derived.reached));
-  const next = nextAction(stage, sit.situation);
-  const action = next.action;
+  // The steps already sent in this stage: the sequence goes on from there.
+  const stageSent = executionsOf.filter((e) => e.stage === stage && e.status === "sent").sort((a, b) => (b.sent_at ?? "").localeCompare(a.sent_at ?? ""));
+  const doneMap: Partial<Record<Action, boolean>> = {};
+  for (const e of stageSent) doneMap[(e.action ?? "principal") as Action] = true;
+  const next = nextAction(stage, sit.situation, doneMap);
+  // Nothing left to send but something went out: the row shows that last one as sent.
+  const action = next.action ?? (!CLOSED_SITUATIONS.includes(sit.situation) && stageSent[0] ? ((stageSent[0].action ?? "principal") as Action) : null);
   const mine = executionsOf.filter((e) => e.stage === stage && (e.action ?? "principal") === (action ?? "principal"));
   const offered = vs.filter((v) => v.stage === stage && (v.action ?? "principal") === (action ?? "principal"));
   const sent = mine.find((e) => e.status === "sent");
@@ -466,9 +501,13 @@ function item(
     action,
     actionLabel: action ? actionLabel(stage, action) : null,
     group: groupOf(stage, action),
+    afterHours: next.action ? next.afterHours : 0,
+    actionReason: next.reason,
+    dueAt: null,
     priority: own?.priority ?? defaultPriority(groupOf(stage, action)),
     priorityManual: Boolean(own?.priority),
     snoozedUntil: null,
+    openReplies: 0,
     blocked: null,
     checks,
     claim: null,
@@ -479,9 +518,10 @@ function item(
 }
 
 /** The whole page: one view per stage, with its versions measured and its agencies (score from highest to lowest), and the execution queue. */
-export async function followupOverview(): Promise<{ stages: StageView[]; queue: QueueItem[]; blocked: QueueItem[]; summary: QueueSummary }> {
+export async function followupOverview(): Promise<{ stages: StageView[]; queue: QueueItem[]; blocked: QueueItem[]; summary: QueueSummary; inbox: InboxItem[] }> {
   const b = await board();
   const all = [...b.items.values()];
+  const inboxItems = inboxOf(b);
   return {
     stages: FOLLOWUP_STAGES.map((s) => {
       const own = b.vs.filter((v) => v.stage === s.key).sort((x, y) => (x.action ?? "").localeCompare(y.action ?? "") || x.version - y.version);
@@ -496,21 +536,23 @@ export async function followupOverview(): Promise<{ stages: StageView[]; queue: 
     }),
     queue: executable(all),
     blocked: all.filter((q) => pending(q) && q.blocked).sort(byPriority),
-    summary: summarize(all, b.newToday),
+    summary: summarize(all, b.newToday, inboxItems.length),
+    inbox: inboxItems,
   };
 }
 
 const pending = (q: QueueItem) => q.action !== null && q.execution?.status !== "sent";
 /** The ones that can be executed now, in priority order (taken ones included: the page shows who has them). */
 const executable = (all: QueueItem[]) => all.filter((q) => pending(q) && !q.blocked).sort(byPriority);
-function summarize(all: QueueItem[], newToday: number): QueueSummary {
+function summarize(all: QueueItem[], newToday: number, inboxCount = 0): QueueSummary {
   const today = artDate(new Date());
   const live = new Date().toISOString();
   return {
     ready: all.filter((q) => pending(q) && !q.blocked && !(q.claim && q.claim.until > live)).length,
-    replies: all.filter((q) => pending(q) && (q.group === "respuestas" || ["neutro", "mas_adelante", "derivo", "interesado"].includes(q.situation)) && !q.snoozedUntil).length,
+    replies: inboxCount + all.filter((q) => pending(q) && q.group === "respuestas" && !q.blocked).length,
+    scheduled: all.filter((q) => pending(q) && q.dueAt).length,
     demos: all.filter((q) => pending(q) && q.group === "demos" && !q.snoozedUntil).length,
-    blocked: all.filter((q) => pending(q) && q.blocked).length,
+    blocked: all.filter((q) => pending(q) && q.blocked && !q.dueAt).length,
     claimed: all.filter((q) => pending(q) && !q.blocked && q.claim && q.claim.until > live).length,
     doneToday: all.filter((q) => q.execution?.status === "sent" && artDate(q.execution.at) === today).length,
     newToday,
@@ -530,7 +572,7 @@ export async function agentQueue(actorId: string, limit = 50) {
   const ready = executable(all);
   const free = ready.filter((q) => !q.claim || q.claim.until <= live || q.claim.actorId === actorId);
   return {
-    summary: summarize(all, b.newToday),
+    summary: summarize(all, b.newToday, inboxOf(b).length),
     next: free[0] ? strip(free[0]) : null,
     queue: ready.slice(0, Math.max(1, Math.min(limit, 500))).map(strip),
     blocked: all.filter((q) => pending(q) && q.blocked).slice(0, 200).map((q) => ({ agencyId: q.agencyId, name: q.name, stage: q.stage, situation: q.situation, blocked: q.blocked })),
@@ -878,6 +920,149 @@ export async function setSituation(agencyId: string, raw: unknown, note: unknown
   if (CLOSED_SITUATIONS.includes(situation)) await adminClient().from("followup_claims").delete().eq("agency_id", agencyId);
   const after = await itemOf(agencyId).catch(() => null);
   return { situation, warning, item: after ? strip(after.it) : null };
+}
+
+// ------------------------------------------------------------------ respuestas (Fase 2)
+
+type ReplyRow = {
+  id: string;
+  agency_id: string;
+  body: string;
+  received_at: string;
+  classification: ReplyClass | null;
+  confidence: number | null;
+  status: "pendiente" | "facu" | "procesada";
+  note: string | null;
+};
+const REPLY_FIELDS = "id,agency_id,body,received_at,classification,confidence,status,note";
+
+/** Las respuestas sin resolver, por inmobiliaria. */
+async function openReplies() {
+  const { data, error } = await adminClient().from("followup_replies").select(REPLY_FIELDS).neq("status", "procesada").order("received_at").limit(2000);
+  if (error) throw missing(error) ? new HttpError(409, MISSING) : new Error("FOLLOWUP_READ_FAILED");
+  const out = new Map<string, ReplyRow[]>();
+  for (const r of (data ?? []) as ReplyRow[]) out.set(r.agency_id, [...(out.get(r.agency_id) ?? []), { ...r, confidence: r.confidence === null ? null : Number(r.confidence) }]);
+  return out;
+}
+
+export type InboxItem = ReplyRow & { name: string; stage: StageKey | null; situation: Situation | null; phone: string | null };
+
+/** La bandeja: las respuestas sin resolver, la más vieja primero, con su inmobiliaria. */
+function inboxOf(b: Awaited<ReturnType<typeof board>>): InboxItem[] {
+  return [...b.open.values()]
+    .flat()
+    .map((r) => {
+      const it = b.items.get(r.agency_id);
+      return { ...r, name: b.names.get(r.agency_id) ?? "Inmobiliaria", stage: it?.stage ?? null, situation: it?.situation ?? null, phone: it?.phone ?? null };
+    })
+    .sort((a, c) => a.received_at.localeCompare(c.received_at));
+}
+export async function inbox() {
+  return inboxOf(await board());
+}
+
+/**
+ * POST …/reply: la extensión (o el equipo) registra una respuesta de WhatsApp
+ * con su texto original y la hora. Con clasificación y confianza suficiente se
+ * aplica sola (la situación, lo que registra en Adquisición y la próxima
+ * acción); con confianza baja, un audio o una pregunta que el script no cubre
+ * va a Facu y no se manda nada; sin clasificación queda en la bandeja.
+ * Idempotente: la misma respuesta (inmobiliaria, hora, texto) no se duplica.
+ */
+export async function registerReply(
+  input: { agencyId: unknown; text: unknown; receivedAt?: unknown; classification?: unknown; confidence?: unknown; note?: unknown; until?: unknown; contactName?: unknown; contactWhatsapp?: unknown },
+  actor: { id: string; name: string },
+) {
+  if (typeof input.agencyId !== "string" || !isUuid(input.agencyId)) throw new HttpError(400, "Falta la inmobiliaria.");
+  const text = typeof input.text === "string" ? input.text.trim().slice(0, 4000) : "";
+  if (!text) throw new HttpError(400, "Falta el texto de la respuesta (en un audio: «Audio»).");
+  const at = input.receivedAt ? new Date(String(input.receivedAt)) : new Date();
+  if (Number.isNaN(at.getTime()) || at.getTime() > Date.now() + 120_000) throw new HttpError(400, "Hora inválida.");
+  const classification = input.classification === undefined || input.classification === null || input.classification === "" ? null : isReplyClass(input.classification) ? input.classification : undefined;
+  if (classification === undefined) throw new HttpError(400, "Clasificación desconocida.");
+  const confidence = input.confidence === undefined || input.confidence === null || input.confidence === "" ? null : Number(input.confidence);
+  if (confidence !== null && (!Number.isFinite(confidence) || confidence < 0 || confidence > 1)) throw new HttpError(400, "La confianza va de 0 a 1.");
+  const route = replyRoute(classification, confidence);
+  const key = `${input.agencyId}:${at.toISOString().slice(0, 16)}:${text.slice(0, 80)}`;
+  const db = adminClient();
+  const found = await db.from("followup_replies").select(REPLY_FIELDS).eq("client_key", key).maybeSingle();
+  if (found.error) throw missing(found.error) ? new HttpError(409, MISSING) : new Error("FOLLOWUP_READ_FAILED");
+  if (found.data) return { reply: found.data as ReplyRow, route: (found.data as ReplyRow).status, replayed: true, warning: null };
+  const note = typeof input.note === "string" ? input.note.trim().slice(0, 500) : "";
+  const made = await db
+    .from("followup_replies")
+    .insert({
+      agency_id: input.agencyId,
+      body: text,
+      received_at: at.toISOString(),
+      classification,
+      confidence,
+      status: route === "facu" ? "facu" : "pendiente",
+      note: note || (route === "facu" ? (classification && FACU_CLASSES.includes(classification) ? REPLY_CLASSES[classification] : "Confianza baja") : null),
+      client_key: key,
+      recorded_by: actor.id,
+    })
+    .select(REPLY_FIELDS)
+    .single();
+  if (made.error) throw missing(made.error) ? new HttpError(409, MISSING) : new Error("FOLLOWUP_SAVE_FAILED");
+  const reply = made.data as ReplyRow;
+  // Whoever had it stops: a reply changes what comes next.
+  await db.from("followup_claims").delete().eq("agency_id", input.agencyId);
+  if (route !== "aplicar") return { reply, route: reply.status, replayed: false, warning: null };
+  const done = await processReply(reply.id, { classification, until: input.until, contactName: input.contactName, contactWhatsapp: input.contactWhatsapp }, actor);
+  return { reply: { ...reply, status: "procesada" as const }, route: "procesada", replayed: false, warning: done.warning };
+}
+
+/**
+ * Resuelve una respuesta de la bandeja: aplica su clasificación como situación
+ * (con el texto como evidencia) y la marca procesada. «Pide más adelante» con
+ * fecha la reprograma; «Derivó» con un contacto nuevo lo suma a la misma
+ * inmobiliaria (sin duplicarla). Audio y pregunta no cubierta quedan en Facu.
+ */
+export async function processReply(
+  id: unknown,
+  input: { classification?: unknown; until?: unknown; contactName?: unknown; contactWhatsapp?: unknown; facu?: unknown; note?: unknown },
+  actor: { id: string; name: string },
+) {
+  if (!isUuid(id)) throw new HttpError(404, "No encontramos esa respuesta.");
+  const db = adminClient();
+  const found = await db.from("followup_replies").select(REPLY_FIELDS).eq("id", id).maybeSingle();
+  if (found.error) throw missing(found.error) ? new HttpError(409, MISSING) : new Error("FOLLOWUP_READ_FAILED");
+  const reply = found.data as ReplyRow | null;
+  if (!reply) throw new HttpError(404, "No encontramos esa respuesta.");
+  if (reply.status === "procesada") return { reply, warning: null, replayed: true };
+  if (input.facu === true) {
+    const note = typeof input.note === "string" ? input.note.trim().slice(0, 500) : "";
+    await db.from("followup_replies").update({ status: "facu", note: note || reply.note || "Asignada a Facu" }).eq("id", reply.id);
+    return { reply: { ...reply, status: "facu" as const }, warning: null, replayed: false };
+  }
+  const c = isReplyClass(input.classification) ? input.classification : reply.classification;
+  if (!c) throw new HttpError(400, "Elegí la clasificación.");
+  if (FACU_CLASSES.includes(c)) {
+    await db.from("followup_replies").update({ status: "facu", classification: c, note: REPLY_CLASSES[c] }).eq("id", reply.id);
+    return { reply: { ...reply, status: "facu" as const, classification: c }, warning: null, replayed: false };
+  }
+  const warnings: string[] = [];
+  // Derivó: the new contact joins the same agency's prospecting account.
+  if (c === "derivo" && typeof input.contactWhatsapp === "string" && input.contactWhatsapp.trim()) {
+    const wa = normalizeArNumber(input.contactWhatsapp.trim());
+    if (!wa) throw new HttpError(400, "Revisá el WhatsApp del contacto nuevo: un celular de Argentina, con el código de área.");
+    const account = accountsByAgency(await prospectDataset()).get(reply.agency_id);
+    if (!account) warnings.push("No tiene cuenta de prospección: cargá el contacto nuevo en su ficha.");
+    else
+      await prospectRpc("habita_prospect_contact", {
+        p_actor: actor.id,
+        p_account: account.id,
+        p_contact: null,
+        p_fields: { channel: "whatsapp", address: `+${wa}`, person_name: typeof input.contactName === "string" ? input.contactName.trim().slice(0, 120) : null, is_primary: true, is_decision_maker: true, source: "Derivación (Follow-up)" },
+      }).catch((e) => warnings.push(`No pudimos sumar el contacto nuevo: ${e instanceof HttpError ? e.message : "probá desde su ficha."}`));
+  }
+  const situation = c as Situation;
+  const applied = await setSituation(reply.agency_id, situation, reply.body, actor);
+  if (applied.warning) warnings.push(applied.warning);
+  if (c === "mas_adelante" && input.until) await snooze(reply.agency_id, input.until, `Pidió hablar más adelante: «${reply.body.slice(0, 120)}»`, actor);
+  await db.from("followup_replies").update({ status: "procesada", classification: c, processed_by: actor.id, processed_at: new Date().toISOString() }).eq("id", reply.id);
+  return { reply: { ...reply, status: "procesada" as const, classification: c }, warning: warnings.join(" ") || null, replayed: false };
 }
 
 /** El nombre corto para {{inmobiliaria}}. Vacío: vuelve al de la ficha sin paréntesis. */
