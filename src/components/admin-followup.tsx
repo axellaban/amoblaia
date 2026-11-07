@@ -31,73 +31,214 @@ async function copy(text: string) {
   }
 }
 
-/** /admin/follow-up: the execution queue on top, then one band per funnel stage with its next best action, its agencies and each version's numbers. */
-export function FollowupBoard({ stages, queue, summary }: { stages: StageView[]; queue: QueueItem[]; summary: QueueSummary }) {
+type View = "cola" | Mode;
+const VIEWS: { key: View | "respuestas"; label: string; soon?: string }[] = [
+  { key: "cola", label: "Cola de ejecución" },
+  { key: "respuestas", label: "Respuestas", soon: "Fase 2" },
+  { key: "embudo", label: "Embudo" },
+  { key: "reglas", label: "Mensajes y reglas" },
+  { key: "resultados", label: "Resultados" },
+];
+
+/** /admin/follow-up: pestañas como en la especificación; la cola de ejecución es la pantalla principal. */
+export function FollowupBoard({ stages, queue, blocked, summary }: { stages: StageView[]; queue: QueueItem[]; blocked: QueueItem[]; summary: QueueSummary }) {
+  const [view, setView] = useState<View>(() => {
+    if (typeof window === "undefined") return "cola";
+    const v = new URLSearchParams(window.location.search).get("vista");
+    return v === "embudo" || v === "reglas" || v === "resultados" ? v : "cola";
+  });
   const [open, setOpen] = useState<string | null>(null);
-  const all = stages.flatMap((s) => s.versions);
-  const executions = all.reduce((n, v) => n + v.stats.executions, 0);
-  const conversions = all.reduce((n, v) => n + v.stats.conversions, 0);
+  function go(v: View) {
+    setView(v);
+    setOpen(null);
+    const url = new URL(window.location.href);
+    if (v === "cola") url.searchParams.delete("vista");
+    else url.searchParams.set("vista", v);
+    window.history.replaceState(null, "", url);
+  }
   return (
     <>
-      <div className="fu-summary fu-summary-5">
-        <div data-testid="followup-kpi-ready">
-          <b>{summary.ready}</b>
-          <span>listas para ejecutar ahora</span>
-        </div>
-        <div data-testid="followup-kpi-blocked">
-          <b>{summary.blocked}</b>
-          <span>bloqueadas (con motivo)</span>
-        </div>
-        <div data-testid="followup-kpi-new">
-          <b>
-            {summary.newToday}/{summary.cap}
-          </b>
-          <span>conversaciones nuevas en 24 h</span>
-        </div>
-        <div>
-          <b>{executions}</b>
-          <span>ejecuciones confirmadas</span>
-        </div>
-        <div>
-          <b>{conversions}</b>
-          <span>avanzaron de etapa después</span>
-        </div>
-      </div>
-      <ExecQueue queue={queue} summary={summary} />
-      <h2 className="fu-h2">Etapas del embudo</h2>
-      <div className="fu-stages">
-        {stages.map((s, i) => (
-          <StageBand key={s.key} stage={s} index={i + 1} open={open === s.key} onToggle={() => setOpen(open === s.key ? null : s.key)} />
-        ))}
-      </div>
+      <nav className="fu-tabs" aria-label="Vistas de Follow-up" data-testid="followup-tabs">
+        {VIEWS.map((t) =>
+          t.soon ? (
+            <span key={t.key} className="fu-tab is-soon" aria-disabled="true" title={`Llega en la ${t.soon}`}>
+              {t.label} <small>· {t.soon}</small>
+            </span>
+          ) : (
+            <button key={t.key} type="button" className={`fu-tab${view === t.key ? " is-on" : ""}`} aria-current={view === t.key ? "page" : undefined} data-testid={`followup-tab-${t.key}`} onClick={() => go(t.key as View)}>
+              {t.label}
+            </button>
+          ),
+        )}
+      </nav>
+      {view === "cola" ? (
+        <ExecCenter queue={queue} blocked={blocked} summary={summary} />
+      ) : (
+        <>
+          <p className="fu-note fu-viewnote">
+            {view === "embudo"
+              ? "Cada etapa con las inmobiliarias que esperan en ella. Desde acá se corrige el estado, la situación y el score."
+              : view === "reglas"
+                ? "El mensaje de cada acción, sus versiones A/B, sus observaciones para la extensión y sus call to actions."
+                : "Ejecuciones, conversiones y tasa de cada versión. Las métricas por ventana de 7 y 14 días y por cohorte llegan en la Fase 4."}
+          </p>
+          <div className="fu-stages">
+            {stages.map((s, i) => (
+              <StageBand key={`${view}-${s.key}`} stage={s} index={i + 1} mode={view} open={open === s.key} onToggle={() => setOpen(open === s.key ? null : s.key)} />
+            ))}
+          </div>
+        </>
+      )}
     </>
   );
 }
 
-const QPAGE = 15;
-/** Una sola cola de todas las etapas: solo lo que se puede ejecutar ahora, por grupo, score y antigüedad. */
-function ExecQueue({ queue, summary }: { queue: QueueItem[]; summary: QueueSummary }) {
+type Filter = "listas" | "respuestas" | "demos" | "bloqueadas";
+const QPAGE = 25;
+const PRIORITY_LABEL = { alta: "Alta", media: "Media", baja: "Baja" } as const;
+const isReply = (q: QueueItem) => q.group === "respuestas" || ["neutro", "mas_adelante", "derivo", "interesado"].includes(q.situation);
+
+/** Centro de ejecución: los 4 números de la especificación (cada uno filtra), la cola y, al ejecutar, el detalle en 3 sectores. */
+function ExecCenter({ queue, blocked, summary }: { queue: QueueItem[]; blocked: QueueItem[]; summary: QueueSummary }) {
   const router = useRouter();
-  const [state, setState] = useState<Record<string, Exec>>({});
-  const [open, setOpen] = useState<string | null>(null);
+  const [filter, setFilter] = useState<Filter>("listas");
+  const [group, setGroup] = useState<string>("todas");
+  const [search, setSearch] = useState("");
   const [shown, setShown] = useState(QPAGE);
-  const statusOf = (q: QueueItem) => (q.agencyId in state ? state[q.agencyId] : q.execution);
-  const list = queue.slice(0, shown);
-  const nextAfter = (id: string) => queue.find((x) => x.agencyId !== id && statusOf(x)?.status !== "sent" && !(x.claim && x.claim.until > new Date().toISOString()));
+  const [detail, setDetail] = useState<string | null>(null);
+  const [done, setDone] = useState<Record<string, Exec>>({});
+  const [taking, setTaking] = useState(false);
+  const [error, setError] = useState("");
+  const live = new Date().toISOString();
+  const statusOf = (q: QueueItem) => (q.agencyId in done ? done[q.agencyId] : q.execution);
+  const base =
+    filter === "bloqueadas"
+      ? blocked
+      : filter === "respuestas"
+        ? [...queue, ...blocked].filter((q) => isReply(q) && !q.snoozedUntil)
+        : filter === "demos"
+          ? [...queue, ...blocked].filter((q) => q.group === "demos" && !q.snoozedUntil)
+          : queue;
+  const term = search.trim().toLowerCase();
+  const list = base.filter((q) => (group === "todas" || q.group === group) && (!term || q.name.toLowerCase().includes(term)));
+  const groups = (["respuestas", "demos", "seguimientos", "nuevos"] as const).map((g) => ({ key: g, n: base.filter((q) => q.group === g).length }));
+  const free = queue.filter((q) => statusOf(q)?.status !== "sent" && !(q.claim && q.claim.until > live));
+
+  async function takeNext() {
+    setTaking(true);
+    setError("");
+    try {
+      const p = await api<Prepared | null>("/api/admin/followup/claim", { method: "POST", body: JSON.stringify({}) });
+      if (!p) setError("No queda nada libre para ejecutar ahora.");
+      else setDetail(p.agencyId);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No pudimos tomar la próxima.");
+    } finally {
+      setTaking(false);
+    }
+  }
+
+  if (detail) {
+    const item = [...queue, ...blocked].find((q) => q.agencyId === detail);
+    if (item)
+      return (
+        <ExecDetail
+          key={detail}
+          item={item}
+          queue={queue}
+          exec={statusOf(item)}
+          statusOf={statusOf}
+          onPick={setDetail}
+          onDone={(e) => setDone((d) => ({ ...d, [item.agencyId]: e }))}
+          onBack={() => {
+            setDetail(null);
+            router.refresh();
+          }}
+          onNext={() => {
+            const next = free.find((q) => q.agencyId !== item.agencyId && !(q.agencyId in done));
+            setDetail(next?.agencyId ?? null);
+            if (!next) router.refresh();
+          }}
+        />
+      );
+  }
+
+  const kpis: { key: Filter; label: string; value: number; hint: string }[] = [
+    { key: "listas", label: "Acciones para hoy", value: summary.ready, hint: summary.claimed ? `listas ahora · ${summary.claimed} tomadas por otra sesión` : "listas para ejecutar ahora" },
+    { key: "respuestas", label: "Respuestas nuevas", value: summary.replies, hint: "respondieron y esperan acción" },
+    { key: "demos", label: "Demos pendientes", value: summary.demos, hint: "por crear o por enviar" },
+    { key: "bloqueadas", label: "Bloqueadas", value: summary.blocked, hint: "cada una con su motivo" },
+  ];
+  const reasons = Object.entries(
+    blocked.reduce<Record<string, number>>((acc, q) => {
+      const k = (q.blocked ?? "").replace(/[:(].*$/, "").replace(/\.$/, "").trim();
+      acc[k] = (acc[k] ?? 0) + 1;
+      return acc;
+    }, {}),
+  ).sort((a, b) => b[1] - a[1]);
+
   return (
-    <section className="fu-execq" data-testid="followup-queue">
-      <div className="fu-qhead">
-        <span className="fu-lbl">Cola de ejecución · {queue.length}</span>
-        <span className="fu-qprog">
-          {summary.claimed > 0 && <>{summary.claimed} tomadas por otra sesión · </>}
-          primero respuestas, después demos, seguimientos y contactos nuevos ·{" "}
-          <button type="button" className="fu-link" onClick={() => router.refresh()}>
-            Actualizar
+    <section className="fu-center" data-testid="followup-queue">
+      <div className="fu-kpis">
+        {kpis.map((k) => (
+          <button
+            key={k.key}
+            type="button"
+            className={`fu-kpi${filter === k.key ? " is-on" : ""} is-${k.key}`}
+            data-testid={`followup-kpi-${k.key}`}
+            aria-pressed={filter === k.key}
+            onClick={() => {
+              setFilter(k.key);
+              setGroup("todas");
+              setShown(QPAGE);
+            }}
+          >
+            <span>{k.label}</span>
+            <b>{k.value}</b>
+            <small>{k.hint}</small>
           </button>
-        </span>
+        ))}
       </div>
-      {queue.length === 0 ? (
-        <p className="fu-empty">No hay nada para ejecutar ahora. Las bloqueadas figuran en cada etapa con su motivo.</p>
+      <p className="fu-note">
+        Conversaciones nuevas en 24 h: <b>{summary.newToday}</b> de {summary.cap} · confirmadas hoy: <b>{summary.doneToday}</b> ·{" "}
+        <button type="button" className="fu-link" onClick={() => router.refresh()}>
+          Actualizar
+        </button>
+      </p>
+      <div className="fu-filters">
+        <button type="button" className={`fu-chip${group === "todas" ? " is-on" : ""}`} onClick={() => setGroup("todas")}>
+          Todas · {base.length}
+        </button>
+        {groups.map((g) => (
+          <button key={g.key} type="button" className={`fu-chip${group === g.key ? " is-on" : ""}`} onClick={() => setGroup(g.key)} disabled={!g.n}>
+            {GROUPS[g.key]} · {g.n}
+          </button>
+        ))}
+        <span className="fu-grow" />
+        <label className="fu-search">
+          <span className="sr-only">Buscar inmobiliaria</span>
+          <input type="search" placeholder="Buscar inmobiliaria" value={search} onChange={(e) => setSearch(e.target.value)} />
+        </label>
+        <button type="button" className="button button-primary button-small" data-testid="followup-take-next" disabled={taking || !free.length} onClick={takeNext}>
+          {taking ? "Tomando…" : "Tomar la próxima →"}
+        </button>
+      </div>
+      {error && (
+        <p className="fu-error" role="alert">
+          {error}
+        </p>
+      )}
+      {filter === "bloqueadas" && reasons.length > 0 && (
+        <div className="fu-reasons" data-testid="followup-block-reasons">
+          {reasons.map(([r, n]) => (
+            <span key={r}>
+              {r} · <b>{n}</b>
+            </span>
+          ))}
+        </div>
+      )}
+      {list.length === 0 ? (
+        <p className="fu-empty">{filter === "listas" ? "No hay nada para ejecutar ahora. Mirá las bloqueadas para ver por qué." : "No hay inmobiliarias en este filtro."}</p>
       ) : (
         <div className="fu-qlist">
           <div className="fu-qwide fu-qwide-q">
@@ -112,62 +253,73 @@ function ExecQueue({ queue, summary }: { queue: QueueItem[]; summary: QueueSumma
               <span>Prioridad</span>
               <span />
             </div>
-            {list.map((q) => {
+            {list.slice(0, shown).map((q) => {
               const exec = statusOf(q);
               const status = exec?.status ?? "pending";
-              const taken = q.claim && q.claim.until > new Date().toISOString();
-              const isOpen = open === q.agencyId;
+              const taken = Boolean(q.claim && q.claim.until > live);
+              const isBlocked = Boolean(q.blocked) && status !== "sent";
               return (
-                <div key={q.agencyId} className={`fu-qi${isOpen ? " is-on" : ""}`} data-testid="followup-queue-item" data-agency={q.agencyId} data-stage={q.stage} data-action={q.action ?? ""} data-situation={q.situation} data-status={status}>
+                <div key={q.agencyId} className="fu-qi" data-testid="followup-queue-item" data-agency={q.agencyId} data-stage={q.stage} data-action={q.action ?? ""} data-situation={q.situation} data-status={status} data-priority={q.priority} data-blocked={isBlocked ? q.blocked : ""}>
                   <div className="fu-qrow fu-qrow-q">
                     <span className="fu-score">{score(q.score)}</span>
                     <div className="fu-qname">
                       <Link href={`/admin/inmobiliarias/${q.agencyId}`}>{q.name}</Link>
-                      <span>{q.person ?? "Sin decisor cargado"}</span>
+                      <span>{q.zone ?? q.person ?? "—"}</span>
                     </div>
                     <span className="fu-cell">{stageTitle(q.stage)}</span>
-                    <span className="fu-cell">{SITUATIONS[q.situation]}</span>
-                    <span className="fu-cell fu-bold">{q.actionLabel}</span>
+                    <span className="fu-cell">
+                      <span className="fu-pill is-sit">{SITUATIONS[q.situation]}</span>
+                    </span>
+                    <span className="fu-cell fu-bold">{q.actionLabel ?? "—"}</span>
                     <div className="fu-qact">
                       <span>{q.lastAction ? q.lastAction.text : "Sin acciones"}</span>
-                      <span>{q.lastAction ? `${day(q.lastAction.at)} · ${ago(q.lastAction.at)}` : "—"}</span>
+                      <span className={q.lastAction && daysSince(q.lastAction.at) > LATE_DAYS ? "is-late" : undefined}>{q.lastAction ? `${day(q.lastAction.at)} · ${ago(q.lastAction.at)}` : "—"}</span>
                     </div>
                     <div className="fu-qcontact">
                       <span className="fu-mono">{q.phone ?? "—"}</span>
-                      <span>{q.needsReview ? "Sin validar" : "Validado"}</span>
+                      <span>{!q.wa ? "Sin WhatsApp" : q.needsReview ? "Sin validar" : "Validado"}</span>
                     </div>
-                    <span className={`fu-qst is-${status}`}>{status === "pending" ? GROUPS[q.group] : EXEC_LABEL[status]}</span>
-                    <button
-                      type="button"
-                      className={`button button-small${status === "pending" && !isOpen && !taken ? " button-primary" : " button-outline"}`}
-                      data-testid="followup-execute"
-                      title={taken ? `La está ejecutando ${q.claim!.by}` : undefined}
-                      disabled={Boolean(taken) && !isOpen}
-                      onClick={() => setOpen(isOpen ? null : q.agencyId)}
-                    >
-                      {isOpen ? "Cerrar" : taken ? "Tomada" : status === "sent" ? "Ver" : "Ejecutar"}
-                    </button>
+                    <span>
+                      <span className={`fu-pill is-${q.priority}`} title={q.priorityManual ? "Puesta a mano" : "Por su grupo"}>
+                        {PRIORITY_LABEL[q.priority]}
+                        {q.priorityManual ? " ·" : ""}
+                      </span>
+                    </span>
+                    {isBlocked ? (
+                      q.snoozedUntil ? (
+                        <button type="button" className="button button-small button-outline" data-testid="followup-unsnooze" onClick={() => api("/api/admin/follow-up/inmobiliarias", { method: "POST", body: JSON.stringify({ accion: "volver", inmobiliaria: q.agencyId }) }).then(() => router.refresh())}>
+                          Volver a la cola
+                        </button>
+                      ) : (
+                        <span className="fu-qst is-blocked" title={q.blocked ?? undefined}>
+                          Bloqueada
+                        </span>
+                      )
+                    ) : (
+                      <button
+                        type="button"
+                        className={`button button-small${status === "pending" && !taken ? " button-primary" : " button-outline"}`}
+                        data-testid="followup-execute"
+                        disabled={taken}
+                        title={taken ? `La está ejecutando ${q.claim!.by}` : undefined}
+                        onClick={() => setDetail(q.agencyId)}
+                      >
+                        {taken ? `Tomada · ${q.claim!.by}` : status === "sent" ? "Ver" : "Ejecutar"}
+                      </button>
+                    )}
                   </div>
-                  {isOpen && (
-                    <Execute
-                      item={q}
-                      exec={exec}
-                      onDone={(e) => setState((st) => ({ ...st, [q.agencyId]: e }))}
-                      onClose={() => setOpen(null)}
-                      onNext={() => {
-                        const next = nextAfter(q.agencyId);
-                        setOpen(next?.agencyId ?? null);
-                        if (next && queue.indexOf(next) >= shown) setShown(queue.indexOf(next) + 1);
-                      }}
-                    />
+                  {isBlocked && (
+                    <p className="fu-blocked" data-testid="followup-blocked">
+                      {q.blocked}
+                    </p>
                   )}
                 </div>
               );
             })}
           </div>
-          {queue.length > shown && (
+          {list.length > shown && (
             <button type="button" className="fu-more" onClick={() => setShown(shown + QPAGE)}>
-              Ver {Math.min(QPAGE, queue.length - shown)} más · quedan {queue.length - shown}
+              Ver {Math.min(QPAGE, list.length - shown)} más · quedan {list.length - shown}
             </button>
           )}
         </div>
@@ -176,9 +328,418 @@ function ExecQueue({ queue, summary }: { queue: QueueItem[]; summary: QueueSumma
   );
 }
 
+const SNOOZE = [
+  { key: "manana", label: "Mañana a las 9" },
+  { key: "3dias", label: "En 3 días" },
+  { key: "semana", label: "En una semana" },
+  { key: "fecha", label: "Otra fecha" },
+] as const;
+/** 9 de la mañana de Argentina (12 UTC), dentro de `days` días. */
+function nineAm(days: number) {
+  const d = new Date(Date.now() + days * 86400000);
+  d.setUTCHours(12, 0, 0, 0);
+  return d.toISOString();
+}
+const hhmm = (iso: string) => new Date(iso).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Argentina/Buenos_Aires" });
+const when = (iso: string) => new Date(iso).toLocaleString("es-AR", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "America/Argentina/Buenos_Aires" });
+
+/**
+ * Detalle de ejecución, en tres sectores (como la especificación): la cola a la
+ * izquierda, el contexto y los mensajes en el centro, el checklist y los
+ * botones a la derecha. Al abrirla, la inmobiliaria queda tomada 10 minutos.
+ */
+function ExecDetail({
+  item,
+  queue,
+  exec,
+  statusOf,
+  onPick,
+  onDone,
+  onBack,
+  onNext,
+}: {
+  item: QueueItem;
+  queue: QueueItem[];
+  exec: Exec;
+  statusOf: (q: QueueItem) => Exec;
+  onPick: (id: string) => void;
+  onDone: (e: Exec) => void;
+  onBack: () => void;
+  onNext: () => void;
+}) {
+  const [prepared, setPrepared] = useState<Prepared | null>(null);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState(exec?.status ?? "pending");
+  const [panel, setPanel] = useState<"none" | "fail" | "snooze">("none");
+  const [kind, setKind] = useState<keyof typeof FAIL_KINDS>("otro");
+  const [reason, setReason] = useState("");
+  const [snoozeKey, setSnoozeKey] = useState<(typeof SNOOZE)[number]["key"]>("manana");
+  const [snoozeDate, setSnoozeDate] = useState("");
+  const [priority, setPriority] = useState(item.priority);
+  const sent = status === "sent";
+
+  const load = () =>
+    api<Prepared>("/api/admin/follow-up/ejecuciones", { method: "POST", body: JSON.stringify({ accion: "preparar", inmobiliaria: item.agencyId }) })
+      .then(setPrepared)
+      .catch((e) => setError(e instanceof Error ? e.message : "No pudimos armar el mensaje."));
+  useEffect(() => {
+    if (exec?.status !== "sent") void load();
+    // Opening the detail takes the agency; loading it once is enough.
+  }, [item.agencyId]);
+
+  async function post<T>(url: string, body: Record<string, unknown>) {
+    setBusy(true);
+    setError("");
+    try {
+      return await api<T>(url, { method: "POST", body: JSON.stringify(body) });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No pudimos guardarlo.");
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function mark(estado: "opened" | "sent" | "failed") {
+    if (!prepared) return;
+    const r = await post<{ execution: NonNullable<Exec>; warning: string | null }>("/api/admin/follow-up/ejecuciones", {
+      accion: "registrar",
+      inmobiliaria: item.agencyId,
+      etapa: prepared.stage,
+      tarea: prepared.action,
+      version: prepared.versionId,
+      estado,
+      motivo: reason,
+      tipo: kind === "otro" ? null : kind,
+      texto: prepared.message,
+    });
+    if (!r) return;
+    setStatus(r.execution.status);
+    if (r.warning) setNotice(r.warning);
+    if (estado !== "opened") onDone({ status: r.execution.status, at: r.execution.at, reason: estado === "failed" ? reason || FAIL_KINDS[kind] : null });
+    if (estado === "failed") setPanel("none");
+  }
+  async function snooze() {
+    const hasta = snoozeKey === "manana" ? nineAm(1) : snoozeKey === "3dias" ? nineAm(3) : snoozeKey === "semana" ? nineAm(7) : snoozeDate ? new Date(`${snoozeDate}T09:00:00-03:00`).toISOString() : "";
+    if (!hasta) return setError("Elegí la fecha.");
+    const r = await post<{ snoozedUntil: string }>("/api/admin/follow-up/inmobiliarias", { accion: "reprogramar", inmobiliaria: item.agencyId, hasta, motivo: reason });
+    if (r) {
+      onDone({ status: "failed", at: new Date().toISOString(), reason: `Reprogramada para el ${when(r.snoozedUntil)}` });
+      onNext();
+    }
+  }
+  async function changePriority(p: string) {
+    setPriority(p as QueueItem["priority"]);
+    await post("/api/admin/follow-up/inmobiliarias", { accion: "prioridad", inmobiliaria: item.agencyId, prioridad: p === "auto" ? null : p });
+  }
+  async function back() {
+    if (prepared && !sent) await api("/api/admin/follow-up/ejecuciones", { method: "POST", body: JSON.stringify({ accion: "soltar", inmobiliaria: item.agencyId }) }).catch(() => undefined);
+    onBack();
+  }
+  async function pick(id: string) {
+    if (id === item.agencyId) return;
+    if (prepared && !sent) await api("/api/admin/follow-up/ejecuciones", { method: "POST", body: JSON.stringify({ accion: "soltar", inmobiliaria: item.agencyId }) }).catch(() => undefined);
+    onPick(id);
+  }
+  async function copyText(text: string, what: string) {
+    setNotice((await copy(text)) ? `${what} copiado.` : `No pudimos copiarlo: ${text}`);
+  }
+  async function rename() {
+    const name = window.prompt("Nombre corto para {{inmobiliaria}} (vacío: el de la ficha sin paréntesis)", prepared?.context.shortName ?? item.shortName);
+    if (name === null) return;
+    if (await post("/api/admin/follow-up/inmobiliarias", { accion: "nombre", inmobiliaria: item.agencyId, nombre: name })) {
+      setPrepared(null);
+      await load();
+    }
+  }
+
+  const ctx = prepared?.context;
+  const task = prepared?.channel === "task";
+  const many = (prepared?.messages.length ?? 0) > 1;
+  return (
+    <section className="fu-detail" data-testid="followup-detail" data-agency={item.agencyId}>
+      <div className="fu-dhead">
+        <button type="button" className="fu-back" aria-label="Volver a la cola" data-testid="followup-back" onClick={back}>
+          <ChevronRight size={18} aria-hidden="true" style={{ transform: "rotate(180deg)" }} />
+        </button>
+        <div className="fu-grow">
+          <h2>Detalle de ejecución</h2>
+          <p>Revisá el contexto y el checklist antes de enviar.</p>
+        </div>
+        {prepared && !sent && <span className="fu-pill is-lock">Tomada por vos · libre a las {hhmm(prepared.lockedUntil)}</span>}
+      </div>
+      <div className="fu-dgrid">
+        <aside className="fu-dcol fu-dqueue" aria-label="Cola">
+          <div className="fu-dtitle">
+            <b>Cola de ejecución</b>
+            <span>{queue.length} en cola</span>
+          </div>
+          {queue.slice(0, 14).map((q) => {
+            const on = q.agencyId === item.agencyId;
+            const done = statusOf(q)?.status === "sent";
+            return (
+              <button key={q.agencyId} type="button" className={`fu-dqi${on ? " is-on" : ""}${done ? " is-done" : ""}`} onClick={() => pick(q.agencyId)} aria-current={on ? "true" : undefined}>
+                <span className="fu-score">{score(q.score)}</span>
+                <span className="fu-dqname">
+                  <b>{q.name}</b>
+                  <span>{done ? "Enviado" : q.actionLabel}</span>
+                </span>
+                <span className={`fu-pill is-${q.priority}`}>{PRIORITY_LABEL[q.priority]}</span>
+              </button>
+            );
+          })}
+        </aside>
+        <div className="fu-dcol fu-dmain">
+          <div className="fu-card fu-ident">
+            <div className="fu-grow">
+              <div className="fu-identname">
+                <Link href={`/admin/inmobiliarias/${item.agencyId}`}>{item.name}</Link>
+                <span className={`fu-pill is-${priority}`}>Prioridad {PRIORITY_LABEL[priority].toLowerCase()}</span>
+              </div>
+              <p>
+                {item.zone ?? "Sin zona"} · Score <b>{score(item.score)}</b> · Decisor: {item.person ?? "sin nombre"} · <span className="fu-mono" data-testid="followup-phone">{item.phone ?? "sin WhatsApp"}</span>
+                {item.wa ? (item.needsReview ? " (sin validar)" : " (validado)") : ""}
+              </p>
+            </div>
+            <div className="fu-identside">
+              <span>
+                Etapa <b>{stageTitle(item.stage)}</b>
+              </span>
+              <SituationCell item={item} />
+            </div>
+          </div>
+          <div className="fu-dtwo">
+            <div className="fu-card">
+              <b className="fu-cardtitle">Contexto del lead</b>
+              <ul className="fu-facts">
+                <li>
+                  Web: {item.website ? (
+                    <a href={href(item.website)} target="_blank" rel="noreferrer">
+                      {host(item.website)}
+                    </a>
+                  ) : "sin web"}
+                </li>
+                <li>{item.properties} propiedades · {item.hasDemo ? "con demo publicada" : "sin demo publicada"} · {item.hasAccount ? "con cuenta" : "sin cuenta"}</li>
+                <li>{item.address ?? "Sin dirección"}</li>
+                <li>
+                  En el mensaje: «{ctx?.shortName ?? item.shortName}»{" "}
+                  <button type="button" className="fu-link" data-testid="followup-short-name" onClick={rename}>
+                    cambiar
+                  </button>
+                </li>
+                {item.situationNote && <li>Su respuesta: «{item.situationNote}»</li>}
+              </ul>
+            </div>
+            <div className="fu-card">
+              <b className="fu-cardtitle">Últimas acciones</b>
+              {!prepared ? (
+                <p className="fu-note">{error ? "—" : "Cargando…"}</p>
+              ) : prepared.history.length === 0 ? (
+                <p className="fu-note">Sin acciones todavía.</p>
+              ) : (
+                <ol className="fu-timeline" data-testid="followup-history">
+                  {prepared.history.map((h, i) => (
+                    <li key={i} className={`is-${h.kind}`}>
+                      <span>{when(h.at)}</span>
+                      {h.text}
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </div>
+          </div>
+          <div className="fu-card fu-next">
+            {!prepared ? (
+              error ? (
+                <p className="fu-error" role="alert" data-testid="followup-error">
+                  {error}
+                </p>
+              ) : sent ? (
+                <p className="fu-note">Confirmado. </p>
+              ) : (
+                <p className="fu-note">Tomando la inmobiliaria y armando el mensaje…</p>
+              )
+            ) : (
+              <>
+                <div className="fu-nexthead">
+                  <b>
+                    Próxima acción: {prepared.actionLabel} · V{prepared.version}
+                    {many ? ` · ${prepared.messages.length} mensajes` : ""}
+                  </b>
+                  <span>{task ? "Tarea del equipo" : `Por WhatsApp · situación: ${ctx?.situationLabel}`}</span>
+                </div>
+                {prepared.messages.map((m, i) => (
+                  <div key={i} className="fu-step">
+                    <span className="fu-stepn">{i + 1}</span>
+                    <div className="fu-msg" data-testid="followup-message" data-index={i}>
+                      {m}
+                    </div>
+                    <button type="button" className="fu-iconbtn" aria-label={`Copiar mensaje ${i + 1}`} data-testid="followup-copy-part" onClick={() => copyText(m, `Mensaje ${i + 1}`)}>
+                      <ClipboardCopy size={16} aria-hidden="true" />
+                    </button>
+                  </div>
+                ))}
+                {prepared.notes && (
+                  <div className="fu-obs" data-testid="followup-notes">
+                    <b>Observaciones</b>
+                    {prepared.notes}
+                  </div>
+                )}
+                {notice && (
+                  <p className="fu-note" role="status">
+                    {notice}
+                  </p>
+                )}
+                {error && (
+                  <p className="fu-error" role="alert" data-testid="followup-error">
+                    {error}
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+        <aside className="fu-dcol fu-dside" aria-label="Checklist">
+          <b className="fu-cardtitle">Checklist de ejecución</b>
+          {prepared ? (
+            <ul className="fu-checks" data-testid="followup-checklist">
+              {prepared.checklist.map((c) => (
+                <li key={c.key} className={c.ok ? "is-ok" : "is-pending"} data-check={c.key} data-ok={c.ok}>
+                  <span className="fu-tick" aria-hidden="true">
+                    {c.ok ? "✓" : ""}
+                  </span>
+                  <span>
+                    {c.label}
+                    {c.note && <small>{c.note}</small>}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="fu-note">—</p>
+          )}
+          <div className="fu-sep" />
+          {prepared && !task && (
+            <>
+              {prepared.whatsappUrl ? (
+                <a className={`button button-small${status === "pending" || status === "failed" ? " button-primary" : " button-outline"}`} data-testid="followup-open" href={prepared.whatsappUrl} target="habita-whatsapp" rel="noreferrer" onClick={() => !sent && void mark("opened")}>
+                  <MessageCircle size={16} aria-hidden="true" /> 1. Abrir WhatsApp{many ? " con el mensaje 1" : ""}
+                </a>
+              ) : (
+                <span className="button button-small button-outline is-disabled" data-testid="followup-open" aria-disabled="true">
+                  <MessageCircle size={16} aria-hidden="true" /> 1. Abrir WhatsApp
+                </span>
+              )}
+              <button type="button" className={`button button-small${status === "opened" ? " button-primary" : " button-outline"}`} data-testid="followup-confirm" disabled={sent || busy || !prepared.ready} onClick={() => mark("sent")}>
+                <Send size={15} aria-hidden="true" /> {sent ? "Enviado" : many ? `2. Confirmar: salieron los ${prepared.messages.length}` : "2. Confirmar envío"}
+              </button>
+            </>
+          )}
+          {prepared && task && (
+            <>
+              {prepared.ctas.includes("create_demo") && (
+                <Link className="button button-small button-primary" href={prepared.links.createDemo} target="_blank" onClick={() => void mark("opened")}>
+                  <Plus size={16} aria-hidden="true" /> Crear demo
+                </Link>
+              )}
+              <button type="button" className="button button-small button-outline" data-testid="followup-confirm" disabled={sent || busy} onClick={() => mark("sent")}>
+                {sent ? "Hecha" : "Marcar hecha"}
+              </button>
+            </>
+          )}
+          {prepared && !sent && (
+            <div className="fu-two">
+              <button type="button" className={`button button-small button-outline${panel === "fail" ? " is-active" : ""}`} data-testid="followup-failed" onClick={() => setPanel(panel === "fail" ? "none" : "fail")}>
+                {task ? "No se pudo" : "No se envió"}
+              </button>
+              <button type="button" className={`button button-small button-outline${panel === "snooze" ? " is-active" : ""}`} data-testid="followup-snooze" onClick={() => setPanel(panel === "snooze" ? "none" : "snooze")}>
+                Omitir o reprogramar
+              </button>
+            </div>
+          )}
+          {panel === "fail" && !sent && (
+            <div className="fu-form">
+              <select data-testid="followup-failed-kind" value={kind} onChange={(e) => setKind(e.target.value as keyof typeof FAIL_KINDS)} aria-label="Qué pasó">
+                {Object.entries(FAIL_KINDS).map(([k, label]) => (
+                  <option key={k} value={k}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+              <input data-testid="followup-failed-reason" value={reason} maxLength={300} placeholder={kind === "otro" ? "Por qué no salió" : "Detalle (opcional)"} onChange={(e) => setReason(e.target.value)} aria-label="Por qué no salió" />
+              <button type="button" className="button button-small button-outline" data-testid="followup-failed-save" disabled={busy || (kind === "otro" && !reason.trim())} onClick={() => mark("failed")}>
+                Guardar
+              </button>
+            </div>
+          )}
+          {panel === "snooze" && !sent && (
+            <div className="fu-form" data-testid="followup-snooze-form">
+              <select value={snoozeKey} onChange={(e) => setSnoozeKey(e.target.value as (typeof SNOOZE)[number]["key"])} aria-label="Hasta cuándo">
+                {SNOOZE.map((o) => (
+                  <option key={o.key} value={o.key}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+              {snoozeKey === "fecha" && <input type="date" value={snoozeDate} onChange={(e) => setSnoozeDate(e.target.value)} aria-label="Fecha" />}
+              <input value={reason} maxLength={300} placeholder="Motivo (ej.: pidió hablar después)" onChange={(e) => setReason(e.target.value)} aria-label="Motivo" />
+              <button type="button" className="button button-small button-outline" data-testid="followup-snooze-save" disabled={busy} onClick={snooze}>
+                Reprogramar
+              </button>
+            </div>
+          )}
+          {(sent || status === "failed") && (
+            <button type="button" className="button button-small button-primary" data-testid="followup-next" onClick={onNext}>
+              Siguiente pendiente →
+            </button>
+          )}
+          {prepared && (
+            <>
+              <span className="fu-lbl">Enlaces rápidos</span>
+              <div className="fu-quick">
+                {!task && (
+                  <button type="button" onClick={() => copyText(prepared.messages.join("\n\n"), many ? "Los mensajes" : "Mensaje")}>
+                    {many ? `Copiar los ${prepared.messages.length}` : "Copiar mensaje"}
+                  </button>
+                )}
+                {prepared.links.demo && (
+                  <button type="button" data-testid="followup-link-demo" onClick={() => copyText(prepared.links.demo!, "Link demo")}>
+                    Link demo
+                  </button>
+                )}
+                {prepared.links.panel && (
+                  <button type="button" data-testid="followup-link-panel" onClick={() => copyText(prepared.links.panel!, "Link panel")}>
+                    Link panel
+                  </button>
+                )}
+              </div>
+            </>
+          )}
+          <label className="fu-prio">
+            <span className="fu-lbl">Prioridad</span>
+            <select data-testid="followup-priority" value={item.priorityManual ? priority : "auto"} onChange={(e) => changePriority(e.target.value)}>
+              <option value="auto">Automática ({PRIORITY_LABEL[item.priorityManual ? priority : item.priority]})</option>
+              <option value="alta">Alta</option>
+              <option value="media">Media</option>
+              <option value="baja">Baja</option>
+            </select>
+          </label>
+          {!task && (
+            <div className="fu-stop" data-testid="followup-stop">
+              <b>Si el chat no coincide, no envíes.</b> El encabezado de WhatsApp tiene que mostrar {item.phone ?? "su número"}.
+            </div>
+          )}
+        </aside>
+      </div>
+    </section>
+  );
+}
+
 const stageTitle = (key: string) => FOLLOWUP_STAGES.find((s) => s.key === key)?.title ?? key;
 
-function StageBand({ stage, index, open, onToggle }: { stage: StageView; index: number; open: boolean; onToggle: () => void }) {
+type Mode = "embudo" | "reglas" | "resultados";
+function StageBand({ stage, index, open, onToggle, mode }: { stage: StageView; index: number; open: boolean; onToggle: () => void; mode: Mode }) {
   const principal = stage.versions.filter((v) => (v.action ?? "principal") === "principal");
   const active = principal.find((v) => v.status === "active") ?? null;
   const test = principal.find((v) => v.status === "test") ?? null;
@@ -213,17 +774,16 @@ function StageBand({ stage, index, open, onToggle }: { stage: StageView; index: 
       </button>
       {open && (
         <div className="fu-body">
-          {actionsOf(stage.key).map((a) => {
+          {mode === "embudo" && <Queue stage={stage} />}
+          {mode !== "embudo" && actionsOf(stage.key).map((a) => {
             const view = { ...stage, versions: stage.versions.filter((v) => (v.action ?? "principal") === a) };
             return (
               <div key={a} className="fu-action" data-testid="followup-action" data-action={a}>
                 {actionsOf(stage.key).length > 1 && <h3 className="fu-h3">{actionLabel(stage.key, a)}{a === "presentacion" ? " · cuando confirma el número" : a === "precios" ? " · cuando pregunta precios" : " · sin respuesta"}</h3>}
-                <Editor stage={view} action={a} />
-                <VersionTable stage={view} />
+                {mode === "reglas" ? <Editor stage={view} action={a} /> : <VersionTable stage={view} />}
               </div>
             );
           })}
-          <Queue stage={stage} />
         </div>
       )}
     </section>

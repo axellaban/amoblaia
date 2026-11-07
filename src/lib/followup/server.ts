@@ -56,6 +56,9 @@ import {
   outsideHours,
   shortName,
   splitMessages,
+  defaultPriority,
+  isPriority,
+  type Priority,
   type Action,
   type Group,
   type Situation,
@@ -100,9 +103,12 @@ type AgencyExtra = {
   situation_note: string | null;
   situation_at: string | null;
   short_name: string | null;
+  priority: Priority | null;
+  snooze_until: string | null;
+  snooze_reason: string | null;
 };
 const extras = async (agencyId?: string) => {
-  let q = adminClient().from("followup_agencies").select("agency_id,stage_override,override_step,address,zone,score,situation,situation_step,situation_note,situation_at,short_name");
+  let q = adminClient().from("followup_agencies").select("agency_id,stage_override,override_step,address,zone,score,situation,situation_step,situation_note,situation_at,short_name,priority,snooze_until,snooze_reason");
   if (agencyId) q = q.eq("agency_id", agencyId);
   const { data, error } = await q.limit(20000);
   if (error) throw missing(error) ? new HttpError(409, MISSING) : new Error("FOLLOWUP_READ_FAILED");
@@ -234,6 +240,11 @@ export type QueueItem = {
   checks: string[];
   /** Otra sesión la tiene tomada (o esta misma). */
   claim: { actorId: string; by: string; until: string } | null;
+  /** Alta, Media o Baja: la del grupo, o la que puso el equipo. */
+  priority: Priority;
+  priorityManual: boolean;
+  /** Reprogramada: no entra a la cola hasta esta fecha. */
+  snoozedUntil: string | null;
   versionId: string | null;
   /** The channel of its version (WhatsApp or a team task). */
   versionChannel: Channel | null;
@@ -246,7 +257,19 @@ export type StageView = {
   versions: (FollowupVersion & { stats: VersionStats })[];
   queue: QueueItem[];
 };
-export type QueueSummary = { ready: number; blocked: number; claimed: number; doneToday: number; newToday: number; cap: number };
+export type QueueSummary = {
+  /** Acciones para hoy: se pueden ejecutar ahora y nadie las tomó. */
+  ready: number;
+  /** Respuestas nuevas: confirmaron el número o preguntaron precios, o respondieron algo que se resuelve a mano. */
+  replies: number;
+  /** Demos pendientes: por crear o por enviar. */
+  demos: number;
+  blocked: number;
+  claimed: number;
+  doneToday: number;
+  newToday: number;
+  cap: number;
+};
 
 type Claim = { agency_id: string; actor_id: string; actor_name: string; stage: string; action: string; locked_until: string };
 const claims = async () => {
@@ -330,7 +353,11 @@ async function board(now = new Date()) {
     const claim = held.get(r.id);
     it.claim = claim ? { actorId: claim.actor_id, by: claim.actor_name || "otra sesión", until: claim.locked_until } : null;
     const version = vs.find((v) => v.id === it.versionId);
-    it.blocked = blockReason(it, {
+    const snoozed = own?.snooze_until && Date.parse(own.snooze_until) > now.getTime() ? own.snooze_until : null;
+    it.snoozedUntil = snoozed;
+    it.blocked = snoozed
+      ? `Reprogramada para el ${whenText(snoozed)}${own?.snooze_reason ? `: ${own.snooze_reason}` : ""}.`
+      : blockReason(it, {
       account,
       sheet: info.sheet.get(r.id),
       duplicate: it.stage === "no-contactado" ? duplicateOf(r.id, it.wa, r.name) : null,
@@ -439,6 +466,9 @@ function item(
     action,
     actionLabel: action ? actionLabel(stage, action) : null,
     group: groupOf(stage, action),
+    priority: own?.priority ?? defaultPriority(groupOf(stage, action)),
+    priorityManual: Boolean(own?.priority),
+    snoozedUntil: null,
     blocked: null,
     checks,
     claim: null,
@@ -449,7 +479,7 @@ function item(
 }
 
 /** The whole page: one view per stage, with its versions measured and its agencies (score from highest to lowest), and the execution queue. */
-export async function followupOverview(): Promise<{ stages: StageView[]; queue: QueueItem[]; summary: QueueSummary }> {
+export async function followupOverview(): Promise<{ stages: StageView[]; queue: QueueItem[]; blocked: QueueItem[]; summary: QueueSummary }> {
   const b = await board();
   const all = [...b.items.values()];
   return {
@@ -465,6 +495,7 @@ export async function followupOverview(): Promise<{ stages: StageView[]; queue: 
       };
     }),
     queue: executable(all),
+    blocked: all.filter((q) => pending(q) && q.blocked).sort(byPriority),
     summary: summarize(all, b.newToday),
   };
 }
@@ -477,6 +508,8 @@ function summarize(all: QueueItem[], newToday: number): QueueSummary {
   const live = new Date().toISOString();
   return {
     ready: all.filter((q) => pending(q) && !q.blocked && !(q.claim && q.claim.until > live)).length,
+    replies: all.filter((q) => pending(q) && (q.group === "respuestas" || ["neutro", "mas_adelante", "derivo", "interesado"].includes(q.situation)) && !q.snoozedUntil).length,
+    demos: all.filter((q) => pending(q) && q.group === "demos" && !q.snoozedUntil).length,
     blocked: all.filter((q) => pending(q) && q.blocked).length,
     claimed: all.filter((q) => pending(q) && !q.blocked && q.claim && q.claim.until > live).length,
     doneToday: all.filter((q) => q.execution?.status === "sent" && artDate(q.execution.at) === today).length,
@@ -576,6 +609,19 @@ async function prepare(it: QueueItem, origin: string, actor: { id: string; name:
   if (v.channel === "whatsapp" && !it.wa) warnings.push("Falta su WhatsApp: cargalo en la ficha de la inmobiliaria.");
   const ready = !holes.length && (v.channel === "task" || Boolean(it.wa));
   const messages = splitMessages(message);
+  const history = await historyOf(it.agencyId, account?.id ?? null, vs);
+  const hours = v.channel === "whatsapp" ? outsideHours(it.group) : null;
+  const linkOk = (!need.demo || Boolean(demo)) && (!need.panel || Boolean(panel));
+  // Lo que el agente revisa antes de mandar. «Número validado» queda pendiente con un número sin validar: se valida al confirmar.
+  const checklist = [
+    { key: "numero", label: "Número validado", ok: v.channel === "task" || (Boolean(it.wa) && !it.needsReview), note: v.channel === "task" ? "Tarea del equipo" : !it.wa ? "Falta su WhatsApp" : it.needsReview ? "Confirmá en el chat que es la inmobiliaria: queda validado al confirmar el envío" : "" },
+    { key: "rechazo", label: "Sin rechazo ni baja", ok: !CLOSED_SITUATIONS.includes(it.situation), note: "" },
+    { key: "reciente", label: "Sin mensaje equivalente reciente", ok: !it.blocked, note: it.blocked ?? (it.execution?.status === "opened" ? "Se abrió WhatsApp antes sin confirmar: revisá el chat" : "") },
+    { key: "horario", label: "Horario permitido", ok: !hours, note: hours ?? (it.group === "nuevos" ? "Lunes a sábado, de 9 a 18" : "Lunes a sábado, de 9 a 19") },
+    { key: "variables", label: "Variables completas", ok: !holes.length, note: holes.length ? holes.map((h) => `{{${h}}}`).join(", ") : `{{inmobiliaria}} = «${it.shortName}»` },
+    { key: "enlaces", label: "Enlaces listos", ok: linkOk, note: need.demo || need.panel ? (linkOk ? "Demo y panel armados" : "No se pudo armar un enlace") : "Este mensaje no lleva enlaces" },
+    { key: "mensaje", label: "Mensaje listo", ok: ready, note: `${messages.length} ${messages.length === 1 ? "mensaje" : "mensajes"} · V${v.version}` },
+  ];
   return {
     agencyId: it.agencyId,
     name: it.name,
@@ -599,7 +645,85 @@ async function prepare(it: QueueItem, origin: string, actor: { id: string; name:
     links: { demo, panel, createDemo: `/admin/inmobiliarias/${it.agencyId}/propiedades/nueva` },
     execution: it.execution,
     lockedUntil: new Date(Date.now() + 600_000).toISOString(),
+    checklist,
+    history,
+    context: {
+      score: it.score,
+      priority: it.priority,
+      priorityManual: it.priorityManual,
+      zone: it.zone,
+      address: it.address,
+      website: it.website,
+      properties: it.properties,
+      hasDemo: it.hasDemo,
+      hasAccount: it.hasAccount,
+      shortName: it.shortName,
+      situationNote: it.situationNote,
+      stageTitle: stageInfo(it.stage).title,
+      situationLabel: SITUATIONS[it.situation],
+    },
   };
+}
+
+/** Las últimas acciones con la inmobiliaria, de Follow-up, de Adquisición (envíos y respuestas, con su texto) y de ella misma. */
+async function historyOf(agencyId: string, accountId: string | null, vs: FollowupVersion[]) {
+  const db = adminClient();
+  const [ex, sends, events] = await Promise.all([
+    db.from("followup_executions").select("stage,action,version_id,status,reason,updated_at,sent_at").eq("agency_id", agencyId).order("updated_at", { ascending: false }).limit(10),
+    accountId ? db.from("outreach_attempts").select("step,status,sent_at,body").eq("account_id", accountId).eq("status", "sent").order("sent_at", { ascending: false }).limit(10) : Promise.resolve({ data: [] }),
+    accountId
+      ? db.from("prospect_events").select("type,occurred_at,evidence,details,source").eq("account_id", accountId).in("type", ["reply", "interest", "not_interested", "lost", "imported", "suppressed"]).order("occurred_at", { ascending: false }).limit(10)
+      : Promise.resolve({ data: [] }),
+  ]);
+  const out: { at: string; text: string; kind: "nuestro" | "suyo" | "dato" }[] = [];
+  for (const e of (ex.data ?? []) as { stage: string; action: string; version_id: string; status: string; reason: string | null; updated_at: string; sent_at: string | null }[]) {
+    if (e.status === "opened") continue;
+    const v = vs.find((x) => x.id === e.version_id);
+    const what = `${isStageKey(e.stage) ? actionLabel(e.stage, (e.action ?? "principal") as Action) : "Follow-up"}${v ? ` V${v.version}` : ""}`;
+    out.push(e.status === "sent" ? { at: e.sent_at ?? e.updated_at, text: `${what} enviado desde Follow-up`, kind: "nuestro" } : { at: e.updated_at, text: `${what} no salió${e.reason ? `: ${e.reason}` : ""}`, kind: "nuestro" });
+  }
+  for (const t of (sends.data ?? []) as { step: number; sent_at: string | null; body: string | null }[])
+    if (t.sent_at && !(t.body ?? "").includes("desde Follow-up") && !out.some((o) => o.kind === "nuestro" && Math.abs(Date.parse(o.at) - Date.parse(t.sent_at!)) < 120_000))
+      out.push({ at: t.sent_at, text: t.step >= 1 ? `Mensaje ${t.step} de la secuencia (Adquisición)` : "Mensaje enviado (Adquisición)", kind: "nuestro" });
+  const label: Record<string, string> = { reply: "Respondió", interest: "Mostró interés", not_interested: "No le interesa", lost: "Se dio por perdida", imported: "Importada de la hoja", suppressed: "Pidió no ser contactada" };
+  for (const e of (events.data ?? []) as { type: string; occurred_at: string; evidence: string | null }[]) {
+    const quote = e.evidence?.replace(/^WhatsApp: /, "").trim();
+    out.push({ at: e.occurred_at, text: `${label[e.type] ?? e.type}${quote && e.type !== "imported" && !quote.startsWith("Follow-up:") ? `: ${quote}` : ""}`, kind: e.type === "imported" ? "dato" : "suyo" });
+  }
+  return out.sort((a, b) => b.at.localeCompare(a.at)).slice(0, 8);
+}
+
+/** «Omitir o reprogramar»: sale de la cola hasta esa fecha (sin fecha: mañana a las 9), con el motivo. La suelta. */
+export async function snooze(agencyId: string, rawUntil: unknown, rawReason: unknown, actor: { id: string; name: string }) {
+  if (!isUuid(agencyId)) throw new HttpError(404, "No encontramos la inmobiliaria.");
+  const reason = typeof rawReason === "string" ? rawReason.trim().slice(0, 300) : "";
+  let until: Date;
+  if (rawUntil === null || rawUntil === undefined || rawUntil === "") {
+    // Mañana a las 9 de Argentina (12 UTC).
+    until = new Date(Date.now() + DAY_MS);
+    until.setUTCHours(12, 0, 0, 0);
+  } else until = new Date(String(rawUntil));
+  if (Number.isNaN(until.getTime())) throw new HttpError(400, "Fecha inválida.");
+  if (until.getTime() < Date.now()) throw new HttpError(400, "La fecha ya pasó.");
+  if (until.getTime() > Date.now() + 90 * DAY_MS) throw new HttpError(400, "Se reprograma hasta 90 días.");
+  await saveExtra(agencyId, { snooze_until: until.toISOString(), snooze_reason: reason || null }, actor.id);
+  await release(agencyId, actor.id).catch(() => undefined);
+  return { snoozedUntil: until.toISOString(), reason: reason || null };
+}
+
+/** Saca la reprogramación: vuelve a la cola. */
+export async function unsnooze(agencyId: string, actorId: string) {
+  if (!isUuid(agencyId)) throw new HttpError(404, "No encontramos la inmobiliaria.");
+  await saveExtra(agencyId, { snooze_until: null, snooze_reason: null }, actorId);
+  return { snoozedUntil: null };
+}
+
+/** Prioridad a mano (Alta, Media, Baja); null vuelve a la del grupo. */
+export async function setPriority(agencyId: string, raw: unknown, actorId: string) {
+  if (!isUuid(agencyId)) throw new HttpError(404, "No encontramos la inmobiliaria.");
+  if (raw !== null && raw !== "" && !isPriority(raw)) throw new HttpError(400, "La prioridad es alta, media o baja.");
+  await saveExtra(agencyId, { priority: isPriority(raw) ? raw : null }, actorId);
+  return { priority: isPriority(raw) ? raw : null };
 }
 export type Prepared = Awaited<ReturnType<typeof prepare>>;
 
