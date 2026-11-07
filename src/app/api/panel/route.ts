@@ -23,7 +23,7 @@ export async function GET() {
     const membership = (user ? await membershipFor(user) : null) ?? (await visitorMembership());
     if (!membership) return Response.json({ agency: null }, { headers: PRIVATE });
     return Response.json(
-      { ...(await panelSummary(membership)), support: Boolean(membership.support), ...(membership.visitor ? { visitor: true } : {}) },
+      { ...(await panelSummary(membership)), support: Boolean(membership.support), ...(membership.support && !membership.acting ? { readOnly: true } : {}), ...(membership.visitor ? { visitor: true } : {}) },
       { headers: PRIVATE },
     );
   } catch (e) {

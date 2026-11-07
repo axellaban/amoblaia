@@ -128,6 +128,8 @@ export type PanelSummary = {
   imports: PanelImport[];
   /** A team member looking at this panel in a support view (read only). */
   support?: boolean;
+  /** That support view only reads (not «Entrar como la inmobiliaria»): nothing can be changed from it. */
+  readOnly?: boolean;
   /** The agency's visit from its link, before its account (read only). */
   visitor?: boolean;
 };

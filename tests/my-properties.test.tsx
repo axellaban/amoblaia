@@ -6,7 +6,7 @@ import { propertyStage, type PanelProperty, type PanelSummary } from "@/lib/agen
 vi.mock("@/lib/analytics", () => ({ track: () => {}, trackMilestone: () => {}, registerSuperProperties: () => {}, registerSuperPropertiesOnce: () => {} }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: () => {}, replace: () => {}, refresh: () => {} }), usePathname: () => "/panel", useSearchParams: () => new URLSearchParams() }));
 
-const { PropertyTile } = await import("@/components/agency-panel");
+const { PropertyTile, byStage } = await import("@/components/agency-panel");
 const { PanelNav } = await import("@/components/panel-shell");
 
 const base: PanelProperty = {
@@ -78,6 +78,22 @@ describe("the property cards", () => {
   });
 });
 
+describe("support view and order", () => {
+  it("the team's read-only support view does not offer the import (each photo would be refused)", () => {
+    const html = renderToStaticMarkup(
+      <PropertyTile p={{ ...base, pending: { importId: "i1", images: ["https://x/1.jpg"] } }} agency={agency} reload={async () => null} canWork readOnly />,
+    );
+    expect(html).not.toContain("Importar fotos con un clic");
+    expect(html).toContain("solo lectura");
+  });
+  it("the property with its demo goes first, the ones waiting for their photos last", () => {
+    const pending = { ...base, id: "p", pending: { importId: "i", images: ["https://x/1.jpg"] } };
+    const demo = { ...base, id: "d", photos: 5, staged: 2 };
+    const imported = { ...base, id: "m", photos: 5 };
+    expect(byStage([pending, imported, demo]).map((p) => p.id)).toEqual(["d", "m", "p"]);
+  });
+});
+
 describe("the panel's menu and home", () => {
   it("«Mis propiedades» comes right after «Inicio», before demos, images and video", () => {
     const html = renderToStaticMarkup(<PanelNav section="inicio" agencyName="Inmo Sur" role="owner" credits={3} />);
@@ -93,5 +109,11 @@ describe("the panel's menu and home", () => {
     expect(source).not.toContain("Mis demostraciones recientes");
     expect(source).toContain("Lo hago después");
     expect(source).toMatch(/autoSave && !resume && !data\.duplicateOf && !isVisiting\(\)/);
+    // The import comes below «Mis propiedades», and only the latest failed imports are listed.
+    const home = source.slice(source.indexOf("function PanelHome"), source.indexOf('/** "Ver mi sitio"'));
+    expect(home.indexOf('id="ap-props-title"')).toBeLessThan(home.indexOf('id="crear"'));
+    expect(source).toContain("const ISSUES_SHOWN = 3;");
+    // «Mis demostraciones» lists only what has its demo, never the ones waiting for their photos.
+    expect(source).toContain('etapa: "importadas"');
   });
 });
