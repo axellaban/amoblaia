@@ -143,3 +143,15 @@ Si la etapa, la acción o la versión cambiaron desde que se leyó la cola, la A
 ### Corrección del 07/11
 
 De las 10 ejecuciones del 07/11, 9 no se habían registrado en Adquisición (número «por revisar»). Se registraron como saludo enviado, con el número validado y la hora real en la evidencia.
+
+### Ajuste a la especificación de Astra (pantallas 1 y 2 del diseño)
+
+Migración `202612030001_followup_priority.sql`.
+
+- **Pestañas**: Cola de ejecución (por defecto), Respuestas (Fase 2), Embudo (las etapas con sus inmobiliarias), Mensajes y reglas (los editores de cada acción) y Resultados (las versiones). `?vista=embudo|reglas|resultados`.
+- **KPIs que filtran la cola**: Acciones para hoy (ejecutables y libres), Respuestas nuevas (respondieron y esperan acción), Demos pendientes y Bloqueadas (con el conteo por motivo).
+- **Prioridad Alta, Media o Baja**: sale del grupo (respuestas y demos, alta; seguimientos, media; contactos nuevos, baja). Se cambia a mano desde el detalle (`followup_agencies.priority`); la cola ordena por prioridad, grupo, score y antigüedad.
+- **Detalle de ejecución en 3 sectores**: la cola a la izquierda; en el centro la inmobiliaria (etapa, situación editable, contexto, nombre en el mensaje), las últimas acciones (Follow-up, Adquisición y sus respuestas con el texto) y los mensajes paso a paso con copiar; a la derecha el checklist (número validado, sin rechazo, sin mensaje reciente, horario, variables, enlaces, mensaje listo), Abrir WhatsApp, Confirmar, No se envió, **Omitir o reprogramar** (mañana, 3 días, una semana u otra fecha, con motivo), enlaces rápidos, prioridad y el aviso de no enviar si el chat no coincide.
+- **Reprogramada**: sale de la cola hasta la fecha (`snooze_until`) y figura en Bloqueadas con «Volver a la cola».
+- API: `POST /api/admin/followup/snooze` `{ inmobiliaria, hasta?, motivo? }` (o `{ inmobiliaria, volver: true }`) y `POST /api/admin/followup/priority` `{ inmobiliaria, prioridad }`. `claim` devuelve además `checklist`, `history` y `context`.
+- Selectores: `followup-tabs`, `followup-tab-<vista>`, `followup-kpi-listas|respuestas|demos|bloqueadas`, `followup-take-next`, `followup-detail`, `followup-back`, `followup-history`, `followup-checklist` (cada `li` con `data-check` y `data-ok`), `followup-snooze`, `followup-snooze-form`, `followup-snooze-save`, `followup-unsnooze`, `followup-priority`, `followup-stop`, `followup-block-reasons`. Cada `followup-queue-item` suma `data-priority` y `data-blocked`.

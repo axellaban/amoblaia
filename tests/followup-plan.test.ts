@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { byPriority, currentSituation, derivedSituation, groupOf, nameKey, nextAction, outsideHours, shortName, splitMessages } from "@/lib/followup/plan";
+import { byPriority, currentSituation, defaultPriority, derivedSituation, groupOf, nameKey, nextAction, outsideHours, shortName, splitMessages } from "@/lib/followup/plan";
 
 const facts = { suppressed: false, accountStage: "pending", lostReason: null, sheetStatus: "Pendiente", hasNumber: true, allInvalid: false };
 
@@ -53,6 +53,21 @@ describe("queue order", () => {
     expect(groupOf("no-contactado", "principal")).toBe("nuevos");
     expect(groupOf("no-responde", "presentacion")).toBe("respuestas");
     expect(groupOf("sin-enviar", "principal")).toBe("demos");
+  });
+});
+
+describe("priority (Alta, Media, Baja)", () => {
+  it("comes from the group, and a manual one goes first", () => {
+    expect(defaultPriority("respuestas")).toBe("alta");
+    expect(defaultPriority("demos")).toBe("alta");
+    expect(defaultPriority("seguimientos")).toBe("media");
+    expect(defaultPriority("nuevos")).toBe("baja");
+    const list = [
+      { name: "seguimiento", group: "seguimientos" as const, score: 90, since: "2026-11-01" },
+      { name: "nuevo subido", group: "nuevos" as const, score: 50, since: "2026-11-01", priority: "alta" as const },
+      { name: "respuesta", group: "respuestas" as const, score: 10, since: "2026-11-01" },
+    ].sort(byPriority);
+    expect(list.map((x) => x.name)).toEqual(["respuesta", "nuevo subido", "seguimiento"]);
   });
 });
 

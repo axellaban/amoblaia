@@ -106,9 +106,19 @@ export function groupOf(stage: StageKey, action: Action | null): Group {
   return "seguimientos";
 }
 
-/** La cola: por grupo; dentro, score de mayor a menor (sin score al final) y las que esperan hace más tiempo. */
-export function byPriority<T extends { group: Group; score: number | null; since: string }>(a: T, b: T) {
-  return GROUP_ORDER.indexOf(a.group) - GROUP_ORDER.indexOf(b.group) || (b.score ?? -1) - (a.score ?? -1) || a.since.localeCompare(b.since);
+/** Prioridad de la cola: sale del grupo (respuestas y demos, alta; seguimientos, media; contactos nuevos, baja) salvo que el equipo la cambie. */
+export const PRIORITIES = { alta: "Alta", media: "Media", baja: "Baja" } as const;
+export type Priority = keyof typeof PRIORITIES;
+export const isPriority = (v: unknown): v is Priority => typeof v === "string" && v in PRIORITIES;
+const PRIORITY_ORDER: Priority[] = ["alta", "media", "baja"];
+export function defaultPriority(group: Group): Priority {
+  return group === "respuestas" || group === "demos" ? "alta" : group === "seguimientos" ? "media" : "baja";
+}
+
+/** La cola: por prioridad, después por grupo; dentro, score de mayor a menor (sin score al final) y las que esperan hace más tiempo. */
+export function byPriority<T extends { group: Group; score: number | null; since: string; priority?: Priority }>(a: T, b: T) {
+  const p = (x: T) => PRIORITY_ORDER.indexOf(x.priority ?? defaultPriority(x.group));
+  return p(a) - p(b) || GROUP_ORDER.indexOf(a.group) - GROUP_ORDER.indexOf(b.group) || (b.score ?? -1) - (a.score ?? -1) || a.since.localeCompare(b.since);
 }
 
 // ---------------------------------------------------------------- horario
