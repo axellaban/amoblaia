@@ -41,6 +41,9 @@ describe("followup migration", () => {
     await db.exec(readFileSync("supabase/migrations/202612020001_followup_queue.sql", "utf8"));
     await db.exec(readFileSync("supabase/migrations/202612030001_followup_priority.sql", "utf8"));
     await db.exec(readFileSync("supabase/migrations/202612040001_followup_replies.sql", "utf8"));
+    await db.exec(readFileSync("supabase/migrations/202612050001_followup_rules.sql", "utf8"));
+    await db.exec(readFileSync("supabase/migrations/202612060001_followup_results.sql", "utf8"));
+    expect((await one<{ n: number }>("select count(*)::int as n from followup_rules"))!.n).toBe(17);
     expect((await one<{ n: number }>("select count(*)::int as n from followup_versions"))!.n).toBe(9);
   });
 
@@ -145,7 +148,7 @@ describe("followup migration", () => {
   });
 
   it("is closed to anonymous and signed-in users", async () => {
-    const grants = (await db.query<{ grantee: string }>("select grantee from information_schema.role_table_grants where table_name in ('followup_versions', 'followup_executions', 'followup_claims', 'followup_agencies', 'followup_script', 'followup_replies') and grantee in ('anon', 'authenticated')")).rows;
+    const grants = (await db.query<{ grantee: string }>("select grantee from information_schema.role_table_grants where table_name in ('followup_versions', 'followup_executions', 'followup_claims', 'followup_agencies', 'followup_script', 'followup_replies', 'followup_rules', 'followup_audit') and grantee in ('anon', 'authenticated')")).rows;
     expect(grants).toEqual([]);
   });
 });

@@ -3,6 +3,7 @@
 // (grupos de la cola). Puro: lo comparten el servidor, el navegador y los tests.
 
 import type { StageKey } from "./stages";
+import { DEFAULT_RULES, pickRule, type Rule } from "./rules";
 
 /** Qué pasó en la conversación. No crea etapas: el embudo sigue siendo el mismo. */
 export const SITUATIONS = {
@@ -143,36 +144,24 @@ export function currentSituation(derived: Situation, manual: { situation: Situat
   return manual && manual.step === step ? { situation: manual.situation, manual: true } : { situation: derived, manual: false };
 }
 
-export type Planned = { action: Action | null; afterHours: number; reason: string | null };
+export type Planned = { action: Action | null; afterHours: number; reason: string | null; rule?: Rule | null };
 
 /**
- * La próxima acción, fija por código: la situación y la etapa dicen qué
- * secuencia corre, y `done` qué pasos ya salieron. `afterHours` es la espera
- * desde nuestro último mensaje (0: ya). Null: nada que mandar, con el motivo.
+ * La próxima acción: la situación y la etapa dicen qué regla corre, y `done`
+ * qué pasos ya salieron. `afterHours` es la espera desde nuestro último
+ * mensaje (0: ya). Null: nada que mandar, con el motivo.
  *
- * - Confirmó número (o derivó a otra persona): presentación; sin respuesta, la presentación sin respuesta a las 48 h.
- * - Pregunta precios: la respuesta de precios.
- * - Neutro, pide más adelante o sin respuesta: la secuencia de seguimientos de su etapa.
- * - Interesado: se prepara la demo (pasa a «Interesado, sin demo»).
- * - Rechazo, no contactar, sin WhatsApp: nada.
+ * Fijo en código (ninguna regla lo cambia): a un rechazo, un «no contactar» o
+ * un número sin WhatsApp no se le escribe; un interesado en las dos primeras
+ * etapas pasa a preparar la demo. Todo lo demás sale de las reglas
+ * (`followup_rules`, editables en «Mensajes y reglas»; por defecto, las de la Fase 2).
  */
-export function nextAction(stage: StageKey, situation: Situation, done: Partial<Record<Action, boolean>> = {}): Planned {
-  const none = (reason: string): Planned => ({ action: null, afterHours: 0, reason });
+export function nextAction(stage: StageKey, situation: Situation, done: Partial<Record<Action, boolean>> = {}, rules: Rule[] = DEFAULT_RULES): Planned {
+  const none = (reason: string): Planned => ({ action: null, afterHours: 0, reason, rule: null });
   if (CLOSED_SITUATIONS.includes(situation)) return none(`${SITUATIONS[situation]}: no se le escribe más.`);
   const early = stage === "no-contactado" || stage === "no-responde";
-  if (early && (situation === "confirmo_numero" || situation === "derivo")) {
-    if (!done.presentacion) return { action: "presentacion", afterHours: 0, reason: null };
-    if (!done.presentacion_seguimiento) return { action: "presentacion_seguimiento", afterHours: PRESENTATION_FOLLOW_UP_HOURS, reason: null };
-    return none("Secuencia terminada: no respondió a la presentación ni a su seguimiento.");
-  }
-  if (early && situation === "pregunta_precios") {
-    if (!done.precios) return { action: "precios", afterHours: 0, reason: null };
-    return none("Ya se le respondió por precios: esperá su respuesta.");
-  }
   if (early && situation === "interesado") return none("Interesado: preparar la demo (pasa a «Interesado, sin demo»).");
-  const next = SEQUENCE_OF(stage).find((x) => !done[x.action]);
-  if (!next) return none(`Secuencia terminada: ${SEQUENCE_OF(stage).length === 1 ? "ya se mandó su acción" : `sin respuesta después de ${SEQUENCE_OF(stage).length} mensajes`}.`);
-  return { action: next.action, afterHours: next.afterHours, reason: null };
+  return pickRule(rules, stage, situation, done);
 }
 
 /** Grupos de la cola, en orden. Dentro de cada uno, por score y antigüedad. */
@@ -202,7 +191,13 @@ export function defaultPriority(group: Group): Priority {
 }
 
 /** La cola: por prioridad, después por grupo; dentro, score de mayor a menor (sin score al final) y las que esperan hace más tiempo. */
-export function byPriority<T extends { group: Group; score: number | null; since: string; priority?: Priority }>(a: T, b: T) {
+export function byPriority<T extends { group: Group; score: number | null; since: string; priority?: Priority; promisedAt?: string | null }>(a: T, b: T) {
+  // A promised demo goes first of all, the oldest promise first.
+  if (a.promisedAt || b.promisedAt) {
+    if (!a.promisedAt) return 1;
+    if (!b.promisedAt) return -1;
+    return a.promisedAt.localeCompare(b.promisedAt);
+  }
   const p = (x: T) => PRIORITY_ORDER.indexOf(x.priority ?? defaultPriority(x.group));
   return p(a) - p(b) || GROUP_ORDER.indexOf(a.group) - GROUP_ORDER.indexOf(b.group) || (b.score ?? -1) - (a.score ?? -1) || a.since.localeCompare(b.since);
 }

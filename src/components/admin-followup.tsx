@@ -5,9 +5,11 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ChevronRight, ClipboardCopy, KeyRound, Link2, MessageCircle, Pencil, Plus, Send } from "lucide-react";
 import { api } from "@/components/admin-demos";
-import { CTA_KEYS, CTA_LABEL, FOLLOWUP_STAGES, OUT, VARIABLES, pct, type Channel, type Cta, type VersionStatus } from "@/lib/followup/stages";
+import { CTA_KEYS, CTA_LABEL, FOLLOWUP_STAGES, OUT, VARIABLES, fillMessage, missingVariables, pct, type Channel, type Cta, type StageKey, type VersionStatus } from "@/lib/followup/stages";
 import { GROUPS, REPLY_CLASSES, SITUATIONS, actionLabel, actionWhen, actionsOf, type Action, type ReplyClass, type Situation } from "@/lib/followup/plan";
-import type { InboxItem, Prepared, QueueItem, QueueSummary, StageView } from "@/lib/followup/server";
+import type { Change, FunnelStep, InboxItem, Prepared, QueueItem, QueueSummary, Results, StageView } from "@/lib/followup/server";
+import type { CohortRow, WindowKey } from "@/lib/followup/results";
+import { daysText, type Rule } from "@/lib/followup/rules";
 
 type Version = StageView["versions"][number];
 type Exec = QueueItem["execution"];
@@ -41,7 +43,27 @@ const VIEWS: { key: View; label: string; soon?: string }[] = [
 ];
 
 /** /admin/follow-up: pestañas como en la especificación; la cola de ejecución es la pantalla principal. */
-export function FollowupBoard({ stages, queue, blocked, summary, inbox }: { stages: StageView[]; queue: QueueItem[]; blocked: QueueItem[]; summary: QueueSummary; inbox: InboxItem[] }) {
+export function FollowupBoard({
+  stages,
+  queue,
+  blocked,
+  summary,
+  inbox,
+  funnel,
+  rules,
+  changes,
+  results,
+}: {
+  stages: StageView[];
+  queue: QueueItem[];
+  blocked: QueueItem[];
+  summary: QueueSummary;
+  inbox: InboxItem[];
+  funnel: FunnelStep[];
+  rules: Rule[];
+  changes: Change[];
+  results: Results;
+}) {
   const [view, setView] = useState<View>(() => {
     if (typeof window === "undefined") return "cola";
     const v = new URLSearchParams(window.location.search).get("vista");
@@ -76,20 +98,23 @@ export function FollowupBoard({ stages, queue, blocked, summary, inbox }: { stag
         <ExecCenter queue={queue} blocked={blocked} summary={summary} onReplies={() => go("respuestas")} />
       ) : view === "respuestas" ? (
         <Inbox inbox={inbox} agencies={[...queue, ...blocked]} />
+      ) : view === "embudo" ? (
+        <Funnel funnel={funnel} stages={stages} rules={rules} onRules={() => go("reglas")} />
+      ) : view === "resultados" ? (
+        <ResultsView results={results} />
       ) : (
         <>
           <p className="fu-note fu-viewnote">
-            {view === "embudo"
-              ? "Cada etapa con las inmobiliarias que esperan en ella. Desde acá se corrige el estado, la situación y el score."
-              : view === "reglas"
-                ? "El mensaje de cada paso, sus versiones A/B, sus observaciones para la extensión y sus call to actions. La versión es la variante del mensaje; el paso (seguimiento 1, 2…) es el momento de la secuencia."
+            {view === "reglas"
+                ? "Cuándo se dispara cada paso (las reglas: se cambian acá, sin deploy) y su mensaje de cada paso, sus versiones A/B, sus observaciones para la extensión y sus call to actions. La versión es la variante del mensaje; el paso (seguimiento 1, 2…) es el momento de la secuencia."
                 : "Ejecuciones, conversiones y tasa de cada versión. Las métricas por ventana de 7 y 14 días y por cohorte llegan en la Fase 4."}
           </p>
           <div className="fu-stages">
             {stages.map((s, i) => (
-              <StageBand key={`${view}-${s.key}`} stage={s} index={i + 1} mode={view} open={open === s.key} onToggle={() => setOpen(open === s.key ? null : s.key)} />
+              <StageBand key={`${view}-${s.key}`} stage={s} index={i + 1} mode={view} rules={rules.filter((r) => r.stage === s.key)} open={open === s.key} onToggle={() => setOpen(open === s.key ? null : s.key)} />
             ))}
           </div>
+          {view === "reglas" && <ChangeLog changes={changes} />}
         </>
       )}
     </>
@@ -962,10 +987,442 @@ function ReplyForm({ agencies, onDone }: { agencies: QueueItem[]; onDone: () => 
   );
 }
 
+const SITUATION_OPTIONS = ["sin_respuesta", "confirmo_numero", "neutro", "pregunta_precios", "mas_adelante", "derivo", "interesado"] as const;
+const DAY_SHORT = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+const ruleSituations = (r: Rule) => (r.situations.length ? r.situations.map((x) => SITUATIONS[x as Situation]).join(", ") : "Cualquier situación");
+
+/** Embudo y etapas (Fase 3): las etapas en tarjetas con su avance; la elegida, con sus reglas, sus versiones y sus inmobiliarias. */
+function Funnel({ funnel, stages, rules, onRules }: { funnel: FunnelStep[]; stages: StageView[]; rules: Rule[]; onRules: () => void }) {
+  const [selected, setSelected] = useState<StageKey>(() => (funnel.find((f) => f.key === "no-responde")?.key ?? funnel[0].key) as StageKey);
+  const stage = stages.find((s) => s.key === selected)!;
+  const step = funnel.find((f) => f.key === selected)!;
+  const own = rules.filter((r) => r.stage === selected).sort((a, b) => a.position - b.position);
+  return (
+    <section className="fu-funnel" data-testid="followup-funnel">
+      <div className="fu-fcards">
+        {funnel.map((f) => (
+          <button key={f.key} type="button" className={`fu-fcard${f.key === selected ? " is-on" : ""}`} aria-pressed={f.key === selected} data-testid="followup-funnel-stage" data-stage={f.key} onClick={() => setSelected(f.key as StageKey)}>
+            <span>{f.title}</span>
+            <b>{f.waiting}</b>
+            <small>{f.rate === null ? "—" : `${pct(f.rate)} pasa a ${f.goal}`}</small>
+          </button>
+        ))}
+      </div>
+      <div className="fu-card fu-fdetail">
+        <div className="fu-fhead">
+          <h2>{step.title}</h2>
+          <span className="fu-pill is-media">{step.waiting} esperando</span>
+          <span className="fu-note">Objetivo: que pase a «{step.goal}»</span>
+          <span className="fu-grow" />
+          <button type="button" className="fu-link" onClick={onRules}>
+            Editar reglas y mensajes →
+          </button>
+        </div>
+        <div className="fu-frules">
+          {own.length === 0 ? (
+            <p className="fu-note">Sin reglas activas.</p>
+          ) : (
+            own.map((r) => {
+              const versions = stage.versions.filter((v) => (v.action ?? "principal") === r.action);
+              const active = versions.find((v) => v.status === "active");
+              const test = versions.find((v) => v.status === "test");
+              return (
+                <div key={r.key} className={`fu-frule${r.enabled ? "" : " is-off"}`} data-testid="followup-funnel-rule" data-rule={r.key}>
+                  <small>{ruleSituations(r)}{r.after_hours ? ` · a las ${r.after_hours} h` : " · enseguida"}</small>
+                  <b>{actionLabel(selected, r.action as Action)}</b>
+                  <span>{active ? `V${active.version} activa` : "Sin texto: queda bloqueada"}{!r.enabled ? " · regla apagada" : ""}</span>
+                  <span>
+                    <b className="fu-big">{pct(active?.stats.rate ?? null)}</b> conversión · {active?.stats.executions ?? 0} ejecuciones{active?.stats.smallSample ? " · muestra chica" : ""}
+                  </span>
+                  <span className={`fu-pill ${test ? "is-baja" : "is-sit"}`}>{test ? `Prueba A/B: V${test.version} contra V${active?.version ?? "?"}` : "Sin prueba"}</span>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+      <Queue stage={stage} />
+    </section>
+  );
+}
+
+/** Las reglas de una etapa, editables: situaciones, paso, espera, paso previo, ventana y si está activa. Cambia la cola sin deploy. */
+function RulesEditor({ stage, rules }: { stage: StageKey; rules: Rule[] }) {
+  const [adding, setAdding] = useState(false);
+  const own = [...rules].sort((a, b) => a.position - b.position);
+  return (
+    <div className="fu-rules" data-testid="followup-rules" data-stage={stage}>
+      <div className="fu-qhead">
+        <span className="fu-lbl">Reglas · cuándo se dispara cada paso</span>
+        <button type="button" className="button button-small button-outline" data-testid="followup-rule-add" onClick={() => setAdding(!adding)}>
+          <Plus size={15} aria-hidden="true" /> Agregar regla
+        </button>
+      </div>
+      {own.map((r) => (
+        <RuleRow key={r.key} stage={stage} rule={r} />
+      ))}
+      {adding && <RuleRow stage={stage} rule={null} onDone={() => setAdding(false)} />}
+      <p className="fu-note">Gana la primera regla (por orden) que corresponde a la situación, cuyo paso no salió y cuyo paso previo sí. A un rechazo, un «no contactar» o un número sin WhatsApp no se le escribe nunca, haya la regla que haya.</p>
+    </div>
+  );
+}
+
+function RuleRow({ stage, rule, onDone }: { stage: StageKey; rule: Rule | null; onDone?: () => void }) {
+  const router = useRouter();
+  const blank: Rule = { key: "", stage, situations: ["sin_respuesta"], action: "principal", after_hours: 48, after_action: null, position: 60, enabled: true, hours_from: 9, hours_to: 19, days: [1, 2, 3, 4, 5, 6] };
+  const [r, setR] = useState<Rule>(rule ?? blank);
+  const [editing, setEditing] = useState(!rule);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const actions = actionsOf(stage);
+  async function save(next = r) {
+    setBusy(true);
+    setError("");
+    try {
+      await api("/api/admin/follow-up/reglas", { method: "PUT", body: JSON.stringify(next) });
+      setEditing(false);
+      onDone?.();
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No pudimos guardar la regla.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  if (!editing && rule)
+    return (
+      <div className={`fu-rule${rule.enabled ? "" : " is-off"}`} data-testid="followup-rule" data-rule={rule.key}>
+        <span className="fu-rulepos">{rule.position}</span>
+        <span className="fu-rulemain">
+          <b>{actionLabel(stage, rule.action as Action)}</b>
+          <span>
+            Si {ruleSituations(rule).toLowerCase()}
+            {rule.after_action ? ` y ya salió «${actionLabel(stage, rule.after_action as Action)}»` : ""} · {rule.after_hours ? `a las ${rule.after_hours} h de nuestro último mensaje` : "enseguida"} · {daysText(rule.days)} de {rule.hours_from} a {rule.hours_to}
+          </span>
+        </span>
+        <label className="fu-switch">
+          <input type="checkbox" checked={rule.enabled} disabled={busy} onChange={(e) => save({ ...rule, enabled: e.target.checked })} /> {rule.enabled ? "Activa" : "Apagada"}
+        </label>
+        <button type="button" className="button button-small button-outline" data-testid="followup-rule-edit" onClick={() => setEditing(true)}>
+          <Pencil size={13} aria-hidden="true" /> Editar
+        </button>
+        {error && <small className="fu-error">{error}</small>}
+      </div>
+    );
+  return (
+    <div className="fu-rule is-editing" data-testid="followup-rule-form">
+      <div className="fu-rulegrid">
+        <label>
+          <span>Paso</span>
+          <select value={r.action} onChange={(e) => setR({ ...r, action: e.target.value as Rule["action"] })}>
+            {actions.map((a) => (
+              <option key={a} value={a}>
+                {actionLabel(stage, a)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>Espera (horas desde nuestro último mensaje)</span>
+          <input type="number" min={0} max={720} step={1} value={r.after_hours} onChange={(e) => setR({ ...r, after_hours: Number(e.target.value) })} data-testid="followup-rule-hours" />
+        </label>
+        <label>
+          <span>Después de</span>
+          <select value={r.after_action ?? ""} onChange={(e) => setR({ ...r, after_action: (e.target.value || null) as Rule["after_action"] })}>
+            <option value="">Ningún paso</option>
+            {actions
+              .filter((a) => a !== r.action)
+              .map((a) => (
+                <option key={a} value={a}>
+                  {actionLabel(stage, a)}
+                </option>
+              ))}
+          </select>
+        </label>
+        <label>
+          <span>Orden</span>
+          <input type="number" min={0} max={1000} value={r.position} onChange={(e) => setR({ ...r, position: Number(e.target.value) })} />
+        </label>
+        <label>
+          <span>Desde (hora)</span>
+          <input type="number" min={0} max={23} value={r.hours_from} onChange={(e) => setR({ ...r, hours_from: Number(e.target.value) })} />
+        </label>
+        <label>
+          <span>Hasta (hora)</span>
+          <input type="number" min={1} max={24} value={r.hours_to} onChange={(e) => setR({ ...r, hours_to: Number(e.target.value) })} />
+        </label>
+      </div>
+      <fieldset className="fu-classes">
+        <legend>Situaciones (ninguna marcada: cualquiera)</legend>
+        {SITUATION_OPTIONS.map((x) => {
+          const on = r.situations.includes(x);
+          return (
+            <label key={x} className={`fu-class${on ? " is-on" : ""}`}>
+              <input type="checkbox" checked={on} onChange={() => setR({ ...r, situations: on ? r.situations.filter((y) => y !== x) : [...r.situations, x] })} /> {SITUATIONS[x]}
+            </label>
+          );
+        })}
+      </fieldset>
+      <fieldset className="fu-classes">
+        <legend>Días</legend>
+        {DAY_SHORT.map((d, i) => {
+          const on = r.days.includes(i);
+          return (
+            <label key={d} className={`fu-class${on ? " is-on" : ""}`}>
+              <input type="checkbox" checked={on} onChange={() => setR({ ...r, days: on ? r.days.filter((y) => y !== i) : [...r.days, i] })} /> {d}
+            </label>
+          );
+        })}
+      </fieldset>
+      {error && (
+        <p className="fu-error" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="fu-actions">
+        <button type="button" className="button button-primary button-small" data-testid="followup-rule-save" disabled={busy} onClick={() => save()}>
+          Guardar regla
+        </button>
+        <button
+          type="button"
+          className="fu-link"
+          onClick={() => {
+            setEditing(false);
+            setR(rule ?? blank);
+            onDone?.();
+          }}
+        >
+          Cancelar
+        </button>
+        <p className="fu-note">Se aplica en la próxima lectura de la cola. Queda en el registro de cambios.</p>
+      </div>
+    </div>
+  );
+}
+
+/** Vista previa con una inmobiliaria de la etapa: las variables resueltas. No se guarda como activa una versión con variables desconocidas. */
+function Preview({ body, sample }: { body: string; sample: QueueItem | null }) {
+  if (!body.trim()) return null;
+  const text = fillMessage(body, { inmobiliaria: sample?.shortName ?? "Inmobiliaria de ejemplo", decisor: sample?.person ?? null, sdr: "vos", demo: sample?.hasDemo ? "[link a su demo]" : null, panel: "[link a su panel]" });
+  const holes = missingVariables(text);
+  return (
+    <div className="fu-preview-box" data-testid="followup-preview">
+      <span className="fu-lbl">Vista previa{sample ? ` con ${sample.name}` : ""}</span>
+      <div className="fu-bubble is-out">{text}</div>
+      {holes.length > 0 && <p className="fu-warn">Sin resolver para esta inmobiliaria: {holes.map((h) => `{{${h}}}`).join(", ")}. Con ella, la acción queda bloqueada.</p>}
+    </div>
+  );
+}
+
+const CHANGE_LABEL: Record<string, string> = { rule: "Regla", version: "Versión" };
+function ChangeLog({ changes }: { changes: Change[] }) {
+  if (!changes.length) return null;
+  return (
+    <section className="fu-card fu-changes" data-testid="followup-changes">
+      <b className="fu-cardtitle">Últimos cambios de reglas y mensajes</b>
+      <ol className="fu-timeline">
+        {changes.map((c, i) => (
+          <li key={i} className="is-dato">
+            <span>{when(c.created_at)}</span>
+            {CHANGE_LABEL[c.subject] ?? c.subject} {c.ref}
+            {c.actor_name ? ` · ${c.actor_name}` : ""}
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+const WINDOW_LABEL: Record<WindowKey, string> = { "7": "7 días", "14": "14 días", todo: "Sin límite" };
+const COHORT_COLS = [
+  ["respondio", "Respondieron"],
+  ["interes", "Interesadas"],
+  ["demo", "Demo enviada"],
+  ["cuenta", "Cuenta creada"],
+  ["suscripcion", "Suscripción"],
+] as const;
+const weekLabel = (w: string) => new Date(`${w}T12:00:00Z`).toLocaleDateString("es-AR", { day: "numeric", month: "short", timeZone: "UTC" });
+const hoursText = (h: number | null) => (h === null ? "—" : h < 48 ? `${Math.round(h)} h` : `${(h / 24).toFixed(1).replace(".", ",")} días`);
+
+/** Resultados (Fase 4): qué acción y qué versión mueven inmobiliarias, con ventana de atribución, cohortes y bloqueos. */
+function ResultsView({ results }: { results: Results }) {
+  const [win, setWin] = useState<WindowKey>("7");
+  const [cohortBy, setCohortBy] = useState<"contacto" | "respuesta" | "version">("contacto");
+  const data = results.windows[win];
+  const maxWeek = Math.max(1, ...data.weekly.map((w) => w.executed));
+  const maxBlock = Math.max(1, ...results.blocks.map((b) => b.n));
+  const rows: CohortRow[] = results.cohorts[cohortBy];
+  return (
+    <section className="fu-results" data-testid="followup-results">
+      <div className="fu-filters">
+        <span className="fu-lbl">Ventana de conversión</span>
+        {(Object.keys(WINDOW_LABEL) as WindowKey[]).map((k) => (
+          <button key={k} type="button" className={`fu-chip${win === k ? " is-on" : ""}`} aria-pressed={win === k} data-testid={`followup-window-${k}`} onClick={() => setWin(k)}>
+            {WINDOW_LABEL[k]}
+          </button>
+        ))}
+      </div>
+      <div className="fu-kpis fu-kpis-5">
+        <div className="fu-kpi">
+          <span>Ejecutadas</span>
+          <b>{results.totals.executed30}</b>
+          <small>confirmadas, últimos 30 días</small>
+        </div>
+        <div className="fu-kpi">
+          <span>Respondieron por primera vez</span>
+          <b>{results.totals.replies30}</b>
+          <small>últimos 30 días</small>
+        </div>
+        <div className="fu-kpi">
+          <span>Acciones pendientes</span>
+          <b>{results.totals.pending}</b>
+          <small>{results.totals.blocked} bloqueadas o programadas</small>
+        </div>
+        <div className="fu-kpi">
+          <span>No salieron</span>
+          <b>{results.totals.failed}</b>
+          <small>marcadas «No se envió»</small>
+        </div>
+      </div>
+      <div className="fu-rgrid">
+        <div className="fu-card">
+          <b className="fu-cardtitle">Evolución semanal · {WINDOW_LABEL[win].toLowerCase()}</b>
+          <div className="fu-legend">
+            <span><i className="is-ex" /> Ejecutadas</span>
+            <span><i className="is-cv" /> Conversiones atribuidas</span>
+          </div>
+          <div className="fu-bars" role="img" aria-label="Ejecutadas y conversiones por semana">
+            {data.weekly.map((w) => (
+              <div key={w.week} className="fu-barcol">
+                <small>
+                  {w.executed} · {w.conversions}
+                </small>
+                <div className="fu-barpair">
+                  <span className="is-ex" style={{ height: `${Math.round((w.executed / maxWeek) * 140)}px` }} />
+                  <span className="is-cv" style={{ height: `${Math.max(w.conversions ? 3 : 0, Math.round((w.conversions / maxWeek) * 140))}px` }} />
+                </div>
+                <small>{weekLabel(w.week)}</small>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="fu-card">
+          <b className="fu-cardtitle">Motivos de bloqueo</b>
+          {results.blocks.length === 0 ? (
+            <p className="fu-note">Nada bloqueado.</p>
+          ) : (
+            <ul className="fu-blockbars" data-testid="followup-results-blocks">
+              {results.blocks.slice(0, 8).map((b) => (
+                <li key={b.reason}>
+                  <span>
+                    {b.reason} <b>{b.n}</b>
+                  </span>
+                  <i style={{ width: `${Math.max(3, Math.round((b.n / maxBlock) * 100))}%` }} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+      <div className="fu-card">
+        <b className="fu-cardtitle">Por regla y versión · {WINDOW_LABEL[win].toLowerCase()}</b>
+        <div className="fu-tbl">
+          <table data-testid="followup-results-versions">
+            <thead>
+              <tr>
+                <th>Paso</th>
+                <th>Versión</th>
+                <th>Elegibles</th>
+                <th>Ejecutadas</th>
+                <th>Conversiones</th>
+                <th>Tasa</th>
+                <th>Tiempo</th>
+                <th>No salieron</th>
+                <th>Muestra</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.versions.map((v) => (
+                <tr key={v.versionId}>
+                  <td>
+                    <b>{actionLabel(v.stage as StageKey, v.action as Action)}</b>
+                    <small>{stageTitle(v.stage)}</small>
+                  </td>
+                  <td>
+                    V{v.version} <span className={`fu-st is-${v.status}`}>{STATUS_LABEL[v.status as VersionStatus] ?? v.status}</span>
+                  </td>
+                  <td>{v.eligible}</td>
+                  <td>{v.executed}</td>
+                  <td>
+                    {v.conversions}
+                    {v.assisted ? <small>+{v.assisted} asistencias</small> : null}
+                  </td>
+                  <td>
+                    <b>{pct(v.rate)}</b>
+                  </td>
+                  <td>{hoursText(v.medianHours)}</td>
+                  <td>{v.failed}</td>
+                  <td>{v.best ? <span className="fu-best">MEJOR</span> : v.executed === 0 ? "—" : v.smallSample ? <small>muestra chica</small> : "OK"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="fu-note">
+          Conversión: la inmobiliaria pasó del paso en que estaba al recibir el mensaje, dentro de la ventana. Si varios mensajes de la misma etapa la precedieron, cuenta solo el último (los otros son asistencias): una conversión nunca suma dos veces. «MEJOR» se marca solo entre versiones con 30 o más ejecutadas. La actividad de producto ya excluye el tráfico interno; las acciones comerciales no se excluyen.
+        </p>
+      </div>
+      <div className="fu-card">
+        <div className="fu-fhead">
+          <b className="fu-cardtitle">Cohortes</b>
+          <span className="fu-grow" />
+          {(
+            [
+              ["contacto", "Por semana de contacto"],
+              ["respuesta", "Por semana de primera respuesta"],
+              ["version", "Por versión del saludo"],
+            ] as const
+          ).map(([k, label]) => (
+            <button key={k} type="button" className={`fu-chip${cohortBy === k ? " is-on" : ""}`} aria-pressed={cohortBy === k} data-testid={`followup-cohort-${k}`} onClick={() => setCohortBy(k)}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="fu-tbl">
+          <table data-testid="followup-results-cohorts">
+            <thead>
+              <tr>
+                <th>{cohortBy === "version" ? "Segmento" : "Semana"}</th>
+                <th>Inmobiliarias</th>
+                {COHORT_COLS.map(([, label]) => (
+                  <th key={label}>{label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.cohort}>
+                  <td>{cohortBy === "version" ? r.cohort : weekLabel(r.cohort)}</td>
+                  <td>{r.size}</td>
+                  {COHORT_COLS.map(([k]) => (
+                    <td key={k}>
+                      {r[k]} <small>{r.size ? pct(r[k] / r.size) : "—"}</small>
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 const stageTitle = (key: string) => FOLLOWUP_STAGES.find((s) => s.key === key)?.title ?? key;
 
 type Mode = "embudo" | "reglas" | "resultados";
-function StageBand({ stage, index, open, onToggle, mode }: { stage: StageView; index: number; open: boolean; onToggle: () => void; mode: Mode }) {
+function StageBand({ stage, index, open, onToggle, mode, rules }: { stage: StageView; index: number; open: boolean; onToggle: () => void; mode: Mode; rules: Rule[] }) {
   const principal = stage.versions.filter((v) => (v.action ?? "principal") === "principal");
   const active = principal.find((v) => v.status === "active") ?? null;
   const test = principal.find((v) => v.status === "test") ?? null;
@@ -1001,6 +1458,7 @@ function StageBand({ stage, index, open, onToggle, mode }: { stage: StageView; i
       {open && (
         <div className="fu-body">
           {mode === "embudo" && <Queue stage={stage} />}
+          {mode === "reglas" && <RulesEditor stage={stage.key} rules={rules} />}
           {mode !== "embudo" && actionsOf(stage.key).map((a) => {
             const view = { ...stage, versions: stage.versions.filter((v) => (v.action ?? "principal") === a) };
             return (
@@ -1008,7 +1466,7 @@ function StageBand({ stage, index, open, onToggle, mode }: { stage: StageView; i
                 <h3 className="fu-h3">
                   {actionLabel(stage.key, a)} <small>· {actionWhen(stage.key, a)}</small>
                 </h3>
-                {mode === "reglas" ? <Editor stage={view} action={a} /> : <VersionTable stage={view} />}
+                {mode === "reglas" ? <Editor stage={view} action={a} sample={stage.queue.find((q) => q.wa) ?? stage.queue[0] ?? null} /> : <VersionTable stage={view} />}
               </div>
             );
           })}
@@ -1023,7 +1481,7 @@ type Draft = { channel: Channel; trigger: string; body: string; ctas: Cta[]; not
 const EMPTY: Draft = { channel: "whatsapp", trigger: "", body: "", ctas: ["whatsapp", "copy"], notes: "" };
 const draftOf = (v: Version, editing?: string): Draft => ({ channel: v.channel, trigger: v.trigger_label, body: v.body, ctas: [...v.ctas], notes: v.notes ?? "", editing });
 
-function Editor({ stage, action }: { stage: StageView; action: Action }) {
+function Editor({ stage, action, sample }: { stage: StageView; action: Action; sample: QueueItem | null }) {
   const router = useRouter();
   const live = stage.versions.find((v) => v.status === "active") ?? stage.versions.at(-1) ?? null;
   const [selected, setSelected] = useState<string | null>(live?.id ?? null);
@@ -1148,6 +1606,7 @@ function Editor({ stage, action }: { stage: StageView; action: Action }) {
                 ))}
               </div>
             )}
+            <Preview body={shown.body} sample={sample} />
             <label className="fu-textarea fu-notes">
               <span>Observaciones para la extensión · cuándo y cómo mandarlo</span>
               <textarea

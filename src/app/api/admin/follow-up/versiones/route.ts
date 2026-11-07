@@ -1,4 +1,5 @@
 import { failure, requireAdmin } from "@/lib/commerce/http";
+import { actorName } from "@/lib/followup/actor";
 import { createVersion, setVersionStatus, updateVersion } from "@/lib/followup/server";
 export const runtime = "nodejs";
 
@@ -29,9 +30,9 @@ export async function PATCH(request: Request) {
 /** Edita una versión guardada (mismo número): { id, channel, trigger, body, ctas, notes }. */
 export async function PUT(request: Request) {
   try {
-    await requireAdmin(request);
+    const user = await requireAdmin(request);
     const b = ((await request.json().catch(() => null)) ?? {}) as Record<string, unknown>;
-    return Response.json(await updateVersion(b.id, b), { headers: NO_STORE });
+    return Response.json(await updateVersion(b.id, b, { id: user.id, name: actorName(user) }), { headers: NO_STORE });
   } catch (e) {
     return failure(e);
   }

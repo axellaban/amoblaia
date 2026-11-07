@@ -188,3 +188,52 @@ Un paso que todavía no venció queda **Programado** («Programada para el …»
 - Resolver una de la bandeja: `POST …/reply` `{ id, clasificacion, … }` o `{ id, facu: true }`. Listarla: `GET /api/admin/followup/replies`.
 - Pestaña **Respuestas**: la lista y el detalle (texto, clasificación sugerida y su confianza, fecha o contacto nuevo según el caso, «Guardar y pasar a la cola», «Asignar a Facu») y «Registrar una respuesta» a mano.
 - Selectores: `followup-inbox`, `followup-reply` (`data-reply`, `data-status`), `followup-reply-detail`, `followup-reply-save`, `followup-reply-facu`, `followup-reply-add`, `followup-reply-form`.
+
+## Fase 3 — Reglas configurables, demos en la cola y auditoría
+
+Migración `202612050001_followup_rules.sql`.
+
+### Reglas (`followup_rules`, `src/lib/followup/rules.ts`)
+
+La next best action sale de reglas guardadas en la base, editables en **Mensajes y reglas** sin deploy. Una regla: etapa, situaciones (vacía: cualquiera), paso, espera en horas desde nuestro último mensaje, paso previo (opcional), orden, ventana horaria (hora de Argentina) y días, activa o apagada. Gana la primera regla (por orden) que corresponde a la situación, cuyo paso no salió y cuyo paso previo sí; sin ninguna, la secuencia terminó.
+
+- Se sembraron iguales a las reglas fijas de la Fase 2 (`DEFAULT_RULES`; un test compara la migración con el código), salvo **crear demo** y **enviar demo**, que pasan a salir enseguida.
+- Fijo en código, por seguridad: a un rechazo, un «no contactar» o un número sin WhatsApp no se le escribe nunca, haya la regla que haya; un interesado en las dos primeras etapas pasa a preparar la demo.
+- La ventana horaria de la regla reemplaza a la general.
+- `GET` y `PUT /api/admin/follow-up/reglas` (`{ key?, stage, situations, action, after_hours, after_action, position, enabled, hours_from, hours_to, days }`).
+
+### Mensajes
+
+- Cada paso tiene su editor con **vista previa** resuelta con una inmobiliaria de la etapa; marca las variables que quedarían sin resolver.
+- Una versión con una variable desconocida no se guarda.
+
+### Demos en la cola
+
+- **Demo prometida**: una inmobiliaria que mostró interés con la demo por crear o por enviar va primera en la cola, con prioridad alta, y el checklist marca si van más de 30 minutos desde el interés.
+- «Interesado, sin demo»: el checklist suma «Propiedad elegida e importada» y «Demo generada, revisada y publicada», que el panel verifica solo; al publicarla pasa sola a «Demo creada, sin enviar», cuyo paso (enviar la demo) sale enseguida.
+
+### Embudo y etapas
+
+La pestaña **Embudo**: las 9 etapas en tarjetas con cuántas esperan y qué parte de las que llegaron pasó a la siguiente; la elegida muestra sus reglas (situaciones, paso, espera, versión activa, conversión, prueba A/B) y sus inmobiliarias.
+
+### Auditoría (`followup_audit`)
+
+Quién cambió qué y cuándo: etapa, situación (con el texto), score, prioridad, reprogramación, nombre corto, reglas y versiones. Los cambios de cada inmobiliaria aparecen en sus «Últimas acciones»; los de reglas y mensajes, al pie de Mensajes y reglas.
+
+Selectores: `followup-funnel`, `followup-funnel-stage`, `followup-funnel-rule`, `followup-rules`, `followup-rule`, `followup-rule-edit`, `followup-rule-form`, `followup-rule-hours`, `followup-rule-save`, `followup-rule-add`, `followup-preview`, `followup-changes`.
+
+## Fase 4 — Resultados, atribución y cohortes
+
+Migración `202612060001_followup_results.sql`. Lógica pura en `src/lib/followup/results.ts`.
+
+- **Cuándo convirtió**: el embudo no guarda cuándo se llegó a cada paso. Cada ejecución guarda `converted_at` (y `converted_step`) la primera vez que el panel ve que la inmobiliaria avanzó: la hora exacta cuando se conoce (el interés registrado, la demo creada) o, si no, ese momento. Las conversiones anteriores a esta fase quedan con la hora en que se vieron por primera vez.
+- **Ventana**: 7 días, 14 días o sin límite desde el envío.
+- **Atribución al último mensaje**: si varios mensajes de la misma etapa precedieron a una conversión, cuenta solo el último antes de ella; los otros son asistencias. Una conversión nunca suma dos veces.
+- **Por regla y versión**: elegibles (ejecutadas + las que hoy esperan esa versión), ejecutadas, conversiones (+ asistencias), tasa, tiempo mediano a la conversión, «No salieron» y muestra. «MEJOR» solo entre versiones con 30 o más ejecutadas (el mínimo es a confirmar con Facu).
+- **Evolución semanal**: ejecutadas por semana de envío y conversiones atribuidas por semana de conversión (semanas de lunes a domingo, hora de Argentina).
+- **Cohortes**: por semana de primer contacto, por semana de primera respuesta y por versión del saludo; cuántas respondieron, mostraron interés, recibieron la demo, crearon la cuenta y se suscribieron.
+- **Motivos de bloqueo** agregados.
+- **Tráfico interno**: la actividad de producto (visitas e interacción de las demos) ya lo excluye (`docs/TRAFICO_INTERNO.md`); las acciones comerciales no se excluyen.
+- **Caso I (suscripción)**: una inmobiliaria suscripta sale de Follow-up (no tiene etapa), así que no le queda ninguna tarea de captación; su historial (ejecuciones, respuestas, auditoría) se conserva.
+- **Opcional, decisión aparte**: la API de WhatsApp Business permitiría detectar respuestas sin una pestaña abierta (costo, plantillas aprobadas por Meta y reglas propias).
+- Selectores: `followup-results`, `followup-window-7|14|todo`, `followup-results-versions`, `followup-results-blocks`, `followup-results-cohorts`, `followup-cohort-contacto|respuesta|version`.
