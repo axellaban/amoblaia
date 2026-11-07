@@ -54,6 +54,10 @@ export type FollowupVersion = {
   status: VersionStatus;
   created_at: string;
   status_at: string;
+  /** Observaciones: lo que la extensión lee debajo del mensaje antes de ejecutarlo. */
+  notes: string;
+  /** Cuándo se editó el texto por última vez (null: nunca): sus números juntan el texto anterior y el nuevo. */
+  edited_at: string | null;
 };
 export type ExecutionStatus = "opened" | "sent" | "failed";
 export type FollowupExecution = {
@@ -84,6 +88,36 @@ export function stageOf(f: { reached: number | null; lost: boolean; test: boolea
 
 /** The step the agency is at for the measurement: -1 before it was contacted. */
 export const stepValue = (reached: number | null) => (reached === null ? -1 : reached);
+
+/** «fuera»: corrected out of Follow-up (lost, not an agency, a duplicate). */
+export const OUT = "fuera" as const;
+export type OverrideStage = StageKey | typeof OUT;
+export const isOverrideStage = (v: unknown): v is OverrideStage => v === OUT || isStageKey(v);
+export type Override = { stage: OverrideStage; step: number } | null;
+
+/**
+ * Where an agency goes in Follow-up: its stage from the funnel, unless the
+ * team (or the extension) corrected it. The correction holds while the funnel
+ * still says what it said then (`override.step`, the funnel's step when it was
+ * set); once something real happens (a send, a visit, an account), the funnel
+ * rules again. `step` is the one the measurement uses: the corrected stage's.
+ */
+export function placement(derived: { reached: number | null; stage: StageKey | null }, override: Override) {
+  const funnel = stepValue(derived.reached);
+  if (override && override.step === funnel) {
+    if (override.stage === OUT) return { stage: null, step: funnel, manual: true };
+    return { stage: override.stage, step: stageInfo(override.stage).step, manual: true };
+  }
+  return { stage: derived.stage, step: funnel, manual: false };
+}
+
+/** The queue's order: score from highest to lowest (without a score, last); then the ones still to do with a WhatsApp, the longest waiting first. */
+export function byScore<T extends { score: number | null; wa: string | null; since: string; execution: { status: string } | null }>(a: T, b: T) {
+  const score = (b.score ?? -1) - (a.score ?? -1);
+  if (score) return score;
+  const rank = (q: T) => (q.execution?.status === "sent" ? 2 : q.wa ? 0 : 1);
+  return rank(a) - rank(b) || a.since.localeCompare(b.since);
+}
 
 /** Small stable hash (FNV-1a) for the A/B split: the same agency always gets the same version. */
 function hash(text: string) {
@@ -171,8 +205,8 @@ export type VersionStats = ReturnType<typeof versionStats>[number];
 /** «12%», «4.5%» under 10%, «—» without executions. */
 export const pct = (r: number | null) => (r === null ? "—" : `${(r * 100).toFixed(r < 0.1 && r > 0 ? 1 : 0).replace(".", ",")}%`);
 
-/** Validates a new version from the panel. Returns the clean fields or an error message. */
-export function cleanVersion(input: { stage?: unknown; channel?: unknown; trigger?: unknown; body?: unknown; ctas?: unknown; status?: unknown }) {
+/** Validates a new version (or an edit of one) from the panel. Returns the clean fields or an error message. */
+export function cleanVersion(input: { stage?: unknown; channel?: unknown; trigger?: unknown; body?: unknown; ctas?: unknown; status?: unknown; notes?: unknown }) {
   if (!isStageKey(input.stage)) return { error: "Etapa desconocida." } as const;
   const channel = input.channel === "task" ? "task" : input.channel === "whatsapp" ? "whatsapp" : null;
   if (!channel) return { error: "El canal es WhatsApp o tarea del equipo." } as const;
@@ -184,5 +218,7 @@ export function cleanVersion(input: { stage?: unknown; channel?: unknown; trigge
   const trigger = typeof input.trigger === "string" ? input.trigger.trim().slice(0, 120) : "";
   const ctas = Array.isArray(input.ctas) ? CTA_KEYS.filter((k) => (input.ctas as unknown[]).includes(k)) : [];
   const status = input.status === "test" ? "test" : "active";
-  return { stage: input.stage, channel, trigger, body, ctas, status } as const;
+  const notes = typeof input.notes === "string" ? input.notes.trim() : "";
+  if (notes.length > 4000) return { error: "Las observaciones superan los 4000 caracteres." } as const;
+  return { stage: input.stage, channel, trigger, body, ctas, status, notes } as const;
 }
