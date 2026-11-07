@@ -222,3 +222,35 @@ export function cleanVersion(input: { stage?: unknown; channel?: unknown; trigge
   if (notes.length > 4000) return { error: "Las observaciones superan los 4000 caracteres." } as const;
   return { stage: input.stage, channel, trigger, body, ctas, status, notes } as const;
 }
+
+const EXEC_TEXT: Record<ExecutionStatus, string> = { sent: "enviado", opened: "WhatsApp abierto, sin confirmar", failed: "no se envió" };
+/** A prospecting send by its step (0 a conversation message, 1 to 3 the sequence). */
+const STEP_TEXT = ["Mensaje de conversación enviado", "Primer mensaje enviado", "Seguimiento enviado", "Último mensaje enviado"];
+
+/**
+ * The latest thing that happened with an agency, for the extension to decide:
+ * a Follow-up execution, a prospecting send (Adquisición, Chapa) or what the
+ * agency itself did (a visit, a reply, its account). Without any of those,
+ * when it entered the list.
+ */
+export function lastAction(
+  agency: { lastActivity: { at: string; text: string } | null; createdAt: string },
+  account: { created_at: string } | undefined,
+  addedByHand: boolean,
+  versions: Pick<FollowupVersion, "id" | "version" | "stage">[],
+  executions: Pick<FollowupExecution, "version_id" | "status" | "reason" | "updated_at">[],
+  attempts: { status: string; sent_at: string | null; step: number }[],
+): { text: string; at: string } {
+  const facts: { text: string; at: string }[] = [];
+  for (const e of executions) {
+    const v = versions.find((x) => x.id === e.version_id);
+    const what = v ? `Follow-up «${stageInfo(v.stage).title}» V${v.version}` : "Follow-up";
+    facts.push({ text: `${what}: ${EXEC_TEXT[e.status]}${e.status === "failed" && e.reason ? ` (${e.reason})` : ""}`, at: e.updated_at });
+  }
+  for (const t of attempts) if (t.status === "sent" && t.sent_at) facts.push({ text: STEP_TEXT[t.step] ?? "Mensaje enviado", at: t.sent_at });
+  if (agency.lastActivity) facts.push(agency.lastActivity);
+  const latest = facts.sort((a, b) => b.at.localeCompare(a.at))[0];
+  if (latest) return latest;
+  if (account) return { text: "Cargada en prospección", at: account.created_at };
+  return { text: addedByHand ? "Agregada a mano" : "Creada", at: agency.createdAt };
+}

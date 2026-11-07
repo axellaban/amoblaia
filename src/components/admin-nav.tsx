@@ -3,17 +3,18 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect } from "react";
-import { Bot, Building2, Megaphone, RefreshCcw, ShieldCheck } from "lucide-react";
+import { Bot, Building2, Megaphone, RefreshCcw, ScrollText, ShieldCheck } from "lucide-react";
 import { markInternal } from "@/lib/interaction-tracking";
 
 /**
  * The team's sections. Leads and demos live inside each agency now, so their
  * old addresses (and the demo editor under /admin/demos) light «Inmobiliarias».
  */
-const LINKS: { href: string; label: string; icon: typeof Bot; also?: string[] }[] = [
+const LINKS: { href: string; label: string; icon: typeof Bot; also?: string[]; exact?: boolean; sub?: boolean }[] = [
   { href: "/admin/prospeccion", label: "Adquisición", icon: Megaphone },
   { href: "/admin/inmobiliarias", label: "Inmobiliarias", icon: Building2, also: ["/admin/demos", "/admin/leads"] },
-  { href: "/admin/follow-up", label: "Follow-up", icon: RefreshCcw },
+  { href: "/admin/follow-up", label: "Follow-up", icon: RefreshCcw, exact: true },
+  { href: "/admin/follow-up/script", label: "Script", icon: ScrollText, sub: true },
   { href: "/admin/asistente", label: "Miguel Ángel", icon: Bot },
   { href: "/admin/internos", label: "Tráfico interno", icon: ShieldCheck },
 ];
@@ -36,10 +37,10 @@ export function AdminNav() {
         <small>Administración</small>
       </div>
       <nav>
-        {LINKS.map(({ href, label, icon: Icon, also }) => {
-          const on = [href, ...(also ?? [])].some((h) => under(pathname, h));
+        {LINKS.map(({ href, label, icon: Icon, also, exact, sub }) => {
+          const on = exact ? pathname === href : [href, ...(also ?? [])].some((h) => under(pathname, h));
           return (
-            <Link key={href} href={href} className={on ? "is-on" : undefined} aria-current={on ? "page" : undefined}>
+            <Link key={href} href={href} className={[on ? "is-on" : "", sub ? "is-sub" : ""].filter(Boolean).join(" ") || undefined} aria-current={on ? "page" : undefined}>
               <Icon size={19} aria-hidden="true" /> {label}
             </Link>
           );

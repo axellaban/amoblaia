@@ -27512,7 +27512,7 @@ dialog.pt-layer::backdrop {
 .fu-qlist {
   border: 1px solid var(--pr-line, #dde3d7);
   border-radius: 10px;
-  overflow: hidden;
+  overflow-x: auto;
 }
 .fu-qi {
   border-bottom: 1px solid var(--pr-line, #dde3d7);
@@ -27525,11 +27525,148 @@ dialog.pt-layer::backdrop {
 }
 .fu-qrow {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.1fr) minmax(0, 1.3fr) 78px 112px;
+  grid-template-columns: 64px minmax(150px, 1.3fr) minmax(130px, 1fr) minmax(130px, 1fr) 176px minmax(160px, 1.2fr) minmax(150px, 1fr) 104px;
   gap: 12px;
   align-items: center;
   padding: 10px 12px;
   font-size: 13px;
+  min-width: 1150px;
+}
+.fu-qhrow {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--pr-muted, #5f6f64);
+  background: var(--fu-soft);
+  border-bottom: 1px solid var(--pr-line, #dde3d7);
+  padding-block: 8px;
+}
+.fu-qscore {
+  display: grid;
+  justify-items: start;
+}
+.fu-qscore b {
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+.fu-qscore input,
+.fu-qrow select {
+  border: 1px solid var(--pr-line, #dde3d7);
+  background: #fff;
+  border-radius: 7px;
+  padding: 5px 7px;
+  font: inherit;
+  color: inherit;
+  min-width: 0;
+}
+.fu-qscore input {
+  width: 58px;
+  font-weight: 800;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.fu-qrow select {
+  width: 100%;
+  font-size: 12.5px;
+}
+.fu-web {
+  color: var(--ah-green);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.fu-manual {
+  font-size: 11px !important;
+  font-weight: 700;
+  color: var(--fu-amber-ink) !important;
+}
+.fu-qlast span:first-child {
+  white-space: normal !important;
+  font-weight: 600;
+}
+.fu-late {
+  color: var(--fu-red) !important;
+  font-weight: 700;
+}
+.fu-row-error {
+  padding: 0 12px 8px;
+}
+.fu-add {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  background: var(--fu-soft);
+  border: 1px dashed var(--pr-line, #dde3d7);
+  border-radius: 10px;
+  padding: 12px;
+}
+.fu-add label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.fu-add label span {
+  font-size: 12px;
+  color: var(--pr-muted, #5f6f64);
+}
+.fu-add input,
+.fu-add select {
+  border: 1px solid var(--pr-line, #dde3d7);
+  background: #fff;
+  border-radius: 7px;
+  padding: 7px 9px;
+  font: inherit;
+  color: inherit;
+  min-width: 0;
+}
+.fu-add-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+.fu-add-actions .fu-warn {
+  margin: 0;
+}
+.fu-obs textarea {
+  min-height: 70px;
+  background: #eef3fd;
+  border-color: #c9d8f6;
+}
+.fu-obs-read {
+  margin-top: 8px;
+  border-left: 3px solid #2f5fd0;
+  background: #eef3fd;
+  border-radius: 0 8px 8px 0;
+  padding: 8px 12px;
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+.fu-obs-read span {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: #2f5fd0;
+  letter-spacing: 0.04em;
+}
+.fu-vtabs .fu-edit {
+  margin-left: auto;
+}
+.fu-script textarea {
+  min-height: 460px;
+  border: 1px solid var(--pr-line, #dde3d7);
+  background: var(--fu-soft);
+  border-radius: 9px;
+  padding: 14px;
+  font: inherit;
+  line-height: 1.6;
+  color: inherit;
+  resize: vertical;
+}
+.pr-side nav a.is-sub {
+  padding-left: 36px;
+  font-size: 14px;
 }
 .fu-qrow > div {
   display: grid;
@@ -27704,12 +27841,8 @@ dialog.pt-layer::backdrop {
   .fu-fields {
     grid-template-columns: 1fr;
   }
-  .fu-qrow {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-  .fu-qrow .fu-qcontact,
-  .fu-qrow .fu-qact {
-    grid-column: 1;
+  .fu-add {
+    grid-template-columns: 1fr 1fr;
   }
   .fu-exec {
     grid-template-columns: 1fr;

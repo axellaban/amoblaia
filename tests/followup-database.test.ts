@@ -36,14 +36,27 @@ describe("followup migration", () => {
   });
 
   it("is idempotent", async () => {
-    await db.exec(readFileSync("supabase/migrations/202611300001_followup.sql", "utf8"));
+    for (const file of ["202611300001_followup.sql", "202612010001_followup_edit.sql"]) await db.exec(readFileSync(`supabase/migrations/${file}`, "utf8"));
     expect((await one<{ n: number }>("select count(*)::int as n from followup_versions"))!.n).toBe(9);
   });
 
-  it("never edits or deletes a saved version: only its status changes", async () => {
+  it("edits a version's text and observations, but never its stage or number, and never deletes it", async () => {
     const v = await active("no-responde");
-    expect(await fails("update followup_versions set body = 'otro' where id = $1", [v.id])).toContain("FOLLOWUP_VERSION_FROZEN");
+    expect(await fails("update followup_versions set body = 'otro', notes = 'Solo de 9 a 19', edited_at = now() where id = $1", [v.id])).toBeNull();
+    expect((await one<{ body: string; notes: string }>("select body, notes from followup_versions where id = $1", [v.id]))).toEqual({ body: "otro", notes: "Solo de 9 a 19" });
+    expect(await fails("update followup_versions set stage = 'sin-uso' where id = $1", [v.id])).toContain("FOLLOWUP_VERSION_FROZEN");
+    expect(await fails("update followup_versions set version = 7 where id = $1", [v.id])).toContain("FOLLOWUP_VERSION_FROZEN");
     expect(await fails("delete from followup_versions where id = $1", [v.id])).toContain("FOLLOWUP_VERSION_FROZEN");
+  });
+
+  it("keeps a corrected stage with the step it corrected, the manual score in range, and one script", async () => {
+    const a = await agency();
+    expect(await fails("insert into followup_agencies(agency_id, stage_override) values($1, 'sin-demo')", [a])).not.toBeNull();
+    expect(await fails("insert into followup_agencies(agency_id, stage_override, override_step) values($1, 'otra', 0)", [a])).not.toBeNull();
+    expect(await fails("insert into followup_agencies(agency_id, score) values($1, 120)", [a])).not.toBeNull();
+    expect(await fails("insert into followup_agencies(agency_id, stage_override, override_step, score, zone) values($1, 'fuera', 0, 75, 'Batán')", [a])).toBeNull();
+    expect((await one<{ n: number }>("select count(*)::int as n from followup_script"))!.n).toBe(1);
+    expect(await fails("insert into followup_script(id, body) values(2, 'otro')")).not.toBeNull();
   });
 
   it("creates the next version: active archives the previous active, test leaves it", async () => {
@@ -84,7 +97,7 @@ describe("followup migration", () => {
   });
 
   it("is closed to anonymous and signed-in users", async () => {
-    const grants = (await db.query<{ grantee: string }>("select grantee from information_schema.role_table_grants where table_name in ('followup_versions', 'followup_executions') and grantee in ('anon', 'authenticated')")).rows;
+    const grants = (await db.query<{ grantee: string }>("select grantee from information_schema.role_table_grants where table_name in ('followup_versions', 'followup_executions', 'followup_agencies', 'followup_script') and grantee in ('anon', 'authenticated')")).rows;
     expect(grants).toEqual([]);
   });
 });

@@ -11,11 +11,12 @@ import { isUuid } from "@/lib/demos/shared";
 import { contactFor } from "@/lib/prospecting/external";
 import { recordSend } from "@/lib/prospecting/record-send";
 import { prospectDataset, prospectRpc } from "@/lib/prospecting/server";
-import type { Dataset, ProspectAccount } from "@/lib/prospecting/types";
+import type { Dataset, OutreachAttempt, ProspectAccount } from "@/lib/prospecting/types";
 import { adminClient } from "@/lib/supabase/server";
 import {
   FOLLOWUP_STAGES,
   OUT,
+  lastAction,
   byScore,
   cleanVersion,
   isOverrideStage,
@@ -161,6 +162,8 @@ export type QueueItem = {
   properties: number;
   /** Its stage was corrected by hand (by the team or the extension). */
   manual: boolean;
+  /** The latest thing that happened with it: a send of ours (Follow-up or Adquisición) or something it did. */
+  lastAction: { text: string; at: string } | null;
   versionId: string | null;
   execution: { status: ExecutionStatus; at: string; reason: string | null } | null;
 };
@@ -180,13 +183,15 @@ export async function followupOverview(): Promise<{ stages: StageView[] }> {
   const byStage = new Map<StageKey, QueueItem[]>(FOLLOWUP_STAGES.map((s) => [s.key, []]));
   const exOf = new Map<string, FollowupExecution[]>();
   for (const e of ex) exOf.set(e.agency_id, [...(exOf.get(e.agency_id) ?? []), e]);
+  const attemptsOf = new Map<string, OutreachAttempt[]>();
+  for (const t of ds?.attempts ?? []) attemptsOf.set(t.account_id, [...(attemptsOf.get(t.account_id) ?? []), t]);
   for (const r of rows) {
     const account = accounts.get(r.id);
     const own = extra.get(r.id);
     const at = place(r, account, own);
     stepNow.set(r.id, at.step);
     if (!at.stage) continue;
-    byStage.get(at.stage)!.push(item(r, account, own, info, at, vs, exOf.get(r.id) ?? []));
+    byStage.get(at.stage)!.push(item(r, account, own, info, at, vs, exOf.get(r.id) ?? [], account ? attemptsOf.get(account.id) ?? [] : []));
   }
   return {
     stages: FOLLOWUP_STAGES.map((s) => {
@@ -211,6 +216,7 @@ function item(
   at: ReturnType<typeof place>,
   vs: FollowupVersion[],
   executionsOf: FollowupExecution[],
+  attempts: OutreachAttempt[],
 ): QueueItem {
   const stage = at.stage!;
   const mine = executionsOf.filter((e) => e.stage === stage);
@@ -237,6 +243,7 @@ function item(
     website: agency?.website ?? account?.website ?? null,
     properties: r.properties,
     manual: at.manual,
+    lastAction: lastAction(r, account, Boolean(own?.stage_override), vs, executionsOf, attempts),
     versionId: version?.id ?? null,
     execution: done ? { status: done.status, at: done.updated_at, reason: done.reason } : null,
   };

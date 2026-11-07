@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AGENCY_STEPS } from "@/lib/agency/demo-funnel";
-import { FOLLOWUP_STAGES, cleanVersion, fillMessage, personName, linksNeeded, missingVariables, pct, stageOf, versionFor, versionStats, type FollowupExecution, type FollowupVersion } from "@/lib/followup/stages";
+import { FOLLOWUP_STAGES, byScore, cleanVersion, fillMessage, lastAction, personName, placement, linksNeeded, missingVariables, pct, stageOf, versionFor, versionStats, type FollowupExecution, type FollowupVersion } from "@/lib/followup/stages";
 
 const base = { lost: false, test: false, suppressed: false, pendingProspect: false };
 const v = (id: string, version: number, status: FollowupVersion["status"], body = "Hola {{decisor}}"): FollowupVersion => ({
@@ -146,5 +146,52 @@ describe("version numbers", () => {
     expect(pct(null)).toBe("—");
     expect(pct(0.125)).toBe("13%");
     expect(pct(0.045)).toBe("4,5%");
+  });
+});
+
+describe("corrected stage", () => {
+  it("holds while the funnel says the same, and the funnel rules again when something real happens", () => {
+    const funnel = { reached: 0, stage: "no-responde" as const };
+    expect(placement(funnel, null)).toEqual({ stage: "no-responde", step: 0, manual: false });
+    // The extension saw in the chat that it is interested: corrected to «Interesado, sin demo».
+    expect(placement(funnel, { stage: "sin-demo", step: 0 })).toEqual({ stage: "sin-demo", step: 1, manual: true });
+    // Out of Follow-up (lost, a duplicate).
+    expect(placement(funnel, { stage: "fuera", step: 0 })).toMatchObject({ stage: null, manual: true });
+    // Later it got its demo created: the correction no longer applies.
+    expect(placement({ reached: 2, stage: "sin-enviar" }, { stage: "sin-demo", step: 0 })).toEqual({ stage: "sin-enviar", step: 2, manual: false });
+    // Added by hand (no funnel yet).
+    expect(placement({ reached: null, stage: null }, { stage: "no-contactado", step: -1 })).toEqual({ stage: "no-contactado", step: -1, manual: true });
+  });
+
+  it("orders by score from highest to lowest, without a score last", () => {
+    const q = (score: number | null, wa: string | null = "549", status: string | null = null, since = "2026-11-01") => ({ score, wa, since, execution: status ? { status } : null });
+    const list = [q(null), q(40), q(90), q(70, null), q(70)].sort(byScore);
+    expect(list.map((x) => `${x.score}:${x.wa ?? "-"}`)).toEqual(["90:549", "70:549", "70:-", "40:549", "null:549"]);
+  });
+});
+
+describe("last action", () => {
+  const agency = { lastActivity: null, createdAt: "2026-10-20T10:00:00Z" };
+  const versions = [{ id: "v2", version: 2, stage: "no-responde" as const }];
+  it("is the latest of our sends and what the agency did", () => {
+    expect(
+      lastAction(
+        { ...agency, lastActivity: { at: "2026-11-05T10:00:00Z", text: "Vio la demo" } },
+        { created_at: "2026-10-28T00:00:00Z" },
+        false,
+        versions,
+        [{ version_id: "v2", status: "sent", reason: null, updated_at: "2026-11-06T12:00:00Z" }],
+        [{ status: "sent", sent_at: "2026-11-01T12:00:00Z", step: 1 }],
+      ),
+    ).toEqual({ text: "Follow-up «Contactado, no responde» V2: enviado", at: "2026-11-06T12:00:00Z" });
+    expect(lastAction(agency, undefined, false, versions, [{ version_id: "v2", status: "failed", reason: "Sin WhatsApp", updated_at: "2026-11-06T12:00:00Z" }], []).text).toBe(
+      "Follow-up «Contactado, no responde» V2: no se envió (Sin WhatsApp)",
+    );
+    expect(lastAction(agency, undefined, false, [], [], [{ status: "sent", sent_at: "2026-11-02T00:00:00Z", step: 2 }]).text).toBe("Seguimiento enviado");
+  });
+
+  it("without anything, says when it entered the list", () => {
+    expect(lastAction(agency, { created_at: "2026-10-28T00:00:00Z" }, false, [], [], [])).toEqual({ text: "Cargada en prospección", at: "2026-10-28T00:00:00Z" });
+    expect(lastAction(agency, undefined, true, [], [], []).text).toBe("Agregada a mano");
   });
 });

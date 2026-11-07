@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { ChevronRight, ClipboardCopy, KeyRound, Link2, MessageCircle, Plus } from "lucide-react";
+import { useEffect, useState, type FormEvent } from "react";
+import { ChevronRight, ClipboardCopy, KeyRound, Link2, MessageCircle, Pencil, Plus } from "lucide-react";
 import { api } from "@/components/admin-demos";
-import { CTA_KEYS, CTA_LABEL, VARIABLES, pct, type Channel, type Cta, type VersionStatus } from "@/lib/followup/stages";
+import { CTA_KEYS, CTA_LABEL, FOLLOWUP_STAGES, OUT, VARIABLES, pct, type Channel, type Cta, type StageKey, type VersionStatus } from "@/lib/followup/stages";
 import type { QueueItem, StageView } from "@/lib/followup/server";
 
 type Version = StageView["versions"][number];
@@ -15,6 +15,7 @@ type Prepared = {
   version: number;
   channel: Channel;
   ctas: Cta[];
+  notes: string;
   person: string | null;
   phone: string | null;
   message: string;
@@ -122,13 +123,15 @@ function StageBand({ stage, index, open, onToggle }: { stage: StageView; index: 
   );
 }
 
-type Draft = { channel: Channel; trigger: string; body: string; ctas: Cta[] };
+/** A new version (no id) or an edit of a saved one (its id). */
+type Draft = { id?: string; channel: Channel; trigger: string; body: string; ctas: Cta[]; notes: string };
+const day = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 
 function Editor({ stage }: { stage: StageView }) {
   const router = useRouter();
   const live = stage.versions.find((v) => v.status === "active") ?? stage.versions.at(-1) ?? null;
   const [selected, setSelected] = useState<string | null>(live?.id ?? null);
-  const [draft, setDraft] = useState<Draft | null>(live ? null : { channel: "whatsapp", trigger: "", body: "", ctas: ["whatsapp", "copy"] });
+  const [draft, setDraft] = useState<Draft | null>(live ? null : { channel: "whatsapp", trigger: "", body: "", ctas: ["whatsapp", "copy"], notes: "" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const current = stage.versions.find((v) => v.id === selected) ?? live;
@@ -155,6 +158,13 @@ function Editor({ stage }: { stage: StageView }) {
       setDraft(null);
       setSelected(v.id);
     });
+  const saveEdit = () =>
+    run(async () => {
+      await api<Version>("/api/admin/follow-up/versiones", { method: "PUT", body: JSON.stringify(draft) });
+      setDraft(null);
+    });
+  const editing = Boolean(draft?.id);
+  const fromVersion = (v: Version, id?: string): Draft => ({ id, channel: v.channel, trigger: v.trigger_label, body: v.body, ctas: [...v.ctas], notes: v.notes ?? "" });
   const setStatus = (id: string, status: VersionStatus) => run(() => api("/api/admin/follow-up/versiones", { method: "PATCH", body: JSON.stringify({ id, status }) }));
   function insert(name: string) {
     if (!draft) return;
@@ -172,7 +182,7 @@ function Editor({ stage }: { stage: StageView }) {
             <button
               key={v.id}
               type="button"
-              className={`fu-vtab${!draft && current?.id === v.id ? " is-on" : ""}`}
+              className={`fu-vtab${(!draft || draft.id === v.id) && current?.id === v.id ? " is-on" : ""}`}
               onClick={() => {
                 setDraft(null);
                 setSelected(v.id);
@@ -181,17 +191,22 @@ function Editor({ stage }: { stage: StageView }) {
               V{v.version} <span className={`fu-st is-${v.status}`}>{STATUS_LABEL[v.status]}</span>
             </button>
           ))}
-          {draft ? (
+          {draft && !editing ? (
             <span className="fu-vtab is-on">
               V{nextNumber} <span className="fu-st is-draft">Borrador</span>
             </span>
-          ) : (
+          ) : !draft ? (
             <button
               type="button"
               className="fu-vtab"
-              onClick={() => setDraft(current ? { channel: current.channel, trigger: current.trigger_label, body: current.body, ctas: [...current.ctas] } : { channel: "whatsapp", trigger: "", body: "", ctas: ["whatsapp", "copy"] })}
+              onClick={() => setDraft(current ? fromVersion(current) : { channel: "whatsapp", trigger: "", body: "", ctas: ["whatsapp", "copy"], notes: "" })}
             >
               <Plus size={14} aria-hidden="true" /> Nueva versión
+            </button>
+          ) : null}
+          {!draft && current && (
+            <button type="button" className="button button-small button-outline fu-edit" data-testid="followup-version-edit" onClick={() => setDraft(fromVersion(current, current.id))}>
+              <Pencil size={14} aria-hidden="true" /> Editar V{current.version}
             </button>
           )}
         </div>
@@ -221,8 +236,22 @@ function Editor({ stage }: { stage: StageView }) {
               </label>
             </div>
             <label className="fu-textarea">
-              <span>{draft ? "Next best action" : "Next best action · una versión guardada no se edita: creá una nueva"}</span>
-              <textarea id={bodyId} value={shown.body} readOnly={!draft} maxLength={4000} onChange={(e) => draft && setDraft({ ...draft, body: e.target.value })} />
+              <span>
+                {editing ? `Editando V${current?.version}` : draft ? "Next best action" : "Next best action"}
+                {!draft && current?.edited_at ? ` · editada el ${day(current.edited_at)}` : ""}
+              </span>
+              <textarea id={bodyId} data-testid="followup-version-body" value={shown.body} readOnly={!draft} maxLength={4000} onChange={(e) => draft && setDraft({ ...draft, body: e.target.value })} />
+            </label>
+            <label className="fu-textarea fu-obs">
+              <span>Observaciones para la extensión</span>
+              <textarea
+                data-testid="followup-version-notes"
+                value={draft ? draft.notes : (shown as Version).notes ?? ""}
+                readOnly={!draft}
+                maxLength={4000}
+                placeholder={draft ? "Cuándo mandarlo, qué revisar antes, qué hacer si el chat dice otra cosa…" : "Sin observaciones"}
+                onChange={(e) => draft && setDraft({ ...draft, notes: e.target.value })}
+              />
             </label>
             {draft && (
               <div className="fu-vars">
@@ -247,7 +276,19 @@ function Editor({ stage }: { stage: StageView }) {
               })}
             </fieldset>
             <div className="fu-actions">
-              {draft ? (
+              {editing && draft ? (
+                <>
+                  <button type="button" className="button button-primary button-small" data-testid="followup-version-save" disabled={busy || !draft.body.trim()} onClick={saveEdit}>
+                    Guardar cambios en V{current?.version}
+                  </button>
+                  <button type="button" className="fu-link" disabled={busy} onClick={() => setDraft(null)}>
+                    Cancelar
+                  </button>
+                  {(current?.stats.executions ?? 0) > 0 && (
+                    <p className="fu-note">Ya tiene {current?.stats.executions} ejecuciones: si cambiás el texto, sus números juntan el anterior y el nuevo. Para comparar textos, «Nueva versión».</p>
+                  )}
+                </>
+              ) : draft ? (
                 <>
                   <button type="button" className="button button-primary button-small" disabled={busy || !draft.body.trim()} onClick={() => save("active")}>
                     Guardar V{nextNumber} como activa
@@ -305,6 +346,7 @@ function Queue({ stage }: { stage: StageView }) {
   const [state, setState] = useState<Record<string, Exec>>({});
   const [open, setOpen] = useState<string | null>(null);
   const [shown, setShown] = useState(PAGE);
+  const [adding, setAdding] = useState(false);
   const statusOf = (q: QueueItem) => (q.agencyId in state ? state[q.agencyId] : q.execution);
   const done = stage.queue.filter((q) => statusOf(q)?.status === "sent").length;
   const list = stage.queue.slice(0, shown);
@@ -320,18 +362,32 @@ function Queue({ stage }: { stage: StageView }) {
   return (
     <div className="fu-queue">
       <div className="fu-qhead">
-        <span className="fu-lbl">Inmobiliarias en esta etapa · {stage.queue.length}</span>
+        <span className="fu-lbl">Inmobiliarias en esta etapa · {stage.queue.length} · por score, de mayor a menor</span>
         <span className="fu-qprog">
-          <b>{done}</b> con la acción enviada · primero las que esperan hace más tiempo ·{" "}
+          <b>{done}</b> con la acción enviada ·{" "}
           <button type="button" className="fu-link" onClick={() => router.refresh()}>
             Actualizar
+          </button>{" "}
+          <button type="button" className="button button-small button-outline" data-testid="followup-add" onClick={() => setAdding(!adding)}>
+            <Plus size={14} aria-hidden="true" /> Agregar inmobiliaria
           </button>
         </span>
       </div>
+      {adding && <AddAgency stage={stage.key} onDone={() => setAdding(false)} />}
       {stage.queue.length === 0 ? (
         <p className="fu-empty">No hay inmobiliarias en esta etapa.</p>
       ) : (
         <div className="fu-qlist">
+          <div className="fu-qrow fu-qhrow" aria-hidden="true">
+            <span>Score</span>
+            <span>Inmobiliaria</span>
+            <span>Dirección · zona</span>
+            <span>Web · propiedades</span>
+            <span>Estado</span>
+            <span>Última acción</span>
+            <span>WhatsApp</span>
+            <span />
+          </div>
           {list.map((q) => (
             <QueueRow key={q.agencyId} stage={stage} item={q} exec={statusOf(q)} open={open === q.agencyId} onToggle={() => setOpen(open === q.agencyId ? null : q.agencyId)} onDone={(e) => finished(q, e)} />
           ))}
@@ -346,33 +402,185 @@ function Queue({ stage }: { stage: StageView }) {
   );
 }
 
+/** «Agregar inmobiliaria»: created like «Nueva inmobiliaria» (with its duplicate check), straight into this stage. */
+function AddAgency({ stage, onDone }: { stage: StageKey; onDone: () => void }) {
+  const router = useRouter();
+  const [key] = useState(() => crypto.randomUUID());
+  const [form, setForm] = useState({ name: "", whatsapp: "", contact: "", score: "", address: "", zone: "", website: "", etapa: stage as string });
+  const [duplicates, setDuplicates] = useState<{ name: string }[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const field = (k: keyof typeof form, label: string, props: Record<string, unknown> = {}) => (
+    <label>
+      <span>{label}</span>
+      <input id={`fu-add-${stage}-${k}`} value={form[k]} onChange={(e) => setForm({ ...form, [k]: e.target.value })} {...props} />
+    </label>
+  );
+  async function submit(e: FormEvent | { preventDefault(): void }, confirmDuplicates = false) {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      const r = await fetch("/api/admin/follow-up/inmobiliarias", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accion: "agregar", key, ...form, score: form.score === "" ? null : Number(form.score), confirmDuplicates }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (r.status === 409 && data.duplicates) return setDuplicates(data.duplicates);
+      if (!r.ok) throw new Error(data.error || "No pudimos agregarla.");
+      onDone();
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No pudimos agregarla.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <form className="fu-add" data-testid="followup-add-form" onSubmit={(e) => submit(e)}>
+      {field("name", "Nombre *", { required: true, maxLength: 120, placeholder: "Inmobiliaria del Puerto" })}
+      {field("whatsapp", "WhatsApp", { placeholder: "223 555-0100" })}
+      {field("contact", "Decisor", { maxLength: 120, placeholder: "Laura" })}
+      {form.etapa === "no-contactado" && field("score", "Score (0 a 100)", { type: "number", min: 0, max: 100 })}
+      {field("address", "Dirección", { maxLength: 200 })}
+      {field("zone", "Zona", { maxLength: 120 })}
+      {field("website", "Web", { placeholder: "inmobiliaria.com.ar" })}
+      <label>
+        <span>Etapa</span>
+        <select id={`fu-add-${stage}-etapa`} value={form.etapa} onChange={(e) => setForm({ ...form, etapa: e.target.value })}>
+          {FOLLOWUP_STAGES.map((s) => (
+            <option key={s.key} value={s.key}>
+              {s.title}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="fu-add-actions">
+        {duplicates ? (
+          <>
+            <p className="fu-warn">Puede que ya exista: {duplicates.map((d) => d.name).join(", ")}.</p>
+            <button type="button" className="button button-small button-primary" disabled={busy} onClick={(e) => submit(e, true)}>
+              Agregarla igual
+            </button>
+          </>
+        ) : (
+          <button type="submit" className="button button-small button-primary" disabled={busy || !form.name.trim()}>
+            Agregar
+          </button>
+        )}
+        <button type="button" className="fu-link" onClick={onDone}>
+          Cancelar
+        </button>
+        <span className="fu-note">Queda en esta etapa hasta que su embudo avance.</span>
+        {error && (
+          <p className="fu-error" role="alert">
+            {error}
+          </p>
+        )}
+      </div>
+    </form>
+  );
+}
+
+const STAGE_CHOICES = [...FOLLOWUP_STAGES.map((s) => ({ key: s.key as string, title: s.title })), { key: OUT, title: "Sacar de Follow-up" }];
+
 function QueueRow({ stage, item: q, exec, open, onToggle, onDone }: { stage: StageView; item: QueueItem; exec: Exec; open: boolean; onToggle: () => void; onDone: (e: Exec) => void }) {
+  const router = useRouter();
   const status = exec?.status ?? "pending";
   const version = stage.versions.find((v) => v.id === q.versionId);
   const testing = stage.versions.some((v) => v.status === "test");
+  const [score, setScore] = useState(q.score === null ? "" : String(q.score));
+  const [error, setError] = useState("");
+  async function save(body: Record<string, unknown>) {
+    setError("");
+    try {
+      await api("/api/admin/follow-up/inmobiliarias", { method: "POST", body: JSON.stringify({ inmobiliaria: q.agencyId, ...body }) });
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No pudimos guardarlo.");
+    }
+  }
+  const saveScore = () => {
+    const next = score.trim() === "" ? null : Number(score);
+    if (next === q.score) return;
+    void save({ accion: "score", score: next });
+  };
   return (
-    <div className={`fu-qi${open ? " is-on" : ""}`} data-testid="followup-item" data-agency={q.agencyId} data-status={status} data-version={version?.version ?? ""}>
+    <div className={`fu-qi${open ? " is-on" : ""}`} data-testid="followup-item" data-agency={q.agencyId} data-status={status} data-version={version?.version ?? ""} data-score={q.score ?? ""}>
       <div className="fu-qrow">
+        <div className="fu-qscore">
+          {q.scoreEditable ? (
+            <input
+              type="number"
+              min={0}
+              max={100}
+              value={score}
+              placeholder="—"
+              aria-label={`Score de ${q.name}`}
+              data-testid="followup-score"
+              onChange={(e) => setScore(e.target.value)}
+              onBlur={saveScore}
+              onKeyDown={(e) => e.key === "Enter" && (e.currentTarget as HTMLInputElement).blur()}
+            />
+          ) : (
+            <b>{q.score === null ? "—" : Math.round(q.score)}</b>
+          )}
+          <span>{q.scoreEditable ? "score" : "lead score"}</span>
+        </div>
         <div className="fu-qname">
           <Link href={`/admin/inmobiliarias/${q.agencyId}`}>{q.name}</Link>
           <span>{q.person ?? "Sin decisor cargado"}</span>
         </div>
-        <div className="fu-qcontact">
-          <span className="fu-mono">{q.phone ?? "Sin WhatsApp"}</span>
-          <span>{q.needsReview ? "Número por revisar" : q.hasDemo ? "Con demo publicada" : "Sin demo publicada"}</span>
+        <div>
+          <span>{q.address ?? "Sin dirección"}</span>
+          <span>{q.zone ?? "Sin zona"}</span>
         </div>
-        <div className="fu-qact">
-          <span>{q.lastActivity ? `${q.lastActivity.text}` : "Sin actividad"}</span>
+        <div>
+          {q.website ? (
+            <a href={/^https?:/.test(q.website) ? q.website : `https://${q.website}`} target="_blank" rel="noreferrer" className="fu-web">
+              {q.website.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}
+            </a>
+          ) : (
+            <span>Sin web</span>
+          )}
           <span>
-            {ago(q.since)}
-            {version ? ` · V${version.version}${testing ? (version.status === "test" ? " (prueba)" : " (activa)") : ""}` : ""}
+            {q.properties} {q.properties === 1 ? "propiedad" : "propiedades"}
           </span>
         </div>
-        <span className={`fu-qst is-${status}`}>{EXEC_LABEL[status]}</span>
+        <div>
+          <select value={stage.key} aria-label={`Estado de ${q.name}`} data-testid="followup-stage-select" onChange={(e) => void save({ accion: "etapa", etapa: e.target.value })}>
+            {STAGE_CHOICES.map((s) => (
+              <option key={s.key} value={s.key}>
+                {s.title}
+              </option>
+            ))}
+          </select>
+          {q.manual && <span className="fu-manual">Corregido a mano</span>}
+        </div>
+        <div className="fu-qlast" data-testid="followup-last-action">
+          <span>{q.lastAction?.text ?? "Sin acciones"}</span>
+          <span className={q.lastAction && Date.now() - new Date(q.lastAction.at).getTime() > 5 * 86400000 ? "fu-late" : undefined}>
+            {q.lastAction ? `${day(q.lastAction.at)} · ${ago(q.lastAction.at)}` : ""}
+          </span>
+        </div>
+        <div>
+          <span className="fu-mono">{q.phone ?? "Sin WhatsApp"}</span>
+          <span>
+            <span className={`fu-qst is-${status}`}>{EXEC_LABEL[status]}</span>
+            {version ? ` V${version.version}${testing ? (version.status === "test" ? " prueba" : " activa") : ""}` : ""}
+            {q.needsReview ? " · por revisar" : ""}
+          </span>
+        </div>
         <button type="button" className={`button button-small${status === "pending" && !open ? " button-primary" : " button-outline"}`} data-testid="followup-execute" onClick={onToggle} disabled={!version}>
           {open ? "Cerrar" : status === "sent" ? "Ver" : version?.channel === "task" ? "Hacer tarea" : "Ejecutar"}
         </button>
       </div>
+      {error && (
+        <p className="fu-error fu-row-error" role="alert">
+          {error}
+        </p>
+      )}
       {open && <Execute stage={stage} item={q} exec={exec} onDone={onDone} />}
     </div>
   );
@@ -434,6 +642,12 @@ function Execute({ stage, item, exec, onDone }: { stage: StageView; item: QueueI
         <div className="fu-msg" data-testid="followup-message">
           {prepared.message}
         </div>
+        {prepared.notes && (
+          <div className="fu-obs-read" data-testid="followup-notes">
+            <span>Observaciones de V{prepared.version}</span>
+            {prepared.notes}
+          </div>
+        )}
         {prepared.warnings.map((w) => (
           <p key={w} className="fu-warn">
             {w}
@@ -563,5 +777,55 @@ function VersionTable({ stage }: { stage: StageView }) {
         Ejecución: un envío confirmado, una vez por inmobiliaria. Conversión: la inmobiliaria pasó a «{stage.goal}» o más allá después del envío, con las mismas reglas que el embudo de Inmobiliarias.
       </p>
     </div>
+  );
+}
+
+/** Follow-up → Script: the guide the extension reads before working. */
+export function ScriptEditor({ body, updatedAt }: { body: string; updatedAt: string | null }) {
+  const [text, setText] = useState(body);
+  const [saved, setSaved] = useState(updatedAt);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  async function save() {
+    setBusy(true);
+    setError("");
+    try {
+      const r = await api<{ body: string; updated_at: string }>("/api/admin/follow-up/script", { method: "PUT", body: JSON.stringify({ body: text }) });
+      setSaved(r.updated_at);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No pudimos guardarlo.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  const when = saved ? new Date(saved).toLocaleString("es-AR", { timeZone: "America/Argentina/Buenos_Aires", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : null;
+  return (
+    <section className="fu-stage fu-script">
+      <div className="fu-editor">
+        <div className="fu-qhead">
+          <span className="fu-lbl">Script de la extensión</span>
+          <span className="fu-note">{when ? `Guardado el ${when}` : "Todavía sin guardar"}</span>
+        </div>
+        <textarea
+          id="fu-script"
+          data-testid="followup-script"
+          value={text}
+          maxLength={20000}
+          placeholder="Cómo trabajar Follow-up: qué revisar en el chat antes de mandar, cuándo corregir el estado, qué hacer si algo no coincide, el tono…"
+          onChange={(e) => setText(e.target.value)}
+        />
+        <div className="fu-actions">
+          <button type="button" className="button button-primary button-small" data-testid="followup-script-save" disabled={busy || text === body && saved === updatedAt} onClick={save}>
+            Guardar
+          </button>
+          <span className="fu-note">Un solo texto para todas las etapas. Las indicaciones de un mensaje puntual van en sus observaciones.</span>
+        </div>
+        {error && (
+          <p className="fu-error" role="alert">
+            {error}
+          </p>
+        )}
+      </div>
+    </section>
   );
 }
