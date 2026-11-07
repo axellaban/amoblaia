@@ -101,7 +101,7 @@ function lines(html: string): Line[] {
 
 const PAGE_TABS = /^(categor[ií]a|videos?|fotos|planos?|mapa|ubicaci[oó]n|tour( 360)?|descripci[oó]n)$/i;
 /** Where the property ends: lists of other properties and the site footer come after. */
-const OTHERS = /^(propiedades similares|similares|te puede interesar|otras propiedades|propiedades relacionadas|propiedades cercanas|tambi[eé]n te puede)/i;
+const OTHERS = /^(propiedades similares|similares|te puede interesar|otras propiedades|propiedades relacionadas|propiedades cercanas|tambi[eé]n te puede|(?:departamentos|casas|ph|d[uú]plex|lotes|terrenos|locales|oficinas|cocheras|quintas|inmuebles|avisos) similares\b)/i;
 
 type Section = { title: string; lines: Line[] };
 function sections(all: Line[]) {

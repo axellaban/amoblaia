@@ -181,7 +181,7 @@ export function ownPhotos(images: string[], pageUrl: string) {
 const OTHERS_BLOCK = /(^|[\s_-])(related|relacionad[oa]s?|similar|similares|otras[-_]propiedades|te[-_]puede[-_]interesar|recomendad[oa]s)(?=[\s_-]|$)/i;
 /** A heading that opens the list of other properties ("Ventas Relacionadas", "Te puede interesar"). */
 const OTHERS_HEADING =
-  /^(?:(?:ventas|alquileres|propiedades|inmuebles|avisos)\s+)?(relacionad[oa]s|similares|propiedades similares|te puede interesar|tambi[eé]n te puede(?:n)? interesar|otras propiedades|propiedades destacadas|destacadas|recomendad[oa]s|propiedades relacionadas|propiedades recomendadas)\b/i;
+  /^(?:(?:ventas|alquileres|propiedades|inmuebles|avisos|departamentos|casas|ph|d[uú]plex|lotes|terrenos|locales|oficinas|cocheras|quintas)\s+)?(relacionad[oa]s|similares|propiedades similares|te puede interesar|tambi[eé]n te puede(?:n)? interesar|otras propiedades|propiedades destacadas|destacadas|recomendad[oa]s|propiedades relacionadas|propiedades recomendadas)\b/i;
 
 /** Removes every element (of these tags) that `remove` picks by its attributes, counting nested tags of the same name. */
 function removeElements(html: string, tags: string, remove: (attrs: string) => boolean) {

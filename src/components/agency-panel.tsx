@@ -1338,7 +1338,7 @@ export function ImportProperty({
             type="text"
             inputMode="url"
             maxLength={500}
-            placeholder={bar ? "Pegá el enlace de la publicación (Zonaprop, Argenprop, el sitio de tu inmobiliaria…)" : "https://inmobiliaria.com/propiedad/..."}
+            placeholder={bar ? "Pegá el enlace de la publicación en el sitio de tu inmobiliaria" : "https://inmobiliaria.com/propiedad/..."}
             value={url}
             disabled={busy}
             onChange={(e) => {

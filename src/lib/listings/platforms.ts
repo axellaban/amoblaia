@@ -43,9 +43,11 @@ export function byClass(html: string, names: string[], limit = 20): string[] {
 
 /** Where the property ends and the lists of other properties begin (their prices and photos are not this one's). */
 const SIMILAR = /<h[1-6][^>]*>\s*(?:<[^>]+>\s*)*(?:(?:ventas|alquileres)\s+(?:<[^>]+>\s*)*relacionad[oa]s|propiedades similares|similares|te puede interesar|tambi[eé]n te pueden? interesar|otras propiedades|propiedades relacionadas|propiedades destacadas)/i;
+/** Containers of other properties named as such (Argenprop: id="similarPropertyContainer"). */
+const SIMILAR_BOX = /<(?:div|section|aside|ul)\b[^>]*\b(?:id|class)\s*=\s*["'][^"']*\bsimilar-?propert(?:y|ies)[^"']*["']/i;
 export function ownPart(html: string) {
-  const m = SIMILAR.exec(html);
-  return m ? html.slice(0, m.index) : html;
+  const ends = [SIMILAR.exec(html)?.index, SIMILAR_BOX.exec(html)?.index].filter((i): i is number => i !== undefined);
+  return ends.length ? html.slice(0, Math.min(...ends)) : html;
 }
 
 const onRequest = (text: string) => /\b(consultar precio|precio a consultar|consulte (el )?precio|precio: ?consultar|valor a consultar)\b/i.test(text);
@@ -498,6 +500,82 @@ function aspFicha(html: string, pageUrl: string): Extracted {
   };
 }
 
+/** Where the reader appends Argenprop's gallery, which the ficha loads apart (/aviso/gallerypartial). */
+export const ARGENPROP_GALLERY_MARK = "<!-- habita:argenprop-gallery -->";
+
+/** The gallery's address on the ficha (data-url-get-gallery), only on Argenprop itself. */
+export function argenpropGalleryUrl(html: string, pageUrl: string): string | null {
+  const raw = html.match(/data-url-get-gallery\s*=\s*["']([^"']+)["']/i)?.[1];
+  if (!raw) return null;
+  try {
+    const page = new URL(pageUrl);
+    const url = new URL(decode(raw), page);
+    return url.host === page.host && /^\/aviso\/gallerypartial$/i.test(url.pathname) ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Argenprop's ficha: the address and price in the title bar ("Beruti 3300",
+ * "USD 300.000", "Venta en Palermo, CABA"), the title as the description's
+ * H1, the features as "Label: <strong>value</strong>" and the advertiser in
+ * the contact box. The page shows only 5 photos; the gallery (all of them,
+ * "_u_large", 1920 px) comes from its own request and is appended after
+ * ARGENPROP_GALLERY_MARK. Other listings ("similares", the advertiser's) never count.
+ */
+function argenprop(html: string, pageUrl: string): Extracted {
+  const [page, gallery = ""] = html.split(ARGENPROP_GALLERY_MARK);
+  const own = page.split(/<div\b[^>]*\bid=["']similarPropertyContainer["']/i)[0];
+  const first = (names: string[]) => squash(byClass(own, names, 1)[0] ?? "") || null;
+  const title = first(["section-description--title"]);
+  const street = first(["titlebar__address"]);
+  const bar = first(["titlebar__title"]);
+  const place = squash(byClass(own, ["location-label"], 1)[0] ?? "") || null;
+  // "Venta en Palermo, CABA" → operation and neighbourhood.
+  const opPlace = bar?.match(/^(Venta|Alquiler(?: temporario)?)\s+en\s+(.+)$/i);
+  const priceText = first(["titlebar__price"]) ?? "";
+  const [price] = moneyIn(priceText);
+  const pairs: Pair[] = [];
+  for (const m of own.matchAll(/<h3\b[^>]*>\s*([^<>:]{2,40}):\s*<strong>\s*([^<]{1,80}?)\s*<\/strong>/gi))
+    pairs.push({ label: decode(m[1]).trim(), value: decode(m[2]).replace(/\s+/g, " ").trim(), section: "plantilla" });
+  const expenses = first(["titlebar__expenses"])?.replace(/^\+\s*/, "");
+  if (expenses) pairs.push({ label: "Expensas", value: expenses.replace(/\s*expensas$/i, ""), section: "plantilla" });
+  const descHtml = byClass(own, ["section-description--content"], 1)[0] ?? "";
+  const description =
+    decode(descHtml.replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, " "))
+      .split("\n")
+      .map((l) => l.replace(/[ \t]+/g, " ").trim())
+      .join("\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim() || null;
+  // The property's photos live in one folder (static-content/<folder>/<uuid>_u_*.jpg): the
+  // gallery's large ones, or else the hero's, enlarged. The advertiser's logo and other
+  // listings are in other folders.
+  const photo = /https?:\/\/[^"'\s()]*\/static-content\/(\d+)\/([0-9a-f-]{36})(?:_u_[a-z]+)?\.(?:jpe?g|png|webp)/gi;
+  const hero = byClass(own, ["hero-image"], 1)[0] ?? "";
+  const folder = [...hero.matchAll(photo)][0]?.[1] ?? [...gallery.matchAll(photo)][0]?.[1] ?? null;
+  const images: string[] = [];
+  for (const source of [gallery, hero])
+    for (const m of source.matchAll(photo)) {
+      if (m[1] !== folder) continue;
+      images.push(`${new URL(pageUrl).origin}/static-content/${m[1]}/${m[2]}_u_large.jpg`);
+    }
+  const advertiser = squash(byClass(own, ["form-details-heading"], 1)[0] ?? "") || null;
+  return {
+    title,
+    location: joinPlace(place?.replace(/,\s*Capital Federal$/i, "") ?? null) ?? joinPlace(street, opPlace?.[2]),
+    price: price ?? null,
+    priceOnRequest: !price && onRequest(priceText),
+    operation: opPlace ? capitalize(opPlace[1].split(" ")[0]) : null,
+    propertyKind: title?.match(KIND_WORDS)?.[1] ?? null,
+    description,
+    pairs,
+    images: uniqueBy(images, (u) => u.split("/").pop()!),
+    agencyName: advertiser ? tidyCaps(advertiser) : null,
+  };
+}
+
 /** The fields this platform's template publishes in known places. */
 export function extractPlatform(platform: PlatformId, html: string, pageUrl: string): Extracted {
   switch (platform) {
@@ -521,6 +599,8 @@ export function extractPlatform(platform: PlatformId, html: string, pageUrl: str
       return aspFicha(html, pageUrl);
     case "next_rsc":
       return nextRsc(html);
+    case "argenprop":
+      return argenprop(html, pageUrl);
     default:
       return generic(html, pageUrl);
   }

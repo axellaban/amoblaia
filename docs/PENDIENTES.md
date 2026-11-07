@@ -4,6 +4,13 @@ Se detiene el trabajo a pedido del usuario para conservar créditos. Los cambios
 
 Producción: https://amoblaia.vercel.app/
 
+## Importador: Zonaprop y Argenprop — 7 de noviembre de 2026 (rama `claude/gallant-cannon-qpagfr`)
+
+- **Zonaprop** responde a nuestros servidores con la verificación de Cloudflare (403, `cf-mitigated: challenge`), siempre. **Argenprop** (CloudFront + AWS WAF) responde desde Vercel con la verificación de AWS WAF (202 y solo «JavaScript is disabled»); desde otras redes entrega la ficha completa.
+- Corregido: la verificación de AWS WAF con estado 2xx ya no se lee como la ficha (antes quedaba el título «JavaScript is disabled» y 0 fotos); los mensajes nombran el portal y ya no recomiendan «Zonaprop o Argenprop», que también nos bloquean, sino el enlace del sitio de la inmobiliaria o subir las fotos a mano.
+- Cuando Argenprop sí responde, ahora tiene lector propio: galería completa (pide `/aviso/gallerypartial`, 20 fotos de 1920 px en vez de 1), descripción, expensas, anunciante, mapa con coma decimal y sin mezclar los «similares».
+- **Pendiente (decisión):** para leer Zonaprop, o Argenprop desde Vercel, hace falta un servicio de renderizado (`SCRAPER_PROVIDER`, `src/lib/listings/render.ts`), con costo y revisando los términos de cada portal. Sin eso no hay forma de importarlos desde producción.
+
 ## UX/UI v3 — 2 de noviembre de 2026 (rama `claude/zealous-feynman-r8b8ba`)
 
 - Inicio: encabezado compacto y tres tarjetas (Ambientar con IA, Editar imágenes, Crear video) con el mismo diseño. Cada una abre «¿Con qué imágenes querés empezar?» (`src/components/start-picker.tsx`): propiedad existente (con buscador; la preparada en la demo va primero), importar URL (el importador de siempre, que al terminar sigue a la herramienta) o subir fotos sin ficha (los mismos grupos de fotos del estudio). Sin propiedades, la lista no se ofrece.
