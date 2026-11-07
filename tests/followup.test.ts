@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AGENCY_STEPS } from "@/lib/agency/demo-funnel";
-import { FOLLOWUP_STAGES, cleanVersion, fillMessage, linksNeeded, missingVariables, pct, stageOf, versionFor, versionStats, type FollowupExecution, type FollowupVersion } from "@/lib/followup/stages";
+import { FOLLOWUP_STAGES, cleanVersion, fillMessage, personName, linksNeeded, missingVariables, pct, stageOf, versionFor, versionStats, type FollowupExecution, type FollowupVersion } from "@/lib/followup/stages";
 
 const base = { lost: false, test: false, suppressed: false, pendingProspect: false };
 const v = (id: string, version: number, status: FollowupVersion["status"], body = "Hola {{decisor}}"): FollowupVersion => ({
@@ -83,6 +83,18 @@ describe("messages", () => {
     expect(fillMessage("Hola {{decisor}}, mirá {{demo}}", { decisor: "Laura", demo: "https://habitaia.app/demo/x" })).toBe("Hola Laura, mirá https://habitaia.app/demo/x");
     const half = fillMessage("Hola {{decisor}}, mirá {{ demo }}", { decisor: "Laura", demo: " " });
     expect(missingVariables(half)).toEqual(["demo"]);
+  });
+
+  it("drops {{decisor}} with its comma when there is no name", () => {
+    expect(fillMessage("Hola {{decisor}}, soy {{sdr}} de habita.", { sdr: "Facu" })).toBe("Hola, soy Facu de habita.");
+    expect(fillMessage("{{decisor}}, te dejo {{demo}}", { demo: "x" })).toBe("Te dejo x");
+    expect(fillMessage("{{decisor}}, ¿pudiste verla?", { decisor: "Laura" })).toBe("Laura, ¿pudiste verla?");
+  });
+
+  it("only takes a real first name as the decisor, never the sheet's categories", () => {
+    for (const v of ["Por confirmar", "Familiar (apellido)", "Dueño/a con nombre propio", "Marca comercial", "Franquicia / corporativa", "", null, "ventas@x.com"]) expect(personName(v)).toBeNull();
+    expect(personName("Laura Bustos")).toBe("Laura");
+    expect(personName("  María José ")).toBe("María");
   });
 
   it("knows which links a version needs, from its text and its CTAs", () => {
