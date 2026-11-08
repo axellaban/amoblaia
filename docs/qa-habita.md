@@ -93,6 +93,20 @@ Sin nombres, teléfonos, emails, enlaces a grabaciones, IDs de sesión, tasas de
 
 ## Resultados
 
+### QA 2026-11-08 pm
+
+- Inicio: 2026-11-08T17:51:39-03:00 · Fin: 2026-11-08T17:55:25-03:00 · Estado: parcial (ver «Sin revisar»)
+- Commit: 71b7374 (#201) · Despliegue: dpl_DEXTosZwcCdaxXbt6DBmKWExJr7C (production, READY)
+- Tipo: liviana (tarde) · Pantallas: escritorio 1366×900, iPhone 13 y Galaxy S8 (este también con red lenta y con el navegador de WhatsApp).
+- Paso 2: errores de Vercel en 24 h: un solo grupo, `DATABASE_57014` (timeout de base) en `/api/prospeccion`, el mismo de OBS-012; se repite una vez más. Avisos de salud de Supabase: ninguno. No se pudieron leer los logs de Postgres (la consulta de logs devolvió «tabla inexistente»).
+- Sesión de QA: OK. Demo pública, `/presentacion`, token inexistente y `/panel`: 200 (404 propio y claro para el token inexistente), sin errores de JavaScript, sin scroll horizontal ni placeholders, `og:title`, `og:description` y `og:image` presentes, enlaces `wa.me` correctos. Comparación con arrastre y botón «Siguiente» de la galería sin fallas en todas las pantallas. Axe: solo `color-contrast` y, en la demo, `aria-prohibited-attr` (UX-001, UX-003). Se miraron las capturas de la demo en iPhone 13, del panel en Galaxy S8 y del 404 en Galaxy S8.
+- Bugs encontrados: ninguno · Corregidos: ninguno
+- Observaciones nuevas: ninguna · Propuestas nuevas: ninguna. Se repiten OBS-012, OBS-005 (pestaña «Contactar» cortada en celular), UX-001, UX-003 y UX-004 (carga lenta en escritorio, 5 a 9 s en este entorno).
+- PRs de usabilidad abiertos: ninguno con título `UX:`
+- PostHog revisado hasta: sin cambios respecto de la corrida anterior · cobertura: sin acceso · el conector de PostHog no estaba disponible en esta sesión.
+- Sin revisar: PostHog completo (sin conector); teclado y zonas táctiles en detalle; el resto de las capturas (solo se miraron tres); tablet; crear demo, estudio de imágenes y video (la corrida liviana los excluye y la mañana no dejó arreglos pendientes). Nada que borrar: no se crearon datos.
+- Esperado, no es bug: el 404 de la consola en `/demo/<token-inexistente>`; los `ERR_TUNNEL_CONNECTION_FAILED` son de la red del entorno; los tiempos de carga incluyen el proxy.
+
 ### QA 2026-11-08 am (2)
 
 - Inicio: 2026-11-08T08:54:06-03:00 · Fin: 2026-11-08T09:20:00-03:00
