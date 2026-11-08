@@ -4,6 +4,7 @@ import { activity, contactFor, HEADER, stableUuid, toRow } from "@/lib/prospecti
 import { recordSend } from "@/lib/prospecting/record-send";
 import { NO_STORE, prospectDataset, prospectFailure, prospectRpc } from "@/lib/prospecting/server";
 import { runSheetSync } from "@/lib/prospecting/sync";
+import { followupSnapshot, operatorFor, runFollowupOp } from "@/lib/followup/chapa";
 import { agencyDemoLink, agencyList, agencyPanel, agencyThumb, recalcScores, setDemosSent } from "@/lib/agency/external";
 import type { Dataset, ProspectAccount } from "@/lib/prospecting/types";
 import { sameSecret } from "@/lib/session";
@@ -28,6 +29,13 @@ export const maxDuration = 300;
  *   POST { inmobiliaria, accion }     «demo-estado» { enviada }, «link-demo», «link-panel».
  *   POST { accion: "recalcular-scores" }
  *
+ * Follow-up (/admin/follow-up), para operarlo desde Chapa con las mismas reglas y claims:
+ *   GET ?vista=followup               { summary, queue, blocked, scheduled, inbox, funnel, stages, rules, results }.
+ *   POST { followup: { op, ... }, by } op = queue, claim, open, confirm, fail, release, situation, reply,
+ *                                     replies, snooze, priority, version-create, version-update,
+ *                                     version-status o rule-save, con los campos de /api/admin/followup/*.
+ *                                     `by` es quien opera: el usuario del equipo con ese nombre.
+ *
  * Las acciones pasan por las mismas funciones que el panel del equipo (/admin/prospeccion), con sus
  * reglas: solo contactos revisados, bajas, secuencia de tres pasos, evidencia. «Mandé el mensaje»
  * hace de una los tres pasos del panel (preparar, abrir y confirmar): quien lo registra en Chapa
@@ -42,6 +50,15 @@ function authorized(request: Request) {
 }
 
 let cachedActor: string | null = null;
+let cachedTeam: { at: number; users: { id: string; email?: string; user_metadata: Record<string, unknown> }[] } | null = null;
+/** Los usuarios del equipo (ADMIN_EMAILS), para saber quién opera desde Chapa. */
+async function team() {
+  if (cachedTeam && Date.now() - cachedTeam.at < 600_000) return cachedTeam.users;
+  const { data } = await adminClient().auth.admin.listUsers({ page: 1, perPage: 1000 });
+  const users = (data?.users ?? []).filter((u) => isAdmin(u.email));
+  cachedTeam = { at: Date.now(), users };
+  return users;
+}
 async function actorId() {
   const env = [process.env.PROSPECTING_ACTOR_ID, process.env.PROSPECT_SYNC_ACTOR_ID].map((v) => v?.trim()).find((v) => isUuid(v));
   if (env) return env;
@@ -84,6 +101,7 @@ export async function GET(request: Request) {
     if (!cloudEnabled() || !cloudConfigured()) throw new HttpError(503, "La base de prospección no está disponible.");
     const q = new URL(request.url).searchParams;
     if (q.get("vista") === "inmobiliarias") return Response.json(await agencyList(), { headers: NO_STORE });
+    if (q.get("vista") === "followup") return Response.json(await followupSnapshot(await team()), { headers: NO_STORE });
     if (q.get("foto")) {
       const image = await agencyThumb(q.get("foto")!, q.get("w"));
       return new Response(new Uint8Array(image), { headers: { "Content-Type": "image/jpeg", "Cache-Control": "private, max-age=3600" } });
@@ -210,7 +228,12 @@ export async function POST(request: Request) {
   if (!authorized(request)) return new Response("Unauthorized", { status: 401 });
   try {
     if (!cloudEnabled() || !cloudConfigured()) throw new HttpError(503, "La base de prospección no está disponible.");
-    const b = (await request.json().catch(() => null)) as { code?: unknown; action?: Action; by?: unknown; sync?: { csv?: unknown }; inmobiliaria?: unknown; accion?: unknown; enviada?: unknown } | null;
+    const b = (await request.json().catch(() => null)) as { code?: unknown; action?: Action; by?: unknown; sync?: { csv?: unknown }; inmobiliaria?: unknown; accion?: unknown; enviada?: unknown; followup?: unknown } | null;
+    if (b?.followup && typeof b.followup === "object") {
+      const f = b.followup as Record<string, unknown>;
+      const actor = operatorFor(str(b.by, 80), await team(), await actorId());
+      return Response.json(await runFollowupOp(f.op, f, actor, new URL(request.url).origin), { headers: NO_STORE });
+    }
     if (b?.accion === "recalcular-scores") return Response.json(await recalcScores(), { headers: NO_STORE });
     if (b && typeof b.accion === "string" && b.inmobiliaria !== undefined) {
       if (!isUuid(b.inmobiliaria)) throw new HttpError(404, "No encontramos la inmobiliaria.");
