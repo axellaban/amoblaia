@@ -8,6 +8,10 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 <!-- END:nextjs-agent-rules -->
 
+## Operación comercial
+
+La operación comercial de habita. y Turnia se hace desde Chapa Labs (`facundogregorini-lab/chapa-labs`, `/prospecting`), que lee y ejecuta el Follow-up de este repo por `/api/prospeccion` (`src/lib/followup/chapa.ts`). Antes de tocar Follow-up o Prospección, leé `docs/FOLLOWUP.md`, `docs/PENDIENTES.md` y, en chapa-labs, `docs/CENTRO_COMERCIAL.md` (cómo se conectan los tres repos, el contrato de la API y qué sigue).
+
 ## Migraciones de Supabase
 
 Cuando un cambio incluye una migración para aplicar, dar siempre el enlace de GitHub al archivo, sin que haga falta pedirlo, para abrirlo y copiar el SQL en el SQL Editor de Supabase:

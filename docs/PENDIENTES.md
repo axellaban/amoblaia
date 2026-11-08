@@ -4,6 +4,17 @@ Se detiene el trabajo a pedido del usuario para conservar créditos. Los cambios
 
 Producción: https://amoblaia.vercel.app/
 
+## Centro comercial en Chapa Labs — 8 de noviembre de 2026 (PR #200, en producción)
+
+- Chapa Labs (`chapa-labs.vercel.app/prospecting`, repo `facundogregorini-lab/chapa-labs`) es la pantalla comercial única de habita. y Turnia. Opera el Follow-up de habita. por `/api/prospeccion` (`GET ?vista=followup` y `POST { by, followup: { op } }`), con las mismas funciones que `/admin/follow-up` y la extensión (`src/lib/followup/chapa.ts`). Detalle en [FOLLOWUP.md](FOLLOWUP.md) → «Desde Chapa Labs»; el traspaso completo de los tres repos, en chapa-labs `docs/CENTRO_COMERCIAL.md`.
+- Sin migraciones. Quien opera en Chapa queda como el usuario del equipo con ese nombre de pila (ADMIN_EMAILS): Facu y Axel tienen que entrar a Chapa con su nombre.
+- **Pendiente:**
+  - Tanda real de 10 desde Chapa, con Facu y Axel a la vez, comprobando las tomas.
+  - Una API segura para **crear demos** desde Chapa; hoy «Su panel» abre el editor.
+  - Login por persona en Chapa: hoy está abierto por decisión del usuario.
+  - Retirar pantallas repetidas solo después de dos semanas sin diferencias.
+  - Los textos que define Facu: «Saludo sin respuesta», «Presentación sin respuesta» y el segundo seguimiento de demo. Sin ellos, esas acciones quedan bloqueadas.
+
 ## Importador: Zonaprop y Argenprop — 7 de noviembre de 2026 (rama `claude/gallant-cannon-qpagfr`)
 
 - **Zonaprop** responde a nuestros servidores con la verificación de Cloudflare (403, `cf-mitigated: challenge`), siempre. **Argenprop** (CloudFront + AWS WAF) responde desde Vercel con la verificación de AWS WAF (202 y solo «JavaScript is disabled»); desde otras redes entrega la ficha completa.
