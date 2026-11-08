@@ -237,3 +237,11 @@ Migración `202612060001_followup_results.sql`. Lógica pura en `src/lib/followu
 - **Caso I (suscripción)**: una inmobiliaria suscripta sale de Follow-up (no tiene etapa), así que no le queda ninguna tarea de captación; su historial (ejecuciones, respuestas, auditoría) se conserva.
 - **Opcional, decisión aparte**: la API de WhatsApp Business permitiría detectar respuestas sin una pestaña abierta (costo, plantillas aprobadas por Meta y reglas propias).
 - Selectores: `followup-results`, `followup-window-7|14|todo`, `followup-results-versions`, `followup-results-blocks`, `followup-results-cohorts`, `followup-cohort-contacto|respuesta|version`.
+
+## Desde Chapa Labs (servidor a servidor)
+
+El panel comercial de Chapa Labs (`/prospecting`, «Hoy» con Avita y Turnia juntas) opera este mismo Follow-up por `/api/prospeccion`, con `Authorization: Bearer $PROSPECTING_API_SECRET` (o `$METRICS_SECRET`). Lógica en `src/lib/followup/chapa.ts`: llama a las mismas funciones que `/api/admin/followup/*`, con los mismos campos, así las reglas, los claims, la auditoría y los resultados son los mismos.
+
+- `GET ?vista=followup` → `{ summary, queue, blocked, scheduled, inbox, funnel, stages, rules, results, changes }`.
+- `POST { by, followup: { op, ... } }` con `op` = `queue`, `claim`, `open`, `confirm`, `fail`, `release`, `situation`, `reply`, `replies`, `snooze`, `priority`, `version-create`, `version-update`, `version-status` o `rule-save`.
+- **Quién opera**: `by` es el nombre de quien opera en Chapa. Se usa el usuario del equipo (ADMIN_EMAILS) cuyo nombre coincide (el mismo que da `{{sdr}}`), así el claim, la ejecución y la auditoría quedan a su nombre. Si nadie coincide, queda a nombre del usuario por defecto de la API (`PROSPECTING_ACTOR_ID`) con el nombre que mandó Chapa, y un claim de otra persona con ese mismo usuario igual frena la operación (409).
