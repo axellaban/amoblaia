@@ -93,6 +93,20 @@ Sin nombres, teléfonos, emails, enlaces a grabaciones, IDs de sesión, tasas de
 
 ## Resultados
 
+### QA 2026-11-08 am (2)
+
+- Inicio: 2026-11-08T08:54:06-03:00 · Fin: 2026-11-08T09:20:00-03:00
+- Commit: f27ee45 (#198) · Despliegue: dpl_Cz7ovhPV3R7LJPVMuEGj6TWZTRvt (production, READY) · Estado: parcial (ver «Sin revisar»)
+- Tipo: completa (mañana), pero recortada: segunda corrida del día, una hora después de la anterior. Pantallas: escritorio 1366×900, iPhone 13, Galaxy S8 e iPad (gen 7).
+- Paso 2: errores de Vercel en 24 h: los mismos dos grupos de timeout de base (`DATABASE_57014`, OBS-012), sin repetirse después de ayer a la tarde. Logs de Supabase en 24 h: solo un puñado de errores de Postgres, los mismos timeouts; sin errores SSR.
+- Sesión de QA: OK. `/`, `/precios`, `/acceso`, `/demo/<token-inexistente>`, `/panel`, `/admin`, `/admin/inmobiliarias` y `/admin/prospeccion` en las cuatro pantallas: 200, sin errores de JavaScript, sin scroll horizontal ni placeholders, sin violaciones axe `critical`. El token inexistente da el 404 propio (el error de consola es esperado).
+- Bugs encontrados: ninguno · Corregidos: ninguno
+- Observaciones y propuestas nuevas: ninguna. Sin cambios en las listas.
+- PRs de usabilidad abiertos: no consultados en esta corrida.
+- PostHog revisado hasta: sin cambios respecto de la corrida anterior · cobertura: sin acceso · el conector de PostHog no estaba disponible en esta sesión.
+- Sin revisar (motivo: corrida repetida con poco tiempo, una hora después de la completa de la mañana): PostHog completo (sin conector); crear demo, estudio de imágenes y video Clásico; demo pública con red lenta, navegador de WhatsApp, galería, comparación y CTA; caminos de error; teclado y zonas táctiles; ficha de inmobiliaria con todas sus pestañas; no se miraron las capturas una por una. Nada que borrar: no se crearon datos.
+- Esperado, no es bug: el 404 de la consola en `/demo/<token-inexistente>`.
+
 ### QA 2026-11-08 am
 
 - Inicio: 2026-11-08T07:32:57-03:00 · Fin: 2026-11-08T07:58:00-03:00
