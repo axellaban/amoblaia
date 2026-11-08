@@ -48,6 +48,7 @@ Buscá `### QA <fecha de hoy> am` o `pm`, con la fecha de Argentina. Si no está
 - **OBS-010** (7/11 am) La consulta de grabaciones de PostHog (`session_replay_events`) no devolvió ninguna sesión en las últimas 72 h, ni siquiera internas. Las corridas anteriores sí tenían grabaciones. Ver si es de la consulta o si la grabación se cortó (`docs/CRO_INSTRUMENTACION.md`, receta de grabaciones).
 - **OBS-011** (7/11 am) Un `lead_recompute_failed` aislado en `POST /api/demo/<token>/leads` (6/11 a la noche). Es el recálculo de puntaje «mejor esfuerzo»: se registra y el siguiente lote lo corrige. Ver si se repite.
 - **OBS-012** (7/11 pm) Tres «statement timeout» de Postgres (`57014`) en las últimas 24 h: dos juntas en `/api/metricas` (a las 14:12 de Argentina, coincidieron con un deploy) y una en `/api/prospeccion` (13:42). Lecturas completas de `demos`, `demo_activity` y del dataset de prospección. Ver si se repite; si sí, paginar o indexar.
+- **OBS-013** (8/11 am) Al terminar de generar un estilo en el editor de la propiedad (escritorio), el visor grande de antes/después desapareció de la captura hasta recargar y la miniatura de la versión nueva se vio en blanco un momento. Aislado; no se repitió al recargar. Ver si se repite.
 
 ### Propuestas UX pendientes
 
@@ -65,6 +66,8 @@ Para que Astra las evalúe. Claude no las implementa sin aprobación.
 
 - **UX-009** Guardar la ficha sin conexión muestra «Failed to fetch» en inglés y sin explicar qué hacer (el reintento sí funciona). Pantalla: editor de la propiedad, pestaña «Datos» (escritorio). Falla el punto 7 de la lista (mensajes de error en castellano). Reproducido.
 - **UX-010** Dejar vacío el título de la propiedad y guardar muestra solo el aviso nativo del navegador («Please fill out this field.» en un navegador en inglés), sin un mensaje propio junto al campo. Punto 7 de la lista. Reproducido en escritorio con navegador en inglés.
+- **UX-011** (8/11 am) En `/panel/imagenes`, en celular (Galaxy S8), el aviso rojo «Elegí un estilo.» aparece apenas se abre la pantalla, antes de que la persona haya hecho algo, junto al botón «Generar versión» deshabilitado. Punto 7 de la lista (mensajes de error). Reproducido una vez.
+- **UX-012** (8/11 am) En celular, el botón flotante del asistente «¿Te ayudo?» queda encima de los controles de la esquina de la foto en `/panel/imagenes` (los botones «Comparar» y de pantalla completa). Punto 2 de la lista. Reproducido en Galaxy S8.
 
 ### PRs de usabilidad abiertos
 
@@ -89,6 +92,21 @@ Para que Astra las evalúe. Claude no las implementa sin aprobación.
 Sin nombres, teléfonos, emails, enlaces a grabaciones, IDs de sesión, tasas de conversión ni cantidades de usuarios o sesiones.
 
 ## Resultados
+
+### QA 2026-11-08 am
+
+- Inicio: 2026-11-08T07:32:57-03:00 · Fin: 2026-11-08T07:58:00-03:00
+- Commit: e091d7d (#197) · Despliegue: dpl_3MiS3RNtmd6M8w5T9YMgHnLKZ17T (production, READY) · Estado: parcial (ver «Sin revisar»)
+- Tipo: completa (mañana) · Pantallas: escritorio 1366×900, iPhone 13, Galaxy S8 (también con red lenta y con el navegador de WhatsApp) e iPad (gen 7).
+- Paso 2: errores de Vercel en 24 h: dos grupos de timeout de base (`DATABASE_57014`, `/api/metricas` y `/api/prospeccion`), los mismos de OBS-012 de ayer; no se repitieron. Logs de Supabase en 24 h: sin errores de Postgres ni 5xx de la API. Sin errores SSR.
+- Sesión de QA: OK. Crear demo en escritorio y en celular con red lenta (2 fotos: la subida y el borrador terminan, con indicador de avance visible), doble clic en «Continuar» y en «Guardar» sin duplicados, título y ubicación persistidos tras recargar, volver atrás sin perder lo guardado, guardar sin conexión con reintento posterior correcto. Errores de subida (HEIC, PDF, TXT y archivo de más de 3 MB): mensaje claro por archivo y no se rompe nada. Estudio de imágenes: costo leído en pantalla («sin costo: la foto ya está paga»), una generación, progreso visible («Creando…») y resultado en unos 30 s, doble clic sin duplicar. Video Clásico (sin créditos): un solo pedido con doble clic, MP4 descargado con el título de la propiedad. Demo pública y `/presentacion` en las cuatro pantallas, red lenta y navegador de WhatsApp: 200, sin errores de JavaScript, sin scroll horizontal ni placeholders, `og:title`/`og:description`/`og:image` presentes, galería por botón y por teclado, comparación con clic y con arrastre (mouse y toque), enlaces de WhatsApp con destino `wa.me`, CTA, foco visible; token inexistente: 404 propio y claro. Resto (`/`, `/precios`, `/acceso`, `/galeria`, panel completo, `/admin`, ficha de inmobiliaria, prospección, internos) en las cuatro pantallas: 200, sin errores ni scroll horizontal. Axe: solo `color-contrast` y, en la demo, `aria-prohibited-attr`.
+- Se miraron las capturas de la demo (iPhone 13 y Galaxy S8, normal y presentación), del 404, del editor, del estudio, del video, de `/panel`, `/panel/imagenes` en Galaxy S8, `/precios` y `/admin/prospeccion` en iPhone 13.
+- Bugs encontrados: ninguno · Corregidos: ninguno
+- Observaciones nuevas: OBS-013 · Propuestas nuevas: UX-011, UX-012. Se repiten UX-001, UX-003, UX-004 (con evidencia real en celular), UX-005, UX-006, UX-007, UX-009, UX-010, OBS-003, OBS-005 y OBS-010. OBS-012 no se repitió.
+- PRs de usabilidad abiertos: ninguno con título `UX:`
+- PostHog revisado hasta: 2026-11-08T07:30:00-03:00 · cobertura: parcial · ventana desde el corte del 7/11 am. Filtro de tráfico interno verificado (sin visitas externas a `/admin`). Demos, panel, rebote, fotos, comparación, CTA, clics repetidos y web vitals revisados con muy poco tráfico externo: ninguna visita al panel y pocas sesiones de demos, todas en celular. Patrones: rebote rápido en parte de las demos (se van sin interactuar), las que interactúan usan la comparación y cambian de foto, una llegó a la CTA; sin clics repetidos. LCP de las demos en celular entre 5 y 9 s. No existen los eventos de clics muertos ni de excepciones en el proyecto. Sin grabaciones disponibles: la tabla de grabaciones no tiene ninguna en los últimos 10 días (OBS-010), así que no se pudo mirar nada a nivel de grabación.
+- Sin revisar: grabaciones de PostHog (no hay, ver arriba); funnel del panel por falta de sesiones externas; `Equilibrado` y `Cinematográfico` del video (OBS-003). Borrado: se eliminaron con la UI del admin las dos propiedades de prueba creadas por la corrida; la demo publicada de QA se conserva.
+- Esperado, no es bug: el 404 de la consola en `/demo/<token-inexistente>`; el límite de subida es de 3 MB por foto y así lo dice la pantalla; los tiempos de carga de la corrida incluyen el proxy del entorno.
 
 ### QA 2026-11-07 pm
 
