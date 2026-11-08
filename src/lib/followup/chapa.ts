@@ -1,6 +1,8 @@
 import "server-only";
 import { HttpError } from "@/lib/commerce/http";
+import { adminClient } from "@/lib/supabase/server";
 import { actorName } from "./actor";
+import { GROUPS, SITUATIONS } from "./plan";
 import {
   agentQueue,
   claimNext,
@@ -58,10 +60,27 @@ function guardClaim(it: Pick<QueueItem, "name" | "claim"> | undefined, actor: Op
   if (c && c.until > new Date().toISOString() && c.actorId === actor.id && c.by && c.by !== actor.name) throw new HttpError(409, `${it!.name} la está ejecutando ${c.by}.`);
 }
 
+/** Envíos confirmados y conversiones por quien ejecutó (el usuario del equipo). */
+async function byActor(team: TeamUser[]) {
+  const { data, error } = await adminClient().from("followup_executions").select("actor_id,status,converted_at").eq("status", "sent").limit(20000);
+  if (error) return [];
+  const name = new Map(team.map((u) => [u.id, actorName(u)]));
+  const out = new Map<string, { executions: number; conversions: number }>();
+  for (const e of (data ?? []) as { actor_id: string | null; converted_at: string | null }[]) {
+    const k = (e.actor_id && name.get(e.actor_id)) || "Equipo";
+    const cur = out.get(k) ?? { executions: 0, conversions: 0 };
+    cur.executions++;
+    if (e.converted_at) cur.conversions++;
+    out.set(k, cur);
+  }
+  return [...out].map(([actor, x]) => ({ actor, ...x, rate: x.executions ? x.conversions / x.executions : null }));
+}
+
 /** Lo que Chapa muestra: la cola, las bloqueadas, la bandeja, el embudo, las reglas y los resultados. */
-export async function followupSnapshot() {
-  const o = await followupOverview();
+export async function followupSnapshot(team: TeamUser[] = []) {
+  const [o, actors] = await Promise.all([followupOverview(), byActor(team)]);
   return {
+    labels: { situations: SITUATIONS, groups: GROUPS },
     summary: o.summary,
     queue: o.queue,
     blocked: o.blocked,
@@ -70,7 +89,7 @@ export async function followupSnapshot() {
     funnel: o.funnel,
     stages: o.stages.map((s) => ({ key: s.key, title: s.title, goal: s.goal, waiting: s.queue.length, versions: s.versions })),
     rules: o.rules,
-    results: o.results,
+    results: { ...o.results, byActor: actors },
     changes: o.changes,
   };
 }

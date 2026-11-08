@@ -101,7 +101,7 @@ export async function GET(request: Request) {
     if (!cloudEnabled() || !cloudConfigured()) throw new HttpError(503, "La base de prospección no está disponible.");
     const q = new URL(request.url).searchParams;
     if (q.get("vista") === "inmobiliarias") return Response.json(await agencyList(), { headers: NO_STORE });
-    if (q.get("vista") === "followup") return Response.json(await followupSnapshot(), { headers: NO_STORE });
+    if (q.get("vista") === "followup") return Response.json(await followupSnapshot(await team()), { headers: NO_STORE });
     if (q.get("foto")) {
       const image = await agencyThumb(q.get("foto")!, q.get("w"));
       return new Response(new Uint8Array(image), { headers: { "Content-Type": "image/jpeg", "Cache-Control": "private, max-age=3600" } });

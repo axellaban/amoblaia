@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // Follow-up desde Chapa Labs por /api/prospeccion: clave, quién opera (el usuario del equipo con
 // ese nombre) y que cada operación llama a la misma función que la ruta del agente.
 const FACU = "00000000-0000-4000-8000-0000000000f1";
+const FACU_ID = vi.hoisted(() => "00000000-0000-4000-8000-0000000000f1");
 const AXEL = "00000000-0000-4000-8000-0000000000f2";
 const AG = "00000000-0000-4000-8000-0000000000b1";
 const calls = vi.hoisted(() => [] as { fn: string; args: unknown[] }[]);
@@ -12,6 +13,7 @@ vi.mock("@/lib/supabase/server", () => ({
   currentUser: async () => null,
   userClient: async () => ({}),
   adminClient: () => ({
+    from: () => ({ select: () => ({ eq: () => ({ limit: async () => ({ data: [{ actor_id: FACU_ID, status: "sent", converted_at: "2026-11-05T12:00:00Z" }, { actor_id: FACU_ID, status: "sent", converted_at: null }], error: null }) }) }) }),
     auth: {
       admin: {
         listUsers: async () => ({
@@ -102,7 +104,9 @@ describe("Follow-up para Chapa", () => {
     expect(body.queue).toHaveLength(1);
     expect(body.scheduled).toHaveLength(1);
     expect(body.stages[0]).toMatchObject({ key: "no-contactado", waiting: 1 });
-    expect(Object.keys(body)).toEqual(expect.arrayContaining(["summary", "blocked", "inbox", "funnel", "rules", "results"]));
+    expect(Object.keys(body)).toEqual(expect.arrayContaining(["summary", "blocked", "inbox", "funnel", "rules", "results", "labels"]));
+    expect(body.labels.situations.interesado).toBe("Interesado");
+    expect(body.results.byActor).toEqual([{ actor: "Facundo", executions: 2, conversions: 1, rate: 0.5 }]);
   });
 
   it("cada operación va a la misma función que la ruta del agente, a nombre de quien opera", async () => {
