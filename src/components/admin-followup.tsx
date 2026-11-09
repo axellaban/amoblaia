@@ -2,11 +2,11 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { ChevronRight, ClipboardCopy, KeyRound, Link2, MessageCircle, Pencil, Plus, Send } from "lucide-react";
 import { api } from "@/components/admin-demos";
 import { CTA_KEYS, CTA_LABEL, FOLLOWUP_STAGES, OUT, VARIABLES, fillMessage, missingVariables, pct, type Channel, type Cta, type StageKey, type VersionStatus } from "@/lib/followup/stages";
-import { GROUPS, REPLY_CLASSES, SITUATIONS, actionLabel, actionWhen, actionsOf, type Action, type ReplyClass, type Situation } from "@/lib/followup/plan";
+import { GROUPS, REPLY_CLASSES, SITUATIONS, actionLabel, actionWhen, actionsOf, splitMessages, type Action, type ReplyClass, type Situation } from "@/lib/followup/plan";
 import type { Change, FunnelStep, InboxItem, Prepared, QueueItem, QueueSummary, Results, StageView } from "@/lib/followup/server";
 import type { CohortRow, WindowKey } from "@/lib/followup/results";
 import { daysText, type Rule } from "@/lib/followup/rules";
@@ -69,10 +69,8 @@ export function FollowupBoard({
     const v = new URLSearchParams(window.location.search).get("vista");
     return v === "respuestas" || v === "embudo" || v === "reglas" || v === "resultados" ? v : "cola";
   });
-  const [open, setOpen] = useState<string | null>(null);
   function go(v: View) {
     setView(v);
-    setOpen(null);
     const url = new URL(window.location.href);
     if (v === "cola") url.searchParams.delete("vista");
     else url.searchParams.set("vista", v);
@@ -105,16 +103,9 @@ export function FollowupBoard({
       ) : (
         <>
           <p className="fu-note fu-viewnote">
-            {view === "reglas"
-                ? "Cuándo se dispara cada paso (las reglas: se cambian acá, sin deploy) y su mensaje de cada paso, sus versiones A/B, sus observaciones para la extensión y sus call to actions. La versión es la variante del mensaje; el paso (seguimiento 1, 2…) es el momento de la secuencia."
-                : "Ejecuciones, conversiones y tasa de cada versión. Las métricas por ventana de 7 y 14 días y por cohorte llegan en la Fase 4."}
+            Cuándo se dispara cada paso (las reglas: se cambian acá, sin deploy) y su mensaje de cada paso, sus versiones A/B, sus observaciones para la extensión y sus call to actions. La versión es la variante del mensaje; el paso (seguimiento 1, 2…) es el momento de la secuencia.
           </p>
-          <div className="fu-stages">
-            {stages.map((s, i) => (
-              <StageBand key={`${view}-${s.key}`} stage={s} index={i + 1} mode={view} rules={rules.filter((r) => r.stage === s.key)} open={open === s.key} onToggle={() => setOpen(open === s.key ? null : s.key)} />
-            ))}
-          </div>
-          {view === "reglas" && <ChangeLog changes={changes} />}
+          <RulesWorkspace stages={stages} rules={rules} changes={changes} />
         </>
       )}
     </>
@@ -1046,42 +1037,242 @@ function Funnel({ funnel, stages, rules, onRules }: { funnel: FunnelStep[]; stag
   );
 }
 
-/** Las reglas de una etapa, editables: situaciones, paso, espera, paso previo, ventana y si está activa. Cambia la cola sin deploy. */
-function RulesEditor({ stage, rules }: { stage: StageKey; rules: Rule[] }) {
-  const [adding, setAdding] = useState(false);
-  const own = [...rules].sort((a, b) => a.position - b.position);
+/* ------------------------------------------------------------------ Mensajes y reglas (rediseño) */
+
+const NEW_RULE = "__nueva";
+const NEW_VERSION = "__nueva";
+const DISCARD = "Hay cambios sin guardar. ¿Descartarlos?";
+type StageTab = "reglas" | "mensajes" | "resumen";
+type MsgTab = "mensaje" | "versiones" | "observaciones";
+
+/** Qué espera cada etapa, en una línea (la misma lectura que la tabla de docs/FOLLOWUP.md). */
+const STAGE_TEXT: Record<StageKey, string> = {
+  "no-contactado": "Cuentas de prospección que todavía no recibieron el primer mensaje.",
+  "no-responde": "Seguimiento a quienes confirmaron el número y aún no avanzaron.",
+  "sin-demo": "Interesadas a las que todavía falta crear la demo.",
+  "sin-enviar": "Demo creada que todavía no se envió.",
+  "no-abrio": "Demo enviada que todavía no se abrió.",
+  "sin-interaccion": "Visitaron el panel sin interactuar.",
+  "sin-cuenta": "Interactuaron con la demo y todavía no crearon cuenta.",
+  "sin-uso": "Cuenta creada que todavía no la usa.",
+  "sin-suscripcion": "Cuenta activa que todavía no se suscribió.",
+};
+
+/** Cuándo se ejecuta una regla, en una frase. Misma lectura en la lista, el resumen y el editor. */
+function ruleWhen(stage: StageKey, r: Rule) {
+  const after = r.after_action ? ` y ya salió «${actionLabel(stage, r.after_action as Action)}»` : "";
+  const timing = r.after_hours ? `a las ${r.after_hours} h de nuestro último mensaje` : "enseguida";
+  return `Si ${ruleSituations(r).toLowerCase()}${after} · ${timing} · ${daysText(r.days)} de ${r.hours_from} a ${r.hours_to}`;
+}
+
+/** La misma etapa, con solo las versiones de una acción: lo que el editor de esa acción necesita. */
+const versionsOf = (stage: StageView, action: Action): StageView => ({ ...stage, versions: stage.versions.filter((v) => (v.action ?? "principal") === action) });
+
+/**
+ * Mensajes y reglas: las etapas en una barra horizontal; dentro de la etapa, sus
+ * reglas (izquierda) y el editor de la regla elegida (derecha). Cambia solo la
+ * interfaz: las reglas y las versiones se guardan con los mismos endpoints.
+ */
+function RulesWorkspace({ stages, rules, changes }: { stages: StageView[]; rules: Rule[]; changes: Change[] }) {
+  const [stageKey, setStageKey] = useState<StageKey>(stages[0].key);
+  const [tab, setTab] = useState<StageTab>("reglas");
+  const [selected, setSelected] = useState<string | null>(null);
+  const [dirty, setDirty] = useState<Record<string, boolean>>({});
+  const stage = stages.find((s) => s.key === stageKey) ?? stages[0];
+  const index = stages.indexOf(stage) + 1;
+  const own = rules.filter((r) => r.stage === stage.key).sort((a, b) => a.position - b.position);
+  const available = actionsOf(stage.key);
+  const sample = stage.queue.find((q) => q.wa) ?? stage.queue[0] ?? null;
+  const waiting = (s: StageView) => s.queue.filter((q) => q.execution?.status !== "sent").length;
+  const isDirty = Object.values(dirty).some(Boolean);
+  const adding = selected === NEW_RULE;
+  const current = adding ? null : own.find((r) => r.key === selected) ?? own.find((r) => r.enabled && available.includes(r.action as Action)) ?? own[0] ?? null;
+  const markDirty = (id: string) => (d: boolean) => setDirty((p) => (p[id] === d ? p : { ...p, [id]: d }));
+
+  /** Cambiar de etapa, pestaña o regla con datos sin guardar pide confirmación; lo que no se guardó se descarta. */
+  function go(next: () => void) {
+    if (isDirty && !window.confirm(DISCARD)) return;
+    setDirty({});
+    next();
+  }
+
+  return (
+    <>
+      <nav className="fu-flow" aria-label="Etapas del embudo" data-testid="followup-flow">
+        {stages.map((s, i) => (
+          <Fragment key={s.key}>
+            <button
+              type="button"
+              className={`fu-flowstep${s.key === stage.key ? " is-on" : ""}`}
+              aria-pressed={s.key === stage.key}
+              data-testid="followup-stage"
+              data-stage={s.key}
+              onClick={() => {
+                if (s.key !== stage.key) go(() => { setStageKey(s.key); setSelected(null); });
+              }}
+            >
+              <span className="fu-num">{i + 1}</span>
+              <span className="fu-flowtext">
+                <b>{s.title}</b>
+                <small>{waiting(s)} esperando</small>
+              </span>
+            </button>
+            {i < stages.length - 1 && <ChevronRight className="fu-flowarrow" size={16} aria-hidden="true" />}
+          </Fragment>
+        ))}
+      </nav>
+
+      <section className="fu-stagehead" data-testid="followup-stage-head" data-stage={stage.key}>
+        <div>
+          <div className="fu-name">
+            <span className="fu-num">{index}</span>
+            <span className="fu-title">{stage.title}</span>
+          </div>
+          <p className="fu-note">{STAGE_TEXT[stage.key]}</p>
+          <div className="fu-meta">
+            <span className="fu-waiting">{waiting(stage)} esperando</span> → {stage.goal}
+          </div>
+        </div>
+        <nav className="fu-subtabs" aria-label="Secciones de la etapa">
+          {(
+            [
+              ["mensajes", "Mensajes de la etapa"],
+              ["reglas", `Reglas (${own.length})`],
+              ["resumen", "Resumen"],
+            ] as const
+          ).map(([k, label]) => (
+            <button
+              key={k}
+              type="button"
+              className={`fu-subtab${tab === k ? " is-on" : ""}`}
+              aria-pressed={tab === k}
+              data-testid={`followup-subtab-${k}`}
+              onClick={() => {
+                if (k !== tab) go(() => setTab(k));
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </nav>
+      </section>
+
+      {tab === "reglas" && (
+        <div className="fu-workspace">
+          <RulesEditor stage={stage.key} rules={own} selected={current?.key ?? null} adding={adding} available={available} isDirty={isDirty} onSelect={(k) => go(() => setSelected(k))} onAdd={() => go(() => setSelected(NEW_RULE))} />
+          <div className="fu-rdetail" data-testid="followup-rule-detail">
+            {adding ? (
+              <RuleEditor key={`${stage.key}:new`} stage={stage} rule={null} sample={sample} onDirty={markDirty("regla")} onAdded={() => setSelected(null)} />
+            ) : current ? (
+              <RuleEditor key={`${stage.key}:${current.key}:${JSON.stringify(current)}`} stage={stage} rule={current} sample={sample} onDirty={markDirty("regla")} />
+            ) : (
+              <div className="fu-detail-card">
+                <p className="fu-note">Esta etapa no tiene reglas. Agregá una para que el motor la ejecute.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {tab === "mensajes" && (
+        <div className="fu-stack">
+          {available.map((a) => (
+            <section key={a} className="fu-action" data-testid="followup-action" data-action={a}>
+              <h3 className="fu-h3">
+                {actionLabel(stage.key, a)} <small>· {actionWhen(stage.key, a)}</small>
+              </h3>
+              <Editor key={`${stage.key}:${a}`} stage={versionsOf(stage, a)} action={a} sample={sample} onDirty={markDirty(`mensaje:${a}`)} />
+            </section>
+          ))}
+        </div>
+      )}
+
+      {tab === "resumen" && (
+        <div className="fu-stack" data-testid="followup-summary">
+          <ul className="fu-summarylist">
+            {own.map((r) => (
+              <li key={r.key}>
+                <span className="fu-rulepos">{r.position}</span>
+                <span className="fu-rulemain">
+                  <b>{actionLabel(stage.key, r.action as Action)}</b>
+                  <span>{ruleWhen(stage.key, r)}</span>
+                </span>
+                <span className={`fu-st is-${r.enabled ? "active" : "archived"}`}>{r.enabled ? "Activa" : "Apagada"}</span>
+                {!available.includes(r.action as Action) && <span className="fu-st is-archived">Acción no disponible</span>}
+              </li>
+            ))}
+          </ul>
+          {!own.length && <p className="fu-note">Esta etapa no tiene reglas.</p>}
+          <ul className="fu-summarylist">
+            {available.map((a) => {
+              const live = stage.versions.find((v) => (v.action ?? "principal") === a && v.status === "active");
+              return (
+                <li key={a}>
+                  <b>{actionLabel(stage.key, a)}</b>
+                  <span>{live ? `Versión activa: V${live.version}` : "Falta configurar el mensaje de esta acción"}</span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
+      <ChangeLog changes={changes} />
+    </>
+  );
+}
+
+/** Las reglas de la etapa: se evalúan en orden y gana la primera que cumple. Elegir una abre su editor. */
+function RulesEditor({
+  stage,
+  rules,
+  selected,
+  adding,
+  available,
+  isDirty,
+  onSelect,
+  onAdd,
+}: {
+  stage: StageKey;
+  rules: Rule[];
+  selected: string | null;
+  adding: boolean;
+  available: Action[];
+  isDirty: boolean;
+  onSelect: (key: string) => void;
+  onAdd: () => void;
+}) {
   return (
     <div className="fu-rules" data-testid="followup-rules" data-stage={stage}>
       <div className="fu-qhead">
-        <span className="fu-lbl">Reglas · cuándo se dispara cada paso</span>
-        <button type="button" className="button button-small button-outline" data-testid="followup-rule-add" onClick={() => setAdding(!adding)}>
+        <div>
+          <span className="fu-lbl">Reglas de esta etapa</span>
+          <p className="fu-note">Se evalúan en orden. Se ejecuta la primera que cumple.</p>
+        </div>
+        <button type="button" className="button button-small button-outline" data-testid="followup-rule-add" onClick={onAdd} disabled={adding}>
           <Plus size={15} aria-hidden="true" /> Agregar regla
         </button>
       </div>
-      {own.map((r) => (
-        <RuleRow key={r.key} stage={stage} rule={r} />
+      {rules.map((r) => (
+        <RuleRow key={r.key} stage={stage} rule={r} selected={selected === r.key} unavailable={!available.includes(r.action as Action)} isDirty={isDirty} onSelect={() => onSelect(r.key)} />
       ))}
-      {adding && <RuleRow stage={stage} rule={null} onDone={() => setAdding(false)} />}
-      <p className="fu-note">Gana la primera regla (por orden) que corresponde a la situación, cuyo paso no salió y cuyo paso previo sí. A un rechazo, un «no contactar» o un número sin WhatsApp no se le escribe nunca, haya la regla que haya.</p>
+      {!rules.length && <p className="fu-note">Todavía no hay reglas para esta etapa.</p>}
+      {adding && <p className="fu-note">Nueva regla: completala a la derecha y guardala.</p>}
     </div>
   );
 }
 
-function RuleRow({ stage, rule, onDone }: { stage: StageKey; rule: Rule | null; onDone?: () => void }) {
+/** Una regla en la lista: número de orden, acción, condición en una línea y el interruptor de activa. */
+function RuleRow({ stage, rule, selected, unavailable, isDirty, onSelect }: { stage: StageKey; rule: Rule; selected: boolean; unavailable: boolean; isDirty: boolean; onSelect: () => void }) {
   const router = useRouter();
-  const blank: Rule = { key: "", stage, situations: ["sin_respuesta"], action: "principal", after_hours: 48, after_action: null, position: 60, enabled: true, hours_from: 9, hours_to: 19, days: [1, 2, 3, 4, 5, 6] };
-  const [r, setR] = useState<Rule>(rule ?? blank);
-  const [editing, setEditing] = useState(!rule);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const actions = actionsOf(stage);
-  async function save(next = r) {
+  async function toggle(enabled: boolean) {
+    if (selected && isDirty && !window.confirm(DISCARD)) return;
     setBusy(true);
     setError("");
     try {
-      await api("/api/admin/follow-up/reglas", { method: "PUT", body: JSON.stringify(next) });
-      setEditing(false);
-      onDone?.();
+      await api("/api/admin/follow-up/reglas", { method: "PUT", body: JSON.stringify({ ...rule, enabled }) });
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "No pudimos guardar la regla.");
@@ -1089,126 +1280,521 @@ function RuleRow({ stage, rule, onDone }: { stage: StageKey; rule: Rule | null; 
       setBusy(false);
     }
   }
-  if (!editing && rule)
-    return (
-      <div className={`fu-rule${rule.enabled ? "" : " is-off"}`} data-testid="followup-rule" data-rule={rule.key}>
+  return (
+    <div className={`fu-rulecard${selected ? " is-on" : ""}${rule.enabled ? "" : " is-off"}`} data-testid="followup-rule" data-rule={rule.key}>
+      <button type="button" className="fu-rulecard-main" aria-pressed={selected} data-testid="followup-rule-edit" onClick={onSelect}>
         <span className="fu-rulepos">{rule.position}</span>
         <span className="fu-rulemain">
-          <b>{actionLabel(stage, rule.action as Action)}</b>
-          <span>
-            Si {ruleSituations(rule).toLowerCase()}
-            {rule.after_action ? ` y ya salió «${actionLabel(stage, rule.after_action as Action)}»` : ""} · {rule.after_hours ? `a las ${rule.after_hours} h de nuestro último mensaje` : "enseguida"} · {daysText(rule.days)} de {rule.hours_from} a {rule.hours_to}
-          </span>
+          <b>
+            {actionLabel(stage, rule.action as Action)}
+            {unavailable && <span className="fu-st is-archived"> No disponible aquí</span>}
+          </b>
+          <span>{ruleWhen(stage, rule)}</span>
         </span>
-        <label className="fu-switch">
-          <input type="checkbox" checked={rule.enabled} disabled={busy} onChange={(e) => save({ ...rule, enabled: e.target.checked })} /> {rule.enabled ? "Activa" : "Apagada"}
-        </label>
-        <button type="button" className="button button-small button-outline" data-testid="followup-rule-edit" onClick={() => setEditing(true)}>
-          <Pencil size={13} aria-hidden="true" /> Editar
-        </button>
-        {error && <small className="fu-error">{error}</small>}
-      </div>
-    );
+      </button>
+      <label className="fu-switch">
+        <input type="checkbox" checked={rule.enabled} disabled={busy} onChange={(e) => toggle(e.target.checked)} /> {rule.enabled ? "Activa" : "Apagada"}
+      </label>
+      {error && <small className="fu-error">{error}</small>}
+    </div>
+  );
+}
+
+/**
+ * El editor de una regla, en tres partes: cuándo se ejecuta, qué se ejecuta
+ * (acción y versión, con su mensaje) y la vista previa. «Guardar cambios»
+ * guarda la regla; cada versión se guarda con sus propios botones.
+ */
+function RuleEditor({ stage, rule, sample, onDirty, onAdded }: { stage: StageView; rule: Rule | null; sample: QueueItem | null; onDirty: (dirty: boolean) => void; onAdded?: () => void }) {
+  const router = useRouter();
+  const available = actionsOf(stage.key);
+  const blank: Rule = { key: "", stage: stage.key, situations: ["sin_respuesta"], action: "principal", after_hours: 48, after_action: null, position: 60, enabled: true, hours_from: 9, hours_to: 19, days: [1, 2, 3, 4, 5, 6] };
+  const base = rule ?? blank;
+  const [r, setR] = useState<Rule>(base);
+  const [msgDirty, setMsgDirty] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const ruleDirty = JSON.stringify(r) !== JSON.stringify(base);
+  const unavailable = !available.includes(r.action as Action);
+  const report = useRef(onDirty);
+  useEffect(() => {
+    report.current = onDirty;
+  });
+  useEffect(() => {
+    report.current(ruleDirty || msgDirty);
+  }, [ruleDirty, msgDirty]);
+  useEffect(() => () => report.current(false), []);
+
+  const set = (patch: Partial<Rule>) => setR({ ...r, ...patch });
+  const toggleSituation = (x: Rule["situations"][number]) => set({ situations: r.situations.includes(x) ? r.situations.filter((y) => y !== x) : [...r.situations, x] });
+  const toggleDay = (d: number) => set({ days: r.days.includes(d) ? r.days.filter((y) => y !== d) : [...r.days, d].sort((a, b) => a - b) });
+  function setAction(a: Action) {
+    if (a === r.action) return;
+    if (msgDirty && !window.confirm(DISCARD)) return;
+    setMsgDirty(false);
+    set({ action: a, after_action: r.after_action === a ? null : r.after_action });
+  }
+  async function save() {
+    setBusy(true);
+    setError("");
+    try {
+      await api("/api/admin/follow-up/reglas", { method: "PUT", body: JSON.stringify(r) });
+      if (!rule) onAdded?.();
+      router.refresh();
+      setBusy(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No pudimos guardar la regla.");
+      setBusy(false);
+    }
+  }
+
   return (
-    <div className="fu-rule is-editing" data-testid="followup-rule-form">
-      <div className="fu-rulegrid">
+    <div className="fu-detail-card" data-testid="followup-rule-form">
+      <header className="fu-rdhead">
+        <div>
+          <span className="fu-lbl">{rule ? `Regla ${rule.position}` : "Nueva regla"}</span>
+          <h3>{actionLabel(stage.key, r.action as Action)}</h3>
+          <p className="fu-note">{ruleWhen(stage.key, r)}</p>
+        </div>
+        <label className="fu-switch">
+          <input type="checkbox" checked={r.enabled} onChange={(e) => set({ enabled: e.target.checked })} /> Activa
+        </label>
+      </header>
+
+      <section className="fu-part" data-testid="followup-part-when">
+        <span className="fu-lbl">1 · Cuándo se ejecuta</span>
+        <div className="fu-field">
+          <span className="fu-lbl2">Situación (cualquiera de)</span>
+          <div className="fu-chips">
+            {r.situations.map((x) => (
+              <button key={x} type="button" className="fu-chipbtn is-on" aria-pressed="true" onClick={() => toggleSituation(x)}>
+                ✓ {SITUATIONS[x]}
+              </button>
+            ))}
+            {SITUATION_OPTIONS.filter((x) => !r.situations.includes(x)).map((x) => (
+              <button key={x} type="button" className="fu-chipbtn" aria-pressed="false" onClick={() => toggleSituation(x)}>
+                + {SITUATIONS[x]}
+              </button>
+            ))}
+          </div>
+          {!r.situations.length && <span className="fu-note">Ninguna marcada: aplica a cualquier situación.</span>}
+        </div>
+        <div className="fu-partgrid">
+          <label>
+            <span>Paso previo</span>
+            <select value={r.after_action ?? ""} onChange={(e) => set({ after_action: (e.target.value || null) as Rule["after_action"] })}>
+              <option value="">Ningún paso</option>
+              {available
+                .filter((a) => a !== r.action)
+                .map((a) => (
+                  <option key={a} value={a}>
+                    {actionLabel(stage.key, a)}
+                  </option>
+                ))}
+            </select>
+          </label>
+          <label>
+            <span>Espera (horas desde nuestro último mensaje)</span>
+            <input type="number" min={0} max={720} step={1} value={r.after_hours} onChange={(e) => set({ after_hours: Number(e.target.value) })} data-testid="followup-rule-hours" />
+          </label>
+          <label>
+            <span>Orden de prioridad</span>
+            <input type="number" min={0} max={1000} value={r.position} onChange={(e) => set({ position: Number(e.target.value) })} />
+          </label>
+          <label>
+            <span>Horario desde (hora)</span>
+            <input type="number" min={0} max={23} value={r.hours_from} onChange={(e) => set({ hours_from: Number(e.target.value) })} />
+          </label>
+          <label>
+            <span>Horario hasta (hora)</span>
+            <input type="number" min={1} max={24} value={r.hours_to} onChange={(e) => set({ hours_to: Number(e.target.value) })} />
+          </label>
+        </div>
+        <div className="fu-field">
+          <span className="fu-lbl2">Días habilitados</span>
+          <div className="fu-chips">
+            {DAY_SHORT.map((d, i) => {
+              const on = r.days.includes(i);
+              return (
+                <button key={d} type="button" className={`fu-chipbtn${on ? " is-on" : ""}`} aria-pressed={on} onClick={() => toggleDay(i)}>
+                  {d}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      <section className="fu-part" data-testid="followup-part-what">
+        <span className="fu-lbl">2 · Qué se ejecuta</span>
         <label>
-          <span>Paso</span>
-          <select value={r.action} onChange={(e) => setR({ ...r, action: e.target.value as Rule["action"] })}>
-            {actions.map((a) => (
-              <option key={a} value={a}>
-                {actionLabel(stage, a)}
+          <span>Acción (mensaje)</span>
+          <select value={r.action} onChange={(e) => setAction(e.target.value as Action)}>
+            {[...new Set<Action>([...available, r.action as Action])].map((a) => (
+              <option key={a} value={a} disabled={!available.includes(a)}>
+                {actionLabel(stage.key, a)}
+                {available.includes(a) ? "" : " · no disponible en esta etapa"}
               </option>
             ))}
           </select>
         </label>
-        <label>
-          <span>Espera (horas desde nuestro último mensaje)</span>
-          <input type="number" min={0} max={720} step={1} value={r.after_hours} onChange={(e) => setR({ ...r, after_hours: Number(e.target.value) })} data-testid="followup-rule-hours" />
-        </label>
-        <label>
-          <span>Después de</span>
-          <select value={r.after_action ?? ""} onChange={(e) => setR({ ...r, after_action: (e.target.value || null) as Rule["after_action"] })}>
-            <option value="">Ningún paso</option>
-            {actions
-              .filter((a) => a !== r.action)
-              .map((a) => (
-                <option key={a} value={a}>
-                  {actionLabel(stage, a)}
-                </option>
-              ))}
-          </select>
-        </label>
-        <label>
-          <span>Orden</span>
-          <input type="number" min={0} max={1000} value={r.position} onChange={(e) => setR({ ...r, position: Number(e.target.value) })} />
-        </label>
-        <label>
-          <span>Desde (hora)</span>
-          <input type="number" min={0} max={23} value={r.hours_from} onChange={(e) => setR({ ...r, hours_from: Number(e.target.value) })} />
-        </label>
-        <label>
-          <span>Hasta (hora)</span>
-          <input type="number" min={1} max={24} value={r.hours_to} onChange={(e) => setR({ ...r, hours_to: Number(e.target.value) })} />
-        </label>
-      </div>
-      <fieldset className="fu-classes">
-        <legend>Situaciones (ninguna marcada: cualquiera)</legend>
-        {SITUATION_OPTIONS.map((x) => {
-          const on = r.situations.includes(x);
-          return (
-            <label key={x} className={`fu-class${on ? " is-on" : ""}`}>
-              <input type="checkbox" checked={on} onChange={() => setR({ ...r, situations: on ? r.situations.filter((y) => y !== x) : [...r.situations, x] })} /> {SITUATIONS[x]}
-            </label>
-          );
-        })}
-      </fieldset>
-      <fieldset className="fu-classes">
-        <legend>Días</legend>
-        {DAY_SHORT.map((d, i) => {
-          const on = r.days.includes(i);
-          return (
-            <label key={d} className={`fu-class${on ? " is-on" : ""}`}>
-              <input type="checkbox" checked={on} onChange={() => setR({ ...r, days: on ? r.days.filter((y) => y !== i) : [...r.days, i] })} /> {d}
-            </label>
-          );
-        })}
-      </fieldset>
-      {error && (
-        <p className="fu-error" role="alert">
-          {error}
+        {unavailable ? (
+          <p className="fu-warn" role="status">
+            Acción no disponible para esta etapa. Esta regla no se ejecuta aquí: elegí una acción de la etapa o apagala.
+          </p>
+        ) : (
+          <Editor key={`${stage.key}:${r.action}`} stage={versionsOf(stage, r.action as Action)} action={r.action as Action} sample={sample} onDirty={setMsgDirty} />
+        )}
+      </section>
+
+      <footer className="fu-footer">
+        {error && (
+          <p className="fu-error" role="alert">
+            {error}
+          </p>
+        )}
+        {msgDirty && <p className="fu-warn">El mensaje tiene cambios sin guardar: guardalos con sus botones.</p>}
+        <div className="fu-actions">
+          <button type="button" className="button button-primary button-small" data-testid="followup-rule-save" disabled={busy || (!!rule && !ruleDirty)} onClick={save}>
+            {rule ? "Guardar cambios" : "Crear regla"}
+          </button>
+          <button
+            type="button"
+            className="fu-link"
+            disabled={busy || !ruleDirty}
+            onClick={() => {
+              setR(base);
+              setError("");
+            }}
+          >
+            Cancelar
+          </button>
+        </div>
+        <p className="fu-note">«Guardar cambios» guarda la regla. Cada versión del mensaje es un cambio aparte y se guarda con sus botones.</p>
+      </footer>
+    </div>
+  );
+}
+
+/**
+ * El mensaje de una acción: versiones, texto, observaciones y CTA para la
+ * extensión, con la vista previa de WhatsApp a la derecha. Los botones de
+ * guardar son los de siempre: crear una versión, editarla o cambiar su estado.
+ */
+function Editor({ stage, action, sample, onDirty }: { stage: StageView; action: Action; sample: QueueItem | null; onDirty?: (dirty: boolean) => void }) {
+  const router = useRouter();
+  const live = stage.versions.find((v) => v.status === "active") ?? stage.versions.at(-1) ?? null;
+  const [selected, setSelected] = useState<string | null>(live?.id ?? null);
+  const [draft, setDraft] = useState<Draft | null>(live ? null : EMPTY);
+  const [tab, setTab] = useState<MsgTab>("mensaje");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const current = stage.versions.find((v) => v.id === selected) ?? live;
+  const shown: Draft | Version | null = draft ?? current;
+  const active = stage.versions.find((v) => v.status === "active");
+  const nextNumber = Math.max(0, ...stage.versions.map((v) => v.version)) + 1;
+  const bodyId = `fu-body-${stage.key}-${action}`;
+  const editing = draft?.editing ? stage.versions.find((v) => v.id === draft.editing) ?? null : null;
+  const dirtyDraft = draft !== null && (editing ? JSON.stringify(draft) !== JSON.stringify(draftOf(editing, editing.id)) : (draft.body.trim() !== "" || draft.notes.trim() !== "" || draft.trigger.trim() !== ""));
+  const report = useRef(onDirty);
+  useEffect(() => {
+    report.current = onDirty;
+  });
+  useEffect(() => {
+    report.current?.(dirtyDraft);
+  }, [dirtyDraft]);
+  useEffect(() => () => report.current?.(false), []);
+
+  const confirmDiscard = () => !dirtyDraft || window.confirm(DISCARD);
+  async function run(work: () => Promise<unknown>) {
+    setBusy(true);
+    setError("");
+    try {
+      await work();
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No pudimos guardar.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  const save = (status: "active" | "test") =>
+    run(async () => {
+      const v = await api<Version>("/api/admin/follow-up/versiones", { method: "POST", body: JSON.stringify({ stage: stage.key, action, ...draft, status }) });
+      setDraft(null);
+      setSelected(v.id);
+    });
+  const update = () =>
+    run(async () => {
+      if (!draft?.editing) return;
+      await api<Version>("/api/admin/follow-up/versiones", { method: "PUT", body: JSON.stringify({ id: draft.editing, ...draft }) });
+      setDraft(null);
+    });
+  const setStatus = (id: string, status: VersionStatus) => run(() => api("/api/admin/follow-up/versiones", { method: "PATCH", body: JSON.stringify({ id, status }) }));
+  function pick(id: string) {
+    if (!confirmDiscard()) return;
+    setDraft(null);
+    setSelected(id);
+    setTab("mensaje");
+  }
+  function newVersion() {
+    if (!confirmDiscard()) return;
+    setDraft(current ? draftOf(current) : EMPTY);
+    setTab("mensaje");
+  }
+  function editVersion(v: Version) {
+    if (!confirmDiscard()) return;
+    setDraft(draftOf(v, v.id));
+    setTab("mensaje");
+  }
+  function insert(name: string) {
+    if (!draft) return;
+    const el = document.getElementById(bodyId) as HTMLTextAreaElement | null;
+    const at = el?.selectionStart ?? draft.body.length;
+    setDraft({ ...draft, body: `${draft.body.slice(0, at)}{{${name}}}${draft.body.slice(at)}` });
+  }
+
+  const selectValue = draft ? draft.editing ?? NEW_VERSION : current?.id ?? "";
+  const actionButtons = editing ? (
+    <>
+      <button type="button" className="button button-primary button-small" disabled={busy || !draft?.body.trim()} onClick={update}>
+        Guardar cambios en V{editing.version}
+      </button>
+      <button type="button" className="fu-link" disabled={busy} onClick={() => setDraft(null)}>
+        Cancelar
+      </button>
+      {editing.stats.executions > 0 && (
+        <p className="fu-note">
+          V{editing.version} ya tiene {editing.stats.executions} {editing.stats.executions === 1 ? "ejecución" : "ejecuciones"}: si cambiás el texto, sus números van a juntar el anterior y el nuevo. Para comparar dos textos, mejor «Nueva versión».
         </p>
       )}
-      <div className="fu-actions">
-        <button type="button" className="button button-primary button-small" data-testid="followup-rule-save" disabled={busy} onClick={() => save()}>
-          Guardar regla
+    </>
+  ) : draft ? (
+    <>
+      <button type="button" className="button button-primary button-small" disabled={busy || !draft.body.trim()} onClick={() => save("active")}>
+        Guardar V{nextNumber} como activa
+      </button>
+      {active && (
+        <button type="button" className="button button-small button-outline" disabled={busy || !draft.body.trim()} onClick={() => save("test")}>
+          Guardar y probar 50/50 contra V{active.version}
         </button>
-        <button
-          type="button"
-          className="fu-link"
-          onClick={() => {
-            setEditing(false);
-            setR(rule ?? blank);
-            onDone?.();
-          }}
-        >
-          Cancelar
+      )}
+      {stage.versions.length > 0 && (
+        <button type="button" className="fu-link" disabled={busy} onClick={() => setDraft(null)}>
+          Descartar
         </button>
-        <p className="fu-note">Se aplica en la próxima lectura de la cola. Queda en el registro de cambios.</p>
+      )}
+    </>
+  ) : current?.status === "active" ? (
+    <p className="fu-note">La activa: la usan todas las inmobiliarias de esta etapa{stage.versions.some((v) => v.status === "test") ? " que no están en la prueba" : ""}.</p>
+  ) : current?.status === "test" ? (
+    <>
+      <button type="button" className="button button-primary button-small" disabled={busy} onClick={() => setStatus(current.id, "active")}>
+        Hacerla la activa
+      </button>
+      <button type="button" className="button button-small button-outline" disabled={busy} onClick={() => setStatus(current.id, "archived")}>
+        Detener prueba
+      </button>
+      <p className="fu-note">Recibe la mitad de las inmobiliarias de la etapa.</p>
+    </>
+  ) : current ? (
+    <>
+      <button type="button" className="button button-small button-outline" disabled={busy} onClick={() => setStatus(current.id, "active")}>
+        Volver a activarla
+      </button>
+      {active && (
+        <button type="button" className="button button-small button-outline" disabled={busy} onClick={() => setStatus(current.id, "test")}>
+          Probar 50/50 contra V{active.version}
+        </button>
+      )}
+    </>
+  ) : null;
+
+  return (
+    <div className="fu-mededit" data-testid="followup-message-editor" data-action={action}>
+      {!stage.versions.length && (
+        <p className="fu-warn" role="status">
+          Falta configurar el mensaje de esta acción.
+        </p>
+      )}
+      <div className="fu-vhead">
+        <label className="fu-vselect">
+          <span className="fu-lbl">Versión</span>
+          <select value={selectValue} onChange={(e) => { if (e.target.value !== NEW_VERSION) pick(e.target.value); }} data-testid="followup-version-select">
+            {stage.versions.map((v) => (
+              <option key={v.id} value={v.id}>
+                V{v.version} · {STATUS_LABEL[v.status]}
+              </option>
+            ))}
+            {draft && !draft.editing && <option value={NEW_VERSION}>Borrador V{nextNumber}</option>}
+          </select>
+        </label>
+        <button type="button" className="fu-link" onClick={() => setTab("versiones")}>
+          Editar versiones
+        </button>
+      </div>
+
+      <div className="fu-subtabs" role="tablist">
+        {(
+          [
+            ["mensaje", "Mensaje"],
+            ["versiones", `Otras versiones (${stage.versions.filter((v) => v.id !== current?.id).length})`],
+            ["observaciones", "Observaciones (extensión)"],
+          ] as const
+        ).map(([k, label]) => (
+          <button key={k} type="button" role="tab" aria-selected={tab === k} className={`fu-subtab${tab === k ? " is-on" : ""}`} onClick={() => setTab(k)}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div className="fu-msg-grid">
+        <div className="fu-msg-main">
+          {tab === "mensaje" && shown && (
+            <>
+              <div className="fu-fields">
+                <label>
+                  <span>Cuándo se dispara</span>
+                  <input value={draft ? draft.trigger : (shown as Version).trigger_label} readOnly={!draft} maxLength={120} placeholder="Ej.: 3 días sin respuesta" onChange={(e) => draft && setDraft({ ...draft, trigger: e.target.value })} />
+                </label>
+                <label>
+                  <span>Canal</span>
+                  <select value={shown.channel} disabled={!draft} onChange={(e) => draft && setDraft({ ...draft, channel: e.target.value as Channel })}>
+                    <option value="whatsapp">WhatsApp</option>
+                    <option value="task">Tarea del equipo</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Cuenta como conversión</span>
+                  <input value={`Pasa a «${stage.goal}»`} readOnly />
+                </label>
+              </div>
+              <p className="fu-note">Para mandar varios mensajes seguidos (como la presentación), separalos con una línea que diga solo «---».</p>
+              <label className="fu-textarea">
+                <span>{editing ? `Mensaje · editando V${editing.version}` : `Mensaje · V${current?.version ?? nextNumber}`}</span>
+                <textarea id={bodyId} value={shown.body} readOnly={!draft} maxLength={4000} onChange={(e) => draft && setDraft({ ...draft, body: e.target.value })} />
+              </label>
+              {draft && (
+                <div className="fu-vars">
+                  Variables:
+                  {(Object.keys(VARIABLES) as (keyof typeof VARIABLES)[]).map((k) => (
+                    <button key={k} type="button" className="fu-var" title={VARIABLES[k]} onClick={() => insert(k)}>
+                      {`{{${k}}}`}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+
+          {tab === "versiones" && (
+            <div className="fu-vtabs" data-testid="followup-versions">
+              <span className="fu-lbl">Versiones</span>
+              {stage.versions.map((v) => (
+                <button key={v.id} type="button" className={`fu-vtab${!draft && current?.id === v.id ? " is-on" : ""}`} onClick={() => pick(v.id)}>
+                  V{v.version} <span className={`fu-st is-${v.status}`}>{STATUS_LABEL[v.status]}</span>
+                </button>
+              ))}
+              {draft && !draft.editing ? (
+                <span className="fu-vtab is-on">
+                  V{nextNumber} <span className="fu-st is-draft">Borrador</span>
+                </span>
+              ) : editing ? (
+                <span className="fu-vtab is-on">
+                  V{editing.version} <span className="fu-st is-draft">Editando</span>
+                </span>
+              ) : (
+                <button type="button" className="fu-vtab" onClick={newVersion}>
+                  <Plus size={14} aria-hidden="true" /> Nueva versión
+                </button>
+              )}
+              {!draft && current && (
+                <button type="button" className="fu-vtab fu-edit" data-testid="followup-edit-version" onClick={() => editVersion(current)}>
+                  <Pencil size={13} aria-hidden="true" /> Editar V{current.version}
+                </button>
+              )}
+            </div>
+          )}
+
+          {tab === "observaciones" && shown && (
+            <>
+              <label className="fu-textarea fu-notes">
+                <span>Observaciones para la extensión · cuándo y cómo mandarlo</span>
+                <textarea
+                  data-testid="followup-version-notes"
+                  value={draft ? draft.notes : ((shown as Version).notes ?? "")}
+                  readOnly={!draft}
+                  maxLength={4000}
+                  placeholder={draft ? "Ej.: no mandar fines de semana; si respondió con una pregunta, contestarla antes." : "Sin observaciones. Tocá «Editar» para sumarlas."}
+                  onChange={(e) => draft && setDraft({ ...draft, notes: e.target.value })}
+                />
+              </label>
+              <fieldset className="fu-ctas">
+                <legend className="fu-lbl">Call to actions para la extensión</legend>
+                {CTA_KEYS.map((k) => {
+                  const on = shown.ctas.includes(k);
+                  return (
+                    <label key={k} className={`fu-cta${on ? "" : " is-off"}`}>
+                      <input type="checkbox" checked={on} disabled={!draft} onChange={() => draft && setDraft({ ...draft, ctas: on ? draft.ctas.filter((c) => c !== k) : [...draft.ctas, k] })} />
+                      {CTA_LABEL[k]}
+                    </label>
+                  );
+                })}
+              </fieldset>
+            </>
+          )}
+
+          <div className="fu-actions">{actionButtons}</div>
+          {!draft && current?.edited_at && <p className="fu-note">Texto editado el {day(current.edited_at)}: sus números juntan el texto anterior y el nuevo.</p>}
+          {error && (
+            <p className="fu-error" role="alert">
+              {error}
+            </p>
+          )}
+        </div>
+        {shown && <Preview body={shown.body} sample={sample} channel={shown.channel} ctas={shown.ctas} />}
       </div>
     </div>
   );
 }
 
-/** Vista previa con una inmobiliaria de la etapa: las variables resueltas. No se guarda como activa una versión con variables desconocidas. */
-function Preview({ body, sample }: { body: string; sample: QueueItem | null }) {
-  if (!body.trim()) return null;
-  const text = fillMessage(body, { inmobiliaria: sample?.shortName ?? "Inmobiliaria de ejemplo", decisor: sample?.person ?? null, sdr: "vos", demo: sample?.hasDemo ? "[link a su demo]" : null, panel: "[link a su panel]" });
-  const holes = missingVariables(text);
+/**
+ * Vista previa de WhatsApp con una inmobiliaria de la etapa: cada mensaje
+ * (separado por «---») en su burbuja, con las variables resueltas. No envía
+ * nada ni genera ejecuciones. Si el canal es una tarea, muestra la tarea.
+ */
+function Preview({ body, sample, channel, ctas }: { body: string; sample: QueueItem | null; channel: Channel; ctas: Cta[] }) {
+  const ctx = { inmobiliaria: sample?.shortName ?? "Inmobiliaria de ejemplo", decisor: sample?.person ?? null, sdr: "vos", demo: sample?.hasDemo ? "[link a su demo]" : null, panel: "[link a su panel]" };
+  const parts = splitMessages(body).map((p) => fillMessage(p, ctx));
+  const holes = missingVariables(parts.join("\n"));
+  const task = channel === "task";
+  const label = task ? "Vista previa de la tarea" : `Vista previa en WhatsApp${sample ? ` · ${sample.name}` : ""}`;
+  if (!parts.length)
+    return (
+      <div className="fu-wa" data-testid="followup-preview">
+        <span className="fu-lbl">{label}</span>
+        <p className="fu-note">Escribí el mensaje para ver cómo queda.</p>
+      </div>
+    );
   return (
-    <div className="fu-preview-box" data-testid="followup-preview">
-      <span className="fu-lbl">Vista previa{sample ? ` con ${sample.name}` : ""}</span>
-      <div className="fu-bubble is-out">{text}</div>
+    <div className={`fu-wa${task ? " is-task" : ""}`} data-testid="followup-preview">
+      <span className="fu-lbl">{label}</span>
+      {task ? (
+        <div className="fu-wa-task">
+          {parts.map((p, i) => (
+            <p key={i}>{p}</p>
+          ))}
+        </div>
+      ) : (
+        <div className="fu-wa-chat">
+          {parts.map((p, i) => (
+            <div key={i} className="fu-bubble is-out">
+              {p}
+            </div>
+          ))}
+        </div>
+      )}
+      {ctas.length > 0 && <div className="fu-wa-ctas">{ctas.map((c) => <span key={c}>{CTA_LABEL[c]}</span>)}</div>}
       {holes.length > 0 && <p className="fu-warn">Sin resolver para esta inmobiliaria: {holes.map((h) => `{{${h}}}`).join(", ")}. Con ella, la acción queda bloqueada.</p>}
     </div>
   );
@@ -1422,286 +2008,10 @@ function ResultsView({ results }: { results: Results }) {
 const stageTitle = (key: string) => FOLLOWUP_STAGES.find((s) => s.key === key)?.title ?? key;
 
 type Mode = "embudo" | "reglas" | "resultados";
-function StageBand({ stage, index, open, onToggle, mode, rules }: { stage: StageView; index: number; open: boolean; onToggle: () => void; mode: Mode; rules: Rule[] }) {
-  const principal = stage.versions.filter((v) => (v.action ?? "principal") === "principal");
-  const active = principal.find((v) => v.status === "active") ?? null;
-  const test = principal.find((v) => v.status === "test") ?? null;
-  const pending = stage.queue.filter((q) => q.execution?.status !== "sent").length;
-  return (
-    <section className={`fu-stage${open ? " is-open" : ""}`} data-testid="followup-stage" data-stage={stage.key}>
-      <button type="button" className="fu-row" onClick={onToggle} aria-expanded={open}>
-        <div>
-          <div className="fu-name">
-            <span className="fu-num">{index}</span>
-            <span className="fu-title">{stage.title}</span>
-          </div>
-          <div className="fu-meta">
-            <span className="fu-waiting">{pending} esperando</span> → {stage.goal}
-          </div>
-        </div>
-        <div className="fu-preview">
-          {active ? (
-            <>
-              <b>{active.trigger_label || "Next best action"}:</b> {active.body}
-            </>
-          ) : (
-            "Sin versión activa"
-          )}
-        </div>
-        <div className="fu-rate">
-          {test && <span className="fu-st is-test">A/B</span>}
-          {active && <span className="fu-vchip">V{active.version}</span>}
-          <span className="fu-pct">{pct(active?.stats.rate ?? null)}</span>
-          <ChevronRight className="fu-chev" size={18} aria-hidden="true" />
-        </div>
-      </button>
-      {open && (
-        <div className="fu-body">
-          {mode === "embudo" && <Queue stage={stage} />}
-          {mode === "reglas" && <RulesEditor stage={stage.key} rules={rules} />}
-          {mode !== "embudo" && actionsOf(stage.key).map((a) => {
-            const view = { ...stage, versions: stage.versions.filter((v) => (v.action ?? "principal") === a) };
-            return (
-              <div key={a} className="fu-action" data-testid="followup-action" data-action={a}>
-                <h3 className="fu-h3">
-                  {actionLabel(stage.key, a)} <small>· {actionWhen(stage.key, a)}</small>
-                </h3>
-                {mode === "reglas" ? <Editor stage={view} action={a} sample={stage.queue.find((q) => q.wa) ?? stage.queue[0] ?? null} /> : <VersionTable stage={view} />}
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </section>
-  );
-}
-
 /** What is being written: a new version, or an edit of the saved one (`editing`: its id). */
 type Draft = { channel: Channel; trigger: string; body: string; ctas: Cta[]; notes: string; editing?: string };
 const EMPTY: Draft = { channel: "whatsapp", trigger: "", body: "", ctas: ["whatsapp", "copy"], notes: "" };
 const draftOf = (v: Version, editing?: string): Draft => ({ channel: v.channel, trigger: v.trigger_label, body: v.body, ctas: [...v.ctas], notes: v.notes ?? "", editing });
-
-function Editor({ stage, action, sample }: { stage: StageView; action: Action; sample: QueueItem | null }) {
-  const router = useRouter();
-  const live = stage.versions.find((v) => v.status === "active") ?? stage.versions.at(-1) ?? null;
-  const [selected, setSelected] = useState<string | null>(live?.id ?? null);
-  const [draft, setDraft] = useState<Draft | null>(live ? null : EMPTY);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const current = stage.versions.find((v) => v.id === selected) ?? live;
-  const shown: Draft | Version | null = draft ?? current;
-  const active = stage.versions.find((v) => v.status === "active");
-  const nextNumber = Math.max(0, ...stage.versions.map((v) => v.version)) + 1;
-  const bodyId = `fu-body-${stage.key}-${action}`;
-  const editing = draft?.editing ? stage.versions.find((v) => v.id === draft.editing) ?? null : null;
-
-  async function run(work: () => Promise<unknown>) {
-    setBusy(true);
-    setError("");
-    try {
-      await work();
-      router.refresh();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "No pudimos guardar.");
-    } finally {
-      setBusy(false);
-    }
-  }
-  const save = (status: "active" | "test") =>
-    run(async () => {
-      const v = await api<Version>("/api/admin/follow-up/versiones", { method: "POST", body: JSON.stringify({ stage: stage.key, action, ...draft, status }) });
-      setDraft(null);
-      setSelected(v.id);
-    });
-  const update = () =>
-    run(async () => {
-      if (!draft?.editing) return;
-      await api<Version>("/api/admin/follow-up/versiones", { method: "PUT", body: JSON.stringify({ id: draft.editing, ...draft }) });
-      setDraft(null);
-    });
-  const setStatus = (id: string, status: VersionStatus) => run(() => api("/api/admin/follow-up/versiones", { method: "PATCH", body: JSON.stringify({ id, status }) }));
-  function insert(name: string) {
-    if (!draft) return;
-    const el = document.getElementById(bodyId) as HTMLTextAreaElement | null;
-    const at = el?.selectionStart ?? draft.body.length;
-    setDraft({ ...draft, body: `${draft.body.slice(0, at)}{{${name}}}${draft.body.slice(at)}` });
-  }
-
-  return (
-    <div className="fu-grid">
-      <div className="fu-editor">
-        <div className="fu-vtabs">
-          <span className="fu-lbl">Versión</span>
-          {stage.versions.map((v) => (
-            <button
-              key={v.id}
-              type="button"
-              className={`fu-vtab${!draft && current?.id === v.id ? " is-on" : ""}`}
-              onClick={() => {
-                setDraft(null);
-                setSelected(v.id);
-              }}
-            >
-              V{v.version} <span className={`fu-st is-${v.status}`}>{STATUS_LABEL[v.status]}</span>
-            </button>
-          ))}
-          {draft && !draft.editing ? (
-            <span className="fu-vtab is-on">
-              V{nextNumber} <span className="fu-st is-draft">Borrador</span>
-            </span>
-          ) : editing ? (
-            <span className="fu-vtab is-on">
-              V{editing.version} <span className="fu-st is-draft">Editando</span>
-            </span>
-          ) : (
-            <>
-              <button type="button" className="fu-vtab" onClick={() => setDraft(current ? draftOf(current) : EMPTY)}>
-                <Plus size={14} aria-hidden="true" /> Nueva versión
-              </button>
-              {current && (
-                <button type="button" className="fu-vtab fu-edit" data-testid="followup-edit-version" onClick={() => setDraft(draftOf(current, current.id))}>
-                  <Pencil size={13} aria-hidden="true" /> Editar V{current.version}
-                </button>
-              )}
-            </>
-          )}
-        </div>
-        {shown && (
-          <>
-            <div className="fu-fields">
-              <label>
-                <span>Cuándo se dispara</span>
-                <input
-                  value={draft ? draft.trigger : (shown as Version).trigger_label}
-                  readOnly={!draft}
-                  maxLength={120}
-                  placeholder="Ej.: 3 días sin respuesta"
-                  onChange={(e) => draft && setDraft({ ...draft, trigger: e.target.value })}
-                />
-              </label>
-              <label>
-                <span>Canal</span>
-                <select value={shown.channel} disabled={!draft} onChange={(e) => draft && setDraft({ ...draft, channel: e.target.value as Channel })}>
-                  <option value="whatsapp">WhatsApp</option>
-                  <option value="task">Tarea del equipo</option>
-                </select>
-              </label>
-              <label>
-                <span>Cuenta como conversión</span>
-                <input value={`Pasa a «${stage.goal}»`} readOnly />
-              </label>
-            </div>
-            <p className="fu-note">Para mandar varios mensajes seguidos (como la presentación), separalos con una línea que diga solo «---».</p>
-            <label className="fu-textarea">
-              <span>{editing ? `Next best action · editando V${editing.version}` : "Next best action"}</span>
-              <textarea id={bodyId} value={shown.body} readOnly={!draft} maxLength={4000} onChange={(e) => draft && setDraft({ ...draft, body: e.target.value })} />
-            </label>
-            {draft && (
-              <div className="fu-vars">
-                Variables:
-                {(Object.keys(VARIABLES) as (keyof typeof VARIABLES)[]).map((k) => (
-                  <button key={k} type="button" className="fu-var" title={VARIABLES[k]} onClick={() => insert(k)}>
-                    {`{{${k}}}`}
-                  </button>
-                ))}
-              </div>
-            )}
-            <Preview body={shown.body} sample={sample} />
-            <label className="fu-textarea fu-notes">
-              <span>Observaciones para la extensión · cuándo y cómo mandarlo</span>
-              <textarea
-                data-testid="followup-version-notes"
-                value={draft ? draft.notes : ((shown as Version).notes ?? "")}
-                readOnly={!draft}
-                maxLength={4000}
-                placeholder={draft ? "Ej.: no mandar fines de semana; si respondió con una pregunta, contestarla antes." : "Sin observaciones. Tocá «Editar» para sumarlas."}
-                onChange={(e) => draft && setDraft({ ...draft, notes: e.target.value })}
-              />
-            </label>
-            <fieldset className="fu-ctas">
-              <legend className="fu-lbl">Call to actions para la extensión</legend>
-              {CTA_KEYS.map((k) => {
-                const on = shown.ctas.includes(k);
-                return (
-                  <label key={k} className={`fu-cta${on ? "" : " is-off"}`}>
-                    <input type="checkbox" checked={on} disabled={!draft} onChange={() => draft && setDraft({ ...draft, ctas: on ? draft.ctas.filter((c) => c !== k) : [...draft.ctas, k] })} />
-                    {CTA_LABEL[k]}
-                  </label>
-                );
-              })}
-            </fieldset>
-            <div className="fu-actions">
-              {editing ? (
-                <>
-                  <button type="button" className="button button-primary button-small" disabled={busy || !draft!.body.trim()} onClick={update}>
-                    Guardar cambios en V{editing.version}
-                  </button>
-                  <button type="button" className="fu-link" disabled={busy} onClick={() => setDraft(null)}>
-                    Cancelar
-                  </button>
-                  {editing.stats.executions > 0 && (
-                    <p className="fu-note">
-                      V{editing.version} ya tiene {editing.stats.executions} {editing.stats.executions === 1 ? "ejecución" : "ejecuciones"}: si cambiás el texto, sus números van a juntar el anterior y el nuevo. Para comparar dos textos, mejor «Nueva versión».
-                    </p>
-                  )}
-                </>
-              ) : draft ? (
-                <>
-                  <button type="button" className="button button-primary button-small" disabled={busy || !draft.body.trim()} onClick={() => save("active")}>
-                    Guardar V{nextNumber} como activa
-                  </button>
-                  {active && (
-                    <button type="button" className="button button-small button-outline" disabled={busy || !draft.body.trim()} onClick={() => save("test")}>
-                      Guardar y probar 50/50 contra V{active.version}
-                    </button>
-                  )}
-                  {stage.versions.length > 0 && (
-                    <button type="button" className="fu-link" disabled={busy} onClick={() => setDraft(null)}>
-                      Descartar
-                    </button>
-                  )}
-                </>
-              ) : current?.status === "active" ? (
-                <p className="fu-note">La activa: la usan todas las inmobiliarias de esta etapa{stage.versions.some((v) => v.status === "test") ? " que no están en la prueba" : ""}.</p>
-              ) : current?.status === "test" ? (
-                <>
-                  <button type="button" className="button button-primary button-small" disabled={busy} onClick={() => setStatus(current.id, "active")}>
-                    Hacerla la activa
-                  </button>
-                  <button type="button" className="button button-small button-outline" disabled={busy} onClick={() => setStatus(current.id, "archived")}>
-                    Detener prueba
-                  </button>
-                  <p className="fu-note">Recibe la mitad de las inmobiliarias de la etapa.</p>
-                </>
-              ) : current ? (
-                <>
-                  <button type="button" className="button button-small button-outline" disabled={busy} onClick={() => setStatus(current.id, "active")}>
-                    Volver a activarla
-                  </button>
-                  {active && (
-                    <button type="button" className="button button-small button-outline" disabled={busy} onClick={() => setStatus(current.id, "test")}>
-                      Probar 50/50 contra V{active.version}
-                    </button>
-                  )}
-                </>
-              ) : null}
-            </div>
-            {!draft && current?.edited_at && (
-              <p className="fu-note">
-                Texto editado el {day(current.edited_at)}: sus números juntan el texto anterior y el nuevo.
-              </p>
-            )}
-            {error && (
-              <p className="fu-error" role="alert">
-                {error}
-              </p>
-            )}
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
 
 const LATE_DAYS = 5;
 const daysSince = (iso: string) => Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
@@ -2282,50 +2592,3 @@ function Execute({ item, exec, onDone, onClose, onNext }: { item: QueueItem; exe
   );
 }
 
-function VersionTable({ stage }: { stage: StageView }) {
-  if (!stage.versions.length) return null;
-  const max = Math.max(0.01, ...stage.versions.map((v) => v.stats.rate ?? 0));
-  const measured = stage.versions.filter((v) => v.stats.executions >= 30);
-  const best = measured.length > 1 ? measured.reduce((a, b) => ((b.stats.rate ?? 0) > (a.stats.rate ?? 0) ? b : a)) : null;
-  return (
-    <div className="fu-versions">
-      <span className="fu-lbl">Resultados por versión</span>
-      <div className="fu-tbl">
-        <table>
-          <thead>
-            <tr>
-              <th>Versión</th>
-              <th>Estado</th>
-              <th>Ejecuciones</th>
-              <th>Conversiones</th>
-              <th>Tasa de conversión</th>
-            </tr>
-          </thead>
-          <tbody>
-            {stage.versions.map((v) => (
-              <tr key={v.id}>
-                <td>
-                  <b>V{v.version}</b>
-                  {best?.id === v.id && <span className="fu-best">MEJOR</span>}
-                </td>
-                <td>
-                  <span className={`fu-st is-${v.status}`}>{STATUS_LABEL[v.status]}</span>
-                </td>
-                <td>{v.stats.executions}</td>
-                <td>{v.stats.conversions}</td>
-                <td>
-                  <span className={`fu-bar${v.status === "archived" ? " is-off" : ""}`} style={{ width: `${v.stats.rate === null ? 0 : Math.max(2, (v.stats.rate / max) * 120)}px` }} />
-                  <b>{pct(v.stats.rate)}</b>
-                  {v.stats.smallSample && <small>muestra chica</small>}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <p className="fu-note">
-        Ejecución: un envío confirmado, una vez por inmobiliaria. Conversión: la inmobiliaria pasó a «{stage.goal}» o más allá después del envío, con las mismas reglas que el embudo de Inmobiliarias.
-      </p>
-    </div>
-  );
-}

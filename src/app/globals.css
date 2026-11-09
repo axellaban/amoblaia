@@ -28675,6 +28675,352 @@ dialog.pt-layer::backdrop {
 .fu-changes {
   margin-top: 14px;
 }
+
+/* Mensajes y reglas: etapas en fila, reglas a la izquierda, editor de la regla a la derecha. */
+.fu-flow {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 4px 2px 10px;
+}
+.fu-flowstep {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  min-width: 200px;
+  border: 1px solid var(--pr-line, #dde3d7);
+  border-radius: 12px;
+  background: #fff;
+  padding: 10px 12px;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.fu-flowstep.is-on {
+  border-color: #2f8f5b;
+  background: #f1faf5;
+  box-shadow: inset 0 0 0 1px #2f8f5b;
+}
+.fu-flowstep .fu-num {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--pr-line, #dde3d7);
+  font-size: 12px;
+  font-weight: 700;
+}
+.fu-flowstep.is-on .fu-num {
+  background: #2f8f5b;
+  border-color: #2f8f5b;
+  color: #fff;
+}
+.fu-flowtext {
+  display: grid;
+  gap: 2px;
+  font-size: 13px;
+}
+.fu-flowtext small {
+  color: var(--pr-muted, #5f6f64);
+  font-size: 12px;
+}
+.fu-flowarrow {
+  align-self: center;
+  flex: 0 0 auto;
+  color: var(--pr-muted, #5f6f64);
+}
+.fu-stagehead {
+  display: grid;
+  gap: 12px;
+  padding: 12px 0 0;
+}
+.fu-subtabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.fu-subtab {
+  border: 1px solid var(--pr-line, #dde3d7);
+  background: #fff;
+  border-radius: 999px;
+  padding: 6px 14px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--pr-ink, #243d36);
+  cursor: pointer;
+}
+.fu-subtab.is-on {
+  background: #2f8f5b;
+  border-color: #2f8f5b;
+  color: #fff;
+}
+.fu-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 2.1fr);
+  gap: 16px;
+  align-items: start;
+  margin-top: 12px;
+}
+.fu-workspace > .fu-rules {
+  padding: 0;
+  border-top: 0;
+}
+.fu-rulecard {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  border: 1px solid var(--pr-line, #dde3d7);
+  border-radius: 12px;
+  background: #fff;
+  padding: 10px 12px;
+}
+.fu-rulecard.is-on {
+  border-color: #2f8f5b;
+  background: #f1faf5;
+}
+.fu-rulecard.is-off {
+  opacity: 0.65;
+}
+.fu-rulecard-main {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  flex: 1;
+  min-width: 180px;
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.fu-rdetail {
+  min-width: 0;
+}
+.fu-detail-card {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  border: 1px solid var(--pr-line, #dde3d7);
+  border-radius: 12px;
+  background: #fff;
+  padding: 16px 18px;
+}
+.fu-rdhead {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.fu-rdhead h3 {
+  margin: 2px 0 0;
+  font-size: 17px;
+}
+.fu-rdhead p {
+  margin: 4px 0 0;
+}
+.fu-part {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.fu-part > label,
+.fu-field {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--pr-muted, #5f6f64);
+}
+.fu-part > label select,
+.fu-part > label input {
+  font: inherit;
+  font-size: 13px;
+  border: 1px solid var(--pr-line, #dde3d7);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #fff;
+  color: var(--pr-ink, #243d36);
+  justify-self: start;
+  min-width: 260px;
+}
+.fu-lbl2 {
+  font-size: 12px;
+  color: var(--pr-muted, #5f6f64);
+}
+.fu-partgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 10px;
+}
+.fu-partgrid label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--pr-muted, #5f6f64);
+}
+.fu-partgrid select,
+.fu-partgrid input {
+  font: inherit;
+  font-size: 13px;
+  border: 1px solid var(--pr-line, #dde3d7);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #fff;
+  color: var(--pr-ink, #243d36);
+  min-width: 0;
+}
+.fu-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.fu-chipbtn {
+  border: 1px solid var(--pr-line, #dde3d7);
+  background: #fff;
+  border-radius: 999px;
+  padding: 5px 11px;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--pr-ink, #243d36);
+  cursor: pointer;
+}
+.fu-chipbtn.is-on {
+  background: #e7f5ec;
+  border-color: #2f8f5b;
+  color: #1d6b40;
+}
+.fu-mededit {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.fu-vhead {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+.fu-vselect {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.fu-vselect select {
+  font: inherit;
+  font-size: 13px;
+  border: 1px solid var(--pr-line, #dde3d7);
+  border-radius: 8px;
+  padding: 6px 10px;
+  background: #fff;
+}
+.fu-msg-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 16px;
+  align-items: start;
+}
+.fu-msg-main {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.fu-wa {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  min-width: 0;
+}
+.fu-wa-chat {
+  display: grid;
+  gap: 8px;
+  min-height: 140px;
+  border-radius: 14px;
+  padding: 14px;
+  background: #efeae2;
+}
+.fu-wa-task {
+  display: grid;
+  gap: 8px;
+  border: 1px dashed #b9c4bc;
+  border-radius: 12px;
+  padding: 12px;
+  background: #f6f7f4;
+  font-size: 13px;
+}
+.fu-wa-task p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+.fu-wa-ctas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.fu-wa-ctas span {
+  font-size: 12px;
+  background: #fff;
+  border: 1px solid #cfd8d2;
+  border-radius: 8px;
+  padding: 4px 8px;
+  color: #1d6b40;
+}
+.fu-footer {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid var(--pr-line, #dde3d7);
+  padding-top: 12px;
+}
+.fu-summarylist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.fu-summarylist li {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  border: 1px solid var(--pr-line, #dde3d7);
+  border-radius: 10px;
+  background: #fff;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+.fu-stack {
+  display: grid;
+  gap: 14px;
+  margin-top: 12px;
+}
+@media (max-width: 1000px) {
+  .fu-workspace,
+  .fu-msg-grid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 600px) {
+  .fu-flowstep {
+    min-width: 170px;
+  }
+  .fu-partgrid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .fu-part > label select,
+  .fu-part > label input {
+    min-width: 0;
+    width: 100%;
+  }
+}
 .fu-results {
   display: grid;
   gap: 14px;
