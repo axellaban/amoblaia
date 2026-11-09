@@ -93,6 +93,21 @@ Sin nombres, teléfonos, emails, enlaces a grabaciones, IDs de sesión, tasas de
 
 ## Resultados
 
+### QA 2026-11-09 am
+
+- Inicio: 2026-11-09T07:33:01-03:00 · Fin: 2026-11-09T07:42:05-03:00 · Estado: parcial (ver «Sin revisar»)
+- Commit: ec786f9 (#202) · Despliegue: dpl_7HDB49YnoXdeGqZV7TByYm1HLT66 (production, READY)
+- Tipo: completa (mañana), recortada · Pantallas: escritorio 1366×900, iPhone 13, Galaxy S8 (también con red lenta y con el navegador de WhatsApp) e iPad (gen 7).
+- Paso 2: errores de Vercel en 24 h: un solo grupo, `DATABASE_57014` en `/api/prospeccion` (OBS-012, se repite; el último fue ayer a la tarde). Sin errores SSR.
+- Sesión de QA: OK. `/`, `/precios`, `/acceso`, `/panel`, `/panel/imagenes`, `/admin`, `/admin/inmobiliarias`, `/admin/prospeccion`, ficha de la inmobiliaria de prueba y token inexistente en las cuatro pantallas: 200 (404 propio para el token inexistente), sin errores de JavaScript propios, sin scroll horizontal ni placeholders, sin violaciones axe `critical`. Demo publicada de QA y `/presentacion` en las cuatro pantallas, con red lenta y con el navegador de WhatsApp: 200, `og:title`/`og:description`/`og:image` presentes, enlaces a `wa.me`, imágenes sin romper, botón «Siguiente» y comparación (clic/arrastre en escritorio y tablet, toque en celular) sin fallas, foco visible. Axe: solo `color-contrast`, y en la demo `aria-prohibited-attr`. Se miraron las capturas de la demo en Galaxy S8 con WhatsApp y la de `/panel` en Galaxy S8 (reducida, no legible a detalle).
+- Dato de la corrida: la demo de QA más reciente está en borrador (da 404 público); se usó la publicada.
+- Bugs encontrados: ninguno · Corregidos: ninguno
+- Observaciones nuevas: ninguna · Propuestas nuevas: ninguna. Se repiten OBS-005, OBS-012, UX-001, UX-003, UX-006, UX-007 y UX-004 (carga de 5 a 6 s en escritorio, 10 s en Android con red lenta).
+- PRs de usabilidad abiertos: ninguno con título `UX:`
+- PostHog revisado hasta: 2026-11-09T07:42:05-03:00 · cobertura: parcial · ventana desde el corte del 8/11 am. Filtro de tráfico interno verificado. Casi sin tráfico externo: ninguna visita a demos ni al panel; sin clics repetidos ni excepciones; sin grabaciones (OBS-010 sigue igual). Los eventos de clics muertos y de excepciones no existen en el proyecto.
+- Sin revisar (motivo: corrida recortada por tiempo): crear demostración, estudio de imágenes y video Clásico; caminos de error (HEIC, archivos grandes, guardar vacío, doble clic, sin conexión); teclado en formularios; ficha de inmobiliaria con todas sus pestañas; la mayoría de las capturas no se miraron una por una; logs de Supabase; panel con red lenta. Nada que borrar: no se crearon datos.
+- Esperado, no es bug: el 404 de la consola en `/demo/<token-inexistente>`; el error de Google (`gsi/style`) en `/acceso` es de la red del entorno; los tiempos incluyen el proxy.
+
 ### QA 2026-11-08 pm
 
 - Inicio: 2026-11-08T17:51:39-03:00 · Fin: 2026-11-08T17:55:25-03:00 · Estado: parcial (ver «Sin revisar»)
