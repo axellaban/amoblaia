@@ -171,3 +171,15 @@ describe("Etapas comerciales agrupadas sin perder el funnel técnico", () => {
     }, async () => true))?.agencyId).toBe("B");
   });
 });
+
+
+describe("Filtro de generación confirmada", () => {
+  it("distingue imágenes generadas de clics comunes", () => {
+    const normal = { ...agency("Normal", "sin-cuenta", "sin_respuesta"), demoGenerated: false };
+    const generated = { ...agency("Generó", "sin-cuenta", "sin_respuesta"), demoGenerated: true };
+    const panel = { ...agency("Panel", "sin-uso", "sin_respuesta"), demoGenerated: true };
+    const list = [normal, generated, panel];
+    expect(list.filter((q) => matchesFilter(q, { ...NO_FILTER, commercial: "demo-enviada", demoImage: "generated" }, DEFAULT_RULES)).map((q) => q.name)).toEqual(["Generó"]);
+    expect(list.filter((q) => matchesFilter(q, { ...NO_FILTER, commercial: "demo-enviada", demoImage: "interacted" }, DEFAULT_RULES)).map((q) => q.name)).toEqual(["Normal"]);
+  });
+});

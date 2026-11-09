@@ -46,13 +46,19 @@ export async function updateStateCatalog(input: Record<string, unknown>, actorId
   const active = input.active === true;
   if (!CUSTOM.test(key)) throw new HttpError(400, "La clave debe empezar con custom_ y usar minúsculas y guiones bajos.");
   if (label.length < 2 || label.length > 80) throw new HttpError(400, "El nombre debe tener entre 2 y 80 caracteres.");
-  if (!VALID_STAGE.includes(commercial_stage as CommercialStageKey)) throw new HttpError(400, "Etapa comercial desconocida.");
+  if (!VALID_STAGE.some((s) => s === commercial_stage)) throw new HttpError(400, "Etapa comercial desconocida.");
   if (!["whatsapp", "manual"].includes(source)) throw new HttpError(400, "Origen de clasificación desconocido.");
   if (description.length > 800 || examples.length > 2000) throw new HttpError(400, "La descripción o los ejemplos son demasiado largos.");
   if (maps_to && (!isReplyClass(maps_to) || !(maps_to in SITUATIONS))) throw new HttpError(400, "La situación elegida no se puede usar para clasificar respuestas.");
   // Closed situations are allowed only as closed: never create an automated outbound rule.
   if (active && !maps_to) throw new HttpError(400, "Para activar el estado, elegí la situación canónica a la que corresponde.");
-  const { data, error } = await adminClient().from("followup_state_catalog")
+  const db = adminClient();
+  if (input.create === true) {
+    const previous = await db.from("followup_state_catalog").select("key").eq("key", key).maybeSingle();
+    if (previous.error) throw new Error("FOLLOWUP_STATE_READ_FAILED");
+    if (previous.data) throw new HttpError(409, "Ya existe un estado con ese nombre: editá ese estado o elegí otro.");
+  }
+  const { data, error } = await db.from("followup_state_catalog")
     .upsert({ key, label, commercial_stage, description, examples, source, maps_to, active, updated_by: actorId, updated_at: new Date().toISOString() }, { onConflict: "key" })
     .select(COLS).single();
   if (error) {

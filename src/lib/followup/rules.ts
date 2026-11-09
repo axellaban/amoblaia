@@ -69,7 +69,6 @@ const EARLY = ["no-contactado", "no-responde"] as const;
 const OTHER_STAGES = ["sin-demo", "sin-enviar", "sin-interaccion", "sin-cuenta", "sin-uso", "sin-suscripcion"] as const;
 const rule = (r: Omit<Rule, "enabled" | "hours_from" | "hours_to" | "days"> & Partial<Rule>): Rule => ({
   enabled: true,
-  min_demo_activity_level: 0,
   hours_from: 9,
   hours_to: r.stage === "no-contactado" && r.action === "principal" ? 18 : 19,
   days: WEEK,
@@ -104,12 +103,12 @@ export type RulePick = { rule: Rule | null; action: Action | null; afterHours: n
  * Las situaciones cerradas y «interesado» en las dos primeras etapas no llegan
  * acá (las resuelve el código: ninguna regla puede escribirle a un rechazo).
  */
-export function pickRule(rules: Rule[], stage: StageKey, situation: Situation, done: Partial<Record<Action, boolean>>, demoActivityLevel = 0): RulePick {
+export function pickRule(rules: Rule[], stage: StageKey, situation: Situation, done: Partial<Record<Action, boolean>>, demoGenerated = false): RulePick {
   // Las incompatibles (acción fuera de la etapa) no se ejecutan, aunque estén encendidas en la base.
   const own = rules
     .filter((r) => r.enabled && r.stage === stage && compatible(stage, r.action) && (!r.after_action || compatible(stage, r.after_action)))
     .filter((r) => r.situations.length === 0 || r.situations.includes(situation))
-    .filter((r) => (r.min_demo_activity_level ?? 0) <= demoActivityLevel)
+    .filter((r) => (r.min_demo_activity_level ?? 0) === 0 || demoGenerated)
     .sort((a, b) => a.position - b.position);
   for (const r of own) {
     if (done[r.action]) continue;

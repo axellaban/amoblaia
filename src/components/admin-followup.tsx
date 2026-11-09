@@ -1418,11 +1418,12 @@ type CatalogState = {
   commercial_stage: string; source: "whatsapp" | "manual";
   maps_to: Situation | null; active: boolean; updated_at: string;
 };
-const EMPTY_CATALOG = { key: "", label: "", description: "", examples: "", source: "whatsapp" as const, maps_to: "" as Situation | "", active: false };
+type CatalogDraft = { key: string; label: string; description: string; examples: string; source: "whatsapp" | "manual"; maps_to: Situation | ""; active: boolean };
+const EMPTY_CATALOG: CatalogDraft = { key: "", label: "", description: "", examples: "", source: "whatsapp", maps_to: "", active: false };
 /** Catalog editor is separate from the message editor: it does not rewrite past events or send messages. */
 function StateCatalogManager({ commercial, onSelect }: { commercial: string; onSelect: (s: Situation) => void }) {
   const [states, setStates] = useState<CatalogState[]>([]);
-  const [draft, setDraft] = useState(EMPTY_CATALOG);
+  const [draft, setDraft] = useState<CatalogDraft>(EMPTY_CATALOG);
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -1450,7 +1451,7 @@ function StateCatalogManager({ commercial, onSelect }: { commercial: string; onS
     setBusy(true);
     setError("");
     try {
-      await api("/api/admin/follow-up/estados", { method: "PUT", body: JSON.stringify({ ...draft, key, commercial_stage: commercial, maps_to: draft.maps_to || null }) });
+      await api("/api/admin/follow-up/estados", { method: "PUT", body: JSON.stringify({ ...draft, key, create: !draft.key, commercial_stage: commercial, maps_to: draft.maps_to || null }) });
       setEditing(false);
       await reload();
     } catch (e) {

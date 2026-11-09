@@ -126,10 +126,16 @@ const extras = async (agencyId?: string) => {
 };
 
 /** Las reglas activas e inactivas (Fase 3). Sin la tabla, la migración falta. */
+const RULE_FIELDS = "key,name,stage,situations,action,after_hours,after_action,position,enabled,hours_from,hours_to,days";
+const RULE_FIELDS_WITH_GENERATION = RULE_FIELDS + ",min_demo_activity_level";
+const missingGenerationField = (error: { code?: string; message?: string } | null) =>
+  Boolean(error && (error.code === "42703" || error.code === "PGRST204" || /min_demo_activity_level/i.test(error.message ?? "")));
 async function readRules(): Promise<Rule[]> {
-  const { data, error } = await adminClient().from("followup_rules").select("key,name,stage,situations,action,after_hours,after_action,min_demo_activity_level,position,enabled,hours_from,hours_to,days").limit(500);
-  if (error) throw missing(error) || /followup_rules/.test(error.message ?? "") ? new HttpError(409, MISSING) : new Error("FOLLOWUP_READ_FAILED");
-  return ((data ?? []) as Rule[]).map((r) => ({ ...r, after_hours: Number(r.after_hours) }));
+  const db = adminClient();
+  let result = await db.from("followup_rules").select(RULE_FIELDS_WITH_GENERATION).limit(500);
+  if (missingGenerationField(result.error)) result = await db.from("followup_rules").select(RULE_FIELDS).limit(500);
+  if (result.error) throw missing(result.error) || /followup_rules/.test(result.error.message ?? "") ? new HttpError(409, MISSING) : new Error("FOLLOWUP_READ_FAILED");
+  return ((result.data ?? []) as Rule[]).map((r) => ({ ...r, after_hours: Number(r.after_hours), min_demo_activity_level: Number(r.min_demo_activity_level ?? 0) }));
 }
 
 /** Deja constancia de un cambio a mano: quién, qué y cuándo. Nunca frena el cambio. */
@@ -543,8 +549,8 @@ function item(
   const stageSent = executionsOf.filter((e) => e.stage === stage && e.status === "sent").sort((a, b) => (b.sent_at ?? "").localeCompare(a.sent_at ?? ""));
   const doneMap: Partial<Record<Action, boolean>> = {};
   for (const e of stageSent) doneMap[(e.action ?? "principal") as Action] = true;
-  const demoActivityLevel = Math.max(0, ...r.demos.map((d) => d.activityLevel ?? 0));
-  const next = nextAction(stage, sit.situation, doneMap, rules, demoActivityLevel);
+  const demoGenerated = r.demos.some((d) => d.generated === true);
+  const next = nextAction(stage, sit.situation, doneMap, rules, demoGenerated);
   // The rule's window, or the one of the rule that sent the last step (for the row of a finished sequence).
   const window = next.rule ?? rules.find((x) => x.stage === stage && x.action === (stageSent[0]?.action ?? "principal")) ?? null;
   // Nothing left to send but something went out: the row shows that last one as sent.
@@ -570,7 +576,7 @@ function item(
     wa: to.wa,
     needsReview: to.needsReview,
     hasDemo: Boolean(r.shareDemo),
-    demoGenerated: demoActivityLevel >= 3,
+    demoGenerated,
     hasAccount: r.hasOwner,
     lastActivity: r.lastActivity,
     lastAction,
@@ -1274,14 +1280,17 @@ export async function saveRule(key: unknown, input: Record<string, unknown>, act
   if (id.length > 80) throw new HttpError(400, "Regla desconocida.");
   const before = typeof key === "string" && key ? (await db.from("followup_rules").select("*").eq("key", key).maybeSingle()).data : null;
   if (typeof key === "string" && key && !before) throw new HttpError(404, "No encontramos esa regla.");
-  const { data, error } = await db
-    .from("followup_rules")
-    .upsert({ key: id, ...clean, updated_by: actor.id, updated_at: new Date().toISOString() }, { onConflict: "key" })
-    .select("key,name,stage,situations,action,after_hours,after_action,min_demo_activity_level,position,enabled,hours_from,hours_to,days")
-    .single();
-  if (error) throw missing(error) ? new HttpError(409, MISSING) : error.code === "23514" ? new HttpError(400, "La base rechazó la regla: revisá los valores.") : new Error("FOLLOWUP_SAVE_FAILED");
+  const payload = { key: id, ...clean, updated_by: actor.id, updated_at: new Date().toISOString() };
+  let result = await db.from("followup_rules").upsert(payload, { onConflict: "key" }).select(RULE_FIELDS_WITH_GENERATION).single();
+  if (missingGenerationField(result.error)) {
+    if (clean.min_demo_activity_level === 3) throw new HttpError(409, "Aplicá la migración de estados antes de activar «Generó imagen».");
+    const { min_demo_activity_level: unused, ...legacy } = payload;
+    void unused;
+    result = await db.from("followup_rules").upsert(legacy, { onConflict: "key" }).select(RULE_FIELDS).single();
+  }
+  if (result.error) throw missing(result.error) ? new HttpError(409, MISSING) : result.error.code === "23514" ? new HttpError(400, "La base rechazó la regla: revisá los valores.") : new Error("FOLLOWUP_SAVE_FAILED");
   await audit("rule", actor, { ref: id, from: before, to: clean });
-  return { ...(data as Rule), after_hours: Number((data as Rule).after_hours) };
+  return { ...(result.data as Rule), after_hours: Number((result.data as Rule).after_hours), min_demo_activity_level: Number((result.data as Rule).min_demo_activity_level ?? 0) };
 }
 
 /**

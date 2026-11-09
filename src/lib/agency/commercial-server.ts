@@ -224,6 +224,20 @@ async function scoreRows(demoIds: string[] | null) {
  * The panel's rows: every agency (or only one) with its stage, account,
  * properties, lead score and latest activity.
  */
+/** Actual external image generations, not a max activity level which also includes
+ * account creation. Fail closed if the event source is unavailable. */
+async function generatedDemoIds(ids: string[]) {
+  const generated = new Set<string>();
+  for (let start = 0; start < ids.length; start += 250) {
+    const { data, error } = await adminClient().from("demo_activity")
+      .select("demo_id").eq("kind", "generacion").eq("is_internal", false)
+      .in("demo_id", ids.slice(start, start + 250)).limit(5000);
+    if (error) return new Set<string>();
+    for (const row of data ?? []) generated.add((row as { demo_id: string }).demo_id);
+  }
+  return generated;
+}
+
 export async function commercialRows(only: string | null = null): Promise<CommercialRow[]> {
   const db = adminClient();
   const [agenciesRaw, demos, prospects, team, whatsapps] = await Promise.all([
@@ -247,6 +261,7 @@ export async function commercialRows(only: string | null = null): Promise<Commer
     ownerActions(claimed.map((a) => ({ id: a.owner_id, since: a.claimed_at ?? a.created_at }))).catch(() => new Map<string, ActivityFact>()),
     prospectFunnel(prospects.accounts),
   ]);
+  const generated = await generatedDemoIds(demos.map((d) => d.id));
   const funnelOf = prospecting.funnel;
   const byAgency = new Map<string, DemoRow[]>();
   for (const d of demos) byAgency.set(d.agency_id, [...(byAgency.get(d.agency_id) ?? []), d]);
@@ -313,6 +328,7 @@ export async function commercialRows(only: string | null = null): Promise<Commer
         id: d.id,
         sent: Boolean(d.sent_at),
         activityLevel: d.activity_level ?? 0,
+        generated: generated.has(d.id),
         createdAt: d.created_at,
         step: funnelStep({
           sentAt: d.sent_at,
