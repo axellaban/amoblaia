@@ -5,13 +5,14 @@
  */
 import { GROUPS, SITUATIONS, type Group, type Situation } from "./plan";
 import { compatible, type Rule } from "./rules";
-import { FOLLOWUP_STAGES, type StageKey } from "./stages";
+import { FOLLOWUP_STAGES, commercialOf, isCommercialStage, type CommercialStageKey, type StageKey } from "./stages";
 
 /** Lo que el motor eligió para una inmobiliaria, lo justo para filtrarla. */
 export type Filterable = { stage: StageKey; ruleKey: string | null; situation: Situation; group: Group; name: string };
 
 export type QueueFilter = {
   stage: StageKey | null;
+  commercial?: CommercialStageKey | null;
   /** La clave de la regla (`ruleKey`), u `OTHER_RULES`: las que no salen de una regla activa de la etapa. */
   rule: string | null;
   situation: Situation | null;
@@ -36,6 +37,7 @@ const norm = (s: string) =>
 /** Si la inmobiliaria entra en el filtro. `rules`: todas (para saber qué es «Otras»). */
 export function matchesFilter(q: Filterable, f: QueueFilter, rules: Rule[]) {
   if (f.stage && q.stage !== f.stage) return false;
+  if (f.commercial && commercialOf(q.stage) !== f.commercial) return false;
   if (f.rule) {
     if (f.rule === OTHER_RULES) {
       if (q.ruleKey && stageRules(rules, q.stage).some((r) => r.key === q.ruleKey)) return false;
@@ -53,11 +55,13 @@ export function cleanFilter(raw: unknown): QueueFilter {
   const o = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
   const stage = str(o.etapa ?? o.stage);
+  const commercial = str(o.etapaComercial ?? o.commercial);
   const situation = str(o.situacion ?? o.situation);
   const group = str(o.grupo ?? o.group);
   const rule = str(o.regla ?? o.rule);
   return {
     stage: FOLLOWUP_STAGES.some((s) => s.key === stage) ? (stage as StageKey) : null,
+    commercial: isCommercialStage(commercial) ? commercial : null,
     rule: rule ? rule.slice(0, 120) : null,
     situation: situation in SITUATIONS ? (situation as Situation) : null,
     group: group in GROUPS ? (group as Group) : null,
@@ -65,7 +69,7 @@ export function cleanFilter(raw: unknown): QueueFilter {
   };
 }
 
-export const isEmptyFilter = (f: QueueFilter) => !f.stage && !f.rule && !f.situation && !f.group && !f.search.trim();
+export const isEmptyFilter = (f: QueueFilter) => !f.stage && !f.commercial && !f.rule && !f.situation && !f.group && !f.search.trim();
 
 /**
  * La próxima para tomar: la primera de la cola (ya recalculada y en orden) que
