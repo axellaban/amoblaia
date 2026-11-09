@@ -28,7 +28,13 @@ export type Action = "principal" | "seguimiento_2" | "presentacion" | "presentac
  */
 export const ACTIONS_OF: Partial<Record<StageKey, Action[]>> = {
   "no-responde": ["principal", "seguimiento_2", "presentacion", "presentacion_seguimiento", "precios"],
-  "no-abrio": ["principal", "seguimiento_2"],
+  "sin-demo": ["principal", "precios"],
+  "sin-enviar": ["principal", "precios"],
+  "no-abrio": ["principal", "seguimiento_2", "precios"],
+  "sin-interaccion": ["principal", "precios"],
+  "sin-cuenta": ["principal", "precios"],
+  "sin-uso": ["principal", "precios"],
+  "sin-suscripcion": ["principal", "precios"],
 };
 export const actionsOf = (stage: StageKey): Action[] => ACTIONS_OF[stage] ?? ["principal"];
 /** Si la acción existe en la etapa. */
