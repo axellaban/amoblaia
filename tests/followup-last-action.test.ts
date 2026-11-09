@@ -18,7 +18,7 @@ describe("lastActionOf", () => {
       attempts: [{ status: "sent", sent_at: "2026-11-03T10:00:00Z", step: 2 }],
       activity: { at: "2026-11-04T10:00:00Z", text: "Abrió la demo" },
     });
-    expect(a).toEqual({ at: "2026-11-05T10:00:00Z", text: "Follow-up enviado: Contactado, no responde (V2)", source: "followup" });
+    expect(a).toEqual({ at: "2026-11-05T10:00:00Z", text: "Follow-up enviado: Contactado (V2)", source: "followup" });
   });
 
   it("uses the Adquisición send or the agency's activity when they are newer", () => {
