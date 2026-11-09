@@ -25,4 +25,10 @@ create index if not exists followup_state_catalog_stage_idx
 alter table public.followup_state_catalog enable row level security;
 revoke all on public.followup_state_catalog from anon, authenticated;
 
+-- Optional condition for rules based on a verified demo-generation fact.
+-- A zero threshold preserves every pre-existing rule unchanged.
+alter table public.followup_rules
+  add column if not exists min_demo_activity_level integer not null default 0
+  check (min_demo_activity_level in (0, 3));
+
 commit;
