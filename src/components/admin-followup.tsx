@@ -3,10 +3,10 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, BarChart3, Building2, CalendarDays, CheckCheck, ChevronDown, ChevronRight, ClipboardCopy, Copy, GripVertical, Info, KeyRound, Layers, Link2, MessageCircle, MessageSquare, MoreVertical, Pencil, Phone, Plus, RefreshCw, Send, SlidersHorizontal, Tag, Target, Trash2, Undo2, Video, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Building2, CalendarDays, CheckCheck, ChevronDown, ChevronRight, ClipboardCopy, Copy, GripVertical, Info, KeyRound, Layers, Link2, MessageCircle, MessageSquare, MoreVertical, Pencil, Phone, Plus, RefreshCw, Send, Tag, Target, Trash2, Undo2, Video, X } from "lucide-react";
 import { api } from "@/components/admin-demos";
 import { CTA_KEYS, CTA_LABEL, FOLLOWUP_STAGES, OUT, VARIABLES, fillMessage, missingVariables, pct, type Channel, type Cta, type StageKey, type VersionStatus } from "@/lib/followup/stages";
-import { GROUPS, REPLY_CLASSES, SITUATIONS, actionLabel, actionWhen, actionsOf, compatible, splitMessages, type Action, type ReplyClass, type Situation } from "@/lib/followup/plan";
+import { GROUPS, REPLY_CLASSES, SITUATIONS, actionLabel, actionsOf, compatible, splitMessages, type Action, type ReplyClass, type Situation } from "@/lib/followup/plan";
 import type { Change, FunnelStep, InboxItem, Prepared, QueueItem, QueueSummary, QueueView, Results, StageView } from "@/lib/followup/server";
 import { NO_FILTER, OTHER_RULES, isEmptyFilter, matchesFilter, stageRules, type QueueFilter } from "@/lib/followup/queue-filter";
 import type { CohortRow, WindowKey } from "@/lib/followup/results";
@@ -39,7 +39,7 @@ const VIEWS: { key: View; label: string; soon?: string }[] = [
   { key: "cola", label: "Cola de ejecución" },
   { key: "respuestas", label: "Respuestas" },
   { key: "embudo", label: "Embudo" },
-  { key: "reglas", label: "Mensajes y reglas" },
+  { key: "reglas", label: "Estados y reglas" },
   { key: "resultados", label: "Resultados" },
 ];
 
@@ -1338,7 +1338,6 @@ function Funnel({ funnel, stages, rules, onRules }: { funnel: FunnelStep[]; stag
 const NEW_RULE = "__nueva";
 const NEW_VERSION = "__nueva";
 const DISCARD = "Hay cambios sin guardar. ¿Descartarlos?";
-type StageTab = "reglas" | "mensajes" | "resumen";
 type MsgTab = "mensaje" | "versiones" | "observaciones";
 
 /** Qué espera cada etapa, en una línea (la misma lectura que la tabla de docs/FOLLOWUP.md). */
@@ -1383,38 +1382,41 @@ const versionsOf = (stage: StageView, action: Action): StageView => ({ ...stage,
  * reglas (izquierda) y el editor de la regla elegida (derecha). Cambia solo la
  * interfaz: las reglas y las versiones se guardan con los mismos endpoints.
  */
+/** Edición unificada: etapa → situación (estado de conversación) → reglas → mensaje.
+ * Las situaciones siguen siendo el catálogo tipado actual; esta interfaz no finge
+ * que es posible agregar nuevas clasificaciones sin migrar el contrato del backend.
+ */
 function RulesWorkspace({ stages, rules, changes }: { stages: StageView[]; rules: Rule[]; changes: Change[] }) {
-  const [stageKey, setStageKey] = useState<StageKey>(stages[0].key);
-  const [tab, setTab] = useState<StageTab>("reglas");
+  const [stageKey, setStageKey] = useState<StageKey>(() => stages.find((s) => s.key === "no-responde")?.key ?? stages[0].key);
+  const [situation, setSituation] = useState<Situation>("confirmo_numero");
   const [selected, setSelected] = useState<string | null>(null);
   const [template, setTemplate] = useState<Rule | null>(null);
   const [dirty, setDirty] = useState<Record<string, boolean>>({});
   const stage = stages.find((s) => s.key === stageKey) ?? stages[0];
   const index = stages.indexOf(stage) + 1;
-  // Las reglas con una acción que no es de la etapa no se muestran: el motor ya no las ejecuta.
-  const own = rules.filter((r) => r.stage === stage.key && compatible(stage.key, r.action as Action)).sort((a, b) => a.position - b.position);
-  const available = actionsOf(stage.key);
-  const sample = stage.queue.find((q) => q.wa) ?? stage.queue[0] ?? null;
   const waiting = (s: StageView) => s.queue.filter((q) => q.execution?.status !== "sent").length;
-  const isDirty = Object.values(dirty).some(Boolean);
+  const own = rules.filter((r) => r.stage === stage.key && compatible(stage.key, r.action as Action)).sort((a, b) => a.position - b.position);
+  const currentSituation = stage.key === "no-contactado" && situation !== "sin_respuesta" ? "sin_respuesta" : situation;
+  const shownRules = own.filter((r) => !r.situations.length || r.situations.includes(currentSituation));
+  const allStates = (Object.keys(SITUATIONS) as Situation[]).filter((s) => !["rechazo", "proveedor_ia", "no_contactar", "sin_whatsapp", "numero_incorrecto"].includes(s));
+  const availableStates = stage.key === "no-contactado" ? (["sin_respuesta"] as Situation[]) : allStates;
+  const activeSituation = availableStates.includes(currentSituation) ? currentSituation : availableStates[0];
+  const sample = stage.queue.find((q) => q.wa) ?? stage.queue[0] ?? null;
   const adding = selected === NEW_RULE;
+  const isDirty = Object.values(dirty).some(Boolean);
   const nextPosition = Math.max(0, ...own.map((r) => r.position)) + 10;
-  const current = adding ? null : own.find((r) => r.key === selected) ?? own.find((r) => r.enabled && available.includes(r.action as Action)) ?? own[0] ?? null;
+  const current = adding ? null : shownRules.find((r) => r.key === selected) ?? shownRules.find((r) => r.enabled) ?? shownRules[0] ?? null;
   const markDirty = (id: string) => (d: boolean) => setDirty((p) => (p[id] === d ? p : { ...p, [id]: d }));
-  // Al traer una regla de otra etapa, si acá su acción no tiene mensaje, se arranca con el de la etapa de origen.
   const seedOf = (t: Rule | null): Draft | undefined => {
     if (!t || stage.versions.some((v) => (v.action ?? "principal") === t.action)) return undefined;
     const from = stages.find((s) => s.key === t.stage)?.versions.find((v) => (v.action ?? "principal") === t.action && v.status === "active");
     return from ? draftOf(from) : undefined;
   };
-
-  /** Cambiar de etapa, pestaña o regla con datos sin guardar pide confirmación; lo que no se guardó se descarta. */
   function go(next: () => void) {
     if (isDirty && !window.confirm(DISCARD)) return;
     setDirty({});
     next();
   }
-
   return (
     <>
       <div className="fu-flowrow">
@@ -1429,128 +1431,88 @@ function RulesWorkspace({ stages, rules, changes }: { stages: StageView[]; rules
                 data-testid="followup-stage"
                 data-stage={s.key}
                 onClick={() => {
-                  if (s.key !== stage.key) go(() => { setStageKey(s.key); setSelected(null); });
+                  if (s.key !== stage.key) go(() => { setStageKey(s.key); setSituation(s.key === "no-contactado" ? "sin_respuesta" : "confirmo_numero"); setSelected(null); setTemplate(null); });
                 }}
               >
                 <span className="fu-num">{i + 1}</span>
-                <span className="fu-flowtext">
-                  <b>{s.title}</b>
-                  <small>{waiting(s)} esperando</small>
-                </span>
+                <span className="fu-flowtext"><b>{s.key === "no-contactado" ? "Prospectado" : s.title}</b><small>{waiting(s)} esperando</small></span>
               </button>
               {i < stages.length - 1 && <ChevronRight className="fu-flowarrow" size={16} aria-hidden="true" />}
             </Fragment>
           ))}
         </nav>
       </div>
-
       <section className="fu-stagehead" data-testid="followup-stage-head" data-stage={stage.key}>
         <div>
           <div className="fu-name">
             <span className="fu-num">{index}</span>
-            <span className="fu-title">{stage.title}</span>
+            <span className="fu-title">{stage.key === "no-contactado" ? "Prospectado" : stage.title}</span>
             <span className="fu-badge-on">Etapa activa</span>
           </div>
           <p className="fu-note">{STAGE_TEXT[stage.key]}</p>
-          <div className="fu-meta">
-            <span className="fu-waiting">{waiting(stage)} esperando</span> → {stage.goal}
-          </div>
+          <div className="fu-meta"><span className="fu-waiting">{waiting(stage)} esperando</span> → {stage.goal}</div>
         </div>
-        <nav className="fu-subtabs" aria-label="Secciones de la etapa">
-          {(
-            [
-              ["mensajes", "Mensajes de la etapa", MessageSquare],
-              ["reglas", `Reglas (${own.length})`, SlidersHorizontal],
-              ["resumen", "Resumen", BarChart3],
-            ] as const
-          ).map(([k, label, Icon]) => (
-            <button
-              key={k}
-              type="button"
-              className={`fu-subtab${tab === k ? " is-on" : ""}`}
-              aria-pressed={tab === k}
-              data-testid={`followup-subtab-${k}`}
-              onClick={() => {
-                if (k !== tab) go(() => setTab(k));
-              }}
-            >
-              <Icon size={15} aria-hidden="true" />
-              {label}
-            </button>
-          ))}
-        </nav>
+        <p className="fu-note">Elegí un estado, configurá sus reglas y editá el mensaje sin salir de esta vista.</p>
       </section>
-
-      {tab === "reglas" && (
-        <div className="fu-workspace">
+      <div
+        className="fu-state-workspace"
+        data-testid="followup-states-workspace"
+        style={{ display: "grid", gridTemplateColumns: "minmax(205px, 0.9fr) minmax(255px, 1fr) minmax(680px, 3fr)", gap: 12, alignItems: "start", overflowX: "auto" }}
+      >
+        <section className="fu-detail-card" data-testid="followup-state-list" style={{ padding: 14, minWidth: 0 }}>
+          <h3 style={{ fontSize: 16, margin: "0 0 5px" }}>Estados de la etapa</h3>
+          <p className="fu-note" style={{ marginBottom: 14 }}>Situaciones registradas para cada inmobiliaria.</p>
+          <div style={{ display: "grid", gap: 7 }}>
+            {availableStates.map((s) => {
+              const count = stage.queue.filter((q) => q.situation === s).length;
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  className={`fu-flowstep${s === activeSituation ? " is-on" : ""}`}
+                  data-testid="followup-state"
+                  data-situation={s}
+                  aria-pressed={s === activeSituation}
+                  onClick={() => { if (s !== activeSituation) go(() => { setSituation(s); setSelected(null); setTemplate(null); }); }}
+                  style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", textAlign: "left", padding: "10px 12px", minWidth: 0 }}
+                >
+                  <span>{SITUATIONS[s]}</span>
+                  <small>{count}</small>
+                </button>
+              );
+            })}
+          </div>
+          <p className="fu-note" style={{ marginTop: 16 }}>
+            Los estados actuales provienen del catálogo de clasificación. Agregar estados nuevos requiere ampliar y migrar ese catálogo, para que la extensión pueda reconocerlos.
+          </p>
+        </section>
+        <section style={{ minWidth: 0 }} data-testid="followup-state-rules" data-situation={activeSituation}>
+          <p className="fu-lbl" style={{ marginBottom: 7 }}>Reglas de: {SITUATIONS[activeSituation]}</p>
           <RulesEditor
             stage={stage.key}
-            rules={own}
+            rules={shownRules}
             others={importable(stage.key, rules)}
             stageTitle={(k) => stages.find((s) => s.key === k)?.title ?? k}
             selected={current?.key ?? null}
             adding={adding}
-            addingName={adding && template ? `${ruleTitle(template.stage, template)}» de ${stages.find((s) => s.key === template.stage)?.title ?? template.stage}` : null}
+            addingName={adding && template ? `${ruleTitle(template.stage, template)} de ${stages.find((s) => s.key === template.stage)?.title ?? template.stage}` : null}
             isDirty={isDirty}
             onSelect={(k) => go(() => setSelected(k))}
             onAdd={(t) => go(() => { setTemplate(t); setSelected(NEW_RULE); })}
           />
-          <div className="fu-rdetail" data-testid="followup-rule-detail">
-            {adding ? (
-              <RuleEditor key={`${stage.key}:new:${template?.key ?? ""}`} stage={stage} rule={null} template={template} seed={seedOf(template)} sample={sample} nextPosition={nextPosition} siblings={own} onDirty={markDirty("regla")} onAdded={() => setSelected(null)} />
-            ) : current ? (
-              <RuleEditor key={`${stage.key}:${current.key}:${JSON.stringify(current)}`} stage={stage} rule={current} sample={sample} nextPosition={nextPosition} siblings={own} onDirty={markDirty("regla")} onDeleted={() => { setDirty({}); setSelected(null); }} />
-            ) : (
-              <div className="fu-detail-card">
-                <p className="fu-note">Esta etapa no tiene reglas. Agregá una para que el motor la ejecute.</p>
-              </div>
-            )}
-          </div>
+        </section>
+        <div className="fu-rdetail" data-testid="followup-rule-detail" style={{ minWidth: 680 }}>
+          {adding ? (
+            <RuleEditor key={`${stage.key}:new:${template?.key ?? ""}:${activeSituation}`} stage={stage} rule={null} template={template} seed={seedOf(template)} sample={sample} nextPosition={nextPosition} siblings={own} defaultSituation={activeSituation} onDirty={markDirty("regla")} onAdded={() => setSelected(null)} />
+          ) : current ? (
+            <RuleEditor key={`${stage.key}:${current.key}:${JSON.stringify(current)}`} stage={stage} rule={current} sample={sample} nextPosition={nextPosition} siblings={own} onDirty={markDirty("regla")} onDeleted={() => { setDirty({}); setSelected(null); }} />
+          ) : (
+            <div className="fu-detail-card">
+              <p className="fu-note">No hay reglas para este estado. Creá una regla nueva para configurar sus condiciones, días, horarios, mensaje y versiones.</p>
+            </div>
+          )}
         </div>
-      )}
-
-      {tab === "mensajes" && (
-        <div className="fu-stack">
-          {available.map((a) => (
-            <section key={a} className="fu-action" data-testid="followup-action" data-action={a}>
-              <h3 className="fu-h3">
-                {actionLabel(stage.key, a)} <small>· {actionWhen(stage.key, a)}</small>
-              </h3>
-              <Editor key={`${stage.key}:${a}`} stage={versionsOf(stage, a)} action={a} sample={sample} onDirty={markDirty(`mensaje:${a}`)} />
-            </section>
-          ))}
-        </div>
-      )}
-
-      {tab === "resumen" && (
-        <div className="fu-stack" data-testid="followup-summary">
-          <ul className="fu-summarylist">
-            {own.map((r) => (
-              <li key={r.key}>
-                <span className="fu-rulepos">{r.position}</span>
-                <span className="fu-rulemain">
-                  <b>{ruleTitle(stage.key, r)}</b>
-                  <span>{ruleWhen(stage.key, r)}</span>
-                </span>
-                <span className={`fu-st is-${r.enabled ? "active" : "archived"}`}>{r.enabled ? "Activa" : "Apagada"}</span>
-              </li>
-            ))}
-          </ul>
-          {!own.length && <p className="fu-note">Esta etapa no tiene reglas.</p>}
-          <ul className="fu-summarylist">
-            {available.map((a) => {
-              const live = stage.versions.find((v) => (v.action ?? "principal") === a && v.status === "active");
-              return (
-                <li key={a}>
-                  <b>{actionLabel(stage.key, a)}</b>
-                  <span>{live ? `Versión activa: V${live.version}` : "Falta configurar el mensaje de esta acción"}</span>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      )}
-
+      </div>
       <ChangeLog changes={changes} />
     </>
   );
@@ -1742,6 +1704,7 @@ function RuleEditor({
   seed,
   sample,
   nextPosition,
+  defaultSituation = "sin_respuesta",
   siblings = [],
   onDirty,
   onAdded,
@@ -1755,6 +1718,7 @@ function RuleEditor({
   seed?: Draft;
   sample: QueueItem | null;
   nextPosition: number;
+  defaultSituation?: Situation;
   siblings?: Rule[];
   onDirty: (dirty: boolean) => void;
   onAdded?: () => void;
@@ -1764,7 +1728,7 @@ function RuleEditor({
   const available = actionsOf(stage.key);
   const blank: Rule = template
     ? { ...template, key: "", name: template.name ?? null, stage: stage.key, position: nextPosition, enabled: true, days: [...template.days], situations: [...template.situations] }
-    : { key: "", name: null, stage: stage.key, situations: ["sin_respuesta"], action: available[0], after_hours: 48, after_action: null, position: nextPosition, enabled: true, hours_from: 9, hours_to: 19, days: [1, 2, 3, 4, 5, 6] };
+    : { key: "", name: null, stage: stage.key, situations: [defaultSituation], action: available[0], after_hours: 48, after_action: null, position: nextPosition, enabled: true, hours_from: 9, hours_to: 19, days: [1, 2, 3, 4, 5, 6] };
   const base = rule ? { ...rule, name: rule.name ?? null } : blank;
   const [r, setR] = useState<Rule>(base);
   const [msgDirty, setMsgDirty] = useState(false);
