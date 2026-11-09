@@ -7,7 +7,7 @@ import { AGENCY_STEPS } from "@/lib/agency/demo-funnel";
 import { isAction, type Action } from "./plan";
 
 export const FOLLOWUP_STAGES = [
-  { key: "no-contactado", step: -1, title: "No contactado", goal: "Contactado" },
+  { key: "no-contactado", step: -1, title: "Prospectado", goal: "Contactado" },
   { key: "no-responde", step: 0, title: "Contactado", goal: "Interesado" },
   { key: "sin-demo", step: 1, title: "Interesado, sin demo", goal: "Demo creada" },
   { key: "sin-enviar", step: 2, title: "Demo creada, sin enviar", goal: "Enviada" },
