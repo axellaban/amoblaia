@@ -1176,9 +1176,9 @@ function RulesWorkspace({ stages, rules, changes }: { stages: StageView[]; rules
           <RulesEditor stage={stage.key} rules={own} selected={current?.key ?? null} adding={adding} isDirty={isDirty} onSelect={(k) => go(() => setSelected(k))} onAdd={() => go(() => setSelected(NEW_RULE))} />
           <div className="fu-rdetail" data-testid="followup-rule-detail">
             {adding ? (
-              <RuleEditor key={`${stage.key}:new`} stage={stage} rule={null} sample={sample} nextPosition={nextPosition} onDirty={markDirty("regla")} onAdded={() => setSelected(null)} />
+              <RuleEditor key={`${stage.key}:new`} stage={stage} rule={null} sample={sample} nextPosition={nextPosition} siblings={own} onDirty={markDirty("regla")} onAdded={() => setSelected(null)} />
             ) : current ? (
-              <RuleEditor key={`${stage.key}:${current.key}:${JSON.stringify(current)}`} stage={stage} rule={current} sample={sample} nextPosition={nextPosition} onDirty={markDirty("regla")} onDeleted={() => { setDirty({}); setSelected(null); }} />
+              <RuleEditor key={`${stage.key}:${current.key}:${JSON.stringify(current)}`} stage={stage} rule={current} sample={sample} nextPosition={nextPosition} siblings={own} onDirty={markDirty("regla")} onDeleted={() => { setDirty({}); setSelected(null); }} />
             ) : (
               <div className="fu-detail-card">
                 <p className="fu-note">Esta etapa no tiene reglas. Agregá una para que el motor la ejecute.</p>
@@ -1348,6 +1348,7 @@ function RuleEditor({
   rule,
   sample,
   nextPosition,
+  siblings = [],
   onDirty,
   onAdded,
   onDeleted,
@@ -1356,6 +1357,7 @@ function RuleEditor({
   rule: Rule | null;
   sample: QueueItem | null;
   nextPosition: number;
+  siblings?: Rule[];
   onDirty: (dirty: boolean) => void;
   onAdded?: () => void;
   onDeleted?: () => void;
@@ -1370,6 +1372,9 @@ function RuleEditor({
   const [error, setError] = useState("");
   const [menu, setMenu] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const msg = useRef<MsgController | null>(null);
+  // El mensaje es de la acción: otras reglas con la misma acción usan el mismo texto.
+  const sharedWith = siblings.filter((x) => x.key !== base.key && x.action === r.action);
   const ruleDirty = JSON.stringify(r) !== JSON.stringify(base);
   const report = useRef(onDirty);
   useEffect(() => {
@@ -1405,7 +1410,18 @@ function RuleEditor({
       setBusy(false);
     }
   }
-  const save = () => call(() => api("/api/admin/follow-up/reglas", { method: "PUT", body: JSON.stringify(r) }), () => !rule && onAdded?.());
+  /** Guarda lo que cambió: la regla y su mensaje (dos APIs, una después de la otra). Si una falla, lo dice y no se pierde el borrador. */
+  const save = () =>
+    call(async () => {
+      if (!rule || ruleDirty) await api("/api/admin/follow-up/reglas", { method: "PUT", body: JSON.stringify(r) });
+      if (msgDirty && msg.current) {
+        try {
+          await msg.current.save();
+        } catch (e) {
+          throw new Error(`${!rule || ruleDirty ? "La regla quedó guardada, pero el mensaje no: " : ""}${e instanceof Error ? e.message : "no pudimos guardar el mensaje."}`, { cause: e });
+        }
+      }
+    }, () => !rule && onAdded?.());
   const duplicate = () => {
     setMenu(false);
     void call(() => api("/api/admin/follow-up/reglas", { method: "PUT", body: JSON.stringify({ ...base, key: undefined, position: base.position + 5 }) }));
@@ -1547,6 +1563,8 @@ function RuleEditor({
           action={r.action as Action}
           sample={sample}
           onDirty={setMsgDirty}
+          controller={msg}
+          sharedNote={sharedWith.length ? `Este mensaje también lo usa ${sharedWith.length === 1 ? "la regla" : "las reglas"} ${sharedWith.map((x) => x.position).join(", ")}: cambiarlo acá lo cambia para ${sharedWith.length === 1 ? "las dos" : "todas"}.` : undefined}
           actionField={
             <label className="fu-f">
               <span>Acción (mensaje)</span>
@@ -1568,20 +1586,21 @@ function RuleEditor({
             {error}
           </p>
         )}
-        {msgDirty && <p className="fu-warn">El mensaje tiene cambios sin guardar: guardalos con sus botones, arriba.</p>}
+        {msgDirty && <p className="fu-hint">«Guardar cambios» guarda la regla y el mensaje.</p>}
         <div className="fu-actions">
           <button
             type="button"
             className="button button-small button-outline"
-            disabled={busy || !ruleDirty}
+            disabled={busy || (!ruleDirty && !msgDirty)}
             onClick={() => {
               setR(base);
+              msg.current?.discard();
               setError("");
             }}
           >
             Cancelar
           </button>
-          <button type="button" className="button button-primary button-small" data-testid="followup-rule-save" disabled={busy || (!!rule && !ruleDirty)} onClick={save}>
+          <button type="button" className="button button-primary button-small" data-testid="followup-rule-save" disabled={busy || (!!rule && !ruleDirty && !msgDirty)} onClick={save}>
             {rule ? "Guardar cambios" : "Crear regla"}
           </button>
         </div>
@@ -1615,7 +1634,26 @@ function RuleEditor({
  * observaciones y CTA) y la vista previa de WhatsApp. Los botones de guardar
  * son los de siempre: crear una versión, editarla o cambiar su estado.
  */
-function Editor({ stage, action, sample, onDirty, actionField }: { stage: StageView; action: Action; sample: QueueItem | null; onDirty?: (dirty: boolean) => void; actionField?: React.ReactNode }) {
+/** Lo que la regla le pide al editor del mensaje: guardarlo y descartarlo desde su pie. */
+type MsgController = { save: () => Promise<void>; discard: () => void };
+
+function Editor({
+  stage,
+  action,
+  sample,
+  onDirty,
+  actionField,
+  controller,
+  sharedNote,
+}: {
+  stage: StageView;
+  action: Action;
+  sample: QueueItem | null;
+  onDirty?: (dirty: boolean) => void;
+  actionField?: React.ReactNode;
+  controller?: { current: MsgController | null };
+  sharedNote?: string;
+}) {
   const router = useRouter();
   const live = stage.versions.find((v) => v.status === "active") ?? stage.versions.at(-1) ?? null;
   const [selected, setSelected] = useState<string | null>(live?.id ?? null);
@@ -1659,12 +1697,23 @@ function Editor({ stage, action, sample, onDirty, actionField }: { stage: StageV
       setDraft(null);
       setSelected(v.id);
     });
-  const update = () =>
-    run(async () => {
-      if (!draft?.editing) return;
+  /** Guarda el borrador: edita la versión que se estaba viendo, o crea la nueva como activa. Tira el error para quien lo llama. */
+  async function persist() {
+    if (!draft) return;
+    if (draft.editing) {
       await api<Version>("/api/admin/follow-up/versiones", { method: "PUT", body: JSON.stringify({ id: draft.editing, ...draft }) });
-      setDraft(null);
-    });
+    } else {
+      const v = await api<Version>("/api/admin/follow-up/versiones", { method: "POST", body: JSON.stringify({ stage: stage.key, action, ...draft, editing: undefined, status: "active" }) });
+      setSelected(v.id);
+    }
+    setDraft(null);
+  }
+  const update = () => run(persist);
+  /** Escribir abre la edición de la versión que se ve (o un mensaje nuevo si no hay ninguna). */
+  const ensure = (patch: Partial<Draft>) => setDraft((d) => ({ ...(d ?? (current ? draftOf(current, current.id) : EMPTY)), ...patch }));
+  useEffect(() => {
+    if (controller) controller.current = { save: persist, discard: () => setDraft(null) };
+  });
   const setStatus = (id: string, status: VersionStatus) => run(() => api("/api/admin/follow-up/versiones", { method: "PATCH", body: JSON.stringify({ id, status }) }));
   function pick(id: string) {
     if (!confirmDiscard()) return;
@@ -1683,21 +1732,29 @@ function Editor({ stage, action, sample, onDirty, actionField }: { stage: StageV
     setTab("mensaje");
   }
   function insert(name: string) {
-    if (!draft) return;
+    const base = draft ?? (current ? draftOf(current, current.id) : EMPTY);
     const el = document.getElementById(bodyId) as HTMLTextAreaElement | null;
-    const at = el?.selectionStart ?? draft.body.length;
-    setDraft({ ...draft, body: `${draft.body.slice(0, at)}{{${name}}}${draft.body.slice(at)}` });
+    const at = el?.selectionStart ?? base.body.length;
+    setDraft({ ...base, body: `${base.body.slice(0, at)}{{${name}}}${base.body.slice(at)}` });
   }
 
   const selectValue = draft ? draft.editing ?? NEW_VERSION : current?.id ?? "";
   const pill = editing ? `Editando V${editing.version}` : draft ? `Nueva versión (V${nextNumber})` : current ? `V${current.version} (${STATUS_LABEL[current.status].toLowerCase()})` : "";
+  const inRule = Boolean(controller);
   const actionButtons = editing ? (
     <>
-      <button type="button" className="button button-primary button-small" disabled={busy || !draft?.body.trim()} onClick={update}>
-        Guardar mensaje
-      </button>
+      {!inRule && (
+        <button type="button" className="button button-primary button-small" disabled={busy || !draft?.body.trim() || !dirtyDraft} onClick={update}>
+          Guardar mensaje
+        </button>
+      )}
+      {dirtyDraft && (
+        <button type="button" className="button button-small button-outline" disabled={busy || !draft?.body.trim()} onClick={() => save("active")}>
+          Guardar como V{nextNumber} (nueva)
+        </button>
+      )}
       <button type="button" className="fu-link" disabled={busy} onClick={() => setDraft(null)}>
-        Cancelar
+        {dirtyDraft ? "Descartar" : "Cancelar"}
       </button>
       {editing.stats.executions > 0 && (
         <p className="fu-note">
@@ -1707,9 +1764,11 @@ function Editor({ stage, action, sample, onDirty, actionField }: { stage: StageV
     </>
   ) : draft ? (
     <>
-      <button type="button" className="button button-primary button-small" disabled={busy || !draft.body.trim()} onClick={() => save("active")}>
-        Guardar V{nextNumber} como activa
-      </button>
+      {!inRule && (
+        <button type="button" className="button button-primary button-small" disabled={busy || !draft.body.trim()} onClick={() => save("active")}>
+          Guardar V{nextNumber} como activa
+        </button>
+      )}
       {active && (
         <button type="button" className="button button-small button-outline" disabled={busy || !draft.body.trim()} onClick={() => save("test")}>
           Guardar y probar A/B contra V{active.version}
@@ -1799,18 +1858,18 @@ function Editor({ stage, action, sample, onDirty, actionField }: { stage: StageV
               <div className="fu-msg-row">
                 <div className="fu-msg-text">
                   {pill && <span className="fu-vpill">{pill}</span>}
-                  <textarea id={bodyId} aria-label="Mensaje" value={shown.body} readOnly={!draft} maxLength={4000} onChange={(e) => draft && setDraft({ ...draft, body: e.target.value })} />
-                  {draft ? (
-                    <div className="fu-vars">
-                      {(Object.keys(VARIABLES) as (keyof typeof VARIABLES)[]).map((k) => (
-                        <button key={k} type="button" className="fu-var" title={VARIABLES[k]} onClick={() => insert(k)}>
-                          {`{{${k}}}`}
-                        </button>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="fu-hint">Para cambiar el texto: «Editar versiones» o «Nueva versión».</p>
-                  )}
+                  <textarea id={bodyId} aria-label="Mensaje" data-testid="followup-message-body" value={shown.body} maxLength={4000} onChange={(e) => ensure({ body: e.target.value })} />
+                  <div className="fu-vars">
+                    {(Object.keys(VARIABLES) as (keyof typeof VARIABLES)[]).map((k) => (
+                      <button key={k} type="button" className="fu-var" title={VARIABLES[k]} onClick={() => insert(k)}>
+                        {`{{${k}}}`}
+                      </button>
+                    ))}
+                  </div>
+                  {sharedNote && <p className="fu-warn">{sharedNote}</p>}
+                  <p className="fu-hint">
+                    {inRule ? "Escribí directo y tocá «Guardar cambios». «Nueva versión» crea otra variante para comparar (A/B)." : "Escribí directo y guardalo con «Guardar mensaje». «Nueva versión» crea otra variante para comparar (A/B)."}
+                  </p>
                   <p className="fu-hint">Para varios mensajes seguidos, separalos con una línea que diga solo «---».</p>
                 </div>
                 {original && original.id !== current?.id ? (
@@ -1870,10 +1929,9 @@ function Editor({ stage, action, sample, onDirty, actionField }: { stage: StageV
                 <textarea
                   data-testid="followup-version-notes"
                   value={draft ? draft.notes : ((shown as Version).notes ?? "")}
-                  readOnly={!draft}
                   maxLength={4000}
-                  placeholder={draft ? "Ej.: no mandar fines de semana; si respondió con una pregunta, contestarla antes." : "Sin observaciones. Tocá «Editar versiones» para sumarlas."}
-                  onChange={(e) => draft && setDraft({ ...draft, notes: e.target.value })}
+                  placeholder="Ej.: no mandar fines de semana; si respondió con una pregunta, contestarla antes."
+                  onChange={(e) => ensure({ notes: e.target.value })}
                 />
               </label>
               <fieldset className="fu-ctas">
@@ -1882,7 +1940,7 @@ function Editor({ stage, action, sample, onDirty, actionField }: { stage: StageV
                   const on = shown.ctas.includes(k);
                   return (
                     <label key={k} className={`fu-cta${on ? "" : " is-off"}`}>
-                      <input type="checkbox" checked={on} disabled={!draft} onChange={() => draft && setDraft({ ...draft, ctas: on ? draft.ctas.filter((c) => c !== k) : [...draft.ctas, k] })} />
+                      <input type="checkbox" checked={on} onChange={() => ensure({ ctas: on ? shown.ctas.filter((c) => c !== k) : [...shown.ctas, k] })} />
                       {CTA_LABEL[k]}
                     </label>
                   );
@@ -1891,11 +1949,11 @@ function Editor({ stage, action, sample, onDirty, actionField }: { stage: StageV
               <div className="fu-fields">
                 <label className="fu-f">
                   <span>Cuándo se dispara (nota para el equipo)</span>
-                  <input value={draft ? draft.trigger : (shown as Version).trigger_label} readOnly={!draft} maxLength={120} placeholder="Ej.: 3 días sin respuesta" onChange={(e) => draft && setDraft({ ...draft, trigger: e.target.value })} />
+                  <input value={draft ? draft.trigger : (shown as Version).trigger_label} maxLength={120} placeholder="Ej.: 3 días sin respuesta" onChange={(e) => ensure({ trigger: e.target.value })} />
                 </label>
                 <label className="fu-f">
                   <span>Canal</span>
-                  <select value={shown.channel} disabled={!draft} onChange={(e) => draft && setDraft({ ...draft, channel: e.target.value as Channel })}>
+                  <select value={shown.channel} onChange={(e) => ensure({ channel: e.target.value as Channel })}>
                     <option value="whatsapp">WhatsApp</option>
                     <option value="task">Tarea del equipo</option>
                   </select>
