@@ -124,7 +124,7 @@ const extras = async (agencyId?: string) => {
 
 /** Las reglas activas e inactivas (Fase 3). Sin la tabla, la migración falta. */
 async function readRules(): Promise<Rule[]> {
-  const { data, error } = await adminClient().from("followup_rules").select("key,stage,situations,action,after_hours,after_action,position,enabled,hours_from,hours_to,days").limit(500);
+  const { data, error } = await adminClient().from("followup_rules").select("key,name,stage,situations,action,after_hours,after_action,position,enabled,hours_from,hours_to,days").limit(500);
   if (error) throw missing(error) || /followup_rules/.test(error.message ?? "") ? new HttpError(409, MISSING) : new Error("FOLLOWUP_READ_FAILED");
   return ((data ?? []) as Rule[]).map((r) => ({ ...r, after_hours: Number(r.after_hours) }));
 }
@@ -1240,7 +1240,7 @@ export async function saveRule(key: unknown, input: Record<string, unknown>, act
   const { data, error } = await db
     .from("followup_rules")
     .upsert({ key: id, ...clean, updated_by: actor.id, updated_at: new Date().toISOString() }, { onConflict: "key" })
-    .select("key,stage,situations,action,after_hours,after_action,position,enabled,hours_from,hours_to,days")
+    .select("key,name,stage,situations,action,after_hours,after_action,position,enabled,hours_from,hours_to,days")
     .single();
   if (error) throw missing(error) ? new HttpError(409, MISSING) : error.code === "23514" ? new HttpError(400, "La base rechazó la regla: revisá los valores.") : new Error("FOLLOWUP_SAVE_FAILED");
   await audit("rule", actor, { ref: id, from: before, to: clean });

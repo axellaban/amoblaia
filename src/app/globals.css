@@ -30170,3 +30170,92 @@ dialog.pt-layer::backdrop {
   width: 100%;
   justify-content: center;
 }
+
+/* Follow-up · nombre de la regla y «Agregar regla» (nueva o existente) */
+.fu-rdname {
+  font: inherit;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--fr-ink);
+  border: 1px solid transparent;
+  border-radius: 7px;
+  padding: 2px 6px;
+  margin-left: -6px;
+  min-width: 0;
+  max-width: 100%;
+  background: transparent;
+}
+.fu-rdname:hover {
+  border-color: var(--fr-line);
+}
+.fu-rdname:focus {
+  outline: none;
+  border-color: var(--fr-green);
+  background: #fff;
+}
+.fu-rdname::placeholder {
+  color: var(--fr-ink);
+  opacity: 1;
+}
+.fu-rdpen {
+  color: var(--fr-muted);
+  margin-left: -4px;
+}
+.fu-addmenu {
+  min-width: 250px;
+}
+.fu-addmenu button {
+  align-items: flex-start;
+}
+.fu-addmenu button span {
+  display: grid;
+  gap: 1px;
+}
+.fu-addmenu small {
+  color: var(--fr-muted);
+  font-size: 11px;
+}
+.fu-dlg > .fu-pick {
+  max-width: 520px;
+  max-height: min(640px, 90vh);
+  grid-template-rows: auto auto 1fr auto;
+}
+.fu-picklist {
+  overflow: auto;
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+.fu-picklist section {
+  display: grid;
+  gap: 6px;
+}
+.fu-pickrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  border: 1px solid var(--fr-line);
+  border-radius: 10px;
+  background: #fff;
+  padding: 8px 10px;
+  font: inherit;
+  cursor: pointer;
+}
+.fu-pickrow:hover {
+  border-color: var(--fr-green);
+  background: var(--fr-greenbg);
+}
+.fu-pickrow .fu-rulemain {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+.fu-pickrow .fu-rulemain b {
+  font-size: 12.5px;
+}
+.fu-pickrow .fu-rulemain span {
+  font-size: 11px;
+  color: var(--fr-muted);
+}

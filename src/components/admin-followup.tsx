@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, useEffect, useRef, useState } from "react";
-import { ArrowLeft, BarChart3, Building2, CalendarDays, CheckCheck, ChevronRight, ClipboardCopy, Copy, GripVertical, Info, KeyRound, Layers, Link2, MessageCircle, MessageSquare, MoreVertical, Pencil, Phone, Plus, Send, SlidersHorizontal, Trash2, Undo2, Video } from "lucide-react";
+import { ArrowLeft, BarChart3, Building2, CalendarDays, CheckCheck, ChevronDown, ChevronRight, ClipboardCopy, Copy, GripVertical, Info, KeyRound, Layers, Link2, MessageCircle, MessageSquare, MoreVertical, Pencil, Phone, Plus, Send, SlidersHorizontal, Trash2, Undo2, Video } from "lucide-react";
 import { api } from "@/components/admin-demos";
 import { CTA_KEYS, CTA_LABEL, FOLLOWUP_STAGES, OUT, VARIABLES, fillMessage, missingVariables, pct, type Channel, type Cta, type StageKey, type VersionStatus } from "@/lib/followup/stages";
 import { GROUPS, REPLY_CLASSES, SITUATIONS, actionLabel, actionWhen, actionsOf, compatible, splitMessages, type Action, type ReplyClass, type Situation } from "@/lib/followup/plan";
@@ -1064,6 +1064,12 @@ function ruleWhen(stage: StageKey, r: Rule) {
   return `Si ${ruleSituations(r).toLowerCase()}${after} · ${timing} · ${daysText(r.days)} de ${r.hours_from} a ${r.hours_to}`;
 }
 
+/** Cómo se llama una regla: su nombre, o la acción si no tiene. */
+const ruleTitle = (stage: StageKey, r: Rule) => r.name?.trim() || actionLabel(stage, r.action as Action);
+
+/** Las reglas de otras etapas que se pueden traer a esta: su acción y su paso previo existen acá. */
+const importable = (stage: StageKey, rules: Rule[]) => rules.filter((r) => r.stage !== stage && compatible(stage, r.action as Action) && (!r.after_action || compatible(stage, r.after_action as Action)));
+
 /** La condición de una regla en una línea corta, para su tarjeta. */
 function ruleShort(stage: StageKey, r: Rule) {
   const sits = r.situations.length ? r.situations.map((x) => SITUATIONS[x]).join(", ").toLowerCase() : "";
@@ -1084,6 +1090,7 @@ function RulesWorkspace({ stages, rules, changes }: { stages: StageView[]; rules
   const [stageKey, setStageKey] = useState<StageKey>(stages[0].key);
   const [tab, setTab] = useState<StageTab>("reglas");
   const [selected, setSelected] = useState<string | null>(null);
+  const [template, setTemplate] = useState<Rule | null>(null);
   const [dirty, setDirty] = useState<Record<string, boolean>>({});
   const stage = stages.find((s) => s.key === stageKey) ?? stages[0];
   const index = stages.indexOf(stage) + 1;
@@ -1097,6 +1104,12 @@ function RulesWorkspace({ stages, rules, changes }: { stages: StageView[]; rules
   const nextPosition = Math.max(0, ...own.map((r) => r.position)) + 10;
   const current = adding ? null : own.find((r) => r.key === selected) ?? own.find((r) => r.enabled && available.includes(r.action as Action)) ?? own[0] ?? null;
   const markDirty = (id: string) => (d: boolean) => setDirty((p) => (p[id] === d ? p : { ...p, [id]: d }));
+  // Al traer una regla de otra etapa, si acá su acción no tiene mensaje, se arranca con el de la etapa de origen.
+  const seedOf = (t: Rule | null): Draft | undefined => {
+    if (!t || stage.versions.some((v) => (v.action ?? "principal") === t.action)) return undefined;
+    const from = stages.find((s) => s.key === t.stage)?.versions.find((v) => (v.action ?? "principal") === t.action && v.status === "active");
+    return from ? draftOf(from) : undefined;
+  };
 
   /** Cambiar de etapa, pestaña o regla con datos sin guardar pide confirmación; lo que no se guardó se descarta. */
   function go(next: () => void) {
@@ -1173,10 +1186,21 @@ function RulesWorkspace({ stages, rules, changes }: { stages: StageView[]; rules
 
       {tab === "reglas" && (
         <div className="fu-workspace">
-          <RulesEditor stage={stage.key} rules={own} selected={current?.key ?? null} adding={adding} isDirty={isDirty} onSelect={(k) => go(() => setSelected(k))} onAdd={() => go(() => setSelected(NEW_RULE))} />
+          <RulesEditor
+            stage={stage.key}
+            rules={own}
+            others={importable(stage.key, rules)}
+            stageTitle={(k) => stages.find((s) => s.key === k)?.title ?? k}
+            selected={current?.key ?? null}
+            adding={adding}
+            addingName={adding && template ? `${ruleTitle(template.stage, template)}» de ${stages.find((s) => s.key === template.stage)?.title ?? template.stage}` : null}
+            isDirty={isDirty}
+            onSelect={(k) => go(() => setSelected(k))}
+            onAdd={(t) => go(() => { setTemplate(t); setSelected(NEW_RULE); })}
+          />
           <div className="fu-rdetail" data-testid="followup-rule-detail">
             {adding ? (
-              <RuleEditor key={`${stage.key}:new`} stage={stage} rule={null} sample={sample} nextPosition={nextPosition} siblings={own} onDirty={markDirty("regla")} onAdded={() => setSelected(null)} />
+              <RuleEditor key={`${stage.key}:new:${template?.key ?? ""}`} stage={stage} rule={null} template={template} seed={seedOf(template)} sample={sample} nextPosition={nextPosition} siblings={own} onDirty={markDirty("regla")} onAdded={() => setSelected(null)} />
             ) : current ? (
               <RuleEditor key={`${stage.key}:${current.key}:${JSON.stringify(current)}`} stage={stage} rule={current} sample={sample} nextPosition={nextPosition} siblings={own} onDirty={markDirty("regla")} onDeleted={() => { setDirty({}); setSelected(null); }} />
             ) : (
@@ -1208,7 +1232,7 @@ function RulesWorkspace({ stages, rules, changes }: { stages: StageView[]; rules
               <li key={r.key}>
                 <span className="fu-rulepos">{r.position}</span>
                 <span className="fu-rulemain">
-                  <b>{actionLabel(stage.key, r.action as Action)}</b>
+                  <b>{ruleTitle(stage.key, r)}</b>
                   <span>{ruleWhen(stage.key, r)}</span>
                 </span>
                 <span className={`fu-st is-${r.enabled ? "active" : "archived"}`}>{r.enabled ? "Activa" : "Apagada"}</span>
@@ -1239,20 +1263,31 @@ function RulesWorkspace({ stages, rules, changes }: { stages: StageView[]; rules
 function RulesEditor({
   stage,
   rules,
+  others,
+  stageTitle,
   selected,
   adding,
+  addingName,
   isDirty,
   onSelect,
   onAdd,
 }: {
   stage: StageKey;
   rules: Rule[];
+  /** Reglas de otras etapas que se pueden traer a esta. */
+  others: Rule[];
+  stageTitle: (k: StageKey) => string;
   selected: string | null;
   adding: boolean;
+  addingName: string | null;
   isDirty: boolean;
   onSelect: (key: string) => void;
-  onAdd: () => void;
+  /** Agregar: `null` es una regla nueva; una regla, una copia de esa. */
+  onAdd: (template: Rule | null) => void;
 }) {
+  const [menu, setMenu] = useState(false);
+  const [picking, setPicking] = useState(false);
+  const groups = [...new Set(others.map((r) => r.stage))].map((k) => ({ key: k, rules: others.filter((r) => r.stage === k).sort((a, b) => a.position - b.position) }));
   return (
     <div className="fu-rules" data-testid="followup-rules" data-stage={stage}>
       <div className="fu-rules-head">
@@ -1260,10 +1295,70 @@ function RulesEditor({
           <h3>Reglas de esta etapa</h3>
           <p className="fu-note">Se evalúan en orden. Se ejecuta la primera que cumpla.</p>
         </div>
-        <button type="button" className="button button-small button-outline" data-testid="followup-rule-add" onClick={onAdd} disabled={adding}>
-          <Plus size={15} aria-hidden="true" /> Agregar regla
-        </button>
+        <div className="fu-kebabwrap">
+          <button type="button" className="button button-small button-outline" data-testid="followup-rule-add" aria-expanded={menu} onClick={() => setMenu(!menu)}>
+            <Plus size={15} aria-hidden="true" /> Agregar regla <ChevronDown size={14} aria-hidden="true" />
+          </button>
+          {menu && (
+            <div className="fu-menu fu-addmenu" role="menu">
+              <button type="button" role="menuitem" data-testid="followup-rule-add-new" onClick={() => { setMenu(false); onAdd(null); }}>
+                <Plus size={15} aria-hidden="true" />
+                <span>
+                  <b>Crear una regla nueva</b>
+                  <small>Desde cero, para esta etapa.</small>
+                </span>
+              </button>
+              <button type="button" role="menuitem" data-testid="followup-rule-add-existing" onClick={() => { setMenu(false); setPicking(true); }}>
+                <Copy size={15} aria-hidden="true" />
+                <span>
+                  <b>Usar una regla existente</b>
+                  <small>Copiar una regla de otra etapa.</small>
+                </span>
+              </button>
+            </div>
+          )}
+        </div>
       </div>
+      {picking && (
+        <div className="fu-dlg" role="dialog" aria-modal="true" aria-labelledby="fu-pick-title" data-testid="followup-rule-pick">
+          <div className="fu-pick">
+            <h4 id="fu-pick-title">Usar una regla existente</h4>
+            <p>Elegí una regla de otra etapa. Se copia a esta con sus condiciones; la revisás y la guardás. La original no cambia.</p>
+            <div className="fu-picklist">
+              {groups.map((g) => (
+                <section key={g.key}>
+                  <span className="fu-lbl">{stageTitle(g.key)}</span>
+                  {g.rules.map((r) => (
+                    <button
+                      key={r.key}
+                      type="button"
+                      className="fu-pickrow"
+                      data-testid="followup-rule-pick-item"
+                      onClick={() => {
+                        setPicking(false);
+                        onAdd(r);
+                      }}
+                    >
+                      <span className="fu-rulepos">{r.position}</span>
+                      <span className="fu-rulemain">
+                        <b>{ruleTitle(r.stage, r)}</b>
+                        <span>{ruleShort(r.stage, r)}</span>
+                      </span>
+                      {!r.enabled && <small className="fu-note">Apagada</small>}
+                    </button>
+                  ))}
+                </section>
+              ))}
+              {!groups.length && <p className="fu-empty">Ninguna regla de otra etapa se puede usar en esta. Creá una nueva.</p>}
+            </div>
+            <div className="fu-actions">
+              <button type="button" className="button button-small button-outline" onClick={() => setPicking(false)}>
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {rules.map((r) => (
         <RuleRow key={r.key} stage={stage} rule={r} selected={selected === r.key} isDirty={isDirty} onSelect={() => onSelect(r.key)} />
       ))}
@@ -1271,8 +1366,8 @@ function RulesEditor({
         <div className="fu-rulecard is-on is-new">
           <span className="fu-rulepos">+</span>
           <span className="fu-rulemain">
-            <b>Nueva regla</b>
-            <span>Completala a la derecha y guardala.</span>
+            <b>{addingName ? `Copia de «${addingName}` : "Nueva regla"}</b>
+            <span>{addingName ? "Revisala a la derecha y guardala." : "Completala a la derecha y guardala."}</span>
           </span>
         </div>
       )}
@@ -1305,7 +1400,7 @@ function RuleRow({ stage, rule, selected, isDirty, onSelect }: { stage: StageKey
       <button type="button" className="fu-rulecard-main" aria-pressed={selected} data-testid="followup-rule-edit" onClick={onSelect}>
         <span className="fu-rulepos">{rule.position}</span>
         <span className="fu-rulemain">
-          <b>{actionLabel(stage, rule.action as Action)}</b>
+          <b>{ruleTitle(stage, rule)}</b>
           <span>{ruleShort(stage, rule)}</span>
         </span>
       </button>
@@ -1346,6 +1441,8 @@ const HOUR_PRESETS: [number, number][] = [
 function RuleEditor({
   stage,
   rule,
+  template = null,
+  seed,
   sample,
   nextPosition,
   siblings = [],
@@ -1355,6 +1452,10 @@ function RuleEditor({
 }: {
   stage: StageView;
   rule: Rule | null;
+  /** Al agregar: la regla de otra etapa que se copia (null: una nueva). */
+  template?: Rule | null;
+  /** Al copiar: el mensaje con el que arranca, si la acción no tiene ninguno en esta etapa. */
+  seed?: Draft;
   sample: QueueItem | null;
   nextPosition: number;
   siblings?: Rule[];
@@ -1364,8 +1465,10 @@ function RuleEditor({
 }) {
   const router = useRouter();
   const available = actionsOf(stage.key);
-  const blank: Rule = { key: "", stage: stage.key, situations: ["sin_respuesta"], action: available[0], after_hours: 48, after_action: null, position: nextPosition, enabled: true, hours_from: 9, hours_to: 19, days: [1, 2, 3, 4, 5, 6] };
-  const base = rule ?? blank;
+  const blank: Rule = template
+    ? { ...template, key: "", name: template.name ?? null, stage: stage.key, position: nextPosition, enabled: true, days: [...template.days], situations: [...template.situations] }
+    : { key: "", name: null, stage: stage.key, situations: ["sin_respuesta"], action: available[0], after_hours: 48, after_action: null, position: nextPosition, enabled: true, hours_from: 9, hours_to: 19, days: [1, 2, 3, 4, 5, 6] };
+  const base = rule ? { ...rule, name: rule.name ?? null } : blank;
   const [r, setR] = useState<Rule>(base);
   const [msgDirty, setMsgDirty] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -1424,7 +1527,7 @@ function RuleEditor({
     }, () => !rule && onAdded?.());
   const duplicate = () => {
     setMenu(false);
-    void call(() => api("/api/admin/follow-up/reglas", { method: "PUT", body: JSON.stringify({ ...base, key: undefined, position: base.position + 5 }) }));
+    void call(() => api("/api/admin/follow-up/reglas", { method: "PUT", body: JSON.stringify({ ...base, key: undefined, name: base.name ? `${base.name} (copia)`.slice(0, 80) : null, position: base.position + 5 }) }));
   };
   const remove = () => call(() => api("/api/admin/follow-up/reglas", { method: "DELETE", body: JSON.stringify({ key: base.key }) }), () => { setConfirmDelete(false); onDeleted?.(); });
 
@@ -1434,7 +1537,18 @@ function RuleEditor({
         <div className="fu-rdtitle">
           <div className="fu-rdline">
             <span className="fu-ruletag">{rule ? `Regla ${r.position}` : "Nueva regla"}</span>
-            <h3>{actionLabel(stage.key, r.action as Action)}</h3>
+            <input
+              className="fu-rdname"
+              value={r.name ?? ""}
+              maxLength={80}
+              size={Math.max(8, (r.name || actionLabel(stage.key, r.action as Action)).length + 1)}
+              placeholder={actionLabel(stage.key, r.action as Action)}
+              onChange={(e) => set({ name: e.target.value || null })}
+              data-testid="followup-rule-name"
+              aria-label="Nombre de la regla"
+              title="Nombre de la regla (opcional). Sin nombre se muestra la acción."
+            />
+            <Pencil className="fu-rdpen" size={14} aria-hidden="true" />
           </div>
           <p className="fu-note">{ruleWhen(stage.key, r)}</p>
         </div>
@@ -1561,6 +1675,7 @@ function RuleEditor({
           key={`${stage.key}:${r.action}`}
           stage={versionsOf(stage, r.action as Action)}
           action={r.action as Action}
+          seed={template && r.action === template.action ? seed : undefined}
           sample={sample}
           onDirty={setMsgDirty}
           controller={msg}
@@ -1610,7 +1725,7 @@ function RuleEditor({
         <div className="fu-dlg" role="dialog" aria-modal="true" aria-labelledby="fu-dlg-title">
           <div>
             <h4 id="fu-dlg-title">
-              ¿Quitar la regla {base.position} · {actionLabel(stage.key, base.action as Action)}?
+              ¿Quitar la regla {base.position} · {ruleTitle(stage.key, base)}?
             </h4>
             <p>La regla deja de existir y el motor ya no la evalúa. Sus mensajes, versiones, ejecuciones y métricas se conservan. Si después hace falta, se vuelve a agregar.</p>
             <div className="fu-actions">
@@ -1645,6 +1760,7 @@ function Editor({
   actionField,
   controller,
   sharedNote,
+  seed,
 }: {
   stage: StageView;
   action: Action;
@@ -1653,11 +1769,13 @@ function Editor({
   actionField?: React.ReactNode;
   controller?: { current: MsgController | null };
   sharedNote?: string;
+  /** Mensaje con el que arranca si la acción todavía no tiene ninguno. */
+  seed?: Draft;
 }) {
   const router = useRouter();
   const live = stage.versions.find((v) => v.status === "active") ?? stage.versions.at(-1) ?? null;
   const [selected, setSelected] = useState<string | null>(live?.id ?? null);
-  const [draft, setDraft] = useState<Draft | null>(null);
+  const [draft, setDraft] = useState<Draft | null>(() => (!live && seed ? { ...seed, editing: undefined } : null));
   const [tab, setTab] = useState<MsgTab>("mensaje");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
