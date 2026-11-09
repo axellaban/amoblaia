@@ -1509,6 +1509,7 @@ function Editor({ stage, action, sample, onDirty }: { stage: StageView; action: 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const current = stage.versions.find((v) => v.id === selected) ?? live;
+  const original = stage.versions.find((v) => v.version === 1) ?? null;
   const shown: Draft | Version | null = draft ?? current;
   const active = stage.versions.find((v) => v.status === "active");
   const nextNumber = Math.max(0, ...stage.versions.map((v) => v.version)) + 1;
@@ -1689,10 +1690,26 @@ function Editor({ stage, action, sample, onDirty }: { stage: StageView; action: 
                 </label>
               </div>
               <p className="fu-note">Para mandar varios mensajes seguidos (como la presentación), separalos con una línea que diga solo «---».</p>
-              <label className="fu-textarea">
-                <span>{editing ? `Mensaje · editando V${editing.version}` : `Mensaje · V${current?.version ?? nextNumber}`}</span>
-                <textarea id={bodyId} value={shown.body} readOnly={!draft} maxLength={4000} onChange={(e) => draft && setDraft({ ...draft, body: e.target.value })} />
-              </label>
+              <div className="fu-msg-row">
+                <label className="fu-textarea">
+                  <span>{editing ? `Mensaje · editando V${editing.version}` : `Mensaje · V${current?.version ?? nextNumber}`}</span>
+                  <textarea id={bodyId} value={shown.body} readOnly={!draft} maxLength={4000} onChange={(e) => draft && setDraft({ ...draft, body: e.target.value })} />
+                </label>
+                {original && original.id !== current?.id && (
+                  <aside className="fu-orig" data-testid="followup-original">
+                    <span className="fu-lbl">Versión original (V{original.version})</span>
+                    <p>{original.body}</p>
+                    <button
+                      type="button"
+                      className="button button-small button-outline"
+                      disabled={!!draft && draft.body === original.body}
+                      onClick={() => setDraft({ channel: original.channel, trigger: original.trigger_label, body: original.body, ctas: [...original.ctas], notes: original.notes ?? "" })}
+                    >
+                      Usar como base
+                    </button>
+                  </aside>
+                )}
+              </div>
               {draft && (
                 <div className="fu-vars">
                   Variables:
