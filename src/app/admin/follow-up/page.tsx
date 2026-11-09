@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { FollowupBoard } from "@/components/admin-followup";
+import "./followup-polish.css";
 import { HttpError } from "@/lib/commerce/http";
 import { requireAdminPage } from "@/lib/demos/admin-page";
 import { followupOverview } from "@/lib/followup/server";
