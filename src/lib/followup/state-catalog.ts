@@ -3,7 +3,7 @@ import { HttpError } from "@/lib/commerce/http";
 import { adminClient } from "@/lib/supabase/server";
 import { isCommercialStage } from "./stages";
 import { customStages } from "./commercial-catalog";
-import { CLOSED_SITUATIONS, REPLY_CLASSES, SITUATIONS, isReplyClass, type ReplyClass, type Situation } from "./plan";
+import { CLOSED_SITUATIONS, REPLY_CLASSES, SITUATIONS, isSituation, isReplyClass, type ReplyClass, type Situation } from "./plan";
 
 /**
  * User-configurable WhatsApp classifications. A custom key is always explicitly
@@ -27,7 +27,7 @@ const COLS = "key,label,description,examples,commercial_stage,source,maps_to,act
 const CUSTOM = /^custom_[a-z0-9_]{3,60}$/;
 
 export async function readStateCatalog(): Promise<StateDefinition[]> {
-  const { data, error } = await adminClient().from("followup_state_catalog").select(COLS).order("created_at", { ascending: true }).limit(300);
+  const { data, error } = await adminClient().from("followup_state_catalog").select(COLS).is("removed_at", null).order("created_at", { ascending: true }).limit(300);
   if (error) {
     if (error.code === "42P01" || error.code === "PGRST205") throw new HttpError(409, "Falta aplicar la migración 202612020001_followup_state_catalog.sql en Supabase.");
     throw new Error("FOLLOWUP_STATE_READ_FAILED");
@@ -54,14 +54,12 @@ export async function updateStateCatalog(input: Record<string, unknown>, actorId
   // Closed situations are allowed only as closed: never create an automated outbound rule.
   if (active && !maps_to) throw new HttpError(400, "Para activar el estado, elegí la situación canónica a la que corresponde.");
   const db = adminClient();
-  if (input.create === true) {
-    const previous = await db.from("followup_state_catalog").select("key").eq("key", key).maybeSingle();
-    if (previous.error) throw new Error("FOLLOWUP_STATE_READ_FAILED");
-    if (previous.data) throw new HttpError(409, "Ya existe un estado con ese nombre: editá ese estado o elegí otro.");
-  }
-  const { data, error } = await db.from("followup_state_catalog")
-    .upsert({ key, label, commercial_stage, description, examples, source, maps_to, active, updated_by: actorId, updated_at: new Date().toISOString() }, { onConflict: "key" })
-    .select(COLS).single();
+  const fields = { label, description, examples, source, maps_to, active, updated_by: actorId, updated_at: new Date().toISOString() };
+  const table = db.from("followup_state_catalog");
+  const change = input.create === true ? table.insert({ ...fields, key, commercial_stage }) :
+    table.update(fields).eq("key", key).eq("commercial_stage", commercial_stage).is("removed_at", null);
+  const { data, error } = await change.select(COLS).maybeSingle();
+  if (!error && !data) throw new HttpError(404, "La situación ya no está en esta etapa.");
   if (error) {
     if (error.code === "42P01" || error.code === "PGRST205") throw new HttpError(409, "Falta aplicar la migración 202612020001_followup_state_catalog.sql.");
     throw new Error("FOLLOWUP_STATE_SAVE_FAILED");
@@ -74,7 +72,7 @@ export type ResolvedCustomClassification = { canonical: ReplyClass; definition: 
 export async function resolveCustomClassification(key: string): Promise<ResolvedCustomClassification | null> {
   if (!CUSTOM.test(key)) return null;
   const { data, error } = await adminClient().from("followup_state_catalog").select(COLS)
-    .eq("key", key).eq("active", true).maybeSingle();
+    .eq("key", key).is("removed_at", null).eq("active", true).maybeSingle();
   if (error) throw new Error("FOLLOWUP_STATE_READ_FAILED");
   const definition = data as StateDefinition | null;
   if (!definition?.maps_to || !isReplyClass(definition.maps_to) || !(definition.maps_to in SITUATIONS)) return null;
@@ -86,3 +84,33 @@ export const canonicalClassifierOptions = () =>
   Object.entries(REPLY_CLASSES).map(([key, label]) => ({
     key, label, permanent_stop: key !== "rechazo" && CLOSED_SITUATIONS.includes(key as Situation),
   }));
+
+export async function readSituationOverrides() {
+  const { data, error } = await adminClient().from("followup_stage_situation_overrides").select("commercial_stage,key,label,description,examples,removed");
+  if (error) throw new Error("FOLLOWUP_OVERRIDES_READ_FAILED");
+  return data ?? [];
+}
+
+export async function changeBaseSituation(input: Record<string, unknown>, removed: boolean) {
+  const key = input.key;
+  const stage = input.commercial_stage;
+  if (!isSituation(key) || typeof stage !== "string") throw new HttpError(400, "Situación o etapa inválida.");
+  const label = removed ? SITUATIONS[key] : String(input.label ?? "").trim();
+  const description = String(input.description ?? "").trim();
+  const examples = String(input.examples ?? "").trim();
+  if (label.length < 2 || label.length > 80 || description.length > 800 || examples.length > 2000)
+    throw new HttpError(400, "Revisá el nombre y la longitud de los campos.");
+  const { error } = await adminClient().from("followup_stage_situation_overrides")
+    .upsert({ key, commercial_stage: stage, label, description, examples, removed }, { onConflict: "commercial_stage,key" });
+  if (error) throw new Error("FOLLOWUP_OVERRIDE_SAVE_FAILED");
+  return { key };
+}
+
+export async function removeCustomSituation(input: Record<string, unknown>) {
+  if (typeof input.key !== "string" || !CUSTOM.test(input.key) || typeof input.commercial_stage !== "string")
+    throw new HttpError(400, "Situación inválida.");
+  const { error } = await adminClient().from("followup_state_catalog").update({ active: false, removed_at: new Date().toISOString() })
+    .eq("key", input.key).eq("commercial_stage", input.commercial_stage);
+  if (error) throw new Error("FOLLOWUP_STATE_DELETE_FAILED");
+  return { key: input.key };
+}

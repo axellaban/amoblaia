@@ -3,9 +3,9 @@ import { createStage, customStages } from "@/lib/followup/commercial-catalog";
 
 export const runtime = "nodejs";
 
-export async function GET(request: Request) {
+export async function GET() {
   try {
-    await requireAdmin(request);
+    await requireAdmin();
     return Response.json({ stages: await customStages() }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) { return failure(error); }
 }

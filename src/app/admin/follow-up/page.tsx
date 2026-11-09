@@ -3,6 +3,7 @@ import Link from "next/link";
 import { FollowupBoard } from "@/components/admin-followup";
 import "./followup-polish.css";
 import "./followup-workspace.css";
+import "./followup-catalog.css";
 import "./followup-reference.css";
 import { HttpError } from "@/lib/commerce/http";
 import { requireAdminPage } from "@/lib/demos/admin-page";

@@ -47,7 +47,14 @@ async function copy(text: string) {
   }
 }
 
-const SituationCatalog = createContext<{ custom: CustomStage[]; states: CatalogState[] }>({ custom: [], states: [] });
+type SituationOverride = { commercial_stage: string; key: Situation; label: string; description: string; examples: string; removed: boolean };
+const SituationCatalog = createContext<{ custom: CustomStage[]; states: CatalogState[]; overrides: SituationOverride[]; reload: () => Promise<void> }>({ custom: [], states: [], overrides: [], reload: async () => {} });
+function visibleSituations(stage: string, overrides: SituationOverride[], keep?: Situation) {
+  return (Object.keys(SITUATIONS) as Situation[]).flatMap(key => {
+    const changed = overrides.find(row => row.commercial_stage === stage && row.key === key);
+    return changed?.removed && key !== keep ? [] : [{ key, label: changed?.label ?? SITUATIONS[key] }];
+  });
+}
 type View = "etapas" | "cola" | "respuestas" | Mode;
 const VIEWS: { key: View; label: string; soon?: string }[] = [
   { key: "cola", label: "Cola de ejecución" },
@@ -85,13 +92,15 @@ export function FollowupBoard({
   generatedAt: string;
 }) {
   const [states, setStates] = useState<CatalogState[]>([]);
+  const [overrides, setOverrides] = useState<SituationOverride[]>([]);
   const [custom, setCustom] = useState<CustomStage[]>([]);
   const [catalogError, setCatalogError] = useState("");
   const reloadCatalog = useCallback(async () => {
     const [result, classifications] = await Promise.all([
       api<{ stages: CustomStage[] }>("/api/admin/follow-up/etapas"),
-      api<{ states: CatalogState[] }>("/api/admin/follow-up/estados"),
+      api<{ states: CatalogState[]; overrides: SituationOverride[] }>("/api/admin/follow-up/estados"),
     ]);
+    setOverrides(classifications.overrides);
     setStates(classifications.states);
     setCustom(result.stages);
     setCatalogError("");
@@ -114,7 +123,7 @@ export function FollowupBoard({
     window.history.replaceState(null, "", url);
   }
   return (
-    <SituationCatalog.Provider value={{ custom, states }}>
+    <SituationCatalog.Provider value={{ custom, states, overrides, reload: reloadCatalog }}>
       <nav className="fu-tabs" aria-label="Vistas de Follow-up" data-testid="followup-tabs">
         {VIEWS.map((t) =>
           t.soon ? (
@@ -130,7 +139,7 @@ export function FollowupBoard({
         )}
       </nav>
       {catalogError && (view === "etapas" || view === "embudo") && <p role="alert">{catalogError}</p>}
-      {view === "etapas" ? <StageSettings custom={custom} reload={reloadCatalog} /> : view === "cola" ? (
+      {view === "etapas" ? <StageSettings custom={custom} reload={reloadCatalog} rules={rules} /> : view === "cola" ? (
         <ExecCenter initial={initial} stages={stages} inboxCount={inbox.length} state={queueState} setState={setQueueState} onReplies={() => go("respuestas")} />
       ) : view === "respuestas" ? (
         <Inbox inbox={inbox} agencies={[...queue, ...blocked, ...noInteresados]} />
@@ -1519,7 +1528,7 @@ type CatalogState = {
 type CatalogDraft = { key: string; label: string; description: string; examples: string; source: "whatsapp" | "manual"; maps_to: Situation | ""; active: boolean };
 const EMPTY_CATALOG: CatalogDraft = { key: "", label: "", description: "", examples: "", source: "whatsapp", maps_to: "", active: false };
 /** Catalog editor is separate from the message editor: it does not rewrite past events or send messages. */
-function StageSettings({ custom, reload }: { custom: CustomStage[]; reload: () => Promise<void> }) {
+function StageSettings({ custom, reload, rules }: { rules: Rule[]; custom: CustomStage[]; reload: () => Promise<void> }) {
   const [selected, select] = useState("contactado");
   const [adding, setAdding] = useState(false);
   const [label, setLabel] = useState("");
@@ -1542,10 +1551,15 @@ function StageSettings({ custom, reload }: { custom: CustomStage[]; reload: () =
     } catch (e) { setError(e instanceof Error ? e.message : "No pudimos guardar la etapa."); }
     finally { setBusy(false); }
   }
-  return <section className="fu-card fu-fdetail">
-    <div className="fu-fhead"><h2>Etapas y situaciones</h2><span className="fu-grow" />
+  return <section className="fu-catalog-layout">
+    <aside className="fu-catalog-nav"><header><h2>Etapas del embudo</h2></header>
       <button className="button button-small button-outline" onClick={() => setAdding(!adding)}>{adding ? "Cancelar" : "+ Nueva etapa"}</button>
-    </div>
+    <nav aria-label="Etapas del embudo">{options.map(s => {
+      const Icon = STAGE_GLYPH[s.key as CommercialStageKey] ?? Layers;
+      return <button type="button" key={s.key} aria-pressed={selected === s.key} onClick={() => { select(s.key); setAdding(false); }}><Icon size={17} />{s.label}<ChevronRight size={15} /></button>;
+    })}</nav>
+    </aside>
+    <div className="fu-catalog-content">
     {adding && <form className="fu-box" onSubmit={e => { e.preventDefault(); void save(); }}>
       <label className="fu-f">Nombre de la etapa<input required minLength={2} maxLength={80} value={label} onChange={e => setLabel(e.target.value)} /></label>
       <label className="fu-f">Etapa de origen<select value={technical} onChange={e => setTechnical(e.target.value as StageKey)}>
@@ -1556,33 +1570,45 @@ function StageSettings({ custom, reload }: { custom: CustomStage[]; reload: () =
       <button className="button button-small button-primary" disabled={busy}>{busy ? "Guardando…" : "Crear etapa"}</button>
     </form>}
     {error && <p role="alert" className="fu-error">{error}</p>}
-    <label className="fu-f">Etapa<select value={selected} onChange={e => select(e.target.value)}>
-      {options.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}</select></label>
     {current && <p className="fu-note">{technicalStateLabel(current.technical_stage)} · {SITUATIONS[current.entry_situation]}</p>}
-    <StateCatalogManager key={selected} commercial={selected} />
+    <StateCatalogManager key={selected} commercial={selected} rules={rules.filter(r => current ? r.stage === current.technical_stage : commercialOf(r.stage) === selected)} title={options.find(s => s.key === selected)?.label} />
+    </div>
   </section>;
 }
 
-function StateCatalogManager({ commercial }: { commercial: string }) {
-  const [states, setStates] = useState<CatalogState[]>([]);
+const situationNotes: Record<Situation, string> = {
+  sin_respuesta: "Todavía no respondió al mensaje.", confirmo_numero: "Confirmó que es el WhatsApp de la inmobiliaria.",
+  interesado: "Quiere conocer o probar HABITA.", neutro: "Respondió sin expresar interés ni rechazo.",
+  pregunta_precios: "Consultó por planes, créditos o precios.", mas_adelante: "Pidió retomar la conversación más adelante.",
+  derivo: "Indicó con quién continuar la conversación.", rechazo: "Respondió que la propuesta no le interesa.",
+  proveedor_ia: "Ya trabaja con otro proveedor de IA.", no_contactar: "Pidió que no se le vuelva a escribir.",
+  sin_whatsapp: "El número no tiene WhatsApp.", numero_incorrecto: "El número corresponde a otro destinatario."
+};
+function StateCatalogManager({ commercial, title, rules = [] }: { commercial: string; title?: string; rules?: Rule[] }) {
+  const { states, overrides, reload } = useContext(SituationCatalog);
   const [draft, setDraft] = useState<CatalogDraft>(EMPTY_CATALOG);
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [loaded, setLoaded] = useState(false);
-  const reload = useCallback(async () => {
+  const editor = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (editing) editor.current?.querySelector("input")?.focus(); }, [editing, draft.key]);
+  const baseRows: CatalogState[] = visibleSituations(commercial, overrides).map(({key, label}) => {
+    const changed = overrides.find(o => o.key === key && o.commercial_stage === commercial);
+    return { key, label, commercial_stage: commercial, maps_to: key, active: true, source: "manual",
+      updated_at: "", description: changed?.description ?? situationNotes[key], examples: changed?.examples ?? "" };
+  });
+  const own = [...baseRows, ...states.filter(s => s.commercial_stage === commercial)];
+  const base = Object.hasOwn(SITUATIONS, draft.key);
+  async function remove(row: CatalogState) {
+    if (!window.confirm(`¿Eliminar «${row.label}» del catálogo de esta etapa? Se conserva el historial y las reglas ya guardadas.`)) return;
+    setError(""); setBusy(true);
     try {
-      const result = await api<{ states: CatalogState[] }>("/api/admin/follow-up/estados");
-      setStates(result.states);
-      setError("");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "No se pudo cargar el catálogo.");
-    } finally {
-      setLoaded(true);
-    }
-  }, []);
-  useEffect(() => { void reload(); }, [reload]);
-  const own = states.filter((s) => s.commercial_stage === commercial);
+      await api("/api/admin/follow-up/estados", { method: "DELETE", body: JSON.stringify({ commercial_stage: commercial, key: row.key, base: Object.hasOwn(SITUATIONS, row.key) }) });
+      if (row.key === draft.key) setEditing(false);
+      await reload();
+    } catch(e) { setError(e instanceof Error ? e.message : "No pudimos eliminar la situación."); }
+    finally { setBusy(false); }
+  }
   function edit(state?: CatalogState) {
     setDraft(state ? { key: state.key, label: state.label, description: state.description, examples: state.examples, source: state.source, maps_to: state.maps_to ?? "", active: state.active } : EMPTY_CATALOG);
     setEditing(true);
@@ -1593,7 +1619,7 @@ function StateCatalogManager({ commercial }: { commercial: string }) {
     setBusy(true);
     setError("");
     try {
-      await api("/api/admin/follow-up/estados", { method: "PUT", body: JSON.stringify({ ...draft, key, create: !draft.key, commercial_stage: commercial, maps_to: draft.maps_to || null }) });
+      await api("/api/admin/follow-up/estados", { method: "PUT", body: JSON.stringify({ ...draft, key, base, create: !draft.key, commercial_stage: commercial, maps_to: draft.maps_to || null }) });
       setEditing(false);
       await reload();
     } catch (e) {
@@ -1603,28 +1629,21 @@ function StateCatalogManager({ commercial }: { commercial: string }) {
     }
   }
   return (
-    <div data-testid="followup-state-catalog" style={{ marginTop: 16 }}>
-      <div className="fu-rules-head">
-        <div><b>Situaciones de esta etapa</b><p className="fu-note">Cada situación personalizada puede asociarse a una respuesta que el motor de reglas reconoce.</p></div>
-        <button type="button" className="button button-small button-outline" onClick={() => edit()}><Plus size={14} /> Nueva situación</button>
-      </div>
-      {own.map((s) => (
-        <button key={s.key} type="button" className="fu-qchip is-sm" data-testid="followup-custom-state" onClick={() => edit(s)}
-          style={{ width: "100%", textAlign: "left", marginTop: 6, display: "flex", justifyContent: "space-between" }}>
-          <span>{s.label}</span><small>{s.active ? "Activa" : "Inactiva"}</small>
-        </button>
-      ))}
-      {!loaded && <p className="fu-note">Cargando catálogo…</p>}
+    <div className="fu-catalog-panel" data-testid="followup-state-catalog">
+      <header className="fu-catalog-head">
+        <div><h2>{title ?? "Situaciones de esta etapa"}</h2><p>{own.length} situaciones en esta etapa</p></div>
+        <button type="button" className="button button-small button-primary" onClick={() => edit()}><Plus size={16} /> Nueva situación</button>
+      </header>
       {error && <p className="fu-error" role="alert">{error}</p>}
       {editing && (
-        <div className="fu-box" style={{ marginTop: 12, display: "grid", gap: 9 }} data-testid="followup-state-editor">
+        <div className="fu-catalog-editor" ref={editor} data-testid="followup-state-editor"><h3>{draft.key ? "Editar situación" : "Nueva situación"}</h3>
           <label>Nombre<input aria-label="Nombre del estado" value={draft.label} maxLength={80} onChange={(e) => setDraft((d) => ({ ...d, label: e.target.value }))} /></label>
           <label>Descripción<textarea aria-label="Descripción para el clasificador" value={draft.description} maxLength={800} onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))} /></label>
           <label>Ejemplos de respuestas<textarea aria-label="Ejemplos del estado" value={draft.examples} maxLength={2000} onChange={(e) => setDraft((d) => ({ ...d, examples: e.target.value }))} /></label>
-          <label>Situación que entiende el motor
+          {!base && <><label>Situación que entiende el motor
             <select aria-label="Mapear a situación existente" value={draft.maps_to} onChange={(e) => setDraft((d) => ({ ...d, maps_to: e.target.value as Situation | "" }))}>
               <option value="">Sin mapear (revisión manual)</option>
-              {(Object.keys(SITUATIONS) as Situation[]).map((s) => <option key={s} value={s}>{SITUATIONS[s]}</option>)}
+              {(Object.keys(SITUATIONS) as Situation[]).filter(s => s in REPLY_CLASSES).map((s) => <option key={s} value={s}>{SITUATIONS[s]}</option>)}
             </select>
           </label>
           <label>Origen
@@ -1633,12 +1652,23 @@ function StateCatalogManager({ commercial }: { commercial: string }) {
             </select>
           </label>
           <label><input type="checkbox" checked={draft.active} onChange={(e) => setDraft((d) => ({ ...d, active: e.target.checked }))} /> Activa para clasificación</label>
-          <p className="fu-note">Una clasificación nueva no crea una acción automáticamente. Se aplican las reglas existentes de la situación elegida y sus restricciones de envío.</p>
+          </>}
           <div className="fu-actions"><button type="button" className="button button-small button-outline" onClick={() => setEditing(false)}>Cancelar</button>
             <button type="button" className="button button-small button-primary" disabled={busy || !draft.label.trim() || (draft.active && !draft.maps_to)} onClick={() => void save()}>{busy ? "Guardando…" : "Guardar situación"}</button>
           </div>
         </div>
       )}
+      <ul className="fu-catalog-list">{own.map(row => {
+        const Icon = row.maps_to === "no_contactar" ? KeyRound : row.maps_to === "interesado" ? Target : row.maps_to === "numero_incorrecto" || row.maps_to === "sin_whatsapp" ? Phone : MessageCircle;
+        const count = rules.filter(r => r.catalog_situation ? r.catalog_situation === row.key : r.situations.some(key => key === row.key)).length;
+        return <li key={row.key}>
+          <span className="fu-catalog-glyph"><Icon size={17} /></span>
+          <div><strong>{row.label}{count > 0 && <span className="fu-catalog-count">{count} {count === 1 ? "regla" : "reglas"}</span>}</strong><small>{row.description || (row.active ? "Situación personalizada" : "Pendiente de activar")}</small></div>
+          <button type="button" disabled={busy} title={`Editar ${row.label}`} aria-label={`Editar ${row.label}`} onClick={() => edit(row)}><Pencil size={15} /></button>
+          <button type="button" disabled={busy} title={`Eliminar ${row.label}`} aria-label={`Eliminar ${row.label}`} onClick={() => void remove(row)}><Trash2 size={15} /></button>
+        </li>;
+      })}</ul>
+      {!own.length && <p className="fu-note">Todavía no hay situaciones en esta etapa.</p>}
     </div>
   );
 }
@@ -2014,7 +2044,8 @@ function RuleEditor({
     }
     set({ catalog_situation: null, situations: r.situations.includes(x) ? r.situations.filter(y => y !== x) : [...r.situations, x] });
   };
-  const remaining = SITUATION_OPTIONS.filter((x) => !r.situations.includes(x) && (x !== "rechazo" || stage.key === "no-responde"));
+  const baseOptions = visibleSituations(commercialOf(stage.key), catalog.overrides);
+  const remaining = SITUATION_OPTIONS.filter((x) => baseOptions.some(o => o.key === x) && !r.situations.includes(x) && (x !== "rechazo" || stage.key === "no-responde"));
   const dayPreset = DAY_PRESETS.find((p) => p.days.join() === [...r.days].sort((a, b) => a - b).join());
   const hourValue = `${r.hours_from}-${r.hours_to}`;
   const hourOptions = HOUR_PRESETS.some(([f, t]) => `${f}-${t}` === hourValue) ? HOUR_PRESETS : [[r.hours_from, r.hours_to] as [number, number], ...HOUR_PRESETS];
@@ -2129,7 +2160,7 @@ function RuleEditor({
             <div className="fu-chips">
               {r.situations.map((x) => (
                 <button key={x} type="button" className="fu-chipbtn is-on" aria-pressed="true" title="Quitar" onClick={() => toggleSituation(x)}>
-                  ✓ {SITUATIONS[x]}
+                  ✓ {baseOptions.find(o => o.key === x)?.label ?? SITUATIONS[x]}
                 </button>
               ))}
               {!r.situations.length && <span className="fu-chipbtn is-on is-static">✓ Cualquier situación</span>}
@@ -2138,7 +2169,7 @@ function RuleEditor({
                   <option value="">+ Agregar</option>
                   {remaining.map((x) => (
                     <option key={x} value={x}>
-                      {SITUATIONS[x]}
+                      {baseOptions.find(o => o.key === x)?.label ?? SITUATIONS[x]}
                     </option>
                   ))}
                 </select>
@@ -3125,9 +3156,9 @@ function SituationCell({ item: q }: { item: QueueItem }) {
     <span className="fu-stagecell">
       <select data-testid="followup-situation-select" value={specific.some(s => s.key === q.catalogSituation) ? q.catalogSituation! : q.situation} disabled={busy} aria-label={`Situación de ${q.name}`} title={error || q.situationNote || undefined} onChange={(e) => change(e.target.value as Situation)}>
         {specific.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
-        {(Object.keys(SITUATIONS) as Situation[]).map((k) => (
+        {visibleSituations(commercialOf(q.stage), catalog.overrides, q.situation).map(({key: k, label}) => (
           <option key={k} value={k}>
-            {SITUATIONS[k]}
+            {label}
           </option>
         ))}
       </select>
@@ -3154,6 +3185,7 @@ function WhatsAppShortcut({ item: q }: { item: QueueItem }) {
 
 /** Corrección manual explícita; no envía mensajes ni confirma tareas. */
 function QueueCorrection({ item: q, onSaved }: { item: QueueItem; onSaved: () => void }) {
+  const catalog = useContext(SituationCatalog);
   const [stage, setStage] = useState<StageKey>(q.stage);
   const [situation, setSituation] = useState<Situation>(q.situation);
   const [note, setNote] = useState(q.situationNote ?? "");
@@ -3195,7 +3227,7 @@ function QueueCorrection({ item: q, onSaved }: { item: QueueItem; onSaved: () =>
         </label>
         <label style={{ display: "grid", gap: 4, fontSize: 12 }}>Estado de conversación
           <select data-testid="followup-quick-situation" value={situation} onChange={(e) => setSituation(e.target.value as Situation)} disabled={busy}>
-            {(Object.entries(SITUATIONS) as [Situation, string][]).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+            {visibleSituations(commercialOf(stage), catalog.overrides, q.situation).map(({key, label}) => <option key={key} value={key}>{label}</option>)}
           </select>
         </label>
         <label style={{ display: "grid", gap: 4, fontSize: 12 }}>Motivo / evidencia (opcional)
