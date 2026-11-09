@@ -1,3 +1,4 @@
+import { AGENCY_STEPS as chartSteps, demosInPeriod, inPeriod, parsePeriod, funnelCounts as chartCounts, type Period } from "@/lib/agency/demo-funnel";
 import "server-only";
 import { HttpError } from "@/lib/commerce/http";
 import { agencyStep } from "@/lib/agency/demo-funnel";
@@ -542,7 +543,7 @@ async function board(now = new Date()) {
     step: stepNow.get(id) ?? -1,
     greetingVersion: greeting.get(id) ?? null,
   }));
-  return { items, closedItems, vs, ex, stepNow, newToday: fresh.size, open, names: new Map(rows.map((r) => [r.id, r.name])), rules, facts };
+  return { rows, items, closedItems, vs, ex, stepNow, newToday: fresh.size, open, names: new Map(rows.map((r) => [r.id, r.name])), rules, facts };
 }
 
 /** Why it cannot be executed now (in order of what to fix first), or null. */
@@ -700,11 +701,17 @@ function resultsOf(b: Awaited<ReturnType<typeof board>>, all: QueueItem[]) {
     blocks: blockReasons(all.filter((q) => q.action && q.execution?.status !== "sent" && q.blocked).map((q) => q.blocked!)),
   };
 }
-export async function followupOverview(): Promise<{ stages: StageView[]; queue: QueueItem[]; blocked: QueueItem[]; noInteresados: QueueItem[]; summary: QueueSummary; inbox: InboxItem[]; funnel: FunnelStep[]; rules: Rule[]; changes: Change[]; results: Results; generatedAt: string }> {
+export async function followupOverview(period: Period = parsePeriod({})): Promise<{ chart: ReturnType<typeof chartCounts>; lostAt: number[]; stages: StageView[]; queue: QueueItem[]; blocked: QueueItem[]; noInteresados: QueueItem[]; summary: QueueSummary; inbox: InboxItem[]; funnel: FunnelStep[]; rules: Rule[]; changes: Change[]; results: Results; generatedAt: string }> {
   const [b, changes] = await Promise.all([board(), auditOf(null, 20)]);
   const all = [...b.items.values()];
   const inboxItems = inboxOf(b);
+  const reached = b.rows.filter(row => !row.test).map(row => {
+    const prospect = row.prospectFunnel;
+    return { step: agencyStep(prospect && inPeriod(prospect.at, period) ? prospect.step : null, demosInPeriod(row.demos, period).step), lost: prospect?.lost };
+  });
   return {
+    chart: chartCounts(reached.flatMap(row => row.step === null ? [] : [row.step]), chartSteps),
+    lostAt: chartSteps.map((_, i) => reached.filter(row => row.step === i && row.lost).length),
     stages: FOLLOWUP_STAGES.map((s) => {
       const own = b.vs.filter((v) => v.stage === s.key).sort((x, y) => (x.action ?? "").localeCompare(y.action ?? "") || x.version - y.version);
       const stats = versionStats(own, b.ex.filter((e) => e.stage === s.key), b.stepNow);
@@ -1374,14 +1381,19 @@ export async function saveRule(key: unknown, input: Record<string, unknown>, act
       throw new HttpError(400, "La situación pertenece a otra etapa.");
   }
   const payload = { key: id, ...clean, catalog_situation: catalogKey, updated_by: actor.id, updated_at: new Date().toISOString() };
-  const latest = await db.from("followup_rules").upsert(payload, { onConflict: "key" })
+  // Only reordering may change an existing rule's position. An editor may have been open before a reorder.
+  const { position, ...fields } = payload;
+  const write = (values: typeof fields | Omit<typeof fields, "min_demo_activity_level">) => before
+    ? db.from("followup_rules").update(values).eq("key", id)
+    : db.from("followup_rules").insert({ ...values, position });
+  const latest = await write(fields)
     .select("key,name,stage,situations,action,after_hours,after_action,position,enabled,hours_from,hours_to,days,min_demo_activity_level,catalog_situation").single();
   let saved: Rule;
   if (missingGenerationField(latest.error)) {
     if (clean.min_demo_activity_level === 3) throw new HttpError(409, "Aplicá la migración de estados antes de activar «Generó imagen».");
-    const { min_demo_activity_level: ignored, ...legacyPayload } = payload;
+    const { min_demo_activity_level: ignored, ...legacyPayload } = fields;
     void ignored;
-    const legacy = await db.from("followup_rules").upsert(legacyPayload, { onConflict: "key" })
+    const legacy = await write(legacyPayload)
       .select("key,name,stage,situations,action,after_hours,after_action,position,enabled,hours_from,hours_to,days").single();
     if (legacy.error) throw missing(legacy.error) ? new HttpError(409, MISSING) : new Error("FOLLOWUP_SAVE_FAILED");
     saved = legacy.data as Rule;
@@ -1399,6 +1411,16 @@ export async function saveRule(key: unknown, input: Record<string, unknown>, act
  * conservan. Queda en la auditoría con la regla completa, para poder volver a
  * crearla igual.
  */
+export async function reorderRules(before: unknown, after: unknown, actor: { id: string; name: string }) {
+  if (![before, after].every(a => Array.isArray(a) && a.length > 0 && a.length <= 1000 && a.every(k => typeof k === "string" && k.length <= 80)))
+    throw new HttpError(400, "Orden de reglas inválido.");
+  const { error } = await adminClient().rpc("habita_reorder_rules", { p_before: before, p_after: after, p_actor: actor.id });
+  if (error) throw new HttpError(error.message.includes("ORDER_CHANGED") ? 409 : 400,
+    error.message.includes("ORDER_CHANGED") ? "El orden cambió en otra sesión. Revisá la lista actualizada." : "No pudimos guardar el orden.");
+  await audit("rule", actor, { from: before, to: after });
+  return { ok: true };
+}
+
 export async function deleteRule(key: unknown, actor: { id: string; name: string }) {
   if (typeof key !== "string" || !key || key.length > 80) throw new HttpError(400, "Regla desconocida.");
   const db = adminClient();

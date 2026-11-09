@@ -67,6 +67,7 @@ const VIEWS: { key: View; label: string; soon?: string }[] = [
 
 /** /admin/follow-up: pestañas como en la especificación; la cola de ejecución es la pantalla principal. */
 export function FollowupBoard({
+  chart, chartStep,
   stages,
   queue,
   blocked,
@@ -79,6 +80,7 @@ export function FollowupBoard({
   results,
   generatedAt,
 }: {
+  chart: React.ReactNode; chartStep: number | null;
   stages: StageView[];
   queue: QueueItem[];
   blocked: QueueItem[];
@@ -144,7 +146,7 @@ export function FollowupBoard({
       ) : view === "respuestas" ? (
         <Inbox inbox={inbox} agencies={[...queue, ...blocked, ...noInteresados]} />
       ) : view === "embudo" ? (
-        <Funnel custom={custom} funnel={funnel} stages={stages} rules={rules} onRules={() => go("reglas")} />
+        <Funnel key={chartStep ?? "all"} chart={chart} chartStep={chartStep} custom={custom} funnel={funnel} stages={stages} rules={rules} onRules={() => go("reglas")} />
       ) : view === "resultados" ? (
         <ResultsView results={results} />
       ) : (
@@ -1395,11 +1397,12 @@ const SITUATION_OPTIONS = ["sin_respuesta", "confirmo_numero", "neutro", "pregun
 const ruleSituations = (r: Rule) => (r.situations.length ? r.situations.map((x) => SITUATIONS[x as Situation]).join(", ") : "Cualquier situación");
 
 /** Embudo y etapas (Fase 3): las etapas en tarjetas con su avance; la elegida, con sus reglas, sus versiones y sus inmobiliarias. */
-function Funnel({ custom, funnel, stages, rules, onRules }: { custom: CustomStage[]; funnel: FunnelStep[]; stages: StageView[]; rules: Rule[]; onRules: () => void }) {
+function Funnel({ chart, chartStep, custom, funnel, stages, rules, onRules }: { chart: React.ReactNode; chartStep: number | null; custom: CustomStage[]; funnel: FunnelStep[]; stages: StageView[]; rules: Rule[]; onRules: () => void }) {
   const [customKey, setCustomKey] = useState<string | null>(null);
   const activeCustom = custom.find(s => s.key === customKey);
-  const [selectedCommercial, setSelectedCommercial] = useState<CommercialStageKey>("contactado");
-  const [selectedTechnical, setSelectedTechnical] = useState<StageKey>("no-responde");
+  const initialStage = FOLLOWUP_STAGES.find(s => s.step === (chartStep ?? 0))?.key;
+  const [selectedCommercial, setSelectedCommercial] = useState<CommercialStageKey>(initialStage ? commercialOf(initialStage) : "cliente");
+  const [selectedTechnical, setSelectedTechnical] = useState<StageKey>(initialStage ?? "no-responde");
   const technical = technicalOf(selectedCommercial);
   const selected = technical.includes(selectedTechnical) ? selectedTechnical : technical[0] ?? null;
   const baseStage = selected ? stages.find((s) => s.key === selected) ?? null : null;
@@ -1420,17 +1423,13 @@ function Funnel({ custom, funnel, stages, rules, onRules }: { custom: CustomStag
   });
   return (
     <section className="fu-funnel" data-testid="followup-funnel">
-      <div className="fu-fcards" aria-label="Siete etapas comerciales">
-        {byCommercial.map((f) => (
-          <button key={f.key} type="button" className={`fu-fcard${f.key === selectedCommercial ? " is-on" : ""}`}
-            aria-pressed={f.key === selectedCommercial} data-testid="followup-funnel-stage" data-stage={f.key}
-            onClick={() => { setCustomKey(null); setSelectedCommercial(f.key); const first = technicalOf(f.key)[0]; if (first) setSelectedTechnical(first); }}>
-            <span>{f.title}</span>
-            <b>{f.waiting}</b>
-            <small>{f.next ? `${pct(f.rate)} pasa a ${f.next}` : "Etapa final"}</small>
-          </button>
-        ))}
-      </div>
+      {chart}
+      <label className="fu-qbar">Etapa del detalle
+        <select value={selectedCommercial} onChange={e => {
+          const key = e.target.value as CommercialStageKey;
+          setCustomKey(null); setSelectedCommercial(key); setSelectedTechnical(technicalOf(key)[0] ?? "no-responde");
+        }}>{byCommercial.map(f => <option key={f.key} value={f.key}>{f.title}</option>)}</select>
+      </label>
       {custom.length > 0 && <div className="fu-qchips" aria-label="Etapas personalizadas">
         {custom.map(s => <button key={s.key} type="button" className={`fu-qchip${s.key === customKey ? " is-on" : ""}`} onClick={() => {
           setCustomKey(s.key); setSelectedCommercial(commercialOf(s.technical_stage)); setSelectedTechnical(s.technical_stage);
@@ -1688,7 +1687,31 @@ function RulesWorkspace({ stages, rules, changes }: { stages: StageView[]; rules
   const [dirty, setDirty] = useState<Record<string, boolean>>({});
   const steps = technicalOf(commercial);
   const stage = stages.find((s) => s.key === stageKey) ?? stages[0];
-  const own = rules.filter((r) => commercialOf(r.stage) === commercial && compatible(r.stage, r.action)).sort((a, b) => a.position - b.position);
+  const router = useRouter();
+  const [savedOrder, setSavedOrder] = useState<{ source: Rule[]; stage: CommercialStageKey; keys: string[] } | null>(null);
+  const [savingOrder, setSavingOrder] = useState(false);
+  const [orderError, setOrderError] = useState("");
+  const own = rules.filter(r => commercialOf(r.stage) === commercial && compatible(r.stage, r.action))
+    .sort((a,b) => a.position - b.position || (a.key < b.key ? -1 : 1));
+  if (savedOrder?.stage === commercial && savedOrder.source === rules)
+    own.sort((a,b) => savedOrder.keys.indexOf(a.key) - savedOrder.keys.indexOf(b.key));
+  async function moveRule(from: string, to: string) {
+    if (savingOrder || isDirty || from === to) return;
+    const before = own.map(r => r.key);
+    const start = before.indexOf(from), end = before.indexOf(to);
+    if (start < 0 || end < 0) return;
+    const after = [...before];
+    after.splice(start, 1);
+    after.splice(end, 0, from);
+    const previous = savedOrder;
+    setSavedOrder({ source: rules, stage: commercial, keys: after });
+    setSavingOrder(true); setOrderError("");
+    try {
+      await api("/api/admin/follow-up/reglas", { method: "PATCH", body: JSON.stringify({ before, after }) });
+    } catch(e) {
+      setSavedOrder(previous); setOrderError(e instanceof Error ? e.message : "No pudimos guardar el orden.");
+    } finally { setSavingOrder(false); router.refresh(); }
+  }
   const adding = selected === NEW_RULE;
   const isDirty = Object.values(dirty).some(Boolean);
   const current = adding ? null : own.find((r) => r.key === selected) ?? own[0] ?? null;
@@ -1754,7 +1777,7 @@ function RulesWorkspace({ stages, rules, changes }: { stages: StageView[]; rules
         <section className="fu-detail-card" style={{ padding: 14, minWidth: 0 }} data-testid="followup-rules-list">
           <RulesEditor
             stage={stageKey}
-            rules={own}
+            rules={own} onMove={moveRule} locked={savingOrder || isDirty || adding}
             others={importable(stageKey, rules)}
             stageTitle={(key) => stages.find((s) => s.key === key)?.title ?? key}
             selected={current?.key ?? null}
@@ -1765,6 +1788,8 @@ function RulesWorkspace({ stages, rules, changes }: { stages: StageView[]; rules
             onAdd={(t) => go(() => { setTemplate(t); setSelected(NEW_RULE); })}
             disabled={!steps.length}
           />
+          {savingOrder && <small role="status">Guardando orden…</small>}
+          {orderError && <small role="alert" className="fu-error">{orderError}</small>}
           <details style={{ marginTop: 18 }} data-testid="followup-classifier-settings">
             <summary className="fu-note" style={{ cursor: "pointer" }}>Administrar clasificaciones de WhatsApp</summary>
             <StateCatalogManager commercial={commercial} />
@@ -1778,7 +1803,7 @@ function RulesWorkspace({ stages, rules, changes }: { stages: StageView[]; rules
               onDirty={markDirty("regla")} onAdded={() => setSelected(null)} />
           ) : current ? (
             <RuleEditor key={`${effectiveStage.key}:${current.key}:${JSON.stringify(current)}`} stage={effectiveStage} rule={current}
-              sample={sample} nextPosition={nextPosition} siblings={sameStepRules} availableStages={steps} onDirty={markDirty("regla")}
+              sample={sample} rank={own.findIndex(r => r.key === current.key) + 1} nextPosition={nextPosition} siblings={sameStepRules} availableStages={steps} onDirty={markDirty("regla")}
               onDeleted={() => { setDirty({}); setSelected(null); }} />
           ) : (
             <div className="fu-detail-card"><p className="fu-note">
@@ -1794,7 +1819,7 @@ function RulesWorkspace({ stages, rules, changes }: { stages: StageView[]; rules
 
 /** Las reglas de la etapa: se evalúan en orden y gana la primera que cumple. Elegir una abre su editor. */
 function RulesEditor({
-  stage,
+  stage, onMove, locked,
   rules,
   others,
   stageTitle,
@@ -1806,6 +1831,7 @@ function RulesEditor({
   onAdd,
   disabled = false,
 }: {
+  onMove: (from: string, to: string) => void; locked: boolean;
   stage: StageKey;
   rules: Rule[];
   /** Reglas de otras etapas que se pueden traer a esta. */
@@ -1822,13 +1848,19 @@ function RulesEditor({
 }) {
   const [menu, setMenu] = useState(false);
   const [picking, setPicking] = useState(false);
+  const [drag, setDrag] = useState<{from: string; to: string} | null>(null);
+  const list = useRef<HTMLDivElement>(null);
+  function targetAt(y: number) {
+    const rows = Array.from(list.current?.querySelectorAll<HTMLElement>("[data-rule]") ?? []);
+    return rows.find(row => y < row.getBoundingClientRect().bottom)?.dataset.rule ?? rows.at(-1)?.dataset.rule;
+  }
   const groups = [...new Set(others.map((r) => r.stage))].map((k) => ({ key: k, rules: others.filter((r) => r.stage === k).sort((a, b) => a.position - b.position) }));
   return (
     <div className="fu-rules" data-testid="followup-rules" data-stage={stage}>
       <div className="fu-rules-head">
         <div>
           <h3>Reglas de esta etapa</h3>
-          <p className="fu-note">Se evalúan en orden. Se ejecuta la primera que cumpla.</p>
+          <p className="fu-note">Arrastrá las reglas para ordenar su prioridad. P1 se evalúa primero.</p>
         </div>
         <div className="fu-kebabwrap">
           <button type="button" className="button button-small button-outline" data-testid="followup-rule-add" disabled={disabled} aria-expanded={menu} onClick={() => setMenu(!menu)}>
@@ -1874,7 +1906,7 @@ function RulesEditor({
                         onAdd(r);
                       }}
                     >
-                      <span className="fu-rulepos">{r.position}</span>
+                      <Copy size={14} aria-hidden="true" />
                       <span className="fu-rulemain">
                         <b>{ruleTitle(r.stage, r)}</b>
                         <span>{ruleShort(r.stage, r)}</span>
@@ -1894,9 +1926,33 @@ function RulesEditor({
           </div>
         </div>
       )}
-      {rules.map((r) => (
-        <RuleRow key={r.key} stage={r.stage} rule={r} selected={selected === r.key} isDirty={isDirty} onSelect={() => onSelect(r.key)} />
-      ))}
+      <div ref={list}>
+        {rules.map((r,index) => (
+          <RuleRow key={r.key} rank={index + 1} stage={r.stage} rule={r} selected={selected === r.key} isDirty={isDirty} onSelect={() => onSelect(r.key)}
+            marker={drag && drag.from !== r.key && drag.to === r.key ? (index < rules.findIndex(x => x.key === drag.from) ? "top" : "bottom") : undefined}
+            handle={<button type="button" className="fu-order-grip" style={{ touchAction: "none", cursor: drag ? "grabbing" : "grab", border: 0, background: "transparent", padding: "10px 4px" }}
+              disabled={locked || rules.length < 2} aria-label={`Mover ${ruleTitle(r.stage,r)}. Usá las flechas arriba y abajo.`}
+              title={isDirty ? "Guardá los cambios para reordenar" : "Arrastrar o usar las flechas arriba y abajo"}
+              onPointerDown={e => { if (e.button !== 0) return; e.currentTarget.setPointerCapture(e.pointerId); setDrag({from:r.key,to:r.key}); }}
+              onPointerMove={e => {
+                if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+                if (e.clientY < 48 || e.clientY > window.innerHeight - 48) window.scrollBy(0, e.clientY < 48 ? -20 : 20);
+                setDrag({from:r.key,to:targetAt(e.clientY) ?? r.key});
+              }}
+              onPointerCancel={() => setDrag(null)}
+              onLostPointerCapture={() => setDrag(null)}
+              onPointerUp={e => {
+                if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+                e.currentTarget.releasePointerCapture(e.pointerId); setDrag(null);
+                onMove(r.key,targetAt(e.clientY) ?? r.key);
+              }}
+              onKeyDown={e => {
+                if (!["ArrowUp","ArrowDown"].includes(e.key)) return;
+                e.preventDefault(); const adjacent = rules[index + (e.key === "ArrowUp" ? -1 : 1)];
+                if (adjacent) onMove(r.key,adjacent.key);
+              }}><GripVertical size={16} aria-hidden="true" /></button>} />
+        ))}
+      </div>
       {adding && (
         <div className="fu-rulecard is-on is-new">
           <span className="fu-rulepos">+</span>
@@ -1912,7 +1968,7 @@ function RulesEditor({
 }
 
 /** Una regla en la lista: orden, acción, condición en una línea y el interruptor de activa. */
-function RuleRow({ stage, rule, selected, isDirty, onSelect }: { stage: StageKey; rule: Rule; selected: boolean; isDirty: boolean; onSelect: () => void }) {
+function RuleRow({ rank, handle, marker, stage, rule, selected, isDirty, onSelect }: { rank: number; handle: React.ReactNode; marker?: "top" | "bottom"; stage: StageKey; rule: Rule; selected: boolean; isDirty: boolean; onSelect: () => void }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -1930,10 +1986,10 @@ function RuleRow({ stage, rule, selected, isDirty, onSelect }: { stage: StageKey
     }
   }
   return (
-    <div className={`fu-rulecard${selected ? " is-on" : ""}${rule.enabled ? "" : " is-off"}`} data-testid="followup-rule" data-rule={rule.key}>
-      <GripVertical className="fu-grip" size={16} aria-hidden="true" />
+    <div className={`fu-rulecard${selected ? " is-on" : ""}${rule.enabled ? "" : " is-off"}`} data-testid="followup-rule" data-rule={rule.key} style={marker ? { boxShadow: `inset 0 ${marker === "top" ? 3 : -3}px #158050` } : undefined}>
+      {handle}
       <button type="button" className="fu-rulecard-main" aria-pressed={selected} data-testid="followup-rule-edit" onClick={onSelect}>
-        <span className="fu-rulepos">{rule.position}</span>
+        <span className="fu-rulepos">P{rank}</span>
         <span className="fu-rulemain">
           <b>{ruleTitle(stage, rule)}</b>
           <span>{ruleShort(stage, rule)}</span>
@@ -1946,7 +2002,7 @@ function RuleRow({ stage, rule, selected, isDirty, onSelect }: { stage: StageKey
           disabled={busy}
           onChange={(e) => toggle(e.target.checked)}
           data-testid="followup-rule-toggle"
-          aria-label={`${rule.enabled ? "Apagar" : "Activar"} la regla ${rule.position}`}
+          aria-label={`${rule.enabled ? "Apagar" : "Activar"} la regla P${rank}`}
         />
       </label>
       {error && <small className="fu-error">{error}</small>}
@@ -1974,7 +2030,7 @@ const HOUR_PRESETS: [number, number][] = [
  * botones (son versiones: APIs separadas). Desde ⋮ se duplica o se quita.
  */
 function RuleEditor({
-  stage,
+  rank, stage,
   rule,
   template = null,
   seed,
@@ -1995,6 +2051,7 @@ function RuleEditor({
   /** Al copiar: el mensaje con el que arranca, si la acción no tiene ninguno en esta etapa. */
   seed?: Draft;
   sample: QueueItem | null;
+  rank?: number;
   nextPosition: number;
   defaultSituation?: Situation;
   availableStages?: StageKey[];
@@ -2091,7 +2148,7 @@ function RuleEditor({
       <header className="fu-rdhead">
         <div className="fu-rdtitle">
           <div className="fu-rdline">
-            <span className="fu-ruletag">{rule ? `Regla ${r.position}` : "Nueva regla"}</span>
+            <span className="fu-ruletag">{rule ? `Prioridad P${rank}` : "Nueva regla"}</span>
             <input
               className="fu-rdname"
               value={r.name ?? ""}
@@ -2251,10 +2308,7 @@ function RuleEditor({
               </select>
             </label>
           )}
-          <label className="fu-f fu-order">
-            <span>Orden de prioridad</span>
-            <input type="number" min={0} max={1000} value={r.position} onChange={(e) => set({ position: Number(e.target.value) })} />
-          </label>
+
         </section>
 
         <Editor
@@ -2266,7 +2320,7 @@ function RuleEditor({
           sample={sample}
           onDirty={setMsgDirty}
           controller={msg}
-          sharedNote={sharedWith.length ? `Este mensaje también lo usa ${sharedWith.length === 1 ? "la regla" : "las reglas"} ${sharedWith.map((x) => x.position).join(", ")}: cambiarlo acá lo cambia para ${sharedWith.length === 1 ? "las dos" : "todas"}.` : undefined}
+          sharedNote={sharedWith.length ? `Este mensaje también lo usa ${sharedWith.length === 1 ? "la regla" : "las reglas"} ${sharedWith.map((x) => ruleTitle(x.stage, x)).join(", ")}: cambiarlo acá lo cambia para ${sharedWith.length === 1 ? "las dos" : "todas"}.` : undefined}
           actionField={
             <label className="fu-f">
               <span>Acción que se ejecuta</span>
@@ -2312,7 +2366,7 @@ function RuleEditor({
         <div className="fu-dlg" role="dialog" aria-modal="true" aria-labelledby="fu-dlg-title">
           <div>
             <h4 id="fu-dlg-title">
-              ¿Quitar la regla {base.position} · {ruleTitle(stage.key, base)}?
+              ¿Quitar la regla P{rank} · {ruleTitle(stage.key, base)}?
             </h4>
             <p>La regla deja de existir y el motor ya no la evalúa. Sus mensajes, versiones, ejecuciones y métricas se conservan. Si después hace falta, se vuelve a agregar.</p>
             <div className="fu-actions">

@@ -1,6 +1,6 @@
 import { HttpError, failure, requireAdmin } from "@/lib/commerce/http";
 import { actorName } from "@/lib/followup/actor";
-import { auditOf, deleteRule, listRules, saveRule } from "@/lib/followup/server";
+import { auditOf, deleteRule, listRules, reorderRules, saveRule } from "@/lib/followup/server";
 export const runtime = "nodejs";
 
 const NO_STORE = { "Cache-Control": "private, no-store" };
@@ -37,4 +37,12 @@ export async function DELETE(request: Request) {
   } catch (e) {
     return failure(e);
   }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const user = await requireAdmin(request);
+    const input = await request.json().catch(() => null);
+    return Response.json(await reorderRules(input?.before, input?.after, { id: user.id, name: actorName(user) }), { headers: NO_STORE });
+  } catch (error) { return failure(error); }
 }
