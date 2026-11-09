@@ -1293,7 +1293,14 @@ function RuleRow({ stage, rule, selected, unavailable, isDirty, onSelect }: { st
         </span>
       </button>
       <label className="fu-switch">
-        <input type="checkbox" checked={rule.enabled} disabled={busy} onChange={(e) => toggle(e.target.checked)} /> {rule.enabled ? "Activa" : "Apagada"}
+        <input
+          type="checkbox"
+          checked={rule.enabled}
+          disabled={busy || (unavailable && !rule.enabled)}
+          onChange={(e) => toggle(e.target.checked)}
+          data-testid="followup-rule-toggle"
+        />{" "}
+        {unavailable ? (rule.enabled ? "Encendida (no se ejecuta)" : "Inactiva: no disponible aquí") : rule.enabled ? "Activa" : "Apagada"}
       </label>
       {error && <small className="fu-error">{error}</small>}
     </div>
@@ -1338,7 +1345,8 @@ function RuleEditor({ stage, rule, sample, onDirty, onAdded }: { stage: StageVie
     setBusy(true);
     setError("");
     try {
-      await api("/api/admin/follow-up/reglas", { method: "PUT", body: JSON.stringify(r) });
+      // Una regla con acción no disponible en su etapa se guarda apagada: el motor ya no la usa.
+      await api("/api/admin/follow-up/reglas", { method: "PUT", body: JSON.stringify(unavailable ? { ...r, enabled: false } : r) });
       if (!rule) onAdded?.();
       router.refresh();
       setBusy(false);
@@ -1357,7 +1365,14 @@ function RuleEditor({ stage, rule, sample, onDirty, onAdded }: { stage: StageVie
           <p className="fu-note">{ruleWhen(stage.key, r)}</p>
         </div>
         <label className="fu-switch">
-          <input type="checkbox" checked={r.enabled} onChange={(e) => set({ enabled: e.target.checked })} /> Activa
+          <input
+            type="checkbox"
+            checked={r.enabled}
+            disabled={unavailable && !r.enabled}
+            onChange={(e) => set({ enabled: e.target.checked })}
+            data-testid="followup-rule-enabled"
+          />{" "}
+          {unavailable ? (r.enabled ? "Encendida (no se ejecuta)" : "No disponible aquí") : "Activa"}
         </label>
       </header>
 

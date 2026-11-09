@@ -26,7 +26,8 @@ describe("derivedSituation (la hoja y Adquisición, sin copiar nada)", () => {
 describe("nextAction (secuencias fijas por código)", () => {
   it("greets the uncontacted, presents to the ones that confirmed, answers prices", () => {
     expect(nextAction("no-contactado", "sin_respuesta")).toMatchObject({ action: "principal", afterHours: 0 });
-    expect(nextAction("no-contactado", "confirmo_numero").action).toBe("presentacion");
+    // Presentación no es una acción de «No contactado»: la regla es incompatible y el motor no la ejecuta.
+    expect(nextAction("no-contactado", "confirmo_numero").action).toBeNull();
     expect(nextAction("no-responde", "confirmo_numero")).toMatchObject({ action: "presentacion", afterHours: 0 });
     expect(nextAction("no-responde", "pregunta_precios").action).toBe("precios");
     expect(nextAction("no-responde", "derivo").action).toBe("presentacion");

@@ -68,7 +68,7 @@ import {
   type Group,
   type Situation,
 } from "./plan";
-import { DEFAULT_RULES, cleanRule, outsideWindow, type Rule } from "./rules";
+import { DEFAULT_RULES, cleanRule, compatible, outsideWindow, type Rule } from "./rules";
 import { WINDOWS, blockReasons, bySegment, cohorts, versionResults, weekly, type VersionResult, type WindowKey } from "./results";
 
 /**
@@ -1231,6 +1231,8 @@ export async function saveRule(key: unknown, input: Record<string, unknown>, act
   const clean = cleanRule(input, Object.keys(SITUATIONS).filter((x) => !CLOSED_SITUATIONS.includes(x as Situation)), ["principal", "seguimiento_2", "presentacion", "presentacion_seguimiento", "precios"], FOLLOWUP_STAGES.map((x) => x.key));
   if ("error" in clean) throw new HttpError(400, clean.error);
   const db = adminClient();
+  // Una regla nueva solo puede tener una acción de su etapa (las existentes incompatibles se pueden apagar, no crear).
+  if (!(typeof key === "string" && key) && !compatible(clean.stage, clean.action)) throw new HttpError(400, `«${clean.action}» no es una acción de esta etapa: no se puede crear una regla así.`);
   const id = typeof key === "string" && key ? key : `${clean.stage}:${clean.action}:${Date.now().toString(36)}`;
   if (id.length > 80) throw new HttpError(400, "Regla desconocida.");
   const before = typeof key === "string" && key ? (await db.from("followup_rules").select("*").eq("key", key).maybeSingle()).data : null;
