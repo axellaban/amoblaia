@@ -3,6 +3,8 @@ import { HttpError } from "@/lib/commerce/http";
 import { adminClient } from "@/lib/supabase/server";
 import { actorName } from "./actor";
 import { GROUPS, SITUATIONS } from "./plan";
+import { createStage, customStages } from "./commercial-catalog";
+import { changeBaseSituation, readSituationOverrides, readStateCatalog, removeCustomSituation, updateStateCatalog } from "./state-catalog";
 import {
   agentQueue,
   claimNext,
@@ -78,9 +80,18 @@ async function byActor(team: TeamUser[]) {
 
 /** Lo que Chapa muestra: la cola, las bloqueadas, la bandeja, el embudo, las reglas y los resultados. */
 export async function followupSnapshot(team: TeamUser[] = []) {
-  const [o, actors] = await Promise.all([followupOverview(), byActor(team)]);
+  const [o, actors, catalogStages, catalogStates, catalogOverrides] = await Promise.all([
+    followupOverview(), byActor(team),
+    customStages().catch(() => null),
+    readStateCatalog().catch(() => null),
+    readSituationOverrides().catch(() => null),
+  ]);
   return {
     labels: { situations: SITUATIONS, groups: GROUPS },
+    catalog: {
+      stages: catalogStages ?? [], states: catalogStates ?? [], overrides: catalogOverrides ?? [],
+      available: catalogStages !== null && catalogStates !== null && catalogOverrides !== null,
+    },
     summary: o.summary,
     queue: o.queue,
     blocked: o.blocked,
@@ -151,6 +162,16 @@ export async function runFollowupOp(op: unknown, b: Record<string, unknown>, act
       return setVersionStatus(b.id, b.estado);
     case "rule-save":
       return saveRule(b.key, (b.valores as Record<string, unknown>) ?? {}, actor);
+    case "stage-create":
+      return createStage((b.valores as Record<string, unknown>) ?? {});
+    case "state-save": {
+      const values = (b.valores as Record<string, unknown>) ?? {};
+      return values.base ? changeBaseSituation(values, false) : updateStateCatalog(values, actor.id);
+    }
+    case "state-delete": {
+      const values = (b.valores as Record<string, unknown>) ?? {};
+      return values.base ? changeBaseSituation(values, true) : removeCustomSituation(values);
+    }
     default:
       throw new HttpError(400, "Operación de Follow-up desconocida.");
   }
