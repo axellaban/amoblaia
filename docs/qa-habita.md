@@ -47,7 +47,7 @@ Buscá `### QA <fecha de hoy> am` o `pm`, con la fecha de Argentina. Si no está
 - **OBS-009** Un 520 aislado de Storage al subir una foto de propiedad (5/11 a la noche). No se repitió.
 - **OBS-010** (7/11 am) La consulta de grabaciones de PostHog (`session_replay_events`) no devolvió ninguna sesión en las últimas 72 h, ni siquiera internas. Las corridas anteriores sí tenían grabaciones. Ver si es de la consulta o si la grabación se cortó (`docs/CRO_INSTRUMENTACION.md`, receta de grabaciones).
 - **OBS-011** (7/11 am) Un `lead_recompute_failed` aislado en `POST /api/demo/<token>/leads` (6/11 a la noche). Es el recálculo de puntaje «mejor esfuerzo»: se registra y el siguiente lote lo corrige. Ver si se repite.
-- **OBS-012** (7/11 pm) Tres «statement timeout» de Postgres (`57014`) en las últimas 24 h: dos juntas en `/api/metricas` (a las 14:12 de Argentina, coincidieron con un deploy) y una en `/api/prospeccion` (13:42). Lecturas completas de `demos`, `demo_activity` y del dataset de prospección. Ver si se repite; si sí, paginar o indexar.
+- **OBS-012** (7/11 pm) Tres «statement timeout» de Postgres (`57014`) en las últimas 24 h: dos juntas en `/api/metricas` (a las 14:12 de Argentina, coincidieron con un deploy) y una en `/api/prospeccion` (13:42). Lecturas completas de `demos`, `demo_activity` y del dataset de prospección. Ver si se repite; si sí, paginar o indexar. **Se repite** el 9/11 am en `/api/prospeccion` y `/api/admin/prospeccion`.
 - **OBS-013** (8/11 am) Al terminar de generar un estilo en el editor de la propiedad (escritorio), el visor grande de antes/después desapareció de la captura hasta recargar y la miniatura de la versión nueva se vio en blanco un momento. Aislado; no se repitió al recargar. Ver si se repite.
 
 ### Propuestas UX pendientes
@@ -92,6 +92,20 @@ Para que Astra las evalúe. Claude no las implementa sin aprobación.
 Sin nombres, teléfonos, emails, enlaces a grabaciones, IDs de sesión, tasas de conversión ni cantidades de usuarios o sesiones.
 
 ## Resultados
+
+### QA 2026-11-09 am (2)
+
+- Inicio: 2026-11-09T08:52:34-03:00 · Fin: 2026-11-09T09:01:57-03:00 · Estado: parcial (ver «Sin revisar»)
+- Commit: c874399 (#203) · Despliegue: dpl_AAHo2qfPcg8qpykTujft6QcA6cDi (production, READY)
+- Tipo: completa (mañana), recortada · Pantallas: escritorio 1366×900, iPhone 13, Galaxy S8 e iPad (gen 7); la interacción de la demo también con el navegador de WhatsApp.
+- Paso 2: errores de Vercel en 24 h: un solo grupo, `DATABASE_57014` en `/api/prospeccion` y `/api/admin/prospeccion` (OBS-012, se repite hoy a la mañana, después del último deploy). Logs de Supabase: solo ese «statement timeout» y dos errores de consulta ajenos a la app (columna y tabla inexistentes, de consultas manuales). Sin errores SSR.
+- Sesión de QA: OK. `/`, `/precios`, `/acceso`, `/panel`, `/panel/imagenes`, `/panel/propiedades`, `/admin`, `/admin/inmobiliarias`, `/admin/prospeccion`, ficha de la inmobiliaria de prueba, demo publicada de QA, `/presentacion` y token inexistente en las cuatro pantallas: 200 (404 propio para el token inexistente), sin errores de JavaScript ni de red propios, sin scroll horizontal ni placeholders, sin violaciones axe `critical`. Axe `serious`: solo `color-contrast` (UX-001) y, en la demo, `aria-prohibited-attr` (UX-003). Demo en escritorio, iPhone 13 y Galaxy S8 con navegador de WhatsApp: `og:title`, `og:description` y `og:image` presentes, enlaces a `wa.me`, botón «Siguiente» de la galería sin fallas. Se miraron las capturas de la demo en iPhone 13 y de `/panel` en Galaxy S8 (esta última reducida, no legible a detalle).
+- Bugs encontrados: ninguno · Corregidos: ninguno
+- Observaciones nuevas: ninguna · Propuestas nuevas: ninguna. Se repiten OBS-012 (ahora en tres días seguidos: conviene paginar o indexar las lecturas de prospección), UX-001 y UX-003.
+- PRs de usabilidad abiertos: ninguno con título `UX:`
+- PostHog revisado hasta: sin cambios respecto de la corrida anterior · cobertura: sin acceso · el conector de PostHog no estaba disponible en esta sesión.
+- Sin revisar (motivo: corrida recortada; el conector de PostHog no existe en la sesión): PostHog completo; crear demostración, estudio de imágenes y video Clásico; caminos de error (HEIC, archivos grandes, guardar vacío, doble clic, sin conexión); comparación antes/después (el script no encontró el control por selector, solo se vio en la captura); red lenta; teclado y zonas táctiles; la mayoría de las capturas no se miraron una por una; ficha de inmobiliaria con todas sus pestañas. Nada que borrar: no se crearon datos.
+- Esperado, no es bug: el 404 de la consola en `/demo/<token-inexistente>`; los tiempos de carga (3 a 11 s) incluyen el proxy del entorno.
 
 ### QA 2026-11-09 am
 
