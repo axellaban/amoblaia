@@ -473,3 +473,137 @@ body:has(.fu-page) .pr-side-foot {
 @media (prefers-reduced-motion: reduce) {
   .fu-page button.fu-reference-stage { transition: none !important; transform: none !important; }
 }
+/* Embudo: upper navigation as a connected, readable commercial pipeline.
+   Lower agency rows, rule editing, stage selection and API stay untouched. */
+.fu-page [data-testid="followup-funnel"] {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.fu-page [data-testid="followup-funnel"] > .fu-fcards {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 10px;
+  padding: 19px 17px 17px;
+  background: #fff;
+  border: 1px solid #e2ebe3;
+  border-radius: 19px;
+  box-shadow: 0 10px 30px #123b2810;
+  overflow: visible;
+}
+.fu-page [data-testid="followup-funnel"] .fu-fcard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: flex-start;
+  gap: 9px;
+  min-width: 0;
+  min-height: 160px;
+  padding: 20px 12px 14px;
+  border: 1px solid #dfebe0;
+  border-radius: 13px;
+  background: #f9fbf9;
+  box-shadow: none;
+  text-align: left;
+}
+.fu-page [data-testid="followup-funnel"] .fu-fcard::before {
+  content: "";
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  top: -11px;
+  left: 12px;
+  border-radius: 50%;
+  background: #e1f1e6;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 1px #bcdcc6;
+}
+.fu-page [data-testid="followup-funnel"] .fu-fcard:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: calc(100% + 1px);
+  top: 64px;
+  width: 9px;
+  border-top: 2px solid #bdd7c5;
+  z-index: 2;
+}
+.fu-page [data-testid="followup-funnel"] .fu-fcard span {
+  font-size: 10px;
+  font-weight: 850;
+  line-height: 1.4;
+  letter-spacing: .025em;
+  color: #476657;
+  text-transform: uppercase;
+  white-space: normal;
+}
+.fu-page [data-testid="followup-funnel"] .fu-fcard b {
+  font-size: clamp(27px, 2.7vw, 39px);
+  font-weight: 850;
+  line-height: 1;
+  letter-spacing: -.06em;
+  color: #123b28;
+  font-variant-numeric: tabular-nums;
+}
+.fu-page [data-testid="followup-funnel"] .fu-fcard small {
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.4;
+  color: #718479;
+  margin-top: auto;
+}
+.fu-page [data-testid="followup-funnel"] .fu-fcard.is-on {
+  background: #eaf6ee;
+  border: 2px solid #118353;
+  padding: 19px 11px 13px;
+  box-shadow: 0 7px 24px #08764719;
+}
+.fu-page [data-testid="followup-funnel"] .fu-fcard.is-on::before {
+  background: #128855;
+  box-shadow: 0 0 0 1px #118353;
+}
+.fu-page [data-testid="followup-funnel"] .fu-fcard:is(:hover, :focus-visible) {
+  border-color: #118353;
+}
+.fu-page [data-testid="followup-funnel"] > .fu-qbar {
+  margin: 0;
+  padding: 10px 14px;
+  background: #f0f7f1;
+  border: 1px solid #dce9de;
+  border-radius: 12px;
+}
+.fu-page [data-testid="followup-funnel"] > .fu-fdetail {
+  margin: 0;
+  border-radius: 16px;
+}
+@media (max-width: 1250px) {
+  .fu-page [data-testid="followup-funnel"] > .fu-fcards {
+    display: flex;
+    gap: 10px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+    scrollbar-width: thin;
+    padding: 19px 14px 16px;
+  }
+  .fu-page [data-testid="followup-funnel"] .fu-fcard {
+    flex: 0 0 154px;
+    scroll-snap-align: start;
+  }
+}
+@media (max-width: 760px) {
+  .fu-page [data-testid="followup-funnel"] { gap: 11px; }
+  .fu-page [data-testid="followup-funnel"] > .fu-fcards {
+    padding: 17px 11px 12px;
+    border-radius: 14px;
+    gap: 9px;
+  }
+  .fu-page [data-testid="followup-funnel"] .fu-fcard {
+    flex-basis: 148px;
+    min-height: 143px;
+    padding: 17px 12px 12px;
+  }
+  .fu-page [data-testid="followup-funnel"] .fu-fcard.is-on { padding: 16px 11px 11px; }
+  .fu-page [data-testid="followup-funnel"] .fu-fcard b { font-size: 31px; }
+  .fu-page [data-testid="followup-funnel"] > .fu-qbar { padding: 10px; }
+}
