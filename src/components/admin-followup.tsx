@@ -1401,14 +1401,18 @@ function RuleEditor({ stage, rule, sample, onDirty, onAdded }: { stage: StageVie
             <span>Orden de prioridad</span>
             <input type="number" min={0} max={1000} value={r.position} onChange={(e) => set({ position: Number(e.target.value) })} />
           </label>
-          <label>
-            <span>Horario desde (hora)</span>
-            <input type="number" min={0} max={23} value={r.hours_from} onChange={(e) => set({ hours_from: Number(e.target.value) })} />
-          </label>
-          <label>
-            <span>Horario hasta (hora)</span>
-            <input type="number" min={1} max={24} value={r.hours_to} onChange={(e) => set({ hours_to: Number(e.target.value) })} />
-          </label>
+          <fieldset className="fu-hours">
+            <legend>Horario de envío</legend>
+            <label>
+              <span className="sr-only">Desde (hora)</span>
+              <input type="number" min={0} max={23} value={r.hours_from} onChange={(e) => set({ hours_from: Number(e.target.value) })} aria-label="Desde (hora)" />
+            </label>
+            <span aria-hidden="true">a</span>
+            <label>
+              <span className="sr-only">Hasta (hora)</span>
+              <input type="number" min={1} max={24} value={r.hours_to} onChange={(e) => set({ hours_to: Number(e.target.value) })} aria-label="Hasta (hora)" />
+            </label>
+          </fieldset>
         </div>
         <div className="fu-field">
           <span className="fu-lbl2">Días habilitados</span>
