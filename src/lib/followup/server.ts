@@ -698,7 +698,6 @@ export async function followupOverview(): Promise<{ stages: StageView[]; queue: 
     queue: executable(all),
     blocked: all.filter((q) => pending(q) && q.blocked).sort(byPriority),
     noInteresados: [...b.closedItems, ...all.filter((q) => q.stage === "no-responde" && (q.situation === "rechazo" || q.situation === "proveedor_ia"))].sort(byPriority),
-    noInteresados: [...b.closedItems, ...all.filter((q) => q.stage === "no-responde" && (q.situation === "rechazo" || q.situation === "proveedor_ia"))].sort(byPriority),
     summary: summarize(all, b.newToday, inboxItems.length),
     inbox: inboxItems,
     funnel: funnelOf(b, all),
@@ -716,6 +715,7 @@ export async function followupQueueView() {
   return {
     queue: executable(all),
     blocked: all.filter((q) => pending(q) && q.blocked).sort(byPriority),
+    noInteresados: [...b.closedItems, ...all.filter((q) => q.stage === "no-responde" && (q.situation === "rechazo" || q.situation === "proveedor_ia"))].sort(byPriority),
     summary: summarize(all, b.newToday, inboxOf(b).length),
     rules: [...b.rules].sort((x, y) => x.position - y.position),
     generatedAt: new Date().toISOString(),
