@@ -33,6 +33,7 @@ export default async function FollowupPage() {
           <Link href="/galeria">Galería</Link>
           <Link href="/precios">Precios</Link>
           <Link href="/cuenta">Mi cuenta</Link>
+          <Link href="/inicio">Ir a mi inmobiliaria</Link>
         </nav>
       </header>
       {data && typeof data === "object" ? (

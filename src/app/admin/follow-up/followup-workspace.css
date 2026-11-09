@@ -4,8 +4,53 @@
 
 /* Replace the redundant public website frame with a dedicated workspace header.
    The same four site destinations are preserved in the workspace utility links. */
-body:has(.fu-page) > .header,
+/* Preserve the existing sign-out button and session handler as a small
+   utility icon; all original site navigation destinations live in the
+   workspace links below. The duplicated website masthead stays invisible. */
 body:has(.fu-page) > .footer { display: none !important; }
+body:has(.fu-page) > .header {
+  display: flex !important;
+  position: fixed !important;
+  z-index: 100;
+  top: 24px;
+  right: 19px;
+  width: 40px;
+  height: 40px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+body:has(.fu-page) > .header .container.nav {
+  padding: 0 !important;
+  margin: 0 !important;
+  width: 40px;
+  height: 40px;
+  min-width: 0;
+}
+body:has(.fu-page) > .header .nav > a,
+body:has(.fu-page) > .header .nav-links,
+body:has(.fu-page) > .header .nav-actions > a,
+body:has(.fu-page) > .header .nav-actions > .menu-toggle { display: none !important; }
+body:has(.fu-page) > .header .nav-actions {
+  display: flex; width: 40px; height: 40px;
+  gap: 0; margin: 0; padding: 0;
+  align-items: center; justify-content: center;
+}
+body:has(.fu-page) > .header button[aria-label="Cerrar sesión"] {
+  display: inline-grid;
+  place-items: center;
+  width: 37px;
+  height: 37px;
+  min-height: 37px;
+  border: 1px solid #d8e7dd;
+  border-radius: 11px;
+  background: #fff;
+  color: #285b3f;
+  box-shadow: 0 3px 10px #234a330d;
+}
+body:has(.fu-page) > .header button[aria-label="Cerrar sesión"]:hover { background: #e9f6ec; }
 body:has(.fu-page) { background: #f8f9f6; }
 body:has(.fu-page) #contenido { min-width: 0; padding: 0; min-height: 100dvh; }
 body:has(.fu-page) .adm-shell {
@@ -137,6 +182,7 @@ body:has(.fu-page) .pr-side-foot {
   flex-wrap: wrap;
   gap: 3px;
   flex-shrink: 0;
+  padding-right: 45px;
 }
 .fu-page .fu-workspace-utilities a {
   font-size: 12px;
@@ -515,6 +561,7 @@ body:has(.fu-page) .pr-side-foot {
 }
 @media (max-width: 760px) {
   body:has(.fu-page) { overflow-x: hidden; }
+  body:has(.fu-page) > .header { top: 7px; right: 10px; }
   body:has(.fu-page) .pr-side {
     height: 51px; min-height: 51px; padding: 7px 13px; position: relative; overflow: visible; isolation: auto;
   }
