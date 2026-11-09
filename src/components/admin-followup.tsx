@@ -1377,18 +1377,6 @@ const DISCARD = "Hay cambios sin guardar. ¿Descartarlos?";
 type MsgTab = "mensaje" | "versiones" | "observaciones";
 
 /** Qué espera cada etapa, en una línea (la misma lectura que la tabla de docs/FOLLOWUP.md). */
-const STAGE_TEXT: Record<StageKey, string> = {
-  "no-contactado": "Cuentas de prospección que todavía no recibieron el primer mensaje.",
-  "no-responde": "Seguimiento a quienes confirmaron el número y aún no avanzaron.",
-  "sin-demo": "Interesadas a las que todavía falta crear la demo.",
-  "sin-enviar": "Demo creada que todavía no se envió.",
-  "no-abrio": "Demo enviada que todavía no se abrió.",
-  "sin-interaccion": "Visitaron el panel sin interactuar.",
-  "sin-cuenta": "Interactuaron con la demo y todavía no crearon cuenta.",
-  "sin-uso": "Cuenta creada que todavía no la usa.",
-  "sin-suscripcion": "Cuenta activa que todavía no se suscribió.",
-};
-
 /** Cuándo se ejecuta una regla, en una frase. Misma lectura en la lista, el resumen y el editor. */
 function ruleWhen(stage: StageKey, r: Rule) {
   const after = r.after_action ? ` y ya salió «${actionLabel(stage, r.after_action as Action)}»` : "";
