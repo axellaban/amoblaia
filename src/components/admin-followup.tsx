@@ -6,7 +6,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { ArrowLeft, ArrowRight, Building2, CalendarDays, CheckCheck, ChevronDown, ChevronRight, ClipboardCopy, Copy, GripVertical, Info, KeyRound, Layers, Link2, MessageCircle, MessageSquare, MoreVertical, Pencil, Phone, Plus, RefreshCw, Send, Tag, Target, Trash2, Undo2, Video, X } from "lucide-react";
 import { api } from "@/components/admin-demos";
 import { CTA_KEYS, CTA_LABEL, COMMERCIAL_STAGES, FOLLOWUP_STAGES, OUT, VARIABLES, commercialOf, technicalOf, technicalStateLabel, fillMessage, missingVariables, pct, type Channel, type Cta, type CommercialStageKey, type StageKey, type VersionStatus } from "@/lib/followup/stages";
-import { GROUPS, REPLY_CLASSES, SITUATIONS, actionLabel, actionsOf, compatible, splitMessages, type Action, type ReplyClass, type Situation } from "@/lib/followup/plan";
+import { GROUPS, REPLY_CLASSES, SITUATIONS, QUEUE_ORDERS, actionLabel, actionsOf, byQueueOrder, commercialTier, compatible, splitMessages, type QueueOrder, type Action, type ReplyClass, type Situation } from "@/lib/followup/plan";
 import type { Change, FunnelStep, InboxItem, Prepared, QueueItem, QueueSummary, QueueView, Results, StageView } from "@/lib/followup/server";
 import { NO_FILTER, OTHER_RULES, isEmptyFilter, matchesFilter, stageRules, type QueueFilter } from "@/lib/followup/queue-filter";
 import type { CohortRow, WindowKey } from "@/lib/followup/results";
@@ -48,6 +48,7 @@ export function FollowupBoard({
   stages,
   queue,
   blocked,
+  noInteresados,
   summary,
   inbox,
   funnel,
@@ -59,6 +60,7 @@ export function FollowupBoard({
   stages: StageView[];
   queue: QueueItem[];
   blocked: QueueItem[];
+  noInteresados: QueueItem[];
   summary: QueueSummary;
   inbox: InboxItem[];
   funnel: FunnelStep[];
@@ -68,7 +70,7 @@ export function FollowupBoard({
   generatedAt: string;
 }) {
   const [queueState, setQueueState] = useState<QueueState>(QUEUE_START);
-  const initial = useMemo<QueueView>(() => ({ queue, blocked, summary, rules, generatedAt }), [queue, blocked, summary, rules, generatedAt]);
+  const initial = useMemo<QueueView>(() => ({ queue, blocked, noInteresados, summary, rules, generatedAt }), [queue, blocked, noInteresados, summary, rules, generatedAt]);
   const [view, setView] = useState<View>(() => {
     if (typeof window === "undefined") return "cola";
     const v = new URLSearchParams(window.location.search).get("vista");
@@ -168,6 +170,8 @@ function ExecCenter({
   const [loading, setLoading] = useState(false);
   const [pollError, setPollError] = useState("");
   const [shown, setShown] = useState(QPAGE);
+  const [order, setOrder] = useState<QueueOrder>("comercial");
+  const [showClosed, setShowClosed] = useState(false);
   // La que se está ejecutando: queda en el panel aunque la cola actualizada ya no la traiga (se confirmó, avanzó).
   const [detail, setDetail] = useState<{ id: string; item: QueueItem; prepared: Prepared | null } | null>(null);
   const [done, setDone] = useState<Record<string, Exec>>({});
@@ -197,12 +201,13 @@ function ExecCenter({
   }, [refresh]);
 
   const { kpi, f } = state;
-  const { queue, blocked, summary, rules } = data;
+  const { queue, blocked, noInteresados, summary, rules } = data;
   const live = new Date().toISOString();
   const statusOf = (q: QueueItem) => (q.agencyId in done ? done[q.agencyId] : q.execution);
-  const all = [...queue, ...blocked];
+  const all = [...queue, ...blocked, ...noInteresados];
+  const closedView = showClosed && kpi === "listas" && (f.commercial === "contactado" || f.stage === "no-responde");
   const base =
-    kpi === "bloqueadas"
+    closedView ? noInteresados : kpi === "bloqueadas"
       ? blocked
       : kpi === "respuestas"
         ? all.filter((q) => isReply(q) && !q.snoozedUntil)
@@ -210,7 +215,7 @@ function ExecCenter({
           ? all.filter((q) => q.group === "demos" && !q.snoozedUntil)
           : queue;
   const fits = (q: QueueItem, g: QueueFilter) => matchesFilter(q, g, rules);
-  const list = base.filter((q) => fits(q, f));
+  const list = base.filter((q) => fits(q, f)).sort((a, b) => byQueueOrder(a, b, order));
   const stage = f.stage ? stages.find((s) => s.key === f.stage) ?? null : null;
   const commercial = f.commercial ?? (f.stage ? commercialOf(f.stage) : null);
   const selectedTechnical = commercial ? technicalOf(commercial) : [];
@@ -219,7 +224,7 @@ function ExecCenter({
   const count = (g: QueueFilter) => base.filter((q) => fits(q, g)).length;
   const others = f.stage ? count({ ...f, rule: OTHER_RULES }) : 0;
   const isFree = (q: QueueItem) => statusOf(q)?.status !== "sent" && !q.blocked && !(q.claim && q.claim.until > live);
-  const free = list.filter(isFree);
+  const free = closedView ? [] : list.filter(isFree);
   const kpiGroup = kpi === "respuestas" ? "respuestas" : kpi === "demos" ? "demos" : null;
   const situations = (Object.keys(SITUATIONS) as Situation[]).map((k) => ({ key: k, n: count({ ...f, situation: k }) })).filter((x) => x.n > 0 || x.key === f.situation);
   const groupCounts = (Object.keys(GROUPS) as (keyof typeof GROUPS)[]).map((k) => ({ key: k, n: count({ ...f, group: k }) }));
@@ -233,7 +238,7 @@ function ExecCenter({
     setTaking(true);
     setError("");
     try {
-      const filtro = { etapa: f.stage, etapaComercial: f.commercial, imagen: f.demoImage, regla: f.rule, situacion: f.situation, grupo: f.group ?? kpiGroup, buscar: f.search };
+      const filtro = { etapa: f.stage, etapaComercial: f.commercial, imagen: f.demoImage, regla: f.rule, situacion: f.situation, grupo: f.group ?? kpiGroup, buscar: f.search, orden: order };
       const p = await api<Prepared | null>("/api/admin/followup/claim", { method: "POST", body: JSON.stringify({ filtro, saltar: skip }) });
       if (!p) {
         setDetail(null);
@@ -265,8 +270,8 @@ function ExecCenter({
     }, {}),
   ).sort((a, b) => b[1] - a[1]);
   const ruleName = rule && f.stage ? ruleTitle(f.stage, rule) : f.rule === OTHER_RULES ? "Otras" : null;
-  const heading = `${stage?.title ?? "Todas las etapas"}${ruleName ? ` — ${ruleName}` : ""} — ${list.length} ${kpi === "bloqueadas" ? (list.length === 1 ? "bloqueada" : "bloqueadas") : list.length === 1 ? "lista" : "listos"}`;
-  const banner = !stage
+  const heading = closedView ? `Contactado — ${list.length} no interesados` : `${stage?.title ?? "Todas las etapas"}${ruleName ? ` — ${ruleName}` : ""} — ${list.length} ${kpi === "bloqueadas" ? (list.length === 1 ? "bloqueada" : "bloqueadas") : list.length === 1 ? "lista" : "listos"}`;
+  const banner = closedView ? "Oportunidades cerradas como No interesado. Podés corregir etapa y estado; estas inmobiliarias no reciben acciones automáticas." : !stage
     ? "Estás viendo todas las etapas. Elegí una etapa y una regla para trabajar sus contactos uno detrás de otro."
     : rule
       ? `Estás viendo la etapa ${stage.title} con la regla ${ruleTitle(stage.key, rule)}. Se muestran solo los contactos cuya próxima acción es «${actionLabel(stage.key, rule.action as Action)}»: ${ruleWhen(stage.key, rule).replace(/^Si /, "si ")}.`
@@ -383,6 +388,19 @@ function ExecCenter({
         </div>
       )}
 
+      {(commercial === "contactado") && (
+        <div className="fu-qbar" data-testid="followup-contact-closed">
+          <span className="fu-qbarlabel">Resultado del contacto</span>
+          <button type="button" className={`fu-qchip is-sm${!closedView ? " is-on" : ""}`} aria-pressed={!closedView}
+            onClick={() => { setShowClosed(false); setShown(QPAGE); }}>Pendientes de acción</button>
+          <button type="button" className={`fu-qchip is-sm${closedView ? " is-on" : ""}`} aria-pressed={closedView}
+            data-testid="followup-no-interesados" onClick={() => { setShowClosed(true); setDetail(null); setShown(QPAGE); }}>
+            No interesados <b>{noInteresados.length}</b>
+          </button>
+          <span className="fu-note">Cerrados para esta campaña · sin envíos automáticos</span>
+        </div>
+      )}
+
       <div className="fu-qbanner" data-testid="followup-queue-banner">
         <Info size={16} aria-hidden="true" />
         <span className="fu-grow">{banner}</span>
@@ -406,6 +424,12 @@ function ExecCenter({
           <div className="fu-qcardhead">
             <h2 data-testid="followup-queue-heading">{heading}</h2>
             <div className="fu-qtools">
+              <label className="fu-qsel">
+                <span>Ordenar</span>
+                <select data-testid="followup-queue-order" value={order} onChange={(e) => { setOrder(e.target.value as QueueOrder); setShown(QPAGE); }}>
+                  {(Object.entries(QUEUE_ORDERS) as [QueueOrder, string][]).map(([key, title]) => <option key={key} value={key}>{title}</option>)}
+                </select>
+              </label>
               <label className="fu-qsel">
                 <span>Situación</span>
                 <select data-testid="followup-filter-situation" value={f.situation ?? ""} onChange={(e) => setF({ situation: (e.target.value || null) as Situation | null })}>
@@ -486,13 +510,15 @@ function ExecCenter({
                         <div className="fu-qname">
                           <Link href={`/admin/inmobiliarias/${q.agencyId}`}>{q.name}</Link>
                           <span>{f.stage ? (q.person ?? "—") : stageTitle(q.stage)}</span>
+                          <QueueCorrection item={q} onSaved={() => void refresh()} />
                         </div>
                         <span className="fu-cell">{q.zone ?? "—"}</span>
                         <span className="fu-cell">
                           <span className="fu-pill is-sit">{SITUATIONS[q.situation]}</span>
                         </span>
-                        <span className="fu-cell fu-bold" title={ruleOf(rules, q) ? ruleTitle(q.stage, ruleOf(rules, q)!) : undefined}>
-                          {q.actionLabel ?? "—"}
+                        <span className="fu-cell fu-bold" title={commercialTier(q).reason}>
+                          {closedView ? "Sin seguimiento" : q.actionLabel ?? "—"}
+                          {!closedView && <small style={{ display: "block", fontSize: "11px", fontWeight: 400, opacity: 0.75 }}>P{commercialTier(q).tier} · {commercialTier(q).reason}</small>}
                         </span>
                         <div className="fu-qact">
                           <span>{q.lastAction ? q.lastAction.text : "Sin acciones"}</span>
@@ -500,6 +526,7 @@ function ExecCenter({
                         </div>
                         <div className="fu-qcontact">
                           <span className="fu-mono">{q.phone ?? "—"}</span>
+                          <WhatsAppShortcut item={q} />
                           <span>{!q.wa ? "Sin WhatsApp" : q.needsReview ? "Sin validar" : "Validado"}</span>
                         </div>
                         <span>
@@ -508,7 +535,9 @@ function ExecCenter({
                             {q.priorityManual ? " ·" : ""}
                           </span>
                         </span>
-                        {isBlocked ? (
+                        {closedView || !q.action ? (
+                          <span className="fu-qst is-blocked">Sin acciones</span>
+                        ) : isBlocked ? (
                           q.snoozedUntil ? (
                             <button type="button" className="button button-small button-outline" data-testid="followup-unsnooze" onClick={() => api("/api/admin/follow-up/inmobiliarias", { method: "POST", body: JSON.stringify({ accion: "volver", inmobiliaria: q.agencyId }) }).then(() => void refresh())}>
                               Volver a la cola
@@ -846,7 +875,7 @@ function ExecPanel({
   const many = (prepared?.messages.length ?? 0) > 1;
   const closed = sent || status === "failed";
   return (
-    <div className="fu-qpanel is-exec" data-testid="followup-detail" data-agency={item.agencyId} data-status={status}>
+    <div className="fu-qpanel is-exec" data-testid="followup-detail" data-agency={item.agencyId} data-status={status} style={{ maxHeight: "calc(100vh - 155px)", overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
       <div className="fu-qpanelhead">
         <Target size={17} aria-hidden="true" />
         <b>{sent ? "Enviado" : "Ejecutando"}</b>
@@ -858,114 +887,68 @@ function ExecPanel({
         </button>
       </div>
       <PanelIdent q={item} />
-      <RuleBox q={item} rules={rules} />
-      <div className="fu-qline">
-        <span className="fu-lbl">Situación</span>
+      <div className="fu-qline" style={{ margin: "6px 0" }}>
+        <span className="fu-lbl">Estado</span>
         <SituationCell item={item} />
       </div>
-      <div className="fu-qtwo">
-        <div className="fu-qbox">
-          <b>Contexto</b>
-          <span>
-            Web:{" "}
-            {item.website ? (
-              <a href={href(item.website)} target="_blank" rel="noreferrer">
-                {host(item.website)}
-              </a>
-            ) : (
-              "sin web"
-            )}{" "}
-            · {item.properties} propiedades
-          </span>
-          <span>{item.hasDemo ? "Con demo publicada" : "Sin demo publicada"} · {item.hasAccount ? "con cuenta" : "sin cuenta"}</span>
+      <div className="fu-qbox" data-testid="followup-execution-focus" style={{ padding: 14, margin: "8px 0", border: "1px solid #a9cab7", borderRadius: 10 }}>
+        <b>{task ? `Tarea · ${prepared?.actionLabel ?? item.actionLabel ?? "Pendiente"}` : `Mensaje a enviar · ${prepared?.actionLabel ?? item.actionLabel ?? "Pendiente"}${prepared ? ` · V${prepared.version}` : ""}`}</b>
+        {!prepared ? (
+          <span>{error || (sent ? "Confirmada." : "Cargando acción…")}</span>
+        ) : task ? (
+          <p className="fu-note">Acción interna. {creatingDemo ? "Creá y publicá la demo desde la ficha; no se envía un WhatsApp." : "Revisá las instrucciones y ejecutá la tarea."}</p>
+        ) : (
+          prepared.messages.map((m, i) => (
+            <div key={i} className="fu-qmsgrow" style={{ marginTop: 7 }}>
+              <div className="fu-qmsg" data-testid="followup-message" data-index={i}>{m}</div>
+              <button type="button" className="fu-iconbtn" aria-label={`Copiar mensaje ${i + 1}`} data-testid="followup-copy-part" onClick={() => copyText(m, `Mensaje ${i + 1}`)}>
+                <ClipboardCopy size={16} aria-hidden="true" />
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+      <details data-testid="followup-execution-checks" className="fu-qbox" style={{ margin: "6px 0", padding: 10 }}>
+        <summary style={{ cursor: "pointer", fontWeight: 600 }}>
+          Validaciones · {prepared ? `${prepared.checklist.filter((x) => x.ok).length} correctas · ${prepared.checklist.filter((x) => !x.ok).length} pendientes` : "Cargando"}
+        </summary>
+        {prepared && prepared.checklist.some((x) => !x.ok) && <p className="fu-note" style={{ color: "#9c631b" }}>Revisá los puntos pendientes antes de confirmar el envío.</p>}
+        <ul className="fu-qchecks" data-testid="followup-checklist">
+          {(prepared?.checklist ?? []).map((check) => (
+            <li key={check.key} className={check.ok ? "is-ok" : "is-pending"} data-check={check.key} data-ok={check.ok}>
+              <span className="fu-tick" aria-hidden="true">{check.ok ? "✓" : ""}</span>
+              <span>{check.label}{check.note && <small>{check.note}</small>}</span>
+            </li>
+          ))}
+        </ul>
+      </details>
+      <details data-testid="followup-execution-notes" className="fu-qbox" style={{ margin: "6px 0", padding: 10 }}>
+        <summary style={{ cursor: "pointer", fontWeight: 600 }}>Instrucciones para la extensión · {prepared?.notes ? "Leer" : "Sin observaciones"}</summary>
+        <p className="fu-obs" data-testid="followup-notes" style={{ whiteSpace: "pre-wrap" }}>{prepared?.notes || "Esta acción no tiene observaciones adicionales."}</p>
+      </details>
+      <details data-testid="followup-execution-context" className="fu-qbox" style={{ margin: "6px 0", padding: 10 }}>
+        <summary style={{ cursor: "pointer", fontWeight: 600 }}>Contexto de la inmobiliaria</summary>
+        <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
+          <span>Web: {item.website ? <a href={href(item.website)} target="_blank" rel="noreferrer">{host(item.website)}</a> : "sin web"} · {item.properties} propiedades</span>
+          <span>{item.hasDemo ? "Con demo publicada" : "Sin demo publicada"} · {item.hasAccount ? "Con cuenta" : "Sin cuenta"}</span>
           {item.address && <span>{item.address}</span>}
-          <span>
-            En el mensaje: «{ctx?.shortName ?? item.shortName}»{" "}
-            <button type="button" className="fu-link" data-testid="followup-short-name" onClick={rename}>
-              cambiar
-            </button>
-          </span>
-          {item.situationNote && <span>Su respuesta: «{item.situationNote}»</span>}
+          <span>En el mensaje: «{ctx?.shortName ?? item.shortName}» <button type="button" className="fu-link" data-testid="followup-short-name" onClick={rename}>cambiar</button></span>
+          {item.situationNote && <span>Respuesta: «{item.situationNote}»</span>}
         </div>
-        <div className="fu-qbox">
-          <b>Últimas acciones</b>
-          {!prepared ? (
-            <span>{error ? "—" : "Cargando…"}</span>
-          ) : prepared.history.length === 0 ? (
-            <span>Sin acciones todavía.</span>
-          ) : (
-            <ol className="fu-timeline" data-testid="followup-history">
-              {prepared.history.slice(0, 5).map((h, i) => (
-                <li key={i} className={`is-${h.kind}`}>
-                  <span>{when(h.at)}</span>
-                  {h.text}
-                </li>
-              ))}
-            </ol>
-          )}
-        </div>
-      </div>
-      <p className="fu-qflow" data-testid="followup-after-confirm">
-        <ArrowRight size={14} aria-hidden="true" /> {afterConfirm(item, rules)}
-      </p>
-      <div className="fu-qtwo is-msg">
-        <div className="fu-qbox">
-          <b>Antes de enviar</b>
-          {prepared ? (
-            <ul className="fu-qchecks" data-testid="followup-checklist">
-              {prepared.checklist.map((c) => (
-                <li key={c.key} className={c.ok ? "is-ok" : "is-pending"} data-check={c.key} data-ok={c.ok}>
-                  <span className="fu-tick" aria-hidden="true">
-                    {c.ok ? "✓" : ""}
-                  </span>
-                  <span>
-                    {c.label}
-                    {c.note && <small>{c.note}</small>}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <span>—</span>
-          )}
-        </div>
-        <div className="fu-qbox">
-          {!prepared ? (
-            error ? (
-              <p className="fu-error" role="alert" data-testid="followup-error">
-                {error}
-              </p>
-            ) : sent ? (
-              <span>Confirmado.</span>
-            ) : (
-              <span>Tomando la inmobiliaria y armando el mensaje…</span>
-            )
-          ) : (
-            <>
-              <b>
-                Mensaje a enviar ({prepared.actionLabel} · V{prepared.version}
-                {many ? ` · ${prepared.messages.length} mensajes` : ""})
-              </b>
-              {prepared.messages.map((m, i) => (
-                <div key={i} className="fu-qmsgrow">
-                  <div className="fu-qmsg" data-testid="followup-message" data-index={i}>
-                    {m}
-                  </div>
-                  <button type="button" className="fu-iconbtn" aria-label={`Copiar mensaje ${i + 1}`} data-testid="followup-copy-part" onClick={() => copyText(m, `Mensaje ${i + 1}`)}>
-                    <ClipboardCopy size={15} aria-hidden="true" />
-                  </button>
-                </div>
-              ))}
-              {prepared.notes && (
-                <div className="fu-obs" data-testid="followup-notes">
-                  <b>Observaciones</b>
-                  {prepared.notes}
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      </div>
+      </details>
+      <details data-testid="followup-execution-history" className="fu-qbox" style={{ margin: "6px 0", padding: 10 }}>
+        <summary style={{ cursor: "pointer", fontWeight: 600 }}>Historial y últimas acciones · {prepared?.history.length ?? 0}</summary>
+        {prepared?.history.length ? (
+          <ol className="fu-timeline" data-testid="followup-history">
+            {prepared.history.slice(0, 8).map((h, i) => <li key={i} className={`is-${h.kind}`}><span>{when(h.at)}</span> {h.text}</li>)}
+          </ol>
+        ) : <span>Sin acciones registradas.</span>}
+      </details>
+      <details data-testid="followup-execution-rule" className="fu-qbox" style={{ margin: "6px 0", padding: 10 }}>
+        <summary style={{ cursor: "pointer", fontWeight: 600 }}>Regla: {ruleOf(rules, item) ? ruleTitle(item.stage, ruleOf(rules, item)!) : (item.actionLabel ?? "—")} · Ver detalles</summary>
+        <RuleBox q={item} rules={rules} />
+        <p className="fu-qflow" data-testid="followup-after-confirm"><ArrowRight size={14} aria-hidden="true" /> {afterConfirm(item, rules)}</p>
+      </details>
       {notice && (
         <p className="fu-note" role="status">
           {notice}
@@ -976,7 +959,7 @@ function ExecPanel({
           {error}
         </p>
       )}
-      <div className="fu-qbtns">
+      <div className="fu-qbtns" style={{ position: "sticky", bottom: 0, zIndex: 4, background: "#fff", borderTop: "1px solid #d8e3dc", boxShadow: "0 -5px 15px #0000000e", padding: "12px 8px", marginTop: 8 }}>
         {prepared && !task && (
           <>
             {prepared.whatsappUrl ? (
@@ -2956,6 +2939,79 @@ function SituationCell({ item: q }: { item: QueueItem }) {
       </select>
       {error ? <small className="fu-error">{error}</small> : q.situationManual ? <small title={q.situationNote ?? undefined}>Marcada a mano</small> : null}
     </span>
+  );
+}
+
+
+/** Abre únicamente el chat para revisar la conversación, sin texto precargado ni registro de envío. */
+function WhatsAppShortcut({ item: q }: { item: QueueItem }) {
+  if (!q.wa) return null;
+  return (
+    <a href={`https://web.whatsapp.com/send?phone=${encodeURIComponent(q.wa)}`} target="habita-wa-review" rel="noopener noreferrer"
+      data-testid="followup-whatsapp-review" title={`Revisar conversación de WhatsApp con ${q.name}`}
+      aria-label={`Abrir WhatsApp de ${q.name} (solo revisar)`}
+      style={{ display: "inline-flex", color: "#128C7E", verticalAlign: "middle", alignItems: "center", justifyContent: "center", width: 24, height: 24 }}>
+      <svg viewBox="0 0 24 24" fill="currentColor" width="19" height="19" aria-hidden="true">
+        <path d="M12.04 2a9.91 9.91 0 0 0-8.5 15.04L2 22l5.11-1.52A9.97 9.97 0 1 0 12.04 2Zm0 18.14a8.07 8.07 0 0 1-4.1-1.12l-.3-.17-3.03.9.91-2.95-.2-.31a8.06 8.06 0 1 1 6.72 3.65Zm4.43-6.03c-.24-.12-1.42-.7-1.64-.78-.22-.08-.38-.12-.54.12s-.62.78-.76.94c-.14.16-.28.18-.52.06-.24-.12-1.02-.38-1.94-1.2-.72-.64-1.21-1.43-1.35-1.67-.14-.24-.01-.37.1-.49.11-.11.24-.28.36-.42.12-.14.16-.24.24-.4.08-.16.04-.3-.02-.42-.06-.12-.54-1.3-.74-1.78-.2-.47-.4-.41-.54-.42h-.46c-.16 0-.42.06-.64.3-.22.24-.84.82-.84 2s.86 2.32.98 2.48c.12.16 1.7 2.6 4.12 3.64.58.25 1.03.4 1.38.51.58.18 1.1.15 1.52.09.46-.07 1.42-.58 1.62-1.14.2-.56.2-1.04.14-1.14-.06-.1-.22-.16-.46-.28Z"/>
+      </svg>
+    </a>
+  );
+}
+
+/** Corrección manual explícita; no envía mensajes ni confirma tareas. */
+function QueueCorrection({ item: q, onSaved }: { item: QueueItem; onSaved: () => void }) {
+  const [stage, setStage] = useState<StageKey>(q.stage);
+  const [situation, setSituation] = useState<Situation>(q.situation);
+  const [note, setNote] = useState(q.situationNote ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  async function save() {
+    if (stage === q.stage && situation === q.situation && note === (q.situationNote ?? "")) return;
+    if (stage !== q.stage && !window.confirm("¿Corregir la etapa comercial? Esto cambia las acciones pendientes, no crea eventos de producto ni envía WhatsApps.")) return;
+    setBusy(true);
+    setError("");
+    try {
+      if (stage !== q.stage) await api("/api/admin/follow-up/inmobiliarias", { method: "POST", body: JSON.stringify({ accion: "estado", inmobiliaria: q.agencyId, etapa: stage }) });
+      if (situation !== q.situation || note !== (q.situationNote ?? "")) {
+        const r = await api<{ warning: string | null }>("/api/admin/follow-up/inmobiliarias", {
+          method: "POST", body: JSON.stringify({ accion: "situacion", inmobiliaria: q.agencyId, situacion: situation, texto: note }),
+        });
+        if (r.warning) setError(r.warning);
+      }
+      onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo guardar la corrección. Revisá la fila antes de reintentar.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <details data-testid="followup-quick-correct" style={{ position: "relative", display: "inline-block" }}>
+      <summary style={{ fontSize: "11px", cursor: "pointer", display: "inline-flex", gap: 4, alignItems: "center", color: "#28664e" }}><Pencil size={11} /> Editar etapa / estado</summary>
+      <div style={{ position: "absolute", zIndex: 25, minWidth: 280, width: 320, background: "#fff", color: "#243d32", border: "1px solid #b9cdc2", borderRadius: 10, padding: 12, boxShadow: "0 8px 25px #0002", display: "grid", gap: 8 }}>
+        <b style={{ fontSize: 13 }}>Corregir {q.name}</b>
+        <label style={{ display: "grid", gap: 4, fontSize: 12 }}>Etapa comercial / avance
+          <select data-testid="followup-quick-stage" value={stage} onChange={(e) => setStage(e.target.value as StageKey)} disabled={busy}>
+            {COMMERCIAL_STAGES.filter((s) => s.technical.length).map((s) => (
+              <optgroup key={s.key} label={s.title}>
+                {s.technical.map((key) => <option key={key} value={key}>{technicalStateLabel(key)}</option>)}
+              </optgroup>
+            ))}
+          </select>
+        </label>
+        <label style={{ display: "grid", gap: 4, fontSize: 12 }}>Estado de conversación
+          <select data-testid="followup-quick-situation" value={situation} onChange={(e) => setSituation(e.target.value as Situation)} disabled={busy}>
+            {(Object.entries(SITUATIONS) as [Situation, string][]).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+          </select>
+        </label>
+        <label style={{ display: "grid", gap: 4, fontSize: 12 }}>Motivo / evidencia (opcional)
+          <textarea value={note} maxLength={2000} rows={2} onChange={(e) => setNote(e.target.value)} disabled={busy} placeholder="Qué respondió o por qué corregís el estado" />
+        </label>
+        <small>No interesado cierra los seguimientos; «No contactar» impide nuevos envíos.</small>
+        {error && <span className="fu-error" role="alert">{error}</span>}
+        <button className="button button-small button-primary" type="button" disabled={busy} data-testid="followup-quick-save" onClick={() => void save()}>{busy ? "Guardando…" : "Guardar corrección"}</button>
+      </div>
+    </details>
   );
 }
 

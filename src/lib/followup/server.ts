@@ -48,6 +48,7 @@ import {
   SITUATIONS,
   actionLabel,
   byPriority,
+  byQueueOrder,
   currentSituation,
   derivedSituation,
   groupOf,
@@ -295,6 +296,8 @@ export type QueueItem = {
   window: { hours_from: number; hours_to: number; days: number[] } | null;
   /** Demo prometida: cuándo mostró interés (va primera; a los 30 minutos está atrasada). */
   promisedAt: string | null;
+  /** Last recorded inbound reply/interest, not our last outbound. */
+  lastReplyAt: string | null;
   /** Por qué no hay acción (secuencia terminada, rechazo…). */
   actionReason: string | null;
   /** Horas de espera de su paso de la secuencia desde nuestro último mensaje. */
@@ -419,8 +422,24 @@ async function board(now = new Date()) {
   };
 
   const items = new Map<string, QueueItem>();
+  // Terminal losses are deliberately NOT in the executable queue or funnel.
+  // Show them only in Contactado > No interesados, for audit and manual correction.
+  const closedItems: QueueItem[] = [];
   for (const { r, account, own, at } of base) {
-    if (!at.stage) continue;
+    if (!at.stage) {
+      const lost = !r.test && !account?.suppressed && (r.prospectFunnel?.lost || account?.stage === "lost" || account?.stage === "discarded");
+      if (lost) {
+        const viewAt = { ...at, stage: "no-responde" as const, step: 0 };
+        const closed = item(r, account, own, info, viewAt, vs, exOf.get(r.id) ?? [], sendsOf.get(r.id) ?? [], rules);
+        if (closed.situation !== "proveedor_ia") closed.situation = "rechazo";
+        closed.action = null;
+        closed.actionLabel = null;
+        closed.ruleKey = null;
+        closed.versionId = null;
+        closedItems.push(closed);
+      }
+      continue;
+    }
     const it = item(r, account, own, info, at, vs, exOf.get(r.id) ?? [], sendsOf.get(r.id) ?? [], rules);
     // A promised demo (interested, the demo still to make or to send) goes first; past 30 minutes it is late.
     const interest = lastInterest.get(r.id);
@@ -428,6 +447,7 @@ async function board(now = new Date()) {
       it.promisedAt = new Date(interest).toISOString();
       it.priority = own?.priority ?? "alta";
     }
+    it.lastReplyAt = lastReply.get(r.id) ? new Date(lastReply.get(r.id)!).toISOString() : null;
     const claim = held.get(r.id);
     it.claim = claim ? { actorId: claim.actor_id, by: claim.actor_name || "otra sesión", until: claim.locked_until } : null;
     const version = vs.find((v) => v.id === it.versionId);
@@ -504,7 +524,7 @@ async function board(now = new Date()) {
     step: stepNow.get(id) ?? -1,
     greetingVersion: greeting.get(id) ?? null,
   }));
-  return { items, vs, ex, stepNow, newToday: fresh.size, open, names: new Map(rows.map((r) => [r.id, r.name])), rules, facts };
+  return { items, closedItems, vs, ex, stepNow, newToday: fresh.size, open, names: new Map(rows.map((r) => [r.id, r.name])), rules, facts };
 }
 
 /** Why it cannot be executed now (in order of what to fix first), or null. */
@@ -610,6 +630,7 @@ function item(
     ruleKey: next.rule?.key ?? null,
     window: window ? { hours_from: window.hours_from, hours_to: window.hours_to, days: window.days } : null,
     promisedAt: null,
+    lastReplyAt: null,
     actionReason: next.reason,
     dueAt: null,
     priority: own?.priority ?? defaultPriority(groupOf(stage, action)),
@@ -658,7 +679,7 @@ function resultsOf(b: Awaited<ReturnType<typeof board>>, all: QueueItem[]) {
     blocks: blockReasons(all.filter((q) => q.action && q.execution?.status !== "sent" && q.blocked).map((q) => q.blocked!)),
   };
 }
-export async function followupOverview(): Promise<{ stages: StageView[]; queue: QueueItem[]; blocked: QueueItem[]; summary: QueueSummary; inbox: InboxItem[]; funnel: FunnelStep[]; rules: Rule[]; changes: Change[]; results: Results; generatedAt: string }> {
+export async function followupOverview(): Promise<{ stages: StageView[]; queue: QueueItem[]; blocked: QueueItem[]; noInteresados: QueueItem[]; summary: QueueSummary; inbox: InboxItem[]; funnel: FunnelStep[]; rules: Rule[]; changes: Change[]; results: Results; generatedAt: string }> {
   const [b, changes] = await Promise.all([board(), auditOf(null, 20)]);
   const all = [...b.items.values()];
   const inboxItems = inboxOf(b);
@@ -676,6 +697,7 @@ export async function followupOverview(): Promise<{ stages: StageView[]; queue: 
     }),
     queue: executable(all),
     blocked: all.filter((q) => pending(q) && q.blocked).sort(byPriority),
+    noInteresados: [...b.closedItems, ...all.filter((q) => q.stage === "no-responde" && (q.situation === "rechazo" || q.situation === "proveedor_ia"))].sort(byPriority),
     summary: summarize(all, b.newToday, inboxItems.length),
     inbox: inboxItems,
     funnel: funnelOf(b, all),
@@ -693,6 +715,7 @@ export async function followupQueueView() {
   return {
     queue: executable(all),
     blocked: all.filter((q) => pending(q) && q.blocked).sort(byPriority),
+    noInteresados: [...b.closedItems, ...all.filter((q) => q.stage === "no-responde" && (q.situation === "rechazo" || q.situation === "proveedor_ia"))].sort(byPriority),
     summary: summarize(all, b.newToday, inboxOf(b).length),
     rules: [...b.rules].sort((x, y) => x.position - y.position),
     generatedAt: new Date().toISOString(),
@@ -712,7 +735,7 @@ function funnelOf(b: Awaited<ReturnType<typeof board>>, all: QueueItem[]): Funne
 
 const pending = (q: QueueItem) => q.action !== null && q.execution?.status !== "sent";
 /** The ones that can be executed now, in priority order (taken ones included: the page shows who has them). */
-const executable = (all: QueueItem[]) => all.filter((q) => pending(q) && !q.blocked).sort(byPriority);
+const executable = (all: QueueItem[]) => all.filter((q) => pending(q) && !q.blocked).sort((a, b) => byQueueOrder(a, b));
 function summarize(all: QueueItem[], newToday: number, inboxCount = 0): QueueSummary {
   const today = artDate(new Date());
   const live = new Date().toISOString();

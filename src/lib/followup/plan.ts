@@ -14,7 +14,7 @@ export const SITUATIONS = {
   pregunta_precios: "Pregunta precios",
   mas_adelante: "Pide más adelante",
   derivo: "Derivó",
-  rechazo: "Rechazo",
+  rechazo: "No interesado",
   proveedor_ia: "No interesado (con proveedor)",
   no_contactar: "No contactar",
   sin_whatsapp: "Sin WhatsApp",
@@ -33,7 +33,7 @@ export const REPLY_CLASSES = {
   pregunta_precios: "Pregunta precios",
   mas_adelante: "Pide más adelante",
   derivo: "Derivó a otra persona",
-  rechazo: "Rechazo",
+  rechazo: "No interesado",
   proveedor_ia: "No interesado (con proveedor)",
   no_contactar: "No contactar",
   audio: "Audio",
@@ -192,6 +192,43 @@ export function byPriority<T extends { group: Group; score: number | null; since
   }
   const p = (x: T) => PRIORITY_ORDER.indexOf(x.priority ?? defaultPriority(x.group));
   return p(a) - p(b) || GROUP_ORDER.indexOf(a.group) - GROUP_ORDER.indexOf(b.group) || (b.score ?? -1) - (a.score ?? -1) || a.since.localeCompare(b.since);
+}
+
+
+/**
+ * Orden alternativo de la cola. El comercial no premia eternamente una promesa
+ * antigua: respuestas frescas y demos listas ganan a oportunidades estancadas.
+ * P0–P5 son segmentos operativos, no probabilidades calculadas ni scores predictivos.
+ */
+export const QUEUE_ORDERS = { comercial: "Prioridad comercial recomendada", antiguedad: "Mayor tiempo esperando", score: "Mayor score comercial", anterior: "Prioridad anterior" } as const;
+export type QueueOrder = keyof typeof QUEUE_ORDERS;
+export const isQueueOrder = (x: unknown): x is QueueOrder => typeof x === "string" && x in QUEUE_ORDERS;
+type CommercialQueueItem = { stage: StageKey; situation: Situation; group: Group; score: number | null; since: string; priority?: Priority;
+  promisedAt?: string | null; lastReplyAt?: string | null; priorityManual?: boolean; action?: Action | null };
+const recent = (at: string | null | undefined, now: number, hours: number) =>
+  Boolean(at && Number.isFinite(Date.parse(at)) && Date.parse(at) <= now && now - Date.parse(at) <= hours * 3_600_000);
+export function commercialTier(q: CommercialQueueItem, now = Date.now()): { tier: number; reason: string } {
+  if (recent(q.lastReplyAt, now, 2) && ["interesado", "pregunta_precios", "confirmo_numero"].includes(q.situation))
+    return { tier: 0, reason: "Respuesta comercial reciente (menos de 2 h)" };
+  if (q.stage === "sin-enviar") return { tier: 1, reason: "Demo creada: falta enviarla" };
+  if (q.stage === "sin-demo" && recent(q.promisedAt, now, 24))
+    return { tier: 2, reason: "Interés reciente: falta crear la demo" };
+  if (["sin-interaccion", "sin-cuenta", "sin-uso", "sin-suscripcion"].includes(q.stage))
+    return { tier: 3, reason: "Actividad de producto: oportunidad de activación" };
+  if (q.stage === "no-abrio") return { tier: 3, reason: "Demo enviada, pendiente de visita" };
+  if (q.stage === "no-contactado") return { tier: 5, reason: "Primer contacto: adquisición" };
+  if (q.stage === "sin-demo") return { tier: 4, reason: "Interés antiguo: recuperación, no urgencia perpetua" };
+  return { tier: 4, reason: "Seguimiento según su regla vigente" };
+}
+export function byQueueOrder<T extends CommercialQueueItem>(a: T, b: T, order: QueueOrder = "comercial", now = Date.now()): number {
+  if (order === "anterior") return byPriority(a, b);
+  if (order === "antiguedad") return a.since.localeCompare(b.since) || byPriority(a, b);
+  if (order === "score") return (b.score ?? -1) - (a.score ?? -1) || byPriority(a, b);
+  const ta = commercialTier(a, now).tier, tb = commercialTier(b, now).tier;
+  return ta - tb
+    || PRIORITY_ORDER.indexOf(a.priority ?? defaultPriority(a.group)) - PRIORITY_ORDER.indexOf(b.priority ?? defaultPriority(b.group))
+    || (b.score ?? -1) - (a.score ?? -1)
+    || a.since.localeCompare(b.since);
 }
 
 // ---------------------------------------------------------------- horario

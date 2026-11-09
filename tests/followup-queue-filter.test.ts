@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { NO_FILTER, OTHER_RULES, cleanFilter, isEmptyFilter, matchesFilter, pickNext, stageRules, type Filterable } from "@/lib/followup/queue-filter";
-import { groupOf, nextAction, type Action, type Situation } from "@/lib/followup/plan";
+import { CLOSED_SITUATIONS, SITUATIONS, byQueueOrder, commercialTier, groupOf, nextAction, type Action, type Situation } from "@/lib/followup/plan";
 import { DEFAULT_RULES, type Rule } from "@/lib/followup/rules";
 import { COMMERCIAL_STAGES, FOLLOWUP_STAGES, commercialOf, technicalOf, type StageKey } from "@/lib/followup/stages";
 
@@ -181,5 +181,49 @@ describe("Filtro de generación confirmada", () => {
     const list = [normal, generated, panel];
     expect(list.filter((q) => matchesFilter(q, { ...NO_FILTER, commercial: "demo-enviada", demoImage: "generated" }, DEFAULT_RULES)).map((q) => q.name)).toEqual(["Generó"]);
     expect(list.filter((q) => matchesFilter(q, { ...NO_FILTER, commercial: "demo-enviada", demoImage: "interacted" }, DEFAULT_RULES)).map((q) => q.name)).toEqual(["Normal"]);
+  });
+});
+
+describe("Priorización comercial y No interesado", () => {
+  const now = Date.parse("2026-11-09T18:00:00Z");
+  const q = (stage: StageKey, situation: Situation, overrides: Record<string, unknown> = {}) => ({
+    stage, situation, group: groupOf(stage, "principal"), score: 50, since: "2026-11-03T18:00:00Z",
+    promisedAt: null as string | null, lastReplyAt: null as string | null, priority: "alta" as const,
+    ...overrides,
+  });
+  it("una respuesta reciente gana a promesas antiguas de demo", () => {
+    const fresh = q("no-responde", "pregunta_precios", { lastReplyAt: "2026-11-09T17:45:00Z" });
+    const stale = q("sin-demo", "interesado", { promisedAt: "2026-10-24T18:00:00Z" });
+    const readyDemo = q("sin-enviar", "interesado");
+    expect(commercialTier(fresh, now).tier).toBe(0);
+    expect(commercialTier(readyDemo, now).tier).toBe(1);
+    expect(commercialTier(stale, now).tier).toBe(4);
+    expect([stale, readyDemo, fresh].sort((a, b) => byQueueOrder(a, b, "comercial", now))).toEqual([fresh, readyDemo, stale]);
+  });
+  it("elige score o antigüedad cuando el usuario cambia el modo", () => {
+    const a = q("sin-demo", "interesado", { score: 90, since: "2026-11-08T18:00:00Z" });
+    const b = q("sin-demo", "interesado", { score: 30, since: "2026-11-01T18:00:00Z" });
+    expect(byQueueOrder(a, b, "score", now)).toBeLessThan(0);
+    expect(byQueueOrder(a, b, "antiguedad", now)).toBeGreaterThan(0);
+    expect(cleanFilter({ orden: "comercial" })).toEqual({ ...NO_FILTER, order: "comercial" });
+    expect(cleanFilter({ orden: "incorrecto" })).toEqual(NO_FILTER);
+  });
+  it("tomar próxima respeta el mismo orden comercial, sin mensajes enviados", async () => {
+    const queue = [
+      { ...agency("Antigua", "sin-demo", "interesado"), agencyId: "antigua", claim: null, score: 90, since: "2026-10-24T18:00:00Z", promisedAt: "2026-10-24T18:00:00Z" },
+      { ...agency("Nueva", "no-responde", "pregunta_precios"), agencyId: "nueva", claim: null, score: 10, since: "2026-11-09T17:45:00Z", lastReplyAt: "2026-11-09T17:45:00Z" },
+    ];
+    const locks: string[] = [];
+    const chosen = await pickNext(queue, { filter: { ...NO_FILTER, order: "comercial" }, rules: DEFAULT_RULES, actorId: "operador", now: "2026-11-09T18:00:00Z" }, async (it) => { locks.push(it.agencyId); return true; });
+    expect(chosen?.agencyId).toBe("nueva");
+    expect(locks).toEqual(["nueva"]);
+  });
+  it("No interesado y No contactar son distintos, ambos frenan mensajes", () => {
+    expect(SITUATIONS.rechazo).toBe("No interesado");
+    expect(SITUATIONS.no_contactar).toBe("No contactar");
+    expect(CLOSED_SITUATIONS).toContain("rechazo");
+    expect(CLOSED_SITUATIONS).toContain("no_contactar");
+    expect(nextAction("no-responde", "rechazo").action).toBeNull();
+    expect(nextAction("no-responde", "no_contactar").action).toBeNull();
   });
 });
