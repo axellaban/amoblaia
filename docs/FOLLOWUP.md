@@ -245,3 +245,16 @@ El panel comercial de Chapa Labs (`/prospecting`, «Hoy» con Avita y Turnia jun
 - `GET ?vista=followup` → `{ summary, queue, blocked, scheduled, inbox, funnel, stages, rules, results, changes }`.
 - `POST { by, followup: { op, ... } }` con `op` = `queue`, `claim`, `open`, `confirm`, `fail`, `release`, `situation`, `reply`, `replies`, `snooze`, `priority`, `version-create`, `version-update`, `version-status` o `rule-save`.
 - **Quién opera**: `by` es el nombre de quien opera en Chapa. Se usa el usuario del equipo (ADMIN_EMAILS) cuyo nombre coincide (el mismo que da `{{sdr}}`), así el claim, la ejecución y la auditoría quedan a su nombre. Si nadie coincide, queda a nombre del usuario por defecto de la API (`PROSPECTING_ACTOR_ID`) con el nombre que mandó Chapa, y un claim de otra persona con ese mismo usuario igual frena la operación (409).
+
+## Interfaz «Mensajes y reglas» (rediseño)
+
+Solo cambia la pestaña, no el motor de ejecución: las reglas y las versiones se leen y se guardan con los mismos endpoints (`/api/admin/follow-up/reglas` y `/versiones`), y la cola, los envíos y la extensión no cambian.
+
+- Arriba, las nueve etapas en fila. Al elegir una, sus pestañas: **Reglas (N)** (inicial), **Mensajes de la etapa** y **Resumen**.
+- En **Reglas**, la lista de la etapa a la izquierda (en orden de `position`; gana la primera que cumple) y el editor de la regla elegida a la derecha, en tres partes: cuándo se ejecuta, qué se ejecuta (acción y versión) y el mensaje con su vista previa de WhatsApp. «Guardar cambios» guarda la regla; cada versión se guarda con sus propios botones, porque la API crea versiones una a una y no hay transacción común.
+- Cambiar de etapa, pestaña o regla con cambios sin guardar pide confirmación.
+- Una regla cuya acción no se ejecuta en su etapa se muestra como «No disponible aquí» y no se puede crear una nueva así: el selector solo ofrece las acciones de `actionsOf(etapa)`.
+
+### Corrección funcional pendiente
+
+`DEFAULT_RULES` (y la migración `202612050001`) siembran **Presentación**, **Presentación sin respuesta** y **Precios** también en «No contactado», pero `ACTIONS_OF` las habilita solo en «Contactado, no responde». Resultado: esas tres reglas de «No contactado» nunca tienen mensaje editable, y cuando se disparan la cola las bloquea con «Falta el texto». El rediseño las muestra como «Acción no disponible para esta etapa» y no las borra ni las mueve (son reglas de producción). Corrección pendiente, a decidir: borrarlas de «No contactado» (la secuencia de presentación es de «Contactado, no responde») o habilitar esas acciones también en «No contactado». No se crean mensajes ficticios para resolverlo.
