@@ -679,7 +679,7 @@ function resultsOf(b: Awaited<ReturnType<typeof board>>, all: QueueItem[]) {
     blocks: blockReasons(all.filter((q) => q.action && q.execution?.status !== "sent" && q.blocked).map((q) => q.blocked!)),
   };
 }
-export async function followupOverview(): Promise<{ stages: StageView[]; queue: QueueItem[]; blocked: QueueItem[]; summary: QueueSummary; inbox: InboxItem[]; funnel: FunnelStep[]; rules: Rule[]; changes: Change[]; results: Results; generatedAt: string }> {
+export async function followupOverview(): Promise<{ stages: StageView[]; queue: QueueItem[]; blocked: QueueItem[]; noInteresados: QueueItem[]; summary: QueueSummary; inbox: InboxItem[]; funnel: FunnelStep[]; rules: Rule[]; changes: Change[]; results: Results; generatedAt: string }> {
   const [b, changes] = await Promise.all([board(), auditOf(null, 20)]);
   const all = [...b.items.values()];
   const inboxItems = inboxOf(b);
