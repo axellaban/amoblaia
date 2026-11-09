@@ -303,3 +303,11 @@ Los estados personalizados actúan como alias explícitos de situaciones canóni
 La extensión debe consumir el catálogo autenticado en `GET /api/admin/followup/states`.
 «Generó imagen» se detecta exclusivamente desde `demo_activity.kind='generacion'` con `is_internal=false`, no desde `activity_level>=3` (que también puede indicar creación de cuenta).
 Se preservan horarios, días, prioridad, versiones de mensajes, A/B, observaciones y el histórico de ejecuciones.
+
+## Editor de reglas de dos columnas y tarea «Crear demo»
+En **Estados y reglas** el funnel comercial filtra las reglas; la columna izquierda muestra las reglas de la etapa (incluyendo sus subetapas técnicas), y la derecha contiene el editor. Los estados de avance se eligen **dentro de la regla**. Las respuestas de WhatsApp son condiciones opcionales de la misma regla, no otra columna de estados.
+- «Nueva regla» crea una regla del subestado seleccionado en el editor. Las claves técnicas de acción y etapa siguen siendo las que conoce el motor: no implica crear nuevos tipos arbitrarios de acción.
+- Las reglas que envían WhatsApp mantienen sus días, horarios, esperas, prioridades, versiones A/B, mensajes y observaciones.
+- Para **Interesado → Demo pendiente de crear → Crear demo** (acción técnica `sin-demo:principal`), el editor solo muestra el campo **Observaciones para la extensión**, persistido en `followup_versions.notes`. El canal de esa versión debe ser `task`.
+- En la **Cola de ejecución** la tarea ofrece el botón **Crear demo** hacia `/admin/inmobiliarias/{agencyId}/propiedades/nueva` incluso si una versión heredada no tiene el CTA `create_demo`.
+- **No se puede marcar manualmente «Crear demo» como completada**. Al publicarse una demo real, la inmobiliaria cambia por el propio funnel a «Demo creada, sin enviar». No se envía WhatsApp desde «Crear demo»; ese envío corresponde a la etapa posterior.

@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { byPriority, nextAction } from "@/lib/followup/plan";
+import { actionLabel, byPriority, nextAction } from "@/lib/followup/plan";
 import { DEFAULT_RULES, cleanRule, compatible, outsideWindow, pickRule, type Rule } from "@/lib/followup/rules";
 
 const SITS = ["sin_respuesta", "confirmo_numero", "interesado", "neutro", "pregunta_precios", "mas_adelante", "derivo"];
@@ -113,5 +113,19 @@ describe("Generación real frente a interacción", () => {
   });
   it("preserva la estructura sembrada históricamente", () => {
     expect(DEFAULT_RULES.every((r) => r.min_demo_activity_level === undefined)).toBe(true);
+  });
+});
+
+describe("Acciones de tareas internas en Follow-up", () => {
+  it("presenta los dos pasos de Interesado como acciones distintas", () => {
+    expect(actionLabel("sin-demo", "principal")).toBe("Crear demo");
+    expect(actionLabel("sin-enviar", "principal")).toBe("Enviar demo");
+    expect(actionLabel("no-contactado", "principal")).toBe("Saludo");
+    expect(actionLabel("no-responde", "principal")).toBe("Saludo sin respuesta");
+  });
+  it("conserva la compatibilidad de acciones existentes sin crear una nueva clave técnica", () => {
+    expect(compatible("sin-demo", "principal")).toBe(true);
+    expect(compatible("sin-enviar", "principal")).toBe(true);
+    expect(compatible("no-abrio", "principal")).toBe(true);
   });
 });

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Building2, CalendarDays, CheckCheck, ChevronDown, ChevronRight, ClipboardCopy, Copy, GripVertical, Info, KeyRound, Layers, Link2, MessageCircle, MessageSquare, MoreVertical, Pencil, Phone, Plus, RefreshCw, Send, Tag, Target, Trash2, Undo2, Video, X } from "lucide-react";
 import { api } from "@/components/admin-demos";
-import { CTA_KEYS, CTA_LABEL, COMMERCIAL_STAGES, FOLLOWUP_STAGES, OUT, VARIABLES, commercialOf, technicalOf, technicalStateLabel, fillMessage, missingVariables, pct, type Channel, type Cta, type StageKey, type VersionStatus } from "@/lib/followup/stages";
+import { CTA_KEYS, CTA_LABEL, COMMERCIAL_STAGES, FOLLOWUP_STAGES, OUT, VARIABLES, commercialOf, technicalOf, technicalStateLabel, fillMessage, missingVariables, pct, type Channel, type Cta, type CommercialStageKey, type StageKey, type VersionStatus } from "@/lib/followup/stages";
 import { GROUPS, REPLY_CLASSES, SITUATIONS, actionLabel, actionsOf, compatible, splitMessages, type Action, type ReplyClass, type Situation } from "@/lib/followup/plan";
 import type { Change, FunnelStep, InboxItem, Prepared, QueueItem, QueueSummary, QueueView, Results, StageView } from "@/lib/followup/server";
 import { NO_FILTER, OTHER_RULES, isEmptyFilter, matchesFilter, stageRules, type QueueFilter } from "@/lib/followup/queue-filter";
@@ -842,6 +842,7 @@ function ExecPanel({
 
   const ctx = prepared?.context;
   const task = prepared?.channel === "task";
+  const creatingDemo = task && prepared?.stage === "sin-demo" && prepared?.action === "principal";
   const many = (prepared?.messages.length ?? 0) > 1;
   const closed = sent || status === "failed";
   return (
@@ -994,14 +995,18 @@ function ExecPanel({
         )}
         {prepared && task && (
           <>
-            {prepared.ctas.includes("create_demo") && (
+            {(prepared.ctas.includes("create_demo") || creatingDemo) && (
               <Link className="button button-small button-primary" href={prepared.links.createDemo} target="_blank" onClick={() => void mark("opened")}>
                 <Plus size={16} aria-hidden="true" /> Crear demo
               </Link>
             )}
-            <button type="button" className="button button-small button-outline" data-testid="followup-confirm" disabled={sent || busy} onClick={() => mark("sent")}>
-              {sent ? "Hecha" : "Marcar hecha"}
-            </button>
+            {creatingDemo ? (
+              <p className="fu-note" data-testid="followup-demo-auto-progress">Al publicar la demo se actualizará el estado automáticamente; no hace falta marcar la tarea como hecha.</p>
+            ) : (
+              <button type="button" className="button button-small button-outline" data-testid="followup-confirm" disabled={sent || busy} onClick={() => mark("sent")}>
+                {sent ? "Hecha" : "Marcar hecha"}
+              </button>
+            )}
           </>
         )}
         {prepared && !sent && (
@@ -1372,18 +1377,6 @@ const DISCARD = "Hay cambios sin guardar. ¿Descartarlos?";
 type MsgTab = "mensaje" | "versiones" | "observaciones";
 
 /** Qué espera cada etapa, en una línea (la misma lectura que la tabla de docs/FOLLOWUP.md). */
-const STAGE_TEXT: Record<StageKey, string> = {
-  "no-contactado": "Cuentas de prospección que todavía no recibieron el primer mensaje.",
-  "no-responde": "Seguimiento a quienes confirmaron el número y aún no avanzaron.",
-  "sin-demo": "Interesadas a las que todavía falta crear la demo.",
-  "sin-enviar": "Demo creada que todavía no se envió.",
-  "no-abrio": "Demo enviada que todavía no se abrió.",
-  "sin-interaccion": "Visitaron el panel sin interactuar.",
-  "sin-cuenta": "Interactuaron con la demo y todavía no crearon cuenta.",
-  "sin-uso": "Cuenta creada que todavía no la usa.",
-  "sin-suscripcion": "Cuenta activa que todavía no se suscribió.",
-};
-
 /** Cuándo se ejecuta una regla, en una frase. Misma lectura en la lista, el resumen y el editor. */
 function ruleWhen(stage: StageKey, r: Rule) {
   const after = r.after_action ? ` y ya salió «${actionLabel(stage, r.after_action as Action)}»` : "";
@@ -1421,7 +1414,7 @@ type CatalogState = {
 type CatalogDraft = { key: string; label: string; description: string; examples: string; source: "whatsapp" | "manual"; maps_to: Situation | ""; active: boolean };
 const EMPTY_CATALOG: CatalogDraft = { key: "", label: "", description: "", examples: "", source: "whatsapp", maps_to: "", active: false };
 /** Catalog editor is separate from the message editor: it does not rewrite past events or send messages. */
-function StateCatalogManager({ commercial, onSelect }: { commercial: string; onSelect: (s: Situation) => void }) {
+function StateCatalogManager({ commercial }: { commercial: string }) {
   const [states, setStates] = useState<CatalogState[]>([]);
   const [draft, setDraft] = useState<CatalogDraft>(EMPTY_CATALOG);
   const [editing, setEditing] = useState(false);
@@ -1467,7 +1460,7 @@ function StateCatalogManager({ commercial, onSelect }: { commercial: string; onS
         <button type="button" className="button button-small button-outline" onClick={() => edit()}><Plus size={14} /> Estado</button>
       </div>
       {own.map((s) => (
-        <button key={s.key} type="button" className="fu-qchip is-sm" data-testid="followup-custom-state" onClick={() => { edit(s); if (s.maps_to) onSelect(s.maps_to); }}
+        <button key={s.key} type="button" className="fu-qchip is-sm" data-testid="followup-custom-state" onClick={() => edit(s)}
           style={{ width: "100%", textAlign: "left", marginTop: 6, display: "flex", justifyContent: "space-between" }}>
           <span>{s.label}</span><small>{s.active ? "Activa" : "Inactiva"}</small>
         </button>
@@ -1505,29 +1498,29 @@ function StateCatalogManager({ commercial, onSelect }: { commercial: string; onS
  * Las situaciones siguen siendo el catálogo tipado actual; esta interfaz no finge
  * que es posible agregar nuevas clasificaciones sin migrar el contrato del backend.
  */
+/** Configuración de automatizaciones: dos columnas, reglas y editor.
+ * Las situaciones comerciales se eligen como condiciones dentro de cada regla,
+ * no como una tercera lista de 'estados' que compita con el avance del funnel. */
 function RulesWorkspace({ stages, rules, changes }: { stages: StageView[]; rules: Rule[]; changes: Change[] }) {
-  const [stageKey, setStageKey] = useState<StageKey>(() => stages.find((s) => s.key === "no-responde")?.key ?? stages[0].key);
-  const [situation, setSituation] = useState<Situation>("confirmo_numero");
+  const [commercial, setCommercial] = useState<CommercialStageKey>("contactado");
+  const [stageKey, setStageKey] = useState<StageKey>("no-responde");
   const [selected, setSelected] = useState<string | null>(null);
   const [template, setTemplate] = useState<Rule | null>(null);
   const [dirty, setDirty] = useState<Record<string, boolean>>({});
+  const steps = technicalOf(commercial);
   const stage = stages.find((s) => s.key === stageKey) ?? stages[0];
-  const index = COMMERCIAL_STAGES.findIndex((s) => s.key === commercialOf(stage.key)) + 1;
-  const waiting = (s: StageView) => s.queue.filter((q) => q.execution?.status !== "sent").length;
-  const own = rules.filter((r) => r.stage === stage.key && compatible(stage.key, r.action as Action)).sort((a, b) => a.position - b.position);
-  const currentSituation = stage.key === "no-contactado" && situation !== "sin_respuesta" ? "sin_respuesta" : situation;
-  const shownRules = own.filter((r) => !r.situations.length || r.situations.includes(currentSituation));
-  const allStates = (Object.keys(SITUATIONS) as Situation[]).filter((s) => !["rechazo", "proveedor_ia", "no_contactar", "sin_whatsapp", "numero_incorrecto"].includes(s));
-  const availableStates = stage.key === "no-contactado" ? (["sin_respuesta"] as Situation[]) : allStates;
-  const activeSituation = availableStates.includes(currentSituation) ? currentSituation : availableStates[0];
-  const sample = stage.queue.find((q) => q.wa) ?? stage.queue[0] ?? null;
+  const own = rules.filter((r) => commercialOf(r.stage) === commercial && compatible(r.stage, r.action)).sort((a, b) => a.position - b.position);
   const adding = selected === NEW_RULE;
   const isDirty = Object.values(dirty).some(Boolean);
-  const nextPosition = Math.max(0, ...own.map((r) => r.position)) + 10;
-  const current = adding ? null : shownRules.find((r) => r.key === selected) ?? shownRules.find((r) => r.enabled) ?? shownRules[0] ?? null;
+  const current = adding ? null : own.find((r) => r.key === selected) ?? own[0] ?? null;
+  const effectiveStage = current ? stages.find((s) => s.key === current.stage) ?? stage : stage;
+  const sameStepRules = rules.filter((r) => r.stage === effectiveStage.key);
+  const nextPosition = Math.max(0, ...sameStepRules.map((r) => r.position)) + 10;
+  const sample = effectiveStage.queue.find((q) => q.wa) ?? effectiveStage.queue[0] ?? null;
+  const waiting = (s: StageView) => s.queue.filter((q) => q.execution?.status !== "sent").length;
   const markDirty = (id: string) => (d: boolean) => setDirty((p) => (p[id] === d ? p : { ...p, [id]: d }));
   const seedOf = (t: Rule | null): Draft | undefined => {
-    if (!t || stage.versions.some((v) => (v.action ?? "principal") === t.action)) return undefined;
+    if (!t || effectiveStage.versions.some((v) => (v.action ?? "principal") === t.action)) return undefined;
     const from = stages.find((s) => s.key === t.stage)?.versions.find((v) => (v.action ?? "principal") === t.action && v.status === "active");
     return from ? draftOf(from) : undefined;
   };
@@ -1536,6 +1529,15 @@ function RulesWorkspace({ stages, rules, changes }: { stages: StageView[]; rules
     setDirty({});
     next();
   }
+  function chooseCommercial(key: CommercialStageKey) {
+    if (key === commercial) return;
+    go(() => {
+      setCommercial(key);
+      setStageKey(technicalOf(key)[0] ?? "no-responde");
+      setSelected(null);
+      setTemplate(null);
+    });
+  }
   return (
     <>
       <div className="fu-flowrow">
@@ -1543,101 +1545,66 @@ function RulesWorkspace({ stages, rules, changes }: { stages: StageView[]; rules
         <nav className="fu-flow" aria-label="Etapas comerciales" data-testid="followup-flow">
           {COMMERCIAL_STAGES.map((s, i) => (
             <Fragment key={s.key}>
-              <button type="button" className={`fu-flowstep${commercialOf(stage.key) === s.key ? " is-on" : ""}`}
-                aria-pressed={commercialOf(stage.key) === s.key} data-testid="followup-commercial-stage" data-stage={s.key}
-                onClick={() => {
-                  const target = technicalOf(s.key)[0];
-                  if (target && target !== stage.key) go(() => { setStageKey(target); setSituation(target === "no-contactado" ? "sin_respuesta" : "confirmo_numero"); setSelected(null); setTemplate(null); });
-                }}>
+              <button type="button" className={`fu-flowstep${commercial === s.key ? " is-on" : ""}`}
+                aria-pressed={commercial === s.key} data-testid="followup-commercial-stage" data-stage={s.key}
+                onClick={() => chooseCommercial(s.key)}>
                 <span className="fu-num">{i + 1}</span>
-                <span className="fu-flowtext"><b>{s.title}</b><small>{s.technical.reduce((n, key) => n + waiting(stages.find((x) => x.key === key)!), 0)} esperando</small></span>
+                <span className="fu-flowtext">
+                  <b>{s.title}</b>
+                  <small>{s.technical.reduce((n, key) => n + waiting(stages.find((x) => x.key === key)!), 0)} esperando</small>
+                </span>
               </button>
               {i < COMMERCIAL_STAGES.length - 1 && <ChevronRight className="fu-flowarrow" size={16} aria-hidden="true" />}
             </Fragment>
           ))}
         </nav>
       </div>
-      {technicalOf(commercialOf(stage.key)).length > 1 && (
-        <div className="fu-qbar is-rules" data-testid="followup-rule-technical-stage">
-          <span className="fu-qbarlabel">Estado de avance</span>
-          <div className="fu-qchips">
-            {technicalOf(commercialOf(stage.key)).map((key) => (
-              <button key={key} type="button" className={`fu-qchip is-sm${stage.key === key ? " is-on" : ""}`}
-                aria-pressed={stage.key === key} data-stage={key}
-                onClick={() => { if (key !== stage.key) go(() => { setStageKey(key); setSelected(null); setTemplate(null); }); }}>
-                {technicalStateLabel(key)} <b>{waiting(stages.find((s) => s.key === key)!)}</b>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-      {commercialOf(stage.key) === "demo-enviada" && <p className="fu-note">«Generó imagen» se distinguirá cuando haya un evento específico de generación; no se infiere de una interacción genérica.</p>}
-      <section className="fu-stagehead" data-testid="followup-stage-head" data-stage={stage.key}>
+      <section className="fu-stagehead" data-testid="followup-stage-head" data-stage={commercial}>
         <div>
           <div className="fu-name">
-            <span className="fu-num">{index}</span>
-            <span className="fu-title">{COMMERCIAL_STAGES.find((s) => s.key === commercialOf(stage.key))?.title} · {technicalStateLabel(stage.key)}</span>
-            <span className="fu-badge-on">Etapa activa</span>
+            <span className="fu-num">{COMMERCIAL_STAGES.findIndex((s) => s.key === commercial) + 1}</span>
+            <span className="fu-title">{COMMERCIAL_STAGES.find((s) => s.key === commercial)?.title}</span>
+            <span className="fu-badge-on">Reglas de la etapa</span>
           </div>
-          <p className="fu-note">{STAGE_TEXT[stage.key]}</p>
-          <div className="fu-meta"><span className="fu-waiting">{waiting(stage)} esperando</span> → {stage.goal}</div>
+          <p className="fu-note">Las condiciones de avance, las respuestas de WhatsApp y los eventos de producto se configuran dentro de cada regla.</p>
         </div>
-        <p className="fu-note">Elegí un estado, configurá sus reglas y editá el mensaje sin salir de esta vista.</p>
+        <p className="fu-note">Seleccioná una regla para editarla o creá una nueva. La cola de ejecución muestra a quién corresponde aplicarla.</p>
       </section>
-      <div
-        className="fu-state-workspace"
-        data-testid="followup-states-workspace"
-        style={{ display: "grid", gridTemplateColumns: "minmax(205px, 0.9fr) minmax(255px, 1fr) minmax(680px, 3fr)", gap: 12, alignItems: "start", overflowX: "auto" }}
-      >
-        <section className="fu-detail-card" data-testid="followup-state-list" style={{ padding: 14, minWidth: 0 }}>
-          <h3 style={{ fontSize: 16, margin: "0 0 5px" }}>Estados de la etapa</h3>
-          <p className="fu-note" style={{ marginBottom: 14 }}>Situaciones registradas para cada inmobiliaria.</p>
-          <div style={{ display: "grid", gap: 7 }}>
-            {availableStates.map((s) => {
-              const count = stage.queue.filter((q) => q.situation === s).length;
-              return (
-                <button
-                  key={s}
-                  type="button"
-                  className={`fu-flowstep${s === activeSituation ? " is-on" : ""}`}
-                  data-testid="followup-state"
-                  data-situation={s}
-                  aria-pressed={s === activeSituation}
-                  onClick={() => { if (s !== activeSituation) go(() => { setSituation(s); setSelected(null); setTemplate(null); }); }}
-                  style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", textAlign: "left", padding: "10px 12px", minWidth: 0 }}
-                >
-                  <span>{SITUATIONS[s]}</span>
-                  <small>{count}</small>
-                </button>
-              );
-            })}
-          </div>
-          <StateCatalogManager commercial={commercialOf(stage.key)} onSelect={(s) => go(() => { setSituation(s); setSelected(null); setTemplate(null); })} />
-        </section>
-        <section style={{ minWidth: 0 }} data-testid="followup-state-rules" data-situation={activeSituation}>
-          <p className="fu-lbl" style={{ marginBottom: 7 }}>Reglas de: {SITUATIONS[activeSituation]}</p>
+      <div className="fu-state-workspace" data-testid="followup-rules-workspace"
+        style={{ display: "grid", gridTemplateColumns: "minmax(300px, 0.85fr) minmax(680px, 2fr)", gap: 14, alignItems: "start", overflowX: "auto" }}>
+        <section className="fu-detail-card" style={{ padding: 14, minWidth: 0 }} data-testid="followup-rules-list">
           <RulesEditor
-            stage={stage.key}
-            rules={shownRules}
-            others={importable(stage.key, rules)}
-            stageTitle={(k) => stages.find((s) => s.key === k)?.title ?? k}
+            stage={stageKey}
+            rules={own}
+            others={importable(stageKey, rules)}
+            stageTitle={(key) => stages.find((s) => s.key === key)?.title ?? key}
             selected={current?.key ?? null}
             adding={adding}
             addingName={adding && template ? `${ruleTitle(template.stage, template)} de ${stages.find((s) => s.key === template.stage)?.title ?? template.stage}` : null}
             isDirty={isDirty}
-            onSelect={(k) => go(() => setSelected(k))}
+            onSelect={(key) => go(() => { setSelected(key); setTemplate(null); })}
             onAdd={(t) => go(() => { setTemplate(t); setSelected(NEW_RULE); })}
+            disabled={!steps.length}
           />
+          <details style={{ marginTop: 18 }} data-testid="followup-classifier-settings">
+            <summary className="fu-note" style={{ cursor: "pointer" }}>Administrar clasificaciones de WhatsApp</summary>
+            <StateCatalogManager commercial={commercial} />
+          </details>
         </section>
         <div className="fu-rdetail" data-testid="followup-rule-detail" style={{ minWidth: 680 }}>
-          {adding ? (
-            <RuleEditor key={`${stage.key}:new:${template?.key ?? ""}:${activeSituation}`} stage={stage} rule={null} template={template} seed={seedOf(template)} sample={sample} nextPosition={nextPosition} siblings={own} defaultSituation={activeSituation} onDirty={markDirty("regla")} onAdded={() => setSelected(null)} />
+          {adding && steps.length ? (
+            <RuleEditor key={`${stage.key}:new:${template?.key ?? ""}`} stage={stage} rule={null} template={template} seed={seedOf(template)} sample={sample}
+              nextPosition={nextPosition} siblings={sameStepRules} defaultSituation={stage.key === "no-contactado" ? "sin_respuesta" : stage.key === "no-responde" ? "confirmo_numero" : "interesado"}
+              availableStages={steps} onStageChange={(key) => go(() => setStageKey(key))}
+              onDirty={markDirty("regla")} onAdded={() => setSelected(null)} />
           ) : current ? (
-            <RuleEditor key={`${stage.key}:${current.key}:${JSON.stringify(current)}`} stage={stage} rule={current} sample={sample} nextPosition={nextPosition} siblings={own} onDirty={markDirty("regla")} onDeleted={() => { setDirty({}); setSelected(null); }} />
+            <RuleEditor key={`${effectiveStage.key}:${current.key}:${JSON.stringify(current)}`} stage={effectiveStage} rule={current}
+              sample={sample} nextPosition={nextPosition} siblings={sameStepRules} availableStages={steps} onDirty={markDirty("regla")}
+              onDeleted={() => { setDirty({}); setSelected(null); }} />
           ) : (
-            <div className="fu-detail-card">
-              <p className="fu-note">No hay reglas para este estado. Creá una regla nueva para configurar sus condiciones, días, horarios, mensaje y versiones.</p>
-            </div>
+            <div className="fu-detail-card"><p className="fu-note">
+              {steps.length ? "No hay reglas para esta etapa. Agregá una regla y elegí en su editor el estado de avance, las condiciones y la acción." : "Cliente es el último hito del funnel; no hay reglas de seguimiento técnico configurables para esta etapa."}
+            </p></div>
           )}
         </div>
       </div>
@@ -1658,6 +1625,7 @@ function RulesEditor({
   isDirty,
   onSelect,
   onAdd,
+  disabled = false,
 }: {
   stage: StageKey;
   rules: Rule[];
@@ -1671,6 +1639,7 @@ function RulesEditor({
   onSelect: (key: string) => void;
   /** Agregar: `null` es una regla nueva; una regla, una copia de esa. */
   onAdd: (template: Rule | null) => void;
+  disabled?: boolean;
 }) {
   const [menu, setMenu] = useState(false);
   const [picking, setPicking] = useState(false);
@@ -1683,7 +1652,7 @@ function RulesEditor({
           <p className="fu-note">Se evalúan en orden. Se ejecuta la primera que cumpla.</p>
         </div>
         <div className="fu-kebabwrap">
-          <button type="button" className="button button-small button-outline" data-testid="followup-rule-add" aria-expanded={menu} onClick={() => setMenu(!menu)}>
+          <button type="button" className="button button-small button-outline" data-testid="followup-rule-add" disabled={disabled} aria-expanded={menu} onClick={() => setMenu(!menu)}>
             <Plus size={15} aria-hidden="true" /> Agregar regla <ChevronDown size={14} aria-hidden="true" />
           </button>
           {menu && (
@@ -1747,7 +1716,7 @@ function RulesEditor({
         </div>
       )}
       {rules.map((r) => (
-        <RuleRow key={r.key} stage={stage} rule={r} selected={selected === r.key} isDirty={isDirty} onSelect={() => onSelect(r.key)} />
+        <RuleRow key={r.key} stage={r.stage} rule={r} selected={selected === r.key} isDirty={isDirty} onSelect={() => onSelect(r.key)} />
       ))}
       {adding && (
         <div className="fu-rulecard is-on is-new">
@@ -1833,6 +1802,8 @@ function RuleEditor({
   sample,
   nextPosition,
   defaultSituation = "sin_respuesta",
+  availableStages = [],
+  onStageChange,
   siblings = [],
   onDirty,
   onAdded,
@@ -1847,6 +1818,8 @@ function RuleEditor({
   sample: QueueItem | null;
   nextPosition: number;
   defaultSituation?: Situation;
+  availableStages?: StageKey[];
+  onStageChange?: (key: StageKey) => void;
   siblings?: Rule[];
   onDirty: (dirty: boolean) => void;
   onAdded?: () => void;
@@ -1859,6 +1832,7 @@ function RuleEditor({
     : { key: "", name: null, stage: stage.key, situations: [defaultSituation], action: available[0], after_hours: 48, after_action: null, position: nextPosition, enabled: true, hours_from: 9, hours_to: 19, days: [1, 2, 3, 4, 5, 6] };
   const base = rule ? { ...rule, name: rule.name ?? null } : blank;
   const [r, setR] = useState<Rule>(base);
+  const createDemoTask = stage.key === "sin-demo" && r.action === "principal";
   const [msgDirty, setMsgDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -1979,6 +1953,16 @@ function RuleEditor({
           <h4>
             <CalendarDays size={16} aria-hidden="true" /> Cuándo se ejecuta
           </h4>
+          <label className="fu-f">
+            <span>Estado de avance (etapa técnica)</span>
+            <select aria-label="Estado de avance de la regla" value={stage.key} disabled={Boolean(rule) || !onStageChange}
+              onChange={(e) => onStageChange?.(e.target.value as StageKey)}>
+              {(availableStages.length ? availableStages : [stage.key]).map((key) => (
+                <option key={key} value={key}>{technicalStateLabel(key)}</option>
+              ))}
+            </select>
+            {rule && <small>Para mover una regla a otro estado, creá una nueva con las mismas condiciones; así se conserva el historial.</small>}
+          </label>
           <div className="fu-f">
             <span>Situación (cualquiera de)</span>
             <div className="fu-chips">
@@ -2073,6 +2057,7 @@ function RuleEditor({
           key={`${stage.key}:${r.action}`}
           stage={versionsOf(stage, r.action as Action)}
           action={r.action as Action}
+          taskOnly={createDemoTask}
           seed={template && r.action === template.action ? seed : undefined}
           sample={sample}
           onDirty={setMsgDirty}
@@ -2080,7 +2065,7 @@ function RuleEditor({
           sharedNote={sharedWith.length ? `Este mensaje también lo usa ${sharedWith.length === 1 ? "la regla" : "las reglas"} ${sharedWith.map((x) => x.position).join(", ")}: cambiarlo acá lo cambia para ${sharedWith.length === 1 ? "las dos" : "todas"}.` : undefined}
           actionField={
             <label className="fu-f">
-              <span>Acción (mensaje)</span>
+              <span>Acción que se ejecuta</span>
               <select value={r.action} onChange={(e) => setAction(e.target.value as Action)} data-testid="followup-rule-action">
                 {available.map((a) => (
                   <option key={a} value={a}>
@@ -2159,6 +2144,7 @@ function Editor({
   controller,
   sharedNote,
   seed,
+  taskOnly = false,
 }: {
   stage: StageView;
   action: Action;
@@ -2169,6 +2155,7 @@ function Editor({
   sharedNote?: string;
   /** Mensaje con el que arranca si la acción todavía no tiene ninguno. */
   seed?: Draft;
+  taskOnly?: boolean;
 }) {
   const router = useRouter();
   const live = stage.versions.find((v) => v.status === "active") ?? stage.versions.at(-1) ?? null;
@@ -2315,6 +2302,36 @@ function Editor({
       )}
     </>
   ) : null;
+
+  // Crear demo is an internal task. It needs only extension instructions here;
+  // WhatsApp text, A/B controls and previews remain unchanged for message actions.
+  if (taskOnly) {
+    const instructions = draft?.notes ?? current?.notes ?? "";
+    return (
+      <div className="fu-mededit" data-testid="followup-task-editor" data-action={action}>
+        <section className="fu-box fu-what" data-testid="followup-part-what">
+          <h4><Building2 size={16} aria-hidden="true" /> Acción interna</h4>
+          {actionField}
+          <p className="fu-note">Crear una demo para la inmobiliaria. Esta tarea aparece en la cola y abre la creación desde su ficha.</p>
+          <label className="fu-f">
+            <span>Observaciones para la extensión</span>
+            <textarea aria-label="Observaciones para crear demo" data-testid="followup-create-demo-notes" rows={6} maxLength={4000}
+              value={instructions} placeholder="Ej.: elegí una propiedad atractiva, importá sus fotos, generá tres ambientes y publicá la demo."
+              onChange={(e) => ensure({ notes: e.target.value, channel: "task", ctas: ["create_demo"] })} />
+          </label>
+          {sharedNote && <p className="fu-warn">{sharedNote}</p>}
+          <p className="fu-hint">Estas instrucciones se guardan al tocar «Guardar cambios». No se envía ningún mensaje desde esta acción.</p>
+          {error && <p className="fu-error" role="alert">{error}</p>}
+        </section>
+        <section className="fu-box" data-testid="followup-task-preview">
+          <h4><Target size={16} aria-hidden="true" /> Vista previa de la tarea</h4>
+          <p><b>Crear demo</b> · {sample?.name ?? "Inmobiliaria de ejemplo"}</p>
+          <p className="fu-note" style={{ whiteSpace: "pre-wrap" }}>{instructions || "Agregá observaciones para indicarle a la extensión cómo crear la demo."}</p>
+          <p className="fu-hint">En la cola, «Crear demo» abre la ficha de la inmobiliaria. La etapa avanza al publicar la demo.</p>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="fu-mededit" data-testid="followup-message-editor" data-action={action}>
@@ -3213,6 +3230,7 @@ function Execute({ item, exec, onDone, onClose, onNext }: { item: QueueItem; exe
       </div>
     );
   const task = prepared.channel === "task";
+  const creatingDemo = task && prepared.stage === "sin-demo" && prepared.action === "principal";
   const many = prepared.messages.length > 1;
   return (
     <div className="fu-exec" data-testid="followup-exec" data-action={prepared.action ?? ""} data-version={prepared.version}>
@@ -3261,14 +3279,18 @@ function Execute({ item, exec, onDone, onClose, onNext }: { item: QueueItem; exe
       <div className="fu-steps">
         {task ? (
           <>
-            {prepared.ctas.includes("create_demo") && (
+            {(prepared.ctas.includes("create_demo") || creatingDemo) && (
               <Link className="button button-small button-primary" href={prepared.links.createDemo} target="_blank" onClick={() => void mark("opened")}>
                 <Plus size={16} aria-hidden="true" /> Crear demo
               </Link>
             )}
-            <button type="button" className="button button-small button-outline" data-testid="followup-confirm" disabled={sent || busy} onClick={() => mark("sent")}>
-              {sent ? "Hecha" : "Marcar hecha"}
-            </button>
+            {creatingDemo ? (
+              <p className="fu-note" data-testid="followup-demo-auto-progress">La tarea avanzará al publicar la demo.</p>
+            ) : (
+              <button type="button" className="button button-small button-outline" data-testid="followup-confirm" disabled={sent || busy} onClick={() => mark("sent")}>
+                {sent ? "Hecha" : "Marcar hecha"}
+              </button>
+            )}
           </>
         ) : (
           <>

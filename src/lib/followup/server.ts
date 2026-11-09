@@ -1008,6 +1008,8 @@ export async function confirmExecution(input: { agencyId: unknown; stage?: unkno
       return { execution: { status: "sent" as const, at: before.it.execution.at }, warning: null, item: strip(before.it), replayed: true };
   }
   const { it, v } = await sameTask(input, actor.id);
+  // Crear demo is confirmed by publication in the product, never by a manual task-send click.
+  if (it.stage === "sin-demo" && it.action === "principal" && v.channel === "task") throw new HttpError(409, "La demo todavía no está publicada. Creala desde el panel: al publicarla, Habita avanzará automáticamente a «Demo creada, sin enviar».");
   const text = typeof input.text === "string" ? input.text.trim().slice(0, 8000) : "";
   const e = await mark(it, v, "sent", actor.id, null, text || null);
   const warnings: string[] = [];
