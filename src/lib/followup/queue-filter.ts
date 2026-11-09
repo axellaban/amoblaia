@@ -61,7 +61,7 @@ export function cleanFilter(raw: unknown): QueueFilter {
   const rule = str(o.regla ?? o.rule);
   return {
     stage: FOLLOWUP_STAGES.some((s) => s.key === stage) ? (stage as StageKey) : null,
-    commercial: isCommercialStage(commercial) ? commercial : null,
+    ...(isCommercialStage(commercial) ? { commercial } : {}),
     rule: rule ? rule.slice(0, 120) : null,
     situation: situation in SITUATIONS ? (situation as Situation) : null,
     group: group in GROUPS ? (group as Group) : null,
