@@ -127,7 +127,7 @@ const extras = async (agencyId?: string) => {
 
 /** Las reglas activas e inactivas (Fase 3). Sin la tabla, la migración falta. */
 async function readRules(): Promise<Rule[]> {
-  const { data, error } = await adminClient().from("followup_rules").select("key,name,stage,situations,action,after_hours,after_action,position,enabled,hours_from,hours_to,days").limit(500);
+  const { data, error } = await adminClient().from("followup_rules").select("key,name,stage,situations,action,after_hours,after_action,min_demo_activity_level,position,enabled,hours_from,hours_to,days").limit(500);
   if (error) throw missing(error) || /followup_rules/.test(error.message ?? "") ? new HttpError(409, MISSING) : new Error("FOLLOWUP_READ_FAILED");
   return ((data ?? []) as Rule[]).map((r) => ({ ...r, after_hours: Number(r.after_hours) }));
 }
@@ -235,6 +235,8 @@ export type QueueItem = {
   wa: string | null;
   needsReview: boolean;
   hasDemo: boolean;
+  /** Verified demo generation, distinct from generic interaction. */
+  demoGenerated: boolean;
   hasAccount: boolean;
   lastActivity: { at: string; text: string } | null;
   /** Lo más reciente entre Follow-up, Adquisición y lo que hizo la inmobiliaria. */
@@ -541,7 +543,8 @@ function item(
   const stageSent = executionsOf.filter((e) => e.stage === stage && e.status === "sent").sort((a, b) => (b.sent_at ?? "").localeCompare(a.sent_at ?? ""));
   const doneMap: Partial<Record<Action, boolean>> = {};
   for (const e of stageSent) doneMap[(e.action ?? "principal") as Action] = true;
-  const next = nextAction(stage, sit.situation, doneMap, rules);
+  const demoActivityLevel = Math.max(0, ...r.demos.map((d) => d.activityLevel ?? 0));
+  const next = nextAction(stage, sit.situation, doneMap, rules, demoActivityLevel);
   // The rule's window, or the one of the rule that sent the last step (for the row of a finished sequence).
   const window = next.rule ?? rules.find((x) => x.stage === stage && x.action === (stageSent[0]?.action ?? "principal")) ?? null;
   // Nothing left to send but something went out: the row shows that last one as sent.
@@ -567,6 +570,7 @@ function item(
     wa: to.wa,
     needsReview: to.needsReview,
     hasDemo: Boolean(r.shareDemo),
+    demoGenerated: demoActivityLevel >= 3,
     hasAccount: r.hasOwner,
     lastActivity: r.lastActivity,
     lastAction,
@@ -1273,7 +1277,7 @@ export async function saveRule(key: unknown, input: Record<string, unknown>, act
   const { data, error } = await db
     .from("followup_rules")
     .upsert({ key: id, ...clean, updated_by: actor.id, updated_at: new Date().toISOString() }, { onConflict: "key" })
-    .select("key,name,stage,situations,action,after_hours,after_action,position,enabled,hours_from,hours_to,days")
+    .select("key,name,stage,situations,action,after_hours,after_action,min_demo_activity_level,position,enabled,hours_from,hours_to,days")
     .single();
   if (error) throw missing(error) ? new HttpError(409, MISSING) : error.code === "23514" ? new HttpError(400, "La base rechazó la regla: revisá los valores.") : new Error("FOLLOWUP_SAVE_FAILED");
   await audit("rule", actor, { ref: id, from: before, to: clean });
