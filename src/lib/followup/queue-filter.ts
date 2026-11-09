@@ -8,11 +8,12 @@ import { compatible, type Rule } from "./rules";
 import { FOLLOWUP_STAGES, commercialOf, isCommercialStage, type CommercialStageKey, type StageKey } from "./stages";
 
 /** Lo que el motor eligió para una inmobiliaria, lo justo para filtrarla. */
-export type Filterable = { stage: StageKey; ruleKey: string | null; situation: Situation; group: Group; name: string };
+export type Filterable = { stage: StageKey; ruleKey: string | null; situation: Situation; group: Group; name: string; demoGenerated?: boolean };
 
 export type QueueFilter = {
   stage: StageKey | null;
   commercial?: CommercialStageKey | null;
+  demoImage?: "generated" | "interacted" | null;
   /** La clave de la regla (`ruleKey`), u `OTHER_RULES`: las que no salen de una regla activa de la etapa. */
   rule: string | null;
   situation: Situation | null;
@@ -38,6 +39,8 @@ const norm = (s: string) =>
 export function matchesFilter(q: Filterable, f: QueueFilter, rules: Rule[]) {
   if (f.stage && q.stage !== f.stage) return false;
   if (f.commercial && commercialOf(q.stage) !== f.commercial) return false;
+  if (f.demoImage === "generated" && (q.stage !== "sin-cuenta" || !q.demoGenerated)) return false;
+  if (f.demoImage === "interacted" && (q.stage !== "sin-cuenta" || q.demoGenerated)) return false;
   if (f.rule) {
     if (f.rule === OTHER_RULES) {
       if (q.ruleKey && stageRules(rules, q.stage).some((r) => r.key === q.ruleKey)) return false;
@@ -56,12 +59,14 @@ export function cleanFilter(raw: unknown): QueueFilter {
   const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
   const stage = str(o.etapa ?? o.stage);
   const commercial = str(o.etapaComercial ?? o.commercial);
+  const demoImage = str(o.imagen ?? o.demoImage);
   const situation = str(o.situacion ?? o.situation);
   const group = str(o.grupo ?? o.group);
   const rule = str(o.regla ?? o.rule);
   return {
     stage: FOLLOWUP_STAGES.some((s) => s.key === stage) ? (stage as StageKey) : null,
     ...(isCommercialStage(commercial) ? { commercial } : {}),
+    ...(demoImage === "generated" || demoImage === "interacted" ? { demoImage } : {}),
     rule: rule ? rule.slice(0, 120) : null,
     situation: situation in SITUATIONS ? (situation as Situation) : null,
     group: group in GROUPS ? (group as Group) : null,
@@ -69,7 +74,7 @@ export function cleanFilter(raw: unknown): QueueFilter {
   };
 }
 
-export const isEmptyFilter = (f: QueueFilter) => !f.stage && !f.commercial && !f.rule && !f.situation && !f.group && !f.search.trim();
+export const isEmptyFilter = (f: QueueFilter) => !f.stage && !f.commercial && !f.demoImage && !f.rule && !f.situation && !f.group && !f.search.trim();
 
 /**
  * La próxima para tomar: la primera de la cola (ya recalculada y en orden) que
