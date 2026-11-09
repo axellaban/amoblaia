@@ -77,7 +77,7 @@ import { DEFAULT_RULES, cleanRule, compatible, outsideWindow, type Rule } from "
 import { WINDOWS, blockReasons, bySegment, cohorts, versionResults, weekly, type VersionResult, type WindowKey } from "./results";
 import { cleanFilter, pickNext } from "./queue-filter";
 import { customStages } from "./commercial-catalog";
-import { resolveCustomClassification } from "./state-catalog";
+import { readSituationOverrides, readStateCatalog, resolveCustomClassification } from "./state-catalog";
 
 /**
  * Follow-up (/admin/follow-up): each funnel stage with its next best action,
@@ -117,6 +117,7 @@ type AgencyExtra = {
   situation_step: number | null;
   situation_note: string | null;
   situation_at: string | null;
+  rejection_stage?: StageKey | null;
   catalog_situation?: string | null;
   short_name: string | null;
   priority: Priority | null;
@@ -124,7 +125,7 @@ type AgencyExtra = {
   snooze_reason: string | null;
 };
 const extras = async (agencyId?: string) => {
-  let q = adminClient().from("followup_agencies").select("agency_id,stage_override,override_step,address,zone,score,situation,situation_step,situation_note,situation_at,catalog_situation,short_name,priority,snooze_until,snooze_reason");
+  let q = adminClient().from("followup_agencies").select("agency_id,stage_override,override_step,address,zone,score,situation,situation_step,situation_note,situation_at,rejection_stage,catalog_situation,short_name,priority,snooze_until,snooze_reason");
   if (agencyId) q = q.eq("agency_id", agencyId);
   const { data, error } = await q.limit(20000);
   if (error) throw missing(error) ? new HttpError(409, MISSING) : new Error("FOLLOWUP_READ_FAILED");
@@ -360,7 +361,7 @@ const whenText = (iso: string) => new Date(iso).toLocaleString("es-AR", { day: "
  * so the counters match the rows.
  */
 async function board(now = new Date()) {
-  const [rows, ds, vs, ex, extra, info, held, open, rules] = await Promise.all([
+  const [rows, ds, vs, ex, extra, info, held, open, rules, overrides, catalog, extraStages] = await Promise.all([
     commercialRows(),
     prospectDataset().catch(() => null),
     versions(),
@@ -369,7 +370,7 @@ async function board(now = new Date()) {
     details(),
     claims(),
     openReplies(),
-    readRules(),
+    readRules(), readSituationOverrides(), readStateCatalog(), customStages(),
   ]);
   const accounts = accountsByAgency(ds);
   const exOf = new Map<string, FollowupExecution[]>();
@@ -436,10 +437,11 @@ async function board(now = new Date()) {
   // Show them only in Contactado > No interesados, for audit and manual correction.
   const closedItems: QueueItem[] = [];
   for (const { r, account, own, at } of base) {
+    const closingStage = own?.rejection_stage ?? "no-responde";
     const surveyReply = own?.situation === "rechazo" && own.situation_at && Date.parse(own.situation_at) >= surveyStarted &&
-      ds && !r.test && !account?.suppressed && (!at.manual || at.stage === "no-responde") && (!at.stage || at.stage === "no-responde") &&
+      ds && !r.test && !account?.suppressed && compatible(closingStage, "encuesta_cierre") && (!at.manual || at.stage === closingStage) && (!at.stage || at.stage === closingStage) &&
       !(account?.contacts.some(c => c.channel === "whatsapp") && account.contacts.filter(c => c.channel === "whatsapp").every(c => c.invalid));
-    const placement = surveyReply ? { ...at, stage: "no-responde" as const, step: 0 } : at;
+    const placement = surveyReply ? { ...at, stage: closingStage, step: stageInfo(closingStage).step } : at;
     if (surveyReply) later(lastReply, r.id, own.situation_at);
     if (!placement.stage) {
       const lost = !r.test && !account?.suppressed && (r.prospectFunnel?.lost || account?.stage === "lost" || account?.stage === "discarded");
@@ -456,9 +458,16 @@ async function board(now = new Date()) {
       continue;
     }
     const it = item(r, account, own, info, placement, vs, exOf.get(r.id) ?? [], sendsOf.get(r.id) ?? [], rules, Boolean(surveyReply));
+    const scopes = [commercialOf(it.stage) as string, ...extraStages.filter(s => s.technical_stage === it.stage && s.entry_situation === it.situation).map(s => s.key)];
+    const disabled = overrides.some(o => scopes.includes(o.commercial_stage) && o.key === it.situation && o.enabled === false)
+      || Boolean(it.catalogSituation && !catalog.some(s => s.key === it.catalogSituation && s.active));
+    if (disabled && it.execution?.status !== "sent") {
+      it.action = null; it.actionLabel = null; it.ruleKey = null; it.versionId = null;
+      it.versionChannel = null; it.actionReason = "Situación deshabilitada en esta etapa.";
+    }
     // A promised demo (interested, the demo still to make or to send) goes first; past 30 minutes it is late.
     const interest = lastInterest.get(r.id);
-    if (interest && (it.stage === "sin-demo" || it.stage === "sin-enviar") && it.execution?.status !== "sent") {
+    if (interest && it.action !== "encuesta_cierre" && (it.stage === "sin-demo" || it.stage === "sin-enviar") && it.execution?.status !== "sent") {
       it.promisedAt = new Date(interest).toISOString();
       it.priority = own?.priority ?? "alta";
     }
@@ -601,11 +610,13 @@ function item(
   for (const e of stageSent) doneMap[(e.action ?? "principal") as Action] = true;
   const demoGenerated = r.demos.some((d) => d.generated === true);
   const matchingRules = rules.filter(rule => !rule.catalog_situation || (sit.manual && rule.catalog_situation === own?.catalog_situation));
+  const alreadySurveyed = executionsOf.some(e => e.action === "encuesta_cierre" && e.status === "sent");
+  if (alreadySurveyed) doneMap.encuesta_cierre = true;
   const next = nextAction(stage, sit.situation, doneMap, sit.situation === "rechazo" && !surveyReply ? [] : matchingRules, demoGenerated);
   // The rule's window, or the one of the rule that sent the last step (for the row of a finished sequence).
   const window = next.rule ?? rules.find((x) => x.stage === stage && x.action === (stageSent[0]?.action ?? "principal")) ?? null;
   // Nothing left to send but something went out: the row shows that last one as sent.
-  const action = next.action ?? (surveyReply && doneMap.encuesta_cierre ? "encuesta_cierre" : null) ?? (!CLOSED_SITUATIONS.includes(sit.situation) && stageSent[0] ? ((stageSent[0].action ?? "principal") as Action) : null);
+  const action = next.action ?? (surveyReply && stageSent.some(e => e.action === "encuesta_cierre") ? "encuesta_cierre" : null) ?? (!CLOSED_SITUATIONS.includes(sit.situation) && stageSent[0] ? ((stageSent[0].action ?? "principal") as Action) : null);
   const mine = executionsOf.filter((e) => e.stage === stage && (e.action ?? "principal") === (action ?? "principal"));
   const offered = vs.filter((v) => v.stage === stage && (v.action ?? "principal") === (action ?? "principal"));
   const sent = mine.find((e) => e.status === "sent");
@@ -892,7 +903,7 @@ async function prepare(it: QueueItem, origin: string, actor: { id: string; name:
     { key: "mensaje", label: "Mensaje listo", ok: ready, note: `${messages.length} ${messages.length === 1 ? "mensaje" : "mensajes"} · V${v.version}` },
   ];
   // A demo to make: what the panel can check by itself, and the promise (30 minutes at most).
-  if (it.stage === "sin-demo" || it.stage === "sin-enviar") {
+  if (it.action === "principal" && (it.stage === "sin-demo" || it.stage === "sin-enviar")) {
     const late = it.promisedAt ? Math.round((Date.now() - Date.parse(it.promisedAt)) / 60000) : null;
     if (late !== null) checklist.unshift({ key: "promesa", label: "Demo prometida a tiempo", ok: late <= 30, note: `Mostró interés hace ${late} min · máximo 30` });
     if (it.stage === "sin-demo")
@@ -1094,7 +1105,7 @@ export async function confirmExecution(input: { agencyId: unknown; stage?: unkno
       warnings.push(`La ejecución quedó registrada, pero no el envío en Adquisición: ${err instanceof HttpError ? err.message : "probá registrarlo desde su ficha."}`);
     }
   }
-  if (it.stage === "sin-enviar") await setDemosSent(it.agencyId, true, actor.id, "followup").catch(() => warnings.push("No pudimos marcar su demo como enviada."));
+  if (it.stage === "sin-enviar" && it.action === "principal") await setDemosSent(it.agencyId, true, actor.id, "followup").catch(() => warnings.push("No pudimos marcar su demo como enviada."));
   await release(it.agencyId, actor.id).catch(() => undefined);
   const after = await itemOf(it.agencyId).catch(() => null);
   return { execution: { status: e.status, at: e.updated_at }, warning: warnings.join(" ") || null, item: after ? strip(after.it) : null, replayed: false };
@@ -1157,8 +1168,8 @@ export async function setSituation(agencyId: string, raw: unknown, note: unknown
   if (!isSituation(raw)) throw new HttpError(400, "Situación desconocida.");
   const situation = raw;
   const text = typeof note === "string" ? note.trim().slice(0, 2000) : "";
-  const { at, account } = await now(agencyId);
-  await saveExtra(agencyId, { situation, catalog_situation: custom?.definition.key ?? null, situation_step: stepValue(at.derived.reached), situation_note: text || null, situation_at: receivedAt }, actor.id);
+  const { at, account, extra } = await now(agencyId);
+  await saveExtra(agencyId, { situation, rejection_stage: situation === "rechazo" ? at.stage ?? extra?.rejection_stage ?? null : null, catalog_situation: custom?.definition.key ?? null, situation_step: stepValue(at.derived.reached), situation_note: text || null, situation_at: receivedAt }, actor.id);
   await audit("situation", actor, { agencyId, to: `${situation}${text ? ` · «${text.slice(0, 200)}»` : ""}` });
   let warning: string | null = null;
   if (account) {
@@ -1365,6 +1376,10 @@ export async function listRules() {
 export async function saveRule(key: unknown, input: Record<string, unknown>, actor: { id: string; name: string }) {
   const clean = cleanRule(input, Object.keys(SITUATIONS).filter((x) => x === "rechazo" || !CLOSED_SITUATIONS.includes(x as Situation)), ["encuesta_cierre", "principal", "seguimiento_2", "presentacion", "presentacion_seguimiento", "precios"], FOLLOWUP_STAGES.map((x) => x.key));
   if ("error" in clean) throw new HttpError(400, clean.error);
+  if (clean.enabled && clean.situations.length) {
+    const hidden = (await readSituationOverrides()).find(o => o.commercial_stage === commercialOf(clean.stage) && (o.removed || !o.enabled) && clean.situations.includes(o.key));
+    if (hidden) throw new HttpError(400, `Habilitá «${hidden.label}» en Etapas y situaciones antes de guardar esta regla.`);
+  }
   const db = adminClient();
   // Una regla nueva solo puede tener una acción de su etapa (las existentes incompatibles se pueden apagar, no crear).
   if (!(typeof key === "string" && key) && !compatible(clean.stage, clean.action)) throw new HttpError(400, `«${clean.action}» no es una acción de esta etapa: no se puede crear una regla así.`);

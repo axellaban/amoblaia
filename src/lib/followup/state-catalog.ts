@@ -86,7 +86,7 @@ export const canonicalClassifierOptions = () =>
   }));
 
 export async function readSituationOverrides() {
-  const { data, error } = await adminClient().from("followup_stage_situation_overrides").select("commercial_stage,key,label,description,examples,removed");
+  const { data, error } = await adminClient().from("followup_stage_situation_overrides").select("commercial_stage,key,label,description,examples,removed,enabled");
   if (error) throw new Error("FOLLOWUP_OVERRIDES_READ_FAILED");
   return data ?? [];
 }
@@ -113,4 +113,21 @@ export async function removeCustomSituation(input: Record<string, unknown>) {
     .eq("key", input.key).eq("commercial_stage", input.commercial_stage);
   if (error) throw new Error("FOLLOWUP_STATE_DELETE_FAILED");
   return { key: input.key };
+}
+
+export async function toggleSituation(input: Record<string, unknown>) {
+  const { commercial_stage: stage, key, enabled } = input;
+  if (typeof stage !== "string" || typeof key !== "string" || typeof enabled !== "boolean")
+    throw new HttpError(400, "Etapa, situación o valor inválido.");
+  const db = adminClient();
+  if (isSituation(key)) {
+    const { error } = await db.rpc("habita_toggle_base_situation", { p_stage: stage, p_key: key, p_label: SITUATIONS[key], p_enabled: enabled });
+    if (error) throw new Error("FOLLOWUP_TOGGLE_FAILED");
+  } else {
+    const { data, error } = await db.from("followup_state_catalog").update({ active: enabled, updated_at: new Date().toISOString() })
+      .eq("key", key).eq("commercial_stage", stage).is("removed_at", null).select("key").maybeSingle();
+    if (error?.code === "23514") throw new HttpError(400, "Editá la situación y elegí primero a qué respuesta corresponde.");
+    if (error || !data) throw new HttpError(400, "No se pudo actualizar la situación.");
+  }
+  return { enabled };
 }

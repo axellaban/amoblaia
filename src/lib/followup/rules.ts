@@ -28,8 +28,8 @@ export type Action = "principal" | "seguimiento_2" | "presentacion" | "presentac
  */
 export const ACTIONS_OF: Partial<Record<StageKey, Action[]>> = {
   "no-responde": ["principal", "seguimiento_2", "presentacion", "presentacion_seguimiento", "precios", "encuesta_cierre"],
-  "sin-demo": ["principal", "precios"],
-  "sin-enviar": ["principal", "precios"],
+  "sin-demo": ["principal", "precios", "encuesta_cierre"],
+  "sin-enviar": ["principal", "precios", "encuesta_cierre"],
   "no-abrio": ["principal", "seguimiento_2", "precios"],
   "sin-interaccion": ["principal", "precios"],
   "sin-cuenta": ["principal", "precios"],
@@ -151,7 +151,7 @@ export function cleanRule(input: Record<string, unknown>, situations: readonly s
   const sits = Array.isArray(input.situations) ? input.situations.filter((s): s is Situation => typeof s === "string" && situations.includes(s)) : [];
   if (Array.isArray(input.situations) && sits.length !== input.situations.length) return { error: "Situación desconocida." };
   if ((sits.includes("rechazo") || input.action === "encuesta_cierre") &&
-      !(input.stage === "no-responde" && input.action === "encuesta_cierre" && sits.length === 1 && sits[0] === "rechazo"))
+      !(compatible(input.stage as StageKey, "encuesta_cierre") && input.action === "encuesta_cierre" && sits.length === 1 && sits[0] === "rechazo"))
     return { error: "Elegí únicamente No interesado y la acción Despedida y encuesta." };
   const num = (v: unknown) => (typeof v === "number" || (typeof v === "string" && v.trim() !== "") ? Number(v) : NaN);
   const after = num(input.after_hours);
