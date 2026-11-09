@@ -314,6 +314,35 @@ function ExecCenter({
 
   return (
     <section className="fu-center" data-testid="followup-queue">
+      {/* Visual match to the original mockup: first the commercial stage cards,
+          then the existing stage chips, queue and execution. No extra stage logic. */}
+      <div className="fu-reference-stages" data-testid="followup-reference-stage-cards" aria-label="Etapas comerciales">
+        <button type="button"
+          className={`fu-reference-stage is-todas${!commercial ? " is-on" : ""}`}
+          aria-pressed={!commercial}
+          data-testid="followup-reference-stage"
+          onClick={() => setF({ commercial: null, stage: null, demoImage: null, rule: null })}>
+          <span className="fu-reference-stage-icon" aria-hidden="true"><MessageCircle size={21} /></span>
+          <span className="fu-reference-stage-label">TODAS</span>
+          <strong>{count({ ...f, commercial: null, stage: null, rule: null })}</strong>
+          <span className="fu-reference-spark" aria-hidden="true"><i /><i /><i /><i /></span>
+        </button>
+        {COMMERCIAL_STAGES.filter((s) => s.key !== "cliente").map((st) => {
+          const Icon = STAGE_GLYPH[st.key];
+          return (
+            <button key={st.key} type="button"
+              className={`fu-reference-stage is-${st.key}${commercial === st.key ? " is-on" : ""}`}
+              aria-pressed={commercial === st.key}
+              data-testid="followup-reference-stage"
+              data-stage={st.key}
+              onClick={() => setF({ commercial: st.key, stage: null, demoImage: null, rule: null })}>
+              <span className="fu-reference-stage-icon" aria-hidden="true"><Icon size={21} /></span>
+              <span className="fu-reference-stage-label">{st.title.toLocaleUpperCase("es-AR")}</span>
+              <strong>{count({ ...f, commercial: st.key, stage: null, rule: null })}</strong>
+            </button>
+          );
+        })}
+      </div>
       <div className="fu-kpis">
         {kpis.map((k) => (
           <button
@@ -711,7 +740,7 @@ function Recommended({ item: q, stage, rules, onExecute }: { item: QueueItem | n
       <div className="fu-qpanel" data-testid="followup-recommended">
         <div className="fu-qpanelhead">
           <Target size={17} aria-hidden="true" />
-          <b>Siguiente recomendada</b>
+          <b>SIGUIENTE EN LA COLA</b>
         </div>
         <p className="fu-empty">No queda ningún contacto libre con estos filtros.</p>
       </div>
@@ -739,11 +768,11 @@ function Recommended({ item: q, stage, rules, onExecute }: { item: QueueItem | n
         <Send size={15} aria-hidden="true" /> Ejecutar esta
       </button>
       <div className="fu-qline">
-        <span className="fu-lbl">Situación</span>
+        <span className="fu-lbl">SITUACIÓN ACTUAL</span>
         <span className="fu-pill is-sit">{SITUATIONS[q.situation]}</span>
       </div>
       <details className="fu-recommended-details" data-testid="followup-recommended-context">
-        <summary>Contexto e historial <ChevronDown size={15} aria-hidden="true" /></summary>
+        <summary>ANTECEDENTES Y NOTAS <ChevronDown size={15} aria-hidden="true" /></summary>
         <div className="fu-qtwo">
         <div className="fu-qbox">
           <b>Contexto</b>
@@ -767,13 +796,13 @@ function Recommended({ item: q, stage, rules, onExecute }: { item: QueueItem | n
       </div>
       </details>
       <details className="fu-recommended-details" data-testid="followup-recommended-flow">
-        <summary>Próximo paso del flujo <ChevronDown size={15} aria-hidden="true" /></summary>
+        <summary>PRÓXIMO PASO DEL FLUJO <ChevronDown size={15} aria-hidden="true" /></summary>
         <p className="fu-qflow">
           <ArrowRight size={14} aria-hidden="true" /> {afterConfirm(q, rules)}
         </p>
       </details>
       <details className="fu-recommended-details" data-testid="followup-recommended-preparation">
-        <summary>Validaciones y mensaje <ChevronDown size={15} aria-hidden="true" /></summary>
+        <summary>VALIDACIONES Y MENSAJE <ChevronDown size={15} aria-hidden="true" /></summary>
         <div className="fu-qtwo is-msg">
         <div className="fu-qbox">
           <b>Antes de enviar</b>

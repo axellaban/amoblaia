@@ -3,6 +3,7 @@ import Link from "next/link";
 import { FollowupBoard } from "@/components/admin-followup";
 import "./followup-polish.css";
 import "./followup-workspace.css";
+import "./followup-reference.css";
 import { HttpError } from "@/lib/commerce/http";
 import { requireAdminPage } from "@/lib/demos/admin-page";
 import { followupOverview } from "@/lib/followup/server";
@@ -24,9 +25,9 @@ export default async function FollowupPage() {
     <div className="ah-page fu-page">
       <header className="ah-head fu-workspace-head">
         <div className="fu-workspace-copy">
-          <span className="fu-workspace-eyebrow">FOLLOW-UP / OPERACIÓN COMERCIAL</span>
-          <h1>Ejecución comercial</h1>
-          <p>Gestioná el outreach y el seguimiento de tus inmobiliarias. Las mismas acciones, reglas y métricas, en una vista más clara.</p>
+          <span className="fu-workspace-eyebrow">FOLLOW-UP</span>
+          <h1>EJECUCIÓN COMERCIAL</h1>
+          <p>Gestioná el outreach y el seguimiento de todas tus inmobiliarias.</p>
         </div>
         <nav className="fu-workspace-utilities" aria-label="Accesos de Habita">
           <Link href="/panel">Mi inmobiliaria</Link>
