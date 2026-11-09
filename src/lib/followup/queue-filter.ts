@@ -3,7 +3,7 @@
  * y búsqueda. La pantalla y el servidor usan esta misma función, así «Tomar la
  * próxima» toma solo lo que se ve con los filtros elegidos.
  */
-import { GROUPS, SITUATIONS, type Group, type Situation } from "./plan";
+import { GROUPS, SITUATIONS, byQueueOrder, isQueueOrder, type QueueOrder, type Group, type Situation } from "./plan";
 import { compatible, type Rule } from "./rules";
 import { FOLLOWUP_STAGES, commercialOf, isCommercialStage, type CommercialStageKey, type StageKey } from "./stages";
 
@@ -19,6 +19,7 @@ export type QueueFilter = {
   situation: Situation | null;
   group: Group | null;
   search: string;
+  order?: QueueOrder;
 };
 export const OTHER_RULES = "otras";
 export const NO_FILTER: QueueFilter = { stage: null, rule: null, situation: null, group: null, search: "" };
@@ -71,6 +72,7 @@ export function cleanFilter(raw: unknown): QueueFilter {
     situation: situation in SITUATIONS ? (situation as Situation) : null,
     group: group in GROUPS ? (group as Group) : null,
     search: str(o.buscar ?? o.search).slice(0, 120),
+    ...(isQueueOrder(o.orden ?? o.order) ? { order: (o.orden ?? o.order) as QueueOrder } : {}),
   };
 }
 
@@ -88,7 +90,10 @@ export async function pickNext<T extends Filterable & { agencyId: string; claim:
   lock: (it: T) => Promise<boolean>,
 ): Promise<T | null> {
   const skip = new Set(f.skip ?? []);
-  for (const it of queue) {
+  const sortKey = (q: T) => ({ ...q, since: ("since" in q && typeof q.since === "string" ? q.since : ""), score: ("score" in q && typeof q.score === "number" ? q.score : null) });
+  // Legacy extension requests omit order: preserve the input queue order. The panel explicitly sends comercial.
+  const ordered = f.filter.order ? [...queue].sort((a, b) => byQueueOrder(sortKey(a), sortKey(b), f.filter.order!, f.now ? Date.parse(f.now) : Date.now())) : queue;
+  for (const it of ordered) {
     if (skip.has(it.agencyId) || !matchesFilter(it, f.filter, f.rules)) continue;
     if (it.claim && it.claim.until > (f.now ?? new Date().toISOString()) && it.claim.actorId !== f.actorId) continue;
     if (await lock(it)) return it;

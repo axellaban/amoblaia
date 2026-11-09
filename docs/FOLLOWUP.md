@@ -311,3 +311,13 @@ En **Estados y reglas** el funnel comercial filtra las reglas; la columna izquie
 - Para **Interesado → Demo pendiente de crear → Crear demo** (acción técnica `sin-demo:principal`), el editor solo muestra el campo **Observaciones para la extensión**, persistido en `followup_versions.notes`. El canal de esa versión debe ser `task`.
 - En la **Cola de ejecución** la tarea ofrece el botón **Crear demo** hacia `/admin/inmobiliarias/{agencyId}/propiedades/nueva` incluso si una versión heredada no tiene el CTA `create_demo`.
 - **No se puede marcar manualmente «Crear demo» como completada**. Al publicarse una demo real, la inmobiliaria cambia por el propio funnel a «Demo creada, sin enviar». No se envía WhatsApp desde «Crear demo»; ese envío corresponde a la etapa posterior.
+
+
+## Cola rápida, priorización y corrección de estados (noviembre 2026)
+- Por defecto «Prioridad comercial recomendada»: P0 respuesta comercial de menos de 2 h; P1 demo creada pendiente de enviar; P2 interés de menos de 24 h pendiente de demo; P3 demos/activación; P4 seguimientos o interés antiguo; P5 prospectos nuevos. Se utiliza solo como orden operativo, no es un modelo predictivo. Las reglas de horario, bloqueos y no contactar no se alteran.
+- Selector de orden: prioridad comercial / antigüedad / score / criterio anterior. La UI manda `orden` al servidor para «Tomar la próxima», por lo que no elige contactos de otra prioridad. La extensión antigua que omite el parámetro conserva el orden recibido.
+- Desde cada fila de la cola se puede **Editar etapa / estado**, usando los endpoints autenticados ya existentes: `accion: estado` y `accion: situacion`. Las correcciones son auditadas. Se solicita confirmación al cambiar de etapa. No disparan un envío por sí solas.
+- El ícono WhatsApp junto al número abre `web.whatsapp.com/send?phone=...` en una pestaña reutilizable, sin texto precargado ni evento de ejecución. Solo sirve para revisar la conversación.
+- La vista **Contactado → No interesados** muestra pérdidas cerradas (incluidas las que Adquisición ya había sacado del funnel de envío), sin habilitar «Ejecutar». El estado canónico `rechazo` ahora se presenta «No interesado» para no romper datos históricos; `no_contactar` sigue siendo una exclusión distinta.
+- El detalle de ejecución muestra primero el mensaje o tarea; las validaciones, observaciones para extensión, contexto, historial y regla están plegados por defecto. El pie con «Abrir WhatsApp / Confirmar envío», o «Crear demo», se mantiene visible al desplazarse.
+- No se agregaron envíos automáticos, ni una octava etapa, ni cambios de esquema de base de datos.
