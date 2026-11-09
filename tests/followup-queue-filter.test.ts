@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { NO_FILTER, OTHER_RULES, cleanFilter, isEmptyFilter, matchesFilter, pickNext, stageRules, type Filterable } from "@/lib/followup/queue-filter";
 import { groupOf, nextAction, type Action, type Situation } from "@/lib/followup/plan";
 import { DEFAULT_RULES, type Rule } from "@/lib/followup/rules";
-import { FOLLOWUP_STAGES, type StageKey } from "@/lib/followup/stages";
+import { COMMERCIAL_STAGES, FOLLOWUP_STAGES, commercialOf, technicalOf, type StageKey } from "@/lib/followup/stages";
 
 /** Una inmobiliaria como la arma la cola: la regla y el grupo salen del motor. */
 function agency(name: string, stage: StageKey, situation: Situation, done: Partial<Record<Action, boolean>> = {}, rules: Rule[] = DEFAULT_RULES): Filterable & { action: Action | null } {
@@ -126,5 +126,48 @@ describe("Tomar la próxima con filtros", () => {
 
   it("sin filtro, la primera libre de la cola, como antes", async () => {
     expect((await pickNext(queue, { filter: NO_FILTER, rules: DEFAULT_RULES, actorId: "yo", now }, async () => true))?.agencyId).toBe("nueva-1");
+  });
+});
+
+
+describe("Etapas comerciales agrupadas sin perder el funnel técnico", () => {
+  it("agrupa los nueve pasos técnicos en siete etapas visibles sin repetir ninguno", () => {
+    expect(COMMERCIAL_STAGES.map((s) => s.title)).toEqual(["Prospectado", "Contactado", "Interesado", "Demo enviada", "Cuenta creada", "Cuenta activa", "Cliente"]);
+    expect(COMMERCIAL_STAGES.flatMap((s) => [...s.technical])).toEqual(FOLLOWUP_STAGES.map((s) => s.key));
+    expect(technicalOf("interesado")).toEqual(["sin-demo", "sin-enviar"]);
+    expect(technicalOf("demo-enviada")).toEqual(["no-abrio", "sin-interaccion", "sin-cuenta"]);
+    expect(technicalOf("cliente")).toEqual([]);
+    expect(commercialOf("sin-enviar")).toBe("interesado");
+    expect(commercialOf("sin-cuenta")).toBe("demo-enviada");
+  });
+
+  it("la API acepta el filtro comercial nuevo y mantiene el formato anterior", () => {
+    expect(cleanFilter({ etapaComercial: "demo-enviada" })).toEqual({ ...NO_FILTER, commercial: "demo-enviada" });
+    expect(cleanFilter({ etapaComercial: "desconocida" })).toEqual(NO_FILTER);
+    expect(isEmptyFilter({ ...NO_FILTER, commercial: "demo-enviada" })).toBe(false);
+  });
+
+  it("Contactado no incluye prospectados, Interesado abarca tareas de demo y Demo enviada abarca visitas e interacciones", async () => {
+    const queue = [
+      agency("A", "no-contactado", "sin_respuesta"),
+      agency("B", "no-responde", "confirmo_numero"),
+      agency("C", "sin-demo", "interesado"),
+      agency("D", "sin-enviar", "interesado"),
+      agency("E", "no-abrio", "sin_respuesta"),
+      agency("F", "sin-interaccion", "sin_respuesta"),
+      agency("G", "sin-cuenta", "sin_respuesta"),
+      agency("H", "sin-uso", "sin_respuesta"),
+      agency("I", "sin-suscripcion", "sin_respuesta"),
+    ];
+    const matching = (commercial: "prospectado" | "contactado" | "interesado" | "demo-enviada" | "cuenta-creada" | "cuenta-activa" | "cliente") =>
+      queue.filter((q) => matchesFilter(q, { ...NO_FILTER, commercial }, DEFAULT_RULES)).map((q) => q.name);
+    expect(matching("prospectado")).toEqual(["A"]);
+    expect(matching("contactado")).toEqual(["B"]);
+    expect(matching("interesado")).toEqual(["C", "D"]);
+    expect(matching("demo-enviada")).toEqual(["E", "F", "G"]);
+    expect(matching("cliente")).toEqual([]);
+    expect((await pickNext(queue.map((q) => ({ ...q, agencyId: q.name, claim: null })), {
+      filter: { ...NO_FILTER, commercial: "contactado" }, rules: DEFAULT_RULES, actorId: "facu", now: "2026-11-09T15:00:00Z",
+    }, async () => true))?.agencyId).toBe("B");
   });
 });
