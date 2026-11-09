@@ -29262,3 +29262,90 @@ dialog.pt-layer::backdrop {
 .fu-msg-grid{align-items:start}
 [data-testid=followup-part-what] > .fu-mededit .fu-vhead{gap:8px}
 .fu-wa > .fu-lbl{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+
+/* Mensajes y reglas, según el mockup: rótulo del flujo, etapa activa, íconos y cabecera de WhatsApp. */
+.fu-flowrow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+.fu-flowrow > .fu-flow {
+  flex: 1;
+  min-width: 0;
+}
+.fu-flowlabel {
+  flex: none;
+  font-size: 12px;
+  font-weight: 700;
+  color: #24382e;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.fu-badge-on {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #1f6b4a;
+  background: #e3f1e8;
+}
+.fu-stagehead .fu-num {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: #2f8f5b;
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 700;
+}
+.fu-subtab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.fu-grip {
+  color: #9aa79c;
+  flex: none;
+  cursor: default;
+}
+.fu-rulecard {
+  align-items: center;
+}
+.fu-wa::before {
+  content: none;
+}
+.fu-wa-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #24382e;
+  color: #f4f3ee;
+  padding: 12px 14px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.fu-wa-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #e8efe9;
+  color: #24382e;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 800;
+  flex: none;
+}
+.fu-wa-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
