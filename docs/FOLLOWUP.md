@@ -297,7 +297,7 @@ Textos pendientes: Presentación, Presentación sin respuesta, Precios y el segu
 
 
 ## Catálogo editable de clasificaciones y eventos verificados
-La migración aditiva `supabase/migrations/202612020001_followup_state_catalog.sql` habilita el catálogo de estados y la condición `min_demo_activity_level`.
+Las migraciones aditivas `supabase/migrations/202612020001_followup_state_catalog.sql` y `supabase/migrations/202612060001_followup_rule_generation.sql` habilitan el catálogo y la condición `min_demo_activity_level`, respectivamente. La segunda va después de la creación de `followup_rules` en `202612050001`.
 Sin aplicarla, la cola y las reglas históricas continúan funcionando y el editor informa que el catálogo todavía requiere migración. No se pueden guardar reglas condicionadas por una imagen hasta aplicarla.
 Los estados personalizados actúan como alias explícitos de situaciones canónicas existentes. Los desconocidos, desactivados o de baja confianza no generan envíos: requieren revisión humana.
 La extensión debe consumir el catálogo autenticado en `GET /api/admin/followup/states`.
