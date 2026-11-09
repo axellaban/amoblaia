@@ -16,6 +16,7 @@ import { artDate } from "@/lib/prospecting/time";
 import { adminClient } from "@/lib/supabase/server";
 import {
   FOLLOWUP_STAGES,
+  commercialOf,
   OUT,
   byScore,
   cleanVersion,
@@ -71,6 +72,7 @@ import {
 import { DEFAULT_RULES, cleanRule, compatible, outsideWindow, type Rule } from "./rules";
 import { WINDOWS, blockReasons, bySegment, cohorts, versionResults, weekly, type VersionResult, type WindowKey } from "./results";
 import { cleanFilter, pickNext } from "./queue-filter";
+import { resolveCustomClassification } from "./state-catalog";
 
 /**
  * Follow-up (/admin/follow-up): each funnel stage with its next best action,
@@ -1148,17 +1150,29 @@ export async function registerReply(
   if (!text) throw new HttpError(400, "Falta el texto de la respuesta (en un audio: «Audio»).");
   const at = input.receivedAt ? new Date(String(input.receivedAt)) : new Date();
   if (Number.isNaN(at.getTime()) || at.getTime() > Date.now() + 120_000) throw new HttpError(400, "Hora inválida.");
-  const classification = input.classification === undefined || input.classification === null || input.classification === "" ? null : isReplyClass(input.classification) ? input.classification : undefined;
+  const rawClassification = typeof input.classification === "string" ? input.classification.trim() : "";
+  const custom = rawClassification.startsWith("custom_") ? await resolveCustomClassification(rawClassification) : null;
+  if (rawClassification.startsWith("custom_") && !custom) throw new HttpError(400, "Estado personalizado desconocido o inactivo. Revisá el catálogo.");
+  if (custom) {
+    const current = (await board()).items.get(input.agencyId)?.stage;
+    if (!current || commercialOf(current) !== custom.definition.commercial_stage) {
+      throw new HttpError(409, "Ese estado personalizado no corresponde a la etapa comercial actual.");
+    }
+  }
+  const classification = !rawClassification ? null : custom ? custom.canonical : isReplyClass(rawClassification) ? rawClassification : undefined;
   if (classification === undefined) throw new HttpError(400, "Clasificación desconocida.");
   const confidence = input.confidence === undefined || input.confidence === null || input.confidence === "" ? null : Number(input.confidence);
   if (confidence !== null && (!Number.isFinite(confidence) || confidence < 0 || confidence > 1)) throw new HttpError(400, "La confianza va de 0 a 1.");
-  const route = replyRoute(classification, confidence);
+  // Custom labels only map to the existing engine with explicit, sufficient confidence.
+  // Missing confidence goes to human review; it must not auto-send a reply.
+  const route = custom && confidence === null ? "facu" : replyRoute(classification, confidence);
   const key = `${input.agencyId}:${at.toISOString().slice(0, 16)}:${text.slice(0, 80)}`;
   const db = adminClient();
   const found = await db.from("followup_replies").select(REPLY_FIELDS).eq("client_key", key).maybeSingle();
   if (found.error) throw missing(found.error) ? new HttpError(409, MISSING) : new Error("FOLLOWUP_READ_FAILED");
   if (found.data) return { reply: found.data as ReplyRow, route: (found.data as ReplyRow).status, replayed: true, warning: null };
-  const note = typeof input.note === "string" ? input.note.trim().slice(0, 500) : "";
+  const originalNote = typeof input.note === "string" ? input.note.trim() : "";
+  const note = `${custom ? `Catálogo: ${custom.definition.key} (${custom.definition.label}). ` : ""}${originalNote}`.slice(0, 500);
   const made = await db
     .from("followup_replies")
     .insert({
