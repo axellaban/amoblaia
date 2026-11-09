@@ -11,7 +11,7 @@ create table if not exists public.followup_state_catalog (
   commercial_stage text not null check (commercial_stage in ('prospectado','contactado','interesado','demo-enviada','cuenta-creada','cuenta-activa')),
   source text not null default 'whatsapp' check (source in ('whatsapp','manual')),
   -- Canonical situation recognized by the existing follow-up engine. NULL = review only.
-  maps_to text null check (maps_to in ('sin_respuesta','confirmo_numero','interesado','neutro','pregunta_precios','mas_adelante','derivo','rechazo','proveedor_ia','no_contactar','sin_whatsapp','numero_incorrecto')),
+  maps_to text null check (maps_to in ('confirmo_numero','interesado','neutro','pregunta_precios','mas_adelante','derivo','rechazo','proveedor_ia','no_contactar')),
   active boolean not null default false,
   updated_by uuid null references public.profiles(id) on delete set null,
   created_at timestamptz not null default now(),
