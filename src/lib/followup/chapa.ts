@@ -4,7 +4,7 @@ import { adminClient } from "@/lib/supabase/server";
 import { actorName } from "./actor";
 import { GROUPS, SITUATIONS } from "./plan";
 import { createStage, customStages } from "./commercial-catalog";
-import { changeBaseSituation, readSituationOverrides, readStateCatalog, removeCustomSituation, updateStateCatalog } from "./state-catalog";
+import { canonicalClassifierOptions, changeBaseSituation, readSituationOverrides, readStateCatalog, removeCustomSituation, updateStateCatalog } from "./state-catalog";
 import {
   agentQueue,
   claimNext,
@@ -90,6 +90,7 @@ export async function followupSnapshot(team: TeamUser[] = []) {
     labels: { situations: SITUATIONS, groups: GROUPS },
     catalog: {
       stages: catalogStages ?? [], states: catalogStates ?? [], overrides: catalogOverrides ?? [],
+      canonical: canonicalClassifierOptions(),
       available: catalogStages !== null && catalogStates !== null && catalogOverrides !== null,
     },
     summary: o.summary,
