@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, useEffect, useRef, useState } from "react";
-import { ChevronRight, ClipboardCopy, KeyRound, Link2, MessageCircle, Pencil, Plus, Send } from "lucide-react";
+import { BarChart3, ChevronRight, ClipboardCopy, GripVertical, Info, KeyRound, Layers, Link2, MessageCircle, MessageSquare, Pencil, Plus, Send, SlidersHorizontal } from "lucide-react";
 import { api } from "@/components/admin-demos";
 import { CTA_KEYS, CTA_LABEL, FOLLOWUP_STAGES, OUT, VARIABLES, fillMessage, missingVariables, pct, type Channel, type Cta, type StageKey, type VersionStatus } from "@/lib/followup/stages";
 import { GROUPS, REPLY_CLASSES, SITUATIONS, actionLabel, actionWhen, actionsOf, splitMessages, type Action, type ReplyClass, type Situation } from "@/lib/followup/plan";
@@ -1098,35 +1098,39 @@ function RulesWorkspace({ stages, rules, changes }: { stages: StageView[]; rules
 
   return (
     <>
-      <nav className="fu-flow" aria-label="Etapas del embudo" data-testid="followup-flow">
-        {stages.map((s, i) => (
-          <Fragment key={s.key}>
-            <button
-              type="button"
-              className={`fu-flowstep${s.key === stage.key ? " is-on" : ""}`}
-              aria-pressed={s.key === stage.key}
-              data-testid="followup-stage"
-              data-stage={s.key}
-              onClick={() => {
-                if (s.key !== stage.key) go(() => { setStageKey(s.key); setSelected(null); });
-              }}
-            >
-              <span className="fu-num">{i + 1}</span>
-              <span className="fu-flowtext">
-                <b>{s.title}</b>
-                <small>{waiting(s)} esperando</small>
-              </span>
-            </button>
-            {i < stages.length - 1 && <ChevronRight className="fu-flowarrow" size={16} aria-hidden="true" />}
-          </Fragment>
-        ))}
-      </nav>
+      <div className="fu-flowrow">
+        <span className="fu-lbl fu-flowlabel">Flujo de etapas</span>
+        <nav className="fu-flow" aria-label="Etapas del embudo" data-testid="followup-flow">
+          {stages.map((s, i) => (
+            <Fragment key={s.key}>
+              <button
+                type="button"
+                className={`fu-flowstep${s.key === stage.key ? " is-on" : ""}`}
+                aria-pressed={s.key === stage.key}
+                data-testid="followup-stage"
+                data-stage={s.key}
+                onClick={() => {
+                  if (s.key !== stage.key) go(() => { setStageKey(s.key); setSelected(null); });
+                }}
+              >
+                <span className="fu-num">{i + 1}</span>
+                <span className="fu-flowtext">
+                  <b>{s.title}</b>
+                  <small>{waiting(s)} esperando</small>
+                </span>
+              </button>
+              {i < stages.length - 1 && <ChevronRight className="fu-flowarrow" size={16} aria-hidden="true" />}
+            </Fragment>
+          ))}
+        </nav>
+      </div>
 
       <section className="fu-stagehead" data-testid="followup-stage-head" data-stage={stage.key}>
         <div>
           <div className="fu-name">
             <span className="fu-num">{index}</span>
             <span className="fu-title">{stage.title}</span>
+            <span className="fu-badge-on">Etapa activa</span>
           </div>
           <p className="fu-note">{STAGE_TEXT[stage.key]}</p>
           <div className="fu-meta">
@@ -1136,11 +1140,11 @@ function RulesWorkspace({ stages, rules, changes }: { stages: StageView[]; rules
         <nav className="fu-subtabs" aria-label="Secciones de la etapa">
           {(
             [
-              ["mensajes", "Mensajes de la etapa"],
-              ["reglas", `Reglas (${own.length})`],
-              ["resumen", "Resumen"],
+              ["mensajes", "Mensajes de la etapa", MessageSquare],
+              ["reglas", `Reglas (${own.length})`, SlidersHorizontal],
+              ["resumen", "Resumen", BarChart3],
             ] as const
-          ).map(([k, label]) => (
+          ).map(([k, label, Icon]) => (
             <button
               key={k}
               type="button"
@@ -1151,6 +1155,7 @@ function RulesWorkspace({ stages, rules, changes }: { stages: StageView[]; rules
                 if (k !== tab) go(() => setTab(k));
               }}
             >
+              <Icon size={15} aria-hidden="true" />
               {label}
             </button>
           ))}
@@ -1282,6 +1287,7 @@ function RuleRow({ stage, rule, selected, unavailable, isDirty, onSelect }: { st
   }
   return (
     <div className={`fu-rulecard${selected ? " is-on" : ""}${rule.enabled ? "" : " is-off"}`} data-testid="followup-rule" data-rule={rule.key}>
+      <GripVertical className="fu-grip" size={16} aria-hidden="true" />
       <button type="button" className="fu-rulecard-main" aria-pressed={selected} data-testid="followup-rule-edit" onClick={onSelect}>
         <span className="fu-rulepos">{rule.position}</span>
         <span className="fu-rulemain">
@@ -1509,6 +1515,7 @@ function Editor({ stage, action, sample, onDirty }: { stage: StageView; action: 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const current = stage.versions.find((v) => v.id === selected) ?? live;
+  const original = stage.versions.find((v) => v.version === 1) ?? null;
   const shown: Draft | Version | null = draft ?? current;
   const active = stage.versions.find((v) => v.status === "active");
   const nextNumber = Math.max(0, ...stage.versions.map((v) => v.version)) + 1;
@@ -1662,6 +1669,7 @@ function Editor({ stage, action, sample, onDirty }: { stage: StageView; action: 
           ] as const
         ).map(([k, label]) => (
           <button key={k} type="button" role="tab" aria-selected={tab === k} className={`fu-subtab${tab === k ? " is-on" : ""}`} onClick={() => setTab(k)}>
+            {k === "mensaje" ? <MessageCircle size={14} aria-hidden="true" /> : k === "versiones" ? <Layers size={14} aria-hidden="true" /> : <Info size={14} aria-hidden="true" />}
             {label}
           </button>
         ))}
@@ -1689,10 +1697,26 @@ function Editor({ stage, action, sample, onDirty }: { stage: StageView; action: 
                 </label>
               </div>
               <p className="fu-note">Para mandar varios mensajes seguidos (como la presentación), separalos con una línea que diga solo «---».</p>
-              <label className="fu-textarea">
-                <span>{editing ? `Mensaje · editando V${editing.version}` : `Mensaje · V${current?.version ?? nextNumber}`}</span>
-                <textarea id={bodyId} value={shown.body} readOnly={!draft} maxLength={4000} onChange={(e) => draft && setDraft({ ...draft, body: e.target.value })} />
-              </label>
+              <div className="fu-msg-row">
+                <label className="fu-textarea">
+                  <span>{editing ? `Mensaje · editando V${editing.version}` : `Mensaje · V${current?.version ?? nextNumber}`}</span>
+                  <textarea id={bodyId} value={shown.body} readOnly={!draft} maxLength={4000} onChange={(e) => draft && setDraft({ ...draft, body: e.target.value })} />
+                </label>
+                {original && original.id !== current?.id && (
+                  <aside className="fu-orig" data-testid="followup-original">
+                    <span className="fu-lbl">Versión original (V{original.version})</span>
+                    <p>{original.body}</p>
+                    <button
+                      type="button"
+                      className="button button-small button-outline"
+                      disabled={!!draft && draft.body === original.body}
+                      onClick={() => setDraft({ channel: original.channel, trigger: original.trigger_label, body: original.body, ctas: [...original.ctas], notes: original.notes ?? "" })}
+                    >
+                      Usar como base
+                    </button>
+                  </aside>
+                )}
+              </div>
               {draft && (
                 <div className="fu-vars">
                   Variables:
@@ -1795,9 +1819,10 @@ function Preview({ body, sample, channel, ctas }: { body: string; sample: QueueI
         <p className="fu-note">Escribí el mensaje para ver cómo queda.</p>
       </div>
     );
+  const who = sample?.shortName ?? "Inmobiliaria de ejemplo";
   return (
     <div className={`fu-wa${task ? " is-task" : ""}`} data-testid="followup-preview">
-      <span className="fu-lbl">{label}</span>
+      {task ? <span className="fu-lbl">{label}</span> : <div className="fu-wa-head"><span className="fu-wa-avatar" aria-hidden="true">{who.charAt(0).toUpperCase()}</span><span className="fu-wa-name">{who}</span><span className="sr-only">{label}</span></div>}
       {task ? (
         <div className="fu-wa-task">
           {parts.map((p, i) => (

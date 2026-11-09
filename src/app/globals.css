@@ -29193,3 +29193,159 @@ dialog.pt-layer::backdrop {
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+/* Mensaje de la regla: la versión original (V1), a la derecha del texto; «Usar como base» abre un borrador desde ella. */
+.fu-msg-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 190px;
+  gap: 12px;
+  align-items: start;
+}
+.fu-orig {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  border: 1px dashed #cfd9cc;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 12.5px;
+  background: #fbfcfa;
+}
+.fu-orig p {
+  margin: 0;
+  white-space: pre-wrap;
+  color: var(--pr-muted, #5f6f64);
+  max-height: 180px;
+  overflow: auto;
+}
+@media (max-width: 900px) {
+  .fu-msg-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Rediseño visual de «Mensajes y reglas» según el mockup: interruptores, dos columnas (cuándo | qué), cabecera de WhatsApp y botones. Solo estilos. */
+.fu-flow{gap:10px;padding:6px 2px 12px}
+.fu-flowstep{border-radius:14px;border-color:#dfe5dc;box-shadow:0 1px 2px rgba(20,40,30,.04);min-width:210px;padding:12px 14px}
+.fu-flowstep.is-on{border-color:#2f8f5b;background:#f1faf5;box-shadow:0 0 0 1px #2f8f5b inset}
+.fu-workspace{grid-template-columns:minmax(0,0.85fr) minmax(0,2.15fr);gap:18px}
+.fu-rulecard{border-radius:14px;border-color:#dfe5dc;padding:12px 14px;gap:10px}
+.fu-rulecard.is-on{border-color:#2f8f5b;box-shadow:0 0 0 1px #2f8f5b inset}
+.fu-rulecard .fu-rulepos{width:auto;font-weight:700;color:#24382e;background:#eef3ee;border-radius:8px;padding:4px 9px;font-size:13px}
+.fu-rulecard .fu-st.is-archived{background:#fff3d9;color:#8a5d12;border:0;border-radius:6px;font-size:10.5px;white-space:normal}
+.fu-switch input[type=checkbox],.fu-rulecard input[type=checkbox]{appearance:none;-webkit-appearance:none;width:38px;height:22px;border-radius:999px;background:#d5dbd2;position:relative;cursor:pointer;flex:none;margin:0;transition:background .2s}
+.fu-switch input[type=checkbox]::after,.fu-rulecard input[type=checkbox]::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2);transition:transform .2s}
+.fu-switch input[type=checkbox]:checked,.fu-rulecard input[type=checkbox]:checked{background:#2f8f5b}
+.fu-switch input[type=checkbox]:checked::after,.fu-rulecard input[type=checkbox]:checked::after{transform:translateX(16px)}
+.fu-switch input[type=checkbox]:disabled,.fu-rulecard input[type=checkbox]:disabled{opacity:.45;cursor:not-allowed}
+.fu-detail-card{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px 18px;border-radius:14px;padding:18px 20px;border-color:#dfe5dc}
+.fu-rdhead,.fu-footer{grid-column:1/-1}
+.fu-part{border:1px solid #e6ece4;border-radius:12px;padding:14px;gap:12px;display:flex;flex-direction:column}
+.fu-part .fu-lbl{color:#24382e;font-weight:700}
+.fu-st{border-radius:999px;padding:2px 9px}
+.fu-st.is-active{background:#e3f1e8;color:#1f6b4a}
+.fu-footer .fu-actions{justify-content:flex-end}
+.fu-footer .button-primary{background:#2f8f5b;border-color:#2f8f5b;border-radius:999px;padding:9px 18px}
+.fu-footer .fu-link{color:#5f6f64}
+.fu-rdhead{grid-column:1/-1;grid-row:1}
+[data-testid=followup-part-when]{grid-column:1;grid-row:2/span 2;align-self:start}
+[data-testid=followup-part-what]{display:contents}
+[data-testid=followup-part-what] > .fu-lbl{grid-column:2;grid-row:2;align-self:end;color:#24382e;font-weight:700;font-size:11px}
+[data-testid=followup-part-what] > label{grid-column:2;grid-row:3;align-self:start;border:1px solid #e6ece4;border-radius:12px;padding:12px 14px;display:grid;gap:6px}
+[data-testid=followup-part-what] > .fu-mededit{grid-column:1/-1;grid-row:4}
+.fu-footer{grid-column:1/-1;grid-row:5}
+.fu-footer .button-primary,.fu-footer .button-primary:hover{color:#fff!important}
+.fu-wa{border-radius:18px;overflow:hidden;border:1px solid #dfe5dc;background:#efe9df}
+.fu-wa::before{content:"";display:block;height:44px;background:#24382e}
+.fu-wa > .fu-lbl{position:relative;margin-top:-44px;padding:13px 14px 0;color:#f4f3ee;font-size:10.5px;letter-spacing:.06em}
+.fu-wa-chat{padding:14px 12px 16px}
+.fu-msg-grid{align-items:start}
+[data-testid=followup-part-what] > .fu-mededit .fu-vhead{gap:8px}
+.fu-wa > .fu-lbl{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+
+/* Mensajes y reglas, según el mockup: rótulo del flujo, etapa activa, íconos y cabecera de WhatsApp. */
+.fu-flowrow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+.fu-flowrow > .fu-flow {
+  flex: 1;
+  min-width: 0;
+}
+.fu-flowlabel {
+  flex: none;
+  font-size: 12px;
+  font-weight: 700;
+  color: #24382e;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.fu-badge-on {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #1f6b4a;
+  background: #e3f1e8;
+}
+.fu-stagehead .fu-num {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: #2f8f5b;
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 700;
+}
+.fu-subtab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.fu-grip {
+  color: #9aa79c;
+  flex: none;
+  cursor: default;
+}
+.fu-rulecard {
+  align-items: center;
+}
+.fu-wa::before {
+  content: none;
+}
+.fu-wa-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #24382e;
+  color: #f4f3ee;
+  padding: 12px 14px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.fu-wa-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #e8efe9;
+  color: #24382e;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 800;
+  flex: none;
+}
+.fu-wa-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
