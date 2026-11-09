@@ -65,7 +65,7 @@ export const isAction = (v: unknown): v is Action => typeof v === "string" && v 
 export { ACTIONS_OF, actionsOf, compatible } from "./rules";
 /** Nombre de la acción para el equipo: en «No contactado», la principal es el saludo. */
 export function actionLabel(stage: StageKey, action: Action) {
-  if (action === "principal") return stage === "no-contactado" ? "Saludo" : stage === "no-responde" ? "Saludo sin respuesta" : stage === "no-abrio" ? "Seguimiento de demo 1" : ACTIONS.principal;
+  if (action === "principal") return stage === "no-contactado" ? "Saludo" : stage === "no-responde" ? "Saludo sin respuesta" : stage === "sin-demo" ? "Crear demo" : stage === "sin-enviar" ? "Enviar demo" : stage === "no-abrio" ? "Seguimiento de demo 1" : ACTIONS.principal;
   if (action === "seguimiento_2") return stage === "no-abrio" ? "Seguimiento de demo 2" : "Seguimiento 2";
   return ACTIONS[action];
 }
