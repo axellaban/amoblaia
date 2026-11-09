@@ -716,6 +716,9 @@ function Recommended({ item: q, stage, rules, onExecute }: { item: QueueItem | n
       </div>
       <PanelIdent q={q} />
       <RuleBox q={q} rules={rules} />
+      <button type="button" className="button button-primary fu-qbig" data-testid="followup-recommended-execute" onClick={() => onExecute(q)}>
+        <Send size={15} aria-hidden="true" /> Ejecutar esta
+      </button>
       <div className="fu-qline">
         <span className="fu-lbl">Situación</span>
         <span className="fu-pill is-sit">{SITUATIONS[q.situation]}</span>
@@ -778,9 +781,6 @@ function Recommended({ item: q, stage, rules, onExecute }: { item: QueueItem | n
         </div>
       </div>
       </details>
-      <button type="button" className="button button-primary fu-qbig" data-testid="followup-recommended-execute" onClick={() => onExecute(q)}>
-        <Send size={15} aria-hidden="true" /> Ejecutar esta
-      </button>
       <p className="fu-qinfo">
         <Info size={14} aria-hidden="true" /> Al ejecutarla queda tomada por vos 10 minutos y se arma el mensaje con sus enlaces. Después: 1. Abrir WhatsApp, 2. Confirmar envío.
       </p>
