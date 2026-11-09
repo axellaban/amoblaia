@@ -12,6 +12,18 @@ import { NO_FILTER, OTHER_RULES, isEmptyFilter, matchesFilter, stageRules, type 
 import type { CohortRow, WindowKey } from "@/lib/followup/results";
 import { daysText, type Rule } from "@/lib/followup/rules";
 
+
+/** Presentational-only stage glyphs; stage filters keep their original callbacks. */
+const STAGE_GLYPH: Record<CommercialStageKey, typeof Layers> = {
+  prospectado: Send,
+  contactado: MessageCircle,
+  interesado: Target,
+  "demo-enviada": Video,
+  "cuenta-creada": Building2,
+  "cuenta-activa": CheckCheck,
+  cliente: Layers,
+};
+
 type Version = StageView["versions"][number];
 type Exec = QueueItem["execution"];
 
@@ -297,7 +309,12 @@ function ExecCenter({
               setShown(QPAGE);
             }}
           >
-            <span>{k.label}</span>
+            <span className="fu-workspace-kpi-label">
+              <span className="fu-workspace-kpi-symbol" aria-hidden="true">
+                {k.key === "listas" ? <Target size={19} /> : k.key === "respuestas" ? <MessageSquare size={19} /> : k.key === "demos" ? <Video size={19} /> : <KeyRound size={19} />}
+              </span>
+              <span>{k.label}</span>
+            </span>
             <b>{k.value}</b>
             <small>{k.hint}</small>
           </button>
@@ -308,15 +325,20 @@ function ExecCenter({
         <span className="fu-qbarlabel">Cola por etapa comercial</span>
         <div className="fu-qchips">
           <button type="button" className={`fu-qchip${!commercial ? " is-on" : ""}`} aria-pressed={!commercial} data-testid="followup-queue-stage" data-stage="" onClick={() => setF({ commercial: null, stage: null, demoImage: null, rule: null })}>
-            Todas <b>{count({ ...f, commercial: null, stage: null, rule: null })}</b>
+            <span className="fu-stage-glyph" aria-hidden="true"><Layers size={19} /></span>
+            <span className="fu-stage-tile-copy"><span>Todas</span><b>{count({ ...f, commercial: null, stage: null, rule: null })}</b></span>
           </button>
-          {COMMERCIAL_STAGES.map((s) => (
-            <button key={s.key} type="button" className={`fu-qchip${commercial === s.key ? " is-on" : ""}`}
-              aria-pressed={commercial === s.key} data-testid="followup-queue-stage" data-stage={s.key}
-              onClick={() => setF({ commercial: s.key, stage: null, demoImage: null, rule: null })}>
-              {s.title} <b>{count({ ...f, commercial: s.key, stage: null, rule: null })}</b>
-            </button>
-          ))}
+          {COMMERCIAL_STAGES.map((s) => {
+            const Icon = STAGE_GLYPH[s.key];
+            return (
+              <button key={s.key} type="button" className={`fu-qchip${commercial === s.key ? " is-on" : ""}`}
+                aria-pressed={commercial === s.key} data-testid="followup-queue-stage" data-stage={s.key}
+                onClick={() => setF({ commercial: s.key, stage: null, demoImage: null, rule: null })}>
+                <span className="fu-stage-glyph" aria-hidden="true"><Icon size={19} /></span>
+                <span className="fu-stage-tile-copy"><span>{s.title}</span><b>{count({ ...f, commercial: s.key, stage: null, rule: null })}</b></span>
+              </button>
+            );
+          })}
         </div>
         <button type="button" className="fu-qchip is-replies" data-testid="followup-queue-replies" onClick={onReplies}>
           <MessageSquare size={14} aria-hidden="true" /> Respuestas nuevas <b>{inboxCount}</b>
@@ -694,11 +716,16 @@ function Recommended({ item: q, stage, rules, onExecute }: { item: QueueItem | n
       </div>
       <PanelIdent q={q} />
       <RuleBox q={q} rules={rules} />
+      <button type="button" className="button button-primary fu-qbig" data-testid="followup-recommended-execute" onClick={() => onExecute(q)}>
+        <Send size={15} aria-hidden="true" /> Ejecutar esta
+      </button>
       <div className="fu-qline">
         <span className="fu-lbl">Situación</span>
         <span className="fu-pill is-sit">{SITUATIONS[q.situation]}</span>
       </div>
-      <div className="fu-qtwo">
+      <details className="fu-recommended-details" data-testid="followup-recommended-context">
+        <summary>Contexto e historial <ChevronDown size={15} aria-hidden="true" /></summary>
+        <div className="fu-qtwo">
         <div className="fu-qbox">
           <b>Contexto</b>
           <span>
@@ -719,10 +746,16 @@ function Recommended({ item: q, stage, rules, onExecute }: { item: QueueItem | n
           )}
         </div>
       </div>
-      <p className="fu-qflow">
-        <ArrowRight size={14} aria-hidden="true" /> {afterConfirm(q, rules)}
-      </p>
-      <div className="fu-qtwo is-msg">
+      </details>
+      <details className="fu-recommended-details" data-testid="followup-recommended-flow">
+        <summary>Próximo paso del flujo <ChevronDown size={15} aria-hidden="true" /></summary>
+        <p className="fu-qflow">
+          <ArrowRight size={14} aria-hidden="true" /> {afterConfirm(q, rules)}
+        </p>
+      </details>
+      <details className="fu-recommended-details" data-testid="followup-recommended-preparation">
+        <summary>Validaciones y mensaje <ChevronDown size={15} aria-hidden="true" /></summary>
+        <div className="fu-qtwo is-msg">
         <div className="fu-qbox">
           <b>Antes de enviar</b>
           <ul className="fu-qchecks">
@@ -747,9 +780,7 @@ function Recommended({ item: q, stage, rules, onExecute }: { item: QueueItem | n
           {preview.length ? preview.map((m, i) => <div key={i} className="fu-qmsg">{m}</div>) : <span>Sin texto cargado.</span>}
         </div>
       </div>
-      <button type="button" className="button button-primary fu-qbig" data-testid="followup-recommended-execute" onClick={() => onExecute(q)}>
-        <Send size={15} aria-hidden="true" /> Ejecutar esta
-      </button>
+      </details>
       <p className="fu-qinfo">
         <Info size={14} aria-hidden="true" /> Al ejecutarla queda tomada por vos 10 minutos y se arma el mensaje con sus enlaces. Después: 1. Abrir WhatsApp, 2. Confirmar envío.
       </p>

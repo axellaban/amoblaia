@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { FollowupBoard } from "@/components/admin-followup";
 import "./followup-polish.css";
+import "./followup-workspace.css";
 import { HttpError } from "@/lib/commerce/http";
 import { requireAdminPage } from "@/lib/demos/admin-page";
 import { followupOverview } from "@/lib/followup/server";
@@ -21,11 +22,19 @@ export default async function FollowupPage() {
   const data = await followupOverview().catch((e: unknown) => (e instanceof HttpError ? e.message : null));
   return (
     <div className="ah-page fu-page">
-      <header className="ah-head">
-        <div>
-          <h1>Follow-up</h1>
-          <p>Una next best action por cada etapa del embudo. Cada versión se mide sola: cuántas veces se ejecutó y cuántas inmobiliarias avanzaron después.</p>
+      <header className="ah-head fu-workspace-head">
+        <div className="fu-workspace-copy">
+          <span className="fu-workspace-eyebrow">FOLLOW-UP / OPERACIÓN COMERCIAL</span>
+          <h1>Ejecución comercial</h1>
+          <p>Gestioná el outreach y el seguimiento de tus inmobiliarias. Las mismas acciones, reglas y métricas, en una vista más clara.</p>
         </div>
+        <nav className="fu-workspace-utilities" aria-label="Accesos de Habita">
+          <Link href="/panel">Mi inmobiliaria</Link>
+          <Link href="/galeria">Galería</Link>
+          <Link href="/precios">Precios</Link>
+          <Link href="/cuenta">Mi cuenta</Link>
+          <Link href="/inicio">Ir a mi inmobiliaria</Link>
+        </nav>
       </header>
       {data && typeof data === "object" ? (
         <FollowupBoard stages={data.stages} queue={data.queue} blocked={data.blocked} noInteresados={data.noInteresados} summary={data.summary} inbox={data.inbox} funnel={data.funnel} rules={data.rules} changes={data.changes} results={data.results} generatedAt={data.generatedAt} />
