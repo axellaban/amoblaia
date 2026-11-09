@@ -233,7 +233,7 @@ function ExecCenter({
     setTaking(true);
     setError("");
     try {
-      const filtro = { etapa: f.stage, etapaComercial: f.commercial, regla: f.rule, situacion: f.situation, grupo: f.group ?? kpiGroup, buscar: f.search };
+      const filtro = { etapa: f.stage, etapaComercial: f.commercial, imagen: f.demoImage, regla: f.rule, situacion: f.situation, grupo: f.group ?? kpiGroup, buscar: f.search };
       const p = await api<Prepared | null>("/api/admin/followup/claim", { method: "POST", body: JSON.stringify({ filtro, saltar: skip }) });
       if (!p) {
         setDetail(null);
@@ -302,13 +302,13 @@ function ExecCenter({
       <div className="fu-qbar" data-testid="followup-queue-stages">
         <span className="fu-qbarlabel">Cola por etapa comercial</span>
         <div className="fu-qchips">
-          <button type="button" className={`fu-qchip${!commercial ? " is-on" : ""}`} aria-pressed={!commercial} data-testid="followup-queue-stage" data-stage="" onClick={() => setF({ commercial: null, stage: null, rule: null })}>
+          <button type="button" className={`fu-qchip${!commercial ? " is-on" : ""}`} aria-pressed={!commercial} data-testid="followup-queue-stage" data-stage="" onClick={() => setF({ commercial: null, stage: null, demoImage: null, rule: null })}>
             Todas <b>{count({ ...f, commercial: null, stage: null, rule: null })}</b>
           </button>
           {COMMERCIAL_STAGES.map((s) => (
             <button key={s.key} type="button" className={`fu-qchip${commercial === s.key ? " is-on" : ""}`}
               aria-pressed={commercial === s.key} data-testid="followup-queue-stage" data-stage={s.key}
-              onClick={() => setF({ commercial: s.key, stage: null, rule: null })}>
+              onClick={() => setF({ commercial: s.key, stage: null, demoImage: null, rule: null })}>
               {s.title} <b>{count({ ...f, commercial: s.key, stage: null, rule: null })}</b>
             </button>
           ))}
@@ -322,16 +322,33 @@ function ExecCenter({
         <div className="fu-qbar is-rules" data-testid="followup-queue-substages">
           <span className="fu-qbarlabel">Estado de avance</span>
           <div className="fu-qchips">
-            <button type="button" className={`fu-qchip is-sm${!f.stage ? " is-on" : ""}`} aria-pressed={!f.stage} onClick={() => setF({ stage: null, rule: null })}>
+            <button type="button" className={`fu-qchip is-sm${!f.stage ? " is-on" : ""}`} aria-pressed={!f.stage} onClick={() => setF({ stage: null, demoImage: null, rule: null })}>
               Todos <b>{count({ ...f, commercial, stage: null, rule: null })}</b>
             </button>
             {selectedTechnical.map((key) => (
               <button key={key} type="button" className={`fu-qchip is-sm${f.stage === key ? " is-on" : ""}`}
                 data-testid="followup-queue-technical-stage" data-stage={key} aria-pressed={f.stage === key}
-                onClick={() => setF({ stage: key, rule: null })}>
+                onClick={() => setF({ stage: key, demoImage: null, rule: null })}>
                 {technicalStateLabel(key)} <b>{count({ ...f, commercial, stage: key, rule: null })}</b>
               </button>
             ))}
+          </div>
+        </div>
+      )}
+
+      {commercial === "demo-enviada" && (
+        <div className="fu-qbar is-rules" data-testid="followup-queue-demo-image">
+          <span className="fu-qbarlabel">Interacción de la demo</span>
+          <div className="fu-qchips">
+            <button type="button" className={`fu-qchip is-sm${!f.demoImage ? " is-on" : ""}`} onClick={() => setF({ demoImage: null, stage: "sin-cuenta", rule: null })}>
+              Todas <b>{count({ ...f, commercial, stage: "sin-cuenta", demoImage: null, rule: null })}</b>
+            </button>
+            <button type="button" className={`fu-qchip is-sm${f.demoImage === "interacted" ? " is-on" : ""}`} data-testid="followup-demo-interacted" onClick={() => setF({ stage: "sin-cuenta", demoImage: "interacted", rule: null })}>
+              Interactuó <b>{count({ ...f, commercial, stage: "sin-cuenta", demoImage: "interacted", rule: null })}</b>
+            </button>
+            <button type="button" className={`fu-qchip is-sm${f.demoImage === "generated" ? " is-on" : ""}`} data-testid="followup-demo-generated" onClick={() => setF({ stage: "sin-cuenta", demoImage: "generated", rule: null })}>
+              Generó imagen <b>{count({ ...f, commercial, stage: "sin-cuenta", demoImage: "generated", rule: null })}</b>
+            </button>
           </div>
         </div>
       )}
