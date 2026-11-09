@@ -102,7 +102,7 @@ export function FollowupBoard({
       {view === "cola" ? (
         <ExecCenter initial={initial} stages={stages} inboxCount={inbox.length} state={queueState} setState={setQueueState} onReplies={() => go("respuestas")} />
       ) : view === "respuestas" ? (
-        <Inbox inbox={inbox} agencies={[...queue, ...blocked]} />
+        <Inbox inbox={inbox} agencies={[...queue, ...blocked, ...noInteresados]} />
       ) : view === "embudo" ? (
         <Funnel funnel={funnel} stages={stages} rules={rules} onRules={() => go("reglas")} />
       ) : view === "resultados" ? (
@@ -394,13 +394,22 @@ function ExecCenter({
           <button type="button" className={`fu-qchip is-sm${!closedView ? " is-on" : ""}`} aria-pressed={!closedView}
             onClick={() => { setShowClosed(false); setShown(QPAGE); }}>Pendientes de acción</button>
           <button type="button" className={`fu-qchip is-sm${closedView ? " is-on" : ""}`} aria-pressed={closedView}
-            data-testid="followup-no-interesados" onClick={() => { setShowClosed(true); setDetail(null); setShown(QPAGE); }}>
+            data-testid="followup-no-interesados" onClick={() => { setShowClosed(true); setDetail(null); setF({ situation: null, rule: null, group: null }); setShown(QPAGE); }}>
             No interesados <b>{noInteresados.length}</b>
           </button>
           <span className="fu-note">Cerrados para esta campaña · sin envíos automáticos</span>
         </div>
       )}
 
+      {commercial === "prospectado" && (
+        <div className="fu-qbanner" data-testid="followup-first-contact-capacity">
+          <Info size={16} aria-hidden="true" />
+          <span>Primeros contactos · ventana móvil de 24 h: <b>{summary.newToday}/{summary.cap}</b> registrados.
+            <b> {summary.newRemaining} cupos restantes</b>{summary.newWaiting ? ` · ${summary.newWaiting} esperan cupo` : ""}.
+            Los mensajes enviados fuera de Habita no se pueden contar automáticamente.
+          </span>
+        </div>
+      )}
       <div className="fu-qbanner" data-testid="followup-queue-banner">
         <Info size={16} aria-hidden="true" />
         <span className="fu-grow">{banner}</span>
@@ -1299,55 +1308,81 @@ const ruleSituations = (r: Rule) => (r.situations.length ? r.situations.map((x) 
 
 /** Embudo y etapas (Fase 3): las etapas en tarjetas con su avance; la elegida, con sus reglas, sus versiones y sus inmobiliarias. */
 function Funnel({ funnel, stages, rules, onRules }: { funnel: FunnelStep[]; stages: StageView[]; rules: Rule[]; onRules: () => void }) {
-  const [selected, setSelected] = useState<StageKey>(() => (funnel.find((f) => f.key === "no-responde")?.key ?? funnel[0].key) as StageKey);
-  const stage = stages.find((s) => s.key === selected)!;
-  const step = funnel.find((f) => f.key === selected)!;
-  const own = rules.filter((r) => r.stage === selected).sort((a, b) => a.position - b.position);
+  const [selectedCommercial, setSelectedCommercial] = useState<CommercialStageKey>("contactado");
+  const [selectedTechnical, setSelectedTechnical] = useState<StageKey>("no-responde");
+  const technical = technicalOf(selectedCommercial);
+  const selected = technical.includes(selectedTechnical) ? selectedTechnical : technical[0] ?? null;
+  const stage = selected ? stages.find((s) => s.key === selected) ?? null : null;
+  const step = selected ? funnel.find((f) => f.key === selected) ?? null : null;
+  const own = selected ? rules.filter((r) => r.stage === selected).sort((a, b) => a.position - b.position) : [];
+  const latestTechnical = funnel[funnel.length - 1];
+  const clientReached = latestTechnical?.rate === null ? 0 : Math.round((latestTechnical?.reached ?? 0) * (latestTechnical?.rate ?? 0));
+  const byCommercial = COMMERCIAL_STAGES.map((item, index) => {
+    const first = item.technical[0];
+    const reached = first ? (funnel.find((f) => f.key === first)?.reached ?? 0) : clientReached;
+    const waiting = item.technical.reduce((sum, key) => sum + (funnel.find((f) => f.key === key)?.waiting ?? 0), 0);
+    const next = COMMERCIAL_STAGES[index + 1];
+    const nextReached = next?.technical[0]
+      ? (funnel.find((f) => f.key === next.technical[0])?.reached ?? 0) : clientReached;
+    return { ...item, waiting: item.key === "cliente" ? reached : waiting, reached,
+      rate: next && reached ? Math.min(1, nextReached / reached) : null, next: next?.title ?? null };
+  });
   return (
     <section className="fu-funnel" data-testid="followup-funnel">
-      <div className="fu-fcards">
-        {funnel.map((f) => (
-          <button key={f.key} type="button" className={`fu-fcard${f.key === selected ? " is-on" : ""}`} aria-pressed={f.key === selected} data-testid="followup-funnel-stage" data-stage={f.key} onClick={() => setSelected(f.key as StageKey)}>
+      <div className="fu-fcards" aria-label="Siete etapas comerciales">
+        {byCommercial.map((f) => (
+          <button key={f.key} type="button" className={`fu-fcard${f.key === selectedCommercial ? " is-on" : ""}`}
+            aria-pressed={f.key === selectedCommercial} data-testid="followup-funnel-stage" data-stage={f.key}
+            onClick={() => { setSelectedCommercial(f.key); const first = technicalOf(f.key)[0]; if (first) setSelectedTechnical(first); }}>
             <span>{f.title}</span>
             <b>{f.waiting}</b>
-            <small>{f.rate === null ? "—" : `${pct(f.rate)} pasa a ${f.goal}`}</small>
+            <small>{f.next ? `${pct(f.rate)} pasa a ${f.next}` : "Etapa final"}</small>
           </button>
         ))}
       </div>
+      {technical.length > 1 && (
+        <div className="fu-qbar" data-testid="followup-funnel-substages">
+          <span className="fu-qbarlabel">Estado de avance</span>
+          <div className="fu-qchips">
+            {technical.map((key) => (
+              <button key={key} type="button" className={`fu-qchip is-sm${key === selected ? " is-on" : ""}`}
+                aria-pressed={key === selected} onClick={() => setSelectedTechnical(key)}>
+                {technicalStateLabel(key)} <b>{funnel.find((x) => x.key === key)?.waiting ?? 0}</b>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="fu-card fu-fdetail">
         <div className="fu-fhead">
-          <h2>{step.title}</h2>
-          <span className="fu-pill is-media">{step.waiting} esperando</span>
-          <span className="fu-note">Objetivo: que pase a «{step.goal}»</span>
+          <h2>{selectedCommercial === "cliente" ? "Cliente" : step?.title ?? selectedCommercial}</h2>
+          <span className="fu-pill is-media">{byCommercial.find((x) => x.key === selectedCommercial)?.waiting ?? 0} en la etapa comercial</span>
+          {step && <span className="fu-note">Objetivo: que pase a «{step.goal}»</span>}
           <span className="fu-grow" />
-          <button type="button" className="fu-link" onClick={onRules}>
-            Editar reglas y mensajes →
-          </button>
+          {selected && <button type="button" className="fu-link" onClick={onRules}>Editar reglas y mensajes →</button>}
         </div>
-        <div className="fu-frules">
-          {own.length === 0 ? (
-            <p className="fu-note">Sin reglas activas.</p>
-          ) : (
-            own.map((r) => {
-              const versions = stage.versions.filter((v) => (v.action ?? "principal") === r.action);
+        {selected ? (
+          <div className="fu-frules">
+            {own.length === 0 ? (
+              <p className="fu-note">No hay reglas configuradas para este estado de avance.</p>
+            ) : own.map((r) => {
+              const versions = stage?.versions.filter((v) => (v.action ?? "principal") === r.action) ?? [];
               const active = versions.find((v) => v.status === "active");
               const test = versions.find((v) => v.status === "test");
               return (
                 <div key={r.key} className={`fu-frule${r.enabled ? "" : " is-off"}`} data-testid="followup-funnel-rule" data-rule={r.key}>
                   <small>{ruleSituations(r)}{r.after_hours ? ` · a las ${r.after_hours} h` : " · enseguida"}</small>
                   <b>{actionLabel(selected, r.action as Action)}</b>
-                  <span>{active ? `V${active.version} activa` : "Sin texto: queda bloqueada"}{!r.enabled ? " · regla apagada" : ""}</span>
-                  <span>
-                    <b className="fu-big">{pct(active?.stats.rate ?? null)}</b> conversión · {active?.stats.executions ?? 0} ejecuciones{active?.stats.smallSample ? " · muestra chica" : ""}
-                  </span>
+                  <span>{active ? `V${active.version} activa` : "Sin versión activa: no se puede ejecutar"}{!r.enabled ? " · regla apagada" : ""}</span>
+                  <span><b className="fu-big">{pct(active?.stats.rate ?? null)}</b> avance registrado · {active?.stats.executions ?? 0} ejecuciones{active?.stats.smallSample ? " · muestra chica" : ""}</span>
                   <span className={`fu-pill ${test ? "is-baja" : "is-sit"}`}>{test ? `Prueba A/B: V${test.version} contra V${active?.version ?? "?"}` : "Sin prueba"}</span>
                 </div>
               );
-            })
-          )}
-        </div>
+            })}
+          </div>
+        ) : <p className="fu-note">Una inmobiliaria que ya es cliente no tiene más acciones de captación en este funnel.</p>}
       </div>
-      <Queue stage={stage} />
+      {stage && <Queue stage={stage} />}
     </section>
   );
 }
@@ -2601,7 +2636,7 @@ function ResultsView({ results }: { results: Results }) {
       </div>
       <div className="fu-kpis fu-kpis-5">
         <div className="fu-kpi">
-          <span>Ejecutadas</span>
+          <span>Ejecuciones confirmadas</span>
           <b>{results.totals.executed30}</b>
           <small>confirmadas, últimos 30 días</small>
         </div>

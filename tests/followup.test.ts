@@ -150,3 +150,14 @@ describe("version numbers", () => {
     expect(pct(0.045)).toBe("4,5%");
   });
 });
+ 
+describe("Validación de versiones coherente con reglas configurables", () => {
+  it("permite precios desde Interesado y Demo enviada, no desde Prospectado", () => {
+    for (const stage of ["sin-demo", "sin-enviar", "no-abrio", "sin-cuenta"]) {
+      expect("error" in cleanVersion({ stage, action: "precios", channel: "whatsapp", body: "Estos son nuestros planes." })).toBe(false);
+    }
+    expect(cleanVersion({ stage: "no-contactado", action: "precios", channel: "whatsapp", body: "Planes." })).toEqual({
+      error: "Esta acción no está disponible en la etapa seleccionada.",
+    });
+  });
+});

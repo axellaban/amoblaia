@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { NO_FILTER, OTHER_RULES, cleanFilter, isEmptyFilter, matchesFilter, pickNext, stageRules, type Filterable } from "@/lib/followup/queue-filter";
-import { CLOSED_SITUATIONS, SITUATIONS, byQueueOrder, commercialTier, groupOf, nextAction, type Action, type Situation } from "@/lib/followup/plan";
+import { CLOSED_SITUATIONS, SITUATIONS, allocateFirstContactSlots, remainingFirstContactSlots, byQueueOrder, commercialTier, groupOf, nextAction, type Action, type Situation } from "@/lib/followup/plan";
 import { DEFAULT_RULES, type Rule } from "@/lib/followup/rules";
 import { COMMERCIAL_STAGES, FOLLOWUP_STAGES, commercialOf, technicalOf, type StageKey } from "@/lib/followup/stages";
 
@@ -225,5 +225,45 @@ describe("Priorización comercial y No interesado", () => {
     expect(CLOSED_SITUATIONS).toContain("no_contactar");
     expect(nextAction("no-responde", "rechazo").action).toBeNull();
     expect(nextAction("no-responde", "no_contactar").action).toBeNull();
+  });
+});
+
+describe("Cupos reales para primeras conversaciones de WhatsApp", () => {
+  const make = (id: string, score: number, claimed = false) => ({
+    ...agency(id, "no-contactado", "sin_respuesta"),
+    agencyId: id,
+    versionChannel: "whatsapp" as const,
+    blocked: null as string | null,
+    execution: null,
+    claim: claimed ? { until: "2026-11-09T20:00:00Z" } : null,
+    score,
+    since: "2026-11-09T10:00:00Z",
+    priority: "baja" as const,
+  });
+
+  it("muestra 37 habilitados cuando se registraron 13, no todos los candidatos", () => {
+    const queue = Array.from({ length: 94 }, (_, i) => make(String(i), i));
+    const { slots, ready, waiting } = allocateFirstContactSlots(queue, 13, Date.parse("2026-11-09T18:00:00Z"));
+    expect(slots).toBe(37);
+    expect(ready).toHaveLength(37);
+    expect(waiting).toHaveLength(57);
+    expect(ready[0].agencyId).toBe("93");
+    expect(remainingFirstContactSlots(50)).toBe(0);
+    expect(remainingFirstContactSlots(51)).toBe(0);
+  });
+
+  it("reserva primero un cupo para quien ya está siendo ejecutado", () => {
+    const queue = [make("score-alto", 99), make("tomada", 10, true), make("otra", 20)];
+    const { ready, waiting } = allocateFirstContactSlots(queue, 49, Date.parse("2026-11-09T18:00:00Z"));
+    expect(ready.map((q) => q.agencyId)).toEqual(["tomada"]);
+    expect(waiting.map((q) => q.agencyId)).toEqual(["score-alto", "otra"]);
+  });
+
+  it("no reserva cupos a mensajes bloqueados o que no son primeros contactos", () => {
+    const blocked = { ...make("bloqueado", 100), blocked: "Fuera de horario" };
+    const followup = { ...make("seguimiento", 100), stage: "no-responde" as const };
+    const { ready, waiting } = allocateFirstContactSlots([blocked, followup, make("lista", 3)], 49);
+    expect(ready.map((q) => q.agencyId)).toEqual(["lista"]);
+    expect(waiting).toHaveLength(0);
   });
 });
