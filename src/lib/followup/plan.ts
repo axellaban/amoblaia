@@ -251,6 +251,47 @@ export function outsideHours(group: Group, at = new Date()): string | null {
 /** Tope de conversaciones nuevas en 24 horas. */
 export const DAILY_NEW_CAP = 50;
 
+
+/**
+ * A rolling 24-hour first-contact quota is capacity, not a boolean flag.
+ * Only the highest priority candidates up to remaining capacity are "ready".
+ * Already-claimed candidates reserve a slot so that refreshing the list
+ * doesn't silently replace an operator's in-progress contact.
+ */
+type FirstContactCandidate = {
+  agencyId: string;
+  stage: StageKey;
+  group: Group;
+  situation: Situation;
+  action: Action | null;
+  versionChannel: "whatsapp" | "task" | null;
+  blocked: string | null;
+  execution: { status: string } | null;
+  claim: { until: string } | null;
+  score: number | null;
+  since: string;
+  priority?: Priority;
+  promisedAt?: string | null;
+  lastReplyAt?: string | null;
+};
+export const remainingFirstContactSlots = (sent24: number, cap = DAILY_NEW_CAP) =>
+  Math.max(0, cap - Math.max(0, Math.floor(sent24)));
+
+export function allocateFirstContactSlots<T extends FirstContactCandidate>(
+  all: T[], sent24: number, now = Date.now(),
+): { slots: number; ready: T[]; waiting: T[] } {
+  const slots = remainingFirstContactSlots(sent24);
+  const candidates = all.filter((q) =>
+    q.stage === "no-contactado" && q.group === "nuevos" && q.versionChannel === "whatsapp" &&
+    q.action !== null && !q.blocked && q.execution?.status !== "sent");
+  const claimed = candidates.filter((q) => q.claim?.until && Date.parse(q.claim.until) > now)
+    .sort((a, b) => byQueueOrder(a, b, "comercial", now));
+  const available = candidates.filter((q) => !q.claim?.until || Date.parse(q.claim.until) <= now)
+    .sort((a, b) => byQueueOrder(a, b, "comercial", now));
+  const ranked = [...claimed, ...available];
+  return { slots, ready: ranked.slice(0, slots), waiting: ranked.slice(slots) };
+}
+
 // ---------------------------------------------------------------- mensajes
 
 /**

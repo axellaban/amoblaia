@@ -5,6 +5,7 @@
 
 import { AGENCY_STEPS } from "@/lib/agency/demo-funnel";
 import { isAction, type Action } from "./plan";
+import { compatible } from "./rules";
 
 export const FOLLOWUP_STAGES = [
   { key: "no-contactado", step: -1, title: "Prospectado", goal: "Contactado" },
@@ -266,7 +267,7 @@ export function cleanVersion(input: { stage?: unknown; action?: unknown; channel
   if (notes.length > 4000) return { error: "Las observaciones superan los 4000 caracteres." } as const;
   const action: Action = input.action === undefined || input.action === null ? "principal" : isAction(input.action) ? input.action : ("" as Action);
   if (!action) return { error: "Acción desconocida." } as const;
-  if (action !== "principal" && input.stage !== "no-responde") return { error: "La presentación y los precios van en «Contactado»." } as const;
+  if (!compatible(input.stage, action)) return { error: "Esta acción no está disponible en la etapa seleccionada." } as const;
   return { stage: input.stage, action, channel, trigger, body, ctas, status, notes } as const;
 }
 

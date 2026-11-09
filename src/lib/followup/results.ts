@@ -35,9 +35,12 @@ export function attribute(executions: ResultExecution[], stepNow: Map<string, nu
   for (const list of groups.values()) {
     const e0 = list[0];
     if ((stepNow.get(e0.agency_id) ?? -1) <= e0.from_step) continue;
-    const at = list.map((e) => e.converted_at).find(Boolean);
-    if (!at) continue;
-    const t = Date.parse(at);
+    // Choose the earliest documented conversion, not whichever row happened
+    // to be returned first by the database.
+    const recorded = list.map((e) => e.converted_at ? Date.parse(e.converted_at) : NaN)
+      .filter(Number.isFinite).sort((a, b) => a - b);
+    if (!recorded.length) continue;
+    const t = recorded[0];
     // The last message sent before the conversion takes it; the earlier ones assisted.
     const before = list.filter((e) => Date.parse(e.sent_at!) <= t).sort((a, b) => Date.parse(b.sent_at!) - Date.parse(a.sent_at!));
     const last = before[0];
@@ -106,11 +109,11 @@ export function versionResults(
   return rows;
 }
 
-/** Monday 00:00 of an instant's week, in Argentina (UTC-3), as YYYY-MM-DD. */
+/** Friday closing date of an instant's Sat–Fri reporting week in Argentina. */
 export function weekOf(iso: string) {
   const t = new Date(Date.parse(iso) - 3 * 3_600_000);
-  const day = (t.getUTCDay() + 6) % 7;
-  t.setUTCDate(t.getUTCDate() - day);
+  const daysToFriday = (5 - t.getUTCDay() + 7) % 7;
+  t.setUTCDate(t.getUTCDate() + daysToFriday);
   return t.toISOString().slice(0, 10);
 }
 export function lastWeeks(n: number, now = new Date()) {

@@ -152,3 +152,32 @@ describe("followup migration", () => {
     expect(grants).toEqual([]);
   });
 });
+
+describe("Confirmación atómica del cupo Follow-up", () => {
+  it("serializa el cupo de primer contacto en la base y conserva idempotencia", async () => {
+    await db.exec("begin");
+    try {
+      const version = await active("no-contactado");
+      // The previous suites may have already recorded a few greetings. Fill
+      // the full quota with distinct agencies using the historical RPC.
+      const exists = (await one<{ count: string }>(
+        "select count(distinct agency_id)::text as count from followup_executions where stage='no-contactado' and status='sent' and sent_at >= now() - interval '24 hours'",
+      ))!;
+      for (let i = Number(exists.count); i < 50; i++) {
+        const a = (await one<{ id: string }>(
+          "insert into agencies(name) values($1) returning id", [`Cap audit test ${i}`],
+        ))!.id;
+        await db.query("select habita_followup_mark(null, $1, $2, -1, 'sent', null)", [version.id, a]);
+      }
+      const finalAgency = (await one<{ id: string }>(
+        "insert into agencies(name) values('Cap last test') returning id",
+      ))!.id;
+      const blocked = await fails(
+        "select habita_followup_mark_capped(null, $1, $2, -1, 'sent', null, null)", [version.id, finalAgency],
+      );
+      expect(blocked).toContain("FOLLOWUP_FIRST_CONTACT_CAP_REACHED");
+    } finally {
+      await db.exec("rollback");
+    }
+  });
+});

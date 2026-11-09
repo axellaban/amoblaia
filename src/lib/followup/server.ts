@@ -45,6 +45,8 @@ import {
 import {
   CLOSED_SITUATIONS,
   DAILY_NEW_CAP,
+  allocateFirstContactSlots,
+  remainingFirstContactSlots,
   SITUATIONS,
   actionLabel,
   byPriority,
@@ -332,6 +334,9 @@ export type QueueSummary = {
   doneToday: number;
   newToday: number;
   cap: number;
+  /** Real capacity in the rolling 24-hour window, not all waiting prospects. */
+  newRemaining: number;
+  newWaiting: number;
 };
 
 type Claim = { agency_id: string; actor_id: string; actor_name: string; stage: string; action: string; locked_until: string };
@@ -478,28 +483,32 @@ async function board(now = new Date()) {
     });
     items.set(r.id, it);
   }
+  // Respect remaining first-contact capacity rather than calling every
+  // prospect "ready" until the 50th send. Claims reserve capacity first.
+  // This only governs registered sends; WhatsApp Web activity outside Habita
+  // cannot be inferred or counted here.
+  const allocated = allocateFirstContactSlots([...items.values()], fresh.size, now.getTime());
+  for (const candidate of allocated.waiting)
+    candidate.blocked = `Sin cupo para primer contacto: ${fresh.size} enviados en 24 h, máximo ${DAILY_NEW_CAP}. Se habilitará al liberarse un cupo.`;
+
   // Fase 4: the moment each execution converted, recorded the first time it is seen (the exact time when known).
   const firstDemo = new Map<string, number>();
   for (const r of rows) for (const d of r.demos) if (d.createdAt) later(firstDemo, r.id, d.createdAt);
-  const pendingConv = ex.filter((e) => e.status === "sent" && e.sent_at && !e.converted_at && (stepNow.get(e.agency_id) ?? -1) > e.from_step);
-  await Promise.all(
-    pendingConv.slice(0, 200).map((e) => {
-      const sentAt = Date.parse(e.sent_at!);
-      const interest = lastInterest.get(e.agency_id);
-      const demo = firstDemo.get(e.agency_id);
-      const at = e.from_step < 1 && interest && interest >= sentAt ? interest : e.from_step < 2 && demo && demo >= sentAt ? demo : now.getTime();
-      e.converted_at = new Date(at).toISOString();
-      return adminClient()
-        .from("followup_executions")
-        .update({ converted_at: e.converted_at, converted_step: stepNow.get(e.agency_id) ?? null })
-        .eq("id", e.id)
-        .is("converted_at", null)
-        .then(
-          () => undefined,
-          () => undefined,
-        );
-    }),
-  );
+  // GETs must not mutate real conversion history. Credit only an observed
+  // post-send interest or demo creation timestamp. For later steps we don't
+  // know the exact event time; never fabricate one using the time of this GET.
+  for (const e of ex) {
+    if (e.status !== "sent" || !e.sent_at || e.converted_at || (stepNow.get(e.agency_id) ?? -1) <= e.from_step) continue;
+    const sentAt = Date.parse(e.sent_at);
+    const interest = lastInterest.get(e.agency_id);
+    const demo = firstDemo.get(e.agency_id);
+    const observed = e.from_step < 1 && interest && interest >= sentAt
+      ? interest
+      : e.from_step < 2 && demo && demo >= sentAt
+        ? demo
+        : null;
+    if (observed !== null) e.converted_at = new Date(observed).toISOString();
+  }
   // Fase 4: per agency, its first contact and first reply (for the cohorts) and the greeting version it got.
   const firstReply = new Map<string, number>();
   for (const e of ds?.events ?? []) {
@@ -749,6 +758,9 @@ function summarize(all: QueueItem[], newToday: number, inboxCount = 0): QueueSum
     doneToday: all.filter((q) => q.execution?.status === "sent" && artDate(q.execution.at) === today).length,
     newToday,
     cap: DAILY_NEW_CAP,
+    newRemaining: remainingFirstContactSlots(newToday),
+    newWaiting: all.filter((q) => q.stage === "no-contactado" && pending(q) &&
+      (q.blocked?.startsWith("Sin cupo para primer contacto") || q.blocked?.startsWith("Tope de 50 conversaciones"))).length,
   };
 }
 
@@ -794,9 +806,12 @@ export async function claimNext(input: { agencyId?: unknown; filter?: unknown; s
     return prepare(it, origin, actor);
   }
   // La cola se recalcula ahora (no la que tiene la pantalla) y se toma solo lo que entra en el filtro elegido.
-  const [{ queue }, rules] = await Promise.all([agentQueue(actor.id, 500), input.filter ? readRules().catch(() => DEFAULT_RULES) : Promise.resolve(DEFAULT_RULES)]);
+  // Filtering after the first 500 globally ranked prospects silently loses
+  // stage-specific results. Rank and filter the entire executable board first.
+  const currentBoard = await board();
+  const queue = executable([...currentBoard.items.values()]);
   const skip = Array.isArray(input.skip) ? input.skip.filter((x): x is string => typeof x === "string").slice(0, 500) : [];
-  const it = await pickNext(queue, { filter: cleanFilter(input.filter), rules, skip, actorId: actor.id }, (x) =>
+  const it = await pickNext(queue, { filter: cleanFilter(input.filter), rules: currentBoard.rules, skip, actorId: actor.id }, (x) =>
     lock(x, actor).then(
       () => true,
       (e) => {
@@ -996,7 +1011,9 @@ async function sameTask(input: { agencyId: unknown; stage?: unknown; action?: un
 }
 
 async function mark(it: QueueItem, v: FollowupVersion, status: ExecutionStatus, actorId: string, reason?: string | null, body?: string | null) {
-  const { data, error } = await adminClient().rpc("habita_followup_mark", {
+  const rpc = status === "sent" && it.stage === "no-contactado"
+    ? "habita_followup_mark_capped" : "habita_followup_mark";
+  const { data, error } = await adminClient().rpc(rpc, {
     p_actor: actorId,
     p_version: v.id,
     p_agency: it.agencyId,
@@ -1005,7 +1022,9 @@ async function mark(it: QueueItem, v: FollowupVersion, status: ExecutionStatus, 
     p_reason: reason || null,
     p_body: body || null,
   });
-  if (error) throw missing(error) ? new HttpError(409, MISSING) : new Error("FOLLOWUP_MARK_FAILED");
+  if (error?.message?.includes("FOLLOWUP_FIRST_CONTACT_CAP_REACHED"))
+    throw new HttpError(409, "Se alcanzó el límite interno de 50 contactos nuevos en 24 horas. El contacto sigue pendiente; no confirmes otro envío.");
+  if (error) throw missing(error) ? new HttpError(409, "Falta aplicar la migración 202612080001_followup_first_contact_cap.sql.") : new Error("FOLLOWUP_MARK_FAILED");
   return data as FollowupExecution;
 }
 
@@ -1031,6 +1050,10 @@ export async function confirmExecution(input: { agencyId: unknown; stage?: unkno
       return { execution: { status: "sent" as const, at: before.it.execution.at }, warning: null, item: strip(before.it), replayed: true };
   }
   const { it, v } = await sameTask(input, actor.id);
+  // Revalidate availability at confirmation: a claim or an open WhatsApp tab
+  // never reserves permission to exceed the first-contact cap or send to a
+  // newly closed contact.
+  if (v.channel === "whatsapp" && it.blocked) throw new HttpError(409, `No confirmes el envío: ${it.blocked} Actualizá la cola.`);
   // Crear demo is confirmed by publication in the product, never by a manual task-send click.
   if (it.stage === "sin-demo" && it.action === "principal" && v.channel === "task") throw new HttpError(409, "La demo todavía no está publicada. Creala desde el panel: al publicarla, Habita avanzará automáticamente a «Demo creada, sin enviar».");
   const text = typeof input.text === "string" ? input.text.trim().slice(0, 8000) : "";
