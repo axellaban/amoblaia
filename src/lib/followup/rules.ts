@@ -48,6 +48,7 @@ export type Rule = {
   stage: StageKey;
   /** Situaciones a las que aplica; vacía: cualquiera (las cerradas nunca). */
   situations: Situation[];
+  catalog_situation?: string | null;
   action: Action;
   /** Horas desde nuestro último mensaje (0: enseguida). */
   after_hours: number;

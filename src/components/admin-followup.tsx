@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, createContext, useContext, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Building2, CalendarDays, CheckCheck, ChevronDown, ChevronRight, ClipboardCopy, Copy, GripVertical, Info, KeyRound, Layers, Link2, MessageCircle, MessageSquare, MoreVertical, Pencil, Phone, Plus, RefreshCw, Send, Tag, Target, Trash2, Undo2, Video, X } from "lucide-react";
 import { api } from "@/components/admin-demos";
 import { CTA_KEYS, CTA_LABEL, COMMERCIAL_STAGES, FOLLOWUP_STAGES, OUT, VARIABLES, commercialOf, technicalOf, technicalStateLabel, fillMessage, missingVariables, pct, type Channel, type Cta, type CommercialStageKey, type StageKey, type VersionStatus } from "@/lib/followup/stages";
@@ -47,6 +47,7 @@ async function copy(text: string) {
   }
 }
 
+const SituationCatalog = createContext<{ custom: CustomStage[]; states: CatalogState[] }>({ custom: [], states: [] });
 type View = "etapas" | "cola" | "respuestas" | Mode;
 const VIEWS: { key: View; label: string; soon?: string }[] = [
   { key: "cola", label: "Cola de ejecución" },
@@ -83,10 +84,15 @@ export function FollowupBoard({
   results: Results;
   generatedAt: string;
 }) {
+  const [states, setStates] = useState<CatalogState[]>([]);
   const [custom, setCustom] = useState<CustomStage[]>([]);
   const [catalogError, setCatalogError] = useState("");
   const reloadCatalog = useCallback(async () => {
-    const result = await api<{ stages: CustomStage[] }>("/api/admin/follow-up/etapas");
+    const [result, classifications] = await Promise.all([
+      api<{ stages: CustomStage[] }>("/api/admin/follow-up/etapas"),
+      api<{ states: CatalogState[] }>("/api/admin/follow-up/estados"),
+    ]);
+    setStates(classifications.states);
     setCustom(result.stages);
     setCatalogError("");
   }, []);
@@ -98,7 +104,7 @@ export function FollowupBoard({
     return v === "etapas" || v === "respuestas" || v === "embudo" || v === "reglas" || v === "resultados" ? v : "cola";
   });
   useEffect(() => {
-    if (view === "etapas" || view === "embudo") void reloadCatalog().catch(() => setCatalogError("No pudimos cargar las etapas personalizadas."));
+    void reloadCatalog().catch(() => setCatalogError("No pudimos cargar las etapas personalizadas."));
   }, [view, reloadCatalog]);
   function go(v: View) {
     setView(v);
@@ -108,7 +114,7 @@ export function FollowupBoard({
     window.history.replaceState(null, "", url);
   }
   return (
-    <>
+    <SituationCatalog.Provider value={{ custom, states }}>
       <nav className="fu-tabs" aria-label="Vistas de Follow-up" data-testid="followup-tabs">
         {VIEWS.map((t) =>
           t.soon ? (
@@ -140,7 +146,7 @@ export function FollowupBoard({
           <RulesWorkspace stages={stages} rules={rules} changes={changes} />
         </>
       )}
-    </>
+    </SituationCatalog.Provider>
   );
 }
 
@@ -1940,6 +1946,9 @@ function RuleEditor({
   onDeleted?: () => void;
 }) {
   const router = useRouter();
+  const catalog = useContext(SituationCatalog);
+  const specific = catalog.states.filter(s => s.active && s.maps_to && (commercialOf(stage.key) === s.commercial_stage ||
+    catalog.custom.some(c => c.key === s.commercial_stage && c.technical_stage === stage.key)));
   const available = actionsOf(stage.key);
   const blank: Rule = template
     ? { ...template, key: "", name: template.name ?? null, stage: stage.key, position: nextPosition, enabled: true, days: [...template.days], situations: [...template.situations] }
@@ -1971,10 +1980,10 @@ function RuleEditor({
       if (msgDirty && !window.confirm(DISCARD)) return;
       setMsgDirty(false);
       const closing = x === "rechazo" && !r.situations.includes(x);
-      set({ situations: closing ? ["rechazo"] : x === "rechazo" ? [] : [x], action: closing ? "encuesta_cierre" : "principal", after_action: null, after_hours: 0 });
+      set({ catalog_situation: null, situations: closing ? ["rechazo"] : x === "rechazo" ? [] : [x], action: closing ? "encuesta_cierre" : "principal", after_action: null, after_hours: 0 });
       return;
     }
-    set({ situations: r.situations.includes(x) ? r.situations.filter(y => y !== x) : [...r.situations, x] });
+    set({ catalog_situation: null, situations: r.situations.includes(x) ? r.situations.filter(y => y !== x) : [...r.situations, x] });
   };
   const remaining = SITUATION_OPTIONS.filter((x) => !r.situations.includes(x) && (x !== "rechazo" || stage.key === "no-responde"));
   const dayPreset = DAY_PRESETS.find((p) => p.days.join() === [...r.days].sort((a, b) => a - b).join());
@@ -1984,7 +1993,7 @@ function RuleEditor({
     if (a === r.action) return;
     if (msgDirty && !window.confirm(DISCARD)) return;
     setMsgDirty(false);
-    set({ action: a, situations: a === "encuesta_cierre" ? ["rechazo"] : r.situations.filter(s => s !== "rechazo"), after_action: a === "encuesta_cierre" || r.after_action === a ? null : r.after_action });
+    set({ catalog_situation: null, action: a, situations: a === "encuesta_cierre" ? ["rechazo"] : r.situations.filter(s => s !== "rechazo"), after_action: a === "encuesta_cierre" || r.after_action === a ? null : r.after_action });
   }
   async function call(work: () => Promise<unknown>, after?: () => void) {
     setBusy(true);
@@ -2107,12 +2116,24 @@ function RuleEditor({
               )}
             </div>
           </div>
+          {specific.length > 0 && <label className="fu-f">Situación personalizada
+              <select value={r.catalog_situation ?? ""} onChange={e => {
+                const definition = specific.find(s => s.key === e.target.value);
+                if (!definition?.maps_to) { set({ catalog_situation: null }); return; }
+                const closing = definition.maps_to === "rechazo";
+                const action = closing ? "encuesta_cierre" : r.action === "encuesta_cierre" ? "principal" : r.action;
+                if (action !== r.action && msgDirty && !window.confirm(DISCARD)) return;
+                if (action !== r.action) setMsgDirty(false);
+                set({ catalog_situation: definition.key, situations: [definition.maps_to], action, after_action: null });
+              }}><option value="">Todas las que cumplan la condición</option>
+              {specific.filter(s => SITUATION_OPTIONS.some(x => x === s.maps_to) && (s.maps_to !== "rechazo" || stage.key === "no-responde")).map(s => <option key={s.key} value={s.key}>{s.label}</option>)}</select>
+          </label>}
           <label className="fu-f">
             <span>Paso previo</span>
             <select value={r.after_action ?? ""} onChange={(e) => set({ after_action: (e.target.value || null) as Rule["after_action"] })}>
               <option value="">Ningún paso</option>
               {available
-                .filter((a) => a !== r.action)
+                .filter((a) => a !== r.action && a !== "encuesta_cierre")
                 .map((a) => (
                   <option key={a} value={a}>
                     {actionLabel(stage.key, a)}
@@ -3054,8 +3075,11 @@ function SituationCell({ item: q }: { item: QueueItem }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  async function change(situacion: Situation) {
-    if (situacion === q.situation) return;
+  const catalog = useContext(SituationCatalog);
+  const specific = catalog.states.filter(s => s.active && s.maps_to && (s.key === q.catalogSituation || s.commercial_stage === commercialOf(q.stage) ||
+    catalog.custom.some(c => c.key === s.commercial_stage && c.technical_stage === q.stage && c.entry_situation === q.situation)));
+  async function change(situacion: string) {
+    if (situacion === (q.catalogSituation ?? q.situation)) return;
     const texto = ["sin_respuesta", "sin_whatsapp", "numero_incorrecto"].includes(situacion) ? "" : (window.prompt("Texto de su respuesta (opcional, queda como evidencia)") ?? "");
     setBusy(true);
     setError("");
@@ -3070,7 +3094,8 @@ function SituationCell({ item: q }: { item: QueueItem }) {
   }
   return (
     <span className="fu-stagecell">
-      <select data-testid="followup-situation-select" value={q.situation} disabled={busy} aria-label={`Situación de ${q.name}`} title={error || q.situationNote || undefined} onChange={(e) => change(e.target.value as Situation)}>
+      <select data-testid="followup-situation-select" value={specific.some(s => s.key === q.catalogSituation) ? q.catalogSituation! : q.situation} disabled={busy} aria-label={`Situación de ${q.name}`} title={error || q.situationNote || undefined} onChange={(e) => change(e.target.value as Situation)}>
+        {specific.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
         {(Object.keys(SITUATIONS) as Situation[]).map((k) => (
           <option key={k} value={k}>
             {SITUATIONS[k]}

@@ -116,13 +116,14 @@ type AgencyExtra = {
   situation_step: number | null;
   situation_note: string | null;
   situation_at: string | null;
+  catalog_situation?: string | null;
   short_name: string | null;
   priority: Priority | null;
   snooze_until: string | null;
   snooze_reason: string | null;
 };
 const extras = async (agencyId?: string) => {
-  let q = adminClient().from("followup_agencies").select("agency_id,stage_override,override_step,address,zone,score,situation,situation_step,situation_note,situation_at,short_name,priority,snooze_until,snooze_reason");
+  let q = adminClient().from("followup_agencies").select("agency_id,stage_override,override_step,address,zone,score,situation,situation_step,situation_note,situation_at,catalog_situation,short_name,priority,snooze_until,snooze_reason");
   if (agencyId) q = q.eq("agency_id", agencyId);
   const { data, error } = await q.limit(20000);
   if (error) throw missing(error) ? new HttpError(409, MISSING) : new Error("FOLLOWUP_READ_FAILED");
@@ -135,7 +136,7 @@ const missingGenerationField = (error: { code?: string; message?: string } | nul
 async function readRules(): Promise<Rule[]> {
   const db = adminClient();
   const latest = await db.from("followup_rules")
-    .select("key,name,stage,situations,action,after_hours,after_action,position,enabled,hours_from,hours_to,days,min_demo_activity_level")
+    .select("key,name,stage,situations,action,after_hours,after_action,position,enabled,hours_from,hours_to,days,min_demo_activity_level,catalog_situation")
     .limit(500);
   if (!missingGenerationField(latest.error)) {
     if (latest.error) throw missing(latest.error) ? new HttpError(409, MISSING) : new Error("FOLLOWUP_READ_FAILED");
@@ -276,6 +277,7 @@ export type QueueItem = {
   /** Its stage was corrected by hand (by the team or the extension). */
   manual: boolean;
   situation: Situation;
+  catalogSituation?: string | null;
   situationManual: boolean;
   situationNote: string | null;
   /** La próxima acción (fija por código en la Fase 1); null: nada que mandar. */
@@ -597,7 +599,8 @@ function item(
   const doneMap: Partial<Record<Action, boolean>> = {};
   for (const e of stageSent) doneMap[(e.action ?? "principal") as Action] = true;
   const demoGenerated = r.demos.some((d) => d.generated === true);
-  const next = nextAction(stage, sit.situation, doneMap, sit.situation === "rechazo" && !surveyReply ? [] : rules, demoGenerated);
+  const matchingRules = rules.filter(rule => !rule.catalog_situation || (sit.manual && rule.catalog_situation === own?.catalog_situation));
+  const next = nextAction(stage, sit.situation, doneMap, sit.situation === "rechazo" && !surveyReply ? [] : matchingRules, demoGenerated);
   // The rule's window, or the one of the rule that sent the last step (for the row of a finished sequence).
   const window = next.rule ?? rules.find((x) => x.stage === stage && x.action === (stageSent[0]?.action ?? "principal")) ?? null;
   // Nothing left to send but something went out: the row shows that last one as sent.
@@ -638,6 +641,7 @@ function item(
     step: at.step,
     manual: at.manual,
     situation: sit.situation,
+    catalogSituation: sit.manual ? own?.catalog_situation : null,
     situationManual: sit.manual,
     situationNote: sit.manual ? (own?.situation_note ?? null) : null,
     action,
@@ -1135,12 +1139,19 @@ const SITUATION_FACT: Partial<Record<Situation, "reply" | "interest" | "lost">> 
  * do-not-contact, an invalid number), best effort: the answer says what could
  * not be recorded.
  */
-export async function setSituation(agencyId: string, raw: unknown, note: unknown, actor: { id: string; name: string }) {
+export async function setSituation(agencyId: string, raw: unknown, note: unknown, actor: { id: string; name: string }, receivedAt = new Date().toISOString()) {
+  const custom = typeof raw === "string" && raw.startsWith("custom_") ? await resolveCustomClassification(raw) : null;
+  if (custom) {
+    const current = (await board()).items.get(agencyId);
+    if (!current || !await classificationMatches(current, custom.definition.commercial_stage))
+      throw new HttpError(409, "La situación ya no corresponde a la etapa de la inmobiliaria.");
+    raw = custom.canonical;
+  }
   if (!isSituation(raw)) throw new HttpError(400, "Situación desconocida.");
   const situation = raw;
   const text = typeof note === "string" ? note.trim().slice(0, 2000) : "";
   const { at, account } = await now(agencyId);
-  await saveExtra(agencyId, { situation, situation_step: stepValue(at.derived.reached), situation_note: text || null, situation_at: new Date().toISOString() }, actor.id);
+  await saveExtra(agencyId, { situation, catalog_situation: custom?.definition.key ?? null, situation_step: stepValue(at.derived.reached), situation_note: text || null, situation_at: receivedAt }, actor.id);
   await audit("situation", actor, { agencyId, to: `${situation}${text ? ` · «${text.slice(0, 200)}»` : ""}` });
   let warning: string | null = null;
   if (account) {
@@ -1178,11 +1189,12 @@ type ReplyRow = {
   body: string;
   received_at: string;
   classification: ReplyClass | null;
+  catalog_situation?: string | null;
   confidence: number | null;
   status: "pendiente" | "facu" | "procesada";
   note: string | null;
 };
-const REPLY_FIELDS = "id,agency_id,body,received_at,classification,confidence,status,note";
+const REPLY_FIELDS = "id,agency_id,body,received_at,classification,catalog_situation,confidence,status,note";
 
 /** Las respuestas sin resolver, por inmobiliaria. */
 async function openReplies() {
@@ -1217,6 +1229,12 @@ export async function inbox() {
  * va a Facu y no se manda nada; sin clasificación queda en la bandeja.
  * Idempotente: la misma respuesta (inmobiliaria, hora, texto) no se duplica.
  */
+async function classificationMatches(current: QueueItem, expected: string) {
+  if (commercialOf(current.stage) === expected) return true;
+  if (!expected.startsWith("etapa_")) return false;
+  return (await customStages()).some(s => s.key === expected && s.technical_stage === current.stage && s.entry_situation === current.situation);
+}
+
 export async function registerReply(
   input: { agencyId: unknown; text: unknown; receivedAt?: unknown; classification?: unknown; confidence?: unknown; note?: unknown; until?: unknown; contactName?: unknown; contactWhatsapp?: unknown },
   actor: { id: string; name: string },
@@ -1231,9 +1249,7 @@ export async function registerReply(
   if (rawClassification.startsWith("custom_") && !custom) throw new HttpError(400, "Estado personalizado desconocido o inactivo. Revisá el catálogo.");
   if (custom) {
     const current = (await board()).items.get(input.agencyId);
-    const expected = custom.definition.commercial_stage;
-    const customStage = expected.startsWith("etapa_") ? (await customStages()).find(s => s.key === expected) : null;
-    if (!current || (customStage ? current.stage !== customStage.technical_stage || current.situation !== customStage.entry_situation : commercialOf(current.stage) !== expected)) {
+    if (!current || !await classificationMatches(current, custom.definition.commercial_stage)) {
       throw new HttpError(409, "Ese estado personalizado no corresponde a la etapa comercial actual.");
     }
   }
@@ -1258,6 +1274,7 @@ export async function registerReply(
       body: text,
       received_at: at.toISOString(),
       classification,
+      catalog_situation: custom?.definition.key ?? null,
       confidence,
       status: route === "facu" ? "facu" : "pendiente",
       note: note || (route === "facu" ? (classification && FACU_CLASSES.includes(classification) ? REPLY_CLASSES[classification] : "Confianza baja") : null),
@@ -1320,7 +1337,7 @@ export async function processReply(
       }).catch((e) => warnings.push(`No pudimos sumar el contacto nuevo: ${e instanceof HttpError ? e.message : "probá desde su ficha."}`));
   }
   const situation = c as Situation;
-  const applied = await setSituation(reply.agency_id, situation, reply.body, actor);
+  const applied = await setSituation(reply.agency_id, reply.catalog_situation && c === reply.classification ? reply.catalog_situation : situation, reply.body, actor, reply.received_at);
   if (applied.warning) warnings.push(applied.warning);
   if (c === "mas_adelante" && input.until) await snooze(reply.agency_id, input.until, `Pidió hablar más adelante: «${reply.body.slice(0, 120)}»`, actor);
   await db.from("followup_replies").update({ status: "procesada", classification: c, processed_by: actor.id, processed_at: new Date().toISOString() }).eq("id", reply.id);
@@ -1348,9 +1365,17 @@ export async function saveRule(key: unknown, input: Record<string, unknown>, act
   if (id.length > 80) throw new HttpError(400, "Regla desconocida.");
   const before = typeof key === "string" && key ? (await db.from("followup_rules").select("*").eq("key", key).maybeSingle()).data : null;
   if (typeof key === "string" && key && !before) throw new HttpError(404, "No encontramos esa regla.");
-  const payload = { key: id, ...clean, updated_by: actor.id, updated_at: new Date().toISOString() };
+  const catalogKey = typeof input.catalog_situation === "string" && input.catalog_situation ? input.catalog_situation : null;
+  if (catalogKey) {
+    const custom = await resolveCustomClassification(catalogKey);
+    if (!custom || !clean.situations.includes(custom.canonical as Situation)) throw new HttpError(400, "Revisá la situación personalizada de la regla.");
+    const scope = custom.definition.commercial_stage;
+    if (scope !== commercialOf(clean.stage) && !(await customStages()).some(s => s.key === scope && s.technical_stage === clean.stage))
+      throw new HttpError(400, "La situación pertenece a otra etapa.");
+  }
+  const payload = { key: id, ...clean, catalog_situation: catalogKey, updated_by: actor.id, updated_at: new Date().toISOString() };
   const latest = await db.from("followup_rules").upsert(payload, { onConflict: "key" })
-    .select("key,name,stage,situations,action,after_hours,after_action,position,enabled,hours_from,hours_to,days,min_demo_activity_level").single();
+    .select("key,name,stage,situations,action,after_hours,after_action,position,enabled,hours_from,hours_to,days,min_demo_activity_level,catalog_situation").single();
   let saved: Rule;
   if (missingGenerationField(latest.error)) {
     if (clean.min_demo_activity_level === 3) throw new HttpError(409, "Aplicá la migración de estados antes de activar «Generó imagen».");
