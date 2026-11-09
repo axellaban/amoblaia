@@ -3,10 +3,10 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, BarChart3, Building2, CalendarDays, CheckCheck, ChevronDown, ChevronRight, ClipboardCopy, Copy, GripVertical, Info, KeyRound, Layers, Link2, MessageCircle, MessageSquare, MoreVertical, Pencil, Phone, Plus, RefreshCw, Send, SlidersHorizontal, Tag, Target, Trash2, Undo2, Video, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Building2, CalendarDays, CheckCheck, ChevronDown, ChevronRight, ClipboardCopy, Copy, GripVertical, Info, KeyRound, Layers, Link2, MessageCircle, MessageSquare, MoreVertical, Pencil, Phone, Plus, RefreshCw, Send, Tag, Target, Trash2, Undo2, Video, X } from "lucide-react";
 import { api } from "@/components/admin-demos";
 import { CTA_KEYS, CTA_LABEL, FOLLOWUP_STAGES, OUT, VARIABLES, fillMessage, missingVariables, pct, type Channel, type Cta, type StageKey, type VersionStatus } from "@/lib/followup/stages";
-import { GROUPS, REPLY_CLASSES, SITUATIONS, actionLabel, actionWhen, actionsOf, compatible, splitMessages, type Action, type ReplyClass, type Situation } from "@/lib/followup/plan";
+import { GROUPS, REPLY_CLASSES, SITUATIONS, actionLabel, actionsOf, compatible, splitMessages, type Action, type ReplyClass, type Situation } from "@/lib/followup/plan";
 import type { Change, FunnelStep, InboxItem, Prepared, QueueItem, QueueSummary, QueueView, Results, StageView } from "@/lib/followup/server";
 import { NO_FILTER, OTHER_RULES, isEmptyFilter, matchesFilter, stageRules, type QueueFilter } from "@/lib/followup/queue-filter";
 import type { CohortRow, WindowKey } from "@/lib/followup/results";
@@ -1338,7 +1338,6 @@ function Funnel({ funnel, stages, rules, onRules }: { funnel: FunnelStep[]; stag
 const NEW_RULE = "__nueva";
 const NEW_VERSION = "__nueva";
 const DISCARD = "Hay cambios sin guardar. ¿Descartarlos?";
-type StageTab = "reglas" | "mensajes" | "resumen";
 type MsgTab = "mensaje" | "versiones" | "observaciones";
 
 /** Qué espera cada etapa, en una línea (la misma lectura que la tabla de docs/FOLLOWUP.md). */
