@@ -16,6 +16,7 @@ import { artDate } from "@/lib/prospecting/time";
 import { adminClient } from "@/lib/supabase/server";
 import {
   FOLLOWUP_STAGES,
+  commercialOf,
   OUT,
   byScore,
   cleanVersion,
@@ -71,6 +72,7 @@ import {
 import { DEFAULT_RULES, cleanRule, compatible, outsideWindow, type Rule } from "./rules";
 import { WINDOWS, blockReasons, bySegment, cohorts, versionResults, weekly, type VersionResult, type WindowKey } from "./results";
 import { cleanFilter, pickNext } from "./queue-filter";
+import { resolveCustomClassification } from "./state-catalog";
 
 /**
  * Follow-up (/admin/follow-up): each funnel stage with its next best action,
@@ -124,10 +126,26 @@ const extras = async (agencyId?: string) => {
 };
 
 /** Las reglas activas e inactivas (Fase 3). Sin la tabla, la migración falta. */
+const missingGenerationField = (error: { code?: string; message?: string } | null) =>
+  Boolean(error && (error.code === "42703" || error.code === "PGRST204" || /min_demo_activity_level/i.test(error.message ?? "")));
 async function readRules(): Promise<Rule[]> {
-  const { data, error } = await adminClient().from("followup_rules").select("key,name,stage,situations,action,after_hours,after_action,position,enabled,hours_from,hours_to,days").limit(500);
-  if (error) throw missing(error) || /followup_rules/.test(error.message ?? "") ? new HttpError(409, MISSING) : new Error("FOLLOWUP_READ_FAILED");
-  return ((data ?? []) as Rule[]).map((r) => ({ ...r, after_hours: Number(r.after_hours) }));
+  const db = adminClient();
+  const latest = await db.from("followup_rules")
+    .select("key,name,stage,situations,action,after_hours,after_action,position,enabled,hours_from,hours_to,days,min_demo_activity_level")
+    .limit(500);
+  if (!missingGenerationField(latest.error)) {
+    if (latest.error) throw missing(latest.error) ? new HttpError(409, MISSING) : new Error("FOLLOWUP_READ_FAILED");
+    return ((latest.data ?? []) as Rule[]).map((r) => ({
+      ...r, after_hours: Number(r.after_hours), min_demo_activity_level: Number(r.min_demo_activity_level ?? 0),
+    }));
+  }
+  const legacy = await db.from("followup_rules")
+    .select("key,name,stage,situations,action,after_hours,after_action,position,enabled,hours_from,hours_to,days")
+    .limit(500);
+  if (legacy.error) throw missing(legacy.error) ? new HttpError(409, MISSING) : new Error("FOLLOWUP_READ_FAILED");
+  return ((legacy.data ?? []) as Rule[]).map((r) => ({
+    ...r, after_hours: Number(r.after_hours), min_demo_activity_level: 0,
+  }));
 }
 
 /** Deja constancia de un cambio a mano: quién, qué y cuándo. Nunca frena el cambio. */
@@ -233,6 +251,8 @@ export type QueueItem = {
   wa: string | null;
   needsReview: boolean;
   hasDemo: boolean;
+  /** Verified demo generation, distinct from generic interaction. */
+  demoGenerated: boolean;
   hasAccount: boolean;
   lastActivity: { at: string; text: string } | null;
   /** Lo más reciente entre Follow-up, Adquisición y lo que hizo la inmobiliaria. */
@@ -539,7 +559,8 @@ function item(
   const stageSent = executionsOf.filter((e) => e.stage === stage && e.status === "sent").sort((a, b) => (b.sent_at ?? "").localeCompare(a.sent_at ?? ""));
   const doneMap: Partial<Record<Action, boolean>> = {};
   for (const e of stageSent) doneMap[(e.action ?? "principal") as Action] = true;
-  const next = nextAction(stage, sit.situation, doneMap, rules);
+  const demoGenerated = r.demos.some((d) => d.generated === true);
+  const next = nextAction(stage, sit.situation, doneMap, rules, demoGenerated);
   // The rule's window, or the one of the rule that sent the last step (for the row of a finished sequence).
   const window = next.rule ?? rules.find((x) => x.stage === stage && x.action === (stageSent[0]?.action ?? "principal")) ?? null;
   // Nothing left to send but something went out: the row shows that last one as sent.
@@ -565,6 +586,7 @@ function item(
     wa: to.wa,
     needsReview: to.needsReview,
     hasDemo: Boolean(r.shareDemo),
+    demoGenerated,
     hasAccount: r.hasOwner,
     lastActivity: r.lastActivity,
     lastAction,
@@ -1148,17 +1170,29 @@ export async function registerReply(
   if (!text) throw new HttpError(400, "Falta el texto de la respuesta (en un audio: «Audio»).");
   const at = input.receivedAt ? new Date(String(input.receivedAt)) : new Date();
   if (Number.isNaN(at.getTime()) || at.getTime() > Date.now() + 120_000) throw new HttpError(400, "Hora inválida.");
-  const classification = input.classification === undefined || input.classification === null || input.classification === "" ? null : isReplyClass(input.classification) ? input.classification : undefined;
+  const rawClassification = typeof input.classification === "string" ? input.classification.trim() : "";
+  const custom = rawClassification.startsWith("custom_") ? await resolveCustomClassification(rawClassification) : null;
+  if (rawClassification.startsWith("custom_") && !custom) throw new HttpError(400, "Estado personalizado desconocido o inactivo. Revisá el catálogo.");
+  if (custom) {
+    const current = (await board()).items.get(input.agencyId)?.stage;
+    if (!current || commercialOf(current) !== custom.definition.commercial_stage) {
+      throw new HttpError(409, "Ese estado personalizado no corresponde a la etapa comercial actual.");
+    }
+  }
+  const classification = !rawClassification ? null : custom ? custom.canonical : isReplyClass(rawClassification) ? rawClassification : undefined;
   if (classification === undefined) throw new HttpError(400, "Clasificación desconocida.");
   const confidence = input.confidence === undefined || input.confidence === null || input.confidence === "" ? null : Number(input.confidence);
   if (confidence !== null && (!Number.isFinite(confidence) || confidence < 0 || confidence > 1)) throw new HttpError(400, "La confianza va de 0 a 1.");
-  const route = replyRoute(classification, confidence);
+  // Custom labels only map to the existing engine with explicit, sufficient confidence.
+  // Missing confidence goes to human review; it must not auto-send a reply.
+  const route = custom && confidence === null ? "facu" : replyRoute(classification, confidence);
   const key = `${input.agencyId}:${at.toISOString().slice(0, 16)}:${text.slice(0, 80)}`;
   const db = adminClient();
   const found = await db.from("followup_replies").select(REPLY_FIELDS).eq("client_key", key).maybeSingle();
   if (found.error) throw missing(found.error) ? new HttpError(409, MISSING) : new Error("FOLLOWUP_READ_FAILED");
   if (found.data) return { reply: found.data as ReplyRow, route: (found.data as ReplyRow).status, replayed: true, warning: null };
-  const note = typeof input.note === "string" ? input.note.trim().slice(0, 500) : "";
+  const originalNote = typeof input.note === "string" ? input.note.trim() : "";
+  const note = `${custom ? `Catálogo: ${custom.definition.key} (${custom.definition.label}). ` : ""}${originalNote}`.slice(0, 500);
   const made = await db
     .from("followup_replies")
     .insert({
@@ -1256,14 +1290,24 @@ export async function saveRule(key: unknown, input: Record<string, unknown>, act
   if (id.length > 80) throw new HttpError(400, "Regla desconocida.");
   const before = typeof key === "string" && key ? (await db.from("followup_rules").select("*").eq("key", key).maybeSingle()).data : null;
   if (typeof key === "string" && key && !before) throw new HttpError(404, "No encontramos esa regla.");
-  const { data, error } = await db
-    .from("followup_rules")
-    .upsert({ key: id, ...clean, updated_by: actor.id, updated_at: new Date().toISOString() }, { onConflict: "key" })
-    .select("key,name,stage,situations,action,after_hours,after_action,position,enabled,hours_from,hours_to,days")
-    .single();
-  if (error) throw missing(error) ? new HttpError(409, MISSING) : error.code === "23514" ? new HttpError(400, "La base rechazó la regla: revisá los valores.") : new Error("FOLLOWUP_SAVE_FAILED");
+  const payload = { key: id, ...clean, updated_by: actor.id, updated_at: new Date().toISOString() };
+  const latest = await db.from("followup_rules").upsert(payload, { onConflict: "key" })
+    .select("key,name,stage,situations,action,after_hours,after_action,position,enabled,hours_from,hours_to,days,min_demo_activity_level").single();
+  let saved: Rule;
+  if (missingGenerationField(latest.error)) {
+    if (clean.min_demo_activity_level === 3) throw new HttpError(409, "Aplicá la migración de estados antes de activar «Generó imagen».");
+    const { min_demo_activity_level: ignored, ...legacyPayload } = payload;
+    void ignored;
+    const legacy = await db.from("followup_rules").upsert(legacyPayload, { onConflict: "key" })
+      .select("key,name,stage,situations,action,after_hours,after_action,position,enabled,hours_from,hours_to,days").single();
+    if (legacy.error) throw missing(legacy.error) ? new HttpError(409, MISSING) : new Error("FOLLOWUP_SAVE_FAILED");
+    saved = legacy.data as Rule;
+  } else {
+    if (latest.error) throw missing(latest.error) ? new HttpError(409, MISSING) : latest.error.code === "23514" ? new HttpError(400, "La base rechazó la regla: revisá los valores.") : new Error("FOLLOWUP_SAVE_FAILED");
+    saved = latest.data as Rule;
+  }
   await audit("rule", actor, { ref: id, from: before, to: clean });
-  return { ...(data as Rule), after_hours: Number((data as Rule).after_hours) };
+  return { ...saved, after_hours: Number(saved.after_hours), min_demo_activity_level: Number(saved.min_demo_activity_level ?? 0) };
 }
 
 /**

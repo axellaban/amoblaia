@@ -233,7 +233,7 @@ function ExecCenter({
     setTaking(true);
     setError("");
     try {
-      const filtro = { etapa: f.stage, etapaComercial: f.commercial, regla: f.rule, situacion: f.situation, grupo: f.group ?? kpiGroup, buscar: f.search };
+      const filtro = { etapa: f.stage, etapaComercial: f.commercial, imagen: f.demoImage, regla: f.rule, situacion: f.situation, grupo: f.group ?? kpiGroup, buscar: f.search };
       const p = await api<Prepared | null>("/api/admin/followup/claim", { method: "POST", body: JSON.stringify({ filtro, saltar: skip }) });
       if (!p) {
         setDetail(null);
@@ -302,13 +302,13 @@ function ExecCenter({
       <div className="fu-qbar" data-testid="followup-queue-stages">
         <span className="fu-qbarlabel">Cola por etapa comercial</span>
         <div className="fu-qchips">
-          <button type="button" className={`fu-qchip${!commercial ? " is-on" : ""}`} aria-pressed={!commercial} data-testid="followup-queue-stage" data-stage="" onClick={() => setF({ commercial: null, stage: null, rule: null })}>
+          <button type="button" className={`fu-qchip${!commercial ? " is-on" : ""}`} aria-pressed={!commercial} data-testid="followup-queue-stage" data-stage="" onClick={() => setF({ commercial: null, stage: null, demoImage: null, rule: null })}>
             Todas <b>{count({ ...f, commercial: null, stage: null, rule: null })}</b>
           </button>
           {COMMERCIAL_STAGES.map((s) => (
             <button key={s.key} type="button" className={`fu-qchip${commercial === s.key ? " is-on" : ""}`}
               aria-pressed={commercial === s.key} data-testid="followup-queue-stage" data-stage={s.key}
-              onClick={() => setF({ commercial: s.key, stage: null, rule: null })}>
+              onClick={() => setF({ commercial: s.key, stage: null, demoImage: null, rule: null })}>
               {s.title} <b>{count({ ...f, commercial: s.key, stage: null, rule: null })}</b>
             </button>
           ))}
@@ -322,16 +322,33 @@ function ExecCenter({
         <div className="fu-qbar is-rules" data-testid="followup-queue-substages">
           <span className="fu-qbarlabel">Estado de avance</span>
           <div className="fu-qchips">
-            <button type="button" className={`fu-qchip is-sm${!f.stage ? " is-on" : ""}`} aria-pressed={!f.stage} onClick={() => setF({ stage: null, rule: null })}>
+            <button type="button" className={`fu-qchip is-sm${!f.stage ? " is-on" : ""}`} aria-pressed={!f.stage} onClick={() => setF({ stage: null, demoImage: null, rule: null })}>
               Todos <b>{count({ ...f, commercial, stage: null, rule: null })}</b>
             </button>
             {selectedTechnical.map((key) => (
               <button key={key} type="button" className={`fu-qchip is-sm${f.stage === key ? " is-on" : ""}`}
                 data-testid="followup-queue-technical-stage" data-stage={key} aria-pressed={f.stage === key}
-                onClick={() => setF({ stage: key, rule: null })}>
+                onClick={() => setF({ stage: key, demoImage: null, rule: null })}>
                 {technicalStateLabel(key)} <b>{count({ ...f, commercial, stage: key, rule: null })}</b>
               </button>
             ))}
+          </div>
+        </div>
+      )}
+
+      {commercial === "demo-enviada" && (
+        <div className="fu-qbar is-rules" data-testid="followup-queue-demo-image">
+          <span className="fu-qbarlabel">Interacción de la demo</span>
+          <div className="fu-qchips">
+            <button type="button" className={`fu-qchip is-sm${!f.demoImage ? " is-on" : ""}`} onClick={() => setF({ demoImage: null, stage: "sin-cuenta", rule: null })}>
+              Todas <b>{count({ ...f, commercial, stage: "sin-cuenta", demoImage: null, rule: null })}</b>
+            </button>
+            <button type="button" className={`fu-qchip is-sm${f.demoImage === "interacted" ? " is-on" : ""}`} data-testid="followup-demo-interacted" onClick={() => setF({ stage: "sin-cuenta", demoImage: "interacted", rule: null })}>
+              Interactuó <b>{count({ ...f, commercial, stage: "sin-cuenta", demoImage: "interacted", rule: null })}</b>
+            </button>
+            <button type="button" className={`fu-qchip is-sm${f.demoImage === "generated" ? " is-on" : ""}`} data-testid="followup-demo-generated" onClick={() => setF({ stage: "sin-cuenta", demoImage: "generated", rule: null })}>
+              Generó imagen <b>{count({ ...f, commercial, stage: "sin-cuenta", demoImage: "generated", rule: null })}</b>
+            </button>
           </div>
         </div>
       )}
@@ -1396,6 +1413,94 @@ const versionsOf = (stage: StageView, action: Action): StageView => ({ ...stage,
  * reglas (izquierda) y el editor de la regla elegida (derecha). Cambia solo la
  * interfaz: las reglas y las versiones se guardan con los mismos endpoints.
  */
+type CatalogState = {
+  key: string; label: string; description: string; examples: string;
+  commercial_stage: string; source: "whatsapp" | "manual";
+  maps_to: Situation | null; active: boolean; updated_at: string;
+};
+type CatalogDraft = { key: string; label: string; description: string; examples: string; source: "whatsapp" | "manual"; maps_to: Situation | ""; active: boolean };
+const EMPTY_CATALOG: CatalogDraft = { key: "", label: "", description: "", examples: "", source: "whatsapp", maps_to: "", active: false };
+/** Catalog editor is separate from the message editor: it does not rewrite past events or send messages. */
+function StateCatalogManager({ commercial, onSelect }: { commercial: string; onSelect: (s: Situation) => void }) {
+  const [states, setStates] = useState<CatalogState[]>([]);
+  const [draft, setDraft] = useState<CatalogDraft>(EMPTY_CATALOG);
+  const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [loaded, setLoaded] = useState(false);
+  const reload = useCallback(async () => {
+    try {
+      const result = await api<{ states: CatalogState[] }>("/api/admin/follow-up/estados");
+      setStates(result.states);
+      setError("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo cargar el catálogo.");
+    } finally {
+      setLoaded(true);
+    }
+  }, []);
+  useEffect(() => { void reload(); }, [reload]);
+  const own = states.filter((s) => s.commercial_stage === commercial);
+  function edit(state?: CatalogState) {
+    setDraft(state ? { key: state.key, label: state.label, description: state.description, examples: state.examples, source: state.source, maps_to: state.maps_to ?? "", active: state.active } : EMPTY_CATALOG);
+    setEditing(true);
+  }
+  async function save() {
+    const slug = draft.label.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 45);
+    const key = draft.key || `custom_${slug}`;
+    setBusy(true);
+    setError("");
+    try {
+      await api("/api/admin/follow-up/estados", { method: "PUT", body: JSON.stringify({ ...draft, key, create: !draft.key, commercial_stage: commercial, maps_to: draft.maps_to || null }) });
+      setEditing(false);
+      await reload();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No pudimos guardar el estado.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div data-testid="followup-state-catalog" style={{ marginTop: 16 }}>
+      <div className="fu-rules-head">
+        <div><b>Clasificaciones personalizadas</b><p className="fu-note">Se reconocen en WhatsApp y se asocian a una situación existente.</p></div>
+        <button type="button" className="button button-small button-outline" onClick={() => edit()}><Plus size={14} /> Estado</button>
+      </div>
+      {own.map((s) => (
+        <button key={s.key} type="button" className="fu-qchip is-sm" data-testid="followup-custom-state" onClick={() => { edit(s); if (s.maps_to) onSelect(s.maps_to); }}
+          style={{ width: "100%", textAlign: "left", marginTop: 6, display: "flex", justifyContent: "space-between" }}>
+          <span>{s.label}</span><small>{s.active ? "Activa" : "Inactiva"}</small>
+        </button>
+      ))}
+      {!loaded && <p className="fu-note">Cargando catálogo…</p>}
+      {error && <p className="fu-error" role="alert">{error}</p>}
+      {editing && (
+        <div className="fu-box" style={{ marginTop: 12, display: "grid", gap: 9 }} data-testid="followup-state-editor">
+          <label>Nombre<input aria-label="Nombre del estado" value={draft.label} maxLength={80} onChange={(e) => setDraft((d) => ({ ...d, label: e.target.value }))} /></label>
+          <label>Descripción<textarea aria-label="Descripción para el clasificador" value={draft.description} maxLength={800} onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))} /></label>
+          <label>Ejemplos de respuestas<textarea aria-label="Ejemplos del estado" value={draft.examples} maxLength={2000} onChange={(e) => setDraft((d) => ({ ...d, examples: e.target.value }))} /></label>
+          <label>Situación que entiende el motor
+            <select aria-label="Mapear a situación existente" value={draft.maps_to} onChange={(e) => setDraft((d) => ({ ...d, maps_to: e.target.value as Situation | "" }))}>
+              <option value="">Sin mapear (revisión manual)</option>
+              {(Object.keys(SITUATIONS) as Situation[]).map((s) => <option key={s} value={s}>{SITUATIONS[s]}</option>)}
+            </select>
+          </label>
+          <label>Origen
+            <select value={draft.source} onChange={(e) => setDraft((d) => ({ ...d, source: e.target.value as "whatsapp" | "manual" }))}>
+              <option value="whatsapp">WhatsApp</option><option value="manual">Manual</option>
+            </select>
+          </label>
+          <label><input type="checkbox" checked={draft.active} onChange={(e) => setDraft((d) => ({ ...d, active: e.target.checked }))} /> Activa para clasificación</label>
+          <p className="fu-note">Una clasificación nueva no crea una acción automáticamente. Se aplican las reglas existentes de la situación elegida y sus restricciones de envío.</p>
+          <div className="fu-actions"><button type="button" className="button button-small button-outline" onClick={() => setEditing(false)}>Cancelar</button>
+            <button type="button" className="button button-small button-primary" disabled={busy || !draft.label.trim() || (draft.active && !draft.maps_to)} onClick={() => void save()}>{busy ? "Guardando…" : "Guardar estado"}</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Edición unificada: etapa → situación (estado de conversación) → reglas → mensaje.
  * Las situaciones siguen siendo el catálogo tipado actual; esta interfaz no finge
  * que es posible agregar nuevas clasificaciones sin migrar el contrato del backend.
@@ -1507,9 +1612,7 @@ function RulesWorkspace({ stages, rules, changes }: { stages: StageView[]; rules
               );
             })}
           </div>
-          <p className="fu-note" style={{ marginTop: 16 }}>
-            Los estados actuales provienen del catálogo de clasificación. Agregar estados nuevos requiere ampliar y migrar ese catálogo, para que la extensión pueda reconocerlos.
-          </p>
+          <StateCatalogManager commercial={commercialOf(stage.key)} onSelect={(s) => go(() => { setSituation(s); setSelected(null); setTemplate(null); })} />
         </section>
         <section style={{ minWidth: 0 }} data-testid="followup-state-rules" data-situation={activeSituation}>
           <p className="fu-lbl" style={{ marginBottom: 7 }}>Reglas de: {SITUATIONS[activeSituation]}</p>
@@ -1951,6 +2054,15 @@ function RuleEditor({
               </select>
             </div>
           </div>
+          {["no-abrio", "sin-interaccion", "sin-cuenta"].includes(stage.key) && (
+            <label className="fu-f">
+              <span>Condición de interacción con la demo</span>
+              <select aria-label="Condición de generación de imagen" value={r.min_demo_activity_level ?? 0} onChange={(e) => set({ min_demo_activity_level: Number(e.target.value) })}>
+                <option value={0}>Cualquier nivel de interacción</option>
+                <option value={3}>Solo si generó una imagen</option>
+              </select>
+            </label>
+          )}
           <label className="fu-f fu-order">
             <span>Orden de prioridad</span>
             <input type="number" min={0} max={1000} value={r.position} onChange={(e) => set({ position: Number(e.target.value) })} />

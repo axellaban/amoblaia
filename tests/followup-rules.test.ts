@@ -103,3 +103,15 @@ describe("incompatible rules (acción fuera de su etapa)", () => {
     expect(compatible("sin-demo", "seguimiento_2")).toBe(false);
   });
 });
+
+
+describe("Generación real frente a interacción", () => {
+  it("no ejecuta una regla especial antes de una generación confirmada", () => {
+    const rule = { ...DEFAULT_RULES.find((x) => x.key === "no-abrio:principal")!, key: "solo-generacion", position: 1, min_demo_activity_level: 3 };
+    expect(pickRule([rule], "no-abrio", "sin_respuesta", {}, false).action).toBeNull();
+    expect(pickRule([rule], "no-abrio", "sin_respuesta", {}, true).action).toBe("principal");
+  });
+  it("preserva la estructura sembrada históricamente", () => {
+    expect(DEFAULT_RULES.every((r) => r.min_demo_activity_level === undefined)).toBe(true);
+  });
+});

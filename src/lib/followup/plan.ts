@@ -148,12 +148,12 @@ export type Planned = { action: Action | null; afterHours: number; reason: strin
  * etapas pasa a preparar la demo. Todo lo demás sale de las reglas
  * (`followup_rules`, editables en «Mensajes y reglas»; por defecto, las de la Fase 2).
  */
-export function nextAction(stage: StageKey, situation: Situation, done: Partial<Record<Action, boolean>> = {}, rules: Rule[] = DEFAULT_RULES): Planned {
+export function nextAction(stage: StageKey, situation: Situation, done: Partial<Record<Action, boolean>> = {}, rules: Rule[] = DEFAULT_RULES, demoGenerated = false): Planned {
   const none = (reason: string): Planned => ({ action: null, afterHours: 0, reason, rule: null });
   if (CLOSED_SITUATIONS.includes(situation)) return none(`${SITUATIONS[situation]}: no se le escribe más.`);
   const early = stage === "no-contactado" || stage === "no-responde";
   if (early && situation === "interesado") return none("Interesado: preparar la demo (pasa a «Interesado, sin demo»).");
-  return pickRule(rules, stage, situation, done);
+  return pickRule(rules, stage, situation, done, demoGenerated);
 }
 
 /** Grupos de la cola, en orden. Dentro de cada uno, por score y antigüedad. */
