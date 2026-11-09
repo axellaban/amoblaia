@@ -3230,6 +3230,7 @@ function Execute({ item, exec, onDone, onClose, onNext }: { item: QueueItem; exe
       </div>
     );
   const task = prepared.channel === "task";
+  const creatingDemo = task && prepared.stage === "sin-demo" && prepared.action === "principal";
   const many = prepared.messages.length > 1;
   return (
     <div className="fu-exec" data-testid="followup-exec" data-action={prepared.action ?? ""} data-version={prepared.version}>
