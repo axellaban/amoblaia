@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Building2, CalendarDays, CheckCheck, ChevronDown, ChevronRight, ClipboardCopy, Copy, GripVertical, Info, KeyRound, Layers, Link2, MessageCircle, MessageSquare, MoreVertical, Pencil, Phone, Plus, RefreshCw, Send, Tag, Target, Trash2, Undo2, Video, X } from "lucide-react";
 import { api } from "@/components/admin-demos";
-import { CTA_KEYS, CTA_LABEL, FOLLOWUP_STAGES, OUT, VARIABLES, fillMessage, missingVariables, pct, type Channel, type Cta, type StageKey, type VersionStatus } from "@/lib/followup/stages";
+import { CTA_KEYS, CTA_LABEL, COMMERCIAL_STAGES, FOLLOWUP_STAGES, OUT, VARIABLES, commercialOf, technicalOf, technicalStateLabel, fillMessage, missingVariables, pct, type Channel, type Cta, type StageKey, type VersionStatus } from "@/lib/followup/stages";
 import { GROUPS, REPLY_CLASSES, SITUATIONS, actionLabel, actionsOf, compatible, splitMessages, type Action, type ReplyClass, type Situation } from "@/lib/followup/plan";
 import type { Change, FunnelStep, InboxItem, Prepared, QueueItem, QueueSummary, QueueView, Results, StageView } from "@/lib/followup/server";
 import { NO_FILTER, OTHER_RULES, isEmptyFilter, matchesFilter, stageRules, type QueueFilter } from "@/lib/followup/queue-filter";
@@ -212,6 +212,8 @@ function ExecCenter({
   const fits = (q: QueueItem, g: QueueFilter) => matchesFilter(q, g, rules);
   const list = base.filter((q) => fits(q, f));
   const stage = f.stage ? stages.find((s) => s.key === f.stage) ?? null : null;
+  const commercial = f.commercial ?? (f.stage ? commercialOf(f.stage) : null);
+  const selectedTechnical = commercial ? technicalOf(commercial) : [];
   const own = f.stage ? stageRules(rules, f.stage) : [];
   const rule = f.rule && f.rule !== OTHER_RULES ? rules.find((r) => r.key === f.rule) ?? null : null;
   const count = (g: QueueFilter) => base.filter((q) => fits(q, g)).length;
@@ -231,7 +233,7 @@ function ExecCenter({
     setTaking(true);
     setError("");
     try {
-      const filtro = { etapa: f.stage, regla: f.rule, situacion: f.situation, grupo: f.group ?? kpiGroup, buscar: f.search };
+      const filtro = { etapa: f.stage, etapaComercial: f.commercial, regla: f.rule, situacion: f.situation, grupo: f.group ?? kpiGroup, buscar: f.search };
       const p = await api<Prepared | null>("/api/admin/followup/claim", { method: "POST", body: JSON.stringify({ filtro, saltar: skip }) });
       if (!p) {
         setDetail(null);
@@ -298,22 +300,16 @@ function ExecCenter({
       </div>
 
       <div className="fu-qbar" data-testid="followup-queue-stages">
-        <span className="fu-qbarlabel">Cola por etapa</span>
+        <span className="fu-qbarlabel">Cola por etapa comercial</span>
         <div className="fu-qchips">
-          <button type="button" className={`fu-qchip${!f.stage ? " is-on" : ""}`} aria-pressed={!f.stage} data-testid="followup-queue-stage" data-stage="" onClick={() => setF({ stage: null, rule: null })}>
-            Todas <b>{count({ ...f, stage: null, rule: null })}</b>
+          <button type="button" className={`fu-qchip${!commercial ? " is-on" : ""}`} aria-pressed={!commercial} data-testid="followup-queue-stage" data-stage="" onClick={() => setF({ commercial: null, stage: null, rule: null })}>
+            Todas <b>{count({ ...f, commercial: null, stage: null, rule: null })}</b>
           </button>
-          {stages.map((s) => (
-            <button
-              key={s.key}
-              type="button"
-              className={`fu-qchip${f.stage === s.key ? " is-on" : ""}`}
-              aria-pressed={f.stage === s.key}
-              data-testid="followup-queue-stage"
-              data-stage={s.key}
-              onClick={() => setF({ stage: s.key, rule: null })}
-            >
-              {s.title} <b>{count({ ...f, stage: s.key, rule: null })}</b>
+          {COMMERCIAL_STAGES.map((s) => (
+            <button key={s.key} type="button" className={`fu-qchip${commercial === s.key ? " is-on" : ""}`}
+              aria-pressed={commercial === s.key} data-testid="followup-queue-stage" data-stage={s.key}
+              onClick={() => setF({ commercial: s.key, stage: null, rule: null })}>
+              {s.title} <b>{count({ ...f, commercial: s.key, stage: null, rule: null })}</b>
             </button>
           ))}
         </div>
@@ -321,6 +317,24 @@ function ExecCenter({
           <MessageSquare size={14} aria-hidden="true" /> Respuestas nuevas <b>{inboxCount}</b>
         </button>
       </div>
+
+      {commercial && (
+        <div className="fu-qbar is-rules" data-testid="followup-queue-substages">
+          <span className="fu-qbarlabel">Estado de avance</span>
+          <div className="fu-qchips">
+            <button type="button" className={`fu-qchip is-sm${!f.stage ? " is-on" : ""}`} aria-pressed={!f.stage} onClick={() => setF({ stage: null, rule: null })}>
+              Todos <b>{count({ ...f, commercial, stage: null, rule: null })}</b>
+            </button>
+            {selectedTechnical.map((key) => (
+              <button key={key} type="button" className={`fu-qchip is-sm${f.stage === key ? " is-on" : ""}`}
+                data-testid="followup-queue-technical-stage" data-stage={key} aria-pressed={f.stage === key}
+                onClick={() => setF({ stage: key, rule: null })}>
+                {technicalStateLabel(key)} <b>{count({ ...f, commercial, stage: key, rule: null })}</b>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {stage && (
         <div className="fu-qbar is-rules" data-testid="followup-queue-rules" data-stage={stage.key}>
@@ -1393,7 +1407,7 @@ function RulesWorkspace({ stages, rules, changes }: { stages: StageView[]; rules
   const [template, setTemplate] = useState<Rule | null>(null);
   const [dirty, setDirty] = useState<Record<string, boolean>>({});
   const stage = stages.find((s) => s.key === stageKey) ?? stages[0];
-  const index = stages.indexOf(stage) + 1;
+  const index = COMMERCIAL_STAGES.findIndex((s) => s.key === commercialOf(stage.key)) + 1;
   const waiting = (s: StageView) => s.queue.filter((q) => q.execution?.status !== "sent").length;
   const own = rules.filter((r) => r.stage === stage.key && compatible(stage.key, r.action as Action)).sort((a, b) => a.position - b.position);
   const currentSituation = stage.key === "no-contactado" && situation !== "sin_respuesta" ? "sin_respuesta" : situation;
@@ -1420,33 +1434,44 @@ function RulesWorkspace({ stages, rules, changes }: { stages: StageView[]; rules
   return (
     <>
       <div className="fu-flowrow">
-        <span className="fu-lbl fu-flowlabel">Flujo de etapas</span>
-        <nav className="fu-flow" aria-label="Etapas del embudo" data-testid="followup-flow">
-          {stages.map((s, i) => (
+        <span className="fu-lbl fu-flowlabel">Etapas comerciales</span>
+        <nav className="fu-flow" aria-label="Etapas comerciales" data-testid="followup-flow">
+          {COMMERCIAL_STAGES.map((s, i) => (
             <Fragment key={s.key}>
-              <button
-                type="button"
-                className={`fu-flowstep${s.key === stage.key ? " is-on" : ""}`}
-                aria-pressed={s.key === stage.key}
-                data-testid="followup-stage"
-                data-stage={s.key}
+              <button type="button" className={`fu-flowstep${commercialOf(stage.key) === s.key ? " is-on" : ""}`}
+                aria-pressed={commercialOf(stage.key) === s.key} data-testid="followup-commercial-stage" data-stage={s.key}
                 onClick={() => {
-                  if (s.key !== stage.key) go(() => { setStageKey(s.key); setSituation(s.key === "no-contactado" ? "sin_respuesta" : "confirmo_numero"); setSelected(null); setTemplate(null); });
-                }}
-              >
+                  const target = technicalOf(s.key)[0];
+                  if (target && target !== stage.key) go(() => { setStageKey(target); setSituation(target === "no-contactado" ? "sin_respuesta" : "confirmo_numero"); setSelected(null); setTemplate(null); });
+                }}>
                 <span className="fu-num">{i + 1}</span>
-                <span className="fu-flowtext"><b>{s.key === "no-contactado" ? "Prospectado" : s.title}</b><small>{waiting(s)} esperando</small></span>
+                <span className="fu-flowtext"><b>{s.title}</b><small>{s.technical.reduce((n, key) => n + waiting(stages.find((x) => x.key === key)!), 0)} esperando</small></span>
               </button>
-              {i < stages.length - 1 && <ChevronRight className="fu-flowarrow" size={16} aria-hidden="true" />}
+              {i < COMMERCIAL_STAGES.length - 1 && <ChevronRight className="fu-flowarrow" size={16} aria-hidden="true" />}
             </Fragment>
           ))}
         </nav>
       </div>
+      {technicalOf(commercialOf(stage.key)).length > 1 && (
+        <div className="fu-qbar is-rules" data-testid="followup-rule-technical-stage">
+          <span className="fu-qbarlabel">Estado de avance</span>
+          <div className="fu-qchips">
+            {technicalOf(commercialOf(stage.key)).map((key) => (
+              <button key={key} type="button" className={`fu-qchip is-sm${stage.key === key ? " is-on" : ""}`}
+                aria-pressed={stage.key === key} data-stage={key}
+                onClick={() => { if (key !== stage.key) go(() => { setStageKey(key); setSelected(null); setTemplate(null); }); }}>
+                {technicalStateLabel(key)} <b>{waiting(stages.find((s) => s.key === key)!)}</b>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {commercialOf(stage.key) === "demo-enviada" && <p className="fu-note">«Generó imagen» se distinguirá cuando haya un evento específico de generación; no se infiere de una interacción genérica.</p>}
       <section className="fu-stagehead" data-testid="followup-stage-head" data-stage={stage.key}>
         <div>
           <div className="fu-name">
             <span className="fu-num">{index}</span>
-            <span className="fu-title">{stage.key === "no-contactado" ? "Prospectado" : stage.title}</span>
+            <span className="fu-title">{COMMERCIAL_STAGES.find((s) => s.key === commercialOf(stage.key))?.title} · {technicalStateLabel(stage.key)}</span>
             <span className="fu-badge-on">Etapa activa</span>
           </div>
           <p className="fu-note">{STAGE_TEXT[stage.key]}</p>

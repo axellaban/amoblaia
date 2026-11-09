@@ -19,6 +19,43 @@ export const FOLLOWUP_STAGES = [
 ] as const;
 export type StageKey = (typeof FOLLOWUP_STAGES)[number]["key"];
 export const STAGE_KEYS = FOLLOWUP_STAGES.map((s) => s.key) as StageKey[];
+
+/** Presentation-only grouping: stable technical StageKey values remain the source of truth
+ * for analytics, event history, claims, versions and automation rules. */
+export const COMMERCIAL_STAGES = [
+  { key: "prospectado", title: "Prospectado", technical: ["no-contactado"] },
+  { key: "contactado", title: "Contactado", technical: ["no-responde"] },
+  { key: "interesado", title: "Interesado", technical: ["sin-demo", "sin-enviar"] },
+  { key: "demo-enviada", title: "Demo enviada", technical: ["no-abrio", "sin-interaccion", "sin-cuenta"] },
+  { key: "cuenta-creada", title: "Cuenta creada", technical: ["sin-uso"] },
+  { key: "cuenta-activa", title: "Cuenta activa", technical: ["sin-suscripcion"] },
+  { key: "cliente", title: "Cliente", technical: [] },
+] as const satisfies readonly { key: string; title: string; technical: readonly StageKey[] }[];
+export type CommercialStageKey = (typeof COMMERCIAL_STAGES)[number]["key"];
+export const commercialOf = (stage: StageKey): CommercialStageKey =>
+  COMMERCIAL_STAGES.find((x) => (x.technical as readonly string[]).includes(stage))!.key;
+export const technicalOf = (commercial: CommercialStageKey): StageKey[] =>
+  [...COMMERCIAL_STAGES.find((x) => x.key === commercial)!.technical];
+export const isCommercialStage = (value: unknown): value is CommercialStageKey =>
+  typeof value === "string" && COMMERCIAL_STAGES.some((x) => x.key === value);
+export const commercialLabel = (commercial: CommercialStageKey) =>
+  COMMERCIAL_STAGES.find((x) => x.key === commercial)!.title;
+
+/** Product advancement inside a commercial stage. This only expresses facts already
+ * distinguished by the current funnel; "Generó imagen" needs its own event fact
+ * and must not be inferred from the generic interaction step. */
+export const technicalStateLabel = (stage: StageKey): string => ({
+  "no-contactado": "Pendiente de primer contacto",
+  "no-responde": "Contactado",
+  "sin-demo": "Demo pendiente de crear",
+  "sin-enviar": "Demo creada, sin enviar",
+  "no-abrio": "No visitó",
+  "sin-interaccion": "Visitó sin interactuar",
+  "sin-cuenta": "Interactuó",
+  "sin-uso": "Sin uso",
+  "sin-suscripcion": "Activa, pendiente de pago",
+})[stage];
+
 export const isStageKey = (v: unknown): v is StageKey => typeof v === "string" && (STAGE_KEYS as string[]).includes(v);
 export const stageInfo = (key: StageKey) => FOLLOWUP_STAGES.find((s) => s.key === key)!;
 // The last step (Suscripciones) has nothing after it: no follow-up.
