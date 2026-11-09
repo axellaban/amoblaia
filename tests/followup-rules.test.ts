@@ -55,6 +55,11 @@ describe("rules (Fase 3)", () => {
   it("validate what the panel sends", () => {
     const ok = cleanRule({ stage: "no-abrio", action: "seguimiento_2", situations: ["sin_respuesta", "rechazo"], after_hours: "48", after_action: "principal", position: 50, hours_from: 9, hours_to: 19, days: [1, 2] }, SITS, ACTS, STAGES);
     expect(ok).toMatchObject({ stage: "no-abrio", situations: ["sin_respuesta"], after_hours: 48, days: [1, 2] });
+    expect(ok).toMatchObject({ name: null });
+    const base = { stage: "no-abrio", action: "principal", after_hours: 1, hours_from: 9, hours_to: 19 };
+    expect(cleanRule({ ...base, name: "  Primer   recordatorio " }, SITS, ACTS, STAGES)).toMatchObject({ name: "Primer recordatorio" });
+    expect(cleanRule({ ...base, name: "   " }, SITS, ACTS, STAGES)).toMatchObject({ name: null });
+    expect(cleanRule({ ...base, name: "x".repeat(81) }, SITS, ACTS, STAGES)).toMatchObject({ error: expect.stringMatching(/80/) });
     expect(cleanRule({ stage: "x", action: "principal" }, SITS, ACTS, STAGES)).toEqual({ error: "Etapa desconocida." });
     expect(cleanRule({ stage: "no-abrio", action: "principal", after_hours: 1000, hours_from: 9, hours_to: 19 }, SITS, ACTS, STAGES)).toMatchObject({ error: expect.stringMatching(/720/) });
     expect(cleanRule({ stage: "no-abrio", action: "principal", after_hours: 1, hours_from: 19, hours_to: 9 }, SITS, ACTS, STAGES)).toMatchObject({ error: expect.stringMatching(/ventana/) });

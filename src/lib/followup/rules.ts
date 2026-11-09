@@ -37,6 +37,8 @@ export const compatible = (stage: StageKey, action: Action | null | undefined) =
 export type Rule = {
   /** Clave estable: la de las reglas sembradas, o la que se crea al agregar una. */
   key: string;
+  /** Nombre que se le pone en el panel (opcional; sin nombre se muestra la acción). El motor no lo usa. */
+  name?: string | null;
   stage: StageKey;
   /** Situaciones a las que aplica; vacía: cualquiera (las cerradas nunca). */
   situations: Situation[];
@@ -150,7 +152,10 @@ export function cleanRule(input: Record<string, unknown>, situations: readonly s
   const enabled = input.enabled !== false;
   if (enabled && !compatible(stageKey, input.action as Action)) return { error: "Una regla con acción no disponible en su etapa no se puede activar." };
   const position = num(input.position);
+  const name = typeof input.name === "string" ? input.name.trim().replace(/\s+/g, " ") : "";
+  if (name.length > 80) return { error: "El nombre de la regla va hasta 80 caracteres." };
   return {
+    name: name || null,
     stage: input.stage as StageKey,
     situations: sits,
     action: input.action as Action,
