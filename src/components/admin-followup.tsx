@@ -2036,6 +2036,15 @@ function RuleEditor({
               </select>
             </div>
           </div>
+          {["no-abrio", "sin-interaccion", "sin-cuenta"].includes(stage.key) && (
+            <label className="fu-f">
+              <span>Condición de interacción con la demo</span>
+              <select aria-label="Condición de generación de imagen" value={r.min_demo_activity_level ?? 0} onChange={(e) => set({ min_demo_activity_level: Number(e.target.value) })}>
+                <option value={0}>Cualquier nivel de interacción</option>
+                <option value={3}>Solo si generó una imagen</option>
+              </select>
+            </label>
+          )}
           <label className="fu-f fu-order">
             <span>Orden de prioridad</span>
             <input type="number" min={0} max={1000} value={r.position} onChange={(e) => set({ position: Number(e.target.value) })} />
