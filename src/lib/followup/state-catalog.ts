@@ -2,7 +2,7 @@ import "server-only";
 import { HttpError } from "@/lib/commerce/http";
 import { adminClient } from "@/lib/supabase/server";
 import { COMMERCIAL_STAGES, type CommercialStageKey } from "./stages";
-import { CLOSED_SITUATIONS, SITUATIONS, type Situation } from "./plan";
+import { CLOSED_SITUATIONS, REPLY_CLASSES, isReplyClass, type ReplyClass, type Situation } from "./plan";
 
 /**
  * User-configurable WhatsApp classifications. A custom key is always explicitly
@@ -16,7 +16,7 @@ export type StateDefinition = {
   examples: string;
   commercial_stage: CommercialStageKey;
   source: "whatsapp" | "manual";
-  maps_to: Situation | null;
+  maps_to: ReplyClass | null;
   active: boolean;
   updated_at: string;
 };
@@ -49,7 +49,7 @@ export async function updateStateCatalog(input: Record<string, unknown>, actorId
   if (!VALID_STAGE.includes(commercial_stage as CommercialStageKey)) throw new HttpError(400, "Etapa comercial desconocida.");
   if (!["whatsapp", "manual"].includes(source)) throw new HttpError(400, "Origen de clasificación desconocido.");
   if (description.length > 800 || examples.length > 2000) throw new HttpError(400, "La descripción o los ejemplos son demasiado largos.");
-  if (maps_to && !(maps_to in SITUATIONS)) throw new HttpError(400, "No existe ese estado canónico.");
+  if (maps_to && !isReplyClass(maps_to)) throw new HttpError(400, "La situación elegida no se puede usar para clasificar respuestas.");
   // Closed situations are allowed only as closed: never create an automated outbound rule.
   if (active && !maps_to) throw new HttpError(400, "Para activar el estado, elegí la situación canónica a la que corresponde.");
   const { data, error } = await adminClient().from("followup_state_catalog")
@@ -62,7 +62,7 @@ export async function updateStateCatalog(input: Record<string, unknown>, actorId
   return data as StateDefinition;
 }
 
-export type ResolvedCustomClassification = { canonical: Situation; definition: StateDefinition };
+export type ResolvedCustomClassification = { canonical: ReplyClass; definition: StateDefinition };
 
 export async function resolveCustomClassification(key: string): Promise<ResolvedCustomClassification | null> {
   if (!CUSTOM.test(key)) return null;
@@ -70,12 +70,12 @@ export async function resolveCustomClassification(key: string): Promise<Resolved
     .eq("key", key).eq("active", true).maybeSingle();
   if (error) throw new Error("FOLLOWUP_STATE_READ_FAILED");
   const definition = data as StateDefinition | null;
-  if (!definition?.maps_to || !(definition.maps_to in SITUATIONS)) return null;
+  if (!definition?.maps_to || !isReplyClass(definition.maps_to)) return null;
   return { canonical: definition.maps_to, definition };
 }
 
 /** Classifier documentation for the extension. Closed states always remain no-contact. */
 export const canonicalClassifierOptions = () =>
-  Object.entries(SITUATIONS).map(([key, label]) => ({
+  Object.entries(REPLY_CLASSES).map(([key, label]) => ({
     key, label, permanent_stop: CLOSED_SITUATIONS.includes(key as Situation),
   }));
