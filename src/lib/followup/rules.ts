@@ -53,6 +53,8 @@ export type Rule = {
   after_hours: number;
   /** El paso que tiene que haber salido antes (null: ninguno). */
   after_action: Action | null;
+  /** 3: require confirmed image generation inside a demo, 0: no condition. */
+  min_demo_activity_level?: number;
   /** Orden de evaluación dentro de la etapa: gana la primera que corresponde. */
   position: number;
   enabled: boolean;
@@ -67,6 +69,7 @@ const EARLY = ["no-contactado", "no-responde"] as const;
 const OTHER_STAGES = ["sin-demo", "sin-enviar", "sin-interaccion", "sin-cuenta", "sin-uso", "sin-suscripcion"] as const;
 const rule = (r: Omit<Rule, "enabled" | "hours_from" | "hours_to" | "days"> & Partial<Rule>): Rule => ({
   enabled: true,
+  min_demo_activity_level: 0,
   hours_from: 9,
   hours_to: r.stage === "no-contactado" && r.action === "principal" ? 18 : 19,
   days: WEEK,
@@ -101,11 +104,12 @@ export type RulePick = { rule: Rule | null; action: Action | null; afterHours: n
  * Las situaciones cerradas y «interesado» en las dos primeras etapas no llegan
  * acá (las resuelve el código: ninguna regla puede escribirle a un rechazo).
  */
-export function pickRule(rules: Rule[], stage: StageKey, situation: Situation, done: Partial<Record<Action, boolean>>): RulePick {
+export function pickRule(rules: Rule[], stage: StageKey, situation: Situation, done: Partial<Record<Action, boolean>>, demoActivityLevel = 0): RulePick {
   // Las incompatibles (acción fuera de la etapa) no se ejecutan, aunque estén encendidas en la base.
   const own = rules
     .filter((r) => r.enabled && r.stage === stage && compatible(stage, r.action) && (!r.after_action || compatible(stage, r.after_action)))
     .filter((r) => r.situations.length === 0 || r.situations.includes(situation))
+    .filter((r) => (r.min_demo_activity_level ?? 0) <= demoActivityLevel)
     .sort((a, b) => a.position - b.position);
   for (const r of own) {
     if (done[r.action]) continue;
@@ -152,7 +156,10 @@ export function cleanRule(input: Record<string, unknown>, situations: readonly s
   const afterAction = input.after_action === null || input.after_action === "" || input.after_action === undefined ? null : typeof input.after_action === "string" && actions.includes(input.after_action) ? (input.after_action as Action) : undefined;
   if (afterAction === undefined) return { error: "El paso previo es desconocido." };
   if (afterAction === input.action) return { error: "Una regla no puede esperar a su propio paso." };
+  const minimum = input.min_demo_activity_level === undefined ? 0 : num(input.min_demo_activity_level);
+  if (minimum !== 0 && minimum !== 3) return { error: "La condición de generación debe ser 0 o 3." };
   const stageKey = input.stage as StageKey;
+  if (minimum === 3 && !["no-abrio", "sin-interaccion", "sin-cuenta"].includes(stageKey)) return { error: "La condición Generó imagen solo corresponde a Demo enviada." };
   if (afterAction && !compatible(stageKey, afterAction)) return { error: "El paso previo no es una acción de esta etapa." };
   // Una regla con acción fuera de su etapa puede quedar apagada (para no perderla), pero no encendida ni nueva.
   const enabled = input.enabled !== false;
@@ -167,6 +174,7 @@ export function cleanRule(input: Record<string, unknown>, situations: readonly s
     action: input.action as Action,
     after_hours: Math.round(after * 10) / 10,
     after_action: afterAction,
+    min_demo_activity_level: minimum,
     position: Number.isFinite(position) ? Math.max(0, Math.min(1000, Math.round(position))) : 100,
     enabled,
     hours_from: from,
