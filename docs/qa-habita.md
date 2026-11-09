@@ -93,6 +93,18 @@ Sin nombres, teléfonos, emails, enlaces a grabaciones, IDs de sesión, tasas de
 
 ## Resultados
 
+### QA 2026-11-09 pm
+
+- Inicio: 2026-11-09T17:52-03:00 · Fin: 2026-11-09T18:10-03:00
+- Commit: 46bd8df · Despliegue: dpl_9uivQRLAEeUAz6u45B2tmGAFemMW (producción, READY) · Estado: parcial
+- Tipo: liviana · Pantallas: escritorio 1366×900, iPhone 13, Galaxy S8 (no se probó tablet, red lenta ni user agent de WhatsApp en esta corrida)
+- Flujos revisados: errores de Vercel (24 h) y de Supabase (logs de Postgres y edge); sesión de QA (OK); demo pública y `/presentacion` de la demo de QA (sin scroll horizontal, `og:*` presentes, sin placeholders, WhatsApp y CTA visibles); 404 de demo inexistente (página clara); `/panel` en escritorio y celular (carga en unos 4 s, sin scroll horizontal); `/`. Capturas miradas: demo en iPhone 13 y panel en Galaxy S8. Sin revisar: interacciones de galería, comparación con clic y arrastre, teclado y zonas táctiles; red lenta; user agent de WhatsApp; admin; estudio de imágenes y video (la liviana los excluye).
+- Bugs encontrados: ninguno nuevo · Corregidos: ninguno
+- Observaciones nuevas: ninguna (se repiten OBS-011 y OBS-012: `lead_recompute_failed` y `statement timeout` en prospección, con más de un RPC de prospección dando 500 por timeout) · Propuestas nuevas: ninguna (se repiten UX-001 y UX-003, mismos axe `serious`)
+- PRs de usabilidad abiertos: ninguno con título `UX:`
+- PostHog revisado hasta: sin cambio · cobertura: sin acceso · el conector de PostHog no estaba disponible en esta tarea; no se analizaron sesiones reales ni grabaciones
+- Esperado, no es bug: errores de Postgres `column followup_rules.min_demo_activity_level does not exist` entre 18:41 y 18:50 UTC, porque la migración `202612060001_followup_rule_generation.sql` se aplicó a mano justo después de ese último error; la columna ya existe. Los demás errores de columna o tabla inexistente fueron consultas de esta misma corrida.
+
 ### QA 2026-11-09 am (2)
 
 - Inicio: 2026-11-09T08:52:34-03:00 · Fin: 2026-11-09T09:01:57-03:00 · Estado: parcial (ver «Sin revisar»)
