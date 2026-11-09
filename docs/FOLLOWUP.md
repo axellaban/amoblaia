@@ -275,3 +275,10 @@ Reglas incompatibles en producción (solo lectura, 9/11/2026): `no-contactado:pr
 **Migración controlada pendiente (no aplicada):** apagarlas con una migración explícita, por ejemplo `update followup_rules set enabled = false where key in ('no-contactado:presentacion', 'no-contactado:presentacion_seguimiento', 'no-contactado:precios');`. Antes, decidir si esas acciones van a «Contactado, no responde» (como dice la sección de Fase 1) o si la etapa «No contactado» debe ganar esas acciones (requiere cambiar `ACTIONS_OF` y las reglas juntas).
 
 Textos pendientes: Presentación, Presentación sin respuesta, Precios y el seguimiento 2 de «Contactado, no responde» no tienen versión cargada. Sin versión, la acción queda bloqueada con «Falta el texto de…».
+
+### Mensajes y reglas: diseño final (9/11/2026)
+
+- **Pantalla:** reglas de la etapa a la izquierda. A la derecha, el editor de la regla elegida: «Cuándo se ejecuta» y «Qué se ejecuta» lado a lado, el mensaje debajo (Mensaje, Otras versiones, Observaciones) y la vista previa de WhatsApp en su columna.
+- **Quitar una regla:** ⋮ → «Eliminar regla», con confirmación (`DELETE /api/admin/follow-up/reglas { key }`, `deleteRule`). Se borra la regla. Las versiones, las ejecuciones y las métricas no dependen de la regla y se conservan. Queda en la auditoría con la regla completa. ⋮ → «Duplicar regla» crea una copia.
+- **Reglas incompatibles:** el panel no las muestra. El motor ya no las ejecuta, así que quedan resueltas de nuestro lado. Siguen en la base: las 3 de «No contactado» (10, 20 y 30) no se borraron.
+- **Guardado:** «Guardar cambios» guarda la regla. El mensaje se guarda con sus botones («Guardar mensaje», «Guardar Vn como activa», «Guardar y probar A/B»), porque las versiones van por otra API.

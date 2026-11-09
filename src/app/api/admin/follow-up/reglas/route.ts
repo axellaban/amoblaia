@@ -1,6 +1,6 @@
 import { HttpError, failure, requireAdmin } from "@/lib/commerce/http";
 import { actorName } from "@/lib/followup/actor";
-import { auditOf, listRules, saveRule } from "@/lib/followup/server";
+import { auditOf, deleteRule, listRules, saveRule } from "@/lib/followup/server";
 export const runtime = "nodejs";
 
 const NO_STORE = { "Cache-Control": "private, no-store" };
@@ -23,6 +23,17 @@ export async function PUT(request: Request) {
     const b = (await request.json().catch(() => null)) as Record<string, unknown> | null;
     if (!b) throw new HttpError(400, "Falta la regla.");
     return Response.json(await saveRule(b.key, b, { id: user.id, name: actorName(user) }), { headers: NO_STORE });
+  } catch (e) {
+    return failure(e);
+  }
+}
+
+/** Quita una regla: `{ key }`. Sus versiones, ejecuciones y métricas se conservan. */
+export async function DELETE(request: Request) {
+  try {
+    const user = await requireAdmin(request);
+    const b = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+    return Response.json(await deleteRule(b?.key, { id: user.id, name: actorName(user) }), { headers: NO_STORE });
   } catch (e) {
     return failure(e);
   }
