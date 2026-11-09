@@ -1247,6 +1247,23 @@ export async function saveRule(key: unknown, input: Record<string, unknown>, act
   return { ...(data as Rule), after_hours: Number((data as Rule).after_hours) };
 }
 
+/**
+ * Quita una regla. El motor deja de evaluarla en la próxima lectura. Las
+ * versiones, las ejecuciones y las métricas no dependen de la regla y se
+ * conservan. Queda en la auditoría con la regla completa, para poder volver a
+ * crearla igual.
+ */
+export async function deleteRule(key: unknown, actor: { id: string; name: string }) {
+  if (typeof key !== "string" || !key || key.length > 80) throw new HttpError(400, "Regla desconocida.");
+  const db = adminClient();
+  const before = (await db.from("followup_rules").select("*").eq("key", key).maybeSingle()).data;
+  if (!before) throw new HttpError(404, "No encontramos esa regla.");
+  const { error } = await db.from("followup_rules").delete().eq("key", key);
+  if (error) throw missing(error) ? new HttpError(409, MISSING) : new Error("FOLLOWUP_DELETE_FAILED");
+  await audit("rule", actor, { ref: key, from: before, to: null });
+  return { key };
+}
+
 /** Los cambios a mano de una inmobiliaria (o de las reglas y versiones, sin `agencyId`), del más nuevo al más viejo. */
 export async function auditOf(agencyId: string | null, limit = 20) {
   let q = adminClient().from("followup_audit").select("subject,ref,old_value,new_value,actor_name,created_at").order("created_at", { ascending: false }).limit(limit);

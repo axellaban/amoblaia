@@ -29194,158 +29194,979 @@ dialog.pt-layer::backdrop {
   white-space: nowrap;
 }
 
-/* Mensaje de la regla: la versión original (V1), a la derecha del texto; «Usar como base» abre un borrador desde ella. */
-.fu-msg-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 190px;
-  gap: 12px;
-  align-items: start;
+/* Follow-up · Mensajes y reglas (diseño final). Flujo de etapas, encabezado de la etapa,
+   reglas a la izquierda y el editor de la regla: «Cuándo» y «Qué» lado a lado, el mensaje
+   debajo y la vista previa de WhatsApp a la derecha. */
+.fu-page {
+  --fr-line: #e3e8e1;
+  --fr-soft: #f6f8f5;
+  --fr-green: #1f7a4d;
+  --fr-green2: #2f8f5b;
+  --fr-greenbg: #eaf5ee;
+  --fr-greenline: #bfe0cc;
+  --fr-ink: #1d2b24;
+  --fr-muted: #647268;
+  --fr-wa-bg: #efeae2;
+  --fr-wa-out: #d9fdd3;
+  --fr-wa-head: #1f3a2c;
 }
-.fu-orig {
-  display: grid;
-  gap: 8px;
-  align-content: start;
-  border: 1px dashed #cfd9cc;
-  border-radius: 12px;
-  padding: 10px 12px;
-  font-size: 12.5px;
-  background: #fbfcfa;
-}
-.fu-orig p {
-  margin: 0;
-  white-space: pre-wrap;
-  color: var(--pr-muted, #5f6f64);
-  max-height: 180px;
-  overflow: auto;
-}
-@media (max-width: 900px) {
-  .fu-msg-row {
-    grid-template-columns: minmax(0, 1fr);
-  }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 
-/* Rediseño visual de «Mensajes y reglas» según el mockup: interruptores, dos columnas (cuándo | qué), cabecera de WhatsApp y botones. Solo estilos. */
-.fu-flow{gap:10px;padding:6px 2px 12px}
-.fu-flowstep{border-radius:14px;border-color:#dfe5dc;box-shadow:0 1px 2px rgba(20,40,30,.04);min-width:210px;padding:12px 14px}
-.fu-flowstep.is-on{border-color:#2f8f5b;background:#f1faf5;box-shadow:0 0 0 1px #2f8f5b inset}
-.fu-workspace{grid-template-columns:minmax(0,0.85fr) minmax(0,2.15fr);gap:18px}
-.fu-rulecard{border-radius:14px;border-color:#dfe5dc;padding:12px 14px;gap:10px}
-.fu-rulecard.is-on{border-color:#2f8f5b;box-shadow:0 0 0 1px #2f8f5b inset}
-.fu-rulecard .fu-rulepos{width:auto;font-weight:700;color:#24382e;background:#eef3ee;border-radius:8px;padding:4px 9px;font-size:13px}
-.fu-rulecard .fu-st.is-archived{background:#fff3d9;color:#8a5d12;border:0;border-radius:6px;font-size:10.5px;white-space:normal}
-.fu-switch input[type=checkbox],.fu-rulecard input[type=checkbox]{appearance:none;-webkit-appearance:none;width:38px;height:22px;border-radius:999px;background:#d5dbd2;position:relative;cursor:pointer;flex:none;margin:0;transition:background .2s}
-.fu-switch input[type=checkbox]::after,.fu-rulecard input[type=checkbox]::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2);transition:transform .2s}
-.fu-switch input[type=checkbox]:checked,.fu-rulecard input[type=checkbox]:checked{background:#2f8f5b}
-.fu-switch input[type=checkbox]:checked::after,.fu-rulecard input[type=checkbox]:checked::after{transform:translateX(16px)}
-.fu-switch input[type=checkbox]:disabled,.fu-rulecard input[type=checkbox]:disabled{opacity:.45;cursor:not-allowed}
-.fu-detail-card{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px 18px;border-radius:14px;padding:18px 20px;border-color:#dfe5dc}
-.fu-rdhead,.fu-footer{grid-column:1/-1}
-.fu-part{border:1px solid #e6ece4;border-radius:12px;padding:14px;gap:12px;display:flex;flex-direction:column}
-.fu-part .fu-lbl{color:#24382e;font-weight:700}
-.fu-st{border-radius:999px;padding:2px 9px}
-.fu-st.is-active{background:#e3f1e8;color:#1f6b4a}
-.fu-footer .fu-actions{justify-content:flex-end}
-.fu-footer .button-primary{background:#2f8f5b;border-color:#2f8f5b;border-radius:999px;padding:9px 18px}
-.fu-footer .fu-link{color:#5f6f64}
-.fu-rdhead{grid-column:1/-1;grid-row:1}
-[data-testid=followup-part-when]{grid-column:1;grid-row:2/span 2;align-self:start}
-[data-testid=followup-part-what]{display:contents}
-[data-testid=followup-part-what] > .fu-lbl{grid-column:2;grid-row:2;align-self:end;color:#24382e;font-weight:700;font-size:11px}
-[data-testid=followup-part-what] > label{grid-column:2;grid-row:3;align-self:start;border:1px solid #e6ece4;border-radius:12px;padding:12px 14px;display:grid;gap:6px}
-[data-testid=followup-part-what] > .fu-mededit{grid-column:1/-1;grid-row:4}
-.fu-footer{grid-column:1/-1;grid-row:5}
-.fu-footer .button-primary,.fu-footer .button-primary:hover{color:#fff!important}
-.fu-wa{border-radius:18px;overflow:hidden;border:1px solid #dfe5dc;background:#efe9df}
-.fu-wa::before{content:"";display:block;height:44px;background:#24382e}
-.fu-wa > .fu-lbl{position:relative;margin-top:-44px;padding:13px 14px 0;color:#f4f3ee;font-size:10.5px;letter-spacing:.06em}
-.fu-wa-chat{padding:14px 12px 16px}
-.fu-msg-grid{align-items:start}
-[data-testid=followup-part-what] > .fu-mededit .fu-vhead{gap:8px}
-.fu-wa > .fu-lbl{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
-
-/* Mensajes y reglas, según el mockup: rótulo del flujo, etapa activa, íconos y cabecera de WhatsApp. */
+/* Flujo de etapas */
 .fu-flowrow {
   display: flex;
   align-items: center;
-  gap: 14px;
-  min-width: 0;
-}
-.fu-flowrow > .fu-flow {
-  flex: 1;
+  gap: 12px;
+  margin-top: 10px;
+  background: #fff;
+  border: 1px solid var(--fr-line);
+  border-radius: 12px;
+  padding: 8px 10px;
   min-width: 0;
 }
 .fu-flowlabel {
   flex: none;
   font-size: 12px;
   font-weight: 700;
-  color: #24382e;
+  color: var(--fr-ink);
+  padding-left: 4px;
   text-transform: none;
   letter-spacing: 0;
+}
+.fu-flowrow > .fu-flow {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 0;
+  scrollbar-width: thin;
+}
+.fu-flowrow .fu-flowstep {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  min-width: 150px;
+  border: 1px solid var(--fr-line);
+  border-radius: 10px;
+  background: #fff;
+  padding: 6px 12px 6px 7px;
+  box-shadow: none;
+}
+.fu-flowrow .fu-flowstep .fu-num {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid var(--fr-line);
+  background: #fff;
+  color: var(--fr-ink);
+  display: grid;
+  place-items: center;
+  font-size: 11.5px;
+  font-weight: 700;
+}
+.fu-flowrow .fu-flowstep b {
+  display: block;
+  font-size: 11.5px;
+  line-height: 1.2;
+}
+.fu-flowrow .fu-flowstep small {
+  color: var(--fr-muted);
+  font-size: 10.5px;
+}
+.fu-flowrow .fu-flowstep.is-on {
+  border: 1.5px solid var(--fr-green2);
+  background: var(--fr-greenbg);
+  box-shadow: none;
+}
+.fu-flowrow .fu-flowstep.is-on .fu-num {
+  border-color: var(--fr-green2);
+  background: #fff;
+  color: var(--fr-ink);
+}
+.fu-flowrow .fu-flowarrow {
+  color: #7c8a80;
+  flex: none;
+}
+
+/* Encabezado de la etapa */
+.fu-page .fu-stagehead {
+  margin-top: 10px;
+  background: #fff;
+  border: 1px solid var(--fr-line);
+  border-bottom: 0;
+  border-radius: 12px 12px 0 0;
+  padding: 12px 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.fu-page .fu-stagehead .fu-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.fu-page .fu-stagehead .fu-num {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--fr-green);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-size: 14px;
+  font-weight: 800;
+}
+.fu-page .fu-stagehead .fu-title {
+  font-size: 17px;
+  font-weight: 800;
 }
 .fu-badge-on {
   display: inline-flex;
   align-items: center;
-  margin-left: 8px;
   border-radius: 999px;
-  padding: 2px 9px;
+  padding: 1px 8px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--fr-green);
+  background: var(--fr-greenbg);
+}
+.fu-page .fu-stagehead .fu-note {
+  margin: 1px 0 0 40px;
   font-size: 11.5px;
-  font-weight: 700;
-  color: #1f6b4a;
-  background: #e3f1e8;
 }
-.fu-stagehead .fu-num {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  background: #2f8f5b;
-  color: #fff;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 15px;
-  font-weight: 700;
+.fu-page .fu-stagehead .fu-meta {
+  margin-left: 40px;
 }
-.fu-subtab {
+.fu-page .fu-stagehead .fu-subtabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.fu-page .fu-stagehead .fu-subtab {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  border: 1px solid var(--fr-line);
+  background: #fff;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fr-ink);
 }
-.fu-grip {
-  color: #9aa79c;
-  flex: none;
-  cursor: default;
+.fu-page .fu-stagehead .fu-subtab.is-on {
+  border-color: transparent;
+  border-bottom: 2px solid var(--fr-green);
+  border-radius: 0;
+  background: none;
+  font-weight: 800;
+  color: var(--fr-ink);
 }
-.fu-rulecard {
-  align-items: center;
+
+/* Reglas e editor */
+.fu-page .fu-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 250px) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  margin-top: 0;
+  background: #fff;
+  border: 1px solid var(--fr-line);
+  border-radius: 0 0 12px 12px;
+  padding: 12px;
 }
-.fu-wa::before {
-  content: none;
+.fu-page .fu-rules {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  border: 0;
+  padding: 0;
 }
-.fu-wa-head {
+.fu-rules-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+.fu-rules-head h3 {
+  margin: 2px 0 0;
+  font-size: 14px;
+}
+.fu-rules-head .fu-note {
+  margin: 2px 0 0;
+  font-size: 10.5px;
+  max-width: 150px;
+}
+.fu-page .fu-rulecard {
   display: flex;
   align-items: center;
-  gap: 10px;
-  background: #24382e;
-  color: #f4f3ee;
-  padding: 12px 14px;
-  font-size: 13px;
-  font-weight: 700;
+  gap: 8px;
+  flex-wrap: nowrap;
+  border: 1px solid var(--fr-line);
+  border-radius: 10px;
+  background: #fafbf9;
+  padding: 9px 10px;
+  box-shadow: none;
+  opacity: 1;
 }
-.fu-wa-avatar {
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  background: #e8efe9;
-  color: #24382e;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 13px;
-  font-weight: 800;
+.fu-page .fu-rulecard.is-on {
+  border: 1.5px solid var(--fr-green2);
+  background: var(--fr-greenbg);
+  box-shadow: none;
+}
+.fu-page .fu-rulecard.is-off .fu-rulemain {
+  opacity: 0.6;
+}
+.fu-page .fu-rulecard .fu-grip {
+  color: #9aa79c;
   flex: none;
 }
-.fu-wa-name {
+.fu-page .fu-rulecard-main {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+.fu-page .fu-rulecard .fu-rulepos {
+  width: 28px;
+  height: 24px;
+  border: 1px solid var(--fr-line);
+  border-radius: 6px;
+  background: #fff;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 11.5px;
+  color: var(--fr-ink);
+  padding: 0;
+  flex: none;
+}
+.fu-page .fu-rulecard .fu-rulemain {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+.fu-page .fu-rulecard .fu-rulemain b {
+  font-size: 12px;
+  line-height: 1.25;
+}
+.fu-page .fu-rulecard .fu-rulemain span {
+  font-size: 10.5px;
+  line-height: 1.3;
+  color: var(--fr-muted);
+}
+.fu-page .fu-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.fu-page .fu-switch input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  margin: 0;
+  width: 34px;
+  height: 19px;
+  border-radius: 999px;
+  background: #cfd6cd;
+  cursor: pointer;
+  flex: none;
+  transition: background 0.2s;
+}
+.fu-page .fu-switch input[type="checkbox"]::after {
+  content: "";
+  position: absolute;
+  top: 2.5px;
+  left: 2.5px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform 0.2s;
+}
+.fu-page .fu-switch input[type="checkbox"]:checked {
+  background: var(--fr-green2);
+}
+.fu-page .fu-switch input[type="checkbox"]:checked::after {
+  transform: translateX(15px);
+}
+.fu-page .fu-switch input[type="checkbox"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.fu-page .fu-ruleform {
+  display: block;
+  border: 1px solid var(--fr-line);
+  border-radius: 12px;
+  padding: 12px;
+  background: #fff;
+  min-width: 0;
+}
+.fu-ruleform .fu-rdhead {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+.fu-rdline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.fu-ruletag {
+  border-radius: 6px;
+  background: var(--fr-greenbg);
+  color: var(--fr-green);
+  font-weight: 800;
+  font-size: 11px;
+  padding: 2px 8px;
+}
+.fu-ruleform .fu-rdhead h3 {
+  margin: 0;
+  font-size: 15px;
+}
+.fu-ruleform .fu-rdhead .fu-note {
+  margin: 3px 0 0;
+  font-size: 11.5px;
+}
+.fu-rdtools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.fu-kebabwrap {
+  position: relative;
+}
+.fu-kebab {
+  border: 0;
+  background: none;
+  padding: 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #55635a;
+  display: grid;
+  place-items: center;
+}
+.fu-kebab:hover {
+  background: var(--fr-soft);
+}
+.fu-menu {
+  position: absolute;
+  right: 0;
+  top: 30px;
+  background: #fff;
+  border: 1px solid var(--fr-line);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(20, 40, 30, 0.12);
+  padding: 4px;
+  z-index: 5;
+  min-width: 170px;
+}
+.fu-menu button {
+  display: flex;
+  width: 100%;
+  gap: 8px;
+  align-items: center;
+  border: 0;
+  background: none;
+  padding: 8px 10px;
+  border-radius: 7px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  color: var(--fr-ink);
+}
+.fu-menu button:hover {
+  background: var(--fr-soft);
+}
+.fu-menu button.is-danger {
+  color: #b4483a;
+}
+
+.fu-rgrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr) 230px;
+  grid-template-areas: "when what pv" "msg msg pv";
+  gap: 10px 12px;
+  margin-top: 10px;
+  align-items: start;
+}
+.fu-rgrid > .fu-mededit {
+  display: contents;
+}
+.fu-rgrid .fu-when {
+  grid-area: when;
+}
+.fu-rgrid .fu-what {
+  grid-area: what;
+}
+.fu-rgrid .fu-msgbox {
+  grid-area: msg;
+}
+.fu-rgrid .fu-pvcol {
+  grid-area: pv;
+}
+.fu-page .fu-box {
+  border: 1px solid var(--fr-line);
+  border-radius: 10px;
+  padding: 10px;
+  display: grid;
+  gap: 7px;
+  align-content: start;
+  min-width: 0;
+  background: #fff;
+}
+.fu-page .fu-box h4,
+.fu-pvcol h4 {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+}
+.fu-page .fu-f {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.fu-page .fu-f > span {
+  font-size: 10.5px;
+  color: #4b5a50;
+}
+.fu-page .fu-box select,
+.fu-page .fu-box input[type="number"],
+.fu-page .fu-box input:not([type]),
+.fu-page .fu-msgbox select,
+.fu-page .fu-msgbox input:not([type]),
+.fu-page .fu-msgbox textarea {
+  border: 1px solid var(--fr-line);
+  border-radius: 7px;
+  background: #fff;
+  padding: 5px 8px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--fr-ink);
+  min-width: 0;
+  width: 100%;
+}
+.fu-page .fu-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.fu-page .fu-chipbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--fr-line);
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #fff;
+  cursor: pointer;
+  color: var(--fr-ink);
+}
+.fu-page .fu-chipbtn.is-on {
+  background: var(--fr-green);
+  border-color: var(--fr-green);
+  color: #fff;
+}
+.fu-page .fu-chipbtn.is-static {
+  cursor: default;
+}
+.fu-page .fu-box .fu-chipadd {
+  width: auto;
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.fu-wait {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.fu-page .fu-wait input {
+  width: 52px;
+  text-align: center;
+}
+.fu-wait small {
+  color: var(--fr-muted);
+  font-size: 10.5px;
+}
+.fu-hours2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.fu-page .fu-order input {
+  width: 80px;
+}
+.fu-page .fu-vsel select {
+  color: var(--fr-green);
+  font-weight: 700;
+  background: var(--fr-greenbg);
+  border-color: var(--fr-greenline);
+}
+.fu-stack {
+  display: grid;
+  gap: 6px;
+}
+.fu-stack .button {
+  width: 100%;
+}
+
+/* El mensaje de la regla */
+.fu-page .fu-msgbox {
+  padding: 0;
+  gap: 0;
+}
+.fu-mtabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--fr-line);
+  padding: 0 8px;
+  overflow-x: auto;
+}
+.fu-mtabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: none;
+  padding: 8px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  color: #3d4c43;
+  white-space: nowrap;
+}
+.fu-mtabs button.is-on {
+  border-bottom-color: var(--fr-green);
+  color: var(--fr-ink);
+  font-weight: 800;
+}
+.fu-mbody {
+  padding: 9px 10px;
+  display: grid;
+  gap: 8px;
+  background: var(--fr-soft);
+  border-radius: 0 0 10px 10px;
+}
+.fu-page .fu-msg-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 150px;
+  gap: 10px;
+  align-items: start;
+}
+.fu-msg-text {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+.fu-vpill {
+  justify-self: start;
+  border-radius: 6px;
+  background: var(--fr-greenbg);
+  color: var(--fr-green);
+  font-weight: 800;
+  font-size: 10.5px;
+  padding: 2px 7px;
+}
+.fu-page .fu-msgbox textarea {
+  min-height: 70px;
+  resize: vertical;
+  line-height: 1.5;
+}
+.fu-page .fu-msgbox textarea[readonly] {
+  background: #fff;
+}
+.fu-page .fu-vars {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.fu-page .fu-vars .fu-var {
+  border: 0;
+  border-radius: 6px;
+  background: var(--fr-greenbg);
+  color: var(--fr-green);
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 3px 7px;
+  cursor: pointer;
+}
+.fu-hint {
+  margin: 0;
+  color: var(--fr-muted);
+  font-size: 10.5px;
+}
+.fu-page .fu-orig {
+  border: 1px solid var(--fr-line);
+  background: #fff;
+  border-radius: 8px;
+  padding: 8px;
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  font-size: 10.5px;
+}
+.fu-page .fu-orig b {
+  font-size: 11px;
+}
+.fu-page .fu-orig p {
+  margin: 0;
+  color: #4b5a50;
+  max-height: 110px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+.fu-miss {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  background: #fdf3e1;
+  color: #7a520f;
+  border-radius: 8px;
+  padding: 9px 10px;
+  font-size: 12px;
+}
+.fu-vlist {
+  display: grid;
+  gap: 6px;
+}
+.fu-vitem {
+  background: #fff;
+  border: 1px solid var(--fr-line);
+  border-radius: 8px;
+  padding: 8px;
+  display: grid;
+  gap: 4px;
+}
+.fu-vitem.is-on {
+  border-color: var(--fr-green2);
+}
+.fu-vitem-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.fu-vitem p {
+  margin: 0;
+  white-space: pre-wrap;
+  color: #4b5a50;
+  font-size: 11.5px;
+}
+.fu-obsgrid {
+  display: grid;
+  gap: 8px;
+}
+.fu-page .fu-obsgrid .fu-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.fu-page .fu-ctas {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.fu-page .fu-ctas legend {
+  font-size: 10.5px;
+  color: #4b5a50;
+  margin-bottom: 4px;
+}
+.fu-msgactions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* Vista previa de WhatsApp */
+.fu-pvcol {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  min-width: 0;
+}
+.fu-page .fu-wa {
+  border: 1px solid var(--fr-line);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--fr-wa-bg);
+  min-height: 250px;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  gap: 0;
+}
+.fu-page .fu-wa-head {
+  background: var(--fr-wa-head);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  font-size: 11.5px;
+  font-weight: 700;
+}
+.fu-page .fu-wa-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #fff;
+  color: var(--fr-wa-head);
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.fu-page .fu-wa-name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.fu-page .fu-wa-chat {
+  padding: 10px 8px;
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  flex: 1;
+  background-image: radial-gradient(rgba(0, 0, 0, 0.03) 1px, transparent 1px);
+  background-size: 10px 10px;
+}
+.fu-wa-day {
+  justify-self: center;
+  background: #fff;
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 10px;
+  color: #55635a;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.05);
+}
+.fu-page .fu-wa-chat .fu-bubble.is-out {
+  justify-self: end;
+  max-width: 88%;
+  background: var(--fr-wa-out);
+  border-radius: 8px 2px 8px 8px;
+  padding: 6px 8px 4px;
+  font-size: 11.5px;
+  white-space: pre-wrap;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.06);
+}
+.fu-wa-tick {
+  display: block;
+  text-align: right;
+  color: #3a9ad9;
+  margin-top: 1px;
+}
+.fu-page .fu-wa-ctas {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  padding: 6px 8px 8px;
+}
+.fu-page .fu-wa-ctas span {
+  background: #fff;
+  border: 1px solid var(--fr-line);
+  border-radius: 6px;
+  padding: 2px 6px;
+  font-size: 10.5px;
+}
+.fu-page .fu-wa > .fu-warn {
+  margin: 0;
+  padding: 6px 8px 8px;
+  font-size: 10.5px;
+}
+
+/* Pie, botón de peligro y diálogo de confirmación */
+.fu-ruleform .fu-footer {
+  margin-top: 10px;
+  display: grid;
+  gap: 6px;
+}
+.fu-ruleform .fu-footer .fu-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.fu-page .fu-ruleform .fu-footer .button-primary,
+.fu-page .fu-ruleform .fu-footer .button-primary:hover {
+  background: var(--fr-green);
+  border-color: var(--fr-green);
+  color: #fff;
+}
+.fu-danger {
+  background: #fff;
+  color: #b4483a;
+  border: 1px solid #f0cfca;
+}
+.fu-danger:hover {
+  background: #fbecea;
+}
+.fu-dlg {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 30, 25, 0.35);
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  z-index: 50;
+}
+.fu-dlg > div {
+  background: #fff;
+  border-radius: 14px;
+  padding: 18px;
+  max-width: 400px;
+  width: 100%;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.2);
+  display: grid;
+  gap: 10px;
+}
+.fu-dlg h4 {
+  margin: 0;
+  font-size: 15px;
+}
+.fu-dlg p {
+  margin: 0;
+  color: var(--fr-muted);
+  font-size: 12.5px;
+}
+.fu-dlg .fu-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.fu-empty {
+  border: 1px dashed var(--fr-line);
+  border-radius: 10px;
+  padding: 14px;
+  color: var(--fr-muted);
+  font-size: 12px;
+  margin: 0;
+}
+
+/* «Mensajes de la etapa»: el mismo editor de mensaje, sin la regla */
+.fu-action .fu-mededit {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 230px;
+  grid-template-areas: "what pv" "msg pv";
+  gap: 10px 12px;
+  align-items: start;
+}
+.fu-action .fu-what {
+  grid-area: what;
+}
+.fu-action .fu-msgbox {
+  grid-area: msg;
+}
+.fu-action .fu-pvcol {
+  grid-area: pv;
+}
+
+@media (max-width: 1180px) {
+  .fu-rgrid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas: "when what" "msg msg" "pv pv";
+  }
+  .fu-rgrid .fu-pvcol,
+  .fu-action .fu-pvcol {
+    max-width: 340px;
+  }
+}
+@media (max-width: 900px) {
+  .fu-page .fu-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .fu-rgrid,
+  .fu-action .fu-mededit {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "when" "what" "msg" "pv";
+  }
+  .fu-action .fu-mededit {
+    grid-template-areas: "what" "msg" "pv";
+  }
+  .fu-page .fu-msg-row,
+  .fu-page .fu-obsgrid .fu-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .fu-flowlabel {
+    display: none;
+  }
+  .fu-page .fu-stagehead .fu-note,
+  .fu-page .fu-stagehead .fu-meta {
+    margin-left: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fu-page .fu-switch input[type="checkbox"],
+  .fu-page .fu-switch input[type="checkbox"]::after {
+    transition: none;
+  }
+}
+/* Botones compactos dentro de Mensajes y reglas (el sitio los usa más grandes). */
+.fu-page .fu-rules .button,
+.fu-page .fu-ruleform .button,
+.fu-page .fu-action .button {
+  min-height: 30px;
+  padding: 5px 10px;
+  font-size: 12px;
+  gap: 6px;
+  border-radius: 8px;
+}
+.fu-page .fu-ruleform .fu-footer .button {
+  min-height: 34px;
+  padding: 7px 16px;
+}
+.fu-rules-head {
+  flex-wrap: wrap;
+}
+.fu-page .fu-box .fu-wait input {
+  width: 56px;
+  flex: none;
+}
+.fu-wait small {
   white-space: nowrap;
+}
+.fu-page .fu-box .fu-order input {
+  width: 90px;
+}
+.fu-page .fu-orig p {
+  overflow-wrap: anywhere;
+}
+.fu-page .fu-orig .button {
+  width: 100%;
+  justify-content: center;
 }

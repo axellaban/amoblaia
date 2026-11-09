@@ -3,10 +3,10 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, useEffect, useRef, useState } from "react";
-import { BarChart3, ChevronRight, ClipboardCopy, GripVertical, Info, KeyRound, Layers, Link2, MessageCircle, MessageSquare, Pencil, Plus, Send, SlidersHorizontal } from "lucide-react";
+import { ArrowLeft, BarChart3, Building2, CalendarDays, CheckCheck, ChevronRight, ClipboardCopy, Copy, GripVertical, Info, KeyRound, Layers, Link2, MessageCircle, MessageSquare, MoreVertical, Pencil, Phone, Plus, Send, SlidersHorizontal, Trash2, Undo2, Video } from "lucide-react";
 import { api } from "@/components/admin-demos";
 import { CTA_KEYS, CTA_LABEL, FOLLOWUP_STAGES, OUT, VARIABLES, fillMessage, missingVariables, pct, type Channel, type Cta, type StageKey, type VersionStatus } from "@/lib/followup/stages";
-import { GROUPS, REPLY_CLASSES, SITUATIONS, actionLabel, actionWhen, actionsOf, splitMessages, type Action, type ReplyClass, type Situation } from "@/lib/followup/plan";
+import { GROUPS, REPLY_CLASSES, SITUATIONS, actionLabel, actionWhen, actionsOf, compatible, splitMessages, type Action, type ReplyClass, type Situation } from "@/lib/followup/plan";
 import type { Change, FunnelStep, InboxItem, Prepared, QueueItem, QueueSummary, Results, StageView } from "@/lib/followup/server";
 import type { CohortRow, WindowKey } from "@/lib/followup/results";
 import { daysText, type Rule } from "@/lib/followup/rules";
@@ -979,7 +979,6 @@ function ReplyForm({ agencies, onDone }: { agencies: QueueItem[]; onDone: () => 
 }
 
 const SITUATION_OPTIONS = ["sin_respuesta", "confirmo_numero", "neutro", "pregunta_precios", "mas_adelante", "derivo", "interesado"] as const;
-const DAY_SHORT = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
 const ruleSituations = (r: Rule) => (r.situations.length ? r.situations.map((x) => SITUATIONS[x as Situation]).join(", ") : "Cualquier situación");
 
 /** Embudo y etapas (Fase 3): las etapas en tarjetas con su avance; la elegida, con sus reglas, sus versiones y sus inmobiliarias. */
@@ -1065,6 +1064,14 @@ function ruleWhen(stage: StageKey, r: Rule) {
   return `Si ${ruleSituations(r).toLowerCase()}${after} · ${timing} · ${daysText(r.days)} de ${r.hours_from} a ${r.hours_to}`;
 }
 
+/** La condición de una regla en una línea corta, para su tarjeta. */
+function ruleShort(stage: StageKey, r: Rule) {
+  const sits = r.situations.length ? r.situations.map((x) => SITUATIONS[x]).join(", ").toLowerCase() : "";
+  if (r.after_action) return `${r.after_hours ? `${r.after_hours} h después de` : "Después de"} «${actionLabel(stage, r.after_action as Action)}»`;
+  const timing = r.after_hours ? `a las ${r.after_hours} h` : "enseguida";
+  return sits ? `Si ${sits} · ${timing}` : timing.charAt(0).toUpperCase() + timing.slice(1);
+}
+
 /** La misma etapa, con solo las versiones de una acción: lo que el editor de esa acción necesita. */
 const versionsOf = (stage: StageView, action: Action): StageView => ({ ...stage, versions: stage.versions.filter((v) => (v.action ?? "principal") === action) });
 
@@ -1080,12 +1087,14 @@ function RulesWorkspace({ stages, rules, changes }: { stages: StageView[]; rules
   const [dirty, setDirty] = useState<Record<string, boolean>>({});
   const stage = stages.find((s) => s.key === stageKey) ?? stages[0];
   const index = stages.indexOf(stage) + 1;
-  const own = rules.filter((r) => r.stage === stage.key).sort((a, b) => a.position - b.position);
+  // Las reglas con una acción que no es de la etapa no se muestran: el motor ya no las ejecuta.
+  const own = rules.filter((r) => r.stage === stage.key && compatible(stage.key, r.action as Action)).sort((a, b) => a.position - b.position);
   const available = actionsOf(stage.key);
   const sample = stage.queue.find((q) => q.wa) ?? stage.queue[0] ?? null;
   const waiting = (s: StageView) => s.queue.filter((q) => q.execution?.status !== "sent").length;
   const isDirty = Object.values(dirty).some(Boolean);
   const adding = selected === NEW_RULE;
+  const nextPosition = Math.max(0, ...own.map((r) => r.position)) + 10;
   const current = adding ? null : own.find((r) => r.key === selected) ?? own.find((r) => r.enabled && available.includes(r.action as Action)) ?? own[0] ?? null;
   const markDirty = (id: string) => (d: boolean) => setDirty((p) => (p[id] === d ? p : { ...p, [id]: d }));
 
@@ -1164,12 +1173,12 @@ function RulesWorkspace({ stages, rules, changes }: { stages: StageView[]; rules
 
       {tab === "reglas" && (
         <div className="fu-workspace">
-          <RulesEditor stage={stage.key} rules={own} selected={current?.key ?? null} adding={adding} available={available} isDirty={isDirty} onSelect={(k) => go(() => setSelected(k))} onAdd={() => go(() => setSelected(NEW_RULE))} />
+          <RulesEditor stage={stage.key} rules={own} selected={current?.key ?? null} adding={adding} isDirty={isDirty} onSelect={(k) => go(() => setSelected(k))} onAdd={() => go(() => setSelected(NEW_RULE))} />
           <div className="fu-rdetail" data-testid="followup-rule-detail">
             {adding ? (
-              <RuleEditor key={`${stage.key}:new`} stage={stage} rule={null} sample={sample} onDirty={markDirty("regla")} onAdded={() => setSelected(null)} />
+              <RuleEditor key={`${stage.key}:new`} stage={stage} rule={null} sample={sample} nextPosition={nextPosition} onDirty={markDirty("regla")} onAdded={() => setSelected(null)} />
             ) : current ? (
-              <RuleEditor key={`${stage.key}:${current.key}:${JSON.stringify(current)}`} stage={stage} rule={current} sample={sample} onDirty={markDirty("regla")} />
+              <RuleEditor key={`${stage.key}:${current.key}:${JSON.stringify(current)}`} stage={stage} rule={current} sample={sample} nextPosition={nextPosition} onDirty={markDirty("regla")} onDeleted={() => { setDirty({}); setSelected(null); }} />
             ) : (
               <div className="fu-detail-card">
                 <p className="fu-note">Esta etapa no tiene reglas. Agregá una para que el motor la ejecute.</p>
@@ -1203,7 +1212,6 @@ function RulesWorkspace({ stages, rules, changes }: { stages: StageView[]; rules
                   <span>{ruleWhen(stage.key, r)}</span>
                 </span>
                 <span className={`fu-st is-${r.enabled ? "active" : "archived"}`}>{r.enabled ? "Activa" : "Apagada"}</span>
-                {!available.includes(r.action as Action) && <span className="fu-st is-archived">Acción no disponible</span>}
               </li>
             ))}
           </ul>
@@ -1233,7 +1241,6 @@ function RulesEditor({
   rules,
   selected,
   adding,
-  available,
   isDirty,
   onSelect,
   onAdd,
@@ -1242,33 +1249,40 @@ function RulesEditor({
   rules: Rule[];
   selected: string | null;
   adding: boolean;
-  available: Action[];
   isDirty: boolean;
   onSelect: (key: string) => void;
   onAdd: () => void;
 }) {
   return (
     <div className="fu-rules" data-testid="followup-rules" data-stage={stage}>
-      <div className="fu-qhead">
+      <div className="fu-rules-head">
         <div>
-          <span className="fu-lbl">Reglas de esta etapa</span>
-          <p className="fu-note">Se evalúan en orden. Se ejecuta la primera que cumple.</p>
+          <h3>Reglas de esta etapa</h3>
+          <p className="fu-note">Se evalúan en orden. Se ejecuta la primera que cumpla.</p>
         </div>
         <button type="button" className="button button-small button-outline" data-testid="followup-rule-add" onClick={onAdd} disabled={adding}>
           <Plus size={15} aria-hidden="true" /> Agregar regla
         </button>
       </div>
       {rules.map((r) => (
-        <RuleRow key={r.key} stage={stage} rule={r} selected={selected === r.key} unavailable={!available.includes(r.action as Action)} isDirty={isDirty} onSelect={() => onSelect(r.key)} />
+        <RuleRow key={r.key} stage={stage} rule={r} selected={selected === r.key} isDirty={isDirty} onSelect={() => onSelect(r.key)} />
       ))}
-      {!rules.length && <p className="fu-note">Todavía no hay reglas para esta etapa.</p>}
-      {adding && <p className="fu-note">Nueva regla: completala a la derecha y guardala.</p>}
+      {adding && (
+        <div className="fu-rulecard is-on is-new">
+          <span className="fu-rulepos">+</span>
+          <span className="fu-rulemain">
+            <b>Nueva regla</b>
+            <span>Completala a la derecha y guardala.</span>
+          </span>
+        </div>
+      )}
+      {!rules.length && !adding && <p className="fu-empty">Esta etapa no tiene reglas. Agregá una para que el motor la ejecute.</p>}
     </div>
   );
 }
 
-/** Una regla en la lista: número de orden, acción, condición en una línea y el interruptor de activa. */
-function RuleRow({ stage, rule, selected, unavailable, isDirty, onSelect }: { stage: StageKey; rule: Rule; selected: boolean; unavailable: boolean; isDirty: boolean; onSelect: () => void }) {
+/** Una regla en la lista: orden, acción, condición en una línea y el interruptor de activa. */
+function RuleRow({ stage, rule, selected, isDirty, onSelect }: { stage: StageKey; rule: Rule; selected: boolean; isDirty: boolean; onSelect: () => void }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -1291,44 +1305,72 @@ function RuleRow({ stage, rule, selected, unavailable, isDirty, onSelect }: { st
       <button type="button" className="fu-rulecard-main" aria-pressed={selected} data-testid="followup-rule-edit" onClick={onSelect}>
         <span className="fu-rulepos">{rule.position}</span>
         <span className="fu-rulemain">
-          <b>
-            {actionLabel(stage, rule.action as Action)}
-            {unavailable && <span className="fu-st is-archived"> No disponible aquí</span>}
-          </b>
-          <span>{ruleWhen(stage, rule)}</span>
+          <b>{actionLabel(stage, rule.action as Action)}</b>
+          <span>{ruleShort(stage, rule)}</span>
         </span>
       </button>
-      <label className="fu-switch">
+      <label className="fu-switch" title={rule.enabled ? "Activa" : "Apagada"}>
         <input
           type="checkbox"
           checked={rule.enabled}
-          disabled={busy || (unavailable && !rule.enabled)}
+          disabled={busy}
           onChange={(e) => toggle(e.target.checked)}
           data-testid="followup-rule-toggle"
-        />{" "}
-        {unavailable ? (rule.enabled ? "Encendida (no se ejecuta)" : "Inactiva: no disponible aquí") : rule.enabled ? "Activa" : "Apagada"}
+          aria-label={`${rule.enabled ? "Apagar" : "Activar"} la regla ${rule.position}`}
+        />
       </label>
       {error && <small className="fu-error">{error}</small>}
     </div>
   );
 }
 
+const DAY_PRESETS = [
+  { label: "Lunes – Sábado", days: [1, 2, 3, 4, 5, 6] },
+  { label: "Lunes – Viernes", days: [1, 2, 3, 4, 5] },
+  { label: "Todos los días", days: [0, 1, 2, 3, 4, 5, 6] },
+];
+const HOUR_PRESETS: [number, number][] = [
+  [9, 18],
+  [9, 19],
+  [9, 20],
+  [10, 19],
+  [8, 20],
+];
+
 /**
- * El editor de una regla, en tres partes: cuándo se ejecuta, qué se ejecuta
- * (acción y versión, con su mensaje) y la vista previa. «Guardar cambios»
- * guarda la regla; cada versión se guarda con sus propios botones.
+ * El editor de una regla, como el diseño: «Cuándo se ejecuta» y «Qué se
+ * ejecuta» lado a lado, el mensaje debajo y la vista previa de WhatsApp a la
+ * derecha. «Guardar cambios» guarda la regla; el mensaje se guarda con sus
+ * botones (son versiones: APIs separadas). Desde ⋮ se duplica o se quita.
  */
-function RuleEditor({ stage, rule, sample, onDirty, onAdded }: { stage: StageView; rule: Rule | null; sample: QueueItem | null; onDirty: (dirty: boolean) => void; onAdded?: () => void }) {
+function RuleEditor({
+  stage,
+  rule,
+  sample,
+  nextPosition,
+  onDirty,
+  onAdded,
+  onDeleted,
+}: {
+  stage: StageView;
+  rule: Rule | null;
+  sample: QueueItem | null;
+  nextPosition: number;
+  onDirty: (dirty: boolean) => void;
+  onAdded?: () => void;
+  onDeleted?: () => void;
+}) {
   const router = useRouter();
   const available = actionsOf(stage.key);
-  const blank: Rule = { key: "", stage: stage.key, situations: ["sin_respuesta"], action: "principal", after_hours: 48, after_action: null, position: 60, enabled: true, hours_from: 9, hours_to: 19, days: [1, 2, 3, 4, 5, 6] };
+  const blank: Rule = { key: "", stage: stage.key, situations: ["sin_respuesta"], action: available[0], after_hours: 48, after_action: null, position: nextPosition, enabled: true, hours_from: 9, hours_to: 19, days: [1, 2, 3, 4, 5, 6] };
   const base = rule ?? blank;
   const [r, setR] = useState<Rule>(base);
   const [msgDirty, setMsgDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [menu, setMenu] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const ruleDirty = JSON.stringify(r) !== JSON.stringify(base);
-  const unavailable = !available.includes(r.action as Action);
   const report = useRef(onDirty);
   useEffect(() => {
     report.current = onDirty;
@@ -1340,68 +1382,106 @@ function RuleEditor({ stage, rule, sample, onDirty, onAdded }: { stage: StageVie
 
   const set = (patch: Partial<Rule>) => setR({ ...r, ...patch });
   const toggleSituation = (x: Rule["situations"][number]) => set({ situations: r.situations.includes(x) ? r.situations.filter((y) => y !== x) : [...r.situations, x] });
-  const toggleDay = (d: number) => set({ days: r.days.includes(d) ? r.days.filter((y) => y !== d) : [...r.days, d].sort((a, b) => a - b) });
+  const remaining = SITUATION_OPTIONS.filter((x) => !r.situations.includes(x));
+  const dayPreset = DAY_PRESETS.find((p) => p.days.join() === [...r.days].sort((a, b) => a - b).join());
+  const hourValue = `${r.hours_from}-${r.hours_to}`;
+  const hourOptions = HOUR_PRESETS.some(([f, t]) => `${f}-${t}` === hourValue) ? HOUR_PRESETS : [[r.hours_from, r.hours_to] as [number, number], ...HOUR_PRESETS];
   function setAction(a: Action) {
     if (a === r.action) return;
     if (msgDirty && !window.confirm(DISCARD)) return;
     setMsgDirty(false);
     set({ action: a, after_action: r.after_action === a ? null : r.after_action });
   }
-  async function save() {
+  async function call(work: () => Promise<unknown>, after?: () => void) {
     setBusy(true);
     setError("");
     try {
-      // Una regla con acción no disponible en su etapa se guarda apagada: el motor ya no la usa.
-      await api("/api/admin/follow-up/reglas", { method: "PUT", body: JSON.stringify(unavailable ? { ...r, enabled: false } : r) });
-      if (!rule) onAdded?.();
+      await work();
+      after?.();
       router.refresh();
-      setBusy(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "No pudimos guardar la regla.");
+    } finally {
       setBusy(false);
     }
   }
+  const save = () => call(() => api("/api/admin/follow-up/reglas", { method: "PUT", body: JSON.stringify(r) }), () => !rule && onAdded?.());
+  const duplicate = () => {
+    setMenu(false);
+    void call(() => api("/api/admin/follow-up/reglas", { method: "PUT", body: JSON.stringify({ ...base, key: undefined, position: base.position + 5 }) }));
+  };
+  const remove = () => call(() => api("/api/admin/follow-up/reglas", { method: "DELETE", body: JSON.stringify({ key: base.key }) }), () => { setConfirmDelete(false); onDeleted?.(); });
 
   return (
-    <div className="fu-detail-card" data-testid="followup-rule-form">
+    <div className="fu-detail-card fu-ruleform" data-testid="followup-rule-form">
       <header className="fu-rdhead">
-        <div>
-          <span className="fu-lbl">{rule ? `Regla ${rule.position}` : "Nueva regla"}</span>
-          <h3>{actionLabel(stage.key, r.action as Action)}</h3>
+        <div className="fu-rdtitle">
+          <div className="fu-rdline">
+            <span className="fu-ruletag">{rule ? `Regla ${r.position}` : "Nueva regla"}</span>
+            <h3>{actionLabel(stage.key, r.action as Action)}</h3>
+          </div>
           <p className="fu-note">{ruleWhen(stage.key, r)}</p>
         </div>
-        <label className="fu-switch">
-          <input
-            type="checkbox"
-            checked={r.enabled}
-            disabled={unavailable && !r.enabled}
-            onChange={(e) => set({ enabled: e.target.checked })}
-            data-testid="followup-rule-enabled"
-          />{" "}
-          {unavailable ? (r.enabled ? "Encendida (no se ejecuta)" : "No disponible aquí") : "Activa"}
-        </label>
+        <div className="fu-rdtools">
+          <label className="fu-switch">
+            <input type="checkbox" checked={r.enabled} onChange={(e) => set({ enabled: e.target.checked })} data-testid="followup-rule-enabled" /> Activa
+          </label>
+          {rule && (
+            <div className="fu-kebabwrap">
+              <button type="button" className="fu-kebab" aria-label="Opciones de la regla" aria-expanded={menu} data-testid="followup-rule-menu" onClick={() => setMenu(!menu)}>
+                <MoreVertical size={17} aria-hidden="true" />
+              </button>
+              {menu && (
+                <div className="fu-menu" role="menu">
+                  <button type="button" role="menuitem" onClick={duplicate} disabled={busy}>
+                    <Copy size={15} aria-hidden="true" /> Duplicar regla
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="is-danger"
+                    data-testid="followup-rule-delete"
+                    onClick={() => {
+                      setMenu(false);
+                      setConfirmDelete(true);
+                    }}
+                  >
+                    <Trash2 size={15} aria-hidden="true" /> Eliminar regla
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </header>
 
-      <section className="fu-part" data-testid="followup-part-when">
-        <span className="fu-lbl">1 · Cuándo se ejecuta</span>
-        <div className="fu-field">
-          <span className="fu-lbl2">Situación (cualquiera de)</span>
-          <div className="fu-chips">
-            {r.situations.map((x) => (
-              <button key={x} type="button" className="fu-chipbtn is-on" aria-pressed="true" onClick={() => toggleSituation(x)}>
-                ✓ {SITUATIONS[x]}
-              </button>
-            ))}
-            {SITUATION_OPTIONS.filter((x) => !r.situations.includes(x)).map((x) => (
-              <button key={x} type="button" className="fu-chipbtn" aria-pressed="false" onClick={() => toggleSituation(x)}>
-                + {SITUATIONS[x]}
-              </button>
-            ))}
+      <div className="fu-rgrid">
+        <section className="fu-box fu-when" data-testid="followup-part-when">
+          <h4>
+            <CalendarDays size={16} aria-hidden="true" /> Cuándo se ejecuta
+          </h4>
+          <div className="fu-f">
+            <span>Situación (cualquiera de)</span>
+            <div className="fu-chips">
+              {r.situations.map((x) => (
+                <button key={x} type="button" className="fu-chipbtn is-on" aria-pressed="true" title="Quitar" onClick={() => toggleSituation(x)}>
+                  ✓ {SITUATIONS[x]}
+                </button>
+              ))}
+              {!r.situations.length && <span className="fu-chipbtn is-on is-static">✓ Cualquier situación</span>}
+              {remaining.length > 0 && (
+                <select className="fu-chipadd" value="" aria-label="Agregar situación" onChange={(e) => e.target.value && toggleSituation(e.target.value as Rule["situations"][number])}>
+                  <option value="">+ Agregar</option>
+                  {remaining.map((x) => (
+                    <option key={x} value={x}>
+                      {SITUATIONS[x]}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
           </div>
-          {!r.situations.length && <span className="fu-note">Ninguna marcada: aplica a cualquier situación.</span>}
-        </div>
-        <div className="fu-partgrid">
-          <label>
+          <label className="fu-f">
             <span>Paso previo</span>
             <select value={r.after_action ?? ""} onChange={(e) => set({ after_action: (e.target.value || null) as Rule["after_action"] })}>
               <option value="">Ningún paso</option>
@@ -1414,63 +1494,73 @@ function RuleEditor({ stage, rule, sample, onDirty, onAdded }: { stage: StageVie
                 ))}
             </select>
           </label>
-          <label>
-            <span>Espera (horas desde nuestro último mensaje)</span>
-            <input type="number" min={0} max={720} step={1} value={r.after_hours} onChange={(e) => set({ after_hours: Number(e.target.value) })} data-testid="followup-rule-hours" />
-          </label>
-          <label>
+          <div className="fu-f">
+            <span>Espera</span>
+            <div className="fu-wait">
+              <input type="number" min={0} max={720} step={1} value={r.after_hours} onChange={(e) => set({ after_hours: Number(e.target.value) })} data-testid="followup-rule-hours" aria-label="Espera en horas" />
+              <small>horas desde nuestro último mensaje</small>
+            </div>
+          </div>
+          <div className="fu-f">
+            <span>Horario de envío</span>
+            <div className="fu-hours2">
+              <select
+                value={dayPreset?.label ?? "custom"}
+                aria-label="Días"
+                onChange={(e) => {
+                  const p = DAY_PRESETS.find((x) => x.label === e.target.value);
+                  if (p) set({ days: p.days });
+                }}
+              >
+                {DAY_PRESETS.map((p) => (
+                  <option key={p.label} value={p.label}>
+                    {p.label}
+                  </option>
+                ))}
+                {!dayPreset && <option value="custom">{daysText(r.days)}</option>}
+              </select>
+              <select
+                value={hourValue}
+                aria-label="Horas"
+                onChange={(e) => {
+                  const [from, to] = e.target.value.split("-").map(Number);
+                  set({ hours_from: from, hours_to: to });
+                }}
+              >
+                {hourOptions.map(([f, t]) => (
+                  <option key={`${f}-${t}`} value={`${f}-${t}`}>
+                    {f}:00 – {t}:00
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <label className="fu-f fu-order">
             <span>Orden de prioridad</span>
             <input type="number" min={0} max={1000} value={r.position} onChange={(e) => set({ position: Number(e.target.value) })} />
           </label>
-          <fieldset className="fu-hours">
-            <legend>Horario de envío</legend>
-            <label>
-              <span className="sr-only">Desde (hora)</span>
-              <input type="number" min={0} max={23} value={r.hours_from} onChange={(e) => set({ hours_from: Number(e.target.value) })} aria-label="Desde (hora)" />
-            </label>
-            <span aria-hidden="true">a</span>
-            <label>
-              <span className="sr-only">Hasta (hora)</span>
-              <input type="number" min={1} max={24} value={r.hours_to} onChange={(e) => set({ hours_to: Number(e.target.value) })} aria-label="Hasta (hora)" />
-            </label>
-          </fieldset>
-        </div>
-        <div className="fu-field">
-          <span className="fu-lbl2">Días habilitados</span>
-          <div className="fu-chips">
-            {DAY_SHORT.map((d, i) => {
-              const on = r.days.includes(i);
-              return (
-                <button key={d} type="button" className={`fu-chipbtn${on ? " is-on" : ""}`} aria-pressed={on} onClick={() => toggleDay(i)}>
-                  {d}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </section>
+        </section>
 
-      <section className="fu-part" data-testid="followup-part-what">
-        <span className="fu-lbl">2 · Qué se ejecuta</span>
-        <label>
-          <span>Acción (mensaje)</span>
-          <select value={r.action} onChange={(e) => setAction(e.target.value as Action)}>
-            {[...new Set<Action>([...available, r.action as Action])].map((a) => (
-              <option key={a} value={a} disabled={!available.includes(a)}>
-                {actionLabel(stage.key, a)}
-                {available.includes(a) ? "" : " · no disponible en esta etapa"}
-              </option>
-            ))}
-          </select>
-        </label>
-        {unavailable ? (
-          <p className="fu-warn" role="status">
-            Acción no disponible para esta etapa. Esta regla no se ejecuta aquí: elegí una acción de la etapa o apagala.
-          </p>
-        ) : (
-          <Editor key={`${stage.key}:${r.action}`} stage={versionsOf(stage, r.action as Action)} action={r.action as Action} sample={sample} onDirty={setMsgDirty} />
-        )}
-      </section>
+        <Editor
+          key={`${stage.key}:${r.action}`}
+          stage={versionsOf(stage, r.action as Action)}
+          action={r.action as Action}
+          sample={sample}
+          onDirty={setMsgDirty}
+          actionField={
+            <label className="fu-f">
+              <span>Acción (mensaje)</span>
+              <select value={r.action} onChange={(e) => setAction(e.target.value as Action)} data-testid="followup-rule-action">
+                {available.map((a) => (
+                  <option key={a} value={a}>
+                    {actionLabel(stage.key, a)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          }
+        />
+      </div>
 
       <footer className="fu-footer">
         {error && (
@@ -1478,14 +1568,11 @@ function RuleEditor({ stage, rule, sample, onDirty, onAdded }: { stage: StageVie
             {error}
           </p>
         )}
-        {msgDirty && <p className="fu-warn">El mensaje tiene cambios sin guardar: guardalos con sus botones.</p>}
+        {msgDirty && <p className="fu-warn">El mensaje tiene cambios sin guardar: guardalos con sus botones, arriba.</p>}
         <div className="fu-actions">
-          <button type="button" className="button button-primary button-small" data-testid="followup-rule-save" disabled={busy || (!!rule && !ruleDirty)} onClick={save}>
-            {rule ? "Guardar cambios" : "Crear regla"}
-          </button>
           <button
             type="button"
-            className="fu-link"
+            className="button button-small button-outline"
             disabled={busy || !ruleDirty}
             onClick={() => {
               setR(base);
@@ -1494,23 +1581,45 @@ function RuleEditor({ stage, rule, sample, onDirty, onAdded }: { stage: StageVie
           >
             Cancelar
           </button>
+          <button type="button" className="button button-primary button-small" data-testid="followup-rule-save" disabled={busy || (!!rule && !ruleDirty)} onClick={save}>
+            {rule ? "Guardar cambios" : "Crear regla"}
+          </button>
         </div>
-        <p className="fu-note">«Guardar cambios» guarda la regla. Cada versión del mensaje es un cambio aparte y se guarda con sus botones.</p>
       </footer>
+
+      {confirmDelete && (
+        <div className="fu-dlg" role="dialog" aria-modal="true" aria-labelledby="fu-dlg-title">
+          <div>
+            <h4 id="fu-dlg-title">
+              ¿Quitar la regla {base.position} · {actionLabel(stage.key, base.action as Action)}?
+            </h4>
+            <p>La regla deja de existir y el motor ya no la evalúa. Sus mensajes, versiones, ejecuciones y métricas se conservan. Si después hace falta, se vuelve a agregar.</p>
+            <div className="fu-actions">
+              <button type="button" className="button button-small button-outline" disabled={busy} onClick={() => setConfirmDelete(false)}>
+                Cancelar
+              </button>
+              <button type="button" className="button button-small fu-danger" data-testid="followup-rule-delete-confirm" disabled={busy} onClick={remove}>
+                Quitar regla
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 /**
- * El mensaje de una acción: versiones, texto, observaciones y CTA para la
- * extensión, con la vista previa de WhatsApp a la derecha. Los botones de
- * guardar son los de siempre: crear una versión, editarla o cambiar su estado.
+ * El mensaje de una acción, en tres partes: «Qué se ejecuta» (acción, versión,
+ * editar y nueva versión), el mensaje con sus pestañas (texto, otras versiones,
+ * observaciones y CTA) y la vista previa de WhatsApp. Los botones de guardar
+ * son los de siempre: crear una versión, editarla o cambiar su estado.
  */
-function Editor({ stage, action, sample, onDirty }: { stage: StageView; action: Action; sample: QueueItem | null; onDirty?: (dirty: boolean) => void }) {
+function Editor({ stage, action, sample, onDirty, actionField }: { stage: StageView; action: Action; sample: QueueItem | null; onDirty?: (dirty: boolean) => void; actionField?: React.ReactNode }) {
   const router = useRouter();
   const live = stage.versions.find((v) => v.status === "active") ?? stage.versions.at(-1) ?? null;
   const [selected, setSelected] = useState<string | null>(live?.id ?? null);
-  const [draft, setDraft] = useState<Draft | null>(live ? null : EMPTY);
+  const [draft, setDraft] = useState<Draft | null>(null);
   const [tab, setTab] = useState<MsgTab>("mensaje");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -1521,7 +1630,7 @@ function Editor({ stage, action, sample, onDirty }: { stage: StageView; action: 
   const nextNumber = Math.max(0, ...stage.versions.map((v) => v.version)) + 1;
   const bodyId = `fu-body-${stage.key}-${action}`;
   const editing = draft?.editing ? stage.versions.find((v) => v.id === draft.editing) ?? null : null;
-  const dirtyDraft = draft !== null && (editing ? JSON.stringify(draft) !== JSON.stringify(draftOf(editing, editing.id)) : (draft.body.trim() !== "" || draft.notes.trim() !== "" || draft.trigger.trim() !== ""));
+  const dirtyDraft = draft !== null && (editing ? JSON.stringify(draft) !== JSON.stringify(draftOf(editing, editing.id)) : draft.body.trim() !== "" || draft.notes.trim() !== "" || draft.trigger.trim() !== "");
   const report = useRef(onDirty);
   useEffect(() => {
     report.current = onDirty;
@@ -1565,7 +1674,7 @@ function Editor({ stage, action, sample, onDirty }: { stage: StageView; action: 
   }
   function newVersion() {
     if (!confirmDiscard()) return;
-    setDraft(current ? draftOf(current) : EMPTY);
+    setDraft(current ? { ...draftOf(current), editing: undefined } : EMPTY);
     setTab("mensaje");
   }
   function editVersion(v: Version) {
@@ -1581,10 +1690,11 @@ function Editor({ stage, action, sample, onDirty }: { stage: StageView; action: 
   }
 
   const selectValue = draft ? draft.editing ?? NEW_VERSION : current?.id ?? "";
+  const pill = editing ? `Editando V${editing.version}` : draft ? `Nueva versión (V${nextNumber})` : current ? `V${current.version} (${STATUS_LABEL[current.status].toLowerCase()})` : "";
   const actionButtons = editing ? (
     <>
       <button type="button" className="button button-primary button-small" disabled={busy || !draft?.body.trim()} onClick={update}>
-        Guardar cambios en V{editing.version}
+        Guardar mensaje
       </button>
       <button type="button" className="fu-link" disabled={busy} onClick={() => setDraft(null)}>
         Cancelar
@@ -1602,17 +1712,13 @@ function Editor({ stage, action, sample, onDirty }: { stage: StageView; action: 
       </button>
       {active && (
         <button type="button" className="button button-small button-outline" disabled={busy || !draft.body.trim()} onClick={() => save("test")}>
-          Guardar y probar 50/50 contra V{active.version}
+          Guardar y probar A/B contra V{active.version}
         </button>
       )}
-      {stage.versions.length > 0 && (
-        <button type="button" className="fu-link" disabled={busy} onClick={() => setDraft(null)}>
-          Descartar
-        </button>
-      )}
+      <button type="button" className="fu-link" disabled={busy} onClick={() => setDraft(null)}>
+        Descartar
+      </button>
     </>
-  ) : current?.status === "active" ? (
-    <p className="fu-note">La activa: la usan todas las inmobiliarias de esta etapa{stage.versions.some((v) => v.status === "test") ? " que no están en la prueba" : ""}.</p>
   ) : current?.status === "test" ? (
     <>
       <button type="button" className="button button-primary button-small" disabled={busy} onClick={() => setStatus(current.id, "active")}>
@@ -1621,16 +1727,15 @@ function Editor({ stage, action, sample, onDirty }: { stage: StageView; action: 
       <button type="button" className="button button-small button-outline" disabled={busy} onClick={() => setStatus(current.id, "archived")}>
         Detener prueba
       </button>
-      <p className="fu-note">Recibe la mitad de las inmobiliarias de la etapa.</p>
     </>
-  ) : current ? (
+  ) : current && current.status !== "active" ? (
     <>
       <button type="button" className="button button-small button-outline" disabled={busy} onClick={() => setStatus(current.id, "active")}>
         Volver a activarla
       </button>
       {active && (
         <button type="button" className="button button-small button-outline" disabled={busy} onClick={() => setStatus(current.id, "test")}>
-          Probar 50/50 contra V{active.version}
+          Probar A/B contra V{active.version}
         </button>
       )}
     </>
@@ -1638,142 +1743,141 @@ function Editor({ stage, action, sample, onDirty }: { stage: StageView; action: 
 
   return (
     <div className="fu-mededit" data-testid="followup-message-editor" data-action={action}>
-      {!stage.versions.length && (
-        <p className="fu-warn" role="status">
-          Falta configurar el mensaje de esta acción.
-        </p>
-      )}
-      <div className="fu-vhead">
-        <label className="fu-vselect">
-          <span className="fu-lbl">Versión</span>
+      <section className="fu-box fu-what" data-testid="followup-part-what">
+        <h4>
+          <Send size={16} aria-hidden="true" /> Qué se ejecuta
+        </h4>
+        {actionField}
+        <label className="fu-f fu-vsel">
+          <span>Versión del mensaje</span>
           <select value={selectValue} onChange={(e) => { if (e.target.value !== NEW_VERSION) pick(e.target.value); }} data-testid="followup-version-select">
+            {!stage.versions.length && !draft && <option value="">Sin versión</option>}
             {stage.versions.map((v) => (
               <option key={v.id} value={v.id}>
-                V{v.version} · {STATUS_LABEL[v.status]}
+                V{v.version} ({STATUS_LABEL[v.status].toLowerCase()})
               </option>
             ))}
             {draft && !draft.editing && <option value={NEW_VERSION}>Borrador V{nextNumber}</option>}
           </select>
         </label>
-        <button type="button" className="fu-link" onClick={() => setTab("versiones")}>
-          Editar versiones
-        </button>
-      </div>
-
-      <div className="fu-subtabs" role="tablist">
-        {(
-          [
-            ["mensaje", "Mensaje"],
-            ["versiones", `Otras versiones (${stage.versions.filter((v) => v.id !== current?.id).length})`],
-            ["observaciones", "Observaciones (extensión)"],
-          ] as const
-        ).map(([k, label]) => (
-          <button key={k} type="button" role="tab" aria-selected={tab === k} className={`fu-subtab${tab === k ? " is-on" : ""}`} onClick={() => setTab(k)}>
-            {k === "mensaje" ? <MessageCircle size={14} aria-hidden="true" /> : k === "versiones" ? <Layers size={14} aria-hidden="true" /> : <Info size={14} aria-hidden="true" />}
-            {label}
+        <div className="fu-stack">
+          <button type="button" className="button button-small button-outline" data-testid="followup-edit-version" disabled={!current} onClick={() => current && editVersion(current)}>
+            <Pencil size={14} aria-hidden="true" /> Editar versiones
           </button>
-        ))}
-      </div>
+          <button type="button" className="button button-small button-outline" data-testid="followup-new-version" onClick={newVersion}>
+            <Plus size={14} aria-hidden="true" /> Nueva versión
+          </button>
+        </div>
+      </section>
 
-      <div className="fu-msg-grid">
-        <div className="fu-msg-main">
-          {tab === "mensaje" && shown && (
-            <>
-              <div className="fu-fields">
-                <label>
-                  <span>Cuándo se dispara</span>
-                  <input value={draft ? draft.trigger : (shown as Version).trigger_label} readOnly={!draft} maxLength={120} placeholder="Ej.: 3 días sin respuesta" onChange={(e) => draft && setDraft({ ...draft, trigger: e.target.value })} />
-                </label>
-                <label>
-                  <span>Canal</span>
-                  <select value={shown.channel} disabled={!draft} onChange={(e) => draft && setDraft({ ...draft, channel: e.target.value as Channel })}>
-                    <option value="whatsapp">WhatsApp</option>
-                    <option value="task">Tarea del equipo</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Cuenta como conversión</span>
-                  <input value={`Pasa a «${stage.goal}»`} readOnly />
-                </label>
+      <section className="fu-box fu-msgbox">
+        <div className="fu-mtabs" role="tablist">
+          {(
+            [
+              ["mensaje", "Mensaje"],
+              ["versiones", `Otras versiones (${stage.versions.filter((v) => v.id !== current?.id).length})`],
+              ["observaciones", "Observaciones (extensión)"],
+            ] as const
+          ).map(([k, label]) => (
+            <button key={k} type="button" role="tab" aria-selected={tab === k} className={tab === k ? "is-on" : undefined} onClick={() => setTab(k)}>
+              {k === "mensaje" ? <MessageCircle size={14} aria-hidden="true" /> : k === "versiones" ? <Layers size={14} aria-hidden="true" /> : <Info size={14} aria-hidden="true" />}
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div className="fu-mbody">
+          {tab === "mensaje" &&
+            (!shown ? (
+              <div className="fu-miss" role="status">
+                Falta configurar el mensaje de esta acción.
+                <button type="button" className="button button-primary button-small" onClick={newVersion}>
+                  <Plus size={14} aria-hidden="true" /> Crear mensaje
+                </button>
               </div>
-              <p className="fu-note">Para mandar varios mensajes seguidos (como la presentación), separalos con una línea que diga solo «---».</p>
+            ) : (
               <div className="fu-msg-row">
-                <label className="fu-textarea">
-                  <span>{editing ? `Mensaje · editando V${editing.version}` : `Mensaje · V${current?.version ?? nextNumber}`}</span>
-                  <textarea id={bodyId} value={shown.body} readOnly={!draft} maxLength={4000} onChange={(e) => draft && setDraft({ ...draft, body: e.target.value })} />
-                </label>
-                {original && original.id !== current?.id && (
+                <div className="fu-msg-text">
+                  {pill && <span className="fu-vpill">{pill}</span>}
+                  <textarea id={bodyId} aria-label="Mensaje" value={shown.body} readOnly={!draft} maxLength={4000} onChange={(e) => draft && setDraft({ ...draft, body: e.target.value })} />
+                  {draft ? (
+                    <div className="fu-vars">
+                      {(Object.keys(VARIABLES) as (keyof typeof VARIABLES)[]).map((k) => (
+                        <button key={k} type="button" className="fu-var" title={VARIABLES[k]} onClick={() => insert(k)}>
+                          {`{{${k}}}`}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="fu-hint">Para cambiar el texto: «Editar versiones» o «Nueva versión».</p>
+                  )}
+                  <p className="fu-hint">Para varios mensajes seguidos, separalos con una línea que diga solo «---».</p>
+                </div>
+                {original && original.id !== current?.id ? (
                   <aside className="fu-orig" data-testid="followup-original">
-                    <span className="fu-lbl">Versión original (V{original.version})</span>
+                    <b>Versión original (V{original.version})</b>
                     <p>{original.body}</p>
                     <button
                       type="button"
                       className="button button-small button-outline"
                       disabled={!!draft && draft.body === original.body}
-                      onClick={() => setDraft({ channel: original.channel, trigger: original.trigger_label, body: original.body, ctas: [...original.ctas], notes: original.notes ?? "" })}
+                      onClick={() => {
+                        if (!confirmDiscard()) return;
+                        setDraft({ channel: original.channel, trigger: original.trigger_label, body: original.body, ctas: [...original.ctas], notes: original.notes ?? "" });
+                      }}
                     >
-                      Usar como base
+                      <Undo2 size={14} aria-hidden="true" /> Usar como base
                     </button>
                   </aside>
-                )}
+                ) : null}
               </div>
-              {draft && (
-                <div className="fu-vars">
-                  Variables:
-                  {(Object.keys(VARIABLES) as (keyof typeof VARIABLES)[]).map((k) => (
-                    <button key={k} type="button" className="fu-var" title={VARIABLES[k]} onClick={() => insert(k)}>
-                      {`{{${k}}}`}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </>
-          )}
+            ))}
 
           {tab === "versiones" && (
-            <div className="fu-vtabs" data-testid="followup-versions">
-              <span className="fu-lbl">Versiones</span>
-              {stage.versions.map((v) => (
-                <button key={v.id} type="button" className={`fu-vtab${!draft && current?.id === v.id ? " is-on" : ""}`} onClick={() => pick(v.id)}>
-                  V{v.version} <span className={`fu-st is-${v.status}`}>{STATUS_LABEL[v.status]}</span>
-                </button>
+            <div className="fu-vlist" data-testid="followup-versions">
+              {stage.versions.length === 0 && <p className="fu-note">Todavía no hay versiones de este mensaje.</p>}
+              {[...stage.versions].reverse().map((v) => (
+                <div key={v.id} className={`fu-vitem${!draft && current?.id === v.id ? " is-on" : ""}`}>
+                  <div className="fu-vitem-head">
+                    <b>V{v.version}</b> <span className={`fu-st is-${v.status}`}>{STATUS_LABEL[v.status]}</span>
+                    <span className="fu-note">
+                      {v.stats.executions} ejecuciones · {pct(v.stats.rate)}
+                    </span>
+                  </div>
+                  <p>{v.body}</p>
+                  <div className="fu-actions">
+                    <button type="button" className="fu-link" onClick={() => pick(v.id)}>
+                      Ver
+                    </button>
+                    <button type="button" className="fu-link" onClick={() => editVersion(v)}>
+                      Editar
+                    </button>
+                  </div>
+                </div>
               ))}
-              {draft && !draft.editing ? (
-                <span className="fu-vtab is-on">
-                  V{nextNumber} <span className="fu-st is-draft">Borrador</span>
-                </span>
-              ) : editing ? (
-                <span className="fu-vtab is-on">
-                  V{editing.version} <span className="fu-st is-draft">Editando</span>
-                </span>
-              ) : (
-                <button type="button" className="fu-vtab" onClick={newVersion}>
+              <div className="fu-actions">
+                <button type="button" className="button button-small button-outline" onClick={newVersion}>
                   <Plus size={14} aria-hidden="true" /> Nueva versión
                 </button>
-              )}
-              {!draft && current && (
-                <button type="button" className="fu-vtab fu-edit" data-testid="followup-edit-version" onClick={() => editVersion(current)}>
-                  <Pencil size={13} aria-hidden="true" /> Editar V{current.version}
-                </button>
-              )}
+              </div>
             </div>
           )}
 
           {tab === "observaciones" && shown && (
-            <>
-              <label className="fu-textarea fu-notes">
+            <div className="fu-obsgrid">
+              <label className="fu-f fu-notes">
                 <span>Observaciones para la extensión · cuándo y cómo mandarlo</span>
                 <textarea
                   data-testid="followup-version-notes"
                   value={draft ? draft.notes : ((shown as Version).notes ?? "")}
                   readOnly={!draft}
                   maxLength={4000}
-                  placeholder={draft ? "Ej.: no mandar fines de semana; si respondió con una pregunta, contestarla antes." : "Sin observaciones. Tocá «Editar» para sumarlas."}
+                  placeholder={draft ? "Ej.: no mandar fines de semana; si respondió con una pregunta, contestarla antes." : "Sin observaciones. Tocá «Editar versiones» para sumarlas."}
                   onChange={(e) => draft && setDraft({ ...draft, notes: e.target.value })}
                 />
               </label>
               <fieldset className="fu-ctas">
-                <legend className="fu-lbl">Call to actions para la extensión</legend>
+                <legend>Call to actions para la extensión</legend>
                 {CTA_KEYS.map((k) => {
                   const on = shown.ctas.includes(k);
                   return (
@@ -1784,18 +1888,41 @@ function Editor({ stage, action, sample, onDirty }: { stage: StageView; action: 
                   );
                 })}
               </fieldset>
-            </>
+              <div className="fu-fields">
+                <label className="fu-f">
+                  <span>Cuándo se dispara (nota para el equipo)</span>
+                  <input value={draft ? draft.trigger : (shown as Version).trigger_label} readOnly={!draft} maxLength={120} placeholder="Ej.: 3 días sin respuesta" onChange={(e) => draft && setDraft({ ...draft, trigger: e.target.value })} />
+                </label>
+                <label className="fu-f">
+                  <span>Canal</span>
+                  <select value={shown.channel} disabled={!draft} onChange={(e) => draft && setDraft({ ...draft, channel: e.target.value as Channel })}>
+                    <option value="whatsapp">WhatsApp</option>
+                    <option value="task">Tarea del equipo</option>
+                  </select>
+                </label>
+                <label className="fu-f">
+                  <span>Cuenta como conversión</span>
+                  <input value={`Pasa a «${stage.goal}»`} readOnly />
+                </label>
+              </div>
+            </div>
           )}
 
-          <div className="fu-actions">{actionButtons}</div>
-          {!draft && current?.edited_at && <p className="fu-note">Texto editado el {day(current.edited_at)}: sus números juntan el texto anterior y el nuevo.</p>}
+          {actionButtons && <div className="fu-actions fu-msgactions">{actionButtons}</div>}
+          {!draft && current?.edited_at && <p className="fu-hint">Texto editado el {day(current.edited_at)}: sus números juntan el texto anterior y el nuevo.</p>}
           {error && (
             <p className="fu-error" role="alert">
               {error}
             </p>
           )}
         </div>
-        {shown && <Preview body={shown.body} sample={sample} channel={shown.channel} ctas={shown.ctas} />}
+      </section>
+
+      <div className="fu-pvcol">
+        <h4>
+          <MessageCircle size={16} aria-hidden="true" /> {shown?.channel === "task" ? "Vista previa de la tarea" : "Vista previa en WhatsApp"}
+        </h4>
+        <Preview body={shown?.body ?? ""} sample={sample} channel={shown?.channel ?? "whatsapp"} ctas={shown?.ctas ?? []} />
       </div>
     </div>
   );
@@ -1810,34 +1937,40 @@ function Preview({ body, sample, channel, ctas }: { body: string; sample: QueueI
   const ctx = { inmobiliaria: sample?.shortName ?? "Inmobiliaria de ejemplo", decisor: sample?.person ?? null, sdr: "vos", demo: sample?.hasDemo ? "[link a su demo]" : null, panel: "[link a su panel]" };
   const parts = splitMessages(body).map((p) => fillMessage(p, ctx));
   const holes = missingVariables(parts.join("\n"));
-  const task = channel === "task";
-  const label = task ? "Vista previa de la tarea" : `Vista previa en WhatsApp${sample ? ` · ${sample.name}` : ""}`;
-  if (!parts.length)
+  const who = sample?.shortName ?? "Inmobiliaria de ejemplo";
+  if (channel === "task")
     return (
-      <div className="fu-wa" data-testid="followup-preview">
-        <span className="fu-lbl">{label}</span>
-        <p className="fu-note">Escribí el mensaje para ver cómo queda.</p>
+      <div className="fu-wa is-task" data-testid="followup-preview">
+        <div className="fu-wa-task">{parts.length ? parts.map((p, i) => <p key={i}>{p}</p>) : <p className="fu-note">Escribí la tarea para ver cómo queda.</p>}</div>
       </div>
     );
-  const who = sample?.shortName ?? "Inmobiliaria de ejemplo";
   return (
-    <div className={`fu-wa${task ? " is-task" : ""}`} data-testid="followup-preview">
-      {task ? <span className="fu-lbl">{label}</span> : <div className="fu-wa-head"><span className="fu-wa-avatar" aria-hidden="true">{who.charAt(0).toUpperCase()}</span><span className="fu-wa-name">{who}</span><span className="sr-only">{label}</span></div>}
-      {task ? (
-        <div className="fu-wa-task">
-          {parts.map((p, i) => (
-            <p key={i}>{p}</p>
-          ))}
-        </div>
-      ) : (
-        <div className="fu-wa-chat">
-          {parts.map((p, i) => (
+    <div className="fu-wa" data-testid="followup-preview">
+      <div className="fu-wa-head">
+        <ArrowLeft size={15} aria-hidden="true" />
+        <span className="fu-wa-avatar" aria-hidden="true">
+          <Building2 size={14} />
+        </span>
+        <span className="fu-wa-name">{who}</span>
+        <Video size={15} aria-hidden="true" />
+        <Phone size={14} aria-hidden="true" />
+        <MoreVertical size={15} aria-hidden="true" />
+      </div>
+      <div className="fu-wa-chat">
+        <span className="fu-wa-day">Hoy</span>
+        {parts.length ? (
+          parts.map((p, i) => (
             <div key={i} className="fu-bubble is-out">
               {p}
+              <span className="fu-wa-tick" aria-hidden="true">
+                <CheckCheck size={13} />
+              </span>
             </div>
-          ))}
-        </div>
-      )}
+          ))
+        ) : (
+          <span className="fu-wa-day">Sin mensaje todavía</span>
+        )}
+      </div>
       {ctas.length > 0 && <div className="fu-wa-ctas">{ctas.map((c) => <span key={c}>{CTA_LABEL[c]}</span>)}</div>}
       {holes.length > 0 && <p className="fu-warn">Sin resolver para esta inmobiliaria: {holes.map((h) => `{{${h}}}`).join(", ")}. Con ella, la acción queda bloqueada.</p>}
     </div>
