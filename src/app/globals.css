@@ -30259,3 +30259,530 @@ dialog.pt-layer::backdrop {
   font-size: 11px;
   color: var(--fr-muted);
 }
+
+/* Follow-up · Cola de ejecución por etapa y regla: dos filas de filtros (etapa, regla), el aviso
+   con la hora de la última actualización, la tabla a la izquierda y el panel de la derecha
+   (siguiente recomendada o la que se está ejecutando). */
+.fu-qbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.fu-qbarlabel {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--fr-ink);
+  white-space: nowrap;
+  flex: none;
+}
+.fu-qchips {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  flex: 1;
+  min-width: 0;
+  padding: 2px 0 4px;
+  scrollbar-width: thin;
+}
+.fu-qchip {
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  flex: none;
+  padding: 7px 12px;
+  min-height: 34px;
+  border-radius: 10px;
+  border: 1px solid var(--fr-line);
+  background: #fff;
+  color: var(--fr-ink);
+  cursor: pointer;
+}
+.fu-qchip b {
+  font-size: 11.5px;
+  font-weight: 800;
+  min-width: 22px;
+  text-align: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--fr-soft);
+  border: 1px solid var(--fr-line);
+}
+.fu-qchip:hover {
+  border-color: var(--fr-greenline);
+}
+.fu-qchip.is-on {
+  background: #1f3b33;
+  border-color: #1f3b33;
+  color: #fff;
+}
+.fu-qchip.is-on b {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: transparent;
+  color: #fff;
+}
+.fu-qchip.is-sm {
+  border-radius: 999px;
+  min-height: 30px;
+  padding: 5px 12px;
+}
+.fu-qchip.is-replies {
+  flex: none;
+}
+.fu-qbar.is-rules {
+  background: var(--fr-soft);
+  border: 1px solid var(--fr-line);
+  border-radius: 12px;
+  padding: 6px 10px;
+}
+.fu-qbanner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--fr-greenbg);
+  border: 1px solid var(--fr-greenline);
+  border-radius: 12px;
+  padding: 8px 12px;
+  font-size: 12.5px;
+  color: #1d4a35;
+}
+.fu-qbanner > svg {
+  flex: none;
+  color: var(--fr-green);
+}
+.fu-qsync {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  font-size: 12px;
+  color: #1d4a35;
+}
+.fu-qdot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--fr-green2);
+}
+.fu-qsync.is-error {
+  color: #9a3412;
+  white-space: normal;
+}
+.fu-qsync.is-error .fu-qdot {
+  background: #c2410c;
+}
+.fu-qbanner .fu-iconbtn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+}
+@keyframes fu-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.fu-spin {
+  animation: fu-spin 0.9s linear infinite;
+}
+.fu-qgrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 400px);
+  gap: 14px;
+  align-items: start;
+}
+.fu-qgrid.is-wide {
+  grid-template-columns: minmax(0, 1fr);
+}
+.fu-qcard {
+  background: #fff;
+  border: 1px solid var(--pr-line, #dde3d7);
+  border-radius: 14px;
+  padding: 12px 0 8px;
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+.fu-qcardhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 0 14px;
+}
+.fu-qcardhead h2 {
+  margin: 0;
+  font-size: 16px;
+  letter-spacing: -0.2px;
+}
+.fu-qtools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.fu-qsel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--fr-muted);
+}
+.fu-qsel select {
+  font: inherit;
+  font-size: 12.5px;
+  border: 1px solid var(--pr-line, #dde3d7);
+  border-radius: 9px;
+  padding: 7px 8px;
+  background: #fff;
+  color: var(--fr-ink);
+  max-width: 190px;
+}
+.fu-qcard .fu-search input {
+  width: 180px;
+  padding: 7px 10px;
+}
+.fu-qcard .fu-reasons,
+.fu-qcard .fu-empty {
+  margin: 0 14px;
+}
+.fu-qcard .fu-qwide-q {
+  min-width: 900px;
+}
+.fu-qcard .fu-qrow.fu-qrow-q {
+  grid-template-columns: 40px minmax(0, 1.5fr) minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 0.95fr) minmax(0, 1.25fr) minmax(0, 1.1fr) 62px 96px;
+  gap: 10px;
+  padding: 8px 14px;
+  font-size: 12.5px;
+}
+.fu-qcard .fu-qi.is-on {
+  background: var(--fr-greenbg);
+}
+.fu-qcard .fu-blocked {
+  padding-left: 64px;
+}
+.fu-qfoot {
+  margin: 0;
+  padding: 0 14px;
+  font-size: 12px;
+}
+.fu-qside {
+  min-width: 0;
+  position: sticky;
+  top: 12px;
+}
+.fu-qpanel {
+  background: #fff;
+  border: 1px solid var(--pr-line, #dde3d7);
+  border-radius: 14px;
+  padding: 0 0 12px;
+  display: grid;
+  gap: 10px;
+  overflow: hidden;
+  font-size: 12.5px;
+}
+.fu-qpanel > *:not(.fu-qpanelhead) {
+  margin: 0 12px;
+}
+.fu-qpanelhead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  background: var(--fr-greenbg);
+  border-bottom: 1px solid var(--fr-greenline);
+  color: #1d4a35;
+  font-size: 13.5px;
+}
+.fu-qpanelhead > svg {
+  color: var(--fr-green);
+  flex: none;
+}
+.fu-qpanelhead .fu-iconbtn {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+}
+.fu-qpanelhead .fu-pill {
+  font-size: 11px;
+}
+.fu-qstage {
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: #fff;
+  border: 1px solid var(--fr-greenline);
+  color: var(--fr-green);
+  white-space: nowrap;
+}
+.fu-qident {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.fu-qident > .fu-grow {
+  display: grid;
+  gap: 2px;
+}
+.fu-qidentname {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--fr-ink);
+  text-decoration: none;
+  line-height: 1.2;
+}
+.fu-qident span {
+  color: var(--fr-muted);
+}
+.fu-qwa {
+  display: grid;
+  justify-items: end;
+  gap: 1px;
+}
+.fu-qwa .fu-mono {
+  color: var(--fr-ink);
+  font-weight: 700;
+  font-size: 13px;
+}
+.fu-qwa small {
+  font-size: 10.5px;
+  color: var(--fr-muted);
+}
+.fu-qident .fu-iconbtn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+}
+.fu-qrulebox {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  background: var(--fr-greenbg);
+  border: 1px solid var(--fr-greenline);
+  border-radius: 10px;
+  padding: 8px 10px;
+  color: #1d4a35;
+}
+.fu-qrulebox > svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--fr-green);
+}
+.fu-qrulebox span {
+  display: grid;
+  gap: 1px;
+}
+.fu-qrulebox small {
+  font-size: 11.5px;
+  color: #3c6b54;
+}
+.fu-qline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.fu-qline .fu-stagecell select {
+  font: inherit;
+  font-size: 12.5px;
+  border: 1px solid var(--pr-line, #dde3d7);
+  border-radius: 8px;
+  padding: 5px 8px;
+  background: #fff;
+}
+.fu-qtwo {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.fu-qbox {
+  border: 1px solid var(--fr-line);
+  border-radius: 10px;
+  padding: 8px 10px;
+  display: grid;
+  gap: 3px;
+  align-content: start;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.fu-qbox > b {
+  font-size: 12.5px;
+  margin-bottom: 2px;
+}
+.fu-qbox > span {
+  color: #4b5a51;
+  font-size: 12px;
+}
+.fu-qbox .fu-timeline {
+  font-size: 11.5px;
+}
+.fu-qflow {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  background: var(--fr-soft);
+  border: 1px solid var(--fr-line);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: #1d4a35;
+}
+.fu-qflow > svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--fr-green);
+}
+.fu-qchecks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 5px;
+  font-size: 12px;
+}
+.fu-qchecks li {
+  display: flex;
+  gap: 7px;
+  align-items: flex-start;
+}
+.fu-qchecks small {
+  display: block;
+  font-size: 11px;
+  color: var(--fr-muted);
+}
+.fu-qchecks .fu-tick {
+  width: 16px;
+  height: 16px;
+  font-size: 10px;
+}
+.fu-qchecks li.is-pending .fu-tick {
+  background: #fff;
+  border: 2px solid #b9c4bd;
+  width: 12px;
+  height: 12px;
+}
+.fu-qmsg {
+  background: var(--fr-soft);
+  border: 1px solid var(--fr-line);
+  border-radius: 8px;
+  padding: 7px 9px;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  color: var(--fr-ink);
+}
+.fu-qmsgrow {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+}
+.fu-qmsgrow .fu-qmsg {
+  flex: 1;
+  min-width: 0;
+}
+.fu-qmsgrow .fu-iconbtn {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+}
+.fu-qbox .fu-obs {
+  font-size: 11.5px;
+}
+.fu-qbtns {
+  display: grid;
+  gap: 8px;
+}
+.fu-qbtns .button,
+.fu-qbig {
+  justify-content: center;
+  width: 100%;
+}
+.fu-qmore {
+  display: grid;
+  gap: 8px;
+}
+.fu-qinfo {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  background: var(--fr-soft);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 11.5px;
+  color: var(--fr-muted);
+}
+.fu-qinfo > svg {
+  flex: none;
+  margin-top: 1px;
+}
+@media (max-width: 1180px) {
+  .fu-qgrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .fu-qside {
+    position: static;
+  }
+}
+@media (max-width: 700px) {
+  .fu-qbar {
+    flex-wrap: wrap;
+  }
+  .fu-qbarlabel {
+    width: 100%;
+  }
+  .fu-qtwo {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.fu-qpanel {
+  grid-template-columns: minmax(0, 1fr);
+}
+.fu-qbox .fu-timeline li {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+.fu-qbox .fu-timeline li span {
+  font-size: 10.5px;
+}
+.fu-qpanelhead .fu-pill.is-lock {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.fu-qcard .fu-qrow .button {
+  min-height: 32px;
+  padding: 6px 10px;
+  font-size: 12px;
+  width: 100%;
+  justify-content: center;
+}
+.fu-qcard .fu-qrow .fu-pill {
+  font-size: 11px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fu-qcard .fu-qth {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+.fu-qcard .fu-qrow.fu-qrow-q {
+  grid-template-columns: 34px minmax(0, 1.5fr) minmax(0, 0.85fr) minmax(0, 1.05fr) minmax(0, 0.95fr) minmax(0, 1.15fr) minmax(0, 1.15fr) 56px 92px;
+}
+.fu-qcard .fu-qrow.fu-qrow-q {
+  grid-template-columns: 46px minmax(0, 1.5fr) minmax(0, 0.85fr) minmax(0, 1.05fr) minmax(0, 0.95fr) minmax(0, 1.15fr) minmax(0, 1.15fr) 56px 92px;
+}
+.fu-qtwo.is-msg {
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+}
+@media (max-width: 700px) {
+  .fu-qtwo.is-msg {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

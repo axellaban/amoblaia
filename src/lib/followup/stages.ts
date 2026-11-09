@@ -8,7 +8,7 @@ import { isAction, type Action } from "./plan";
 
 export const FOLLOWUP_STAGES = [
   { key: "no-contactado", step: -1, title: "No contactado", goal: "Contactado" },
-  { key: "no-responde", step: 0, title: "Contactado, no responde", goal: "Interesado" },
+  { key: "no-responde", step: 0, title: "Contactado", goal: "Interesado" },
   { key: "sin-demo", step: 1, title: "Interesado, sin demo", goal: "Demo creada" },
   { key: "sin-enviar", step: 2, title: "Demo creada, sin enviar", goal: "Enviada" },
   { key: "no-abrio", step: 3, title: "Enviada, no abrió", goal: "Con visita" },
@@ -47,7 +47,7 @@ export type VersionStatus = "active" | "test" | "archived";
 export type FollowupVersion = {
   id: string;
   stage: StageKey;
-  /** La acción dentro de la etapa: la principal, o la presentación y los precios en «Contactado, no responde». */
+  /** La acción dentro de la etapa: la principal, o la presentación y los precios en «Contactado». */
   action: Action;
   version: number;
   channel: Channel;
@@ -229,7 +229,7 @@ export function cleanVersion(input: { stage?: unknown; action?: unknown; channel
   if (notes.length > 4000) return { error: "Las observaciones superan los 4000 caracteres." } as const;
   const action: Action = input.action === undefined || input.action === null ? "principal" : isAction(input.action) ? input.action : ("" as Action);
   if (!action) return { error: "Acción desconocida." } as const;
-  if (action !== "principal" && input.stage !== "no-responde") return { error: "La presentación y los precios van en «Contactado, no responde»." } as const;
+  if (action !== "principal" && input.stage !== "no-responde") return { error: "La presentación y los precios van en «Contactado»." } as const;
   return { stage: input.stage, action, channel, trigger, body, ctas, status, notes } as const;
 }
 

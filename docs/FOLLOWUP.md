@@ -9,7 +9,7 @@ Son los que «se quedaron» en cada paso del embudo de Inmobiliarias (la parte n
 | Etapa | Paso del embudo | Convierte cuando pasa a |
 | --- | --- | --- |
 | No contactado | — (cuenta de prospección sin contacto) | Contactados |
-| Contactado, no responde | Contactados | Interesados |
+| Contactado (`no-responde`) | Contactados | Interesados |
 | Interesado, sin demo | Interesados | Demos creadas |
 | Demo creada, sin enviar | Demos creadas | Enviadas |
 | Enviada, no abrió | Enviadas | Con visita |
@@ -47,7 +47,7 @@ Cada etapa lista sus inmobiliarias **ordenadas por score, de mayor a menor** (si
 
 El número es el WhatsApp de prospección (el revisado primero) o, si no hay, el de la ficha de la inmobiliaria. Confirmar también mueve el resto del panel:
 
-- En «No contactado» y «Contactado, no responde», registra el envío en Adquisición con las reglas de siempre (`recordSend`, la misma función que «Mandé el mensaje» de Chapa Labs: contacto revisado, bajas, secuencia de tres pasos).
+- En «No contactado» y «Contactado», registra el envío en Adquisición con las reglas de siempre (`recordSend`, la misma función que «Mandé el mensaje» de Chapa Labs: contacto revisado, bajas, secuencia de tres pasos).
 - En «Demo creada, sin enviar», marca sus demos como enviadas.
 
 Si eso falla (por ejemplo, el número está por revisar), la ejecución queda registrada igual y se avisa qué falta.
@@ -99,7 +99,7 @@ Cada inmobiliaria tiene cuatro datos independientes; el embudo sigue con sus 9 e
 
 - **Etapa** (`stage`): la del embudo, como antes (o la corregida a mano).
 - **Situación** (`situation`): qué pasó en la conversación. Sin respuesta, Confirmó número, Interesado, Neutro, Pregunta precios, Pide más adelante, Derivó, Rechazo, No interesado (con proveedor), No contactar, Sin WhatsApp, Número incorrecto. Sale de los datos (`derivedSituation` en `src/lib/followup/plan.ts`: baja, cuenta perdida con su motivo, «Estado» de la hoja, números inválidos, etapa de prospección), así la hoja queda migrada sin copiarla. Una situación marcada a mano vale mientras el embudo siga en el mismo paso, y además se registra en Adquisición: respuesta, interés, pérdida, baja o número inválido.
-- **Próxima acción** (`action`, fija por código en esta fase, `nextAction`): la de la etapa («Saludo» en No contactado). Confirmó número → **Presentación**. Pregunta precios → **Precios**. Interesado, Neutro, Pide más adelante y Derivó se resuelven a mano (la bandeja llega en la Fase 2). Las cerradas no tienen acción. Presentación y Precios son acciones de «Contactado, no responde» con sus propias versiones A/B; un texto con líneas `---` son varios mensajes seguidos.
+- **Próxima acción** (`action`, fija por código en esta fase, `nextAction`): la de la etapa («Saludo» en No contactado). Confirmó número → **Presentación**. Pregunta precios → **Precios**. Interesado, Neutro, Pide más adelante y Derivó se resuelven a mano (la bandeja llega en la Fase 2). Las cerradas no tienen acción. Presentación y Precios son acciones de «Contactado» con sus propias versiones A/B; un texto con líneas `---` son varios mensajes seguidos.
 - **Estado de ejecución**: pendiente, tomada, abierta, enviada, no salió, bloqueada.
 
 ### La cola
@@ -167,7 +167,7 @@ La acción es el momento de la secuencia y la versión, la variante del mensaje:
 | Situación | Pasos | Espera desde nuestro último mensaje |
 | --- | --- | --- |
 | No contactado | Saludo | — |
-| Sin respuesta, Neutro o Pide más adelante («Contactado, no responde») | Saludo sin respuesta → Seguimiento 2 → fin | 48 h, después 72 h |
+| Sin respuesta, Neutro o Pide más adelante («Contactado») | Saludo sin respuesta → Seguimiento 2 → fin | 48 h, después 72 h |
 | Enviada, no abrió | Seguimiento de demo 1 → Seguimiento de demo 2 → fin | 24 h, después 72 h |
 | Confirmó número o Derivó | Presentación → Presentación sin respuesta → fin | ya, después 48 h |
 | Pregunta precios | Precios → esperar | ya |
@@ -257,11 +257,11 @@ Solo cambia la pestaña, no el motor de ejecución: las reglas y las versiones s
 
 ### Corrección funcional pendiente
 
-`DEFAULT_RULES` (y la migración `202612050001`) siembran **Presentación**, **Presentación sin respuesta** y **Precios** también en «No contactado», pero `ACTIONS_OF` las habilita solo en «Contactado, no responde». Resultado: esas tres reglas de «No contactado» nunca tienen mensaje editable, y cuando se disparan la cola las bloquea con «Falta el texto». El rediseño las muestra como «Acción no disponible para esta etapa» y no las borra ni las mueve (son reglas de producción). Corrección pendiente, a decidir: borrarlas de «No contactado» (la secuencia de presentación es de «Contactado, no responde») o habilitar esas acciones también en «No contactado». No se crean mensajes ficticios para resolverlo.
+`DEFAULT_RULES` (y la migración `202612050001`) siembran **Presentación**, **Presentación sin respuesta** y **Precios** también en «No contactado», pero `ACTIONS_OF` las habilita solo en «Contactado». Resultado: esas tres reglas de «No contactado» nunca tienen mensaje editable, y cuando se disparan la cola las bloquea con «Falta el texto». El rediseño las muestra como «Acción no disponible para esta etapa» y no las borra ni las mueve (son reglas de producción). Corrección pendiente, a decidir: borrarlas de «No contactado» (la secuencia de presentación es de «Contactado») o habilitar esas acciones también en «No contactado». No se crean mensajes ficticios para resolverlo.
 
 ## Reglas incompatibles (acción fuera de su etapa)
 
-Una regla es **incompatible** cuando su acción no existe en su etapa: `ACTIONS_OF` (en `src/lib/followup/rules.ts`) dice qué acciones tiene cada etapa. Hoy: «No contactado» solo tiene Saludo (`principal`); «Contactado, no responde» tiene Saludo sin respuesta, Presentación, Presentación sin respuesta, Precios y seguimiento 2; «Enviada, no abrió» tiene dos seguimientos; el resto, solo `principal`.
+Una regla es **incompatible** cuando su acción no existe en su etapa: `ACTIONS_OF` (en `src/lib/followup/rules.ts`) dice qué acciones tiene cada etapa. Hoy: «No contactado» solo tiene Saludo (`principal`); «Contactado» tiene Saludo sin respuesta, Presentación, Presentación sin respuesta, Precios y seguimiento 2; «Enviada, no abrió» tiene dos seguimientos; el resto, solo `principal`.
 
 Qué pasa con una regla incompatible:
 
@@ -272,9 +272,9 @@ Qué pasa con una regla incompatible:
 
 Reglas incompatibles en producción (solo lectura, 9/11/2026): `no-contactado:presentacion` (10), `no-contactado:presentacion_seguimiento` (20) y `no-contactado:precios` (30), todas encendidas. Con el motor corregido no se ejecutan, pero siguen encendidas en la base.
 
-**Migración controlada pendiente (no aplicada):** apagarlas con una migración explícita, por ejemplo `update followup_rules set enabled = false where key in ('no-contactado:presentacion', 'no-contactado:presentacion_seguimiento', 'no-contactado:precios');`. Antes, decidir si esas acciones van a «Contactado, no responde» (como dice la sección de Fase 1) o si la etapa «No contactado» debe ganar esas acciones (requiere cambiar `ACTIONS_OF` y las reglas juntas).
+**Migración controlada pendiente (no aplicada):** apagarlas con una migración explícita, por ejemplo `update followup_rules set enabled = false where key in ('no-contactado:presentacion', 'no-contactado:presentacion_seguimiento', 'no-contactado:precios');`. Antes, decidir si esas acciones van a «Contactado» (como dice la sección de Fase 1) o si la etapa «No contactado» debe ganar esas acciones (requiere cambiar `ACTIONS_OF` y las reglas juntas).
 
-Textos pendientes: Presentación, Presentación sin respuesta, Precios y el seguimiento 2 de «Contactado, no responde» no tienen versión cargada. Sin versión, la acción queda bloqueada con «Falta el texto de…».
+Textos pendientes: Presentación, Presentación sin respuesta, Precios y el seguimiento 2 de «Contactado» no tienen versión cargada. Sin versión, la acción queda bloqueada con «Falta el texto de…».
 
 ### Mensajes y reglas: diseño final (9/11/2026)
 
@@ -284,3 +284,13 @@ Textos pendientes: Presentación, Presentación sin respuesta, Precios y el segu
 - **Guardado:** «Guardar cambios» guarda la regla. El mensaje se guarda con sus botones («Guardar mensaje», «Guardar Vn como activa», «Guardar y probar A/B»), porque las versiones van por otra API.
 - **Nombre de la regla (9/11):** se escribe en el título del editor (lápiz). Es opcional (`followup_rules.name`, hasta 80 caracteres, migración `202612070001_followup_rule_name.sql`); sin nombre se muestra la acción. El motor no lo usa. Duplicar le agrega «(copia)».
 - **Agregar regla (9/11):** el botón abre dos opciones. «Crear una regla nueva» arranca de cero. «Usar una regla existente» lista las reglas de las otras etapas cuya acción y paso previo existen en esta (las otras no se muestran) y abre una copia en esta etapa con sus condiciones, para revisarla y guardarla; la original no cambia. Si en esta etapa esa acción todavía no tiene mensaje, la copia arranca con el mensaje activo de la etapa de origen y se guarda como V1 al guardar.
+
+## Cola de ejecución por etapa y regla (9/11/2026)
+
+- **Nombre:** la segunda etapa se llama **«Contactado»** (antes «Contactado, no responde»). Su clave sigue siendo `no-responde` y su lugar en el embudo no cambia. Incluye a las ya contactadas que todavía no pasaron a «Interesado», aunque hayan confirmado el número o preguntado precios.
+- **Pantalla:** debajo de los 4 números, **Cola por etapa** (Todas y las 9 etapas, con scroll horizontal) y, con una etapa elegida, **Reglas de [etapa]**: sus reglas activas y compatibles (`stageRules`), en orden, y «Otras» si hay acciones que no salen de una de ellas. Cada filtro cuenta las filas reales de la cola con los demás filtros aplicados. Se combinan con la situación, el tipo de trabajo (respuestas, demos, seguimientos, contactos nuevos) y la búsqueda. Los filtros quedan aunque se cambie de pestaña o se ejecute una tras otra.
+- **Filtros:** `src/lib/followup/queue-filter.ts` (`matchesFilter`, `cleanFilter`, `pickNext`). La regla se filtra por su clave (`ruleKey`), no por la acción: dos reglas con la misma acción se distinguen.
+- **Tabla y panel:** la tabla a la izquierda (Score, Inmobiliaria, Ciudad, Situación, Próxima acción, Última acción, WhatsApp, Prioridad, Ejecutar) y, a la derecha, la **siguiente recomendada** (la primera libre con los filtros, sin tomarla) o la que se está ejecutando (`followup-detail`): regla aplicada y su condición, contexto, últimas acciones, qué pasa al confirmar, checklist, mensaje, observaciones y los botones de siempre. «Ejecutar» la toma 10 minutos, como antes.
+- **Tomar la próxima / Siguiente contacto:** `POST /api/admin/followup/claim { filtro: { etapa, regla, situacion, grupo, buscar }, saltar: [inmobiliaria] }`. El servidor recalcula la cola, toma la primera que entra en el filtro (nunca una bloqueada, programada o ya enviada), salta las ya trabajadas y la reserva con el lock de siempre (si otra sesión la gana, sigue con la siguiente; recorre la cola una vez). Sin `filtro`, como antes. La respuesta suma `item` (la inmobiliaria como la ve la cola).
+- **Actualización:** `GET /api/admin/follow-up/cola` (ejecutables, bloqueadas, resumen, reglas y `generatedAt`). La pantalla la pide cada 45 segundos mientras la pestaña está a la vista, después de confirmar o cerrar una ejecución y con «Actualizar»; muestra la hora de la última actualización o el error. No es tiempo real ni lee WhatsApp: las respuestas las registra la extensión y Habita recalcula etapa, situación y próxima acción.
+- **Selectores nuevos:** `followup-queue-stage` (`data-stage`), `followup-queue-rule` (`data-rule`), `followup-queue-heading`, `followup-filter-situation`, `followup-filter-group`, `followup-filter-search`, `followup-queue-sync`, `followup-queue-refresh`, `followup-recommended`, `followup-recommended-execute`, `followup-applied-rule`, `followup-after-confirm`. `followup-queue-item` suma `data-rule`. Los de ejecución no cambian (`followup-execute`, `followup-message`, `followup-open`, `followup-confirm`, `followup-failed*`, `followup-snooze*`, `followup-next`, `followup-back`, `followup-notes`, `followup-link-*`).

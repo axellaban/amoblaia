@@ -70,6 +70,7 @@ import {
 } from "./plan";
 import { DEFAULT_RULES, cleanRule, compatible, outsideWindow, type Rule } from "./rules";
 import { WINDOWS, blockReasons, bySegment, cohorts, versionResults, weekly, type VersionResult, type WindowKey } from "./results";
+import { cleanFilter, pickNext } from "./queue-filter";
 
 /**
  * Follow-up (/admin/follow-up): each funnel stage with its next best action,
@@ -635,7 +636,7 @@ function resultsOf(b: Awaited<ReturnType<typeof board>>, all: QueueItem[]) {
     blocks: blockReasons(all.filter((q) => q.action && q.execution?.status !== "sent" && q.blocked).map((q) => q.blocked!)),
   };
 }
-export async function followupOverview(): Promise<{ stages: StageView[]; queue: QueueItem[]; blocked: QueueItem[]; summary: QueueSummary; inbox: InboxItem[]; funnel: FunnelStep[]; rules: Rule[]; changes: Change[]; results: Results }> {
+export async function followupOverview(): Promise<{ stages: StageView[]; queue: QueueItem[]; blocked: QueueItem[]; summary: QueueSummary; inbox: InboxItem[]; funnel: FunnelStep[]; rules: Rule[]; changes: Change[]; results: Results; generatedAt: string }> {
   const [b, changes] = await Promise.all([board(), auditOf(null, 20)]);
   const all = [...b.items.values()];
   const inboxItems = inboxOf(b);
@@ -659,8 +660,23 @@ export async function followupOverview(): Promise<{ stages: StageView[]; queue: 
     rules: [...b.rules].sort((x, y) => x.position - y.position),
     changes,
     results: resultsOf(b, all),
+    generatedAt: new Date().toISOString(),
   };
 }
+
+/** La cola de ejecución recalculada (lo que la pantalla vuelve a pedir cada 45 segundos y después de confirmar un envío). */
+export async function followupQueueView() {
+  const b = await board();
+  const all = [...b.items.values()];
+  return {
+    queue: executable(all),
+    blocked: all.filter((q) => pending(q) && q.blocked).sort(byPriority),
+    summary: summarize(all, b.newToday, inboxOf(b).length),
+    rules: [...b.rules].sort((x, y) => x.position - y.position),
+    generatedAt: new Date().toISOString(),
+  };
+}
+export type QueueView = Awaited<ReturnType<typeof followupQueueView>>;
 
 /** Las etapas como en el embudo: cuántas esperan en cada una y qué parte de las que llegaron pasó a la siguiente. */
 function funnelOf(b: Awaited<ReturnType<typeof board>>, all: QueueItem[]): FunnelStep[] {
@@ -724,7 +740,7 @@ async function itemOf(agencyId: string) {
  * Without `inmobiliaria`, the next one free in the queue: two sessions asking
  * at the same time get different ones (the lock is taken in the database).
  */
-export async function claimNext(input: { agencyId?: unknown }, origin: string, actor: { id: string; name: string }) {
+export async function claimNext(input: { agencyId?: unknown; filter?: unknown; skip?: unknown }, origin: string, actor: { id: string; name: string }) {
   if (typeof input.agencyId === "string" && input.agencyId) {
     const { it } = await itemOf(input.agencyId);
     if (it.execution?.status === "sent") throw new HttpError(409, `Ya se confirmó «${it.actionLabel}» con ${it.name}.`);
@@ -732,18 +748,19 @@ export async function claimNext(input: { agencyId?: unknown }, origin: string, a
     await lock(it, actor);
     return prepare(it, origin, actor);
   }
-  const { queue } = await agentQueue(actor.id, 500);
-  for (const it of queue) {
-    if (it.claim && it.claim.until > new Date().toISOString() && it.claim.actorId !== actor.id) continue;
-    try {
-      await lock(it, actor);
-      return prepare(it, origin, actor);
-    } catch (e) {
-      if (e instanceof HttpError && e.status === 409) continue;
-      throw e;
-    }
-  }
-  return null;
+  // La cola se recalcula ahora (no la que tiene la pantalla) y se toma solo lo que entra en el filtro elegido.
+  const [{ queue }, rules] = await Promise.all([agentQueue(actor.id, 500), input.filter ? readRules().catch(() => DEFAULT_RULES) : Promise.resolve(DEFAULT_RULES)]);
+  const skip = Array.isArray(input.skip) ? input.skip.filter((x): x is string => typeof x === "string").slice(0, 500) : [];
+  const it = await pickNext(queue, { filter: cleanFilter(input.filter), rules, skip, actorId: actor.id }, (x) =>
+    lock(x, actor).then(
+      () => true,
+      (e) => {
+        if (e instanceof HttpError && e.status === 409) return false;
+        throw e;
+      },
+    ),
+  );
+  return it ? prepare(it, origin, actor) : null;
 }
 
 async function lock(it: QueueItem, actor: { id: string; name: string }) {
@@ -827,6 +844,8 @@ async function prepare(it: QueueItem, origin: string, actor: { id: string; name:
     whatsappUrl: v.channel === "whatsapp" && it.wa && ready ? `https://web.whatsapp.com/send?phone=${it.wa}&text=${encodeURIComponent(messages[0] ?? message)}` : null,
     links: { demo, panel, createDemo: `/admin/inmobiliarias/${it.agencyId}/propiedades/nueva` },
     execution: it.execution,
+    /** La inmobiliaria como la ve la cola ahora (la pantalla la muestra aunque su lista esté desactualizada). */
+    item: it,
     lockedUntil: new Date(Date.now() + 600_000).toISOString(),
     checklist,
     history,

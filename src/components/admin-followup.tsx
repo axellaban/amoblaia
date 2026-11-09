@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Fragment, useEffect, useRef, useState } from "react";
-import { ArrowLeft, BarChart3, Building2, CalendarDays, CheckCheck, ChevronDown, ChevronRight, ClipboardCopy, Copy, GripVertical, Info, KeyRound, Layers, Link2, MessageCircle, MessageSquare, MoreVertical, Pencil, Phone, Plus, Send, SlidersHorizontal, Trash2, Undo2, Video } from "lucide-react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeft, ArrowRight, BarChart3, Building2, CalendarDays, CheckCheck, ChevronDown, ChevronRight, ClipboardCopy, Copy, GripVertical, Info, KeyRound, Layers, Link2, MessageCircle, MessageSquare, MoreVertical, Pencil, Phone, Plus, RefreshCw, Send, SlidersHorizontal, Tag, Target, Trash2, Undo2, Video, X } from "lucide-react";
 import { api } from "@/components/admin-demos";
 import { CTA_KEYS, CTA_LABEL, FOLLOWUP_STAGES, OUT, VARIABLES, fillMessage, missingVariables, pct, type Channel, type Cta, type StageKey, type VersionStatus } from "@/lib/followup/stages";
 import { GROUPS, REPLY_CLASSES, SITUATIONS, actionLabel, actionWhen, actionsOf, compatible, splitMessages, type Action, type ReplyClass, type Situation } from "@/lib/followup/plan";
-import type { Change, FunnelStep, InboxItem, Prepared, QueueItem, QueueSummary, Results, StageView } from "@/lib/followup/server";
+import type { Change, FunnelStep, InboxItem, Prepared, QueueItem, QueueSummary, QueueView, Results, StageView } from "@/lib/followup/server";
+import { NO_FILTER, OTHER_RULES, isEmptyFilter, matchesFilter, stageRules, type QueueFilter } from "@/lib/followup/queue-filter";
 import type { CohortRow, WindowKey } from "@/lib/followup/results";
 import { daysText, type Rule } from "@/lib/followup/rules";
 
@@ -53,6 +54,7 @@ export function FollowupBoard({
   rules,
   changes,
   results,
+  generatedAt,
 }: {
   stages: StageView[];
   queue: QueueItem[];
@@ -63,7 +65,10 @@ export function FollowupBoard({
   rules: Rule[];
   changes: Change[];
   results: Results;
+  generatedAt: string;
 }) {
+  const [queueState, setQueueState] = useState<QueueState>(QUEUE_START);
+  const initial = useMemo<QueueView>(() => ({ queue, blocked, summary, rules, generatedAt }), [queue, blocked, summary, rules, generatedAt]);
   const [view, setView] = useState<View>(() => {
     if (typeof window === "undefined") return "cola";
     const v = new URLSearchParams(window.location.search).get("vista");
@@ -93,7 +98,7 @@ export function FollowupBoard({
         )}
       </nav>
       {view === "cola" ? (
-        <ExecCenter queue={queue} blocked={blocked} summary={summary} onReplies={() => go("respuestas")} />
+        <ExecCenter initial={initial} stages={stages} inboxCount={inbox.length} state={queueState} setState={setQueueState} onReplies={() => go("respuestas")} />
       ) : view === "respuestas" ? (
         <Inbox inbox={inbox} agencies={[...queue, ...blocked]} />
       ) : view === "embudo" ? (
@@ -116,74 +121,136 @@ type Filter = "listas" | "respuestas" | "demos" | "bloqueadas";
 const QPAGE = 25;
 const PRIORITY_LABEL = { alta: "Alta", media: "Media", baja: "Baja" } as const;
 const isReply = (q: QueueItem) => q.group === "respuestas";
+/** Cada cuánto se vuelve a pedir la cola mientras la pestaña está a la vista. */
+const POLL_MS = 45_000;
 
-/** Centro de ejecución: los 4 números de la especificación (cada uno filtra), la cola y, al ejecutar, el detalle en 3 sectores. */
-function ExecCenter({ queue, blocked, summary, onReplies }: { queue: QueueItem[]; blocked: QueueItem[]; summary: QueueSummary; onReplies: () => void }) {
-  const router = useRouter();
-  const [filter, setFilter] = useState<Filter>("listas");
-  const [group, setGroup] = useState<string>("todas");
-  const [search, setSearch] = useState("");
+/** Los filtros elegidos en la cola: quedan aunque se cambie de pestaña o se ejecute una tras otra. */
+export type QueueState = { kpi: Filter; f: QueueFilter };
+export const QUEUE_START: QueueState = { kpi: "listas", f: NO_FILTER };
+
+/** La regla de la inmobiliaria (la que eligió su próxima acción), si existe. */
+const ruleOf = (rules: Rule[], q: QueueItem) => (q.ruleKey ? rules.find((r) => r.key === q.ruleKey) ?? null : null);
+
+/** Qué pasa al confirmar el envío, sin prometer que avance de etapa: solo lo que hacen el registro y las reglas. */
+function afterConfirm(q: QueueItem, rules: Rule[]) {
+  if (!q.action) return "";
+  const next = stageRules(rules, q.stage).find((r) => r.after_action === q.action && (!r.situations.length || r.situations.includes(q.situation)));
+  const first = q.stage === "no-contactado" ? " Como es el primer contacto, la inmobiliaria pasa a «Contactado»." : "";
+  const demo = q.stage === "sin-enviar" ? " Su demo queda marcada como enviada." : "";
+  const tail = next
+    ? ` Si no responde, «${actionLabel(q.stage, next.action)}» se programa ${next.after_hours ? `a las ${next.after_hours} h` : "enseguida"}, según las reglas vigentes.`
+    : " Si no responde, esta etapa no tiene otro paso programado después de este.";
+  return `Al confirmar el envío de «${q.actionLabel}», Habita registra esta acción.${first}${demo}${tail}`;
+}
+
+/**
+ * Centro de ejecución: los 4 números (cada uno filtra), la cola por etapa y por
+ * regla, la tabla y, a la derecha, la siguiente recomendada o la que se está
+ * ejecutando. «Tomar la próxima» y «Siguiente contacto» piden al servidor la
+ * próxima que entra en los filtros elegidos (no la de la lista guardada acá).
+ */
+function ExecCenter({
+  initial,
+  stages,
+  inboxCount,
+  state,
+  setState,
+  onReplies,
+}: {
+  initial: QueueView;
+  stages: StageView[];
+  inboxCount: number;
+  state: QueueState;
+  setState: (s: QueueState) => void;
+  onReplies: () => void;
+}) {
+  const [data, setData] = useState(initial);
+  const [loading, setLoading] = useState(false);
+  const [pollError, setPollError] = useState("");
   const [shown, setShown] = useState(QPAGE);
-  const [detail, setDetail] = useState<string | null>(null);
+  // La que se está ejecutando: queda en el panel aunque la cola actualizada ya no la traiga (se confirmó, avanzó).
+  const [detail, setDetail] = useState<{ id: string; item: QueueItem; prepared: Prepared | null } | null>(null);
   const [done, setDone] = useState<Record<string, Exec>>({});
   const [taking, setTaking] = useState(false);
   const [error, setError] = useState("");
+  // Lo que trae la página (al volver a cargarla) reemplaza a lo consultado si es más nuevo.
+  useEffect(() => {
+    setData((d) => (initial.generatedAt > d.generatedAt ? initial : d));
+  }, [initial]);
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const fresh = await api<QueueView>("/api/admin/follow-up/cola");
+      setData(fresh);
+      setPollError("");
+    } catch (e) {
+      setPollError(e instanceof Error ? e.message : "No pudimos actualizar la cola.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+  useEffect(() => {
+    const t = window.setInterval(() => {
+      if (!document.hidden) void refresh();
+    }, POLL_MS);
+    return () => window.clearInterval(t);
+  }, [refresh]);
+
+  const { kpi, f } = state;
+  const { queue, blocked, summary, rules } = data;
   const live = new Date().toISOString();
   const statusOf = (q: QueueItem) => (q.agencyId in done ? done[q.agencyId] : q.execution);
+  const all = [...queue, ...blocked];
   const base =
-    filter === "bloqueadas"
+    kpi === "bloqueadas"
       ? blocked
-      : filter === "respuestas"
-        ? [...queue, ...blocked].filter((q) => isReply(q) && !q.snoozedUntil)
-        : filter === "demos"
-          ? [...queue, ...blocked].filter((q) => q.group === "demos" && !q.snoozedUntil)
+      : kpi === "respuestas"
+        ? all.filter((q) => isReply(q) && !q.snoozedUntil)
+        : kpi === "demos"
+          ? all.filter((q) => q.group === "demos" && !q.snoozedUntil)
           : queue;
-  const term = search.trim().toLowerCase();
-  const list = base.filter((q) => (group === "todas" || q.group === group) && (!term || q.name.toLowerCase().includes(term)));
-  const groups = (["respuestas", "demos", "seguimientos", "nuevos"] as const).map((g) => ({ key: g, n: base.filter((q) => q.group === g).length }));
-  const free = queue.filter((q) => statusOf(q)?.status !== "sent" && !(q.claim && q.claim.until > live));
+  const fits = (q: QueueItem, g: QueueFilter) => matchesFilter(q, g, rules);
+  const list = base.filter((q) => fits(q, f));
+  const stage = f.stage ? stages.find((s) => s.key === f.stage) ?? null : null;
+  const own = f.stage ? stageRules(rules, f.stage) : [];
+  const rule = f.rule && f.rule !== OTHER_RULES ? rules.find((r) => r.key === f.rule) ?? null : null;
+  const count = (g: QueueFilter) => base.filter((q) => fits(q, g)).length;
+  const others = f.stage ? count({ ...f, rule: OTHER_RULES }) : 0;
+  const isFree = (q: QueueItem) => statusOf(q)?.status !== "sent" && !q.blocked && !(q.claim && q.claim.until > live);
+  const free = list.filter(isFree);
+  const kpiGroup = kpi === "respuestas" ? "respuestas" : kpi === "demos" ? "demos" : null;
+  const situations = (Object.keys(SITUATIONS) as Situation[]).map((k) => ({ key: k, n: count({ ...f, situation: k }) })).filter((x) => x.n > 0 || x.key === f.situation);
+  const groupCounts = (Object.keys(GROUPS) as (keyof typeof GROUPS)[]).map((k) => ({ key: k, n: count({ ...f, group: k }) }));
+  const setF = (patch: Partial<QueueFilter>) => {
+    setState({ kpi, f: { ...f, ...patch } });
+    setShown(QPAGE);
+  };
 
-  async function takeNext() {
+  /** Toma la próxima que entra en los filtros (el servidor recalcula la cola y la reserva). `skip`: las que ya se trabajaron. */
+  async function takeNext(skip: string[] = []) {
     setTaking(true);
     setError("");
     try {
-      const p = await api<Prepared | null>("/api/admin/followup/claim", { method: "POST", body: JSON.stringify({}) });
-      if (!p) setError("No queda nada libre para ejecutar ahora.");
-      else setDetail(p.agencyId);
+      const filtro = { etapa: f.stage, regla: f.rule, situacion: f.situation, grupo: f.group ?? kpiGroup, buscar: f.search };
+      const p = await api<Prepared | null>("/api/admin/followup/claim", { method: "POST", body: JSON.stringify({ filtro, saltar: skip }) });
+      if (!p) {
+        setDetail(null);
+        setError(skip.length ? "Listo: no queda ninguna libre con estos filtros." : "No queda ninguna libre con estos filtros.");
+        void refresh();
+      } else setDetail({ id: p.agencyId, item: p.item, prepared: p });
     } catch (e) {
       setError(e instanceof Error ? e.message : "No pudimos tomar la próxima.");
     } finally {
       setTaking(false);
     }
   }
-
-  if (detail) {
-    const item = [...queue, ...blocked].find((q) => q.agencyId === detail);
-    if (item)
-      return (
-        <ExecDetail
-          key={detail}
-          item={item}
-          queue={queue}
-          exec={statusOf(item)}
-          statusOf={statusOf}
-          onPick={setDetail}
-          onDone={(e) => setDone((d) => ({ ...d, [item.agencyId]: e }))}
-          onBack={() => {
-            setDetail(null);
-            router.refresh();
-          }}
-          onNext={() => {
-            const next = free.find((q) => q.agencyId !== item.agencyId && !(q.agencyId in done));
-            setDetail(next?.agencyId ?? null);
-            if (!next) router.refresh();
-          }}
-        />
-      );
-  }
+  const execute = (q: QueueItem) => {
+    setError("");
+    setDetail({ id: q.agencyId, item: q, prepared: null });
+  };
 
   const kpis: { key: Filter; label: string; value: number; hint: string }[] = [
-    { key: "listas", label: "Acciones para hoy", value: summary.ready, hint: summary.claimed ? `listas ahora · ${summary.claimed} tomadas por otra sesión` : "listas para ejecutar ahora" },
+    { key: "listas", label: "Acciones listas", value: summary.ready, hint: summary.claimed ? `listas ahora · ${summary.claimed} tomadas por otra sesión` : "contactos listos para ejecutar ahora" },
     { key: "respuestas", label: "Respuestas nuevas", value: summary.replies, hint: "en la bandeja y por contestar" },
     { key: "demos", label: "Demos pendientes", value: summary.demos, hint: "por crear o por enviar" },
     { key: "bloqueadas", label: "Bloqueadas", value: summary.blocked, hint: summary.scheduled ? `con motivo · ${summary.scheduled} programadas` : "cada una con su motivo" },
@@ -195,6 +262,17 @@ function ExecCenter({ queue, blocked, summary, onReplies }: { queue: QueueItem[]
       return acc;
     }, {}),
   ).sort((a, b) => b[1] - a[1]);
+  const ruleName = rule && f.stage ? ruleTitle(f.stage, rule) : f.rule === OTHER_RULES ? "Otras" : null;
+  const heading = `${stage?.title ?? "Todas las etapas"}${ruleName ? ` — ${ruleName}` : ""} — ${list.length} ${kpi === "bloqueadas" ? (list.length === 1 ? "bloqueada" : "bloqueadas") : list.length === 1 ? "lista" : "listos"}`;
+  const banner = !stage
+    ? "Estás viendo todas las etapas. Elegí una etapa y una regla para trabajar sus contactos uno detrás de otro."
+    : rule
+      ? `Estás viendo la etapa ${stage.title} con la regla ${ruleTitle(stage.key, rule)}. Se muestran solo los contactos cuya próxima acción es «${actionLabel(stage.key, rule.action as Action)}»: ${ruleWhen(stage.key, rule).replace(/^Si /, "si ")}.`
+      : f.rule === OTHER_RULES
+        ? `Estás viendo la etapa ${stage.title}: los contactos cuya próxima acción no sale de una de sus reglas activas.`
+        : `Estás viendo la etapa ${stage.title} con todas sus reglas.`;
+  const item = detail ? all.find((q) => q.agencyId === detail.id) ?? detail.item : null;
+  const recommended = free[0] ?? null;
 
   return (
     <section className="fu-center" data-testid="followup-queue">
@@ -203,13 +281,12 @@ function ExecCenter({ queue, blocked, summary, onReplies }: { queue: QueueItem[]
           <button
             key={k.key}
             type="button"
-            className={`fu-kpi${filter === k.key ? " is-on" : ""} is-${k.key}`}
+            className={`fu-kpi${kpi === k.key ? " is-on" : ""} is-${k.key}`}
             data-testid={`followup-kpi-${k.key}`}
-            aria-pressed={filter === k.key}
+            aria-pressed={kpi === k.key}
             onClick={() => {
-              if (k.key === "respuestas" && filter === "respuestas") return onReplies();
-              setFilter(k.key);
-              setGroup("todas");
+              if (k.key === "respuestas" && kpi === "respuestas") return onReplies();
+              setState({ kpi: k.key, f: { ...f, group: null } });
               setShown(QPAGE);
             }}
           >
@@ -219,141 +296,395 @@ function ExecCenter({ queue, blocked, summary, onReplies }: { queue: QueueItem[]
           </button>
         ))}
       </div>
-      {filter === "respuestas" && (
-        <p className="fu-note">
-          Las que confirmaron el número o preguntaron precios, listas para contestar. Las respuestas sin clasificar están en la{" "}
-          <button type="button" className="fu-link" onClick={onReplies}>
-            bandeja
+
+      <div className="fu-qbar" data-testid="followup-queue-stages">
+        <span className="fu-qbarlabel">Cola por etapa</span>
+        <div className="fu-qchips">
+          <button type="button" className={`fu-qchip${!f.stage ? " is-on" : ""}`} aria-pressed={!f.stage} data-testid="followup-queue-stage" data-stage="" onClick={() => setF({ stage: null, rule: null })}>
+            Todas <b>{count({ ...f, stage: null, rule: null })}</b>
           </button>
-          .
-        </p>
-      )}
-      <p className="fu-note">
-        Conversaciones nuevas en 24 h: <b>{summary.newToday}</b> de {summary.cap} · confirmadas hoy: <b>{summary.doneToday}</b> ·{" "}
-        <button type="button" className="fu-link" onClick={() => router.refresh()}>
-          Actualizar
-        </button>
-      </p>
-      <div className="fu-filters">
-        <button type="button" className={`fu-chip${group === "todas" ? " is-on" : ""}`} onClick={() => setGroup("todas")}>
-          Todas · {base.length}
-        </button>
-        {groups.map((g) => (
-          <button key={g.key} type="button" className={`fu-chip${group === g.key ? " is-on" : ""}`} onClick={() => setGroup(g.key)} disabled={!g.n}>
-            {GROUPS[g.key]} · {g.n}
-          </button>
-        ))}
-        <span className="fu-grow" />
-        <label className="fu-search">
-          <span className="sr-only">Buscar inmobiliaria</span>
-          <input type="search" placeholder="Buscar inmobiliaria" value={search} onChange={(e) => setSearch(e.target.value)} />
-        </label>
-        <button type="button" className="button button-primary button-small" data-testid="followup-take-next" disabled={taking || !free.length} onClick={takeNext}>
-          {taking ? "Tomando…" : "Tomar la próxima →"}
+          {stages.map((s) => (
+            <button
+              key={s.key}
+              type="button"
+              className={`fu-qchip${f.stage === s.key ? " is-on" : ""}`}
+              aria-pressed={f.stage === s.key}
+              data-testid="followup-queue-stage"
+              data-stage={s.key}
+              onClick={() => setF({ stage: s.key, rule: null })}
+            >
+              {s.title} <b>{count({ ...f, stage: s.key, rule: null })}</b>
+            </button>
+          ))}
+        </div>
+        <button type="button" className="fu-qchip is-replies" data-testid="followup-queue-replies" onClick={onReplies}>
+          <MessageSquare size={14} aria-hidden="true" /> Respuestas nuevas <b>{inboxCount}</b>
         </button>
       </div>
+
+      {stage && (
+        <div className="fu-qbar is-rules" data-testid="followup-queue-rules" data-stage={stage.key}>
+          <span className="fu-qbarlabel">Reglas de {stage.title}</span>
+          <div className="fu-qchips">
+            <button type="button" className={`fu-qchip is-sm${!f.rule ? " is-on" : ""}`} aria-pressed={!f.rule} data-testid="followup-queue-rule" data-rule="" onClick={() => setF({ rule: null })}>
+              Todas <b>{count({ ...f, rule: null })}</b>
+            </button>
+            {own.map((r) => (
+              <button
+                key={r.key}
+                type="button"
+                className={`fu-qchip is-sm${f.rule === r.key ? " is-on" : ""}`}
+                aria-pressed={f.rule === r.key}
+                data-testid="followup-queue-rule"
+                data-rule={r.key}
+                title={ruleWhen(stage.key, r)}
+                onClick={() => setF({ rule: r.key })}
+              >
+                {ruleTitle(stage.key, r)} <b>{count({ ...f, rule: r.key })}</b>
+              </button>
+            ))}
+            {(others > 0 || f.rule === OTHER_RULES) && (
+              <button type="button" className={`fu-qchip is-sm${f.rule === OTHER_RULES ? " is-on" : ""}`} aria-pressed={f.rule === OTHER_RULES} data-testid="followup-queue-rule" data-rule={OTHER_RULES} onClick={() => setF({ rule: OTHER_RULES })}>
+                Otras <b>{others}</b>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="fu-qbanner" data-testid="followup-queue-banner">
+        <Info size={16} aria-hidden="true" />
+        <span className="fu-grow">{banner}</span>
+        <span className={`fu-qsync${pollError ? " is-error" : ""}`} data-testid="followup-queue-sync" role={pollError ? "alert" : "status"}>
+          <span className="fu-qdot" aria-hidden="true" />
+          {loading ? "Actualizando…" : pollError ? `No se pudo actualizar (${pollError})` : `Actualizada a las ${hhmm(data.generatedAt)} · cada 45 s`}
+        </span>
+        <button type="button" className="fu-iconbtn" aria-label="Actualizar la cola" title="Actualizar" data-testid="followup-queue-refresh" disabled={loading} onClick={() => void refresh()}>
+          <RefreshCw size={15} aria-hidden="true" className={loading ? "fu-spin" : undefined} />
+        </button>
+      </div>
+
       {error && (
-        <p className="fu-error" role="alert">
+        <p className="fu-error" role="alert" data-testid="followup-queue-error">
           {error}
         </p>
       )}
-      {filter === "bloqueadas" && reasons.length > 0 && (
-        <div className="fu-reasons" data-testid="followup-block-reasons">
-          {reasons.map(([r, n]) => (
-            <span key={r}>
-              {r} · <b>{n}</b>
-            </span>
-          ))}
-        </div>
-      )}
-      {list.length === 0 ? (
-        <p className="fu-empty">{filter === "listas" ? "No hay nada para ejecutar ahora. Mirá las bloqueadas para ver por qué." : "No hay inmobiliarias en este filtro."}</p>
-      ) : (
-        <div className="fu-qlist">
-          <div className="fu-qwide fu-qwide-q">
-            <div className="fu-qrow fu-qrow-q fu-qth" aria-hidden="true">
-              <span>Score</span>
-              <span>Inmobiliaria</span>
-              <span>Etapa</span>
-              <span>Situación</span>
-              <span>Próxima acción</span>
-              <span>Última acción</span>
-              <span>WhatsApp</span>
-              <span>Prioridad</span>
-              <span />
+
+      <div className={`fu-qgrid${kpi === "bloqueadas" ? " is-wide" : ""}`}>
+        <div className="fu-qcard">
+          <div className="fu-qcardhead">
+            <h2 data-testid="followup-queue-heading">{heading}</h2>
+            <div className="fu-qtools">
+              <label className="fu-qsel">
+                <span>Situación</span>
+                <select data-testid="followup-filter-situation" value={f.situation ?? ""} onChange={(e) => setF({ situation: (e.target.value || null) as Situation | null })}>
+                  <option value="">Todas</option>
+                  {situations.map((x) => (
+                    <option key={x.key} value={x.key}>
+                      {SITUATIONS[x.key]} · {x.n}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="fu-qsel">
+                <span>Tipo</span>
+                <select data-testid="followup-filter-group" value={f.group ?? ""} onChange={(e) => setF({ group: (e.target.value || null) as QueueFilter["group"] })}>
+                  <option value="">Todos</option>
+                  {groupCounts.map((g) => (
+                    <option key={g.key} value={g.key} disabled={!g.n && f.group !== g.key}>
+                      {GROUPS[g.key]} · {g.n}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="fu-search">
+                <span className="sr-only">Buscar inmobiliaria</span>
+                <input type="search" data-testid="followup-filter-search" placeholder="Buscar inmobiliaria" value={f.search} onChange={(e) => setF({ search: e.target.value })} />
+              </label>
+              <button type="button" className="button button-primary button-small" data-testid="followup-take-next" disabled={taking || kpi === "bloqueadas" || !free.length} onClick={() => void takeNext()}>
+                {taking ? "Tomando…" : "Tomar la próxima →"}
+              </button>
             </div>
-            {list.slice(0, shown).map((q) => {
-              const exec = statusOf(q);
-              const status = exec?.status ?? "pending";
-              const taken = Boolean(q.claim && q.claim.until > live);
-              const isBlocked = Boolean(q.blocked) && status !== "sent";
-              return (
-                <div key={q.agencyId} className="fu-qi" data-testid="followup-queue-item" data-agency={q.agencyId} data-stage={q.stage} data-action={q.action ?? ""} data-situation={q.situation} data-status={status} data-priority={q.priority} data-blocked={isBlocked ? q.blocked : ""}>
-                  <div className="fu-qrow fu-qrow-q">
-                    <span className="fu-score">{score(q.score)}</span>
-                    <div className="fu-qname">
-                      <Link href={`/admin/inmobiliarias/${q.agencyId}`}>{q.name}</Link>
-                      <span>{q.zone ?? q.person ?? "—"}</span>
-                    </div>
-                    <span className="fu-cell">{stageTitle(q.stage)}</span>
-                    <span className="fu-cell">
-                      <span className="fu-pill is-sit">{SITUATIONS[q.situation]}</span>
-                    </span>
-                    <span className="fu-cell fu-bold">{q.actionLabel ?? "—"}</span>
-                    <div className="fu-qact">
-                      <span>{q.lastAction ? q.lastAction.text : "Sin acciones"}</span>
-                      <span className={q.lastAction && daysSince(q.lastAction.at) > LATE_DAYS ? "is-late" : undefined}>{q.lastAction ? `${day(q.lastAction.at)} · ${ago(q.lastAction.at)}` : "—"}</span>
-                    </div>
-                    <div className="fu-qcontact">
-                      <span className="fu-mono">{q.phone ?? "—"}</span>
-                      <span>{!q.wa ? "Sin WhatsApp" : q.needsReview ? "Sin validar" : "Validado"}</span>
-                    </div>
-                    <span>
-                      <span className={`fu-pill is-${q.priority}`} title={q.priorityManual ? "Puesta a mano" : "Por su grupo"}>
-                        {PRIORITY_LABEL[q.priority]}
-                        {q.priorityManual ? " ·" : ""}
-                      </span>
-                    </span>
-                    {isBlocked ? (
-                      q.snoozedUntil ? (
-                        <button type="button" className="button button-small button-outline" data-testid="followup-unsnooze" onClick={() => api("/api/admin/follow-up/inmobiliarias", { method: "POST", body: JSON.stringify({ accion: "volver", inmobiliaria: q.agencyId }) }).then(() => router.refresh())}>
-                          Volver a la cola
-                        </button>
-                      ) : (
-                        <span className="fu-qst is-blocked" title={q.blocked ?? undefined}>
-                          Bloqueada
-                        </span>
-                      )
-                    ) : (
-                      <button
-                        type="button"
-                        className={`button button-small${status === "pending" && !taken ? " button-primary" : " button-outline"}`}
-                        data-testid="followup-execute"
-                        disabled={taken}
-                        title={taken ? `La está ejecutando ${q.claim!.by}` : undefined}
-                        onClick={() => setDetail(q.agencyId)}
-                      >
-                        {taken ? `Tomada · ${q.claim!.by}` : status === "sent" ? "Ver" : "Ejecutar"}
-                      </button>
-                    )}
-                  </div>
-                  {isBlocked && (
-                    <p className="fu-blocked" data-testid="followup-blocked">
-                      {q.blocked}
-                    </p>
-                  )}
-                </div>
-              );
-            })}
           </div>
-          {list.length > shown && (
-            <button type="button" className="fu-more" onClick={() => setShown(shown + QPAGE)}>
-              Ver {Math.min(QPAGE, list.length - shown)} más · quedan {list.length - shown}
-            </button>
+          {kpi === "bloqueadas" && reasons.length > 0 && (
+            <div className="fu-reasons" data-testid="followup-block-reasons">
+              {reasons.map(([r, n]) => (
+                <span key={r}>
+                  {r} · <b>{n}</b>
+                </span>
+              ))}
+            </div>
+          )}
+          {list.length === 0 ? (
+            <p className="fu-empty">{kpi === "listas" ? (isEmptyFilter(f) ? "No hay nada para ejecutar ahora. Mirá las bloqueadas para ver por qué." : "No hay contactos listos con estos filtros.") : "No hay inmobiliarias en este filtro."}</p>
+          ) : (
+            <div className="fu-qlist">
+              <div className="fu-qwide fu-qwide-q">
+                <div className="fu-qrow fu-qrow-q fu-qth" aria-hidden="true">
+                  <span>Score</span>
+                  <span>Inmobiliaria</span>
+                  <span>Ciudad</span>
+                  <span>Situación</span>
+                  <span>Próxima acción</span>
+                  <span>Última acción</span>
+                  <span>WhatsApp</span>
+                  <span>Prioridad</span>
+                  <span />
+                </div>
+                {list.slice(0, shown).map((q) => {
+                  const exec = statusOf(q);
+                  const status = exec?.status ?? "pending";
+                  const busy = Boolean(q.claim && q.claim.until > live) && q.agencyId !== detail?.id;
+                  const isBlocked = Boolean(q.blocked) && status !== "sent";
+                  return (
+                    <div
+                      key={q.agencyId}
+                      className={`fu-qi${q.agencyId === detail?.id ? " is-on" : ""}`}
+                      data-testid="followup-queue-item"
+                      data-agency={q.agencyId}
+                      data-stage={q.stage}
+                      data-action={q.action ?? ""}
+                      data-rule={q.ruleKey ?? ""}
+                      data-situation={q.situation}
+                      data-status={status}
+                      data-priority={q.priority}
+                      data-blocked={isBlocked ? q.blocked : ""}
+                    >
+                      <div className="fu-qrow fu-qrow-q">
+                        <span className="fu-score">{score(q.score)}</span>
+                        <div className="fu-qname">
+                          <Link href={`/admin/inmobiliarias/${q.agencyId}`}>{q.name}</Link>
+                          <span>{f.stage ? (q.person ?? "—") : stageTitle(q.stage)}</span>
+                        </div>
+                        <span className="fu-cell">{q.zone ?? "—"}</span>
+                        <span className="fu-cell">
+                          <span className="fu-pill is-sit">{SITUATIONS[q.situation]}</span>
+                        </span>
+                        <span className="fu-cell fu-bold" title={ruleOf(rules, q) ? ruleTitle(q.stage, ruleOf(rules, q)!) : undefined}>
+                          {q.actionLabel ?? "—"}
+                        </span>
+                        <div className="fu-qact">
+                          <span>{q.lastAction ? q.lastAction.text : "Sin acciones"}</span>
+                          <span className={q.lastAction && daysSince(q.lastAction.at) > LATE_DAYS ? "is-late" : undefined}>{q.lastAction ? `${day(q.lastAction.at)} · ${ago(q.lastAction.at)}` : "—"}</span>
+                        </div>
+                        <div className="fu-qcontact">
+                          <span className="fu-mono">{q.phone ?? "—"}</span>
+                          <span>{!q.wa ? "Sin WhatsApp" : q.needsReview ? "Sin validar" : "Validado"}</span>
+                        </div>
+                        <span>
+                          <span className={`fu-pill is-${q.priority}`} title={q.priorityManual ? "Puesta a mano" : "Por su grupo"}>
+                            {PRIORITY_LABEL[q.priority]}
+                            {q.priorityManual ? " ·" : ""}
+                          </span>
+                        </span>
+                        {isBlocked ? (
+                          q.snoozedUntil ? (
+                            <button type="button" className="button button-small button-outline" data-testid="followup-unsnooze" onClick={() => api("/api/admin/follow-up/inmobiliarias", { method: "POST", body: JSON.stringify({ accion: "volver", inmobiliaria: q.agencyId }) }).then(() => void refresh())}>
+                              Volver a la cola
+                            </button>
+                          ) : (
+                            <span className="fu-qst is-blocked" title={q.blocked ?? undefined}>
+                              Bloqueada
+                            </span>
+                          )
+                        ) : (
+                          <button
+                            type="button"
+                            className={`button button-small${status === "pending" && !busy ? " button-primary" : " button-outline"}`}
+                            data-testid="followup-execute"
+                            disabled={busy || q.agencyId === detail?.id}
+                            title={busy ? `La está ejecutando ${q.claim!.by}` : undefined}
+                            onClick={() => execute(q)}
+                          >
+                            {busy ? `Tomada · ${q.claim!.by}` : q.agencyId === detail?.id ? "Abierta" : status === "sent" ? "Ver" : "Ejecutar"}
+                          </button>
+                        )}
+                      </div>
+                      {isBlocked && (
+                        <p className="fu-blocked" data-testid="followup-blocked">
+                          {q.blocked}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              {list.length > shown && (
+                <button type="button" className="fu-more" onClick={() => setShown(shown + QPAGE)}>
+                  Ver {Math.min(QPAGE, list.length - shown)} más · quedan {list.length - shown}
+                </button>
+              )}
+            </div>
+          )}
+          <p className="fu-note fu-qfoot">
+            Conversaciones nuevas en 24 h: <b>{summary.newToday}</b> de {summary.cap} · confirmadas hoy: <b>{summary.doneToday}</b>
+          </p>
+        </div>
+
+        {kpi !== "bloqueadas" && (
+          <aside className="fu-qside" aria-label={item ? "Ejecución" : "Siguiente recomendada"}>
+            {item ? (
+              <ExecPanel
+                key={item.agencyId}
+                item={item}
+                rules={rules}
+                initialPrepared={detail?.prepared ?? null}
+                exec={statusOf(item)}
+                onDone={(e) => {
+                  setDone((d) => ({ ...d, [item.agencyId]: e }));
+                  void refresh();
+                }}
+                onClose={() => {
+                  setDetail(null);
+                  void refresh();
+                }}
+                onNext={() => void takeNext([...new Set([...Object.keys(done), item.agencyId])])}
+                taking={taking}
+              />
+            ) : (
+              <Recommended item={recommended} stage={recommended ? stages.find((s) => s.key === recommended.stage) ?? null : null} rules={rules} onExecute={execute} />
+            )}
+          </aside>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/** La regla que eligió la acción, con su condición, en el recuadro verde del panel. */
+function RuleBox({ q, rules }: { q: QueueItem; rules: Rule[] }) {
+  const r = ruleOf(rules, q);
+  return (
+    <div className="fu-qrulebox" data-testid="followup-applied-rule" data-rule={q.ruleKey ?? ""}>
+      <Tag size={15} aria-hidden="true" />
+      <span>
+        <b>Regla aplicada: {r ? ruleTitle(q.stage, r) : (q.actionLabel ?? "—")}</b>
+        <small>{r ? ruleWhen(q.stage, r) : "La acción no sale de una regla activa de la etapa."}</small>
+      </span>
+    </div>
+  );
+}
+
+/** El encabezado del panel: nombre, ciudad, score, WhatsApp y etapa. */
+function PanelIdent({ q }: { q: QueueItem }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="fu-qident">
+      <div className="fu-grow">
+        <Link href={`/admin/inmobiliarias/${q.agencyId}`} className="fu-qidentname">
+          {q.name}
+        </Link>
+        <span>
+          {q.zone ?? "Sin ciudad"} · Score {score(q.score)}
+        </span>
+      </div>
+      <div className="fu-qwa">
+        <small>WhatsApp</small>
+        <span className="fu-mono" data-testid="followup-phone">
+          {q.phone ?? "sin WhatsApp"}
+        </span>
+        <small>{!q.wa ? "Sin WhatsApp" : q.needsReview ? "Sin validar" : "Validado"}</small>
+      </div>
+      {q.phone && (
+        <button type="button" className="fu-iconbtn" aria-label="Copiar el número" title={copied ? "Copiado" : "Copiar el número"} onClick={() => void copy(q.phone!).then(setCopied)}>
+          <ClipboardCopy size={15} aria-hidden="true" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** Sin nada tomado: la primera libre con los filtros elegidos, para ver qué sale antes de tomarla. */
+function Recommended({ item: q, stage, rules, onExecute }: { item: QueueItem | null; stage: StageView | null; rules: Rule[]; onExecute: (q: QueueItem) => void }) {
+  if (!q)
+    return (
+      <div className="fu-qpanel" data-testid="followup-recommended">
+        <div className="fu-qpanelhead">
+          <Target size={17} aria-hidden="true" />
+          <b>Siguiente recomendada</b>
+        </div>
+        <p className="fu-empty">No queda ningún contacto libre con estos filtros.</p>
+      </div>
+    );
+  const v = stage?.versions.find((x) => x.id === q.versionId) ?? null;
+  const preview = v ? splitMessages(fillMessage(v.body, { inmobiliaria: q.shortName, decisor: q.person })) : [];
+  const hours = q.window ? `${daysText(q.window.days)}, de ${q.window.hours_from} a ${q.window.hours_to}` : "Lunes a sábado";
+  const checks = [
+    { label: "Número validado", ok: Boolean(q.wa) && !q.needsReview, note: !q.wa ? "Falta su WhatsApp" : q.needsReview ? "Se valida al confirmar el envío" : "" },
+    { label: `Situación: ${SITUATIONS[q.situation]}`, ok: true, note: "" },
+    { label: `Regla: ${ruleOf(rules, q) ? ruleTitle(q.stage, ruleOf(rules, q)!) : (q.actionLabel ?? "—")}`, ok: Boolean(q.ruleKey), note: "" },
+    { label: "Horario permitido", ok: !q.blocked, note: hours },
+  ];
+  return (
+    <div className="fu-qpanel" data-testid="followup-recommended" data-agency={q.agencyId}>
+      <div className="fu-qpanelhead">
+        <Target size={17} aria-hidden="true" />
+        <b>Siguiente recomendada</b>
+        <span className="fu-grow" />
+        <span className="fu-qstage">{stageTitle(q.stage)}</span>
+      </div>
+      <PanelIdent q={q} />
+      <RuleBox q={q} rules={rules} />
+      <div className="fu-qline">
+        <span className="fu-lbl">Situación</span>
+        <span className="fu-pill is-sit">{SITUATIONS[q.situation]}</span>
+      </div>
+      <div className="fu-qtwo">
+        <div className="fu-qbox">
+          <b>Contexto</b>
+          <span>
+            {q.website ? host(q.website) : "Sin web"} · {q.properties} propiedades
+          </span>
+          {q.address && <span>{q.address}</span>}
+          <span>En el mensaje: «{q.shortName}»</span>
+        </div>
+        <div className="fu-qbox">
+          <b>Última acción</b>
+          {q.lastAction ? (
+            <>
+              <span>{ago(q.lastAction.at)}</span>
+              <span>{q.lastAction.text}</span>
+            </>
+          ) : (
+            <span>Sin acciones todavía</span>
           )}
         </div>
-      )}
-    </section>
+      </div>
+      <p className="fu-qflow">
+        <ArrowRight size={14} aria-hidden="true" /> {afterConfirm(q, rules)}
+      </p>
+      <div className="fu-qtwo is-msg">
+        <div className="fu-qbox">
+          <b>Antes de enviar</b>
+          <ul className="fu-qchecks">
+            {checks.map((c) => (
+              <li key={c.label} className={c.ok ? "is-ok" : "is-pending"}>
+                <span className="fu-tick" aria-hidden="true">
+                  {c.ok ? "✓" : ""}
+                </span>
+                <span>
+                  {c.label}
+                  {c.note && <small>{c.note}</small>}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="fu-qbox">
+          <b>
+            Mensaje a enviar ({q.actionLabel}
+            {v ? ` · V${v.version}` : ""})
+          </b>
+          {preview.length ? preview.map((m, i) => <div key={i} className="fu-qmsg">{m}</div>) : <span>Sin texto cargado.</span>}
+        </div>
+      </div>
+      <button type="button" className="button button-primary fu-qbig" data-testid="followup-recommended-execute" onClick={() => onExecute(q)}>
+        <Send size={15} aria-hidden="true" /> Ejecutar esta
+      </button>
+      <p className="fu-qinfo">
+        <Info size={14} aria-hidden="true" /> Al ejecutarla queda tomada por vos 10 minutos y se arma el mensaje con sus enlaces. Después: 1. Abrir WhatsApp, 2. Confirmar envío.
+      </p>
+    </div>
   );
 }
 
@@ -373,30 +704,30 @@ const hhmm = (iso: string) => new Date(iso).toLocaleTimeString("es-AR", { hour: 
 const when = (iso: string) => new Date(iso).toLocaleString("es-AR", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "America/Argentina/Buenos_Aires" });
 
 /**
- * Detalle de ejecución, en tres sectores (como la especificación): la cola a la
- * izquierda, el contexto y los mensajes en el centro, el checklist y los
- * botones a la derecha. Al abrirla, la inmobiliaria queda tomada 10 minutos.
+ * La ejecución, en el panel de la derecha: el contexto, la regla, el mensaje y el
+ * checklist, y los botones (Abrir WhatsApp, Confirmar envío, No se envió,
+ * Omitir o reprogramar). Al abrirla, la inmobiliaria queda tomada 10 minutos.
  */
-function ExecDetail({
+function ExecPanel({
   item,
-  queue,
+  rules,
+  initialPrepared,
   exec,
-  statusOf,
-  onPick,
   onDone,
-  onBack,
+  onClose,
   onNext,
+  taking,
 }: {
   item: QueueItem;
-  queue: QueueItem[];
+  rules: Rule[];
+  initialPrepared: Prepared | null;
   exec: Exec;
-  statusOf: (q: QueueItem) => Exec;
-  onPick: (id: string) => void;
   onDone: (e: Exec) => void;
-  onBack: () => void;
+  onClose: () => void;
   onNext: () => void;
+  taking: boolean;
 }) {
-  const [prepared, setPrepared] = useState<Prepared | null>(null);
+  const [prepared, setPrepared] = useState<Prepared | null>(initialPrepared);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
@@ -414,8 +745,8 @@ function ExecDetail({
       .then(setPrepared)
       .catch((e) => setError(e instanceof Error ? e.message : "No pudimos armar el mensaje."));
   useEffect(() => {
-    if (exec?.status !== "sent") void load();
-    // Opening the detail takes the agency; loading it once is enough.
+    if (!initialPrepared && exec?.status !== "sent") void load();
+    // Opening the panel takes the agency; loading it once is enough.
   }, [item.agencyId]);
 
   async function post<T>(url: string, body: Record<string, unknown>) {
@@ -462,14 +793,9 @@ function ExecDetail({
     setPriority(p as QueueItem["priority"]);
     await post("/api/admin/follow-up/inmobiliarias", { accion: "prioridad", inmobiliaria: item.agencyId, prioridad: p === "auto" ? null : p });
   }
-  async function back() {
+  async function close() {
     if (prepared && !sent) await api("/api/admin/follow-up/ejecuciones", { method: "POST", body: JSON.stringify({ accion: "soltar", inmobiliaria: item.agencyId }) }).catch(() => undefined);
-    onBack();
-  }
-  async function pick(id: string) {
-    if (id === item.agencyId) return;
-    if (prepared && !sent) await api("/api/admin/follow-up/ejecuciones", { method: "POST", body: JSON.stringify({ accion: "soltar", inmobiliaria: item.agencyId }) }).catch(() => undefined);
-    onPick(id);
+    onClose();
   }
   async function copyText(text: string, what: string) {
     setNotice((await copy(text)) ? `${what} copiado.` : `No pudimos copiarlo: ${text}`);
@@ -486,153 +812,75 @@ function ExecDetail({
   const ctx = prepared?.context;
   const task = prepared?.channel === "task";
   const many = (prepared?.messages.length ?? 0) > 1;
+  const closed = sent || status === "failed";
   return (
-    <section className="fu-detail" data-testid="followup-detail" data-agency={item.agencyId}>
-      <div className="fu-dhead">
-        <button type="button" className="fu-back" aria-label="Volver a la cola" data-testid="followup-back" onClick={back}>
-          <ChevronRight size={18} aria-hidden="true" style={{ transform: "rotate(180deg)" }} />
-        </button>
-        <div className="fu-grow">
-          <h2>Detalle de ejecución</h2>
-          <p>Revisá el contexto y el checklist antes de enviar.</p>
-        </div>
+    <div className="fu-qpanel is-exec" data-testid="followup-detail" data-agency={item.agencyId} data-status={status}>
+      <div className="fu-qpanelhead">
+        <Target size={17} aria-hidden="true" />
+        <b>{sent ? "Enviado" : "Ejecutando"}</b>
         {prepared && !sent && <span className="fu-pill is-lock">Tomada por vos · libre a las {hhmm(prepared.lockedUntil)}</span>}
+        <span className="fu-grow" />
+        <span className="fu-qstage">{stageTitle(item.stage)}</span>
+        <button type="button" className="fu-iconbtn" aria-label="Cerrar y volver a la cola" title="Cerrar (la deja libre)" data-testid="followup-back" onClick={close}>
+          <X size={16} aria-hidden="true" />
+        </button>
       </div>
-      <div className="fu-dgrid">
-        <aside className="fu-dcol fu-dqueue" aria-label="Cola">
-          <div className="fu-dtitle">
-            <b>Cola de ejecución</b>
-            <span>{queue.length} en cola</span>
-          </div>
-          {queue.slice(0, 14).map((q) => {
-            const on = q.agencyId === item.agencyId;
-            const done = statusOf(q)?.status === "sent";
-            return (
-              <button key={q.agencyId} type="button" className={`fu-dqi${on ? " is-on" : ""}${done ? " is-done" : ""}`} onClick={() => pick(q.agencyId)} aria-current={on ? "true" : undefined}>
-                <span className="fu-score">{score(q.score)}</span>
-                <span className="fu-dqname">
-                  <b>{q.name}</b>
-                  <span>{done ? "Enviado" : q.actionLabel}</span>
-                </span>
-                <span className={`fu-pill is-${q.priority}`}>{PRIORITY_LABEL[q.priority]}</span>
-              </button>
-            );
-          })}
-        </aside>
-        <div className="fu-dcol fu-dmain">
-          <div className="fu-card fu-ident">
-            <div className="fu-grow">
-              <div className="fu-identname">
-                <Link href={`/admin/inmobiliarias/${item.agencyId}`}>{item.name}</Link>
-                <span className={`fu-pill is-${priority}`}>Prioridad {PRIORITY_LABEL[priority].toLowerCase()}</span>
-              </div>
-              <p>
-                {item.zone ?? "Sin zona"} · Score <b>{score(item.score)}</b> · Decisor: {item.person ?? "sin nombre"} · <span className="fu-mono" data-testid="followup-phone">{item.phone ?? "sin WhatsApp"}</span>
-                {item.wa ? (item.needsReview ? " (sin validar)" : " (validado)") : ""}
-              </p>
-            </div>
-            <div className="fu-identside">
-              <span>
-                Etapa <b>{stageTitle(item.stage)}</b>
-              </span>
-              <SituationCell item={item} />
-            </div>
-          </div>
-          <div className="fu-dtwo">
-            <div className="fu-card">
-              <b className="fu-cardtitle">Contexto del lead</b>
-              <ul className="fu-facts">
-                <li>
-                  Web: {item.website ? (
-                    <a href={href(item.website)} target="_blank" rel="noreferrer">
-                      {host(item.website)}
-                    </a>
-                  ) : "sin web"}
-                </li>
-                <li>{item.properties} propiedades · {item.hasDemo ? "con demo publicada" : "sin demo publicada"} · {item.hasAccount ? "con cuenta" : "sin cuenta"}</li>
-                <li>{item.address ?? "Sin dirección"}</li>
-                <li>
-                  En el mensaje: «{ctx?.shortName ?? item.shortName}»{" "}
-                  <button type="button" className="fu-link" data-testid="followup-short-name" onClick={rename}>
-                    cambiar
-                  </button>
-                </li>
-                {item.situationNote && <li>Su respuesta: «{item.situationNote}»</li>}
-              </ul>
-            </div>
-            <div className="fu-card">
-              <b className="fu-cardtitle">Últimas acciones</b>
-              {!prepared ? (
-                <p className="fu-note">{error ? "—" : "Cargando…"}</p>
-              ) : prepared.history.length === 0 ? (
-                <p className="fu-note">Sin acciones todavía.</p>
-              ) : (
-                <ol className="fu-timeline" data-testid="followup-history">
-                  {prepared.history.map((h, i) => (
-                    <li key={i} className={`is-${h.kind}`}>
-                      <span>{when(h.at)}</span>
-                      {h.text}
-                    </li>
-                  ))}
-                </ol>
-              )}
-            </div>
-          </div>
-          <div className="fu-card fu-next">
-            {!prepared ? (
-              error ? (
-                <p className="fu-error" role="alert" data-testid="followup-error">
-                  {error}
-                </p>
-              ) : sent ? (
-                <p className="fu-note">Confirmado. </p>
-              ) : (
-                <p className="fu-note">Tomando la inmobiliaria y armando el mensaje…</p>
-              )
+      <PanelIdent q={item} />
+      <RuleBox q={item} rules={rules} />
+      <div className="fu-qline">
+        <span className="fu-lbl">Situación</span>
+        <SituationCell item={item} />
+      </div>
+      <div className="fu-qtwo">
+        <div className="fu-qbox">
+          <b>Contexto</b>
+          <span>
+            Web:{" "}
+            {item.website ? (
+              <a href={href(item.website)} target="_blank" rel="noreferrer">
+                {host(item.website)}
+              </a>
             ) : (
-              <>
-                <div className="fu-nexthead">
-                  <b>
-                    Próxima acción: {prepared.actionLabel} · V{prepared.version}
-                    {many ? ` · ${prepared.messages.length} mensajes` : ""}
-                  </b>
-                  <span>{task ? "Tarea del equipo" : `Por WhatsApp · situación: ${ctx?.situationLabel}`}</span>
-                </div>
-                {prepared.messages.map((m, i) => (
-                  <div key={i} className="fu-step">
-                    <span className="fu-stepn">{i + 1}</span>
-                    <div className="fu-msg" data-testid="followup-message" data-index={i}>
-                      {m}
-                    </div>
-                    <button type="button" className="fu-iconbtn" aria-label={`Copiar mensaje ${i + 1}`} data-testid="followup-copy-part" onClick={() => copyText(m, `Mensaje ${i + 1}`)}>
-                      <ClipboardCopy size={16} aria-hidden="true" />
-                    </button>
-                  </div>
-                ))}
-                {prepared.notes && (
-                  <div className="fu-obs" data-testid="followup-notes">
-                    <b>Observaciones</b>
-                    {prepared.notes}
-                  </div>
-                )}
-                {notice && (
-                  <p className="fu-note" role="status">
-                    {notice}
-                  </p>
-                )}
-                {error && (
-                  <p className="fu-error" role="alert" data-testid="followup-error">
-                    {error}
-                  </p>
-                )}
-              </>
-            )}
-          </div>
+              "sin web"
+            )}{" "}
+            · {item.properties} propiedades
+          </span>
+          <span>{item.hasDemo ? "Con demo publicada" : "Sin demo publicada"} · {item.hasAccount ? "con cuenta" : "sin cuenta"}</span>
+          {item.address && <span>{item.address}</span>}
+          <span>
+            En el mensaje: «{ctx?.shortName ?? item.shortName}»{" "}
+            <button type="button" className="fu-link" data-testid="followup-short-name" onClick={rename}>
+              cambiar
+            </button>
+          </span>
+          {item.situationNote && <span>Su respuesta: «{item.situationNote}»</span>}
         </div>
-        <aside className="fu-dcol fu-dside" aria-label="Checklist">
-          <b className="fu-cardtitle">Checklist de ejecución</b>
+        <div className="fu-qbox">
+          <b>Últimas acciones</b>
+          {!prepared ? (
+            <span>{error ? "—" : "Cargando…"}</span>
+          ) : prepared.history.length === 0 ? (
+            <span>Sin acciones todavía.</span>
+          ) : (
+            <ol className="fu-timeline" data-testid="followup-history">
+              {prepared.history.slice(0, 5).map((h, i) => (
+                <li key={i} className={`is-${h.kind}`}>
+                  <span>{when(h.at)}</span>
+                  {h.text}
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
+      </div>
+      <p className="fu-qflow" data-testid="followup-after-confirm">
+        <ArrowRight size={14} aria-hidden="true" /> {afterConfirm(item, rules)}
+      </p>
+      <div className="fu-qtwo is-msg">
+        <div className="fu-qbox">
+          <b>Antes de enviar</b>
           {prepared ? (
-            <ul className="fu-checks" data-testid="followup-checklist">
+            <ul className="fu-qchecks" data-testid="followup-checklist">
               {prepared.checklist.map((c) => (
                 <li key={c.key} className={c.ok ? "is-ok" : "is-pending"} data-check={c.key} data-ok={c.ok}>
                   <span className="fu-tick" aria-hidden="true">
@@ -646,105 +894,156 @@ function ExecDetail({
               ))}
             </ul>
           ) : (
-            <p className="fu-note">—</p>
+            <span>—</span>
           )}
-          <div className="fu-sep" />
-          {prepared && !task && (
+        </div>
+        <div className="fu-qbox">
+          {!prepared ? (
+            error ? (
+              <p className="fu-error" role="alert" data-testid="followup-error">
+                {error}
+              </p>
+            ) : sent ? (
+              <span>Confirmado.</span>
+            ) : (
+              <span>Tomando la inmobiliaria y armando el mensaje…</span>
+            )
+          ) : (
             <>
-              {prepared.whatsappUrl ? (
-                <a className={`button button-small${status === "pending" || status === "failed" ? " button-primary" : " button-outline"}`} data-testid="followup-open" href={prepared.whatsappUrl} target="habita-whatsapp" rel="noreferrer" onClick={() => !sent && void mark("opened")}>
-                  <MessageCircle size={16} aria-hidden="true" /> 1. Abrir WhatsApp{many ? " con el mensaje 1" : ""}
-                </a>
-              ) : (
-                <span className="button button-small button-outline is-disabled" data-testid="followup-open" aria-disabled="true">
-                  <MessageCircle size={16} aria-hidden="true" /> 1. Abrir WhatsApp
-                </span>
+              <b>
+                Mensaje a enviar ({prepared.actionLabel} · V{prepared.version}
+                {many ? ` · ${prepared.messages.length} mensajes` : ""})
+              </b>
+              {prepared.messages.map((m, i) => (
+                <div key={i} className="fu-qmsgrow">
+                  <div className="fu-qmsg" data-testid="followup-message" data-index={i}>
+                    {m}
+                  </div>
+                  <button type="button" className="fu-iconbtn" aria-label={`Copiar mensaje ${i + 1}`} data-testid="followup-copy-part" onClick={() => copyText(m, `Mensaje ${i + 1}`)}>
+                    <ClipboardCopy size={15} aria-hidden="true" />
+                  </button>
+                </div>
+              ))}
+              {prepared.notes && (
+                <div className="fu-obs" data-testid="followup-notes">
+                  <b>Observaciones</b>
+                  {prepared.notes}
+                </div>
               )}
-              <button type="button" className={`button button-small${status === "opened" ? " button-primary" : " button-outline"}`} data-testid="followup-confirm" disabled={sent || busy || !prepared.ready} onClick={() => mark("sent")}>
-                <Send size={15} aria-hidden="true" /> {sent ? "Enviado" : many ? `2. Confirmar: salieron los ${prepared.messages.length}` : "2. Confirmar envío"}
-              </button>
             </>
           )}
-          {prepared && task && (
-            <>
-              {prepared.ctas.includes("create_demo") && (
-                <Link className="button button-small button-primary" href={prepared.links.createDemo} target="_blank" onClick={() => void mark("opened")}>
-                  <Plus size={16} aria-hidden="true" /> Crear demo
-                </Link>
-              )}
-              <button type="button" className="button button-small button-outline" data-testid="followup-confirm" disabled={sent || busy} onClick={() => mark("sent")}>
-                {sent ? "Hecha" : "Marcar hecha"}
-              </button>
-            </>
-          )}
-          {prepared && !sent && (
-            <div className="fu-two">
-              <button type="button" className={`button button-small button-outline${panel === "fail" ? " is-active" : ""}`} data-testid="followup-failed" onClick={() => setPanel(panel === "fail" ? "none" : "fail")}>
-                {task ? "No se pudo" : "No se envió"}
-              </button>
-              <button type="button" className={`button button-small button-outline${panel === "snooze" ? " is-active" : ""}`} data-testid="followup-snooze" onClick={() => setPanel(panel === "snooze" ? "none" : "snooze")}>
-                Omitir o reprogramar
-              </button>
-            </div>
-          )}
-          {panel === "fail" && !sent && (
-            <div className="fu-form">
-              <select data-testid="followup-failed-kind" value={kind} onChange={(e) => setKind(e.target.value as keyof typeof FAIL_KINDS)} aria-label="Qué pasó">
-                {Object.entries(FAIL_KINDS).map(([k, label]) => (
-                  <option key={k} value={k}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-              <input data-testid="followup-failed-reason" value={reason} maxLength={300} placeholder={kind === "otro" ? "Por qué no salió" : "Detalle (opcional)"} onChange={(e) => setReason(e.target.value)} aria-label="Por qué no salió" />
-              <button type="button" className="button button-small button-outline" data-testid="followup-failed-save" disabled={busy || (kind === "otro" && !reason.trim())} onClick={() => mark("failed")}>
-                Guardar
-              </button>
-            </div>
-          )}
-          {panel === "snooze" && !sent && (
-            <div className="fu-form" data-testid="followup-snooze-form">
-              <select value={snoozeKey} onChange={(e) => setSnoozeKey(e.target.value as (typeof SNOOZE)[number]["key"])} aria-label="Hasta cuándo">
-                {SNOOZE.map((o) => (
-                  <option key={o.key} value={o.key}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-              {snoozeKey === "fecha" && <input type="date" value={snoozeDate} onChange={(e) => setSnoozeDate(e.target.value)} aria-label="Fecha" />}
-              <input value={reason} maxLength={300} placeholder="Motivo (ej.: pidió hablar después)" onChange={(e) => setReason(e.target.value)} aria-label="Motivo" />
-              <button type="button" className="button button-small button-outline" data-testid="followup-snooze-save" disabled={busy} onClick={snooze}>
-                Reprogramar
-              </button>
-            </div>
-          )}
-          {(sent || status === "failed") && (
-            <button type="button" className="button button-small button-primary" data-testid="followup-next" onClick={onNext}>
-              Siguiente pendiente →
+        </div>
+      </div>
+      {notice && (
+        <p className="fu-note" role="status">
+          {notice}
+        </p>
+      )}
+      {prepared && error && (
+        <p className="fu-error" role="alert" data-testid="followup-error">
+          {error}
+        </p>
+      )}
+      <div className="fu-qbtns">
+        {prepared && !task && (
+          <>
+            {prepared.whatsappUrl ? (
+              <a className={`button button-small${status === "pending" || status === "failed" ? " button-primary" : " button-outline"}`} data-testid="followup-open" href={prepared.whatsappUrl} target="habita-whatsapp" rel="noreferrer" onClick={() => !sent && void mark("opened")}>
+                <MessageCircle size={16} aria-hidden="true" /> 1. Abrir WhatsApp{many ? " con el mensaje 1" : ""}
+              </a>
+            ) : (
+              <span className="button button-small button-outline is-disabled" data-testid="followup-open" aria-disabled="true">
+                <MessageCircle size={16} aria-hidden="true" /> 1. Abrir WhatsApp
+              </span>
+            )}
+            <button type="button" className={`button button-small${status === "opened" ? " button-primary" : " button-outline"}`} data-testid="followup-confirm" disabled={sent || busy || !prepared.ready} onClick={() => mark("sent")}>
+              <Send size={15} aria-hidden="true" /> {sent ? "Enviado" : many ? `2. Confirmar: salieron los ${prepared.messages.length}` : "2. Confirmar envío"}
             </button>
-          )}
-          {prepared && (
-            <>
-              <span className="fu-lbl">Enlaces rápidos</span>
-              <div className="fu-quick">
-                {!task && (
-                  <button type="button" onClick={() => copyText(prepared.messages.join("\n\n"), many ? "Los mensajes" : "Mensaje")}>
-                    {many ? `Copiar los ${prepared.messages.length}` : "Copiar mensaje"}
-                  </button>
-                )}
-                {prepared.links.demo && (
-                  <button type="button" data-testid="followup-link-demo" onClick={() => copyText(prepared.links.demo!, "Link demo")}>
-                    Link demo
-                  </button>
-                )}
-                {prepared.links.panel && (
-                  <button type="button" data-testid="followup-link-panel" onClick={() => copyText(prepared.links.panel!, "Link panel")}>
-                    Link panel
-                  </button>
-                )}
-              </div>
-            </>
-          )}
+          </>
+        )}
+        {prepared && task && (
+          <>
+            {prepared.ctas.includes("create_demo") && (
+              <Link className="button button-small button-primary" href={prepared.links.createDemo} target="_blank" onClick={() => void mark("opened")}>
+                <Plus size={16} aria-hidden="true" /> Crear demo
+              </Link>
+            )}
+            <button type="button" className="button button-small button-outline" data-testid="followup-confirm" disabled={sent || busy} onClick={() => mark("sent")}>
+              {sent ? "Hecha" : "Marcar hecha"}
+            </button>
+          </>
+        )}
+        {prepared && !sent && (
+          <div className="fu-two">
+            <button type="button" className={`button button-small button-outline${panel === "fail" ? " is-active" : ""}`} data-testid="followup-failed" onClick={() => setPanel(panel === "fail" ? "none" : "fail")}>
+              {task ? "No se pudo" : "No se envió"}
+            </button>
+            <button type="button" className={`button button-small button-outline${panel === "snooze" ? " is-active" : ""}`} data-testid="followup-snooze" onClick={() => setPanel(panel === "snooze" ? "none" : "snooze")}>
+              Omitir / reprogramar
+            </button>
+          </div>
+        )}
+        {panel === "fail" && !sent && (
+          <div className="fu-form">
+            <select data-testid="followup-failed-kind" value={kind} onChange={(e) => setKind(e.target.value as keyof typeof FAIL_KINDS)} aria-label="Qué pasó">
+              {Object.entries(FAIL_KINDS).map(([k, label]) => (
+                <option key={k} value={k}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            <input data-testid="followup-failed-reason" value={reason} maxLength={300} placeholder={kind === "otro" ? "Por qué no salió" : "Detalle (opcional)"} onChange={(e) => setReason(e.target.value)} aria-label="Por qué no salió" />
+            <button type="button" className="button button-small button-outline" data-testid="followup-failed-save" disabled={busy || (kind === "otro" && !reason.trim())} onClick={() => mark("failed")}>
+              Guardar
+            </button>
+          </div>
+        )}
+        {panel === "snooze" && !sent && (
+          <div className="fu-form" data-testid="followup-snooze-form">
+            <select value={snoozeKey} onChange={(e) => setSnoozeKey(e.target.value as (typeof SNOOZE)[number]["key"])} aria-label="Hasta cuándo">
+              {SNOOZE.map((o) => (
+                <option key={o.key} value={o.key}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+            {snoozeKey === "fecha" && <input type="date" value={snoozeDate} onChange={(e) => setSnoozeDate(e.target.value)} aria-label="Fecha" />}
+            <input value={reason} maxLength={300} placeholder="Motivo (ej.: pidió hablar después)" onChange={(e) => setReason(e.target.value)} aria-label="Motivo" />
+            <button type="button" className="button button-small button-outline" data-testid="followup-snooze-save" disabled={busy} onClick={snooze}>
+              Reprogramar
+            </button>
+          </div>
+        )}
+        {closed && (
+          <button type="button" className="button button-small button-primary" data-testid="followup-next" disabled={taking} onClick={onNext}>
+            {taking ? "Buscando…" : "Siguiente contacto →"}
+          </button>
+        )}
+      </div>
+      {!task && (
+        <div className="fu-stop" data-testid="followup-stop">
+          <b>Si el chat no coincide, no envíes.</b> El encabezado de WhatsApp tiene que mostrar {item.phone ?? "su número"}.
+        </div>
+      )}
+      {prepared && (
+        <div className="fu-qmore">
+          <div className="fu-quick">
+            {!task && (
+              <button type="button" onClick={() => copyText(prepared.messages.join("\n\n"), many ? "Los mensajes" : "Mensaje")}>
+                {many ? `Copiar los ${prepared.messages.length}` : "Copiar mensaje"}
+              </button>
+            )}
+            {prepared.links.demo && (
+              <button type="button" data-testid="followup-link-demo" onClick={() => copyText(prepared.links.demo!, "Link demo")}>
+                Link demo
+              </button>
+            )}
+            {prepared.links.panel && (
+              <button type="button" data-testid="followup-link-panel" onClick={() => copyText(prepared.links.panel!, "Link panel")}>
+                Link panel
+              </button>
+            )}
+          </div>
           <label className="fu-prio">
             <span className="fu-lbl">Prioridad</span>
             <select data-testid="followup-priority" value={item.priorityManual ? priority : "auto"} onChange={(e) => changePriority(e.target.value)}>
@@ -754,14 +1053,12 @@ function ExecDetail({
               <option value="baja">Baja</option>
             </select>
           </label>
-          {!task && (
-            <div className="fu-stop" data-testid="followup-stop">
-              <b>Si el chat no coincide, no envíes.</b> El encabezado de WhatsApp tiene que mostrar {item.phone ?? "su número"}.
-            </div>
-          )}
-        </aside>
-      </div>
-    </section>
+        </div>
+      )}
+      <p className="fu-qinfo">
+        <Info size={14} aria-hidden="true" /> Al confirmar el envío, la cola se actualiza y «Siguiente contacto» toma el próximo con los mismos filtros. Si llega una respuesta y se registra, Habita recalcula su situación y su próxima acción.
+      </p>
+    </div>
   );
 }
 
