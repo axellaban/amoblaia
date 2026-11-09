@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { byPriority, nextAction } from "@/lib/followup/plan";
-import { DEFAULT_RULES, cleanRule, outsideWindow, pickRule, type Rule } from "@/lib/followup/rules";
+import { DEFAULT_RULES, cleanRule, compatible, outsideWindow, pickRule, type Rule } from "@/lib/followup/rules";
 
 const SITS = ["sin_respuesta", "confirmo_numero", "interesado", "neutro", "pregunta_precios", "mas_adelante", "derivo"];
 const ACTS = ["principal", "seguimiento_2", "presentacion", "presentacion_seguimiento", "precios"];
@@ -67,5 +67,34 @@ describe("a promised demo", () => {
     const q = (name: string, extra: Record<string, unknown> = {}) => ({ name, group: "respuestas" as const, score: 99, since: "2026-11-01", ...extra });
     const list = [q("respuesta"), q("demo nueva", { group: "demos", score: 1, promisedAt: "2026-11-09T12:20:00Z" }), q("demo vieja", { group: "demos", score: 1, promisedAt: "2026-11-09T12:00:00Z" })].sort(byPriority);
     expect(list.map((x) => x.name)).toEqual(["demo vieja", "demo nueva", "respuesta"]);
+  });
+});
+
+describe("incompatible rules (acción fuera de su etapa)", () => {
+  it("the engine never picks one: in No contactado, Presentación and Precios are skipped, Saludo goes", () => {
+    // Confirmó número en «No contactado»: la regla de Presentación está encendida en la base, pero no es de esta etapa.
+    expect(pickRule(DEFAULT_RULES, "no-contactado", "confirmo_numero", {}).action).toBeNull();
+    expect(nextAction("no-contactado", "pregunta_precios", {}).action).toBeNull();
+    // Sin respuesta sigue yendo al Saludo, que es la acción válida.
+    expect(nextAction("no-contactado", "sin_respuesta", {})).toMatchObject({ action: "principal" });
+  });
+
+  it("a rule whose previous step is incompatible does not run either", () => {
+    const rules = [...DEFAULT_RULES, { ...DEFAULT_RULES[0], key: "x", stage: "no-abrio" as const, situations: [], action: "seguimiento_2" as const, after_action: "precios" as const, position: 1 }];
+    expect(pickRule(rules, "no-abrio", "sin_respuesta", {}).action).not.toBe("seguimiento_2");
+  });
+
+  it("the panel can keep one off, but cannot turn it on or create it", () => {
+    const base = { stage: "no-contactado", situations: ["confirmo_numero"], after_hours: 0, after_action: null, position: 10, hours_from: 9, hours_to: 18, days: [1, 2, 3, 4, 5, 6] };
+    expect(cleanRule({ ...base, action: "presentacion", enabled: false }, SITS, ACTS, STAGES)).toMatchObject({ action: "presentacion", enabled: false });
+    expect(cleanRule({ ...base, action: "presentacion", enabled: true }, SITS, ACTS, STAGES)).toMatchObject({ error: expect.stringMatching(/no se puede activar/) });
+    expect(cleanRule({ ...base, action: "principal", enabled: true, after_action: "precios" }, SITS, ACTS, STAGES)).toMatchObject({ error: expect.stringMatching(/paso previo/) });
+  });
+
+  it("compatibility follows the stage's own actions", () => {
+    expect(compatible("no-contactado", "principal")).toBe(true);
+    expect(compatible("no-contactado", "presentacion")).toBe(false);
+    expect(compatible("no-responde", "precios")).toBe(true);
+    expect(compatible("sin-demo", "seguimiento_2")).toBe(false);
   });
 });

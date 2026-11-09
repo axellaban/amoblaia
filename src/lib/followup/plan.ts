@@ -61,16 +61,8 @@ export const ACTIONS = {
 } as const;
 export type Action = keyof typeof ACTIONS;
 export const isAction = (v: unknown): v is Action => typeof v === "string" && v in ACTIONS;
-/**
- * Las acciones de cada etapa. Cada una tiene sus versiones A/B: la versión es
- * la variante del mensaje; la acción es el momento de la secuencia (seguimiento
- * 1 y 2 son dos acciones, no dos versiones).
- */
-export const ACTIONS_OF: Partial<Record<StageKey, Action[]>> = {
-  "no-responde": ["principal", "seguimiento_2", "presentacion", "presentacion_seguimiento", "precios"],
-  "no-abrio": ["principal", "seguimiento_2"],
-};
-export const actionsOf = (stage: StageKey): Action[] => ACTIONS_OF[stage] ?? ["principal"];
+/** Las acciones de cada etapa: viven en rules.ts (fuente única). */
+export { ACTIONS_OF, actionsOf, compatible } from "./rules";
 /** Nombre de la acción para el equipo: en «No contactado», la principal es el saludo. */
 export function actionLabel(stage: StageKey, action: Action) {
   if (action === "principal") return stage === "no-contactado" ? "Saludo" : stage === "no-responde" ? "Saludo sin respuesta" : stage === "no-abrio" ? "Seguimiento de demo 1" : ACTIONS.principal;

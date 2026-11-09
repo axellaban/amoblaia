@@ -258,3 +258,20 @@ Solo cambia la pestaña, no el motor de ejecución: las reglas y las versiones s
 ### Corrección funcional pendiente
 
 `DEFAULT_RULES` (y la migración `202612050001`) siembran **Presentación**, **Presentación sin respuesta** y **Precios** también en «No contactado», pero `ACTIONS_OF` las habilita solo en «Contactado, no responde». Resultado: esas tres reglas de «No contactado» nunca tienen mensaje editable, y cuando se disparan la cola las bloquea con «Falta el texto». El rediseño las muestra como «Acción no disponible para esta etapa» y no las borra ni las mueve (son reglas de producción). Corrección pendiente, a decidir: borrarlas de «No contactado» (la secuencia de presentación es de «Contactado, no responde») o habilitar esas acciones también en «No contactado». No se crean mensajes ficticios para resolverlo.
+
+## Reglas incompatibles (acción fuera de su etapa)
+
+Una regla es **incompatible** cuando su acción no existe en su etapa: `ACTIONS_OF` (en `src/lib/followup/rules.ts`) dice qué acciones tiene cada etapa. Hoy: «No contactado» solo tiene Saludo (`principal`); «Contactado, no responde» tiene Saludo sin respuesta, Presentación, Presentación sin respuesta, Precios y seguimiento 2; «Enviada, no abrió» tiene dos seguimientos; el resto, solo `principal`.
+
+Qué pasa con una regla incompatible:
+
+- **El motor no la ejecuta**, aunque esté encendida (`pickRule` filtra las reglas y los pasos previos que no son de la etapa). Tampoco genera tareas nuevas.
+- **No se puede encender ni crear.** El guardado lo rechaza (`cleanRule` y `saveRule`, en el servidor). En el panel, el interruptor queda deshabilitado y dice «No disponible aquí».
+- **Sí se puede apagar**: el panel la guarda apagada, para no perderla.
+- **Nada se borra ni se traslada automáticamente.** Las reglas y las ejecuciones históricas quedan como están.
+
+Reglas incompatibles en producción (solo lectura, 9/11/2026): `no-contactado:presentacion` (10), `no-contactado:presentacion_seguimiento` (20) y `no-contactado:precios` (30), todas encendidas. Con el motor corregido no se ejecutan, pero siguen encendidas en la base.
+
+**Migración controlada pendiente (no aplicada):** apagarlas con una migración explícita, por ejemplo `update followup_rules set enabled = false where key in ('no-contactado:presentacion', 'no-contactado:presentacion_seguimiento', 'no-contactado:precios');`. Antes, decidir si esas acciones van a «Contactado, no responde» (como dice la sección de Fase 1) o si la etapa «No contactado» debe ganar esas acciones (requiere cambiar `ACTIONS_OF` y las reglas juntas).
+
+Textos pendientes: Presentación, Presentación sin respuesta, Precios y el seguimiento 2 de «Contactado, no responde» no tienen versión cargada. Sin versión, la acción queda bloqueada con «Falta el texto de…».

@@ -19,7 +19,20 @@ type Situation =
   | "no_contactar"
   | "sin_whatsapp"
   | "numero_incorrecto";
-type Action = "principal" | "seguimiento_2" | "presentacion" | "presentacion_seguimiento" | "precios";
+export type Action = "principal" | "seguimiento_2" | "presentacion" | "presentacion_seguimiento" | "precios";
+
+/**
+ * Las acciones que cada etapa puede ejecutar. Fuente única: el motor, el
+ * guardado de reglas y el panel la usan. Una regla con una acción fuera de su
+ * etapa es «incompatible»: no se ejecuta, no se puede activar y no se puede crear.
+ */
+export const ACTIONS_OF: Partial<Record<StageKey, Action[]>> = {
+  "no-responde": ["principal", "seguimiento_2", "presentacion", "presentacion_seguimiento", "precios"],
+  "no-abrio": ["principal", "seguimiento_2"],
+};
+export const actionsOf = (stage: StageKey): Action[] => ACTIONS_OF[stage] ?? ["principal"];
+/** Si la acción existe en la etapa. */
+export const compatible = (stage: StageKey, action: Action | null | undefined) => !!action && actionsOf(stage).includes(action);
 
 export type Rule = {
   /** Clave estable: la de las reglas sembradas, o la que se crea al agregar una. */
@@ -81,7 +94,11 @@ export type RulePick = { rule: Rule | null; action: Action | null; afterHours: n
  * acá (las resuelve el código: ninguna regla puede escribirle a un rechazo).
  */
 export function pickRule(rules: Rule[], stage: StageKey, situation: Situation, done: Partial<Record<Action, boolean>>): RulePick {
-  const own = rules.filter((r) => r.enabled && r.stage === stage && (r.situations.length === 0 || r.situations.includes(situation))).sort((a, b) => a.position - b.position);
+  // Las incompatibles (acción fuera de la etapa) no se ejecutan, aunque estén encendidas en la base.
+  const own = rules
+    .filter((r) => r.enabled && r.stage === stage && compatible(stage, r.action) && (!r.after_action || compatible(stage, r.after_action)))
+    .filter((r) => r.situations.length === 0 || r.situations.includes(situation))
+    .sort((a, b) => a.position - b.position);
   for (const r of own) {
     if (done[r.action]) continue;
     if (r.after_action && !done[r.after_action]) continue;
@@ -127,6 +144,11 @@ export function cleanRule(input: Record<string, unknown>, situations: readonly s
   const afterAction = input.after_action === null || input.after_action === "" || input.after_action === undefined ? null : typeof input.after_action === "string" && actions.includes(input.after_action) ? (input.after_action as Action) : undefined;
   if (afterAction === undefined) return { error: "El paso previo es desconocido." };
   if (afterAction === input.action) return { error: "Una regla no puede esperar a su propio paso." };
+  const stageKey = input.stage as StageKey;
+  if (afterAction && !compatible(stageKey, afterAction)) return { error: "El paso previo no es una acción de esta etapa." };
+  // Una regla con acción fuera de su etapa puede quedar apagada (para no perderla), pero no encendida ni nueva.
+  const enabled = input.enabled !== false;
+  if (enabled && !compatible(stageKey, input.action as Action)) return { error: "Una regla con acción no disponible en su etapa no se puede activar." };
   const position = num(input.position);
   return {
     stage: input.stage as StageKey,
@@ -135,7 +157,7 @@ export function cleanRule(input: Record<string, unknown>, situations: readonly s
     after_hours: Math.round(after * 10) / 10,
     after_action: afterAction,
     position: Number.isFinite(position) ? Math.max(0, Math.min(1000, Math.round(position))) : 100,
-    enabled: input.enabled !== false,
+    enabled,
     hours_from: from,
     hours_to: to,
     days: days.sort(),
