@@ -58,6 +58,7 @@ export const ACTIONS = {
   presentacion: "Presentación",
   presentacion_seguimiento: "Presentación sin respuesta",
   precios: "Precios",
+  encuesta_cierre: "Despedida y encuesta",
 } as const;
 export type Action = keyof typeof ACTIONS;
 export const isAction = (v: unknown): v is Action => typeof v === "string" && v in ACTIONS;
@@ -73,6 +74,7 @@ export function actionLabel(stage: StageKey, action: Action) {
 export function actionWhen(stage: StageKey, action: Action) {
   const step = SEQUENCE_OF(stage).find((x) => x.action === action);
   if (action === "presentacion") return "Cuando confirma el número";
+  if (action === "encuesta_cierre") return "Cuando responde que no le interesa";
   if (action === "precios") return "Cuando pregunta precios";
   if (action === "presentacion_seguimiento") return `Presentación sin respuesta · a las ${PRESENTATION_FOLLOW_UP_HOURS} h`;
   if (stage === "no-contactado") return "Primer contacto";
@@ -150,7 +152,7 @@ export type Planned = { action: Action | null; afterHours: number; reason: strin
  */
 export function nextAction(stage: StageKey, situation: Situation, done: Partial<Record<Action, boolean>> = {}, rules: Rule[] = DEFAULT_RULES, demoGenerated = false): Planned {
   const none = (reason: string): Planned => ({ action: null, afterHours: 0, reason, rule: null });
-  if (CLOSED_SITUATIONS.includes(situation)) return none(`${SITUATIONS[situation]}: no se le escribe más.`);
+  if (situation !== "rechazo" && CLOSED_SITUATIONS.includes(situation)) return none(`${SITUATIONS[situation]}: no se le escribe más.`);
   const early = stage === "no-contactado" || stage === "no-responde";
   if (early && situation === "interesado") return none("Interesado: preparar la demo (pasa a «Interesado, sin demo»).");
   return pickRule(rules, stage, situation, done, demoGenerated);
@@ -166,7 +168,7 @@ export const GROUPS = {
 export type Group = keyof typeof GROUPS;
 const GROUP_ORDER: Group[] = ["respuestas", "demos", "seguimientos", "nuevos"];
 export function groupOf(stage: StageKey, action: Action | null): Group {
-  if (action === "presentacion" || action === "precios") return "respuestas";
+  if (action === "encuesta_cierre" || action === "presentacion" || action === "precios") return "respuestas";
   if (action === "presentacion_seguimiento") return "seguimientos";
   if (stage === "sin-demo" || stage === "sin-enviar") return "demos";
   if (stage === "no-contactado") return "nuevos";

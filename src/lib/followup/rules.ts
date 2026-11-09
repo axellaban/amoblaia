@@ -19,7 +19,7 @@ type Situation =
   | "no_contactar"
   | "sin_whatsapp"
   | "numero_incorrecto";
-export type Action = "principal" | "seguimiento_2" | "presentacion" | "presentacion_seguimiento" | "precios";
+export type Action = "principal" | "seguimiento_2" | "presentacion" | "presentacion_seguimiento" | "precios" | "encuesta_cierre";
 
 /**
  * Las acciones que cada etapa puede ejecutar. Fuente única: el motor, el
@@ -27,7 +27,7 @@ export type Action = "principal" | "seguimiento_2" | "presentacion" | "presentac
  * etapa es «incompatible»: no se ejecuta, no se puede activar y no se puede crear.
  */
 export const ACTIONS_OF: Partial<Record<StageKey, Action[]>> = {
-  "no-responde": ["principal", "seguimiento_2", "presentacion", "presentacion_seguimiento", "precios"],
+  "no-responde": ["principal", "seguimiento_2", "presentacion", "presentacion_seguimiento", "precios", "encuesta_cierre"],
   "sin-demo": ["principal", "precios"],
   "sin-enviar": ["principal", "precios"],
   "no-abrio": ["principal", "seguimiento_2", "precios"],
@@ -107,7 +107,11 @@ export function pickRule(rules: Rule[], stage: StageKey, situation: Situation, d
   // Las incompatibles (acción fuera de la etapa) no se ejecutan, aunque estén encendidas en la base.
   const own = rules
     .filter((r) => r.enabled && r.stage === stage && compatible(stage, r.action) && (!r.after_action || compatible(stage, r.after_action)))
-    .filter((r) => r.situations.length === 0 || r.situations.includes(situation))
+    .filter((r) => {
+      if (situation === "rechazo" || r.action === "encuesta_cierre")
+        return situation === "rechazo" && r.action === "encuesta_cierre" && r.situations.length === 1 && r.situations[0] === "rechazo";
+      return !["no_contactar", "proveedor_ia", "numero_incorrecto", "sin_whatsapp"].includes(situation) && (!r.situations.length || r.situations.includes(situation));
+    })
     .filter((r) => (r.min_demo_activity_level ?? 0) === 0 || demoGenerated)
     .sort((a, b) => a.position - b.position);
   for (const r of own) {
@@ -144,6 +148,10 @@ export function cleanRule(input: Record<string, unknown>, situations: readonly s
   if (typeof input.stage !== "string" || !stages.includes(input.stage)) return { error: "Etapa desconocida." };
   if (typeof input.action !== "string" || !actions.includes(input.action)) return { error: "Acción desconocida." };
   const sits = Array.isArray(input.situations) ? input.situations.filter((s): s is Situation => typeof s === "string" && situations.includes(s)) : [];
+  if (Array.isArray(input.situations) && sits.length !== input.situations.length) return { error: "Situación desconocida." };
+  if ((sits.includes("rechazo") || input.action === "encuesta_cierre") &&
+      !(input.stage === "no-responde" && input.action === "encuesta_cierre" && sits.length === 1 && sits[0] === "rechazo"))
+    return { error: "Elegí únicamente No interesado y la acción Despedida y encuesta." };
   const num = (v: unknown) => (typeof v === "number" || (typeof v === "string" && v.trim() !== "") ? Number(v) : NaN);
   const after = num(input.after_hours);
   if (!Number.isFinite(after) || after < 0 || after > 720) return { error: "La espera va de 0 a 720 horas." };

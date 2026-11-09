@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import { actionLabel, byPriority, nextAction } from "@/lib/followup/plan";
 import { DEFAULT_RULES, cleanRule, compatible, outsideWindow, pickRule, type Rule } from "@/lib/followup/rules";
 
-const SITS = ["sin_respuesta", "confirmo_numero", "interesado", "neutro", "pregunta_precios", "mas_adelante", "derivo"];
-const ACTS = ["principal", "seguimiento_2", "presentacion", "presentacion_seguimiento", "precios"];
+const SITS = ["sin_respuesta", "confirmo_numero", "interesado", "neutro", "pregunta_precios", "mas_adelante", "derivo", "rechazo"];
+const ACTS = ["principal", "seguimiento_2", "presentacion", "presentacion_seguimiento", "precios", "encuesta_cierre"];
 const STAGES = ["no-contactado", "no-responde", "sin-demo", "sin-enviar", "no-abrio", "sin-interaccion", "sin-cuenta", "sin-uso", "sin-suscripcion"];
 
 describe("rules (Fase 3)", () => {
@@ -41,6 +41,18 @@ describe("rules (Fase 3)", () => {
     expect(nextAction("no-responde", "interesado", {}, greedy).action).toBeNull();
   });
 
+  it("offers only the explicit closing survey, once per agency", () => {
+    const survey: Rule = { ...DEFAULT_RULES[0], stage: "no-responde", action: "encuesta_cierre", situations: ["rechazo"] };
+    const rules = [...DEFAULT_RULES, survey];
+    expect(nextAction("no-responde", "rechazo", { principal: true }, rules).action).toBe("encuesta_cierre");
+    expect(nextAction("no-responde", "rechazo", { encuesta_cierre: true }, rules).action).toBeNull();
+    for (const situation of ["no_contactar", "proveedor_ia", "sin_whatsapp", "numero_incorrecto"] as const)
+      expect(nextAction("no-responde", situation, {}, rules).action).toBeNull();
+    expect(nextAction("no-responde", "sin_respuesta", {}, [survey]).action).toBeNull();
+    expect(cleanRule({ ...survey, situations: [] }, SITS, ACTS, STAGES)).toHaveProperty("error");
+    expect(cleanRule({ ...survey, action: "principal" }, SITS, ACTS, STAGES)).toHaveProperty("error");
+  });
+
   it("covers every stage and situation without throwing", () => {
     for (const st of STAGES) for (const si of SITS) for (const a of [{}, { principal: true }, { principal: true, seguimiento_2: true }]) expect(() => pickRule(DEFAULT_RULES, st as Rule["stage"], si as Rule["situations"][number], a)).not.toThrow();
   });
@@ -53,7 +65,7 @@ describe("rules (Fase 3)", () => {
   });
 
   it("validate what the panel sends", () => {
-    const ok = cleanRule({ stage: "no-abrio", action: "seguimiento_2", situations: ["sin_respuesta", "rechazo"], after_hours: "48", after_action: "principal", position: 50, hours_from: 9, hours_to: 19, days: [1, 2] }, SITS, ACTS, STAGES);
+    const ok = cleanRule({ stage: "no-abrio", action: "seguimiento_2", situations: ["sin_respuesta"], after_hours: "48", after_action: "principal", position: 50, hours_from: 9, hours_to: 19, days: [1, 2] }, SITS, ACTS, STAGES);
     expect(ok).toMatchObject({ stage: "no-abrio", situations: ["sin_respuesta"], after_hours: 48, days: [1, 2] });
     expect(ok).toMatchObject({ name: null });
     const base = { stage: "no-abrio", action: "principal", after_hours: 1, hours_from: 9, hours_to: 19 };

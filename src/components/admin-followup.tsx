@@ -10,6 +10,7 @@ import { GROUPS, REPLY_CLASSES, SITUATIONS, QUEUE_ORDERS, actionLabel, actionsOf
 import type { Change, FunnelStep, InboxItem, Prepared, QueueItem, QueueSummary, QueueView, Results, StageView } from "@/lib/followup/server";
 import { NO_FILTER, OTHER_RULES, isEmptyFilter, matchesFilter, stageRules, type QueueFilter } from "@/lib/followup/queue-filter";
 import type { CohortRow, WindowKey } from "@/lib/followup/results";
+import type { CustomStage } from "@/lib/followup/commercial-catalog";
 import { daysText, type Rule } from "@/lib/followup/rules";
 
 
@@ -46,12 +47,13 @@ async function copy(text: string) {
   }
 }
 
-type View = "cola" | "respuestas" | Mode;
+type View = "etapas" | "cola" | "respuestas" | Mode;
 const VIEWS: { key: View; label: string; soon?: string }[] = [
   { key: "cola", label: "Cola de ejecución" },
   { key: "respuestas", label: "Respuestas" },
   { key: "embudo", label: "Embudo" },
-  { key: "reglas", label: "Estados y reglas" },
+  { key: "reglas", label: "Reglas" },
+  { key: "etapas", label: "Etapas y situaciones" },
   { key: "resultados", label: "Resultados" },
 ];
 
@@ -81,13 +83,23 @@ export function FollowupBoard({
   results: Results;
   generatedAt: string;
 }) {
+  const [custom, setCustom] = useState<CustomStage[]>([]);
+  const [catalogError, setCatalogError] = useState("");
+  const reloadCatalog = useCallback(async () => {
+    const result = await api<{ stages: CustomStage[] }>("/api/admin/follow-up/etapas");
+    setCustom(result.stages);
+    setCatalogError("");
+  }, []);
   const [queueState, setQueueState] = useState<QueueState>(QUEUE_START);
   const initial = useMemo<QueueView>(() => ({ queue, blocked, noInteresados, summary, rules, generatedAt }), [queue, blocked, noInteresados, summary, rules, generatedAt]);
   const [view, setView] = useState<View>(() => {
     if (typeof window === "undefined") return "cola";
     const v = new URLSearchParams(window.location.search).get("vista");
-    return v === "respuestas" || v === "embudo" || v === "reglas" || v === "resultados" ? v : "cola";
+    return v === "etapas" || v === "respuestas" || v === "embudo" || v === "reglas" || v === "resultados" ? v : "cola";
   });
+  useEffect(() => {
+    if (view === "etapas" || view === "embudo") void reloadCatalog().catch(() => setCatalogError("No pudimos cargar las etapas personalizadas."));
+  }, [view, reloadCatalog]);
   function go(v: View) {
     setView(v);
     const url = new URL(window.location.href);
@@ -111,12 +123,13 @@ export function FollowupBoard({
           ),
         )}
       </nav>
-      {view === "cola" ? (
+      {catalogError && (view === "etapas" || view === "embudo") && <p role="alert">{catalogError}</p>}
+      {view === "etapas" ? <StageSettings custom={custom} reload={reloadCatalog} /> : view === "cola" ? (
         <ExecCenter initial={initial} stages={stages} inboxCount={inbox.length} state={queueState} setState={setQueueState} onReplies={() => go("respuestas")} />
       ) : view === "respuestas" ? (
         <Inbox inbox={inbox} agencies={[...queue, ...blocked, ...noInteresados]} />
       ) : view === "embudo" ? (
-        <Funnel funnel={funnel} stages={stages} rules={rules} onRules={() => go("reglas")} />
+        <Funnel custom={custom} funnel={funnel} stages={stages} rules={rules} onRules={() => go("reglas")} />
       ) : view === "resultados" ? (
         <ResultsView results={results} />
       ) : (
@@ -216,7 +229,7 @@ function ExecCenter({
   const { queue, blocked, noInteresados, summary, rules } = data;
   const live = new Date().toISOString();
   const statusOf = (q: QueueItem) => (q.agencyId in done ? done[q.agencyId] : q.execution);
-  const all = [...queue, ...blocked, ...noInteresados];
+  const all = [...new Map([...queue, ...blocked, ...noInteresados].map(q => [q.agencyId, q])).values()];
   const closedView = showClosed && kpi === "listas" && (f.commercial === "contactado" || f.stage === "no-responde");
   const base =
     closedView ? noInteresados : kpi === "bloqueadas"
@@ -283,7 +296,7 @@ function ExecCenter({
   ).sort((a, b) => b[1] - a[1]);
   const ruleName = rule && f.stage ? ruleTitle(f.stage, rule) : f.rule === OTHER_RULES ? "Otras" : null;
   const heading = closedView ? `Contactado — ${list.length} no interesados` : `${stage?.title ?? "Todas las etapas"}${ruleName ? ` — ${ruleName}` : ""} — ${list.length} ${kpi === "bloqueadas" ? (list.length === 1 ? "bloqueada" : "bloqueadas") : list.length === 1 ? "lista" : "listos"}`;
-  const banner = closedView ? "Oportunidades cerradas como No interesado. Podés corregir etapa y estado; estas inmobiliarias no reciben acciones automáticas." : !stage
+  const banner = closedView ? "Oportunidades cerradas como No interesado. Podés corregir etapa y situación; la despedida se habilita si corresponde la regla de encuesta." : !stage
     ? "Estás viendo todas las etapas. Elegí una etapa y una regla para trabajar sus contactos uno detrás de otro."
     : rule
       ? `Estás viendo la etapa ${stage.title} con la regla ${ruleTitle(stage.key, rule)}. Se muestran solo los contactos cuya próxima acción es «${actionLabel(stage.key, rule.action as Action)}»: ${ruleWhen(stage.key, rule).replace(/^Si /, "si ")}.`
@@ -347,7 +360,7 @@ function ExecCenter({
 
       {commercial && (
         <div className="fu-qbar is-rules" data-testid="followup-queue-substages">
-          <span className="fu-qbarlabel">Estado de avance</span>
+          <span className="fu-qbarlabel">Etapa del embudo</span>
           <div className="fu-qchips">
             <button type="button" className={`fu-qchip is-sm${!f.stage ? " is-on" : ""}`} aria-pressed={!f.stage} onClick={() => setF({ stage: null, demoImage: null, rule: null })}>
               Todos <b>{count({ ...f, commercial, stage: null, rule: null })}</b>
@@ -548,7 +561,7 @@ function ExecCenter({
                           <span className="fu-pill is-sit">{SITUATIONS[q.situation]}</span>
                         </span>
                         <span className="fu-cell fu-bold" title={commercialTier(q).reason}>
-                          {closedView ? "Sin seguimiento" : q.actionLabel ?? "—"}
+                          {q.actionLabel ?? "Sin seguimiento"}
                           {!closedView && <small style={{ display: "block", fontSize: "11px", fontWeight: 400, opacity: 0.75 }}>P{commercialTier(q).tier} · {commercialTier(q).reason}</small>}
                         </span>
                         <div className="fu-qact">
@@ -566,7 +579,7 @@ function ExecCenter({
                             {q.priorityManual ? " ·" : ""}
                           </span>
                         </span>
-                        {closedView || !q.action ? (
+                        {!q.action ? (
                           <span className="fu-qst is-blocked">Sin acciones</span>
                         ) : isBlocked ? (
                           q.snoozedUntil ? (
@@ -928,7 +941,7 @@ function ExecPanel({
       </div>
       <PanelIdent q={item} />
       <div className="fu-qline" style={{ margin: "6px 0" }}>
-        <span className="fu-lbl">Estado</span>
+        <span className="fu-lbl">Situación</span>
         <SituationCell item={item} />
       </div>
       <div className="fu-qbox" data-testid="followup-execution-focus" style={{ padding: 14, margin: "8px 0", border: "1px solid #a9cab7", borderRadius: 10 }}>
@@ -1334,18 +1347,21 @@ function ReplyForm({ agencies, onDone }: { agencies: QueueItem[]; onDone: () => 
   );
 }
 
-const SITUATION_OPTIONS = ["sin_respuesta", "confirmo_numero", "neutro", "pregunta_precios", "mas_adelante", "derivo", "interesado"] as const;
+const SITUATION_OPTIONS = ["sin_respuesta", "confirmo_numero", "neutro", "pregunta_precios", "mas_adelante", "derivo", "interesado", "rechazo"] as const;
 const ruleSituations = (r: Rule) => (r.situations.length ? r.situations.map((x) => SITUATIONS[x as Situation]).join(", ") : "Cualquier situación");
 
 /** Embudo y etapas (Fase 3): las etapas en tarjetas con su avance; la elegida, con sus reglas, sus versiones y sus inmobiliarias. */
-function Funnel({ funnel, stages, rules, onRules }: { funnel: FunnelStep[]; stages: StageView[]; rules: Rule[]; onRules: () => void }) {
+function Funnel({ custom, funnel, stages, rules, onRules }: { custom: CustomStage[]; funnel: FunnelStep[]; stages: StageView[]; rules: Rule[]; onRules: () => void }) {
+  const [customKey, setCustomKey] = useState<string | null>(null);
+  const activeCustom = custom.find(s => s.key === customKey);
   const [selectedCommercial, setSelectedCommercial] = useState<CommercialStageKey>("contactado");
   const [selectedTechnical, setSelectedTechnical] = useState<StageKey>("no-responde");
   const technical = technicalOf(selectedCommercial);
   const selected = technical.includes(selectedTechnical) ? selectedTechnical : technical[0] ?? null;
-  const stage = selected ? stages.find((s) => s.key === selected) ?? null : null;
+  const baseStage = selected ? stages.find((s) => s.key === selected) ?? null : null;
+  const stage = activeCustom && baseStage ? { ...baseStage, queue: baseStage.queue.filter(q => q.situation === activeCustom.entry_situation) } : baseStage;
   const step = selected ? funnel.find((f) => f.key === selected) ?? null : null;
-  const own = selected ? rules.filter((r) => r.stage === selected).sort((a, b) => a.position - b.position) : [];
+  const own = selected ? rules.filter((r) => r.stage === selected && (!activeCustom || !r.situations.length || r.situations.includes(activeCustom.entry_situation))).sort((a, b) => a.position - b.position) : [];
   const latestTechnical = funnel[funnel.length - 1];
   const clientReached = latestTechnical?.rate === null ? 0 : Math.round((latestTechnical?.reached ?? 0) * (latestTechnical?.rate ?? 0));
   const byCommercial = COMMERCIAL_STAGES.map((item, index) => {
@@ -1364,16 +1380,21 @@ function Funnel({ funnel, stages, rules, onRules }: { funnel: FunnelStep[]; stag
         {byCommercial.map((f) => (
           <button key={f.key} type="button" className={`fu-fcard${f.key === selectedCommercial ? " is-on" : ""}`}
             aria-pressed={f.key === selectedCommercial} data-testid="followup-funnel-stage" data-stage={f.key}
-            onClick={() => { setSelectedCommercial(f.key); const first = technicalOf(f.key)[0]; if (first) setSelectedTechnical(first); }}>
+            onClick={() => { setCustomKey(null); setSelectedCommercial(f.key); const first = technicalOf(f.key)[0]; if (first) setSelectedTechnical(first); }}>
             <span>{f.title}</span>
             <b>{f.waiting}</b>
             <small>{f.next ? `${pct(f.rate)} pasa a ${f.next}` : "Etapa final"}</small>
           </button>
         ))}
       </div>
-      {technical.length > 1 && (
+      {custom.length > 0 && <div className="fu-qchips" aria-label="Etapas personalizadas">
+        {custom.map(s => <button key={s.key} type="button" className={`fu-qchip${s.key === customKey ? " is-on" : ""}`} onClick={() => {
+          setCustomKey(s.key); setSelectedCommercial(commercialOf(s.technical_stage)); setSelectedTechnical(s.technical_stage);
+        }}>{s.label} · {stages.find(t => t.key === s.technical_stage)?.queue.filter(q => q.situation === s.entry_situation).length ?? 0}</button>)}
+      </div>}
+      {!activeCustom && technical.length > 1 && (
         <div className="fu-qbar" data-testid="followup-funnel-substages">
-          <span className="fu-qbarlabel">Estado de avance</span>
+          <span className="fu-qbarlabel">Etapa del embudo</span>
           <div className="fu-qchips">
             {technical.map((key) => (
               <button key={key} type="button" className={`fu-qchip is-sm${key === selected ? " is-on" : ""}`}
@@ -1386,8 +1407,8 @@ function Funnel({ funnel, stages, rules, onRules }: { funnel: FunnelStep[]; stag
       )}
       <div className="fu-card fu-fdetail">
         <div className="fu-fhead">
-          <h2>{selectedCommercial === "cliente" ? "Cliente" : step?.title ?? selectedCommercial}</h2>
-          <span className="fu-pill is-media">{byCommercial.find((x) => x.key === selectedCommercial)?.waiting ?? 0} en la etapa comercial</span>
+          <h2>{activeCustom?.label ?? (selectedCommercial === "cliente" ? "Cliente" : step?.title ?? selectedCommercial)}</h2>
+          <span className="fu-pill is-media">{activeCustom ? stage?.queue.length : byCommercial.find((x) => x.key === selectedCommercial)?.waiting ?? 0} en la etapa comercial</span>
           {step && <span className="fu-note">Objetivo: que pase a «{step.goal}»</span>}
           <span className="fu-grow" />
           {selected && <button type="button" className="fu-link" onClick={onRules}>Editar reglas y mensajes →</button>}
@@ -1395,7 +1416,7 @@ function Funnel({ funnel, stages, rules, onRules }: { funnel: FunnelStep[]; stag
         {selected ? (
           <div className="fu-frules">
             {own.length === 0 ? (
-              <p className="fu-note">No hay reglas configuradas para este estado de avance.</p>
+              <p className="fu-note">No hay reglas configuradas para esta etapa.</p>
             ) : own.map((r) => {
               const versions = stage?.versions.filter((v) => (v.action ?? "principal") === r.action) ?? [];
               const active = versions.find((v) => v.status === "active");
@@ -1463,6 +1484,50 @@ type CatalogState = {
 type CatalogDraft = { key: string; label: string; description: string; examples: string; source: "whatsapp" | "manual"; maps_to: Situation | ""; active: boolean };
 const EMPTY_CATALOG: CatalogDraft = { key: "", label: "", description: "", examples: "", source: "whatsapp", maps_to: "", active: false };
 /** Catalog editor is separate from the message editor: it does not rewrite past events or send messages. */
+function StageSettings({ custom, reload }: { custom: CustomStage[]; reload: () => Promise<void> }) {
+  const [selected, select] = useState("contactado");
+  const [adding, setAdding] = useState(false);
+  const [label, setLabel] = useState("");
+  const [technical, setTechnical] = useState<StageKey>("no-responde");
+  const [situation, setSituation] = useState<Situation>("neutro");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const options = [...COMMERCIAL_STAGES.map(s => ({ key: s.key as string, label: s.title })), ...custom];
+  const current = custom.find(s => s.key === selected);
+  async function save() {
+    setBusy(true);
+    setError("");
+    try {
+      const result = await api<{ key: string }>("/api/admin/follow-up/etapas", { method: "POST",
+        body: JSON.stringify({ label, technical_stage: technical, entry_situation: situation }) });
+      await reload();
+      select(result.key);
+      setLabel("");
+      setAdding(false);
+    } catch (e) { setError(e instanceof Error ? e.message : "No pudimos guardar la etapa."); }
+    finally { setBusy(false); }
+  }
+  return <section className="fu-card fu-fdetail">
+    <div className="fu-fhead"><h2>Etapas y situaciones</h2><span className="fu-grow" />
+      <button className="button button-small button-outline" onClick={() => setAdding(!adding)}>{adding ? "Cancelar" : "+ Nueva etapa"}</button>
+    </div>
+    {adding && <form className="fu-box" onSubmit={e => { e.preventDefault(); void save(); }}>
+      <label className="fu-f">Nombre de la etapa<input required minLength={2} maxLength={80} value={label} onChange={e => setLabel(e.target.value)} /></label>
+      <label className="fu-f">Etapa de origen<select value={technical} onChange={e => setTechnical(e.target.value as StageKey)}>
+        {FOLLOWUP_STAGES.map(s => <option key={s.key} value={s.key}>{s.title}</option>)}</select></label>
+      <label className="fu-f">Situación de entrada<select value={situation} onChange={e => setSituation(e.target.value as Situation)}>
+        {Object.entries(SITUATIONS).map(([key, name]) => <option key={key} value={key}>{name}</option>)}</select></label>
+      <p className="fu-note">La inmobiliaria entra cuando cumple ambas condiciones y sale cuando cambia alguna. El embudo registra el avance de producto como hasta ahora.</p>
+      <button className="button button-small button-primary" disabled={busy}>{busy ? "Guardando…" : "Crear etapa"}</button>
+    </form>}
+    {error && <p role="alert" className="fu-error">{error}</p>}
+    <label className="fu-f">Etapa<select value={selected} onChange={e => select(e.target.value)}>
+      {options.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}</select></label>
+    {current && <p className="fu-note">{technicalStateLabel(current.technical_stage)} · {SITUATIONS[current.entry_situation]}</p>}
+    <StateCatalogManager key={selected} commercial={selected} />
+  </section>;
+}
+
 function StateCatalogManager({ commercial }: { commercial: string }) {
   const [states, setStates] = useState<CatalogState[]>([]);
   const [draft, setDraft] = useState<CatalogDraft>(EMPTY_CATALOG);
@@ -1489,7 +1554,7 @@ function StateCatalogManager({ commercial }: { commercial: string }) {
   }
   async function save() {
     const slug = draft.label.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 45);
-    const key = draft.key || `custom_${slug}`;
+    const key = draft.key || `custom_${crypto.randomUUID().slice(0, 8)}_${slug}`;
     setBusy(true);
     setError("");
     try {
@@ -1505,8 +1570,8 @@ function StateCatalogManager({ commercial }: { commercial: string }) {
   return (
     <div data-testid="followup-state-catalog" style={{ marginTop: 16 }}>
       <div className="fu-rules-head">
-        <div><b>Clasificaciones personalizadas</b><p className="fu-note">Se reconocen en WhatsApp y se asocian a una situación existente.</p></div>
-        <button type="button" className="button button-small button-outline" onClick={() => edit()}><Plus size={14} /> Estado</button>
+        <div><b>Situaciones de esta etapa</b><p className="fu-note">Cada situación personalizada puede asociarse a una respuesta que el motor de reglas reconoce.</p></div>
+        <button type="button" className="button button-small button-outline" onClick={() => edit()}><Plus size={14} /> Nueva situación</button>
       </div>
       {own.map((s) => (
         <button key={s.key} type="button" className="fu-qchip is-sm" data-testid="followup-custom-state" onClick={() => edit(s)}
@@ -1535,7 +1600,7 @@ function StateCatalogManager({ commercial }: { commercial: string }) {
           <label><input type="checkbox" checked={draft.active} onChange={(e) => setDraft((d) => ({ ...d, active: e.target.checked }))} /> Activa para clasificación</label>
           <p className="fu-note">Una clasificación nueva no crea una acción automáticamente. Se aplican las reglas existentes de la situación elegida y sus restricciones de envío.</p>
           <div className="fu-actions"><button type="button" className="button button-small button-outline" onClick={() => setEditing(false)}>Cancelar</button>
-            <button type="button" className="button button-small button-primary" disabled={busy || !draft.label.trim() || (draft.active && !draft.maps_to)} onClick={() => void save()}>{busy ? "Guardando…" : "Guardar estado"}</button>
+            <button type="button" className="button button-small button-primary" disabled={busy || !draft.label.trim() || (draft.active && !draft.maps_to)} onClick={() => void save()}>{busy ? "Guardando…" : "Guardar situación"}</button>
           </div>
         </div>
       )}
@@ -1652,7 +1717,7 @@ function RulesWorkspace({ stages, rules, changes }: { stages: StageView[]; rules
               onDeleted={() => { setDirty({}); setSelected(null); }} />
           ) : (
             <div className="fu-detail-card"><p className="fu-note">
-              {steps.length ? "No hay reglas para esta etapa. Agregá una regla y elegí en su editor el estado de avance, las condiciones y la acción." : "Cliente es el último hito del funnel; no hay reglas de seguimiento técnico configurables para esta etapa."}
+              {steps.length ? "No hay reglas para esta etapa. Agregá una regla y elegí en su editor la etapa, las condiciones y la acción." : "Cliente es el último hito del funnel; no hay reglas de seguimiento técnico configurables para esta etapa."}
             </p></div>
           )}
         </div>
@@ -1901,8 +1966,17 @@ function RuleEditor({
   useEffect(() => () => report.current(false), []);
 
   const set = (patch: Partial<Rule>) => setR({ ...r, ...patch });
-  const toggleSituation = (x: Rule["situations"][number]) => set({ situations: r.situations.includes(x) ? r.situations.filter((y) => y !== x) : [...r.situations, x] });
-  const remaining = SITUATION_OPTIONS.filter((x) => !r.situations.includes(x));
+  const toggleSituation = (x: Situation) => {
+    if (x === "rechazo" || r.action === "encuesta_cierre") {
+      if (msgDirty && !window.confirm(DISCARD)) return;
+      setMsgDirty(false);
+      const closing = x === "rechazo" && !r.situations.includes(x);
+      set({ situations: closing ? ["rechazo"] : x === "rechazo" ? [] : [x], action: closing ? "encuesta_cierre" : "principal", after_action: null, after_hours: 0 });
+      return;
+    }
+    set({ situations: r.situations.includes(x) ? r.situations.filter(y => y !== x) : [...r.situations, x] });
+  };
+  const remaining = SITUATION_OPTIONS.filter((x) => !r.situations.includes(x) && (x !== "rechazo" || stage.key === "no-responde"));
   const dayPreset = DAY_PRESETS.find((p) => p.days.join() === [...r.days].sort((a, b) => a - b).join());
   const hourValue = `${r.hours_from}-${r.hours_to}`;
   const hourOptions = HOUR_PRESETS.some(([f, t]) => `${f}-${t}` === hourValue) ? HOUR_PRESETS : [[r.hours_from, r.hours_to] as [number, number], ...HOUR_PRESETS];
@@ -1910,7 +1984,7 @@ function RuleEditor({
     if (a === r.action) return;
     if (msgDirty && !window.confirm(DISCARD)) return;
     setMsgDirty(false);
-    set({ action: a, after_action: r.after_action === a ? null : r.after_action });
+    set({ action: a, situations: a === "encuesta_cierre" ? ["rechazo"] : r.situations.filter(s => s !== "rechazo"), after_action: a === "encuesta_cierre" || r.after_action === a ? null : r.after_action });
   }
   async function call(work: () => Promise<unknown>, after?: () => void) {
     setBusy(true);
@@ -2003,14 +2077,14 @@ function RuleEditor({
             <CalendarDays size={16} aria-hidden="true" /> Cuándo se ejecuta
           </h4>
           <label className="fu-f">
-            <span>Estado de avance (etapa técnica)</span>
-            <select aria-label="Estado de avance de la regla" value={stage.key} disabled={Boolean(rule) || !onStageChange}
+            <span>Etapa del embudo</span>
+            <select aria-label="Etapa del embudo de la regla" value={stage.key} disabled={Boolean(rule) || !onStageChange}
               onChange={(e) => onStageChange?.(e.target.value as StageKey)}>
               {(availableStages.length ? availableStages : [stage.key]).map((key) => (
                 <option key={key} value={key}>{technicalStateLabel(key)}</option>
               ))}
             </select>
-            {rule && <small>Para mover una regla a otro estado, creá una nueva con las mismas condiciones; así se conserva el historial.</small>}
+            {rule && <small>Para mover una regla a otra etapa, creá una nueva con las mismas condiciones; así se conserva el historial.</small>}
           </label>
           <div className="fu-f">
             <span>Situación (cualquiera de)</span>
@@ -2879,7 +2953,7 @@ function Queue({ stage }: { stage: StageView }) {
               <span>Dirección y zona</span>
               <span>Web</span>
               <span>Prop.</span>
-              <span>Estado</span>
+              <span>Etapa</span>
               <span>Situación</span>
               <span>Última acción y fecha</span>
               <span>WhatsApp</span>
@@ -2963,7 +3037,7 @@ function StageCell({ stage, item: q }: { stage: StageView; item: QueueItem }) {
   }
   return (
     <span className="fu-stagecell">
-      <select data-testid="followup-stage-select" value={stage.key} disabled={busy} aria-label={`Estado de ${q.name}`} title={error || undefined} onChange={(e) => change(e.target.value)}>
+      <select data-testid="followup-stage-select" value={stage.key} disabled={busy} aria-label={`Etapa de ${q.name}`} title={error || undefined} onChange={(e) => change(e.target.value)}>
         {FOLLOWUP_STAGES.map((s) => (
           <option key={s.key} value={s.key}>
             {s.title}
@@ -3073,7 +3147,7 @@ function QueueCorrection({ item: q, onSaved }: { item: QueueItem; onSaved: () =>
         <label style={{ display: "grid", gap: 4, fontSize: 12 }}>Motivo / evidencia (opcional)
           <textarea value={note} maxLength={2000} rows={2} onChange={(e) => setNote(e.target.value)} disabled={busy} placeholder="Qué respondió o por qué corregís el estado" />
         </label>
-        <small>No interesado cierra los seguimientos; «No contactar» impide nuevos envíos.</small>
+        <small>No interesado permite una única despedida con encuesta; «No contactar» impide nuevos envíos.</small>
         {error && <span className="fu-error" role="alert">{error}</span>}
         <button className="button button-small button-primary" type="button" disabled={busy} data-testid="followup-quick-save" onClick={() => void save()}>{busy ? "Guardando…" : "Guardar corrección"}</button>
       </div>

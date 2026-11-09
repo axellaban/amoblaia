@@ -75,6 +75,7 @@ import {
 import { DEFAULT_RULES, cleanRule, compatible, outsideWindow, type Rule } from "./rules";
 import { WINDOWS, blockReasons, bySegment, cohorts, versionResults, weekly, type VersionResult, type WindowKey } from "./results";
 import { cleanFilter, pickNext } from "./queue-filter";
+import { customStages } from "./commercial-catalog";
 import { resolveCustomClassification } from "./state-catalog";
 
 /**
@@ -427,11 +428,17 @@ async function board(now = new Date()) {
   };
 
   const items = new Map<string, QueueItem>();
-  // Terminal losses are deliberately NOT in the executable queue or funnel.
+  const surveyStarted = Math.min(...vs.filter((v) => v.action === "encuesta_cierre").map((v) => Date.parse(v.created_at)));
+  // Only an explicit rejection classified after the survey was introduced can enter its queue.
   // Show them only in Contactado > No interesados, for audit and manual correction.
   const closedItems: QueueItem[] = [];
   for (const { r, account, own, at } of base) {
-    if (!at.stage) {
+    const surveyReply = own?.situation === "rechazo" && own.situation_at && Date.parse(own.situation_at) >= surveyStarted &&
+      ds && !r.test && !account?.suppressed && (!at.manual || at.stage === "no-responde") && (!at.stage || at.stage === "no-responde") &&
+      !(account?.contacts.some(c => c.channel === "whatsapp") && account.contacts.filter(c => c.channel === "whatsapp").every(c => c.invalid));
+    const placement = surveyReply ? { ...at, stage: "no-responde" as const, step: 0 } : at;
+    if (surveyReply) later(lastReply, r.id, own.situation_at);
+    if (!placement.stage) {
       const lost = !r.test && !account?.suppressed && (r.prospectFunnel?.lost || account?.stage === "lost" || account?.stage === "discarded");
       if (lost) {
         const viewAt = { ...at, stage: "no-responde" as const, step: 0 };
@@ -445,7 +452,7 @@ async function board(now = new Date()) {
       }
       continue;
     }
-    const it = item(r, account, own, info, at, vs, exOf.get(r.id) ?? [], sendsOf.get(r.id) ?? [], rules);
+    const it = item(r, account, own, info, placement, vs, exOf.get(r.id) ?? [], sendsOf.get(r.id) ?? [], rules, Boolean(surveyReply));
     // A promised demo (interested, the demo still to make or to send) goes first; past 30 minutes it is late.
     const interest = lastInterest.get(r.id);
     if (interest && (it.stage === "sin-demo" || it.stage === "sin-enviar") && it.execution?.status !== "sent") {
@@ -570,6 +577,7 @@ function item(
   executionsOf: FollowupExecution[],
   sends: { status: string; sent_at: string | null; step: number }[],
   rules: Rule[] = DEFAULT_RULES,
+  surveyReply = false,
 ): QueueItem {
   const stage = at.stage!;
   const agency = info.agency.get(r.id);
@@ -583,17 +591,17 @@ function item(
     hasNumber: Boolean(to.wa),
     allInvalid: waContacts.length > 0 && waContacts.every((c) => c.invalid),
   });
-  const sit = currentSituation(derived, own?.situation && own.situation_step !== null ? { situation: own.situation, step: own.situation_step } : null, stepValue(at.derived.reached));
+  const sit = surveyReply ? { situation: "rechazo" as const, manual: true } : currentSituation(derived, own?.situation && own.situation_step !== null ? { situation: own.situation, step: own.situation_step } : null, stepValue(at.derived.reached));
   // The steps already sent in this stage: the sequence goes on from there.
   const stageSent = executionsOf.filter((e) => e.stage === stage && e.status === "sent").sort((a, b) => (b.sent_at ?? "").localeCompare(a.sent_at ?? ""));
   const doneMap: Partial<Record<Action, boolean>> = {};
   for (const e of stageSent) doneMap[(e.action ?? "principal") as Action] = true;
   const demoGenerated = r.demos.some((d) => d.generated === true);
-  const next = nextAction(stage, sit.situation, doneMap, rules, demoGenerated);
+  const next = nextAction(stage, sit.situation, doneMap, sit.situation === "rechazo" && !surveyReply ? [] : rules, demoGenerated);
   // The rule's window, or the one of the rule that sent the last step (for the row of a finished sequence).
   const window = next.rule ?? rules.find((x) => x.stage === stage && x.action === (stageSent[0]?.action ?? "principal")) ?? null;
   // Nothing left to send but something went out: the row shows that last one as sent.
-  const action = next.action ?? (!CLOSED_SITUATIONS.includes(sit.situation) && stageSent[0] ? ((stageSent[0].action ?? "principal") as Action) : null);
+  const action = next.action ?? (surveyReply && doneMap.encuesta_cierre ? "encuesta_cierre" : null) ?? (!CLOSED_SITUATIONS.includes(sit.situation) && stageSent[0] ? ((stageSent[0].action ?? "principal") as Action) : null);
   const mine = executionsOf.filter((e) => e.stage === stage && (e.action ?? "principal") === (action ?? "principal"));
   const offered = vs.filter((v) => v.stage === stage && (v.action ?? "principal") === (action ?? "principal"));
   const sent = mine.find((e) => e.status === "sent");
@@ -865,7 +873,7 @@ async function prepare(it: QueueItem, origin: string, actor: { id: string; name:
   // Lo que el agente revisa antes de mandar. «Número validado» queda pendiente con un número sin validar: se valida al confirmar.
   const checklist = [
     { key: "numero", label: "Número validado", ok: v.channel === "task" || (Boolean(it.wa) && !it.needsReview), note: v.channel === "task" ? "Tarea del equipo" : !it.wa ? "Falta su WhatsApp" : it.needsReview ? "Confirmá en el chat que es la inmobiliaria: queda validado al confirmar el envío" : "" },
-    { key: "rechazo", label: "Sin rechazo ni baja", ok: !CLOSED_SITUATIONS.includes(it.situation), note: "" },
+    { key: "rechazo", label: "Situación habilitada para esta acción", ok: it.action === "encuesta_cierre" || !CLOSED_SITUATIONS.includes(it.situation), note: "" },
     { key: "reciente", label: "Sin mensaje equivalente reciente", ok: !it.blocked, note: it.blocked ?? (it.execution?.status === "opened" ? "Se abrió WhatsApp antes sin confirmar: revisá el chat" : "") },
     { key: "horario", label: "Horario permitido", ok: !hours, note: hours ?? (it.group === "nuevos" ? "Lunes a sábado, de 9 a 18" : "Lunes a sábado, de 9 a 19") },
     { key: "variables", label: "Variables completas", ok: !holes.length, note: holes.length ? holes.map((h) => `{{${h}}}`).join(", ") : `{{inmobiliaria}} = «${it.shortName}»` },
@@ -1060,7 +1068,7 @@ export async function confirmExecution(input: { agencyId: unknown; stage?: unkno
   const e = await mark(it, v, "sent", actor.id, null, text || null);
   const warnings: string[] = [];
   const early = it.stage === "no-contactado" || it.stage === "no-responde";
-  if (v.channel === "whatsapp" && early) {
+  if (v.channel === "whatsapp" && early && it.action !== "encuesta_cierre") {
     try {
       const ds = await prospectDataset();
       let account = accountsByAgency(ds).get(it.agencyId);
@@ -1222,8 +1230,10 @@ export async function registerReply(
   const custom = rawClassification.startsWith("custom_") ? await resolveCustomClassification(rawClassification) : null;
   if (rawClassification.startsWith("custom_") && !custom) throw new HttpError(400, "Estado personalizado desconocido o inactivo. Revisá el catálogo.");
   if (custom) {
-    const current = (await board()).items.get(input.agencyId)?.stage;
-    if (!current || commercialOf(current) !== custom.definition.commercial_stage) {
+    const current = (await board()).items.get(input.agencyId);
+    const expected = custom.definition.commercial_stage;
+    const customStage = expected.startsWith("etapa_") ? (await customStages()).find(s => s.key === expected) : null;
+    if (!current || (customStage ? current.stage !== customStage.technical_stage || current.situation !== customStage.entry_situation : commercialOf(current.stage) !== expected)) {
       throw new HttpError(409, "Ese estado personalizado no corresponde a la etapa comercial actual.");
     }
   }
@@ -1329,7 +1339,7 @@ export async function listRules() {
  * la próxima lectura ya la usa. Queda en la auditoría.
  */
 export async function saveRule(key: unknown, input: Record<string, unknown>, actor: { id: string; name: string }) {
-  const clean = cleanRule(input, Object.keys(SITUATIONS).filter((x) => !CLOSED_SITUATIONS.includes(x as Situation)), ["principal", "seguimiento_2", "presentacion", "presentacion_seguimiento", "precios"], FOLLOWUP_STAGES.map((x) => x.key));
+  const clean = cleanRule(input, Object.keys(SITUATIONS).filter((x) => x === "rechazo" || !CLOSED_SITUATIONS.includes(x as Situation)), ["encuesta_cierre", "principal", "seguimiento_2", "presentacion", "presentacion_seguimiento", "precios"], FOLLOWUP_STAGES.map((x) => x.key));
   if ("error" in clean) throw new HttpError(400, clean.error);
   const db = adminClient();
   // Una regla nueva solo puede tener una acción de su etapa (las existentes incompatibles se pueden apagar, no crear).

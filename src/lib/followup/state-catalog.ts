@@ -1,7 +1,8 @@
 import "server-only";
 import { HttpError } from "@/lib/commerce/http";
 import { adminClient } from "@/lib/supabase/server";
-import { COMMERCIAL_STAGES, type CommercialStageKey } from "./stages";
+import { isCommercialStage } from "./stages";
+import { customStages } from "./commercial-catalog";
 import { CLOSED_SITUATIONS, REPLY_CLASSES, SITUATIONS, isReplyClass, type ReplyClass, type Situation } from "./plan";
 
 /**
@@ -14,7 +15,7 @@ export type StateDefinition = {
   label: string;
   description: string;
   examples: string;
-  commercial_stage: CommercialStageKey;
+  commercial_stage: string;
   source: "whatsapp" | "manual";
   maps_to: ReplyClass | null;
   active: boolean;
@@ -22,7 +23,7 @@ export type StateDefinition = {
 };
 
 const COLS = "key,label,description,examples,commercial_stage,source,maps_to,active,updated_at";
-const VALID_STAGE = COMMERCIAL_STAGES.filter((s) => s.key !== "cliente").map((s) => s.key);
+
 const CUSTOM = /^custom_[a-z0-9_]{3,60}$/;
 
 export async function readStateCatalog(): Promise<StateDefinition[]> {
@@ -46,7 +47,7 @@ export async function updateStateCatalog(input: Record<string, unknown>, actorId
   const active = input.active === true;
   if (!CUSTOM.test(key)) throw new HttpError(400, "La clave debe empezar con custom_ y usar minúsculas y guiones bajos.");
   if (label.length < 2 || label.length > 80) throw new HttpError(400, "El nombre debe tener entre 2 y 80 caracteres.");
-  if (!VALID_STAGE.some((s) => s === commercial_stage)) throw new HttpError(400, "Etapa comercial desconocida.");
+  if (!isCommercialStage(commercial_stage) && !(await customStages()).some(s => s.key === commercial_stage)) throw new HttpError(400, "Etapa comercial desconocida.");
   if (!["whatsapp", "manual"].includes(source)) throw new HttpError(400, "Origen de clasificación desconocido.");
   if (description.length > 800 || examples.length > 2000) throw new HttpError(400, "La descripción o los ejemplos son demasiado largos.");
   if (maps_to && (!isReplyClass(maps_to) || !(maps_to in SITUATIONS))) throw new HttpError(400, "La situación elegida no se puede usar para clasificar respuestas.");
@@ -83,5 +84,5 @@ export async function resolveCustomClassification(key: string): Promise<Resolved
 /** Classifier documentation for the extension. Closed states always remain no-contact. */
 export const canonicalClassifierOptions = () =>
   Object.entries(REPLY_CLASSES).map(([key, label]) => ({
-    key, label, permanent_stop: CLOSED_SITUATIONS.includes(key as Situation),
+    key, label, permanent_stop: key !== "rechazo" && CLOSED_SITUATIONS.includes(key as Situation),
   }));
