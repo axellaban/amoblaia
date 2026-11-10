@@ -6,6 +6,7 @@ import { recordSend } from "@/lib/prospecting/record-send";
 import { NO_STORE, prospectDataset, prospectFailure, prospectRpc } from "@/lib/prospecting/server";
 import { runSheetSync } from "@/lib/prospecting/sync";
 import { cachedFollowupSnapshot, invalidateFollowupSnapshot, operatorFor, runFollowupOp } from "@/lib/followup/chapa";
+import { readScript, saveScript } from "@/lib/followup/server";
 import { agencyDemoLink, agencyList, agencyPanel, agencyThumb, recalcScores, setDemosSent } from "@/lib/agency/external";
 import type { Dataset, ProspectAccount } from "@/lib/prospecting/types";
 import { sameSecret } from "@/lib/session";
@@ -101,6 +102,7 @@ export async function GET(request: Request) {
   try {
     if (!cloudEnabled() || !cloudConfigured()) throw new HttpError(503, "La base de prospección no está disponible.");
     const q = new URL(request.url).searchParams;
+    if (q.get("vista") === "script") return Response.json(await readScript(), { headers: NO_STORE });
     if (q.get("vista") === "inmobiliarias") return Response.json(await agencyList(), { headers: NO_STORE });
     if (q.get("vista") === "followup") return Response.json(await cachedFollowupSnapshot(await team(), parsePeriod({ periodo: q.get("periodo") ?? "", desde: q.get("desde") ?? "", hasta: q.get("hasta") ?? "" })), { headers: NO_STORE });
     if (q.get("foto")) {
@@ -233,6 +235,7 @@ export async function POST(request: Request) {
     if (b?.followup && typeof b.followup === "object") {
       const f = b.followup as Record<string, unknown>;
       const actor = operatorFor(str(b.by, 80), await team(), await actorId());
+      if (f.op === "script-save") return Response.json(await saveScript(f.body, actor.id), { headers: NO_STORE });
       const result = await runFollowupOp(f.op, f, actor, new URL(request.url).origin);
       if (f.op !== "queue" && f.op !== "replies") invalidateFollowupSnapshot();
       return Response.json(result, { headers: NO_STORE });
