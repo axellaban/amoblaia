@@ -55,7 +55,7 @@ export default async function FollowupPage({ searchParams }: { searchParams: Pro
       {data && typeof data === "object" ? (
         <FollowupBoard chartStep={step} chart={<CommercialFunnelChart funnel={data.chart} lostAt={data.lostAt} period={period} step={step} stayed={stayed} lostOnly={false}
           href={href} presetHref={key => href({ periodo: key, desde: null, hasta: null })} action="/admin/follow-up"
-          rangeFields={<><input type="hidden" name="vista" value="embudo" />{step !== null && <input type="hidden" name="paso" value={step} />}{stayed && <input type="hidden" name="quedo" value="1" />}</>} />} stages={data.stages} queue={data.queue} blocked={data.blocked} noInteresados={data.noInteresados} summary={data.summary} inbox={data.inbox} funnel={data.funnel} rules={data.rules} changes={data.changes} results={data.results} generatedAt={data.generatedAt} />
+          rangeFields={<><input type="hidden" name="vista" value="embudo" />{step !== null && <input type="hidden" name="paso" value={step} />}{stayed && <input type="hidden" name="quedo" value="1" />}</>} />} stages={data.stages} queue={data.queue} blocked={data.blocked} noInteresados={data.noInteresados} summary={data.summary} agencies={data.agencies} inbox={data.inbox} funnel={data.funnel} rules={data.rules} changes={data.changes} results={data.results} generatedAt={data.generatedAt} />
       ) : (
         <div className="account-panel" role="alert">
           <h2>No pudimos cargar Follow-up</h2>
