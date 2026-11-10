@@ -141,3 +141,14 @@ describe("Acciones de tareas internas en Follow-up", () => {
     expect(compatible("no-abrio", "principal")).toBe(true);
   });
 });
+
+
+describe("Recontactar sin mezclar situación con etapa", () => {
+  it("no dispara reglas genéricas ni cambia el progreso del funnel", () => {
+    for (const situation of ["recontactar_vacaciones", "recontactar_mas_adelante"] as const) {
+      expect(nextAction("no-responde", situation, {}).action).toBeNull();
+      expect(nextAction("sin-demo", situation, {}).action).toBeNull();
+      expect(nextAction("no-abrio", situation, {}).action).toBeNull();
+    }
+  });
+});
