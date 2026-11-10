@@ -7,7 +7,7 @@ import { ArrowLeft, ArrowRight, Building2, CalendarDays, CheckCheck, ChevronDown
 import { api } from "@/components/admin-demos";
 import { CTA_KEYS, CTA_LABEL, COMMERCIAL_STAGES, FOLLOWUP_STAGES, OUT, VARIABLES, commercialOf, isCommercialStage, technicalOf, technicalStateLabel, fillMessage, missingVariables, pct, type Channel, type Cta, type CommercialStageKey, type StageKey, type VersionStatus } from "@/lib/followup/stages";
 import { GROUPS, REPLY_CLASSES, SITUATIONS, QUEUE_ORDERS, actionLabel, actionsOf, byQueueOrder, commercialTier, compatible, splitMessages, type QueueOrder, type Action, type ReplyClass, type Situation } from "@/lib/followup/plan";
-import type { Change, FunnelStep, InboxItem, Prepared, QueueItem, QueueSummary, QueueView, Results, StageView } from "@/lib/followup/server";
+import type { AgencyChoice, Change, FunnelStep, InboxItem, Prepared, QueueItem, QueueSummary, QueueView, Results, StageView } from "@/lib/followup/server";
 import { NO_FILTER, OTHER_RULES, isEmptyFilter, matchesFilter, stageRules, type QueueFilter } from "@/lib/followup/queue-filter";
 import type { CohortRow, WindowKey } from "@/lib/followup/results";
 import type { CustomStage } from "@/lib/followup/commercial-catalog";
@@ -35,6 +35,22 @@ const PAGE = 25;
 function ago(iso: string) {
   const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
   return days <= 0 ? "hoy" : days === 1 ? "hace 1 día" : `hace ${days} días`;
+}
+const WHATSAPP_TAB = "habita-followup-whatsapp";
+function whatsappNoText(link:string) {
+  try {
+    const u = new URL(link);
+    if(u.protocol!=="https:" || !["wa.me","web.whatsapp.com","api.whatsapp.com"].includes(u.hostname))return "";
+    u.searchParams.delete("text");
+    return u.toString();
+  } catch {return "";}
+}
+function openWhatsappReuse(link:string){
+  try {
+    const u=new URL(link);
+    if(u.protocol!=="https:" || !["wa.me","web.whatsapp.com","api.whatsapp.com"].includes(u.hostname))return;
+    window.open(u.toString(),WHATSAPP_TAB);
+  } catch { /* invalid link: no navigation */ }
 }
 const SOURCE_LABEL = { followup: "Follow-up", adquisicion: "Adquisición", inmobiliaria: "La inmobiliaria" } as const;
 const day = (iso: string) => new Date(iso).toLocaleDateString("es-AR", { day: "numeric", month: "short", timeZone: "America/Argentina/Buenos_Aires" });
@@ -74,6 +90,7 @@ export function FollowupBoard({
   blocked,
   noInteresados,
   summary,
+  agencies,
   inbox,
   funnel,
   rules,
@@ -87,6 +104,7 @@ export function FollowupBoard({
   blocked: QueueItem[];
   noInteresados: QueueItem[];
   summary: QueueSummary;
+  agencies: AgencyChoice[];
   inbox: InboxItem[];
   funnel: FunnelStep[];
   rules: Rule[];
@@ -109,7 +127,7 @@ export function FollowupBoard({
     setCatalogError("");
   }, []);
   const [queueState, setQueueState] = useState<QueueState>(QUEUE_START);
-  const initial = useMemo<QueueView>(() => ({ queue, blocked, noInteresados, summary, rules, generatedAt }), [queue, blocked, noInteresados, summary, rules, generatedAt]);
+  const initial = useMemo<QueueView>(() => ({ queue, blocked, noInteresados, summary, agencies, stageCounts: Object.fromEntries(FOLLOWUP_STAGES.map(st => [st.key, stages.find(x=>x.key===st.key)?.queue.length??0])), rules, generatedAt }), [queue, blocked, noInteresados, summary, agencies, stages, rules, generatedAt]);
   const [view, setView] = useState<View>(() => {
     if (typeof window === "undefined") return "cola";
     const v = new URLSearchParams(window.location.search).get("vista");
@@ -145,7 +163,7 @@ export function FollowupBoard({
       {view === "etapas" ? <StageSettings custom={custom} reload={reloadCatalog} rules={rules} /> : view === "cola" ? (
         <ExecCenter initial={initial} stages={stages} state={queueState} setState={setQueueState} onReplies={() => go("respuestas")} />
       ) : view === "respuestas" ? (
-        <Inbox inbox={inbox} agencies={[...queue, ...blocked, ...noInteresados]} />
+        <Inbox inbox={inbox} agencies={agencies} />
       ) : view === "embudo" ? (
         <Funnel key={chartStep ?? "all"} chart={chart} chartStep={chartStep} custom={custom} funnel={funnel} stages={stages} rules={rules} onRules={() => go("reglas")} />
       ) : view === "resultados" ? (
@@ -194,6 +212,109 @@ function afterConfirm(q: QueueItem, rules: Rule[]) {
  * ejecutando. «Tomar la próxima» y «Siguiente contacto» piden al servidor la
  * próxima que entra en los filtros elegidos (no la de la lista guardada acá).
  */
+function ResumeHandoff({item,onSaved}:{item:QueueItem;onSaved:()=>void}){
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState("");
+  if(!item.handoffTo)return null;
+  async function resume(){
+    setBusy(true);setError("");
+    try {await api("/api/admin/follow-up/inmobiliarias",{method:"POST",body:JSON.stringify({accion:"handoff",inmobiliaria:item.agencyId,para:null})});onSaved();}
+    catch(e){setError(e instanceof Error?e.message:"No se pudo retomar.");}
+    finally{setBusy(false);}
+  }
+  return <span><button type="button" className="button button-small button-outline" disabled={busy} data-testid="followup-handoff-resume"
+    onClick={()=>void resume()}>Retomar (pasada a {item.handoffTo})</button>{error&&<small role="alert" className="fu-error">{error}</small>}</span>;
+}
+
+function ManualGreeting({ agencyId, onDone }: { agencyId: string; onDone: () => void }) {
+  const localNow = () => new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,16);
+  const [at,setAt]=useState(localNow);
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState("");
+  const [saved,setSaved]=useState("");
+  async function save(e:React.FormEvent){
+    e.preventDefault();setBusy(true);setError("");setSaved("");
+    try {
+      const when=new Date(at);
+      if(!Number.isFinite(when.getTime()))throw new Error("Indicá la hora real del saludo.");
+      const result=await api<{warning?:string|null}>("/api/admin/followup/greeting",{
+        method:"POST",body:JSON.stringify({inmobiliaria:agencyId,hora:when.toISOString()})
+      });
+      if(result.warning)setSaved(result.warning);else setSaved("Saludo registrado.");
+      onDone();
+    }catch(err){setError(err instanceof Error?err.message:"No se pudo registrar.");}
+    finally{setBusy(false);}
+  }
+  return <details data-testid="followup-already-greeted" style={{display:"inline-block",margin:"3px 0"}}>
+    <summary className="button button-small button-outline" style={{cursor:"pointer",listStyle:"none"}}>Ya saludado</summary>
+    <form onSubmit={save} style={{display:"grid",gap:6,padding:9,background:"#fff",borderRadius:8,border:"1px solid #dce7df",minWidth:205}}>
+      <label style={{display:"grid",gap:3,fontSize:12}}>Hora real del saludo
+        <input type="datetime-local" value={at} onChange={e=>setAt(e.target.value)} required />
+      </label>
+      <button type="submit" className="button button-small button-primary" disabled={busy}>{busy?"Registrando…":"Registrar saludo"}</button>
+      {error&&<span role="alert" className="fu-error">{error}</span>}
+      {saved&&<span role="status">{saved}</span>}
+    </form>
+  </details>;
+}
+
+function QuotaBanner({ summary, onSaved }: { summary: QueueSummary; onSaved: () => void }) {
+  const [outside, setOutside] = useState(String(summary.outsideToday));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => { setOutside(String(summary.outsideToday)); }, [summary.outsideToday]);
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true); setError("");
+    try {
+      await api("/api/admin/follow-up/cupo", { method: "PUT", body: JSON.stringify({ outsideToday: Number(outside) }) });
+      onSaved();
+    } catch (err) { setError(err instanceof Error ? err.message : "No pudimos actualizar el cupo."); }
+    finally { setSaving(false); }
+  }
+  return <div className="fu-qbanner" data-testid="followup-first-contact-capacity" style={{display:"grid",gap:9}}>
+    <span><Info size={16} aria-hidden="true" /> Primeros contactos · últimas 24 h:
+      <b> {summary.newToday} registrados + {summary.outsideToday} externos / {summary.cap}</b>.
+      <b> {summary.newRemaining} restantes</b>{summary.newWaiting ? ` · ${summary.newWaiting} esperan cupo` : ""}.
+    </span>
+    <form onSubmit={save} style={{display:"flex",gap:8,alignItems:"end",flexWrap:"wrap"}}>
+      <label style={{display:"grid",gap:3,fontSize:12}}>
+        Saludos enviados fuera de HABITA (últimas 24 h)
+        <input type="number" min={0} max={10000} step={1} value={outside}
+          onChange={e=>setOutside(e.target.value)} aria-label="Saludos enviados fuera de HABITA (últimas 24 h)" required />
+      </label>
+      <button type="submit" className="button button-small button-outline" disabled={saving}>{saving?"Guardando…":"Actualizar cupo"}</button>
+    </form>
+    <small>Estimación manual durante 24 h desde la actualización. Para evitar duplicados, incluí acá solo saludos externos que NO hayas registrado con «Ya saludado».</small>
+    {error && <span role="alert" className="fu-error">{error}</span>}
+  </div>;
+}
+
+function QuotaRuleSettings() {
+  const [cap,setCap]=useState("48");
+  const [saving,setSaving]=useState(false);
+  const [error,setError]=useState("");
+  const [saved,setSaved]=useState("");
+  const router=useRouter();
+  useEffect(()=>{void api<{cap:number}>("/api/admin/follow-up/cupo").then(r=>setCap(String(r.cap))).catch(e=>setError(e instanceof Error?e.message:"No pudimos leer el cupo."));},[]);
+  async function save(e:React.FormEvent) {
+    e.preventDefault();setSaving(true);setError("");setSaved("");
+    try {
+      await api("/api/admin/follow-up/cupo",{method:"PUT",body:JSON.stringify({cap:Number(cap)})});
+      setSaved("Tope actualizado.");router.refresh();
+    } catch(err){setError(err instanceof Error?err.message:"No se pudo guardar.");}
+    finally{setSaving(false);}
+  }
+  return <form data-testid="followup-quota-rules" onSubmit={save} className="fu-detail-card"
+    style={{display:"flex",gap:12,alignItems:"end",flexWrap:"wrap",padding:14,marginBottom:12}}>
+    <label style={{display:"grid",gap:5}}>Máximo de primeros contactos · 24 h móviles
+      <input type="number" min={1} max={500} step={1} value={cap} onChange={e=>setCap(e.target.value)} required />
+    </label>
+    <button type="submit" className="button button-small button-primary" disabled={saving}>{saving?"Guardando…":"Guardar límite"}</button>
+    {saved&&<span role="status">{saved}</span>}{error&&<span role="alert" className="fu-error">{error}</span>}
+  </form>;
+}
+
 function ExecCenter({
   initial,
   stages,
@@ -401,15 +522,7 @@ function ExecCenter({
         </div>
       )}
 
-      {commercial === "prospectado" && (
-        <div className="fu-qbanner" data-testid="followup-first-contact-capacity">
-          <Info size={16} aria-hidden="true" />
-          <span>Primeros contactos · ventana móvil de 24 h: <b>{summary.newToday}/{summary.cap}</b> registrados.
-            <b> {summary.newRemaining} cupos restantes</b>{summary.newWaiting ? ` · ${summary.newWaiting} esperan cupo` : ""}.
-            Los mensajes enviados fuera de Habita no se pueden contar automáticamente.
-          </span>
-        </div>
-      )}
+      {commercial === "prospectado" && <QuotaBanner summary={summary} onSaved={() => void refresh()} />}
       <div className="fu-qbanner" data-testid="followup-queue-banner">
         <Info size={16} aria-hidden="true" />
         <span className="fu-grow">{banner}</span>
@@ -517,6 +630,8 @@ function ExecCenter({
                           <Link href={`/admin/inmobiliarias/${q.agencyId}`}>{q.name}</Link>
                           <span>{f.stage ? (q.person ?? "—") : stageTitle(q.stage)}</span>
                           <QueueCorrection item={q} onSaved={() => void refresh()} />
+                          <ResumeHandoff item={q} onSaved={()=>void refresh()} />
+                          {q.stage === "no-contactado" && status !== "sent" && <ManualGreeting agencyId={q.agencyId} onDone={() => void refresh()} />}
                         </div>
                         <span className="fu-cell">{q.zone ?? "—"}</span>
                         <span className="fu-cell">
@@ -808,11 +923,13 @@ function ExecPanel({
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState(exec?.status ?? "pending");
   const [panel, setPanel] = useState<"none" | "fail" | "snooze">("none");
+  const [confirmSnooze,setConfirmSnooze]=useState(false);
   const [kind, setKind] = useState<keyof typeof FAIL_KINDS>("otro");
   const [reason, setReason] = useState("");
   const [snoozeKey, setSnoozeKey] = useState<(typeof SNOOZE)[number]["key"]>("manana");
   const [snoozeDate, setSnoozeDate] = useState("");
   const [priority, setPriority] = useState(item.priority);
+  const [handoffTo,setHandoffTo]=useState<"Facu"|"Axel">("Facu");
   const sent = status === "sent";
 
   const load = () =>
@@ -863,6 +980,12 @@ function ExecPanel({
       onDone({ status: "failed", at: new Date().toISOString(), reason: `Reprogramada para el ${when(r.snoozedUntil)}` });
       onNext();
     }
+  }
+  async function handoff(){
+    const r=await post<{handoffTo:string}>("/api/admin/follow-up/inmobiliarias",{
+      accion:"handoff",inmobiliaria:item.agencyId,para:handoffTo
+    });
+    if(r){setNotice(`Pasada a ${handoffTo}.`);onNext();}
   }
   async function changePriority(p: string) {
     setPriority(p as QueueItem["priority"]);
@@ -978,9 +1101,13 @@ function ExecPanel({
         {prepared && !task && (
           <>
             {prepared.whatsappUrl ? (
-              <a className={`button button-small${status === "pending" || status === "failed" ? " button-primary" : " button-outline"}`} data-testid="followup-open" href={prepared.whatsappUrl} target="habita-whatsapp" rel="noreferrer" onClick={() => !sent && void mark("opened")}>
+              <>
+              <a className={`button button-small${status === "pending" || status === "failed" ? " button-primary" : " button-outline"}`} data-testid="followup-open" href={prepared.whatsappUrl} onClick={(e) => {e.preventDefault();openWhatsappReuse(prepared.whatsappUrl!);if(!sent)void mark("opened");}}>
                 <MessageCircle size={16} aria-hidden="true" /> 1. Abrir WhatsApp{many ? " con el mensaje 1" : ""}
               </a>
+              <button type="button" className="button button-small button-outline" data-testid="followup-open-without-text"
+                onClick={() => openWhatsappReuse(whatsappNoText(prepared.whatsappUrl!))}>Abrir sin texto</button>
+              </>
             ) : (
               <span className="button button-small button-outline is-disabled" data-testid="followup-open" aria-disabled="true">
                 <MessageCircle size={16} aria-hidden="true" /> 1. Abrir WhatsApp
@@ -1012,6 +1139,15 @@ function ExecPanel({
             <button type="button" className={`button button-small button-outline${panel === "fail" ? " is-active" : ""}`} data-testid="followup-failed" onClick={() => setPanel(panel === "fail" ? "none" : "fail")}>
               {task ? "No se pudo" : "No se envió"}
             </button>
+            <details data-testid="followup-handoff" style={{display:"inline-block"}}>
+              <summary className="button button-small button-outline" style={{cursor:"pointer"}}>Pasar a Facu - Axel</summary>
+              <div style={{display:"flex",gap:6,padding:8}}>
+                <select value={handoffTo} onChange={e=>setHandoffTo(e.target.value as "Facu"|"Axel")} aria-label="Responsable">
+                  <option value="Facu">Facu</option><option value="Axel">Axel</option>
+                </select>
+                <button type="button" className="button button-small button-primary" disabled={busy} onClick={()=>void handoff()}>Confirmar pase</button>
+              </div>
+            </details>
             <button type="button" className={`button button-small button-outline${panel === "snooze" ? " is-active" : ""}`} data-testid="followup-snooze" onClick={() => setPanel(panel === "snooze" ? "none" : "snooze")}>
               Omitir / reprogramar
             </button>
@@ -1043,11 +1179,13 @@ function ExecPanel({
             </select>
             {snoozeKey === "fecha" && <input type="date" value={snoozeDate} onChange={(e) => setSnoozeDate(e.target.value)} aria-label="Fecha" />}
             <input value={reason} maxLength={300} placeholder="Motivo (ej.: pidió hablar después)" onChange={(e) => setReason(e.target.value)} aria-label="Motivo" />
-            <button type="button" className="button button-small button-outline" data-testid="followup-snooze-save" disabled={busy} onClick={snooze}>
+            <button type="button" className="button button-small button-outline" data-testid="followup-snooze-save" disabled={busy} onClick={()=>setConfirmSnooze(true)}>
               Reprogramar
             </button>
           </div>
         )}
+        {confirmSnooze && <ConfirmActionDialog title="Reprogramar contacto" description="La inmobiliaria saldrá de la cola hasta la fecha seleccionada. No se marcará ningún envío." busy={busy}
+          onCancel={()=>setConfirmSnooze(false)} onConfirm={()=>{setConfirmSnooze(false);void snooze();}} />}
         {closed && (
           <button type="button" className="button button-small button-primary" data-testid="followup-next" disabled={taking} onClick={onNext}>
             {taking ? "Buscando…" : "Siguiente contacto →"}
@@ -1101,7 +1239,7 @@ function ExecPanel({
  * clasificar o mandó a Facu. Clasificarla aplica la situación (con el texto
  * como evidencia) y la cola sabe qué hacer después.
  */
-function Inbox({ inbox, agencies }: { inbox: InboxItem[]; agencies: QueueItem[] }) {
+function Inbox({ inbox, agencies }: { inbox: InboxItem[]; agencies: AgencyChoice[] }) {
   const router = useRouter();
   const [selected, setSelected] = useState<string | null>(inbox[0]?.id ?? null);
   const [adding, setAdding] = useState(false);
@@ -1245,13 +1383,19 @@ function ReplyDetail({ reply: r, onDone }: { reply: InboxItem; onDone: () => voi
   );
 }
 
-function ReplyForm({ agencies, onDone }: { agencies: QueueItem[]; onDone: () => void }) {
+function ReplyForm({ agencies, onDone }: { agencies: AgencyChoice[]; onDone: () => void }) {
   const [agency, setAgency] = useState("");
+  const [agencySearch, setAgencySearch] = useState("");
   const [text, setText] = useState("");
   const [c, setC] = useState<ReplyClass | "">("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const options = [...agencies].sort((a, b) => a.name.localeCompare(b.name));
+  const needle = agencySearch.toLowerCase().trim();
+  const digits = needle.replace(/\D/g, "");
+  const options = [...agencies].filter((a) => !needle ||
+    a.name.toLowerCase().includes(needle) ||
+    (digits.length >= 3 && (a.phone||"").replace(/\D/g, "").includes(digits)))
+    .sort((a,b)=>a.name.localeCompare(b.name)).slice(0,100);
   async function save() {
     setBusy(true);
     setError("");
@@ -1270,11 +1414,12 @@ function ReplyForm({ agencies, onDone }: { agencies: QueueItem[]; onDone: () => 
       <div className="fu-add-grid">
         <label>
           <span>Inmobiliaria</span>
+          <input type="search" value={agencySearch} onChange={(e) => {setAgencySearch(e.target.value);setAgency("");}} placeholder="Buscar por nombre o teléfono" aria-label="Buscar inmobiliaria por nombre o teléfono" />
           <select value={agency} onChange={(e) => setAgency(e.target.value)}>
             <option value="">Elegí…</option>
             {options.map((q) => (
               <option key={q.agencyId} value={q.agencyId}>
-                {q.name}
+                {q.name}{q.phone ? ` · ${q.phone}` : ""}
               </option>
             ))}
           </select>
@@ -1676,6 +1821,7 @@ function RulesWorkspace({ stages, rules, changes }: { stages: StageView[]; rules
   }
   return (
     <>
+      <QuotaRuleSettings />
       <div className="fu-flowrow">
         <span className="fu-lbl fu-flowlabel">Etapas comerciales</span>
         <nav className="fu-flow" aria-label="Etapas comerciales" data-testid="followup-flow">
@@ -3201,6 +3347,19 @@ function WhatsAppShortcut({ item: q }: { item: QueueItem }) {
 }
 
 /** Corrección manual explícita; no envía mensajes ni confirma tareas. */
+function ConfirmActionDialog({title,description,onConfirm,onCancel,busy=false}:{title:string;description:string;onConfirm:()=>void;onCancel:()=>void;busy?:boolean}){
+  return <div className="fu-action-modal-backdrop" role="presentation" onClick={onCancel} style={{position:"fixed",inset:0,background:"#102f2270",zIndex:10000,display:"grid",placeItems:"center",padding:16}}>
+    <div role="dialog" aria-modal="true" aria-label={title} onClick={e=>e.stopPropagation()}
+      style={{background:"#fff",maxWidth:430,width:"100%",padding:20,borderRadius:14,display:"grid",gap:12,boxShadow:"0 18px 50px #0004"}}>
+      <h3 style={{margin:0}}>{title}</h3><p style={{margin:0,fontSize:14}}>{description}</p>
+      <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
+        <button type="button" className="button button-small button-outline" onClick={onCancel} disabled={busy}>Cancelar</button>
+        <button type="button" className="button button-small button-primary" onClick={onConfirm} disabled={busy}>{busy?"Guardando…":"Confirmar"}</button>
+      </div>
+    </div>
+  </div>;
+}
+
 function QueueCorrection({ item: q, onSaved }: { item: QueueItem; onSaved: () => void }) {
   const catalog = useContext(SituationCatalog);
   const [stage, setStage] = useState<StageKey>(q.stage);
@@ -3208,9 +3367,11 @@ function QueueCorrection({ item: q, onSaved }: { item: QueueItem; onSaved: () =>
   const [note, setNote] = useState(q.situationNote ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  async function save() {
+  const [confirmStage,setConfirmStage]=useState(false);
+  async function save(approved = false) {
     if (stage === q.stage && situation === q.situation && note === (q.situationNote ?? "")) return;
-    if (stage !== q.stage && !window.confirm("¿Corregir la etapa comercial? Esto cambia las acciones pendientes, no crea eventos de producto ni envía WhatsApps.")) return;
+    if(stage!==q.stage&&!approved){setConfirmStage(true);return;}
+    setConfirmStage(false);
     setBusy(true);
     setError("");
     try {
@@ -3253,6 +3414,8 @@ function QueueCorrection({ item: q, onSaved }: { item: QueueItem; onSaved: () =>
         <small>No interesado permite una única despedida con encuesta; «No contactar» impide nuevos envíos.</small>
         {error && <span className="fu-error" role="alert">{error}</span>}
         <button className="button button-small button-primary" type="button" disabled={busy} data-testid="followup-quick-save" onClick={() => void save()}>{busy ? "Guardando…" : "Guardar corrección"}</button>
+        {confirmStage && <ConfirmActionDialog title="Corregir etapa" description="Esto cambia las tareas pendientes, pero no crea eventos de producto ni envía WhatsApps." busy={busy}
+          onCancel={()=>setConfirmStage(false)} onConfirm={()=>void save(true)} />}
       </div>
     </details>
   );

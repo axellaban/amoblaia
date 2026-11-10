@@ -45,7 +45,6 @@ import {
 } from "./stages";
 import {
   CLOSED_SITUATIONS,
-  DAILY_NEW_CAP,
   allocateFirstContactSlots,
   remainingFirstContactSlots,
   SITUATIONS,
@@ -123,9 +122,11 @@ type AgencyExtra = {
   priority: Priority | null;
   snooze_until: string | null;
   snooze_reason: string | null;
+  handoff_to: "Facu" | "Axel" | null;
+  handoff_at: string | null;
 };
 const extras = async (agencyId?: string) => {
-  let q = adminClient().from("followup_agencies").select("agency_id,stage_override,override_step,address,zone,score,situation,situation_step,situation_note,situation_at,rejection_stage,catalog_situation,short_name,priority,snooze_until,snooze_reason");
+  let q = adminClient().from("followup_agencies").select("agency_id,stage_override,override_step,address,zone,score,situation,situation_step,situation_note,situation_at,rejection_stage,catalog_situation,short_name,priority,snooze_until,snooze_reason,handoff_to,handoff_at");
   if (agencyId) q = q.eq("agency_id", agencyId);
   const { data, error } = await q.limit(20000);
   if (error) throw missing(error) ? new HttpError(409, MISSING) : new Error("FOLLOWUP_READ_FAILED");
@@ -178,8 +179,8 @@ function sheetFacts(row: Record<string, unknown>): SheetFacts {
 /** The agency's web and contact name, and its prospecting account's address (optional sources: missing reads as nothing). */
 async function details(agencyId?: string) {
   const [agencies, accounts] = await Promise.all([
-    readAll<{ id: string; website: string | null; contact_name: string | null }>("agencies", "id,website,contact_name").catch(() => []),
-    readAll<{ agency_id: string; address: string | null; stage: string; source_data: Record<string, unknown> | null }>("prospect_accounts", "agency_id,address,stage,source_data").catch(() => []),
+    readAll<{ id: string; website: string | null; contact_name: string | null }>("agencies", "id,website,contact_name"),
+    readAll<{ agency_id: string; address: string | null; stage: string; source_data: Record<string, unknown> | null }>("prospect_accounts", "agency_id,address,stage,source_data"),
   ]);
   const only = <T extends { id?: string; agency_id?: string }>(list: T[]) => (agencyId ? list.filter((x) => (x.id ?? x.agency_id) === agencyId) : list);
   return {
@@ -289,6 +290,7 @@ export type QueueItem = {
   group: Group;
   /** Por qué no se puede ejecutar ahora; null: está en la cola. */
   blocked: string | null;
+  handoffTo: "Facu" | "Axel" | null;
   /** Lo que el agente revisa antes de mandar (número sin validar, un WhatsApp abierto sin confirmar). */
   checks: string[];
   /** Otra sesión la tiene tomada (o esta misma). */
@@ -339,6 +341,7 @@ export type QueueSummary = {
   claimed: number;
   doneToday: number;
   newToday: number;
+  outsideToday: number;
   cap: number;
   /** Real capacity in the rolling 24-hour window, not all waiting prospects. */
   newRemaining: number;
@@ -353,6 +356,35 @@ const claims = async () => {
 };
 
 const DAY_MS = 86_400_000;
+export type QuotaSettings = { cap: number; outsideToday: number; externalUpdatedAt: string | null };
+export async function readQuotaSettings(now = new Date()): Promise<QuotaSettings> {
+  const { data, error } = await adminClient().from("followup_quota_settings")
+    .select("cap,external_count,external_updated_at").eq("id", true).single();
+  if(error || !data) throw new HttpError(503, "No se pudo consultar el cupo. Verificá la migración de configuración.");
+  const stamped = data.external_updated_at ? Date.parse(data.external_updated_at) : NaN;
+  return { cap: data.cap, outsideToday: Number.isFinite(stamped) && stamped > now.getTime()-DAY_MS ? data.external_count : 0,
+    externalUpdatedAt: data.external_updated_at };
+}
+export async function updateQuotaSettings(
+  input: { cap?: unknown; outsideToday?: unknown },
+  actor: { id: string; name: string },
+) {
+  const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if(input.cap!==undefined){
+    if(!Number.isInteger(input.cap)||Number(input.cap)<1||Number(input.cap)>500)throw new HttpError(400,"El límite debe ser un número entre 1 y 500.");
+    patch.cap=input.cap;
+  }
+  if(input.outsideToday!==undefined){
+    if(!Number.isInteger(input.outsideToday)||Number(input.outsideToday)<0||Number(input.outsideToday)>10000)throw new HttpError(400,"Indicá cuántos saludos enviaste fuera de Habita.");
+    patch.external_count=input.outsideToday;
+    patch.external_updated_at=new Date().toISOString();
+  }
+  const {error}=await adminClient().from("followup_quota_settings").update(patch).eq("id",true);
+  if(error)throw new HttpError(503,"No se pudo guardar la configuración del cupo.");
+  await audit("quota",actor,{to:JSON.stringify(patch)}).catch(()=>undefined);
+  return readQuotaSettings();
+}
+
 const whenText = (iso: string) => new Date(iso).toLocaleString("es-AR", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "America/Argentina/Buenos_Aires" });
 
 /**
@@ -362,16 +394,16 @@ const whenText = (iso: string) => new Date(iso).toLocaleString("es-AR", { day: "
  * so the counters match the rows.
  */
 async function board(now = new Date()) {
-  const [rows, ds, vs, ex, extra, info, held, open, rules, overrides, catalog, extraStages] = await Promise.all([
+  const [rows, ds, vs, ex, extra, info, held, open, rules, overrides, catalog, extraStages, quota] = await Promise.all([
     commercialRows(),
-    prospectDataset().catch(() => null),
+    prospectDataset({ syncConversions: false }),
     versions(),
     executions(),
     extras(),
     details(),
     claims(),
     openReplies(),
-    readRules(), readSituationOverrides(), readStateCatalog(), customStages(),
+    readRules(), readSituationOverrides(), readStateCatalog(), customStages(), readQuotaSettings(now),
   ]);
   const accounts = accountsByAgency(ds);
   const exOf = new Map<string, FollowupExecution[]>();
@@ -502,15 +534,16 @@ async function board(now = new Date()) {
       lastReply: lastReply.get(r.id) ?? null,
       needsDemo: Boolean(version && /\{\{\s*demo\s*\}\}/.test(version.body)),
     });
+    if(own?.handoff_to)it.blocked=`Pasada a ${own.handoff_to}. Retomar para volver a ejecutar.`;
     items.set(r.id, it);
   }
   // Respect remaining first-contact capacity rather than calling every
   // prospect "ready" until the 50th send. Claims reserve capacity first.
   // This only governs registered sends; WhatsApp Web activity outside Habita
   // cannot be inferred or counted here.
-  const allocated = allocateFirstContactSlots([...items.values()], fresh.size, now.getTime());
+  const allocated = allocateFirstContactSlots([...items.values()], fresh.size + quota.outsideToday, now.getTime(), quota.cap);
   for (const candidate of allocated.waiting)
-    candidate.blocked = `Sin cupo para primer contacto: ${fresh.size} enviados en 24 h, máximo ${DAILY_NEW_CAP}. Se habilitará al liberarse un cupo.`;
+    candidate.blocked = `Sin cupo para primer contacto: ${fresh.size} registrados y ${quota.outsideToday} externos en 24 h, máximo ${quota.cap}. Se habilitará al liberarse un cupo.`;
 
   // Fase 4: the moment each execution converted, recorded the first time it is seen (the exact time when known).
   const firstDemo = new Map<string, number>();
@@ -554,7 +587,7 @@ async function board(now = new Date()) {
     step: stepNow.get(id) ?? -1,
     greetingVersion: greeting.get(id) ?? null,
   }));
-  return { rows, items, closedItems, vs, ex, stepNow, newToday: fresh.size, open, names: new Map(rows.map((r) => [r.id, r.name])), rules, facts,
+  return { rows, items, closedItems, vs, ex, stepNow, newToday: fresh.size, quota, open, names: new Map(rows.map((r) => [r.id, r.name])), rules, facts,
     // Catalog already fetched to calculate which actions are eligible; reuse it
     // in the Chapa snapshot instead of making three additional DB round trips.
     catalog: { stages: extraStages, states: catalog, overrides },
@@ -579,7 +612,7 @@ function blockReason(
   if (f.needsDemo && !it.hasDemo) return "Variable incompleta: el mensaje lleva {{demo}} y todavía no tiene una demo publicada.";
   const channel = it.versionChannel;
   if (channel === "whatsapp" && !it.wa) return "Sin WhatsApp: cargalo en la ficha o marcala «Sin WhatsApp».";
-  if (channel === "whatsapp" && it.group === "nuevos" && f.newToday >= DAILY_NEW_CAP) return `Tope de ${DAILY_NEW_CAP} conversaciones nuevas en 24 horas alcanzado.`;
+  // Capacity is allocated once across the whole board using the DB-configured limit; no second hardcoded cap here.
   if (channel === "whatsapp") return it.window ? outsideWindow(it.window, f.now) : outsideHours(it.group, f.now);
   return null;
 }
@@ -664,6 +697,7 @@ function item(
     catalogSituation: sit.manual ? own?.catalog_situation : null,
     situationManual: sit.manual,
     situationNote: sit.manual ? (own?.situation_note ?? null) : null,
+    handoffTo: own?.handoff_to ?? null,
     action,
     actionLabel: action ? actionLabel(stage, action) : null,
     group: groupOf(stage, action),
@@ -720,7 +754,7 @@ function resultsOf(b: Awaited<ReturnType<typeof board>>, all: QueueItem[]) {
     blocks: blockReasons(all.filter((q) => q.action && q.execution?.status !== "sent" && q.blocked).map((q) => q.blocked!)),
   };
 }
-export async function followupOverview(period: Period = parsePeriod({})): Promise<{ chart: ReturnType<typeof chartCounts>; lostAt: number[]; chartRows: { agencyId: string; name: string; step: number | null; lost: boolean; score: number | null; whatsapp: string | null }[]; catalog: { stages: Awaited<ReturnType<typeof customStages>>; states: Awaited<ReturnType<typeof readStateCatalog>>; overrides: Awaited<ReturnType<typeof readSituationOverrides>> }; stages: StageView[]; queue: QueueItem[]; blocked: QueueItem[]; noInteresados: QueueItem[]; summary: QueueSummary; inbox: InboxItem[]; funnel: FunnelStep[]; rules: Rule[]; changes: Change[]; results: Results; generatedAt: string }> {
+export async function followupOverview(period: Period = parsePeriod({})): Promise<{ chart: ReturnType<typeof chartCounts>; lostAt: number[]; chartRows: { agencyId: string; name: string; step: number | null; lost: boolean; score: number | null; whatsapp: string | null }[]; catalog: { stages: Awaited<ReturnType<typeof customStages>>; states: Awaited<ReturnType<typeof readStateCatalog>>; overrides: Awaited<ReturnType<typeof readSituationOverrides>> }; stages: StageView[]; queue: QueueItem[]; blocked: QueueItem[]; noInteresados: QueueItem[]; summary: QueueSummary; agencies: AgencyChoice[]; inbox: InboxItem[]; funnel: FunnelStep[]; rules: Rule[]; changes: Change[]; results: Results; generatedAt: string }> {
   const [b, changes] = await Promise.all([board(), auditOf(null, 20)]);
   const all = [...b.items.values()];
   const inboxItems = inboxOf(b);
@@ -747,7 +781,8 @@ export async function followupOverview(period: Period = parsePeriod({})): Promis
     queue: executable(all),
     blocked: all.filter((q) => pending(q) && q.blocked).sort(byPriority),
     noInteresados: [...b.closedItems, ...all.filter((q) => q.stage === "no-responde" && (q.situation === "rechazo" || q.situation === "proveedor_ia"))].sort(byPriority),
-    summary: summarize(all, b.newToday, inboxItems.length),
+    summary: summarize(all, b.newToday, inboxItems.length, b.quota),
+    agencies: b.rows.filter((r) => !r.test).map((r) => ({ agencyId: r.id, name: r.name, phone: r.whatsapp ?? null, stage: b.items.get(r.id)?.stage ?? null })),
     inbox: inboxItems,
     funnel: funnelOf(b, all),
     rules: [...b.rules].sort((x, y) => x.position - y.position),
@@ -765,11 +800,14 @@ export async function followupQueueView() {
     queue: executable(all),
     blocked: all.filter((q) => pending(q) && q.blocked).sort(byPriority),
     noInteresados: [...b.closedItems, ...all.filter((q) => q.stage === "no-responde" && (q.situation === "rechazo" || q.situation === "proveedor_ia"))].sort(byPriority),
-    summary: summarize(all, b.newToday, inboxOf(b).length),
+    summary: summarize(all, b.newToday, inboxOf(b).length, b.quota),
+    agencies: b.rows.filter((r) => !r.test).map((r) => ({ agencyId: r.id, name: r.name, phone: r.whatsapp ?? null, stage: b.items.get(r.id)?.stage ?? null })),
+    stageCounts: Object.fromEntries(FOLLOWUP_STAGES.map((stage) => [stage.key, all.filter((q) => q.stage === stage.key).length])),
     rules: [...b.rules].sort((x, y) => x.position - y.position),
     generatedAt: new Date().toISOString(),
   };
 }
+export type AgencyChoice = { agencyId: string; name: string; phone: string | null; stage: StageKey | null };
 export type QueueView = Awaited<ReturnType<typeof followupQueueView>>;
 
 /** Las etapas como en el embudo: cuántas esperan en cada una y qué parte de las que llegaron pasó a la siguiente. */
@@ -785,7 +823,7 @@ function funnelOf(b: Awaited<ReturnType<typeof board>>, all: QueueItem[]): Funne
 const pending = (q: QueueItem) => q.action !== null && q.execution?.status !== "sent";
 /** The ones that can be executed now, in priority order (taken ones included: the page shows who has them). */
 const executable = (all: QueueItem[]) => all.filter((q) => pending(q) && !q.blocked).sort((a, b) => byQueueOrder(a, b));
-function summarize(all: QueueItem[], newToday: number, inboxCount = 0): QueueSummary {
+function summarize(all: QueueItem[], newToday: number, inboxCount = 0, quota: QuotaSettings = {cap:48,outsideToday:0,externalUpdatedAt:null}): QueueSummary {
   const today = artDate(new Date());
   const live = new Date().toISOString();
   return {
@@ -797,10 +835,11 @@ function summarize(all: QueueItem[], newToday: number, inboxCount = 0): QueueSum
     claimed: all.filter((q) => pending(q) && !q.blocked && q.claim && q.claim.until > live).length,
     doneToday: all.filter((q) => q.execution?.status === "sent" && artDate(q.execution.at) === today).length,
     newToday,
-    cap: DAILY_NEW_CAP,
-    newRemaining: remainingFirstContactSlots(newToday),
+    cap: quota.cap,
+    outsideToday: quota.outsideToday,
+    newRemaining: remainingFirstContactSlots(newToday+quota.outsideToday, quota.cap),
     newWaiting: all.filter((q) => q.stage === "no-contactado" && pending(q) &&
-      (q.blocked?.startsWith("Sin cupo para primer contacto") || q.blocked?.startsWith("Tope de 50 conversaciones"))).length,
+      (q.blocked?.startsWith("Sin cupo para primer contacto") || q.blocked?.startsWith("Tope de conversaciones"))).length,
   };
 }
 
@@ -1066,6 +1105,57 @@ async function mark(it: QueueItem, v: FollowupVersion, status: ExecutionStatus, 
     throw new HttpError(409, "Se alcanzó el límite interno de 50 contactos nuevos en 24 horas. El contacto sigue pendiente; no confirmes otro envío.");
   if (error) throw missing(error) ? new HttpError(409, "Falta aplicar la migración 202612080001_followup_first_contact_cap.sql.") : new Error("FOLLOWUP_MARK_FAILED");
   return data as FollowupExecution;
+}
+
+/**
+ * Register a greeting that the operator has already sent outside the UI.
+ * This is reconciliation, not authorization to send: it must be recorded
+ * even when the daily quota has already been exceeded. Timestamp is supplied
+ * by the operator (defaulting to now), never invented by a GET.
+ */
+export async function registerManualGreeting(agencyId: unknown, sentAt: unknown, actor: { id: string; name: string }) {
+  if(typeof agencyId!=="string")throw new HttpError(400,"Falta la inmobiliaria.");
+  const when = sentAt === undefined || sentAt === null || sentAt === "" ? new Date() :
+    typeof sentAt==="string" ? new Date(sentAt) : new Date(NaN);
+  if(!Number.isFinite(when.getTime()) || when.getTime()>Date.now()+30_000 || when.getTime()<Date.now()-7*DAY_MS)
+    throw new HttpError(400,"Indicá la hora real del saludo (últimos 7 días; no futura).");
+  const {it,b}=await itemOf(agencyId);
+  if(it.execution?.status==="sent" && it.stage==="no-contactado")
+    return { execution:it.execution, replayed:true };
+  if(it.stage!=="no-contactado"||!it.versionId)
+    throw new HttpError(409,"«Ya saludado» corresponde a una inmobiliaria en Prospectado con mensaje configurado.");
+  const v=b.vs.find(x=>x.id===it.versionId);
+  if(!v || v.stage!=="no-contactado" || v.channel!=="whatsapp")
+    throw new HttpError(409,"Falta una versión de saludo por WhatsApp.");
+  const {data,error}=await adminClient().rpc("habita_followup_mark",{
+    p_actor:actor.id,p_version:v.id,p_agency:it.agencyId,p_from_step:it.step,
+    p_status:"sent",p_reason:null,p_body:"Ya saludado fuera de HABITA (registrado manualmente)",
+  });
+  if(error||!data)throw new HttpError(503,"No se pudo registrar el saludo.");
+  const e=data as FollowupExecution;
+  // The execution's actual time, rather than the current registration time.
+  const iso=when.toISOString();
+  const saved=await adminClient().from("followup_executions").update({sent_at:iso}).eq("id",e.id);
+  if(saved.error)throw new HttpError(503,"Se registró el saludo, pero faltó guardar su hora. Revisá el historial antes de reintentar.");
+  let warning:string|null=null;
+  try {
+    const ds=await prospectDataset({syncConversions:false});
+    const account=accountsByAgency(ds).get(it.agencyId);
+    if(account){
+      const contact=contactFor(account,"whatsapp");
+      if(contact?.needs_review){
+        await prospectRpc("habita_prospect_contact",{p_actor:actor.id,p_account:account.id,p_contact:contact.id,p_fields:{verified:true}});
+      }
+      const fresh=await prospectDataset({syncConversions:false});
+      const current=accountsByAgency(fresh).get(it.agencyId);
+      if(current)await recordSend(actor.id,fresh,current,{channel:"whatsapp",text:v.body,sentAt:iso},actor.name,"Follow-up · Ya saludado");
+    }
+  } catch {
+    warning="El saludo quedó registrado con su hora, pero no se pudo reflejar en Adquisición. Revisá la ficha.";
+  }
+  await release(it.agencyId,actor.id).catch(()=>undefined);
+  await audit("manual_greeting",actor,{agencyId:it.agencyId,to:iso});
+  return {execution:{status:"sent",at:iso},replayed:false,warning};
 }
 
 /** «Abrir WhatsApp»: queda como abierto (no cuenta como enviado). */
@@ -1571,6 +1661,18 @@ async function saveExtra(agencyId: string, fields: Partial<Omit<AgencyExtra, "ag
     .from("followup_agencies")
     .upsert({ agency_id: agencyId, ...fields, updated_by: actorId, updated_at: new Date().toISOString() }, { onConflict: "agency_id" });
   if (error) throw missing(error) ? new HttpError(409, MISSING) : new Error("FOLLOWUP_SAVE_FAILED");
+}
+
+/** Manual ownership in the commercial execution queue, without fabricating replies. */
+export async function setHandoff(agencyId: unknown, to: unknown, actor: { id: string; name: string }) {
+  if(typeof agencyId!=="string"||!isUuid(agencyId))throw new HttpError(400,"Falta la inmobiliaria.");
+  if(to!==null && to!=="Facu" && to!=="Axel")throw new HttpError(400,"Elegí Facu o Axel.");
+  const {at}=await now(agencyId);
+  if(!at.stage)throw new HttpError(409,"La inmobiliaria ya no está en Follow-up.");
+  await saveExtra(agencyId,{handoff_to:to,handoff_at:to?new Date().toISOString():null},actor.id);
+  await audit("handoff",actor,{agencyId,to:to??"retomada"});
+  if(to)await release(agencyId,actor.id).catch(()=>undefined);
+  return {handoffTo:to};
 }
 
 /**

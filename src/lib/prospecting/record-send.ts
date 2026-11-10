@@ -4,7 +4,7 @@ import { contactFor, stableUuid, stepFor } from "./external";
 import { ProspectError, prospectRpc } from "./server";
 import type { Dataset, ProspectAccount } from "./types";
 
-export type SendInput = { channel?: string; template?: string; step?: number; text?: string; subject?: string };
+export type SendInput = { channel?: string; template?: string; step?: number; text?: string; subject?: string; sentAt?: string };
 
 const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
 
@@ -58,7 +58,7 @@ export async function recordSend(actor: string, ds: Dataset, a: ProspectAccount,
     p_actor: actor,
     p_attempt: attemptId,
     p_method: "manual",
-    p_sent_at: null,
+    p_sent_at: act.sentAt ?? null,
     p_external_id: null,
     p_evidence: `Confirmado en ${where} por ${by}`,
   });

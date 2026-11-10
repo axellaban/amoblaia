@@ -1,6 +1,6 @@
 import { HttpError, failure, requireAdmin } from "@/lib/commerce/http";
 import { actorName } from "@/lib/followup/actor";
-import { addAgency, setPriority, setScore, setShortName, setSituation, setStage, snooze, unsnooze } from "@/lib/followup/server";
+import { addAgency, setPriority, setScore, setShortName, setSituation, setStage, setHandoff, snooze, unsnooze } from "@/lib/followup/server";
 export const runtime = "nodejs";
 
 const NO_STORE = { "Cache-Control": "private, no-store" };
@@ -25,6 +25,7 @@ export async function POST(request: Request) {
     }
     if (typeof b.inmobiliaria !== "string") throw new HttpError(400, "Falta la inmobiliaria.");
     if (b.accion === "estado") return Response.json(await setStage(b.inmobiliaria, b.etapa, user.id, actorName(user)), { headers: NO_STORE });
+    if (b.accion === "handoff") return Response.json(await setHandoff(b.inmobiliaria,b.para,{id:user.id,name:actorName(user)}),{headers:NO_STORE});
     if (b.accion === "situacion") return Response.json(await setSituation(b.inmobiliaria, b.situacion, b.texto, { id: user.id, name: actorName(user) }), { headers: NO_STORE });
     if (b.accion === "reprogramar") return Response.json(await snooze(b.inmobiliaria, b.hasta, b.motivo, { id: user.id, name: actorName(user) }), { headers: NO_STORE });
     if (b.accion === "volver") return Response.json(await unsnooze(b.inmobiliaria, user.id, actorName(user)), { headers: NO_STORE });

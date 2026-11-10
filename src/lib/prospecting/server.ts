@@ -81,8 +81,10 @@ export async function prospectRpc<T>(name: string, args: Record<string, unknown>
 }
 
 /** The whole private dataset, after reconciling activation and purchases from the server's tables. */
-export async function prospectDataset(): Promise<Dataset> {
-  await prospectRpc<number>("habita_prospect_sync_conversions");
+export async function prospectDataset(options: { syncConversions?: boolean } = {}): Promise<Dataset> {
+  // Read-only callers (Follow-up GET, queue, counters and reply selector)
+  // must NOT mutate prospecting facts just by refreshing the page.
+  if (options.syncConversions !== false) await prospectRpc<number>("habita_prospect_sync_conversions");
   const ds = await prospectRpc<Dataset>("habita_prospect_dataset");
   const agencies = [...new Set(ds.accounts.map((a) => a.agency_id))];
   const progress = await demoProgress(agencies);
