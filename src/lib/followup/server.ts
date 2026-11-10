@@ -1083,7 +1083,7 @@ export async function openExecution(input: { agencyId: unknown; stage?: unknown;
  * creada, sin enviar»), frees the agency and returns it as it is now.
  * Idempotent: confirming twice changes nothing.
  */
-export async function confirmExecution(input: { agencyId: unknown; stage?: unknown; action?: unknown; versionId?: unknown; text?: unknown }, actor: { id: string; name: string }) {
+export async function confirmExecution(input: { agencyId: unknown; stage?: unknown; action?: unknown; versionId?: unknown; text?: unknown }, actor: { id: string; name: string }, options: { includeItem?: boolean } = {}) {
   if (typeof input.agencyId === "string") {
     const before = await itemOf(input.agencyId).catch(() => null);
     if (before?.it.execution?.status === "sent" && before.it.versionId === input.versionId)
@@ -1117,7 +1117,10 @@ export async function confirmExecution(input: { agencyId: unknown; stage?: unkno
   }
   if (it.stage === "sin-enviar" && it.action === "principal") await setDemosSent(it.agencyId, true, actor.id, "followup").catch(() => warnings.push("No pudimos marcar su demo como enviada."));
   await release(it.agencyId, actor.id).catch(() => undefined);
-  const after = await itemOf(it.agencyId).catch(() => null);
+  // Chapa only consumes execution.status and timestamp. Rebuilding the entire
+  // board after a persisted confirmation added an avoidable heavy read.
+  // Native panel callers retain the original item response.
+  const after = options.includeItem === false ? null : await itemOf(it.agencyId).catch(() => null);
   return { execution: { status: e.status, at: e.updated_at }, warning: warnings.join(" ") || null, item: after ? strip(after.it) : null, replayed: false };
 }
 
