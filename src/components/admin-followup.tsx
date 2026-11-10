@@ -285,7 +285,7 @@ function QuotaBanner({ summary, onSaved }: { summary: QueueSummary; onSaved: () 
       </label>
       <button type="submit" className="button button-small button-outline" disabled={saving}>{saving?"Guardando…":"Actualizar cupo"}</button>
     </form>
-    <small>Estimación manual; se mantiene durante 24 h desde su última actualización. Registrá cada saludo con «Ya saludado» cuando conozcas la inmobiliaria.</small>
+    <small>Estimación manual durante 24 h desde la actualización. Para evitar duplicados, incluí acá solo saludos externos que NO hayas registrado con «Ya saludado».</small>
     {error && <span role="alert" className="fu-error">{error}</span>}
   </div>;
 }
