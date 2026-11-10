@@ -749,7 +749,7 @@ function resultsOf(b: Awaited<ReturnType<typeof board>>, all: QueueItem[]) {
     blocks: blockReasons(all.filter((q) => q.action && q.execution?.status !== "sent" && q.blocked).map((q) => q.blocked!)),
   };
 }
-export async function followupOverview(period: Period = parsePeriod({})): Promise<{ chart: ReturnType<typeof chartCounts>; lostAt: number[]; chartRows: { agencyId: string; name: string; step: number | null; lost: boolean; score: number | null; whatsapp: string | null }[]; catalog: { stages: Awaited<ReturnType<typeof customStages>>; states: Awaited<ReturnType<typeof readStateCatalog>>; overrides: Awaited<ReturnType<typeof readSituationOverrides>> }; stages: StageView[]; queue: QueueItem[]; blocked: QueueItem[]; noInteresados: QueueItem[]; summary: QueueSummary; inbox: InboxItem[]; funnel: FunnelStep[]; rules: Rule[]; changes: Change[]; results: Results; generatedAt: string }> {
+export async function followupOverview(period: Period = parsePeriod({})): Promise<{ chart: ReturnType<typeof chartCounts>; lostAt: number[]; chartRows: { agencyId: string; name: string; step: number | null; lost: boolean; score: number | null; whatsapp: string | null }[]; catalog: { stages: Awaited<ReturnType<typeof customStages>>; states: Awaited<ReturnType<typeof readStateCatalog>>; overrides: Awaited<ReturnType<typeof readSituationOverrides>> }; stages: StageView[]; queue: QueueItem[]; blocked: QueueItem[]; noInteresados: QueueItem[]; summary: QueueSummary; agencies: AgencyChoice[]; inbox: InboxItem[]; funnel: FunnelStep[]; rules: Rule[]; changes: Change[]; results: Results; generatedAt: string }> {
   const [b, changes] = await Promise.all([board(), auditOf(null, 20)]);
   const all = [...b.items.values()];
   const inboxItems = inboxOf(b);
@@ -777,6 +777,7 @@ export async function followupOverview(period: Period = parsePeriod({})): Promis
     blocked: all.filter((q) => pending(q) && q.blocked).sort(byPriority),
     noInteresados: [...b.closedItems, ...all.filter((q) => q.stage === "no-responde" && (q.situation === "rechazo" || q.situation === "proveedor_ia"))].sort(byPriority),
     summary: summarize(all, b.newToday, inboxItems.length, b.quota),
+    agencies: b.rows.filter((r) => !r.test).map((r) => ({ agencyId: r.id, name: r.name, phone: r.whatsapp ?? null, stage: b.items.get(r.id)?.stage ?? null })),
     inbox: inboxItems,
     funnel: funnelOf(b, all),
     rules: [...b.rules].sort((x, y) => x.position - y.position),
@@ -795,10 +796,13 @@ export async function followupQueueView() {
     blocked: all.filter((q) => pending(q) && q.blocked).sort(byPriority),
     noInteresados: [...b.closedItems, ...all.filter((q) => q.stage === "no-responde" && (q.situation === "rechazo" || q.situation === "proveedor_ia"))].sort(byPriority),
     summary: summarize(all, b.newToday, inboxOf(b).length, b.quota),
+    agencies: b.rows.filter((r) => !r.test).map((r) => ({ agencyId: r.id, name: r.name, phone: r.whatsapp ?? null, stage: b.items.get(r.id)?.stage ?? null })),
+    stageCounts: Object.fromEntries(FOLLOWUP_STAGES.map((stage) => [stage.key, all.filter((q) => q.stage === stage.key).length])),
     rules: [...b.rules].sort((x, y) => x.position - y.position),
     generatedAt: new Date().toISOString(),
   };
 }
+export type AgencyChoice = { agencyId: string; name: string; phone: string | null; stage: StageKey | null };
 export type QueueView = Awaited<ReturnType<typeof followupQueueView>>;
 
 /** Las etapas como en el embudo: cuántas esperan en cada una y qué parte de las que llegaron pasó a la siguiente. */
