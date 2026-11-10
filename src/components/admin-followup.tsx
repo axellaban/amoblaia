@@ -1101,11 +1101,13 @@ function ExecPanel({
         {prepared && !task && (
           <>
             {prepared.whatsappUrl ? (
+              <>
               <a className={`button button-small${status === "pending" || status === "failed" ? " button-primary" : " button-outline"}`} data-testid="followup-open" href={prepared.whatsappUrl} onClick={(e) => {e.preventDefault();openWhatsappReuse(prepared.whatsappUrl!);if(!sent)void mark("opened");}}>
                 <MessageCircle size={16} aria-hidden="true" /> 1. Abrir WhatsApp{many ? " con el mensaje 1" : ""}
               </a>
               <button type="button" className="button button-small button-outline" data-testid="followup-open-without-text"
                 onClick={() => openWhatsappReuse(whatsappNoText(prepared.whatsappUrl!))}>Abrir sin texto</button>
+              </>
             ) : (
               <span className="button button-small button-outline is-disabled" data-testid="followup-open" aria-disabled="true">
                 <MessageCircle size={16} aria-hidden="true" /> 1. Abrir WhatsApp
