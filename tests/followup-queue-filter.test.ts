@@ -241,20 +241,20 @@ describe("Cupos reales para primeras conversaciones de WhatsApp", () => {
     priority: "baja" as const,
   });
 
-  it("muestra 37 habilitados cuando se registraron 13, no todos los candidatos", () => {
+  it("muestra 35 habilitados cuando se registraron 13, no todos los candidatos", () => {
     const queue = Array.from({ length: 94 }, (_, i) => make(String(i), i));
     const { slots, ready, waiting } = allocateFirstContactSlots(queue, 13, Date.parse("2026-11-09T18:00:00Z"));
-    expect(slots).toBe(37);
-    expect(ready).toHaveLength(37);
-    expect(waiting).toHaveLength(57);
+    expect(slots).toBe(35);
+    expect(ready).toHaveLength(35);
+    expect(waiting).toHaveLength(59);
     expect(ready[0].agencyId).toBe("93");
-    expect(remainingFirstContactSlots(50)).toBe(0);
-    expect(remainingFirstContactSlots(51)).toBe(0);
+    expect(remainingFirstContactSlots(48)).toBe(0);
+    expect(remainingFirstContactSlots(49)).toBe(0);
   });
 
   it("reserva primero un cupo para quien ya está siendo ejecutado", () => {
     const queue = [make("score-alto", 99), make("tomada", 10, true), make("otra", 20)];
-    const { ready, waiting } = allocateFirstContactSlots(queue, 49, Date.parse("2026-11-09T18:00:00Z"));
+    const { ready, waiting } = allocateFirstContactSlots(queue, 47, Date.parse("2026-11-09T18:00:00Z"));
     expect(ready.map((q) => q.agencyId)).toEqual(["tomada"]);
     expect(waiting.map((q) => q.agencyId)).toEqual(["score-alto", "otra"]);
   });
@@ -262,7 +262,7 @@ describe("Cupos reales para primeras conversaciones de WhatsApp", () => {
   it("no reserva cupos a mensajes bloqueados o que no son primeros contactos", () => {
     const blocked = { ...make("bloqueado", 100), blocked: "Fuera de horario" };
     const followup = { ...make("seguimiento", 100), stage: "no-responde" as const };
-    const { ready, waiting } = allocateFirstContactSlots([blocked, followup, make("lista", 3)], 49);
+    const { ready, waiting } = allocateFirstContactSlots([blocked, followup, make("lista", 3)], 47);
     expect(ready.map((q) => q.agencyId)).toEqual(["lista"]);
     expect(waiting).toHaveLength(0);
   });
