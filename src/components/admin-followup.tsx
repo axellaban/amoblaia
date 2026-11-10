@@ -1827,6 +1827,18 @@ function RulesWorkspace({ stages, rules, changes }: { stages: StageView[]; rules
 }
 
 /** Las reglas de la etapa: se evalúan en orden y gana la primera que cumple. Elegir una abre su editor. */
+function templateIssue(stage: StageKey, r: Rule, catalog: React.ContextType<typeof SituationCatalog>) {
+    const allowed = visibleSituations(commercialOf(stage), catalog.overrides).map(o => o.key);
+    if (!compatible(stage,r.action)) return "Elegí una acción disponible en «Qué se ejecuta».";
+    if (r.after_action && !compatible(stage,r.after_action)) return "Elegí un paso previo de esta etapa o seleccioná «Ningún paso».";
+    if (r.min_demo_activity_level && !["no-abrio","sin-interaccion","sin-cuenta"].includes(stage)) return "Requiere una demo enviada.";
+    if (r.situations.some(s => !allowed.includes(s))) return "Habilitá la situación en Etapas y situaciones.";
+    if (r.catalog_situation && !catalog.states.some(s => s.key === r.catalog_situation && s.active &&
+      (s.commercial_stage === commercialOf(stage) || catalog.custom.some(c => c.key === s.commercial_stage && c.technical_stage === stage))))
+      return "Situación personalizada no disponible en esta etapa.";
+    return "";
+  }
+
 function RulesEditor({
   stage, onMove, locked,
   rules,
@@ -1864,17 +1876,6 @@ function RulesEditor({
     return rows.find(row => y < row.getBoundingClientRect().bottom)?.dataset.rule ?? rows.at(-1)?.dataset.rule;
   }
   const catalog = useContext(SituationCatalog);
-  const allowed = visibleSituations(commercialOf(stage),catalog.overrides).map(o => o.key);
-  function copyBlock(r: Rule) {
-    if (!compatible(stage,r.action)) return "Acción no disponible en esta etapa.";
-    if (r.after_action && !compatible(stage,r.after_action)) return "Paso previo no disponible en esta etapa.";
-    if (r.min_demo_activity_level && !["no-abrio","sin-interaccion","sin-cuenta"].includes(stage)) return "Requiere una demo enviada.";
-    if (r.situations.some(s => !allowed.includes(s))) return "Habilitá la situación en Etapas y situaciones.";
-    if (r.catalog_situation && !catalog.states.some(s => s.key === r.catalog_situation && s.active &&
-      (s.commercial_stage === commercialOf(stage) || catalog.custom.some(c => c.key === s.commercial_stage && c.technical_stage === stage))))
-      return "Situación personalizada no disponible en esta etapa.";
-    return "";
-  }
   const groups = [...new Set(others.map((r) => r.stage))].map((k) => ({ key: k, rules: others.filter((r) => r.stage === k).sort((a, b) => a.position - b.position) }));
   return (
     <div className="fu-rules" data-testid="followup-rules" data-stage={stage}>
@@ -1911,7 +1912,7 @@ function RulesEditor({
         <div className="fu-dlg" role="dialog" aria-modal="true" aria-labelledby="fu-pick-title" data-testid="followup-rule-pick">
           <div className="fu-pick">
             <h4 id="fu-pick-title">Usar una regla existente</h4>
-            <p>Elegí una regla para copiar a esta etapa. Revisá sus condiciones y su mensaje antes de guardar.</p>
+            <p>Elegí cualquier regla como punto de partida. La copia se abre en el editor para que la revises antes de guardarla.</p>
             <div className="fu-picklist">
               {groups.map((g) => (
                 <section key={g.key}>
@@ -1920,7 +1921,7 @@ function RulesEditor({
                     <button
                       key={r.key}
                       type="button"
-                      className="fu-pickrow" disabled={Boolean(copyBlock(r))}
+                      className="fu-pickrow"
                       data-testid="followup-rule-pick-item"
                       onClick={() => {
                         setPicking(false);
@@ -1930,7 +1931,7 @@ function RulesEditor({
                       <Copy size={14} aria-hidden="true" />
                       <span className="fu-rulemain">
                         <b>{ruleTitle(r.stage, r)}</b>
-                        <span>{copyBlock(r) || ruleShort(r.stage, r)}</span>
+                        <span>{templateIssue(stage, r, catalog) ? "Elegir y adaptar a esta etapa" : ruleShort(r.stage, r)}</span>
                       </span>
                       {!r.enabled && <small className="fu-note">Apagada</small>}
                     </button>
@@ -2092,6 +2093,7 @@ function RuleEditor({
     : { key: "", name: null, stage: stage.key, situations: [defaultSituation], action: available[0], after_hours: 48, after_action: null, position: nextPosition, enabled: true, hours_from: 9, hours_to: 19, days: [1, 2, 3, 4, 5, 6] };
   const base = rule ? { ...rule, name: rule.name ?? null } : blank;
   const [r, setR] = useState<Rule>(base);
+  const issue = template ? templateIssue(stage.key, r, catalog) : "";
   const createDemoTask = stage.key === "sin-demo" && r.action === "principal";
   const [msgDirty, setMsgDirty] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -2149,6 +2151,7 @@ function RuleEditor({
   /** Guarda lo que cambió: la regla y su mensaje (dos APIs, una después de la otra). Si una falla, lo dice y no se pierde el borrador. */
   const save = () =>
     call(async () => {
+      if (issue) throw new Error(issue);
       if (!rule || ruleDirty) await api("/api/admin/follow-up/reglas", { method: "PUT", body: JSON.stringify(r) });
       if (msgDirty && msg.current) {
         try {
@@ -2218,6 +2221,14 @@ function RuleEditor({
         </div>
       </header>
 
+      {issue && <aside className="fu-box" role="status">
+        <strong>Adaptá la copia a esta etapa</strong>
+        <p>{issue}</p>
+        {r.catalog_situation && !specific.some(s => s.key === r.catalog_situation) &&
+          <button type="button" className="button button-small button-outline" onClick={() => set({ catalog_situation: null })}>Usar la situación base</button>}
+        {!!r.min_demo_activity_level && !["no-abrio","sin-interaccion","sin-cuenta"].includes(stage.key) &&
+          <button type="button" className="button button-small button-outline" onClick={() => set({ min_demo_activity_level: 0 })}>Quitar condición de la demo</button>}
+      </aside>}
       <div className="fu-rgrid">
         <section className="fu-box fu-when" data-testid="followup-part-when">
           <h4>
@@ -2269,6 +2280,7 @@ function RuleEditor({
           <label className="fu-f">
             <span>Paso previo</span>
             <select value={r.after_action ?? ""} onChange={(e) => set({ after_action: (e.target.value || null) as Rule["after_action"] })}>
+              {r.after_action && !compatible(stage.key,r.after_action) && <option disabled value={r.after_action}>{actionLabel(template?.stage ?? stage.key,r.after_action)} · no disponible</option>}
               <option value="">Ningún paso</option>
               {available
                 .filter((a) => a !== r.action && a !== "encuesta_cierre")
@@ -2346,6 +2358,7 @@ function RuleEditor({
             <label className="fu-f">
               <span>Acción que se ejecuta</span>
               <select value={r.action} onChange={(e) => setAction(e.target.value as Action)} data-testid="followup-rule-action">
+                {!available.includes(r.action) && <option disabled value={r.action}>{actionLabel(template?.stage ?? stage.key,r.action)} · elegir otra acción</option>}
                 {available.filter(a => a !== "encuesta_cierre" || a === r.action || baseOptions.some(o => o.key === "rechazo")).map((a) => (
                   <option key={a} value={a}>
                     {actionLabel(stage.key, a)}
@@ -2377,7 +2390,7 @@ function RuleEditor({
           >
             Cancelar
           </button>
-          <button type="button" className="button button-primary button-small" data-testid="followup-rule-save" disabled={busy || (!!rule && !ruleDirty && !msgDirty)} onClick={save}>
+          <button type="button" className="button button-primary button-small" data-testid="followup-rule-save" disabled={busy || Boolean(issue) || (!!rule && !ruleDirty && !msgDirty)} onClick={save}>
             {rule ? "Guardar cambios" : "Crear regla"}
           </button>
         </div>

@@ -30,9 +30,9 @@ export const ACTIONS_OF: Partial<Record<StageKey, Action[]>> = {
   "no-responde": ["principal", "seguimiento_2", "presentacion", "presentacion_seguimiento", "precios", "encuesta_cierre"],
   "sin-demo": ["principal", "precios", "encuesta_cierre"],
   "sin-enviar": ["principal", "precios", "encuesta_cierre"],
-  "no-abrio": ["principal", "seguimiento_2", "precios"],
-  "sin-interaccion": ["principal", "precios"],
-  "sin-cuenta": ["principal", "precios"],
+  "no-abrio": ["principal", "seguimiento_2", "precios", "encuesta_cierre"],
+  "sin-interaccion": ["principal", "precios", "encuesta_cierre"],
+  "sin-cuenta": ["principal", "precios", "encuesta_cierre"],
   "sin-uso": ["principal", "precios"],
   "sin-suscripcion": ["principal", "precios"],
 };
