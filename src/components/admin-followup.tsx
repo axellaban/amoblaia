@@ -212,6 +212,20 @@ function afterConfirm(q: QueueItem, rules: Rule[]) {
  * ejecutando. «Tomar la próxima» y «Siguiente contacto» piden al servidor la
  * próxima que entra en los filtros elegidos (no la de la lista guardada acá).
  */
+function ResumeHandoff({item,onSaved}:{item:QueueItem;onSaved:()=>void}){
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState("");
+  if(!item.handoffTo)return null;
+  async function resume(){
+    setBusy(true);setError("");
+    try {await api("/api/admin/follow-up/inmobiliarias",{method:"POST",body:JSON.stringify({accion:"handoff",inmobiliaria:item.agencyId,para:null})});onSaved();}
+    catch(e){setError(e instanceof Error?e.message:"No se pudo retomar.");}
+    finally{setBusy(false);}
+  }
+  return <span><button type="button" className="button button-small button-outline" disabled={busy} data-testid="followup-handoff-resume"
+    onClick={()=>void resume()}>Retomar (pasada a {item.handoffTo})</button>{error&&<small role="alert" className="fu-error">{error}</small>}</span>;
+}
+
 function ManualGreeting({ agencyId, onDone }: { agencyId: string; onDone: () => void }) {
   const localNow = () => new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,16);
   const [at,setAt]=useState(localNow);
@@ -616,6 +630,7 @@ function ExecCenter({
                           <Link href={`/admin/inmobiliarias/${q.agencyId}`}>{q.name}</Link>
                           <span>{f.stage ? (q.person ?? "—") : stageTitle(q.stage)}</span>
                           <QueueCorrection item={q} onSaved={() => void refresh()} />
+                          <ResumeHandoff item={q} onSaved={()=>void refresh()} />
                           {q.stage === "no-contactado" && status !== "sent" && <ManualGreeting agencyId={q.agencyId} onDone={() => void refresh()} />}
                         </div>
                         <span className="fu-cell">{q.zone ?? "—"}</span>
