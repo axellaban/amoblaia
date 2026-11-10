@@ -1150,7 +1150,7 @@ export async function registerManualGreeting(agencyId: unknown, sentAt: unknown,
       const current=accountsByAgency(fresh).get(it.agencyId);
       if(current)await recordSend(actor.id,fresh,current,{channel:"whatsapp",text:v.body,sentAt:iso},actor.name,"Follow-up · Ya saludado");
     }
-  } catch(err) {
+  } catch {
     warning="El saludo quedó registrado con su hora, pero no se pudo reflejar en Adquisición. Revisá la ficha.";
   }
   await release(it.agencyId,actor.id).catch(()=>undefined);
