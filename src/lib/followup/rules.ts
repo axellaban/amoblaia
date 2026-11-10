@@ -13,6 +13,8 @@ type Situation =
   | "neutro"
   | "pregunta_precios"
   | "mas_adelante"
+  | "recontactar_vacaciones"
+  | "recontactar_mas_adelante"
   | "derivo"
   | "rechazo"
   | "proveedor_ia"
