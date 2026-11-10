@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { actionLabel, byPriority, nextAction } from "@/lib/followup/plan";
+import { actionLabel, byPriority, nextAction, isSituation } from "@/lib/followup/plan";
 import { DEFAULT_RULES, cleanRule, compatible, outsideWindow, pickRule, type Rule } from "@/lib/followup/rules";
 
 const SITS = ["sin_respuesta", "confirmo_numero", "interesado", "neutro", "pregunta_precios", "mas_adelante", "derivo", "rechazo"];
@@ -150,5 +150,23 @@ describe("Recontactar sin mezclar situación con etapa", () => {
       expect(nextAction("sin-demo", situation, {}).action).toBeNull();
       expect(nextAction("no-abrio", situation, {}).action).toBeNull();
     }
+  });
+});
+
+describe("recontact classifications", () => {
+  it("accepts both situations but does not match a generic follow-up rule", () => {
+    expect(isSituation("recontactar_vacaciones")).toBe(true);
+    expect(isSituation("recontactar_mas_adelante")).toBe(true);
+    expect(nextAction("no-abrio", "recontactar_vacaciones", {}).action).toBeNull();
+    expect(nextAction("no-abrio", "recontactar_mas_adelante", {}).action).toBeNull();
+  });
+
+  it("allows different explicit rules to be configured later", () => {
+    const rule = { ...DEFAULT_RULES.find(r => r.key === "no-abrio:principal")!,
+      situations: ["recontactar_vacaciones"] as ("recontactar_vacaciones")[], after_hours: 72 };
+    expect(nextAction("no-abrio", "recontactar_vacaciones", {}, [rule])).toMatchObject({
+      action: "principal", afterHours: 72,
+    });
+    expect(nextAction("no-abrio", "recontactar_mas_adelante", {}, [rule]).action).toBeNull();
   });
 });
