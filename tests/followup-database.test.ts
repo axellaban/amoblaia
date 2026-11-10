@@ -160,8 +160,10 @@ describe("Confirmación atómica del cupo Follow-up", () => {
       const v = await active("no-contactado");
       await db.exec("update public.followup_quota_settings set cap=48,external_count=48,external_updated_at=now() where id=true");
       const id = await agency();
+      await db.exec("savepoint quota_check");
       const error = await fails("select habita_followup_mark_capped(null,$1,$2,-1,'sent',null,null)", [v.id,id]);
       expect(error).toContain("FOLLOWUP_FIRST_CONTACT_CAP_REACHED");
+      await db.exec("rollback to savepoint quota_check");
       await db.exec("update public.followup_quota_settings set cap=48,external_count=0,external_updated_at=now()-interval '25 hours' where id=true");
       // The expired manual estimate does not count; limit still enforced by real sends.
       const accepted = await one<{status:string}>("select (habita_followup_mark_capped(null,$1,$2,-1,'sent',null,null)).status as status",[v.id,id]);
