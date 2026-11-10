@@ -122,9 +122,11 @@ type AgencyExtra = {
   priority: Priority | null;
   snooze_until: string | null;
   snooze_reason: string | null;
+  handoff_to: "Facu" | "Axel" | null;
+  handoff_at: string | null;
 };
 const extras = async (agencyId?: string) => {
-  let q = adminClient().from("followup_agencies").select("agency_id,stage_override,override_step,address,zone,score,situation,situation_step,situation_note,situation_at,rejection_stage,catalog_situation,short_name,priority,snooze_until,snooze_reason");
+  let q = adminClient().from("followup_agencies").select("agency_id,stage_override,override_step,address,zone,score,situation,situation_step,situation_note,situation_at,rejection_stage,catalog_situation,short_name,priority,snooze_until,snooze_reason,handoff_to,handoff_at");
   if (agencyId) q = q.eq("agency_id", agencyId);
   const { data, error } = await q.limit(20000);
   if (error) throw missing(error) ? new HttpError(409, MISSING) : new Error("FOLLOWUP_READ_FAILED");
@@ -288,6 +290,7 @@ export type QueueItem = {
   group: Group;
   /** Por qué no se puede ejecutar ahora; null: está en la cola. */
   blocked: string | null;
+  handoffTo: "Facu" | "Axel" | null;
   /** Lo que el agente revisa antes de mandar (número sin validar, un WhatsApp abierto sin confirmar). */
   checks: string[];
   /** Otra sesión la tiene tomada (o esta misma). */
@@ -531,6 +534,7 @@ async function board(now = new Date()) {
       lastReply: lastReply.get(r.id) ?? null,
       needsDemo: Boolean(version && /\{\{\s*demo\s*\}\}/.test(version.body)),
     });
+    if(own?.handoff_to)it.blocked=`Pasada a ${own.handoff_to}. Retomar para volver a ejecutar.`;
     items.set(r.id, it);
   }
   // Respect remaining first-contact capacity rather than calling every
@@ -693,6 +697,7 @@ function item(
     catalogSituation: sit.manual ? own?.catalog_situation : null,
     situationManual: sit.manual,
     situationNote: sit.manual ? (own?.situation_note ?? null) : null,
+    handoffTo: own?.handoff_to ?? null,
     action,
     actionLabel: action ? actionLabel(stage, action) : null,
     group: groupOf(stage, action),
@@ -1656,6 +1661,18 @@ async function saveExtra(agencyId: string, fields: Partial<Omit<AgencyExtra, "ag
     .from("followup_agencies")
     .upsert({ agency_id: agencyId, ...fields, updated_by: actorId, updated_at: new Date().toISOString() }, { onConflict: "agency_id" });
   if (error) throw missing(error) ? new HttpError(409, MISSING) : new Error("FOLLOWUP_SAVE_FAILED");
+}
+
+/** Manual ownership in the commercial execution queue, without fabricating replies. */
+export async function setHandoff(agencyId: unknown, to: unknown, actor: { id: string; name: string }) {
+  if(typeof agencyId!=="string"||!isUuid(agencyId))throw new HttpError(400,"Falta la inmobiliaria.");
+  if(to!==null && to!=="Facu" && to!=="Axel")throw new HttpError(400,"Elegí Facu o Axel.");
+  const {at}=await now(agencyId);
+  if(!at.stage)throw new HttpError(409,"La inmobiliaria ya no está en Follow-up.");
+  await saveExtra(agencyId,{handoff_to:to,handoff_at:to?new Date().toISOString():null},actor.id);
+  await audit("handoff",actor,{agencyId,to:to??"retomada"});
+  if(to)await release(agencyId,actor.id).catch(()=>undefined);
+  return {handoffTo:to};
 }
 
 /**
