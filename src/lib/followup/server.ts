@@ -179,8 +179,8 @@ function sheetFacts(row: Record<string, unknown>): SheetFacts {
 /** The agency's web and contact name, and its prospecting account's address (optional sources: missing reads as nothing). */
 async function details(agencyId?: string) {
   const [agencies, accounts] = await Promise.all([
-    readAll<{ id: string; website: string | null; contact_name: string | null }>("agencies", "id,website,contact_name").catch(() => []),
-    readAll<{ agency_id: string; address: string | null; stage: string; source_data: Record<string, unknown> | null }>("prospect_accounts", "agency_id,address,stage,source_data").catch(() => []),
+    readAll<{ id: string; website: string | null; contact_name: string | null }>("agencies", "id,website,contact_name"),
+    readAll<{ agency_id: string; address: string | null; stage: string; source_data: Record<string, unknown> | null }>("prospect_accounts", "agency_id,address,stage,source_data"),
   ]);
   const only = <T extends { id?: string; agency_id?: string }>(list: T[]) => (agencyId ? list.filter((x) => (x.id ?? x.agency_id) === agencyId) : list);
   return {
