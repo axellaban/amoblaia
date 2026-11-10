@@ -120,13 +120,14 @@ type AgencyExtra = {
   catalog_situation?: string | null;
   short_name: string | null;
   priority: Priority | null;
+  assigned_to: string | null;
   snooze_until: string | null;
   snooze_reason: string | null;
   handoff_to: "Facu" | "Axel" | null;
   handoff_at: string | null;
 };
 const extras = async (agencyId?: string) => {
-  let q = adminClient().from("followup_agencies").select("agency_id,stage_override,override_step,address,zone,score,situation,situation_step,situation_note,situation_at,rejection_stage,catalog_situation,short_name,priority,snooze_until,snooze_reason,handoff_to,handoff_at");
+  let q = adminClient().from("followup_agencies").select("agency_id,stage_override,override_step,address,zone,score,situation,situation_step,situation_note,situation_at,rejection_stage,catalog_situation,short_name,priority,assigned_to,snooze_until,snooze_reason,handoff_to,handoff_at");
   if (agencyId) q = q.eq("agency_id", agencyId);
   const { data, error } = await q.limit(20000);
   if (error) throw missing(error) ? new HttpError(409, MISSING) : new Error("FOLLOWUP_READ_FAILED");
@@ -298,6 +299,8 @@ export type QueueItem = {
   /** Alta, Media o Baja: la del grupo, o la que puso el equipo. */
   priority: Priority;
   priorityManual: boolean;
+  /** Asignación comercial independiente de la toma temporal. */
+  owner: string | null;
   /** Reprogramada: no entra a la cola hasta esta fecha. */
   snoozedUntil: string | null;
   /** La regla que eligió su acción (null: fija por código). */
@@ -710,6 +713,7 @@ function item(
     dueAt: null,
     priority: own?.priority ?? defaultPriority(groupOf(stage, action)),
     priorityManual: Boolean(own?.priority),
+    owner: own?.assigned_to ?? null,
     snoozedUntil: null,
     openReplies: 0,
     blocked: null,
@@ -1673,6 +1677,17 @@ export async function setHandoff(agencyId: unknown, to: unknown, actor: { id: st
   await audit("handoff",actor,{agencyId,to:to??"retomada"});
   if(to)await release(agencyId,actor.id).catch(()=>undefined);
   return {handoffTo:to};
+}
+
+/** Asignación comercial persistente, distinta del claim por diez minutos. */
+export async function setOwner(agencyId: string, raw: unknown, actorId: string, actorName = "") {
+  const options = ["Todos", "Facu", "Axel", "Extensión"];
+  if (typeof raw !== "string" || !options.includes(raw)) throw new HttpError(400, "Responsable desconocido.");
+  const { extra } = await now(agencyId);
+  const before = extra?.assigned_to ?? "Todos";
+  await saveExtra(agencyId, { assigned_to: raw === "Todos" ? null : raw }, actorId);
+  await audit("owner", { id: actorId, name: actorName }, { agencyId, from: before, to: raw });
+  return { owner: raw };
 }
 
 /**
