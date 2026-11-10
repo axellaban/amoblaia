@@ -24,6 +24,7 @@ import {
   deleteRule,
   reorderRules,
   setPriority,
+  setStage,
   setSituation,
   setVersionStatus,
   snooze,
@@ -204,6 +205,10 @@ export async function runFollowupOp(op: unknown, b: Record<string, unknown>, act
     case "release":
       await guard();
       return releaseClaim(b.inmobiliaria, actor.id);
+    case "stage":
+      if (!ID(b)) throw new HttpError(400, "Falta la inmobiliaria.");
+      await guard();
+      return setStage(ID(b), b.etapa, actor.id, actor.name);
     case "situation":
       if (!ID(b)) throw new HttpError(400, "Falta la inmobiliaria.");
       return setSituation(ID(b), b.situacion, b.texto, actor);

@@ -56,6 +56,7 @@ vi.mock("@/lib/followup/server", () => ({
   failExecution: fn("failExecution"),
   releaseClaim: fn("releaseClaim"),
   setSituation: fn("setSituation"),
+  setStage: fn("setStage"),
   registerReply: fn("registerReply"),
   processReply: fn("processReply"),
   inbox: async () => [],
@@ -133,11 +134,13 @@ describe("Follow-up para Chapa", () => {
     await POST(req("POST", "", { by: "Axel", followup: { op: "confirm", ...task, texto: "hola" } }));
     await POST(req("POST", "", { by: "Axel", followup: { op: "fail", ...task, motivo: "No tiene WhatsApp", tipo: "sin_whatsapp" } }));
     await POST(req("POST", "", { by: "Axel", followup: { op: "snooze", inmobiliaria: AG, hasta: "2026-11-20T12:00:00Z", motivo: "vuelve el lunes" } }));
+    await POST(req("POST", "", { by: "Axel", followup: { op: "stage", inmobiliaria: AG, etapa: "no-responde" } }));
     const done = calls.filter((c) => c.fn !== "agentQueue");
-    expect(done.map((c) => c.fn)).toEqual(["claimNext", "confirmExecution", "failExecution", "snooze"]);
+    expect(done.map((c) => c.fn)).toEqual(["claimNext", "confirmExecution", "failExecution", "snooze", "setStage"]);
     expect(done[0].args).toEqual([{ agencyId: AG }, "https://habita.test", { id: AXEL, name: "Axel" }]);
     expect(done[1].args).toEqual([{ agencyId: AG, stage: "no-contactado", action: "principal", versionId: "v1", text: "hola" }, { id: AXEL, name: "Axel" }, { includeItem: false }]);
     expect(done[2].args[0]).toMatchObject({ reason: "No tiene WhatsApp", kind: "sin_whatsapp" });
+    expect(done[4].args).toEqual([AG, "no-responde", AXEL, "Axel"]);
   });
 
   it("dos personas con el usuario por defecto: el claim de una frena a la otra", async () => {
