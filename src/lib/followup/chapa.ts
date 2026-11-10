@@ -170,8 +170,21 @@ export async function runFollowupOp(op: unknown, b: Record<string, unknown>, act
   const task = { agencyId: b.inmobiliaria, stage: b.etapa, action: b.tarea, versionId: b.version };
   const guard = async () => {
     if (!ID(b)) return;
-    const { queue } = await agentQueue(actor.id, 500);
-    guardClaim(queue.find((q) => q.agencyId === ID(b)), actor);
+    // Formerly: agentQueue(..., 500), which recalculated every agency and
+    // queried the whole commercial board before *each* claim/open/confirm/fail.
+    // The operation itself still revalidates the current queue and permissions.
+    // Here we only need to detect different operator names sharing a fallback ID.
+    const { data, error } = await adminClient()
+      .from("followup_claims")
+      .select("actor_id,actor_name,locked_until")
+      .eq("agency_id", ID(b))
+      .gt("locked_until", new Date().toISOString())
+      .maybeSingle();
+    if (error) throw new HttpError(503, "No pudimos verificar la toma de esta tarea. Reintentá.");
+    if (data) guardClaim({
+      name: "Esta inmobiliaria",
+      claim: { actorId: data.actor_id, by: data.actor_name, until: data.locked_until },
+    }, actor);
   };
   switch (op) {
     case "queue":
