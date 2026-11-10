@@ -196,6 +196,63 @@ function afterConfirm(q: QueueItem, rules: Rule[]) {
  * ejecutando. «Tomar la próxima» y «Siguiente contacto» piden al servidor la
  * próxima que entra en los filtros elegidos (no la de la lista guardada acá).
  */
+function QuotaBanner({ summary, onSaved }: { summary: QueueSummary; onSaved: () => void }) {
+  const [outside, setOutside] = useState(String(summary.outsideToday));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => { setOutside(String(summary.outsideToday)); }, [summary.outsideToday]);
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true); setError("");
+    try {
+      await api("/api/admin/follow-up/cupo", { method: "PUT", body: JSON.stringify({ outsideToday: Number(outside) }) });
+      onSaved();
+    } catch (err) { setError(err instanceof Error ? err.message : "No pudimos actualizar el cupo."); }
+    finally { setSaving(false); }
+  }
+  return <div className="fu-qbanner" data-testid="followup-first-contact-capacity" style={{display:"grid",gap:9}}>
+    <span><Info size={16} aria-hidden="true" /> Primeros contactos · últimas 24 h:
+      <b> {summary.newToday} registrados + {summary.outsideToday} externos / {summary.cap}</b>.
+      <b> {summary.newRemaining} restantes</b>{summary.newWaiting ? ` · ${summary.newWaiting} esperan cupo` : ""}.
+    </span>
+    <form onSubmit={save} style={{display:"flex",gap:8,alignItems:"end",flexWrap:"wrap"}}>
+      <label style={{display:"grid",gap:3,fontSize:12}}>
+        Saludos enviados fuera de HABITA (últimas 24 h)
+        <input type="number" min={0} max={10000} step={1} value={outside}
+          onChange={e=>setOutside(e.target.value)} aria-label="Saludos enviados fuera de HABITA (últimas 24 h)" required />
+      </label>
+      <button type="submit" className="button button-small button-outline" disabled={saving}>{saving?"Guardando…":"Actualizar cupo"}</button>
+    </form>
+    <small>Estimación manual; se mantiene durante 24 h desde su última actualización. Registrá cada saludo con «Ya saludado» cuando conozcas la inmobiliaria.</small>
+    {error && <span role="alert" className="fu-error">{error}</span>}
+  </div>;
+}
+
+function QuotaRuleSettings() {
+  const [cap,setCap]=useState("48");
+  const [saving,setSaving]=useState(false);
+  const [error,setError]=useState("");
+  const [saved,setSaved]=useState("");
+  const router=useRouter();
+  useEffect(()=>{void api<{cap:number}>("/api/admin/follow-up/cupo").then(r=>setCap(String(r.cap))).catch(e=>setError(e instanceof Error?e.message:"No pudimos leer el cupo."));},[]);
+  async function save(e:React.FormEvent) {
+    e.preventDefault();setSaving(true);setError("");setSaved("");
+    try {
+      await api("/api/admin/follow-up/cupo",{method:"PUT",body:JSON.stringify({cap:Number(cap)})});
+      setSaved("Tope actualizado.");router.refresh();
+    } catch(err){setError(err instanceof Error?err.message:"No se pudo guardar.");}
+    finally{setSaving(false);}
+  }
+  return <form data-testid="followup-quota-rules" onSubmit={save} className="fu-detail-card"
+    style={{display:"flex",gap:12,alignItems:"end",flexWrap:"wrap",padding:14,marginBottom:12}}>
+    <label style={{display:"grid",gap:5}}>Máximo de primeros contactos · 24 h móviles
+      <input type="number" min={1} max={500} step={1} value={cap} onChange={e=>setCap(e.target.value)} required />
+    </label>
+    <button type="submit" className="button button-small button-primary" disabled={saving}>{saving?"Guardando…":"Guardar límite"}</button>
+    {saved&&<span role="status">{saved}</span>}{error&&<span role="alert" className="fu-error">{error}</span>}
+  </form>;
+}
+
 function ExecCenter({
   initial,
   stages,
@@ -403,15 +460,7 @@ function ExecCenter({
         </div>
       )}
 
-      {commercial === "prospectado" && (
-        <div className="fu-qbanner" data-testid="followup-first-contact-capacity">
-          <Info size={16} aria-hidden="true" />
-          <span>Primeros contactos · ventana móvil de 24 h: <b>{summary.newToday}/{summary.cap}</b> registrados.
-            <b> {summary.newRemaining} cupos restantes</b>{summary.newWaiting ? ` · ${summary.newWaiting} esperan cupo` : ""}.
-            Los mensajes enviados fuera de Habita no se pueden contar automáticamente.
-          </span>
-        </div>
-      )}
+      {commercial === "prospectado" && <QuotaBanner summary={summary} onSaved={() => void refresh()} />}
       <div className="fu-qbanner" data-testid="followup-queue-banner">
         <Info size={16} aria-hidden="true" />
         <span className="fu-grow">{banner}</span>
@@ -1683,6 +1732,7 @@ function RulesWorkspace({ stages, rules, changes }: { stages: StageView[]; rules
   }
   return (
     <>
+      <QuotaRuleSettings />
       <div className="fu-flowrow">
         <span className="fu-lbl fu-flowlabel">Etapas comerciales</span>
         <nav className="fu-flow" aria-label="Etapas comerciales" data-testid="followup-flow">
