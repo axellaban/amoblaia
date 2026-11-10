@@ -57,6 +57,7 @@ vi.mock("@/lib/followup/server", () => ({
   releaseClaim: fn("releaseClaim"),
   setSituation: fn("setSituation"),
   setStage: fn("setStage"),
+  setExecutionOwner: fn("setExecutionOwner", { owner: "Facu" }),
   registerReply: fn("registerReply"),
   processReply: fn("processReply"),
   inbox: async () => [],
@@ -141,6 +142,14 @@ describe("Follow-up para Chapa", () => {
     expect(done[1].args).toEqual([{ agencyId: AG, stage: "no-contactado", action: "principal", versionId: "v1", text: "hola" }, { id: AXEL, name: "Axel" }, { includeItem: false }]);
     expect(done[2].args[0]).toMatchObject({ reason: "No tiene WhatsApp", kind: "sin_whatsapp" });
     expect(done[4].args).toEqual([AG, "no-responde", AXEL, "Axel"]);
+  });
+
+  it("guarda quién ejecuta a través del motor de HABITA y conserva al operador", async () => {
+    const res=await POST(req("POST","",{
+      by:"Axel",followup:{op:"owner",inmobiliaria:AG,responsable:"Facu"}
+    }));
+    expect(res.status).toBe(200);
+    expect(calls.find(c=>c.fn==="setExecutionOwner")?.args).toEqual([AG,"Facu",AXEL,"Axel"]);
   });
 
   it("dos personas con el usuario por defecto: el claim de una frena a la otra", async () => {
