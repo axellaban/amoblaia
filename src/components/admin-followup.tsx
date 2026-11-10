@@ -36,6 +36,22 @@ function ago(iso: string) {
   const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
   return days <= 0 ? "hoy" : days === 1 ? "hace 1 día" : `hace ${days} días`;
 }
+const WHATSAPP_TAB = "habita-followup-whatsapp";
+function whatsappNoText(link:string) {
+  try {
+    const u = new URL(link);
+    if(u.protocol!=="https:" || !["wa.me","web.whatsapp.com","api.whatsapp.com"].includes(u.hostname))return "";
+    u.searchParams.delete("text");
+    return u.toString();
+  } catch {return "";}
+}
+function openWhatsappReuse(link:string){
+  try {
+    const u=new URL(link);
+    if(u.protocol!=="https:" || !["wa.me","web.whatsapp.com","api.whatsapp.com"].includes(u.hostname))return;
+    window.open(u.toString(),WHATSAPP_TAB);
+  } catch { /* invalid link: no navigation */ }
+}
 const SOURCE_LABEL = { followup: "Follow-up", adquisicion: "Adquisición", inmobiliaria: "La inmobiliaria" } as const;
 const day = (iso: string) => new Date(iso).toLocaleDateString("es-AR", { day: "numeric", month: "short", timeZone: "America/Argentina/Buenos_Aires" });
 async function copy(text: string) {
@@ -1062,9 +1078,11 @@ function ExecPanel({
         {prepared && !task && (
           <>
             {prepared.whatsappUrl ? (
-              <a className={`button button-small${status === "pending" || status === "failed" ? " button-primary" : " button-outline"}`} data-testid="followup-open" href={prepared.whatsappUrl} target="habita-whatsapp" rel="noreferrer" onClick={() => !sent && void mark("opened")}>
+              <a className={`button button-small${status === "pending" || status === "failed" ? " button-primary" : " button-outline"}`} data-testid="followup-open" href={prepared.whatsappUrl} onClick={(e) => {e.preventDefault();openWhatsappReuse(prepared.whatsappUrl!);if(!sent)void mark("opened");}}>
                 <MessageCircle size={16} aria-hidden="true" /> 1. Abrir WhatsApp{many ? " con el mensaje 1" : ""}
               </a>
+              <button type="button" className="button button-small button-outline" data-testid="followup-open-without-text"
+                onClick={() => openWhatsappReuse(whatsappNoText(prepared.whatsappUrl!))}>Abrir sin texto</button>
             ) : (
               <span className="button button-small button-outline is-disabled" data-testid="followup-open" aria-disabled="true">
                 <MessageCircle size={16} aria-hidden="true" /> 1. Abrir WhatsApp
