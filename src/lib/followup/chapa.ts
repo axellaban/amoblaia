@@ -85,12 +85,16 @@ async function byActor(team: TeamUser[]) {
 
 /** Lo que Chapa muestra: la cola, las bloqueadas, la bandeja, el embudo, las reglas y los resultados. */
 export async function followupSnapshot(team: TeamUser[] = [], period?: Period) {
-  const [o, actors, catalogStages, catalogStates, catalogOverrides] = await Promise.all([
-    followupOverview(period), byActor(team),
-    customStages().catch(() => null),
-    readStateCatalog().catch(() => null),
-    readSituationOverrides().catch(() => null),
-  ]);
+  const [o, actors] = await Promise.all([followupOverview(period), byActor(team)]);
+  // The Follow-up engine already read this catalog to determine executable tasks.
+  // Keep a compatibility fallback for older snapshots and isolated test mocks.
+  const [catalogStages, catalogStates, catalogOverrides] = o.catalog
+    ? [o.catalog.stages, o.catalog.states, o.catalog.overrides]
+    : await Promise.all([
+      customStages().catch(() => null),
+      readStateCatalog().catch(() => null),
+      readSituationOverrides().catch(() => null),
+    ]);
   return {
     labels: { situations: SITUATIONS, groups: GROUPS },
     catalog: {
@@ -120,6 +124,40 @@ export async function followupSnapshot(team: TeamUser[] = [], period?: Period) {
     results: { ...o.results, byActor: actors },
     changes: o.changes,
   };
+}
+
+// Warm-instance, per-period single-flight cache. Never caches a failed read, never
+// mutates the underlying queue; every write still goes through the live motor.
+const SNAPSHOT_TTL_MS = 15_000;
+type Snapshot = Awaited<ReturnType<typeof followupSnapshot>>;
+const snapshots = new Map<string, { until: number; value: Snapshot }>();
+const pending = new Map<string, Promise<Snapshot>>();
+let snapshotRevision = 0;
+
+export function invalidateFollowupSnapshot() {
+  snapshotRevision++;
+  snapshots.clear();
+  pending.clear();
+}
+
+export function cachedFollowupSnapshot(team: TeamUser[] = [], period?: Period): Promise<Snapshot> {
+  const key = JSON.stringify(period ?? { key: "todo", from: null, to: null });
+  const cached = snapshots.get(key);
+  if (cached && cached.until > Date.now()) return Promise.resolve(cached.value);
+  const active = pending.get(key);
+  if (active) return active;
+  const generation = snapshotRevision;
+  const request = followupSnapshot(team, period)
+    .then((value) => {
+      if (generation === snapshotRevision) {
+        if (snapshots.size >= 8) snapshots.clear();
+        snapshots.set(key, { until: Date.now() + SNAPSHOT_TTL_MS, value });
+      }
+      return value;
+    })
+    .finally(() => { if (pending.get(key) === request) pending.delete(key); });
+  pending.set(key, request);
+  return request;
 }
 
 const ID = (b: Record<string, unknown>) => (typeof b.inmobiliaria === "string" ? b.inmobiliaria : "");
