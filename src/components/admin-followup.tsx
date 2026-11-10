@@ -258,17 +258,23 @@ function ExecCenter({
           : queue;
   const fits = (q: QueueItem, g: QueueFilter) => matchesFilter(q, g, rules);
   const list = base.filter((q) => fits(q, f)).sort((a, b) => byQueueOrder(a, b, order));
-  const stage = f.stage ? stages.find((s) => s.key === f.stage) ?? null : null;
+  const catalog = useContext(SituationCatalog);
   const commercial = f.commercial ?? (f.stage ? commercialOf(f.stage) : null);
-  const selectedTechnical = commercial ? technicalOf(commercial) : [];
-  const own = f.stage ? stageRules(rules, f.stage) : [];
-  const rule = f.rule && f.rule !== OTHER_RULES ? rules.find((r) => r.key === f.rule) ?? null : null;
+  const selectedStageTitle = COMMERCIAL_STAGES.find(s => s.key === commercial)?.title ?? "Todas las etapas";
+  const own = commercial ? technicalOf(commercial).flatMap(key => stageRules(rules,key)) : [];
   const count = (g: QueueFilter) => base.filter((q) => fits(q, g)).length;
-  const others = f.stage ? count({ ...f, rule: OTHER_RULES }) : 0;
   const isFree = (q: QueueItem) => statusOf(q)?.status !== "sent" && !q.blocked && !(q.claim && q.claim.until > live);
   const free = closedView ? [] : list.filter(isFree);
   const kpiGroup = kpi === "respuestas" ? "respuestas" : kpi === "demos" ? "demos" : null;
-  const situations = (Object.keys(SITUATIONS) as Situation[]).map((k) => ({ key: k, n: count({ ...f, situation: k }) })).filter((x) => x.n > 0 || x.key === f.situation);
+  const scopes = commercial ? [commercial] : COMMERCIAL_STAGES.map(s => s.key);
+  const baseOptions = new Map(scopes.flatMap(scope => visibleSituations(scope, catalog.overrides).map(s => [s.key, s.label] as const)));
+  const customOptions = catalog.states.filter(s => s.active && s.maps_to && scopes.some(scope =>
+    s.commercial_stage === scope || catalog.custom.some(c => c.key === s.commercial_stage && commercialOf(c.technical_stage) === scope)));
+  const options = [
+    ...Array.from(baseOptions, ([key,label]) => ({ key, label, filter: { situation: key as Situation | null, catalogSituation: null as string | null } })),
+    ...customOptions.map(s => ({ key: s.key, label: s.label, filter: { situation: null, catalogSituation: s.key } })),
+  ];
+  const selectedSituation = options.find(s => s.key === (f.catalogSituation ?? f.situation));
   const groupCounts = (Object.keys(GROUPS) as (keyof typeof GROUPS)[]).map((k) => ({ key: k, n: count({ ...f, group: k }) }));
   const setF = (patch: Partial<QueueFilter>) => {
     setState({ kpi, f: { ...f, ...patch } });
@@ -280,7 +286,7 @@ function ExecCenter({
     setTaking(true);
     setError("");
     try {
-      const filtro = { etapa: f.stage, etapaComercial: f.commercial, imagen: f.demoImage, regla: f.rule, situacion: f.situation, grupo: f.group ?? kpiGroup, buscar: f.search, orden: order };
+      const filtro = { etapa: f.stage, etapaComercial: f.commercial, imagen: f.demoImage, regla: f.rule, situacion: f.situation, situacionPersonalizada: f.catalogSituation, grupo: f.group ?? kpiGroup, buscar: f.search, orden: order };
       const p = await api<Prepared | null>("/api/admin/followup/claim", { method: "POST", body: JSON.stringify({ filtro, saltar: skip }) });
       if (!p) {
         setDetail(null);
@@ -311,15 +317,10 @@ function ExecCenter({
       return acc;
     }, {}),
   ).sort((a, b) => b[1] - a[1]);
-  const ruleName = rule && f.stage ? ruleTitle(f.stage, rule) : f.rule === OTHER_RULES ? "Otras" : null;
-  const heading = closedView ? `Contactado — ${list.length} no interesados` : `${stage?.title ?? "Todas las etapas"}${ruleName ? ` — ${ruleName}` : ""} — ${list.length} ${kpi === "bloqueadas" ? (list.length === 1 ? "bloqueada" : "bloqueadas") : list.length === 1 ? "lista" : "listos"}`;
-  const banner = closedView ? "Oportunidades cerradas como No interesado. Podés corregir etapa y situación; la despedida se habilita si corresponde la regla de encuesta." : !stage
-    ? "Estás viendo todas las etapas. Elegí una etapa y una regla para trabajar sus contactos uno detrás de otro."
-    : rule
-      ? `Estás viendo la etapa ${stage.title} con la regla ${ruleTitle(stage.key, rule)}. Se muestran solo los contactos cuya próxima acción es «${actionLabel(stage.key, rule.action as Action)}»: ${ruleWhen(stage.key, rule).replace(/^Si /, "si ")}.`
-      : f.rule === OTHER_RULES
-        ? `Estás viendo la etapa ${stage.title}: los contactos cuya próxima acción no sale de una de sus reglas activas.`
-        : `Estás viendo la etapa ${stage.title} con todas sus reglas.`;
+  const selectedRule = own.find(r => r.key === f.rule);
+  const scopeTitle = [selectedStageTitle, selectedSituation?.label, selectedRule ? ruleTitle(selectedRule.stage, selectedRule) : null].filter(Boolean).join(" — ");
+  const heading = closedView ? `${scopeTitle} — ${list.length} no interesados` : `${scopeTitle} — ${list.length} ${kpi === "bloqueadas" ? "bloqueadas" : list.length === 1 ? "listo" : "listos"}`;
+  const banner = closedView ? "Oportunidades cerradas como No interesado." : `Cola de ejecución · ${selectedStageTitle} · ${selectedSituation?.label ?? "Todas las situaciones"}`;
   const item = detail ? all.find((q) => q.agencyId === detail.id) ?? detail.item : null;
   const recommended = free[0] ?? null;
 
@@ -332,10 +333,10 @@ function ExecCenter({
           className={`fu-reference-stage is-todas${!commercial ? " is-on" : ""}`}
           aria-pressed={!commercial}
           data-testid="followup-reference-stage"
-          onClick={() => setF({ commercial: null, stage: null, demoImage: null, rule: null })}>
+          onClick={() => setF({ commercial: null, stage: null, demoImage: null, rule: null, situation: null, catalogSituation: null })}>
           <span className="fu-reference-stage-icon" aria-hidden="true"><MessageCircle size={21} /></span>
           <span className="fu-reference-stage-label">TODAS</span>
-          <strong>{count({ ...f, commercial: null, stage: null, rule: null })}</strong>
+          <strong>{count({ ...f, commercial: null, stage: null, rule: null, situation: null, catalogSituation: null })}</strong>
           <span className="fu-reference-spark" aria-hidden="true"><i /><i /><i /><i /></span>
         </button>
         {COMMERCIAL_STAGES.filter((s) => s.key !== "cliente").map((st) => {
@@ -346,10 +347,10 @@ function ExecCenter({
               aria-pressed={commercial === st.key}
               data-testid="followup-reference-stage"
               data-stage={st.key}
-              onClick={() => setF({ commercial: st.key, stage: null, demoImage: null, rule: null })}>
+              onClick={() => setF({ commercial: st.key, stage: null, demoImage: null, rule: null, situation: null, catalogSituation: null })}>
               <span className="fu-reference-stage-icon" aria-hidden="true"><Icon size={21} /></span>
               <span className="fu-reference-stage-label">{st.title.toLocaleUpperCase("es-AR")}</span>
-              <strong>{count({ ...f, commercial: st.key, stage: null, rule: null })}</strong>
+              <strong>{count({ ...f, commercial: st.key, stage: null, rule: null, situation: null, catalogSituation: null })}</strong>
             </button>
           );
         })}
@@ -383,18 +384,18 @@ function ExecCenter({
       <div className="fu-qbar" data-testid="followup-queue-stages">
         <span className="fu-qbarlabel">Cola por etapa comercial</span>
         <div className="fu-qchips">
-          <button type="button" className={`fu-qchip${!commercial ? " is-on" : ""}`} aria-pressed={!commercial} data-testid="followup-queue-stage" data-stage="" onClick={() => setF({ commercial: null, stage: null, demoImage: null, rule: null })}>
+          <button type="button" className={`fu-qchip${!commercial ? " is-on" : ""}`} aria-pressed={!commercial} data-testid="followup-queue-stage" data-stage="" onClick={() => setF({ commercial: null, stage: null, demoImage: null, rule: null, situation: null, catalogSituation: null })}>
             <span className="fu-stage-glyph" aria-hidden="true"><Layers size={19} /></span>
-            <span className="fu-stage-tile-copy"><span>Todas</span><b>{count({ ...f, commercial: null, stage: null, rule: null })}</b></span>
+            <span className="fu-stage-tile-copy"><span>Todas</span><b>{count({ ...f, commercial: null, stage: null, rule: null, situation: null, catalogSituation: null })}</b></span>
           </button>
           {COMMERCIAL_STAGES.map((s) => {
             const Icon = STAGE_GLYPH[s.key];
             return (
               <button key={s.key} type="button" className={`fu-qchip${commercial === s.key ? " is-on" : ""}`}
                 aria-pressed={commercial === s.key} data-testid="followup-queue-stage" data-stage={s.key}
-                onClick={() => setF({ commercial: s.key, stage: null, demoImage: null, rule: null })}>
+                onClick={() => setF({ commercial: s.key, stage: null, demoImage: null, rule: null, situation: null, catalogSituation: null })}>
                 <span className="fu-stage-glyph" aria-hidden="true"><Icon size={19} /></span>
-                <span className="fu-stage-tile-copy"><span>{s.title}</span><b>{count({ ...f, commercial: s.key, stage: null, rule: null })}</b></span>
+                <span className="fu-stage-tile-copy"><span>{s.title}</span><b>{count({ ...f, commercial: s.key, stage: null, rule: null, situation: null, catalogSituation: null })}</b></span>
               </button>
             );
           })}
@@ -404,70 +405,15 @@ function ExecCenter({
         </button>
       </div>
 
-      {commercial && (
-        <div className="fu-qbar is-rules" data-testid="followup-queue-substages">
-          <span className="fu-qbarlabel">Etapa del embudo</span>
-          <div className="fu-qchips">
-            <button type="button" className={`fu-qchip is-sm${!f.stage ? " is-on" : ""}`} aria-pressed={!f.stage} onClick={() => setF({ stage: null, demoImage: null, rule: null })}>
-              Todos <b>{count({ ...f, commercial, stage: null, rule: null })}</b>
-            </button>
-            {selectedTechnical.map((key) => (
-              <button key={key} type="button" className={`fu-qchip is-sm${f.stage === key ? " is-on" : ""}`}
-                data-testid="followup-queue-technical-stage" data-stage={key} aria-pressed={f.stage === key}
-                onClick={() => setF({ stage: key, demoImage: null, rule: null })}>
-                {technicalStateLabel(key)} <b>{count({ ...f, commercial, stage: key, rule: null })}</b>
-              </button>
-            ))}
-          </div>
+      <div className="fu-qbar is-rules" data-testid="followup-queue-situations">
+        <span className="fu-qbarlabel">Situación</span>
+        <div className="fu-qchips">
+          <button type="button" className={`fu-qchip is-sm${!f.situation && !f.catalogSituation ? " is-on" : ""}`} aria-pressed={!f.situation && !f.catalogSituation}
+            onClick={() => setF({ situation: null, catalogSituation: null })}>Todas <b>{count({ ...f, situation: null, catalogSituation: null })}</b></button>
+          {options.map(s => <button type="button" key={s.key} className={`fu-qchip is-sm${selectedSituation?.key === s.key ? " is-on" : ""}`}
+            aria-pressed={selectedSituation?.key === s.key} onClick={() => setF(s.filter)}>{s.label} <b>{count({ ...f, ...s.filter })}</b></button>)}
         </div>
-      )}
-
-      {commercial === "demo-enviada" && (
-        <div className="fu-qbar is-rules" data-testid="followup-queue-demo-image">
-          <span className="fu-qbarlabel">Interacción de la demo</span>
-          <div className="fu-qchips">
-            <button type="button" className={`fu-qchip is-sm${!f.demoImage ? " is-on" : ""}`} onClick={() => setF({ demoImage: null, stage: "sin-cuenta", rule: null })}>
-              Todas <b>{count({ ...f, commercial, stage: "sin-cuenta", demoImage: null, rule: null })}</b>
-            </button>
-            <button type="button" className={`fu-qchip is-sm${f.demoImage === "interacted" ? " is-on" : ""}`} data-testid="followup-demo-interacted" onClick={() => setF({ stage: "sin-cuenta", demoImage: "interacted", rule: null })}>
-              Interactuó <b>{count({ ...f, commercial, stage: "sin-cuenta", demoImage: "interacted", rule: null })}</b>
-            </button>
-            <button type="button" className={`fu-qchip is-sm${f.demoImage === "generated" ? " is-on" : ""}`} data-testid="followup-demo-generated" onClick={() => setF({ stage: "sin-cuenta", demoImage: "generated", rule: null })}>
-              Generó imagen <b>{count({ ...f, commercial, stage: "sin-cuenta", demoImage: "generated", rule: null })}</b>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {stage && (
-        <div className="fu-qbar is-rules" data-testid="followup-queue-rules" data-stage={stage.key}>
-          <span className="fu-qbarlabel">Reglas de {stage.title}</span>
-          <div className="fu-qchips">
-            <button type="button" className={`fu-qchip is-sm${!f.rule ? " is-on" : ""}`} aria-pressed={!f.rule} data-testid="followup-queue-rule" data-rule="" onClick={() => setF({ rule: null })}>
-              Todas <b>{count({ ...f, rule: null })}</b>
-            </button>
-            {own.map((r) => (
-              <button
-                key={r.key}
-                type="button"
-                className={`fu-qchip is-sm${f.rule === r.key ? " is-on" : ""}`}
-                aria-pressed={f.rule === r.key}
-                data-testid="followup-queue-rule"
-                data-rule={r.key}
-                title={ruleWhen(stage.key, r)}
-                onClick={() => setF({ rule: r.key })}
-              >
-                {ruleTitle(stage.key, r)} <b>{count({ ...f, rule: r.key })}</b>
-              </button>
-            ))}
-            {(others > 0 || f.rule === OTHER_RULES) && (
-              <button type="button" className={`fu-qchip is-sm${f.rule === OTHER_RULES ? " is-on" : ""}`} aria-pressed={f.rule === OTHER_RULES} data-testid="followup-queue-rule" data-rule={OTHER_RULES} onClick={() => setF({ rule: OTHER_RULES })}>
-                Otras <b>{others}</b>
-              </button>
-            )}
-          </div>
-        </div>
-      )}
+      </div>
 
       {(commercial === "contactado") && (
         <div className="fu-qbar" data-testid="followup-contact-closed">
@@ -475,7 +421,7 @@ function ExecCenter({
           <button type="button" className={`fu-qchip is-sm${!closedView ? " is-on" : ""}`} aria-pressed={!closedView}
             onClick={() => { setShowClosed(false); setShown(QPAGE); }}>Pendientes de acción</button>
           <button type="button" className={`fu-qchip is-sm${closedView ? " is-on" : ""}`} aria-pressed={closedView}
-            data-testid="followup-no-interesados" onClick={() => { setShowClosed(true); setDetail(null); setF({ situation: null, rule: null, group: null }); setShown(QPAGE); }}>
+            data-testid="followup-no-interesados" onClick={() => { setShowClosed(true); setDetail(null); setF({ situation: null, catalogSituation: null, rule: null, group: null }); setShown(QPAGE); }}>
             No interesados <b>{noInteresados.length}</b>
           </button>
           <span className="fu-note">Cerrados para esta campaña · sin envíos automáticos</span>
@@ -520,17 +466,14 @@ function ExecCenter({
                   {(Object.entries(QUEUE_ORDERS) as [QueueOrder, string][]).map(([key, title]) => <option key={key} value={key}>{title}</option>)}
                 </select>
               </label>
-              <label className="fu-qsel">
-                <span>Situación</span>
-                <select data-testid="followup-filter-situation" value={f.situation ?? ""} onChange={(e) => setF({ situation: (e.target.value || null) as Situation | null })}>
+              {own.length > 0 && <label className="fu-qsel">
+                <span>Regla</span>
+                <select value={f.rule ?? ""} onChange={e => setF({ rule: e.target.value || null })}>
                   <option value="">Todas</option>
-                  {situations.map((x) => (
-                    <option key={x.key} value={x.key}>
-                      {SITUATIONS[x.key]} · {x.n}
-                    </option>
-                  ))}
+                  {own.map(r => <option key={r.key} value={r.key}>{ruleTitle(r.stage,r)}</option>)}
+                  <option value={OTHER_RULES}>Otras</option>
                 </select>
-              </label>
+              </label>}
               <label className="fu-qsel">
                 <span>Tipo</span>
                 <select data-testid="followup-filter-group" value={f.group ?? ""} onChange={(e) => setF({ group: (e.target.value || null) as QueueFilter["group"] })}>

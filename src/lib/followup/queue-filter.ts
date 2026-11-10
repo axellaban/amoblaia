@@ -8,7 +8,7 @@ import { compatible, type Rule } from "./rules";
 import { FOLLOWUP_STAGES, commercialOf, isCommercialStage, type CommercialStageKey, type StageKey } from "./stages";
 
 /** Lo que el motor eligió para una inmobiliaria, lo justo para filtrarla. */
-export type Filterable = { stage: StageKey; ruleKey: string | null; situation: Situation; group: Group; name: string; demoGenerated?: boolean };
+export type Filterable = { stage: StageKey; ruleKey: string | null; situation: Situation; group: Group; name: string; demoGenerated?: boolean; catalogSituation?: string | null };
 
 export type QueueFilter = {
   stage: StageKey | null;
@@ -17,6 +17,7 @@ export type QueueFilter = {
   /** La clave de la regla (`ruleKey`), u `OTHER_RULES`: las que no salen de una regla activa de la etapa. */
   rule: string | null;
   situation: Situation | null;
+  catalogSituation?: string | null;
   group: Group | null;
   search: string;
   order?: QueueOrder;
@@ -47,6 +48,7 @@ export function matchesFilter(q: Filterable, f: QueueFilter, rules: Rule[]) {
       if (q.ruleKey && stageRules(rules, q.stage).some((r) => r.key === q.ruleKey)) return false;
     } else if (q.ruleKey !== f.rule) return false;
   }
+  if (f.catalogSituation && q.catalogSituation !== f.catalogSituation) return false;
   if (f.situation && q.situation !== f.situation) return false;
   if (f.group && q.group !== f.group) return false;
   const term = norm(f.search);
@@ -62,6 +64,7 @@ export function cleanFilter(raw: unknown): QueueFilter {
   const commercial = str(o.etapaComercial ?? o.commercial);
   const demoImage = str(o.imagen ?? o.demoImage);
   const situation = str(o.situacion ?? o.situation);
+  const catalogSituation = str(o.situacionPersonalizada ?? o.catalogSituation);
   const group = str(o.grupo ?? o.group);
   const rule = str(o.regla ?? o.rule);
   return {
@@ -69,6 +72,7 @@ export function cleanFilter(raw: unknown): QueueFilter {
     ...(isCommercialStage(commercial) ? { commercial } : {}),
     ...(demoImage === "generated" || demoImage === "interacted" ? { demoImage } : {}),
     rule: rule ? rule.slice(0, 120) : null,
+    ...(/^custom_[a-z0-9_]{3,60}$/.test(catalogSituation) ? { catalogSituation } : {}),
     situation: situation in SITUATIONS ? (situation as Situation) : null,
     group: group in GROUPS ? (group as Group) : null,
     search: str(o.buscar ?? o.search).slice(0, 120),
@@ -76,7 +80,7 @@ export function cleanFilter(raw: unknown): QueueFilter {
   };
 }
 
-export const isEmptyFilter = (f: QueueFilter) => !f.stage && !f.commercial && !f.demoImage && !f.rule && !f.situation && !f.group && !f.search.trim();
+export const isEmptyFilter = (f: QueueFilter) => !f.stage && !f.commercial && !f.demoImage && !f.rule && !f.situation && !f.catalogSituation && !f.group && !f.search.trim();
 
 /**
  * La próxima para tomar: la primera de la cola (ya recalculada y en orden) que
