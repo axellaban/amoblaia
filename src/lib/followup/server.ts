@@ -716,17 +716,18 @@ function resultsOf(b: Awaited<ReturnType<typeof board>>, all: QueueItem[]) {
     blocks: blockReasons(all.filter((q) => q.action && q.execution?.status !== "sent" && q.blocked).map((q) => q.blocked!)),
   };
 }
-export async function followupOverview(period: Period = parsePeriod({})): Promise<{ chart: ReturnType<typeof chartCounts>; lostAt: number[]; stages: StageView[]; queue: QueueItem[]; blocked: QueueItem[]; noInteresados: QueueItem[]; summary: QueueSummary; inbox: InboxItem[]; funnel: FunnelStep[]; rules: Rule[]; changes: Change[]; results: Results; generatedAt: string }> {
+export async function followupOverview(period: Period = parsePeriod({})): Promise<{ chart: ReturnType<typeof chartCounts>; lostAt: number[]; chartRows: { agencyId: string; name: string; step: number | null; lost: boolean; score: number | null; whatsapp: string | null }[]; stages: StageView[]; queue: QueueItem[]; blocked: QueueItem[]; noInteresados: QueueItem[]; summary: QueueSummary; inbox: InboxItem[]; funnel: FunnelStep[]; rules: Rule[]; changes: Change[]; results: Results; generatedAt: string }> {
   const [b, changes] = await Promise.all([board(), auditOf(null, 20)]);
   const all = [...b.items.values()];
   const inboxItems = inboxOf(b);
   const reached = b.rows.filter(row => !row.test).map(row => {
     const prospect = row.prospectFunnel;
-    return { step: agencyStep(prospect && inPeriod(prospect.at, period) ? prospect.step : null, demosInPeriod(row.demos, period).step), lost: prospect?.lost };
+    return { agencyId: row.id, name: row.name, score: row.score, whatsapp: row.whatsapp ?? null, step: agencyStep(prospect && inPeriod(prospect.at, period) ? prospect.step : null, demosInPeriod(row.demos, period).step), lost: Boolean(prospect?.lost) };
   });
   return {
     chart: chartCounts(reached.flatMap(row => row.step === null ? [] : [row.step]), chartSteps),
     lostAt: chartSteps.map((_, i) => reached.filter(row => row.step === i && row.lost).length),
+    chartRows: reached,
     stages: FOLLOWUP_STAGES.map((s) => {
       const own = b.vs.filter((v) => v.stage === s.key).sort((x, y) => (x.action ?? "").localeCompare(y.action ?? "") || x.version - y.version);
       const stats = versionStats(own, b.ex.filter((e) => e.stage === s.key), b.stepNow);
