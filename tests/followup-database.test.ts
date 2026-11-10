@@ -154,6 +154,34 @@ describe("followup migration", () => {
 });
 
 describe("Confirmación atómica del cupo Follow-up", () => {
+  it("bloquea usando el cupo configurable y los saludos externos recientes", async () => {
+    await db.exec("begin");
+    try {
+      const v = await active("no-contactado");
+      await db.exec("update public.followup_quota_settings set cap=48,external_count=48,external_updated_at=now() where id=true");
+      const id = await agency();
+      const error = await fails("select habita_followup_mark_capped(null,$1,$2,-1,'sent',null,null)", [v.id,id]);
+      expect(error).toContain("FOLLOWUP_FIRST_CONTACT_CAP_REACHED");
+      await db.exec("update public.followup_quota_settings set cap=48,external_count=0,external_updated_at=now()-interval '25 hours' where id=true");
+      // The expired manual estimate does not count; limit still enforced by real sends.
+      const accepted = await one<{status:string}>("select (habita_followup_mark_capped(null,$1,$2,-1,'sent',null,null)).status as status",[v.id,id]);
+      expect(accepted?.status).toBe("sent");
+    } finally { await db.exec("rollback"); }
+  });
+
+  it("dos lecturas consecutivas sin escrituras preservan cola y contadores por etapa", async () => {
+    const query = `select jsonb_build_object(
+      'agencies',(select count(*) from public.agencies),
+      'prospects',(select count(*) from public.prospect_accounts),
+      'confirmed',(select count(*) from public.followup_executions where status='sent'),
+      'stages',(select coalesce(jsonb_object_agg(stage,n),'{}'::jsonb) from
+        (select stage,count(*) n from public.followup_executions group by stage) x),
+      'quota',(select jsonb_build_object('cap',cap,'external',external_count) from public.followup_quota_settings where id=true)
+    ) result`;
+    const first = await one<{result:unknown}>(query);
+    const second = await one<{result:unknown}>(query);
+    expect(second).toEqual(first);
+  });
   it("serializa el cupo de primer contacto en la base y conserva idempotencia", async () => {
     await db.exec("begin");
     try {
@@ -163,7 +191,7 @@ describe("Confirmación atómica del cupo Follow-up", () => {
       const exists = (await one<{ count: string }>(
         "select count(distinct agency_id)::text as count from followup_executions where stage='no-contactado' and status='sent' and sent_at >= now() - interval '24 hours'",
       ))!;
-      for (let i = Number(exists.count); i < 50; i++) {
+      for (let i = Number(exists.count); i < 48; i++) {
         const a = (await one<{ id: string }>(
           "insert into agencies(name) values($1) returning id", [`Cap audit test ${i}`],
         ))!.id;
