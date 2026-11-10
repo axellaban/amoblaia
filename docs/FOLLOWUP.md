@@ -1,5 +1,19 @@
 # Follow-up
 
+## Catálogo remoto para Chapa Labs (09/11/2026)
+
+`followupSnapshot()` expone opcionalmente `catalog: { stages, states, overrides, available }` para que la interfaz compartida lea las mismas etapas y situaciones que `/admin/follow-up?vista=etapas`. Si faltan tablas/migraciones, `available: false` y el resto del embudo y cola sigue funcionando.
+
+Las operaciones de Chapa se ejecutan en la API autenticada de prospección, con `by` y `followup`:
+
+- `stage-create`: `valores = {label, technical_stage, entry_situation}` → `createStage`.
+- `state-save`: `valores = {key, commercial_stage, base, ...}` → `changeBaseSituation` (canónicas) o `updateStateCatalog` (personalizadas).
+- `state-delete`: `valores = {key, commercial_stage, base}` → `changeBaseSituation` para ocultar una canónica o `removeCustomSituation` (baja lógica).
+- Regla/versión mantienen `rule-save`, `version-update` y auditoría existentes.
+
+Estas acciones nunca recalculan las etapas de producto ni envían WhatsApp. El proxy de Chapa exige sesión protegida con `PROSPECTING_PASSWORD` para los cambios sensibles. No requiere migración nueva para esta integración; sí las migraciones de catálogo ya documentadas en Habita.
+
+
 `/admin/follow-up`, debajo de Inmobiliarias en el panel del equipo. Una **next best action** por cada etapa del embudo, con las inmobiliarias que esperan en cada una y los números de cada versión, para iterar los mensajes con datos.
 
 ## Etapas
