@@ -10,6 +10,12 @@ create table if not exists public.followup_quota_settings (
 );
 insert into public.followup_quota_settings (id,cap) values (true,48) on conflict (id) do nothing;
 alter table public.followup_quota_settings enable row level security;
+
+-- Durable hand-off to the team. Cleared explicitly by the assigned operator.
+alter table public.followup_agencies
+  add column if not exists handoff_to text check (handoff_to in ('Facu','Axel')),
+  add column if not exists handoff_at timestamptz;
+
 revoke all on public.followup_quota_settings from public, anon, authenticated;
 grant select,update on public.followup_quota_settings to service_role;
 
