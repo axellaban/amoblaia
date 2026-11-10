@@ -7,7 +7,7 @@ import { ArrowLeft, ArrowRight, Building2, CalendarDays, CheckCheck, ChevronDown
 import { api } from "@/components/admin-demos";
 import { CTA_KEYS, CTA_LABEL, COMMERCIAL_STAGES, FOLLOWUP_STAGES, OUT, VARIABLES, commercialOf, isCommercialStage, technicalOf, technicalStateLabel, fillMessage, missingVariables, pct, type Channel, type Cta, type CommercialStageKey, type StageKey, type VersionStatus } from "@/lib/followup/stages";
 import { GROUPS, REPLY_CLASSES, SITUATIONS, QUEUE_ORDERS, actionLabel, actionsOf, byQueueOrder, commercialTier, compatible, splitMessages, type QueueOrder, type Action, type ReplyClass, type Situation } from "@/lib/followup/plan";
-import type { Change, FunnelStep, InboxItem, Prepared, QueueItem, QueueSummary, QueueView, Results, StageView } from "@/lib/followup/server";
+import type { AgencyChoice, Change, FunnelStep, InboxItem, Prepared, QueueItem, QueueSummary, QueueView, Results, StageView } from "@/lib/followup/server";
 import { NO_FILTER, OTHER_RULES, isEmptyFilter, matchesFilter, stageRules, type QueueFilter } from "@/lib/followup/queue-filter";
 import type { CohortRow, WindowKey } from "@/lib/followup/results";
 import type { CustomStage } from "@/lib/followup/commercial-catalog";
