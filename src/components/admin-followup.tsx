@@ -1511,7 +1511,14 @@ function StateCatalogManager({ commercial, title, rules = [] }: { commercial: st
   });
   const own = [...baseRows, ...states.filter(s => s.commercial_stage === commercial)];
   const base = Object.hasOwn(SITUATIONS, draft.key);
+  const workflowSteps = commercial === "interesado" ? technicalOf("interesado") : commercial === "demo-enviada" ? technicalOf("demo-enviada") : [];
   async function toggle(row: CatalogState) {
+    if (!row.active && !row.maps_to && !row.product_stage) {
+      edit(row);
+      setDraft(d => ({ ...d, active: true }));
+      setError(workflowSteps.length ? "Elegí la condición del embudo o la respuesta de WhatsApp que define esta situación y guardá." : "Elegí la respuesta que define esta situación y guardá.");
+      return;
+    }
     setBusy(true); setError("");
     try {
       await api("/api/admin/follow-up/estados", { method: "PATCH", body: JSON.stringify({ commercial_stage: commercial, key: row.key, enabled: !row.active }) });
@@ -1560,15 +1567,15 @@ function StateCatalogManager({ commercial, title, rules = [] }: { commercial: st
           <label>Nombre<input aria-label="Nombre del estado" value={draft.label} maxLength={80} onChange={(e) => setDraft((d) => ({ ...d, label: e.target.value }))} /></label>
           <label>Descripción<textarea aria-label="Descripción para el clasificador" value={draft.description} maxLength={800} onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))} /></label>
           <label>Ejemplos de respuestas<textarea aria-label="Ejemplos del estado" value={draft.examples} maxLength={2000} onChange={(e) => setDraft((d) => ({ ...d, examples: e.target.value }))} /></label>
-          {!base && <>{draft.source === "product" ? <label>Actividad registrada en la demo<select value={draft.product_stage ?? ""} onChange={e => setDraft(d => ({ ...d, product_stage: e.target.value as StageKey }))}>{technicalOf("demo-enviada").map(key => <option key={key} value={key}>{technicalStateLabel(key)}</option>)}</select></label> : <label>Situación que entiende el motor
+          {!base && <>{draft.source === "product" ? <label>Condición del embudo<select value={draft.product_stage ?? ""} onChange={e => setDraft(d => ({ ...d, product_stage: e.target.value as StageKey }))}>{workflowSteps.map(key => <option key={key} value={key}>{technicalStateLabel(key)}</option>)}</select></label> : <label>Situación que entiende el motor
             <select aria-label="Mapear a situación existente" value={draft.maps_to} onChange={(e) => setDraft((d) => ({ ...d, maps_to: e.target.value as Situation | "" }))}>
               <option value="">Sin mapear (revisión manual)</option>
               {(Object.keys(SITUATIONS) as Situation[]).filter(s => s in REPLY_CLASSES).map((s) => <option key={s} value={s}>{SITUATIONS[s]}</option>)}
             </select>
           </label>}
           <label>Origen
-            <select value={draft.source} onChange={(e) => setDraft((d) => ({ ...d, source: e.target.value as CatalogDraft["source"], maps_to: "", product_stage: e.target.value === "product" ? "no-abrio" : null }))}>
-              <option value="whatsapp">WhatsApp</option><option value="manual">Manual</option>{commercial === "demo-enviada" && <option value="product">Actividad de la demo</option>}
+            <select value={draft.source} onChange={(e) => setDraft((d) => ({ ...d, source: e.target.value as CatalogDraft["source"], maps_to: "", product_stage: e.target.value === "product" ? workflowSteps[0] : null }))}>
+              <option value="whatsapp">WhatsApp</option><option value="manual">Manual</option>{workflowSteps.length > 0 && <option value="product">Avance del embudo</option>}
             </select>
           </label>
           <label><input type="checkbox" checked={draft.active} onChange={(e) => setDraft((d) => ({ ...d, active: e.target.checked }))} /> Activa para clasificación</label>
@@ -1583,7 +1590,7 @@ function StateCatalogManager({ commercial, title, rules = [] }: { commercial: st
         const count = rules.filter(r => r.catalog_situation ? r.catalog_situation === row.key : r.situations.some(key => key === row.key)).length;
         return <li key={row.key}>
           <span className="fu-catalog-glyph"><Icon size={17} /></span>
-          <div><strong>{row.label}{count > 0 && <span className="fu-catalog-count">{count} {count === 1 ? "regla" : "reglas"}</span>}</strong><small>{row.description || (row.product_stage ? "Se actualiza con la actividad de la demo" : row.active ? "Situación personalizada" : "Pendiente de activar")}</small></div>
+          <div><strong>{row.label}{count > 0 && <span className="fu-catalog-count">{count} {count === 1 ? "regla" : "reglas"}</span>}</strong><small>{row.description || (row.product_stage ? technicalStateLabel(row.product_stage) : row.active ? "Situación personalizada" : "Pendiente de activar")}</small></div>
           <button className="fu-situation-switch" type="button" role="switch" aria-checked={row.active} aria-label={`${row.active ? "Deshabilitar" : "Habilitar"} ${row.label} en esta etapa`} disabled={busy} onClick={() => void toggle(row)}>
             <span aria-hidden="true" />{row.active ? "Habilitada" : "Deshabilitada"}
           </button>
