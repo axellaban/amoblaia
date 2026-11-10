@@ -839,11 +839,11 @@ async function itemOf(agencyId: string) {
  */
 export async function claimNext(input: { agencyId?: unknown; filter?: unknown; skip?: unknown }, origin: string, actor: { id: string; name: string }) {
   if (typeof input.agencyId === "string" && input.agencyId) {
-    const { it } = await itemOf(input.agencyId);
+    const { it, b } = await itemOf(input.agencyId);
     if (it.execution?.status === "sent") throw new HttpError(409, `Ya se confirmó «${it.actionLabel}» con ${it.name}.`);
     if (it.blocked) throw new HttpError(409, it.blocked);
     await lock(it, actor);
-    return prepare(it, origin, actor);
+    return prepare(it, origin, actor, b.vs);
   }
   // La cola se recalcula ahora (no la que tiene la pantalla) y se toma solo lo que entra en el filtro elegido.
   // Filtering after the first 500 globally ranked prospects silently loses
@@ -878,8 +878,8 @@ async function release(agencyId: string, actorId: string) {
  * «Link demo» and «Link panel»), its WhatsApp and the version it gets. A text
  * with «---» lines is several messages, sent one after the other.
  */
-async function prepare(it: QueueItem, origin: string, actor: { id: string; name: string }) {
-  const vs = await versions();
+async function prepare(it: QueueItem, origin: string, actor: { id: string; name: string }, knownVersions?: FollowupVersion[]) {
+  const vs = knownVersions ?? await versions();
   const v = vs.find((x) => x.id === it.versionId);
   if (!v) throw new HttpError(409, `Falta el texto de «${it.actionLabel}».`);
   const need = linksNeeded(v);
