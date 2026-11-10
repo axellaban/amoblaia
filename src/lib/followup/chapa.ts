@@ -20,6 +20,8 @@ import {
   registerReply,
   releaseClaim,
   saveRule,
+  deleteRule,
+  reorderRules,
   setPriority,
   setSituation,
   setVersionStatus,
@@ -172,6 +174,10 @@ export async function runFollowupOp(op: unknown, b: Record<string, unknown>, act
       return setVersionStatus(b.id, b.estado);
     case "rule-save":
       return saveRule(b.key, (b.valores as Record<string, unknown>) ?? {}, actor);
+    case "rule-delete":
+      return deleteRule(b.key, actor);
+    case "rule-reorder":
+      return reorderRules(b.before, b.after, actor);
     case "stage-create":
       return createStage((b.valores as Record<string, unknown>) ?? {});
     case "state-save": {
