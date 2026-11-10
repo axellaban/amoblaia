@@ -913,6 +913,7 @@ function ExecPanel({
   const [snoozeKey, setSnoozeKey] = useState<(typeof SNOOZE)[number]["key"]>("manana");
   const [snoozeDate, setSnoozeDate] = useState("");
   const [priority, setPriority] = useState(item.priority);
+  const [handoffTo,setHandoffTo]=useState<"Facu"|"Axel">("Facu");
   const sent = status === "sent";
 
   const load = () =>
@@ -963,6 +964,12 @@ function ExecPanel({
       onDone({ status: "failed", at: new Date().toISOString(), reason: `Reprogramada para el ${when(r.snoozedUntil)}` });
       onNext();
     }
+  }
+  async function handoff(){
+    const r=await post<{handoffTo:string}>("/api/admin/follow-up/inmobiliarias",{
+      accion:"handoff",inmobiliaria:item.agencyId,para:handoffTo
+    });
+    if(r){setNotice(`Pasada a ${handoffTo}.`);onNext();}
   }
   async function changePriority(p: string) {
     setPriority(p as QueueItem["priority"]);
@@ -1114,6 +1121,15 @@ function ExecPanel({
             <button type="button" className={`button button-small button-outline${panel === "fail" ? " is-active" : ""}`} data-testid="followup-failed" onClick={() => setPanel(panel === "fail" ? "none" : "fail")}>
               {task ? "No se pudo" : "No se envió"}
             </button>
+            <details data-testid="followup-handoff" style={{display:"inline-block"}}>
+              <summary className="button button-small button-outline" style={{cursor:"pointer"}}>Pasar a Facu - Axel</summary>
+              <div style={{display:"flex",gap:6,padding:8}}>
+                <select value={handoffTo} onChange={e=>setHandoffTo(e.target.value as "Facu"|"Axel")} aria-label="Responsable">
+                  <option value="Facu">Facu</option><option value="Axel">Axel</option>
+                </select>
+                <button type="button" className="button button-small button-primary" disabled={busy} onClick={()=>void handoff()}>Confirmar pase</button>
+              </div>
+            </details>
             <button type="button" className={`button button-small button-outline${panel === "snooze" ? " is-active" : ""}`} data-testid="followup-snooze" onClick={() => setPanel(panel === "snooze" ? "none" : "snooze")}>
               Omitir / reprogramar
             </button>
