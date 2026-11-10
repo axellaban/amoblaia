@@ -1,4 +1,5 @@
 import "server-only";
+import type { Period } from "@/lib/agency/demo-funnel";
 import { HttpError } from "@/lib/commerce/http";
 import { adminClient } from "@/lib/supabase/server";
 import { actorName } from "./actor";
@@ -83,9 +84,9 @@ async function byActor(team: TeamUser[]) {
 }
 
 /** Lo que Chapa muestra: la cola, las bloqueadas, la bandeja, el embudo, las reglas y los resultados. */
-export async function followupSnapshot(team: TeamUser[] = []) {
+export async function followupSnapshot(team: TeamUser[] = [], period?: Period) {
   const [o, actors, catalogStages, catalogStates, catalogOverrides] = await Promise.all([
-    followupOverview(), byActor(team),
+    followupOverview(period), byActor(team),
     customStages().catch(() => null),
     readStateCatalog().catch(() => null),
     readSituationOverrides().catch(() => null),
@@ -110,6 +111,10 @@ export async function followupSnapshot(team: TeamUser[] = []) {
     scheduled: o.stages.flatMap((s) => s.queue).filter((q) => q.dueAt && q.action && q.execution?.status !== "sent"),
     inbox: o.inbox,
     funnel: o.funnel,
+    chart: o.chart,
+    lostAt: o.lostAt,
+    chartRows: o.chartRows,
+    chartPeriod: period ?? { key: 'todo', from: null, to: null },
     stages: o.stages.map((s) => ({ key: s.key, title: s.title, goal: s.goal, waiting: s.queue.length, versions: s.versions })),
     rules: o.rules,
     results: { ...o.results, byActor: actors },
