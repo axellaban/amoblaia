@@ -608,7 +608,7 @@ function blockReason(
   if (f.needsDemo && !it.hasDemo) return "Variable incompleta: el mensaje lleva {{demo}} y todavía no tiene una demo publicada.";
   const channel = it.versionChannel;
   if (channel === "whatsapp" && !it.wa) return "Sin WhatsApp: cargalo en la ficha o marcala «Sin WhatsApp».";
-  if (channel === "whatsapp" && it.group === "nuevos" && f.newToday >= DAILY_NEW_CAP) return `Tope de ${DAILY_NEW_CAP} conversaciones nuevas en 24 horas alcanzado.`;
+  // Capacity is allocated once across the whole board using the DB-configured limit; no second hardcoded cap here.
   if (channel === "whatsapp") return it.window ? outsideWindow(it.window, f.now) : outsideHours(it.group, f.now);
   return null;
 }
