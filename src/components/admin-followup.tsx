@@ -74,6 +74,7 @@ export function FollowupBoard({
   blocked,
   noInteresados,
   summary,
+  agencies,
   inbox,
   funnel,
   rules,
@@ -87,6 +88,7 @@ export function FollowupBoard({
   blocked: QueueItem[];
   noInteresados: QueueItem[];
   summary: QueueSummary;
+  agencies: AgencyChoice[];
   inbox: InboxItem[];
   funnel: FunnelStep[];
   rules: Rule[];
@@ -109,7 +111,7 @@ export function FollowupBoard({
     setCatalogError("");
   }, []);
   const [queueState, setQueueState] = useState<QueueState>(QUEUE_START);
-  const initial = useMemo<QueueView>(() => ({ queue, blocked, noInteresados, summary, rules, generatedAt }), [queue, blocked, noInteresados, summary, rules, generatedAt]);
+  const initial = useMemo<QueueView>(() => ({ queue, blocked, noInteresados, summary, agencies, stageCounts: Object.fromEntries(FOLLOWUP_STAGES.map(st => [st.key, stages.find(x=>x.key===st.key)?.queue.length??0])), rules, generatedAt }), [queue, blocked, noInteresados, summary, agencies, stages, rules, generatedAt]);
   const [view, setView] = useState<View>(() => {
     if (typeof window === "undefined") return "cola";
     const v = new URLSearchParams(window.location.search).get("vista");
@@ -145,7 +147,7 @@ export function FollowupBoard({
       {view === "etapas" ? <StageSettings custom={custom} reload={reloadCatalog} rules={rules} /> : view === "cola" ? (
         <ExecCenter initial={initial} stages={stages} state={queueState} setState={setQueueState} onReplies={() => go("respuestas")} />
       ) : view === "respuestas" ? (
-        <Inbox inbox={inbox} agencies={[...queue, ...blocked, ...noInteresados]} />
+        <Inbox inbox={inbox} agencies={agencies} />
       ) : view === "embudo" ? (
         <Funnel key={chartStep ?? "all"} chart={chart} chartStep={chartStep} custom={custom} funnel={funnel} stages={stages} rules={rules} onRules={() => go("reglas")} />
       ) : view === "resultados" ? (
@@ -1101,7 +1103,7 @@ function ExecPanel({
  * clasificar o mandó a Facu. Clasificarla aplica la situación (con el texto
  * como evidencia) y la cola sabe qué hacer después.
  */
-function Inbox({ inbox, agencies }: { inbox: InboxItem[]; agencies: QueueItem[] }) {
+function Inbox({ inbox, agencies }: { inbox: InboxItem[]; agencies: AgencyChoice[] }) {
   const router = useRouter();
   const [selected, setSelected] = useState<string | null>(inbox[0]?.id ?? null);
   const [adding, setAdding] = useState(false);
@@ -1245,13 +1247,17 @@ function ReplyDetail({ reply: r, onDone }: { reply: InboxItem; onDone: () => voi
   );
 }
 
-function ReplyForm({ agencies, onDone }: { agencies: QueueItem[]; onDone: () => void }) {
+function ReplyForm({ agencies, onDone }: { agencies: AgencyChoice[]; onDone: () => void }) {
   const [agency, setAgency] = useState("");
+  const [agencySearch, setAgencySearch] = useState("");
   const [text, setText] = useState("");
   const [c, setC] = useState<ReplyClass | "">("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const options = [...agencies].sort((a, b) => a.name.localeCompare(b.name));
+  const needle = agencySearch.toLowerCase().trim().replace(/[^a-z0-9áéíóúñ+]/g,"");
+  const options = [...agencies].filter((a) => !needle ||
+    (a.name+" "+(a.phone||"")).toLowerCase().replace(/[^a-z0-9áéíóúñ+]/g,"").includes(needle) ||
+    (a.phone||"").replace(/\D/g,"").includes(needle.replace(/\D/g,""))).sort((a,b)=>a.name.localeCompare(b.name)).slice(0,100);
   async function save() {
     setBusy(true);
     setError("");
@@ -1270,11 +1276,12 @@ function ReplyForm({ agencies, onDone }: { agencies: QueueItem[]; onDone: () => 
       <div className="fu-add-grid">
         <label>
           <span>Inmobiliaria</span>
+          <input type="search" value={agencySearch} onChange={(e) => {setAgencySearch(e.target.value);setAgency("");}} placeholder="Buscar por nombre o teléfono" aria-label="Buscar inmobiliaria por nombre o teléfono" />
           <select value={agency} onChange={(e) => setAgency(e.target.value)}>
             <option value="">Elegí…</option>
             {options.map((q) => (
               <option key={q.agencyId} value={q.agencyId}>
-                {q.name}
+                {q.name}{q.phone ? ` · ${q.phone}` : ""}
               </option>
             ))}
           </select>
