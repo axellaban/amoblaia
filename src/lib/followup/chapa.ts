@@ -2,7 +2,9 @@ import "server-only";
 import { HttpError } from "@/lib/commerce/http";
 import { adminClient } from "@/lib/supabase/server";
 import { actorName } from "./actor";
-import { GROUPS, SITUATIONS } from "./plan";
+import { ACTIONS, GROUPS, SITUATIONS } from "./plan";
+import { actionsOf } from "./rules";
+import { FOLLOWUP_STAGES } from "./stages";
 import { createStage, customStages } from "./commercial-catalog";
 import { canonicalClassifierOptions, changeBaseSituation, readSituationOverrides, readStateCatalog, removeCustomSituation, updateStateCatalog } from "./state-catalog";
 import {
@@ -95,6 +97,7 @@ export async function followupSnapshot(team: TeamUser[] = []) {
       })),
       states: catalogStates ?? [], overrides: catalogOverrides ?? [],
       canonical: canonicalClassifierOptions(),
+      actions: Object.fromEntries(FOLLOWUP_STAGES.map((s) => [s.key, actionsOf(s.key).map((key) => ({ key, label: ACTIONS[key] }))])),
       available: catalogStages !== null && catalogStates !== null && catalogOverrides !== null,
     },
     summary: o.summary,
