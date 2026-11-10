@@ -3325,6 +3325,19 @@ function WhatsAppShortcut({ item: q }: { item: QueueItem }) {
 }
 
 /** Corrección manual explícita; no envía mensajes ni confirma tareas. */
+function ConfirmActionDialog({title,description,onConfirm,onCancel,busy=false}:{title:string;description:string;onConfirm:()=>void;onCancel:()=>void;busy?:boolean}){
+  return <div className="fu-action-modal-backdrop" role="presentation" onClick={onCancel} style={{position:"fixed",inset:0,background:"#102f2270",zIndex:10000,display:"grid",placeItems:"center",padding:16}}>
+    <div role="dialog" aria-modal="true" aria-label={title} onClick={e=>e.stopPropagation()}
+      style={{background:"#fff",maxWidth:430,width:"100%",padding:20,borderRadius:14,display:"grid",gap:12,boxShadow:"0 18px 50px #0004"}}>
+      <h3 style={{margin:0}}>{title}</h3><p style={{margin:0,fontSize:14}}>{description}</p>
+      <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
+        <button type="button" className="button button-small button-outline" onClick={onCancel} disabled={busy}>Cancelar</button>
+        <button type="button" className="button button-small button-primary" onClick={onConfirm} disabled={busy}>{busy?"Guardando…":"Confirmar"}</button>
+      </div>
+    </div>
+  </div>;
+}
+
 function QueueCorrection({ item: q, onSaved }: { item: QueueItem; onSaved: () => void }) {
   const catalog = useContext(SituationCatalog);
   const [stage, setStage] = useState<StageKey>(q.stage);
@@ -3332,9 +3345,11 @@ function QueueCorrection({ item: q, onSaved }: { item: QueueItem; onSaved: () =>
   const [note, setNote] = useState(q.situationNote ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  async function save() {
+  const [confirmStage,setConfirmStage]=useState(false);
+  async function save(approved = false) {
     if (stage === q.stage && situation === q.situation && note === (q.situationNote ?? "")) return;
-    if (stage !== q.stage && !window.confirm("¿Corregir la etapa comercial? Esto cambia las acciones pendientes, no crea eventos de producto ni envía WhatsApps.")) return;
+    if(stage!==q.stage&&!approved){setConfirmStage(true);return;}
+    setConfirmStage(false);
     setBusy(true);
     setError("");
     try {
@@ -3377,6 +3392,8 @@ function QueueCorrection({ item: q, onSaved }: { item: QueueItem; onSaved: () =>
         <small>No interesado permite una única despedida con encuesta; «No contactar» impide nuevos envíos.</small>
         {error && <span className="fu-error" role="alert">{error}</span>}
         <button className="button button-small button-primary" type="button" disabled={busy} data-testid="followup-quick-save" onClick={() => void save()}>{busy ? "Guardando…" : "Guardar corrección"}</button>
+        {confirmStage && <ConfirmActionDialog title="Corregir etapa" description="Esto cambia las tareas pendientes, pero no crea eventos de producto ni envía WhatsApps." busy={busy}
+          onCancel={()=>setConfirmStage(false)} onConfirm={()=>void save(true)} />}
       </div>
     </details>
   );
