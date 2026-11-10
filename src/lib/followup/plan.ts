@@ -255,7 +255,7 @@ export function outsideHours(group: Group, at = new Date()): string | null {
 }
 
 /** Tope de conversaciones nuevas en 24 horas. */
-export const DAILY_NEW_CAP = 50;
+export const DAILY_NEW_CAP = 48;
 
 
 /**
@@ -284,9 +284,9 @@ export const remainingFirstContactSlots = (sent24: number, cap = DAILY_NEW_CAP) 
   Math.max(0, cap - Math.max(0, Math.floor(sent24)));
 
 export function allocateFirstContactSlots<T extends FirstContactCandidate>(
-  all: T[], sent24: number, now = Date.now(),
+  all: T[], sent24: number, now = Date.now(), cap = DAILY_NEW_CAP,
 ): { slots: number; ready: T[]; waiting: T[] } {
-  const slots = remainingFirstContactSlots(sent24);
+  const slots = remainingFirstContactSlots(sent24, cap);
   const candidates = all.filter((q) =>
     q.stage === "no-contactado" && q.group === "nuevos" && q.versionChannel === "whatsapp" &&
     q.action !== null && !q.blocked && q.execution?.status !== "sent");
