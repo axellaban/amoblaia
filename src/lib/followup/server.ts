@@ -45,7 +45,6 @@ import {
 } from "./stages";
 import {
   CLOSED_SITUATIONS,
-  DAILY_NEW_CAP,
   allocateFirstContactSlots,
   remainingFirstContactSlots,
   SITUATIONS,
@@ -339,6 +338,7 @@ export type QueueSummary = {
   claimed: number;
   doneToday: number;
   newToday: number;
+  outsideToday: number;
   cap: number;
   /** Real capacity in the rolling 24-hour window, not all waiting prospects. */
   newRemaining: number;
@@ -353,6 +353,35 @@ const claims = async () => {
 };
 
 const DAY_MS = 86_400_000;
+export type QuotaSettings = { cap: number; outsideToday: number; externalUpdatedAt: string | null };
+export async function readQuotaSettings(now = new Date()): Promise<QuotaSettings> {
+  const { data, error } = await adminClient().from("followup_quota_settings")
+    .select("cap,external_count,external_updated_at").eq("id", true).single();
+  if(error || !data) throw new HttpError(503, "No se pudo consultar el cupo. Verificá la migración de configuración.");
+  const stamped = data.external_updated_at ? Date.parse(data.external_updated_at) : NaN;
+  return { cap: data.cap, outsideToday: Number.isFinite(stamped) && stamped > now.getTime()-DAY_MS ? data.external_count : 0,
+    externalUpdatedAt: data.external_updated_at };
+}
+export async function updateQuotaSettings(
+  input: { cap?: unknown; outsideToday?: unknown },
+  actor: { id: string; name: string },
+) {
+  const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if(input.cap!==undefined){
+    if(!Number.isInteger(input.cap)||Number(input.cap)<1||Number(input.cap)>500)throw new HttpError(400,"El límite debe ser un número entre 1 y 500.");
+    patch.cap=input.cap;
+  }
+  if(input.outsideToday!==undefined){
+    if(!Number.isInteger(input.outsideToday)||Number(input.outsideToday)<0||Number(input.outsideToday)>10000)throw new HttpError(400,"Indicá cuántos saludos enviaste fuera de Habita.");
+    patch.external_count=input.outsideToday;
+    patch.external_updated_at=new Date().toISOString();
+  }
+  const {error}=await adminClient().from("followup_quota_settings").update(patch).eq("id",true);
+  if(error)throw new HttpError(503,"No se pudo guardar la configuración del cupo.");
+  await audit("quota",actor,{to:JSON.stringify(patch)}).catch(()=>undefined);
+  return readQuotaSettings();
+}
+
 const whenText = (iso: string) => new Date(iso).toLocaleString("es-AR", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "America/Argentina/Buenos_Aires" });
 
 /**
@@ -362,16 +391,16 @@ const whenText = (iso: string) => new Date(iso).toLocaleString("es-AR", { day: "
  * so the counters match the rows.
  */
 async function board(now = new Date()) {
-  const [rows, ds, vs, ex, extra, info, held, open, rules, overrides, catalog, extraStages] = await Promise.all([
+  const [rows, ds, vs, ex, extra, info, held, open, rules, overrides, catalog, extraStages, quota] = await Promise.all([
     commercialRows(),
-    prospectDataset().catch(() => null),
+    prospectDataset({ syncConversions: false }),
     versions(),
     executions(),
     extras(),
     details(),
     claims(),
     openReplies(),
-    readRules(), readSituationOverrides(), readStateCatalog(), customStages(),
+    readRules(), readSituationOverrides(), readStateCatalog(), customStages(), readQuotaSettings(now),
   ]);
   const accounts = accountsByAgency(ds);
   const exOf = new Map<string, FollowupExecution[]>();
@@ -508,9 +537,9 @@ async function board(now = new Date()) {
   // prospect "ready" until the 50th send. Claims reserve capacity first.
   // This only governs registered sends; WhatsApp Web activity outside Habita
   // cannot be inferred or counted here.
-  const allocated = allocateFirstContactSlots([...items.values()], fresh.size, now.getTime());
+  const allocated = allocateFirstContactSlots([...items.values()], fresh.size + quota.outsideToday, now.getTime(), quota.cap);
   for (const candidate of allocated.waiting)
-    candidate.blocked = `Sin cupo para primer contacto: ${fresh.size} enviados en 24 h, máximo ${DAILY_NEW_CAP}. Se habilitará al liberarse un cupo.`;
+    candidate.blocked = `Sin cupo para primer contacto: ${fresh.size} registrados y ${quota.outsideToday} externos en 24 h, máximo ${quota.cap}. Se habilitará al liberarse un cupo.`;
 
   // Fase 4: the moment each execution converted, recorded the first time it is seen (the exact time when known).
   const firstDemo = new Map<string, number>();
@@ -554,7 +583,7 @@ async function board(now = new Date()) {
     step: stepNow.get(id) ?? -1,
     greetingVersion: greeting.get(id) ?? null,
   }));
-  return { rows, items, closedItems, vs, ex, stepNow, newToday: fresh.size, open, names: new Map(rows.map((r) => [r.id, r.name])), rules, facts,
+  return { rows, items, closedItems, vs, ex, stepNow, newToday: fresh.size, quota, open, names: new Map(rows.map((r) => [r.id, r.name])), rules, facts,
     // Catalog already fetched to calculate which actions are eligible; reuse it
     // in the Chapa snapshot instead of making three additional DB round trips.
     catalog: { stages: extraStages, states: catalog, overrides },
@@ -747,7 +776,7 @@ export async function followupOverview(period: Period = parsePeriod({})): Promis
     queue: executable(all),
     blocked: all.filter((q) => pending(q) && q.blocked).sort(byPriority),
     noInteresados: [...b.closedItems, ...all.filter((q) => q.stage === "no-responde" && (q.situation === "rechazo" || q.situation === "proveedor_ia"))].sort(byPriority),
-    summary: summarize(all, b.newToday, inboxItems.length),
+    summary: summarize(all, b.newToday, inboxItems.length, b.quota),
     inbox: inboxItems,
     funnel: funnelOf(b, all),
     rules: [...b.rules].sort((x, y) => x.position - y.position),
@@ -765,7 +794,7 @@ export async function followupQueueView() {
     queue: executable(all),
     blocked: all.filter((q) => pending(q) && q.blocked).sort(byPriority),
     noInteresados: [...b.closedItems, ...all.filter((q) => q.stage === "no-responde" && (q.situation === "rechazo" || q.situation === "proveedor_ia"))].sort(byPriority),
-    summary: summarize(all, b.newToday, inboxOf(b).length),
+    summary: summarize(all, b.newToday, inboxOf(b).length, b.quota),
     rules: [...b.rules].sort((x, y) => x.position - y.position),
     generatedAt: new Date().toISOString(),
   };
@@ -785,7 +814,7 @@ function funnelOf(b: Awaited<ReturnType<typeof board>>, all: QueueItem[]): Funne
 const pending = (q: QueueItem) => q.action !== null && q.execution?.status !== "sent";
 /** The ones that can be executed now, in priority order (taken ones included: the page shows who has them). */
 const executable = (all: QueueItem[]) => all.filter((q) => pending(q) && !q.blocked).sort((a, b) => byQueueOrder(a, b));
-function summarize(all: QueueItem[], newToday: number, inboxCount = 0): QueueSummary {
+function summarize(all: QueueItem[], newToday: number, inboxCount = 0, quota: QuotaSettings = {cap:48,outsideToday:0,externalUpdatedAt:null}): QueueSummary {
   const today = artDate(new Date());
   const live = new Date().toISOString();
   return {
@@ -797,10 +826,11 @@ function summarize(all: QueueItem[], newToday: number, inboxCount = 0): QueueSum
     claimed: all.filter((q) => pending(q) && !q.blocked && q.claim && q.claim.until > live).length,
     doneToday: all.filter((q) => q.execution?.status === "sent" && artDate(q.execution.at) === today).length,
     newToday,
-    cap: DAILY_NEW_CAP,
-    newRemaining: remainingFirstContactSlots(newToday),
+    cap: quota.cap,
+    outsideToday: quota.outsideToday,
+    newRemaining: remainingFirstContactSlots(newToday+quota.outsideToday, quota.cap),
     newWaiting: all.filter((q) => q.stage === "no-contactado" && pending(q) &&
-      (q.blocked?.startsWith("Sin cupo para primer contacto") || q.blocked?.startsWith("Tope de 50 conversaciones"))).length,
+      (q.blocked?.startsWith("Sin cupo para primer contacto") || q.blocked?.startsWith("Tope de conversaciones"))).length,
   };
 }
 
