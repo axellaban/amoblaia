@@ -8,12 +8,18 @@ const AXEL = "00000000-0000-4000-8000-0000000000f2";
 const AG = "00000000-0000-4000-8000-0000000000b1";
 const calls = vi.hoisted(() => [] as { fn: string; args: unknown[] }[]);
 const board = vi.hoisted(() => ({ claim: null as null | { actorId: string; by: string; until: string } }));
+const snapshotReads = vi.hoisted(() => ({ count: 0 }));
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/supabase/server", () => ({
   currentUser: async () => null,
   userClient: async () => ({}),
   adminClient: () => ({
-    from: () => ({ select: () => ({ eq: () => ({ limit: async () => ({ data: [{ actor_id: FACU_ID, status: "sent", converted_at: "2026-11-05T12:00:00Z" }, { actor_id: FACU_ID, status: "sent", converted_at: null }], error: null }) }) }) }),
+    from: (table: string) => table === "followup_claims"
+      ? { select: () => ({ eq: () => ({ gt: () => ({ maybeSingle: async () => ({
+          data: board.claim ? { actor_id: board.claim.actorId, actor_name: board.claim.by, locked_until: board.claim.until } : null,
+          error: null,
+        }) }) }) }) }
+      : { select: () => ({ eq: () => ({ limit: async () => ({ data: [{ actor_id: FACU_ID, status: "sent", converted_at: "2026-11-05T12:00:00Z" }, { actor_id: FACU_ID, status: "sent", converted_at: null }], error: null }) }) }) },
     auth: {
       admin: {
         listUsers: async () => ({
@@ -32,7 +38,7 @@ vi.mock("@/lib/supabase/server", () => ({
 vi.mock("@/lib/agency/external", () => ({}));
 const fn = vi.hoisted(() => (name: string, out: unknown = { ok: name }) => async (...args: unknown[]) => (calls.push({ fn: name, args }), out));
 vi.mock("@/lib/followup/server", () => ({
-  followupOverview: async () => ({
+  followupOverview: async () => (snapshotReads.count++, {
     summary: { ready: 1 },
     queue: [{ agencyId: AG, name: "Inmo", action: "principal", dueAt: null, execution: null }],
     blocked: [],
@@ -62,7 +68,7 @@ vi.mock("@/lib/followup/server", () => ({
   saveRule: fn("saveRule"),
 }));
 import { GET, POST } from "../src/app/api/prospeccion/route";
-import { operatorFor } from "../src/lib/followup/chapa";
+import { invalidateFollowupSnapshot, operatorFor } from "../src/lib/followup/chapa";
 
 const SECRET = "m".repeat(40);
 const req = (method: string, path: string, body?: unknown, auth = `Bearer ${SECRET}`) =>
@@ -78,6 +84,8 @@ beforeEach(() => {
   vi.stubEnv("PROSPECTING_ACTOR_ID", FACU);
   calls.length = 0;
   board.claim = null;
+  snapshotReads.count = 0;
+  invalidateFollowupSnapshot();
 });
 
 describe("Follow-up para Chapa", () => {
@@ -107,6 +115,16 @@ describe("Follow-up para Chapa", () => {
     expect(Object.keys(body)).toEqual(expect.arrayContaining(["summary", "blocked", "inbox", "funnel", "rules", "results", "labels"]));
     expect(body.labels.situations.interesado).toBe("Interesado");
     expect(body.results.byActor).toEqual([{ actor: "Facundo", executions: 2, conversions: 1, rate: 0.5 }]);
+  });
+
+  it("cachea lecturas repetidas pero invalida luego de una acción real", async () => {
+    const url = "?vista=followup";
+    expect((await GET(req("GET", url))).status).toBe(200);
+    expect((await GET(req("GET", url))).status).toBe(200);
+    expect(snapshotReads.count).toBe(1);
+    await POST(req("POST", "", { by: "Facundo", followup: { op: "situation", inmobiliaria: AG, situacion: "neutro" } }));
+    expect((await GET(req("GET", url))).status).toBe(200);
+    expect(snapshotReads.count).toBe(2);
   });
 
   it("cada operación va a la misma función que la ruta del agente, a nombre de quien opera", async () => {
