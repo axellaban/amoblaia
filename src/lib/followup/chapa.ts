@@ -25,6 +25,7 @@ import {
   reorderRules,
   setPriority,
   setStage,
+  setHandoff,
   setSituation,
   setVersionStatus,
   snooze,
@@ -209,6 +210,10 @@ export async function runFollowupOp(op: unknown, b: Record<string, unknown>, act
       if (!ID(b)) throw new HttpError(400, "Falta la inmobiliaria.");
       await guard();
       return setStage(ID(b), b.etapa, actor.id, actor.name);
+    case "handoff":
+      if (!ID(b)) throw new HttpError(400, "Falta la inmobiliaria.");
+      await guard();
+      return setHandoff(ID(b), b.para ?? null, actor);
     case "situation":
       if (!ID(b)) throw new HttpError(400, "Falta la inmobiliaria.");
       return setSituation(ID(b), b.situacion, b.texto, actor);
