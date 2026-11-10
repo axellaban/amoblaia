@@ -8,7 +8,7 @@ import { compatible, type Rule } from "./rules";
 import { FOLLOWUP_STAGES, commercialOf, isCommercialStage, type CommercialStageKey, type StageKey } from "./stages";
 
 /** Lo que el motor eligió para una inmobiliaria, lo justo para filtrarla. */
-export type Filterable = { stage: StageKey; ruleKey: string | null; situation: Situation; group: Group; name: string; demoGenerated?: boolean; catalogSituation?: string | null };
+export type Filterable = { stage: StageKey; ruleKey: string | null; situation: Situation; group: Group; name: string; demoGenerated?: boolean; catalogSituation?: string | null; productSituations?: string[] };
 
 export type QueueFilter = {
   stage: StageKey | null;
@@ -48,7 +48,7 @@ export function matchesFilter(q: Filterable, f: QueueFilter, rules: Rule[]) {
       if (q.ruleKey && stageRules(rules, q.stage).some((r) => r.key === q.ruleKey)) return false;
     } else if (q.ruleKey !== f.rule) return false;
   }
-  if (f.catalogSituation && q.catalogSituation !== f.catalogSituation) return false;
+  if (f.catalogSituation && q.catalogSituation !== f.catalogSituation && !q.productSituations?.includes(f.catalogSituation)) return false;
   if (f.situation && q.situation !== f.situation) return false;
   if (f.group && q.group !== f.group) return false;
   const term = norm(f.search);

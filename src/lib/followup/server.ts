@@ -280,6 +280,7 @@ export type QueueItem = {
   manual: boolean;
   situation: Situation;
   catalogSituation?: string | null;
+  productSituations?: string[];
   situationManual: boolean;
   situationNote: string | null;
   /** La próxima acción (fija por código en la Fase 1); null: nada que mandar. */
@@ -457,7 +458,8 @@ async function board(now = new Date()) {
       }
       continue;
     }
-    const it = item(r, account, own, info, placement, vs, exOf.get(r.id) ?? [], sendsOf.get(r.id) ?? [], rules, Boolean(surveyReply));
+    const productKeys = catalog.filter(s => s.active && s.source === "product" && s.product_stage === at.derived.stage && s.product_stage === placement.stage).map(s => s.key);
+    const it = item(r, account, own, info, placement, vs, exOf.get(r.id) ?? [], sendsOf.get(r.id) ?? [], rules, Boolean(surveyReply), productKeys);
     const scopes = [commercialOf(it.stage) as string, ...extraStages.filter(s => s.technical_stage === it.stage && s.entry_situation === it.situation).map(s => s.key)];
     const disabled = overrides.some(o => scopes.includes(o.commercial_stage) && o.key === it.situation && o.enabled === false)
       || Boolean(it.catalogSituation && !catalog.some(s => s.key === it.catalogSituation && s.active));
@@ -590,6 +592,7 @@ function item(
   sends: { status: string; sent_at: string | null; step: number }[],
   rules: Rule[] = DEFAULT_RULES,
   surveyReply = false,
+  productKeys: string[] = [],
 ): QueueItem {
   const stage = at.stage!;
   const agency = info.agency.get(r.id);
@@ -609,7 +612,7 @@ function item(
   const doneMap: Partial<Record<Action, boolean>> = {};
   for (const e of stageSent) doneMap[(e.action ?? "principal") as Action] = true;
   const demoGenerated = r.demos.some((d) => d.generated === true);
-  const matchingRules = rules.filter(rule => !rule.catalog_situation || (sit.manual && rule.catalog_situation === own?.catalog_situation));
+  const matchingRules = rules.filter(rule => !rule.catalog_situation || productKeys.includes(rule.catalog_situation) || (sit.manual && rule.catalog_situation === own?.catalog_situation));
   const alreadySurveyed = executionsOf.some(e => e.action === "encuesta_cierre" && e.status === "sent");
   if (alreadySurveyed) doneMap.encuesta_cierre = true;
   const next = nextAction(stage, sit.situation, doneMap, sit.situation === "rechazo" && !surveyReply ? [] : matchingRules, demoGenerated);
@@ -653,6 +656,7 @@ function item(
     step: at.step,
     manual: at.manual,
     situation: sit.situation,
+    productSituations: productKeys,
     catalogSituation: sit.manual ? own?.catalog_situation : null,
     situationManual: sit.manual,
     situationNote: sit.manual ? (own?.situation_note ?? null) : null,
@@ -1389,9 +1393,14 @@ export async function saveRule(key: unknown, input: Record<string, unknown>, act
   if (typeof key === "string" && key && !before) throw new HttpError(404, "No encontramos esa regla.");
   const catalogKey = typeof input.catalog_situation === "string" && input.catalog_situation ? input.catalog_situation : null;
   if (catalogKey) {
-    const custom = await resolveCustomClassification(catalogKey);
-    if (!custom || !clean.situations.includes(custom.canonical as Situation)) throw new HttpError(400, "Revisá la situación personalizada de la regla.");
-    const scope = custom.definition.commercial_stage;
+    const definition = (await readStateCatalog()).find(s => s.key === catalogKey && s.active);
+    if (!definition) throw new HttpError(400, "Revisá la situación personalizada de la regla.");
+    if (definition.source === "product") {
+      if (definition.product_stage !== clean.stage) throw new HttpError(400, "La actividad de la demo corresponde a otra subetapa.");
+    } else if (!definition.maps_to || !clean.situations.includes(definition.maps_to as Situation)) {
+      throw new HttpError(400, "Revisá la situación de conversación de la regla.");
+    }
+    const scope = definition.commercial_stage;
     if (scope !== commercialOf(clean.stage) && !(await customStages()).some(s => s.key === scope && s.technical_stage === clean.stage))
       throw new HttpError(400, "La situación pertenece a otra etapa.");
   }

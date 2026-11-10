@@ -1,7 +1,7 @@
 import "server-only";
 import { HttpError } from "@/lib/commerce/http";
 import { adminClient } from "@/lib/supabase/server";
-import { isCommercialStage } from "./stages";
+import { isCommercialStage, type StageKey } from "./stages";
 import { customStages } from "./commercial-catalog";
 import { CLOSED_SITUATIONS, REPLY_CLASSES, SITUATIONS, isSituation, isReplyClass, type ReplyClass, type Situation } from "./plan";
 
@@ -16,13 +16,14 @@ export type StateDefinition = {
   description: string;
   examples: string;
   commercial_stage: string;
-  source: "whatsapp" | "manual";
+  source: "whatsapp" | "manual" | "product";
+  product_stage: StageKey | null;
   maps_to: ReplyClass | null;
   active: boolean;
   updated_at: string;
 };
 
-const COLS = "key,label,description,examples,commercial_stage,source,maps_to,active,updated_at";
+const COLS = "key,label,description,examples,commercial_stage,source,product_stage,maps_to,active,updated_at";
 
 const CUSTOM = /^custom_[a-z0-9_]{3,60}$/;
 
@@ -43,18 +44,20 @@ export async function updateStateCatalog(input: Record<string, unknown>, actorId
   const description = txt(input.description);
   const examples = txt(input.examples);
   const source = txt(input.source) || "whatsapp";
+  const product_stage = source === "product" ? txt(input.product_stage) : null;
   const maps_to = txt(input.maps_to) || null;
   const active = input.active === true;
   if (!CUSTOM.test(key)) throw new HttpError(400, "La clave debe empezar con custom_ y usar minúsculas y guiones bajos.");
   if (label.length < 2 || label.length > 80) throw new HttpError(400, "El nombre debe tener entre 2 y 80 caracteres.");
   if (!isCommercialStage(commercial_stage) && !(await customStages()).some(s => s.key === commercial_stage)) throw new HttpError(400, "Etapa comercial desconocida.");
-  if (!["whatsapp", "manual"].includes(source)) throw new HttpError(400, "Origen de clasificación desconocido.");
+  if (source === "product" && (commercial_stage !== "demo-enviada" || !["no-abrio","sin-interaccion","sin-cuenta"].includes(product_stage ?? "") || maps_to)) throw new HttpError(400, "Elegí una condición de actividad de la demo.");
+  if (!["whatsapp", "manual", "product"].includes(source)) throw new HttpError(400, "Origen de clasificación desconocido.");
   if (description.length > 800 || examples.length > 2000) throw new HttpError(400, "La descripción o los ejemplos son demasiado largos.");
   if (maps_to && (!isReplyClass(maps_to) || !(maps_to in SITUATIONS))) throw new HttpError(400, "La situación elegida no se puede usar para clasificar respuestas.");
   // Closed situations are allowed only as closed: never create an automated outbound rule.
-  if (active && !maps_to) throw new HttpError(400, "Para activar el estado, elegí la situación canónica a la que corresponde.");
+  if (active && !maps_to && !product_stage) throw new HttpError(400, "Para activar el estado, elegí la situación canónica a la que corresponde.");
   const db = adminClient();
-  const fields = { label, description, examples, source, maps_to, active, updated_by: actorId, updated_at: new Date().toISOString() };
+  const fields = { label, description, examples, source, product_stage, maps_to, active, updated_by: actorId, updated_at: new Date().toISOString() };
   const table = db.from("followup_state_catalog");
   const change = input.create === true ? table.insert({ ...fields, key, commercial_stage }) :
     table.update(fields).eq("key", key).eq("commercial_stage", commercial_stage).is("removed_at", null);

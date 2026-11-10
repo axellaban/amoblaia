@@ -268,7 +268,7 @@ function ExecCenter({
   const kpiGroup = kpi === "respuestas" ? "respuestas" : kpi === "demos" ? "demos" : null;
   const scopes = commercial ? [commercial] : COMMERCIAL_STAGES.map(s => s.key);
   const baseOptions = new Map(scopes.flatMap(scope => visibleSituations(scope, catalog.overrides).map(s => [s.key, s.label] as const)));
-  const customOptions = catalog.states.filter(s => s.active && s.maps_to && scopes.some(scope =>
+  const customOptions = catalog.states.filter(s => s.active && (s.maps_to || s.product_stage) && scopes.some(scope =>
     s.commercial_stage === scope || catalog.custom.some(c => c.key === s.commercial_stage && commercialOf(c.technical_stage) === scope)));
   const options = [
     ...Array.from(baseOptions, ([key,label]) => ({ key, label, filter: { situation: key as Situation | null, catalogSituation: null as string | null } })),
@@ -1461,10 +1461,10 @@ const versionsOf = (stage: StageView, action: Action): StageView => ({ ...stage,
  */
 type CatalogState = {
   key: string; label: string; description: string; examples: string;
-  commercial_stage: string; source: "whatsapp" | "manual";
+  commercial_stage: string; source: "whatsapp" | "manual" | "product"; product_stage?: StageKey | null;
   maps_to: Situation | null; active: boolean; updated_at: string;
 };
-type CatalogDraft = { key: string; label: string; description: string; examples: string; source: "whatsapp" | "manual"; maps_to: Situation | ""; active: boolean };
+type CatalogDraft = { key: string; label: string; description: string; examples: string; source: "whatsapp" | "manual" | "product"; product_stage?: StageKey | null; maps_to: Situation | ""; active: boolean };
 const EMPTY_CATALOG: CatalogDraft = { key: "", label: "", description: "", examples: "", source: "whatsapp", maps_to: "", active: false };
 /** Catalog editor is separate from the message editor: it does not rewrite past events or send messages. */
 function StageSettings({ custom, reload, rules }: { rules: Rule[]; custom: CustomStage[]; reload: () => Promise<void> }) {
@@ -1558,7 +1558,7 @@ function StateCatalogManager({ commercial, title, rules = [] }: { commercial: st
     finally { setBusy(false); }
   }
   function edit(state?: CatalogState) {
-    setDraft(state ? { key: state.key, label: state.label, description: state.description, examples: state.examples, source: state.source, maps_to: state.maps_to ?? "", active: state.active } : EMPTY_CATALOG);
+    setDraft(state ? { key: state.key, label: state.label, description: state.description, examples: state.examples, source: state.source, product_stage: state.product_stage, maps_to: state.maps_to ?? "", active: state.active } : EMPTY_CATALOG);
     setEditing(true);
   }
   async function save() {
@@ -1588,21 +1588,21 @@ function StateCatalogManager({ commercial, title, rules = [] }: { commercial: st
           <label>Nombre<input aria-label="Nombre del estado" value={draft.label} maxLength={80} onChange={(e) => setDraft((d) => ({ ...d, label: e.target.value }))} /></label>
           <label>Descripción<textarea aria-label="Descripción para el clasificador" value={draft.description} maxLength={800} onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))} /></label>
           <label>Ejemplos de respuestas<textarea aria-label="Ejemplos del estado" value={draft.examples} maxLength={2000} onChange={(e) => setDraft((d) => ({ ...d, examples: e.target.value }))} /></label>
-          {!base && <><label>Situación que entiende el motor
+          {!base && <>{draft.source === "product" ? <label>Actividad registrada en la demo<select value={draft.product_stage ?? ""} onChange={e => setDraft(d => ({ ...d, product_stage: e.target.value as StageKey }))}>{technicalOf("demo-enviada").map(key => <option key={key} value={key}>{technicalStateLabel(key)}</option>)}</select></label> : <label>Situación que entiende el motor
             <select aria-label="Mapear a situación existente" value={draft.maps_to} onChange={(e) => setDraft((d) => ({ ...d, maps_to: e.target.value as Situation | "" }))}>
               <option value="">Sin mapear (revisión manual)</option>
               {(Object.keys(SITUATIONS) as Situation[]).filter(s => s in REPLY_CLASSES).map((s) => <option key={s} value={s}>{SITUATIONS[s]}</option>)}
             </select>
-          </label>
+          </label>}
           <label>Origen
-            <select value={draft.source} onChange={(e) => setDraft((d) => ({ ...d, source: e.target.value as "whatsapp" | "manual" }))}>
-              <option value="whatsapp">WhatsApp</option><option value="manual">Manual</option>
+            <select value={draft.source} onChange={(e) => setDraft((d) => ({ ...d, source: e.target.value as CatalogDraft["source"], maps_to: "", product_stage: e.target.value === "product" ? "no-abrio" : null }))}>
+              <option value="whatsapp">WhatsApp</option><option value="manual">Manual</option>{commercial === "demo-enviada" && <option value="product">Actividad de la demo</option>}
             </select>
           </label>
           <label><input type="checkbox" checked={draft.active} onChange={(e) => setDraft((d) => ({ ...d, active: e.target.checked }))} /> Activa para clasificación</label>
           </>}
           <div className="fu-actions"><button type="button" className="button button-small button-outline" onClick={() => setEditing(false)}>Cancelar</button>
-            <button type="button" className="button button-small button-primary" disabled={busy || !draft.label.trim() || (draft.active && !draft.maps_to)} onClick={() => void save()}>{busy ? "Guardando…" : "Guardar situación"}</button>
+            <button type="button" className="button button-small button-primary" disabled={busy || !draft.label.trim() || (draft.active && !draft.maps_to && !draft.product_stage)} onClick={() => void save()}>{busy ? "Guardando…" : "Guardar situación"}</button>
           </div>
         </div>
       )}
@@ -1611,7 +1611,7 @@ function StateCatalogManager({ commercial, title, rules = [] }: { commercial: st
         const count = rules.filter(r => r.catalog_situation ? r.catalog_situation === row.key : r.situations.some(key => key === row.key)).length;
         return <li key={row.key}>
           <span className="fu-catalog-glyph"><Icon size={17} /></span>
-          <div><strong>{row.label}{count > 0 && <span className="fu-catalog-count">{count} {count === 1 ? "regla" : "reglas"}</span>}</strong><small>{row.description || (row.active ? "Situación personalizada" : "Pendiente de activar")}</small></div>
+          <div><strong>{row.label}{count > 0 && <span className="fu-catalog-count">{count} {count === 1 ? "regla" : "reglas"}</span>}</strong><small>{row.description || (row.product_stage ? "Se actualiza con la actividad de la demo" : row.active ? "Situación personalizada" : "Pendiente de activar")}</small></div>
           <button className="fu-situation-switch" type="button" role="switch" aria-checked={row.active} aria-label={`${row.active ? "Deshabilitar" : "Habilitar"} ${row.label} en esta etapa`} disabled={busy} onClick={() => void toggle(row)}>
             <span aria-hidden="true" />{row.active ? "Habilitada" : "Deshabilitada"}
           </button>
@@ -1776,7 +1776,7 @@ function templateIssue(stage: StageKey, r: Rule, catalog: React.ContextType<type
     if (r.after_action && !compatible(stage,r.after_action)) return "Elegí un paso previo de esta etapa o seleccioná «Ningún paso».";
     if (r.min_demo_activity_level && !["no-abrio","sin-interaccion","sin-cuenta"].includes(stage)) return "Requiere una demo enviada.";
     if (r.situations.some(s => !allowed.includes(s))) return "Habilitá la situación en Etapas y situaciones.";
-    if (r.catalog_situation && !catalog.states.some(s => s.key === r.catalog_situation && s.active &&
+    if (r.catalog_situation && !catalog.states.some(s => s.key === r.catalog_situation && s.active && (!s.product_stage || s.product_stage === stage) &&
       (s.commercial_stage === commercialOf(stage) || catalog.custom.some(c => c.key === s.commercial_stage && c.technical_stage === stage))))
       return "Situación personalizada no disponible en esta etapa.";
     return "";
@@ -2028,7 +2028,7 @@ function RuleEditor({
 }) {
   const router = useRouter();
   const catalog = useContext(SituationCatalog);
-  const specific = catalog.states.filter(s => s.active && s.maps_to && (commercialOf(stage.key) === s.commercial_stage ||
+  const specific = catalog.states.filter(s => s.active && (s.maps_to || s.product_stage === stage.key) && (commercialOf(stage.key) === s.commercial_stage ||
     catalog.custom.some(c => c.key === s.commercial_stage && c.technical_stage === stage.key)));
   const available = actionsOf(stage.key);
   const blank: Rule = template
@@ -2211,6 +2211,10 @@ function RuleEditor({
           {specific.length > 0 && <label className="fu-f">Situación personalizada
               <select value={r.catalog_situation ?? ""} onChange={e => {
                 const definition = specific.find(s => s.key === e.target.value);
+                if (definition?.source === "product") {
+                  set({ catalog_situation: definition.key, situations: r.action === "encuesta_cierre" ? ["rechazo"] : [] });
+                  return;
+                }
                 if (!definition?.maps_to) { set({ catalog_situation: null }); return; }
                 const closing = definition.maps_to === "rechazo";
                 const action = closing ? "encuesta_cierre" : r.action === "encuesta_cierre" ? "principal" : r.action;
@@ -2218,7 +2222,7 @@ function RuleEditor({
                 if (action !== r.action) setMsgDirty(false);
                 set({ catalog_situation: definition.key, situations: [definition.maps_to], action, after_action: null });
               }}><option value="">Todas las que cumplan la condición</option>
-              {specific.filter(s => SITUATION_OPTIONS.some(x => x === s.maps_to) && (s.maps_to !== "rechazo" || compatible(stage.key, "encuesta_cierre"))).map(s => <option key={s.key} value={s.key}>{s.label}</option>)}</select>
+              {specific.filter(s => (s.product_stage === stage.key || SITUATION_OPTIONS.some(x => x === s.maps_to)) && (s.maps_to !== "rechazo" || compatible(stage.key, "encuesta_cierre"))).map(s => <option key={s.key} value={s.key}>{s.label}</option>)}</select>
           </label>}
           <label className="fu-f">
             <span>Paso previo</span>
