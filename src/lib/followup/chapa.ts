@@ -89,7 +89,11 @@ export async function followupSnapshot(team: TeamUser[] = []) {
   return {
     labels: { situations: SITUATIONS, groups: GROUPS },
     catalog: {
-      stages: catalogStages ?? [], states: catalogStates ?? [], overrides: catalogOverrides ?? [],
+      stages: (catalogStages ?? []).map((stage) => ({
+        ...stage,
+        waiting: o.stages.find((s) => s.key === stage.technical_stage)?.queue.filter((q) => q.situation === stage.entry_situation).length ?? 0,
+      })),
+      states: catalogStates ?? [], overrides: catalogOverrides ?? [],
       canonical: canonicalClassifierOptions(),
       available: catalogStages !== null && catalogStates !== null && catalogOverrides !== null,
     },
