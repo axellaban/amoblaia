@@ -1390,10 +1390,12 @@ function ReplyForm({ agencies, onDone }: { agencies: AgencyChoice[]; onDone: () 
   const [c, setC] = useState<ReplyClass | "">("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const needle = agencySearch.toLowerCase().trim().replace(/[^a-z0-9áéíóúñ+]/g,"");
+  const needle = agencySearch.toLowerCase().trim();
+  const digits = needle.replace(/\D/g, "");
   const options = [...agencies].filter((a) => !needle ||
-    (a.name+" "+(a.phone||"")).toLowerCase().replace(/[^a-z0-9áéíóúñ+]/g,"").includes(needle) ||
-    (a.phone||"").replace(/\D/g,"").includes(needle.replace(/\D/g,""))).sort((a,b)=>a.name.localeCompare(b.name)).slice(0,100);
+    a.name.toLowerCase().includes(needle) ||
+    (digits.length >= 3 && (a.phone||"").replace(/\D/g, "").includes(digits)))
+    .sort((a,b)=>a.name.localeCompare(b.name)).slice(0,100);
   async function save() {
     setBusy(true);
     setError("");
