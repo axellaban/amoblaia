@@ -24,6 +24,7 @@ import {
   deleteRule,
   reorderRules,
   setPriority,
+  setExecutionOwner,
   setStage,
   setSituation,
   setVersionStatus,
@@ -227,6 +228,10 @@ export async function runFollowupOp(op: unknown, b: Record<string, unknown>, act
     case "priority":
       if (!ID(b)) throw new HttpError(400, "Falta la inmobiliaria.");
       return setPriority(ID(b), b.prioridad, actor.id, actor.name);
+    case "owner":
+      if (!ID(b)) throw new HttpError(400, "Falta la inmobiliaria.");
+      await guard();
+      return setExecutionOwner(ID(b), b.responsable, actor.id, actor.name);
     case "version-create":
       return createVersion((b.valores as Record<string, unknown>) ?? {}, actor.id);
     case "version-update":
