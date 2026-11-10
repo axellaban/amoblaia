@@ -554,7 +554,11 @@ async function board(now = new Date()) {
     step: stepNow.get(id) ?? -1,
     greetingVersion: greeting.get(id) ?? null,
   }));
-  return { rows, items, closedItems, vs, ex, stepNow, newToday: fresh.size, open, names: new Map(rows.map((r) => [r.id, r.name])), rules, facts };
+  return { rows, items, closedItems, vs, ex, stepNow, newToday: fresh.size, open, names: new Map(rows.map((r) => [r.id, r.name])), rules, facts,
+    // Catalog already fetched to calculate which actions are eligible; reuse it
+    // in the Chapa snapshot instead of making three additional DB round trips.
+    catalog: { stages: extraStages, states: catalog, overrides },
+  };
 }
 
 /** Why it cannot be executed now (in order of what to fix first), or null. */
@@ -716,7 +720,7 @@ function resultsOf(b: Awaited<ReturnType<typeof board>>, all: QueueItem[]) {
     blocks: blockReasons(all.filter((q) => q.action && q.execution?.status !== "sent" && q.blocked).map((q) => q.blocked!)),
   };
 }
-export async function followupOverview(period: Period = parsePeriod({})): Promise<{ chart: ReturnType<typeof chartCounts>; lostAt: number[]; chartRows: { agencyId: string; name: string; step: number | null; lost: boolean; score: number | null; whatsapp: string | null }[]; stages: StageView[]; queue: QueueItem[]; blocked: QueueItem[]; noInteresados: QueueItem[]; summary: QueueSummary; inbox: InboxItem[]; funnel: FunnelStep[]; rules: Rule[]; changes: Change[]; results: Results; generatedAt: string }> {
+export async function followupOverview(period: Period = parsePeriod({})): Promise<{ chart: ReturnType<typeof chartCounts>; lostAt: number[]; chartRows: { agencyId: string; name: string; step: number | null; lost: boolean; score: number | null; whatsapp: string | null }[]; catalog: { stages: Awaited<ReturnType<typeof customStages>>; states: Awaited<ReturnType<typeof readStateCatalog>>; overrides: Awaited<ReturnType<typeof readSituationOverrides>> }; stages: StageView[]; queue: QueueItem[]; blocked: QueueItem[]; noInteresados: QueueItem[]; summary: QueueSummary; inbox: InboxItem[]; funnel: FunnelStep[]; rules: Rule[]; changes: Change[]; results: Results; generatedAt: string }> {
   const [b, changes] = await Promise.all([board(), auditOf(null, 20)]);
   const all = [...b.items.values()];
   const inboxItems = inboxOf(b);
@@ -725,6 +729,7 @@ export async function followupOverview(period: Period = parsePeriod({})): Promis
     return { agencyId: row.id, name: row.name, score: row.score, whatsapp: row.whatsapp ?? null, step: agencyStep(prospect && inPeriod(prospect.at, period) ? prospect.step : null, demosInPeriod(row.demos, period).step), lost: Boolean(prospect?.lost) };
   });
   return {
+    catalog: b.catalog,
     chart: chartCounts(reached.flatMap(row => row.step === null ? [] : [row.step]), chartSteps),
     lostAt: chartSteps.map((_, i) => reached.filter(row => row.step === i && row.lost).length),
     chartRows: reached,
