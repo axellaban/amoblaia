@@ -5,7 +5,7 @@ import { activity, contactFor, HEADER, stableUuid, toRow } from "@/lib/prospecti
 import { recordSend } from "@/lib/prospecting/record-send";
 import { NO_STORE, prospectDataset, prospectFailure, prospectRpc } from "@/lib/prospecting/server";
 import { runSheetSync } from "@/lib/prospecting/sync";
-import { followupSnapshot, operatorFor, runFollowupOp } from "@/lib/followup/chapa";
+import { cachedFollowupSnapshot, invalidateFollowupSnapshot, operatorFor, runFollowupOp } from "@/lib/followup/chapa";
 import { agencyDemoLink, agencyList, agencyPanel, agencyThumb, recalcScores, setDemosSent } from "@/lib/agency/external";
 import type { Dataset, ProspectAccount } from "@/lib/prospecting/types";
 import { sameSecret } from "@/lib/session";
@@ -102,7 +102,7 @@ export async function GET(request: Request) {
     if (!cloudEnabled() || !cloudConfigured()) throw new HttpError(503, "La base de prospección no está disponible.");
     const q = new URL(request.url).searchParams;
     if (q.get("vista") === "inmobiliarias") return Response.json(await agencyList(), { headers: NO_STORE });
-    if (q.get("vista") === "followup") return Response.json(await followupSnapshot(await team(), parsePeriod({ periodo: q.get("periodo") ?? "", desde: q.get("desde") ?? "", hasta: q.get("hasta") ?? "" })), { headers: NO_STORE });
+    if (q.get("vista") === "followup") return Response.json(await cachedFollowupSnapshot(await team(), parsePeriod({ periodo: q.get("periodo") ?? "", desde: q.get("desde") ?? "", hasta: q.get("hasta") ?? "" })), { headers: NO_STORE });
     if (q.get("foto")) {
       const image = await agencyThumb(q.get("foto")!, q.get("w"));
       return new Response(new Uint8Array(image), { headers: { "Content-Type": "image/jpeg", "Cache-Control": "private, max-age=3600" } });
@@ -233,7 +233,9 @@ export async function POST(request: Request) {
     if (b?.followup && typeof b.followup === "object") {
       const f = b.followup as Record<string, unknown>;
       const actor = operatorFor(str(b.by, 80), await team(), await actorId());
-      return Response.json(await runFollowupOp(f.op, f, actor, new URL(request.url).origin), { headers: NO_STORE });
+      const result = await runFollowupOp(f.op, f, actor, new URL(request.url).origin);
+      if (f.op !== "queue" && f.op !== "replies") invalidateFollowupSnapshot();
+      return Response.json(result, { headers: NO_STORE });
     }
     if (b?.accion === "recalcular-scores") return Response.json(await recalcScores(), { headers: NO_STORE });
     if (b && typeof b.accion === "string" && b.inmobiliaria !== undefined) {
@@ -242,7 +244,9 @@ export async function POST(request: Request) {
       const origin = new URL(request.url).origin;
       if (b.accion === "demo-estado") {
         if (typeof b.enviada !== "boolean") throw new HttpError(400, "Indicá si la demo ya se envió.");
-        return Response.json({ changed: await setDemosSent(b.inmobiliaria, b.enviada, actor) }, { headers: NO_STORE });
+        const changed = await setDemosSent(b.inmobiliaria, b.enviada, actor);
+        invalidateFollowupSnapshot();
+        return Response.json({ changed }, { headers: NO_STORE });
       }
       if (b.accion === "link-demo") return Response.json(await agencyDemoLink(b.inmobiliaria, actor, origin), { headers: NO_STORE });
       if (b.accion === "link-panel") return Response.json(await agencyPanel(b.inmobiliaria, actor, origin), { headers: NO_STORE });
@@ -253,6 +257,7 @@ export async function POST(request: Request) {
       const actor = await actorId();
       const { last_import } = await prospectDataset();
       const report = await runSheetSync({ actor, csv: b.sync.csv, source: last_import?.source || DEFAULT_SOURCE, legacyChannel: "whatsapp" });
+      invalidateFollowupSnapshot();
       return Response.json(report, { headers: NO_STORE });
     }
     if (!b || !isUuid(b.code) || !b.action || typeof b.action.type !== "string") throw new HttpError(400, "Falta la cuenta o la acción.");
@@ -263,6 +268,7 @@ export async function POST(request: Request) {
     const account = before.accounts.find((a) => a.id === b.code);
     if (!account) throw new HttpError(404, "No encontramos esa cuenta en habita.");
     await apply(actor, before, account, b.action, by);
+    invalidateFollowupSnapshot();
     const { ds, demos } = await sheet(origin);
     const after = ds.accounts.find((a) => a.id === account.id)!;
     return Response.json({ header: HEADER, row: toRow(ds, after, demos.get(after.agency_id)) }, { headers: NO_STORE });
