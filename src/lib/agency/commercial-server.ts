@@ -86,29 +86,50 @@ async function subscribedOwners(owners: string[]) {
 }
 
 /**
- * Owners that did something in their panel after creating their account: an
- * image generated or a property imported (a property they created themselves
- * is read from the demos), with the latest of those. One light read per owner
- * and table; a failed read is «nothing».
+ * Owners that used their panel after account creation.
+ * Batch lookups by table instead of issuing two sequential database requests
+ * for every owner. Keeps the original per-owner "since" semantics.
  */
 const OWNER_ACTION: Record<"generations" | "property_imports", string> = {
   generations: "Generó una imagen en su panel",
   property_imports: "Importó una propiedad",
 };
 async function ownerActions(owners: { id: string; since: string }[]) {
-  const db = adminClient();
   const latest = new Map<string, ActivityFact>();
-  await Promise.all(
-    owners.map(async ({ id, since }) => {
-      for (const table of ["generations", "property_imports"] as const) {
-        const { data, error } = await db.from(table).select("created_at").eq("user_id", id).gt("created_at", since).order("created_at", { ascending: false }).limit(1);
-        const at = (data as { created_at: string }[] | null)?.[0]?.created_at;
-        if (error || !at) continue;
+  if (!owners.length) return latest;
+  const db = adminClient();
+  const sinceByOwner = new Map(owners.map(({ id, since }) => [id, since]));
+  const ids = [...sinceByOwner.keys()];
+  const read = async (table: "generations" | "property_imports", batch: string[]) => {
+    const earliest = batch.reduce((min, id) => {
+      const value = sinceByOwner.get(id)!;
+      return value < min ? value : min;
+    }, sinceByOwner.get(batch[0])!);
+    // Paginate rather than silently dropping an owner when another one has
+    // generated hundreds of images.
+    for (let offset = 0; offset < 20_000; offset += PAGE) {
+      const { data, error } = await db.from(table)
+        .select("user_id,created_at")
+        .in("user_id", batch)
+        .gt("created_at", earliest)
+        .order("created_at", { ascending: false })
+        .range(offset, offset + PAGE - 1);
+      if (error) return; // Activity is optional; it never blocks the board.
+      const rows = (data ?? []) as { user_id: string; created_at: string }[];
+      for (const { user_id: id, created_at: at } of rows) {
+        if (at <= (sinceByOwner.get(id) ?? at)) continue;
         const prev = latest.get(id);
         if (!prev || at > prev.at) latest.set(id, { at, text: OWNER_ACTION[table] });
       }
-    }),
-  );
+      if (rows.length < PAGE) break;
+    }
+  };
+  const jobs: Promise<void>[] = [];
+  for (let i = 0; i < ids.length; i += 150) {
+    const batch = ids.slice(i, i + 150);
+    jobs.push(read("generations", batch), read("property_imports", batch));
+  }
+  await Promise.all(jobs);
   return latest;
 }
 
