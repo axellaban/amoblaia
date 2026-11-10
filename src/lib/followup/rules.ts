@@ -13,6 +13,8 @@ type Situation =
   | "neutro"
   | "pregunta_precios"
   | "mas_adelante"
+  | "recontactar_vacaciones"
+  | "recontactar_mas_adelante"
   | "derivo"
   | "rechazo"
   | "proveedor_ia"
@@ -111,6 +113,8 @@ export function pickRule(rules: Rule[], stage: StageKey, situation: Situation, d
     .filter((r) => {
       if (situation === "rechazo" || r.action === "encuesta_cierre")
         return situation === "rechazo" && r.action === "encuesta_cierre" && r.situations.length === 1 && r.situations[0] === "rechazo";
+      if (situation === "recontactar_vacaciones" || situation === "recontactar_mas_adelante")
+        return r.situations.includes(situation); // never match a generic catch-all rule
       return !["no_contactar", "proveedor_ia", "numero_incorrecto", "sin_whatsapp"].includes(situation) && (!r.situations.length || r.situations.includes(situation));
     })
     .filter((r) => (r.min_demo_activity_level ?? 0) === 0 || demoGenerated)

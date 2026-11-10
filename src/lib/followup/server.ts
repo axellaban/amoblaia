@@ -1182,6 +1182,9 @@ export async function setSituation(agencyId: string, raw: unknown, note: unknown
   const situation = raw;
   const text = typeof note === "string" ? note.trim().slice(0, 2000) : "";
   const { at, account, extra } = await now(agencyId);
+  if ((situation === "recontactar_vacaciones" || situation === "recontactar_mas_adelante") &&
+      (at.stage === "no-contactado" || at.stage === null))
+    throw new HttpError(409, "Recontactar se habilita desde Contactado en adelante.");
   await saveExtra(agencyId, { situation, rejection_stage: situation === "rechazo" ? at.stage ?? extra?.rejection_stage ?? null : null, catalog_situation: custom?.definition.key ?? null, situation_step: stepValue(at.derived.reached), situation_note: text || null, situation_at: receivedAt }, actor.id);
   await audit("situation", actor, { agencyId, to: `${situation}${text ? ` · «${text.slice(0, 200)}»` : ""}` });
   let warning: string | null = null;
