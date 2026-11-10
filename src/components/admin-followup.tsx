@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Fragment, createContext, useContext, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Building2, CalendarDays, CheckCheck, ChevronDown, ChevronRight, ClipboardCopy, Copy, GripVertical, Info, KeyRound, Layers, Link2, MessageCircle, MessageSquare, MoreVertical, Pencil, Phone, Plus, RefreshCw, Send, Tag, Target, Trash2, Undo2, Video, X } from "lucide-react";
 import { api } from "@/components/admin-demos";
-import { CTA_KEYS, CTA_LABEL, COMMERCIAL_STAGES, FOLLOWUP_STAGES, OUT, VARIABLES, commercialOf, technicalOf, technicalStateLabel, fillMessage, missingVariables, pct, type Channel, type Cta, type CommercialStageKey, type StageKey, type VersionStatus } from "@/lib/followup/stages";
+import { CTA_KEYS, CTA_LABEL, COMMERCIAL_STAGES, FOLLOWUP_STAGES, OUT, VARIABLES, commercialOf, isCommercialStage, technicalOf, technicalStateLabel, fillMessage, missingVariables, pct, type Channel, type Cta, type CommercialStageKey, type StageKey, type VersionStatus } from "@/lib/followup/stages";
 import { GROUPS, REPLY_CLASSES, SITUATIONS, QUEUE_ORDERS, actionLabel, actionsOf, byQueueOrder, commercialTier, compatible, splitMessages, type QueueOrder, type Action, type ReplyClass, type Situation } from "@/lib/followup/plan";
 import type { Change, FunnelStep, InboxItem, Prepared, QueueItem, QueueSummary, QueueView, Results, StageView } from "@/lib/followup/server";
 import { NO_FILTER, OTHER_RULES, isEmptyFilter, matchesFilter, stageRules, type QueueFilter } from "@/lib/followup/queue-filter";
@@ -1511,7 +1511,7 @@ function StateCatalogManager({ commercial, title, rules = [] }: { commercial: st
   });
   const own = [...baseRows, ...states.filter(s => s.commercial_stage === commercial)];
   const base = Object.hasOwn(SITUATIONS, draft.key);
-  const workflowSteps = commercial === "interesado" ? technicalOf("interesado") : commercial === "demo-enviada" ? technicalOf("demo-enviada") : [];
+  const workflowSteps = isCommercialStage(commercial) ? technicalOf(commercial) : [];
   async function toggle(row: CatalogState) {
     if (!row.active && !row.maps_to && !row.product_stage) {
       edit(row);
