@@ -103,6 +103,8 @@ export async function followupSnapshot(team: TeamUser[] = []) {
     summary: o.summary,
     queue: o.queue,
     blocked: o.blocked,
+    // El mismo conjunto de cierres que muestra el Follow-up de Habita: nunca se ejecuta desde Chapa.
+    noInteresados: o.noInteresados,
     scheduled: o.stages.flatMap((s) => s.queue).filter((q) => q.dueAt && q.action && q.execution?.status !== "sent"),
     inbox: o.inbox,
     funnel: o.funnel,
