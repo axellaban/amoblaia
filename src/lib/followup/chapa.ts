@@ -6,7 +6,7 @@ import { ACTIONS, GROUPS, SITUATIONS } from "./plan";
 import { actionsOf } from "./rules";
 import { FOLLOWUP_STAGES } from "./stages";
 import { createStage, customStages } from "./commercial-catalog";
-import { canonicalClassifierOptions, changeBaseSituation, readSituationOverrides, readStateCatalog, removeCustomSituation, updateStateCatalog } from "./state-catalog";
+import { canonicalClassifierOptions, changeBaseSituation, readSituationOverrides, readStateCatalog, removeCustomSituation, toggleSituation, updateStateCatalog } from "./state-catalog";
 import {
   agentQueue,
   claimNext,
@@ -184,6 +184,8 @@ export async function runFollowupOp(op: unknown, b: Record<string, unknown>, act
       const values = (b.valores as Record<string, unknown>) ?? {};
       return values.base ? changeBaseSituation(values, false) : updateStateCatalog(values, actor.id);
     }
+    case "state-toggle":
+      return toggleSituation((b.valores as Record<string, unknown>) ?? {});
     case "state-delete": {
       const values = (b.valores as Record<string, unknown>) ?? {};
       return values.base ? changeBaseSituation(values, true) : removeCustomSituation(values);
