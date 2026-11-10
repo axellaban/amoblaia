@@ -51,6 +51,7 @@ type SituationOverride = { commercial_stage: string; key: Situation; label: stri
 const SituationCatalog = createContext<{ custom: CustomStage[]; states: CatalogState[]; overrides: SituationOverride[]; reload: () => Promise<void> }>({ custom: [], states: [], overrides: [], reload: async () => {} });
 function visibleSituations(stage: string, overrides: SituationOverride[], keep?: Situation, includeDisabled = false) {
   return (Object.keys(SITUATIONS) as Situation[]).flatMap(key => {
+    if ((key === "recontactar_vacaciones" || key === "recontactar_mas_adelante") && stage === "prospectado" && key !== keep) return [];
     const changed = overrides.find(row => row.commercial_stage === stage && row.key === key);
     return (changed?.removed || (!includeDisabled && changed?.enabled === false)) && key !== keep ? [] : [{ key, label: changed?.label ?? SITUATIONS[key] }];
   });
@@ -1491,6 +1492,8 @@ const situationNotes: Record<Situation, string> = {
   sin_respuesta: "Todavía no respondió al mensaje.", confirmo_numero: "Confirmó que es el WhatsApp de la inmobiliaria.",
   interesado: "Quiere conocer o probar HABITA.", neutro: "Respondió sin expresar interés ni rechazo.",
   pregunta_precios: "Consultó por planes, créditos o precios.", mas_adelante: "Pidió retomar la conversación más adelante.",
+  recontactar_vacaciones: "Pidió que lo contacten después de sus vacaciones; mantiene su etapa comercial.",
+  recontactar_mas_adelante: "Pidió que lo contacten más adelante; mantiene su etapa comercial.",
   derivo: "Indicó con quién continuar la conversación.", rechazo: "Respondió que la propuesta no le interesa.",
   proveedor_ia: "Ya trabaja con otro proveedor de IA.", no_contactar: "Pidió que no se le vuelva a escribir.",
   sin_whatsapp: "El número no tiene WhatsApp.", numero_incorrecto: "El número corresponde a otro destinatario."
