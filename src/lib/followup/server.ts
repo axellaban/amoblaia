@@ -1102,6 +1102,57 @@ async function mark(it: QueueItem, v: FollowupVersion, status: ExecutionStatus, 
   return data as FollowupExecution;
 }
 
+/**
+ * Register a greeting that the operator has already sent outside the UI.
+ * This is reconciliation, not authorization to send: it must be recorded
+ * even when the daily quota has already been exceeded. Timestamp is supplied
+ * by the operator (defaulting to now), never invented by a GET.
+ */
+export async function registerManualGreeting(agencyId: unknown, sentAt: unknown, actor: { id: string; name: string }) {
+  if(typeof agencyId!=="string")throw new HttpError(400,"Falta la inmobiliaria.");
+  const when = sentAt === undefined || sentAt === null || sentAt === "" ? new Date() :
+    typeof sentAt==="string" ? new Date(sentAt) : new Date(NaN);
+  if(!Number.isFinite(when.getTime()) || when.getTime()>Date.now()+30_000 || when.getTime()<Date.now()-7*DAY_MS)
+    throw new HttpError(400,"Indicá la hora real del saludo (últimos 7 días; no futura).");
+  const {it,b}=await itemOf(agencyId);
+  if(it.execution?.status==="sent" && it.stage==="no-contactado")
+    return { execution:it.execution, replayed:true };
+  if(it.stage!=="no-contactado"||!it.versionId)
+    throw new HttpError(409,"«Ya saludado» corresponde a una inmobiliaria en Prospectado con mensaje configurado.");
+  const v=b.vs.find(x=>x.id===it.versionId);
+  if(!v || v.stage!=="no-contactado" || v.channel!=="whatsapp")
+    throw new HttpError(409,"Falta una versión de saludo por WhatsApp.");
+  const {data,error}=await adminClient().rpc("habita_followup_mark",{
+    p_actor:actor.id,p_version:v.id,p_agency:it.agencyId,p_from_step:it.step,
+    p_status:"sent",p_reason:null,p_body:"Ya saludado fuera de HABITA (registrado manualmente)",
+  });
+  if(error||!data)throw new HttpError(503,"No se pudo registrar el saludo.");
+  const e=data as FollowupExecution;
+  // The execution's actual time, rather than the current registration time.
+  const iso=when.toISOString();
+  const saved=await adminClient().from("followup_executions").update({sent_at:iso}).eq("id",e.id);
+  if(saved.error)throw new HttpError(503,"Se registró el saludo, pero faltó guardar su hora. Revisá el historial antes de reintentar.");
+  let warning:string|null=null;
+  try {
+    const ds=await prospectDataset({syncConversions:false});
+    const account=accountsByAgency(ds).get(it.agencyId);
+    if(account){
+      const contact=contactFor(account,"whatsapp");
+      if(contact?.needs_review){
+        await prospectRpc("habita_prospect_contact",{p_actor:actor.id,p_account:account.id,p_contact:contact.id,p_fields:{verified:true}});
+      }
+      const fresh=await prospectDataset({syncConversions:false});
+      const current=accountsByAgency(fresh).get(it.agencyId);
+      if(current)await recordSend(actor.id,fresh,current,{channel:"whatsapp",text:v.body,sentAt:iso},actor.name,"Follow-up · Ya saludado");
+    }
+  } catch(err) {
+    warning="El saludo quedó registrado con su hora, pero no se pudo reflejar en Adquisición. Revisá la ficha.";
+  }
+  await release(it.agencyId,actor.id).catch(()=>undefined);
+  await audit("manual_greeting",actor,{agencyId:it.agencyId,to:iso});
+  return {execution:{status:"sent",at:iso},replayed:false,warning};
+}
+
 /** «Abrir WhatsApp»: queda como abierto (no cuenta como enviado). */
 export async function openExecution(input: { agencyId: unknown; stage?: unknown; action?: unknown; versionId?: unknown }, actor: { id: string; name: string }) {
   const { it, v } = await sameTask(input, actor.id);
