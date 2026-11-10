@@ -121,11 +121,12 @@ type AgencyExtra = {
   catalog_situation?: string | null;
   short_name: string | null;
   priority: Priority | null;
+  execution_owner?: "Todos" | "Facu" | "Axel" | "Extensión" | null;
   snooze_until: string | null;
   snooze_reason: string | null;
 };
 const extras = async (agencyId?: string) => {
-  let q = adminClient().from("followup_agencies").select("agency_id,stage_override,override_step,address,zone,score,situation,situation_step,situation_note,situation_at,rejection_stage,catalog_situation,short_name,priority,snooze_until,snooze_reason");
+  let q = adminClient().from("followup_agencies").select("agency_id,stage_override,override_step,address,zone,score,situation,situation_step,situation_note,situation_at,rejection_stage,catalog_situation,short_name,priority,execution_owner,snooze_until,snooze_reason");
   if (agencyId) q = q.eq("agency_id", agencyId);
   const { data, error } = await q.limit(20000);
   if (error) throw missing(error) ? new HttpError(409, MISSING) : new Error("FOLLOWUP_READ_FAILED");
@@ -296,6 +297,8 @@ export type QueueItem = {
   /** Alta, Media o Baja: la del grupo, o la que puso el equipo. */
   priority: Priority;
   priorityManual: boolean;
+  /** Quién ejecuta este lead; no cambia los claims de 10 minutos. */
+  owner: "Todos" | "Facu" | "Axel" | "Extensión";
   /** Reprogramada: no entra a la cola hasta esta fecha. */
   snoozedUntil: string | null;
   /** La regla que eligió su acción (null: fija por código). */
@@ -676,6 +679,7 @@ function item(
     dueAt: null,
     priority: own?.priority ?? defaultPriority(groupOf(stage, action)),
     priorityManual: Boolean(own?.priority),
+    owner: own?.execution_owner ?? "Todos",
     snoozedUntil: null,
     openReplies: 0,
     blocked: null,
@@ -1571,6 +1575,17 @@ async function saveExtra(agencyId: string, fields: Partial<Omit<AgencyExtra, "ag
     .from("followup_agencies")
     .upsert({ agency_id: agencyId, ...fields, updated_by: actorId, updated_at: new Date().toISOString() }, { onConflict: "agency_id" });
   if (error) throw missing(error) ? new HttpError(409, MISSING) : new Error("FOLLOWUP_SAVE_FAILED");
+}
+
+/** Asignación operativa: independiente de la reserva temporal de una tarea. */
+export async function setExecutionOwner(agencyId: string, raw: unknown, actorId: string, actorName = "") {
+  if (!isUuid(agencyId)) throw new HttpError(404, "No encontramos la inmobiliaria.");
+  if (raw !== "Todos" && raw !== "Facu" && raw !== "Axel" && raw !== "Extensión")
+    throw new HttpError(400, "Responsable de ejecución desconocido.");
+  const old = (await now(agencyId)).extra?.execution_owner ?? "Todos";
+  await saveExtra(agencyId, { execution_owner: raw }, actorId);
+  await audit("execution_owner", { id: actorId, name: actorName }, { agencyId, from: old, to: raw });
+  return { owner: raw };
 }
 
 /**
