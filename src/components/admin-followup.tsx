@@ -196,6 +196,38 @@ function afterConfirm(q: QueueItem, rules: Rule[]) {
  * ejecutando. «Tomar la próxima» y «Siguiente contacto» piden al servidor la
  * próxima que entra en los filtros elegidos (no la de la lista guardada acá).
  */
+function ManualGreeting({ agencyId, onDone }: { agencyId: string; onDone: () => void }) {
+  const localNow = () => new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,16);
+  const [at,setAt]=useState(localNow);
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState("");
+  const [saved,setSaved]=useState("");
+  async function save(e:React.FormEvent){
+    e.preventDefault();setBusy(true);setError("");setSaved("");
+    try {
+      const when=new Date(at);
+      if(!Number.isFinite(when.getTime()))throw new Error("Indicá la hora real del saludo.");
+      const result=await api<{warning?:string|null}>("/api/admin/followup/greeting",{
+        method:"POST",body:JSON.stringify({inmobiliaria:agencyId,hora:when.toISOString()})
+      });
+      if(result.warning)setSaved(result.warning);else setSaved("Saludo registrado.");
+      onDone();
+    }catch(err){setError(err instanceof Error?err.message:"No se pudo registrar.");}
+    finally{setBusy(false);}
+  }
+  return <details data-testid="followup-already-greeted" style={{display:"inline-block",margin:"3px 0"}}>
+    <summary className="button button-small button-outline" style={{cursor:"pointer",listStyle:"none"}}>Ya saludado</summary>
+    <form onSubmit={save} style={{display:"grid",gap:6,padding:9,background:"#fff",borderRadius:8,border:"1px solid #dce7df",minWidth:205}}>
+      <label style={{display:"grid",gap:3,fontSize:12}}>Hora real del saludo
+        <input type="datetime-local" value={at} onChange={e=>setAt(e.target.value)} required />
+      </label>
+      <button type="submit" className="button button-small button-primary" disabled={busy}>{busy?"Registrando…":"Registrar saludo"}</button>
+      {error&&<span role="alert" className="fu-error">{error}</span>}
+      {saved&&<span role="status">{saved}</span>}
+    </form>
+  </details>;
+}
+
 function QuotaBanner({ summary, onSaved }: { summary: QueueSummary; onSaved: () => void }) {
   const [outside, setOutside] = useState(String(summary.outsideToday));
   const [saving, setSaving] = useState(false);
@@ -568,6 +600,7 @@ function ExecCenter({
                           <Link href={`/admin/inmobiliarias/${q.agencyId}`}>{q.name}</Link>
                           <span>{f.stage ? (q.person ?? "—") : stageTitle(q.stage)}</span>
                           <QueueCorrection item={q} onSaved={() => void refresh()} />
+                          {q.stage === "no-contactado" && status !== "sent" && <ManualGreeting agencyId={q.agencyId} onDone={() => void refresh()} />}
                         </div>
                         <span className="fu-cell">{q.zone ?? "—"}</span>
                         <span className="fu-cell">
