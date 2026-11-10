@@ -908,6 +908,7 @@ function ExecPanel({
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState(exec?.status ?? "pending");
   const [panel, setPanel] = useState<"none" | "fail" | "snooze">("none");
+  const [confirmSnooze,setConfirmSnooze]=useState(false);
   const [kind, setKind] = useState<keyof typeof FAIL_KINDS>("otro");
   const [reason, setReason] = useState("");
   const [snoozeKey, setSnoozeKey] = useState<(typeof SNOOZE)[number]["key"]>("manana");
@@ -1161,11 +1162,13 @@ function ExecPanel({
             </select>
             {snoozeKey === "fecha" && <input type="date" value={snoozeDate} onChange={(e) => setSnoozeDate(e.target.value)} aria-label="Fecha" />}
             <input value={reason} maxLength={300} placeholder="Motivo (ej.: pidió hablar después)" onChange={(e) => setReason(e.target.value)} aria-label="Motivo" />
-            <button type="button" className="button button-small button-outline" data-testid="followup-snooze-save" disabled={busy} onClick={snooze}>
+            <button type="button" className="button button-small button-outline" data-testid="followup-snooze-save" disabled={busy} onClick={()=>setConfirmSnooze(true)}>
               Reprogramar
             </button>
           </div>
         )}
+        {confirmSnooze && <ConfirmActionDialog title="Reprogramar contacto" description="La inmobiliaria saldrá de la cola hasta la fecha seleccionada. No se marcará ningún envío." busy={busy}
+          onCancel={()=>setConfirmSnooze(false)} onConfirm={()=>{setConfirmSnooze(false);void snooze();}} />}
         {closed && (
           <button type="button" className="button button-small button-primary" data-testid="followup-next" disabled={taking} onClick={onNext}>
             {taking ? "Buscando…" : "Siguiente contacto →"}
