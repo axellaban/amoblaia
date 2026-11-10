@@ -197,7 +197,7 @@ export async function runFollowupOp(op: unknown, b: Record<string, unknown>, act
       return openExecution(task, actor);
     case "confirm":
       await guard();
-      return confirmExecution({ ...task, text: b.texto }, actor);
+      return confirmExecution({ ...task, text: b.texto }, actor, { includeItem: false });
     case "fail":
       await guard();
       return failExecution({ ...task, reason: b.motivo, kind: b.tipo }, actor);

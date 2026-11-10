@@ -136,7 +136,7 @@ describe("Follow-up para Chapa", () => {
     const done = calls.filter((c) => c.fn !== "agentQueue");
     expect(done.map((c) => c.fn)).toEqual(["claimNext", "confirmExecution", "failExecution", "snooze"]);
     expect(done[0].args).toEqual([{ agencyId: AG }, "https://habita.test", { id: AXEL, name: "Axel" }]);
-    expect(done[1].args).toEqual([{ agencyId: AG, stage: "no-contactado", action: "principal", versionId: "v1", text: "hola" }, { id: AXEL, name: "Axel" }]);
+    expect(done[1].args).toEqual([{ agencyId: AG, stage: "no-contactado", action: "principal", versionId: "v1", text: "hola" }, { id: AXEL, name: "Axel" }, { includeItem: false }]);
     expect(done[2].args[0]).toMatchObject({ reason: "No tiene WhatsApp", kind: "sin_whatsapp" });
   });
 
