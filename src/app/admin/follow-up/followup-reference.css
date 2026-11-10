@@ -107,7 +107,7 @@ body:has(.fu-page) .pr-side-foot {
 .fu-page .fu-reference-stages {
   order: -10;
   display: grid;
-  grid-template-columns: repeat(7, minmax(0,1fr));
+  grid-template-columns: repeat(8, minmax(0,1fr));
   gap: 9px;
   align-items: stretch;
   margin: 0;
@@ -375,7 +375,7 @@ body:has(.fu-page) .pr-side-foot {
 
 /* Two-column mobile tiles and one-row stage chips, exactly like reference. */
 @media (max-width: 1450px) {
-  .fu-page .fu-reference-stages { grid-template-columns: repeat(7, minmax(116px,1fr)); overflow-x: auto; }
+  .fu-page .fu-reference-stages { grid-template-columns: repeat(8, minmax(116px,1fr)); overflow-x: auto; }
   .fu-page .fu-qgrid { grid-template-columns: minmax(0,1.8fr) minmax(270px,.9fr); }
 }
 @media (max-width: 1250px) {

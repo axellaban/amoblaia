@@ -142,7 +142,7 @@ export function FollowupBoard({
       </nav>
       {catalogError && (view === "etapas" || view === "embudo") && <p role="alert">{catalogError}</p>}
       {view === "etapas" ? <StageSettings custom={custom} reload={reloadCatalog} rules={rules} /> : view === "cola" ? (
-        <ExecCenter initial={initial} stages={stages} inboxCount={inbox.length} state={queueState} setState={setQueueState} onReplies={() => go("respuestas")} />
+        <ExecCenter initial={initial} stages={stages} state={queueState} setState={setQueueState} onReplies={() => go("respuestas")} />
       ) : view === "respuestas" ? (
         <Inbox inbox={inbox} agencies={[...queue, ...blocked, ...noInteresados]} />
       ) : view === "embudo" ? (
@@ -196,14 +196,12 @@ function afterConfirm(q: QueueItem, rules: Rule[]) {
 function ExecCenter({
   initial,
   stages,
-  inboxCount,
   state,
   setState,
   onReplies,
 }: {
   initial: QueueView;
   stages: StageView[];
-  inboxCount: number;
   state: QueueState;
   setState: (s: QueueState) => void;
   onReplies: () => void;
@@ -326,8 +324,6 @@ function ExecCenter({
 
   return (
     <section className="fu-center" data-testid="followup-queue">
-      {/* Visual match to the original mockup: first the commercial stage cards,
-          then the existing stage chips, queue and execution. No extra stage logic. */}
       <div className="fu-reference-stages" data-testid="followup-reference-stage-cards" aria-label="Etapas comerciales">
         <button type="button"
           className={`fu-reference-stage is-todas${!commercial ? " is-on" : ""}`}
@@ -339,7 +335,7 @@ function ExecCenter({
           <strong>{count({ ...f, commercial: null, stage: null, rule: null, situation: null, catalogSituation: null })}</strong>
           <span className="fu-reference-spark" aria-hidden="true"><i /><i /><i /><i /></span>
         </button>
-        {COMMERCIAL_STAGES.filter((s) => s.key !== "cliente").map((st) => {
+        {COMMERCIAL_STAGES.map((st) => {
           const Icon = STAGE_GLYPH[st.key];
           return (
             <button key={st.key} type="button"
@@ -379,30 +375,6 @@ function ExecCenter({
             <small>{k.hint}</small>
           </button>
         ))}
-      </div>
-
-      <div className="fu-qbar" data-testid="followup-queue-stages">
-        <span className="fu-qbarlabel">Cola por etapa comercial</span>
-        <div className="fu-qchips">
-          <button type="button" className={`fu-qchip${!commercial ? " is-on" : ""}`} aria-pressed={!commercial} data-testid="followup-queue-stage" data-stage="" onClick={() => setF({ commercial: null, stage: null, demoImage: null, rule: null, situation: null, catalogSituation: null })}>
-            <span className="fu-stage-glyph" aria-hidden="true"><Layers size={19} /></span>
-            <span className="fu-stage-tile-copy"><span>Todas</span><b>{count({ ...f, commercial: null, stage: null, rule: null, situation: null, catalogSituation: null })}</b></span>
-          </button>
-          {COMMERCIAL_STAGES.map((s) => {
-            const Icon = STAGE_GLYPH[s.key];
-            return (
-              <button key={s.key} type="button" className={`fu-qchip${commercial === s.key ? " is-on" : ""}`}
-                aria-pressed={commercial === s.key} data-testid="followup-queue-stage" data-stage={s.key}
-                onClick={() => setF({ commercial: s.key, stage: null, demoImage: null, rule: null, situation: null, catalogSituation: null })}>
-                <span className="fu-stage-glyph" aria-hidden="true"><Icon size={19} /></span>
-                <span className="fu-stage-tile-copy"><span>{s.title}</span><b>{count({ ...f, commercial: s.key, stage: null, rule: null, situation: null, catalogSituation: null })}</b></span>
-              </button>
-            );
-          })}
-        </div>
-        <button type="button" className="fu-qchip is-replies" data-testid="followup-queue-replies" onClick={onReplies}>
-          <MessageSquare size={14} aria-hidden="true" /> Respuestas nuevas <b>{inboxCount}</b>
-        </button>
       </div>
 
       <div className="fu-qbar is-rules" data-testid="followup-queue-situations">
