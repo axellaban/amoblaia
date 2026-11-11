@@ -3,8 +3,7 @@ import Link from "next/link";
 import { AgencySite } from "@/components/agency-site";
 import { SiteRenderer } from "@/components/site/site-render";
 import { requirePanelPage } from "@/lib/agency/page";
-import { agencyCatalog } from "@/lib/agency/site";
-import { siteDocFor } from "@/lib/site/server";
+import { agencyCatalog, siteDocFor } from "@/lib/site/server";
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Vista previa de mi sitio", robots: { index: false, follow: false } };
 

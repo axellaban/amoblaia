@@ -41,19 +41,7 @@ export async function publicSite(slug: string, opts: { preview?: boolean } = {})
   if (!opts.preview) query = query.eq("site_published", true);
   const { data: agency } = await query.maybeSingle();
   if (!agency) return null;
-  return catalogOf(agency as { id: string; name: string; slug: string; website: string | null });
-}
-
-/** An agency's published properties and brand, by its id (the site editor's preview, before choosing an address). */
-export async function agencyCatalog(agencyId: string): Promise<PublicSite | null> {
-  const { data } = await adminClient().from("agencies").select("id,name,slug,website").eq("id", agencyId).maybeSingle();
-  if (!data) return null;
-  const a = data as { id: string; name: string; slug: string | null; website: string | null };
-  return catalogOf({ ...a, slug: a.slug ?? "" });
-}
-
-async function catalogOf(a: { id: string; name: string; slug: string; website: string | null }): Promise<PublicSite> {
-  const db = adminClient();
+  const a = agency as { id: string; name: string; slug: string; website: string | null };
   const [branding, demos] = await Promise.all([
     brandingOf(a.id),
     db
@@ -100,7 +88,7 @@ async function catalogOf(a: { id: string; name: string; slug: string; website: s
     agencyId: a.id,
     name: a.name,
     slug: a.slug,
-    logo: branding.logo ? (a.slug ? `/inmobiliaria/${a.slug}/logo?v=${branding.logo.v}` : `/api/panel/logo?v=${branding.logo.v}`) : null,
+    logo: branding.logo ? `/inmobiliaria/${a.slug}/logo?v=${branding.logo.v}` : null,
     primary,
     primaryInk: textOn(primary),
     whatsapp,

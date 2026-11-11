@@ -3,6 +3,7 @@ import sharp from "sharp";
 import { HttpError } from "@/lib/commerce/http";
 import { brandingOf } from "@/lib/demos/server";
 import { adminClient } from "@/lib/supabase/server";
+import { publicSite, type PublicSite } from "@/lib/agency/site";
 import { normalizeSite, type SiteDoc, type SiteSeed, type StoredSite } from "./schema";
 
 export const SITE_BUCKET = "agency-site";
@@ -197,4 +198,17 @@ export async function deleteInquiry(agencyId: string, id: string) {
   if (!/^[0-9a-f-]{36}$/i.test(id)) throw new HttpError(400, "Consulta inválida.");
   const { error } = await adminClient().from("site_inquiries").delete().eq("agency_id", agencyId).eq("id", id);
   if (error) throw new HttpError(503, "No pudimos borrar la consulta.");
+}
+
+/**
+ * The agency's published properties and brand for the editor and its
+ * preview, published or not (the catalog's own preview read). Before it has
+ * an address: its name only, no properties yet.
+ */
+export async function agencyCatalog(agencyId: string): Promise<PublicSite | null> {
+  const { data } = await adminClient().from("agencies").select("id,name,slug,website").eq("id", agencyId).maybeSingle();
+  if (!data) return null;
+  const a = data as { id: string; name: string; slug: string | null; website: string | null };
+  const found = a.slug ? await publicSite(a.slug, { preview: true }) : null;
+  return found ?? { agencyId: a.id, name: a.name, slug: a.slug ?? "", logo: null, primary: "#24382e", primaryInk: "#ffffff", whatsapp: null, website: a.website, properties: [] };
 }

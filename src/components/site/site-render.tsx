@@ -1467,24 +1467,3 @@ export function SiteRenderer({
     </Root>
   );
 }
-
-/** The site's header and footer around another page (a property's ficha inside the site). */
-export function SiteChrome({ doc, catalog, mode, children }: { doc: SiteDoc; catalog: PublicSite; mode: SiteMode; children: React.ReactNode }) {
-  const ctx: Ctx = { doc, catalog, mode, page: null, catalogSlug: catalogSlugOf(doc) };
-  return (
-    <Root ctx={ctx}>
-      <SiteHeader ctx={ctx} overHero={false} />
-      <div className={s.chromeBody}>
-        {ctx.catalogSlug !== null && (
-          <div className={cx(s.wrap, s.back)}>
-            <SLink ctx={ctx} to={`/${ctx.catalogSlug}`}>
-              ← Todas las propiedades
-            </SLink>
-          </div>
-        )}
-        {children}
-      </div>
-      <SiteFooter ctx={ctx} />
-    </Root>
-  );
-}

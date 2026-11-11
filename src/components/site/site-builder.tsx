@@ -80,6 +80,7 @@ type Loaded = EditorState & {
   agency: { id: string; name: string; slug: string | null; sitePublished: boolean; website: string | null };
   catalog: PublicSite | null;
   unread: number;
+  branding: { primary: string | null; contactKind: string | null; contactValue: string | null };
 };
 type Tab = "secciones" | "paginas" | "diseno" | "ajustes" | "consultas";
 type Device = "desktop" | "tablet" | "mobile";
@@ -841,8 +842,9 @@ function SettingsPanel({
           {logoError && <small className={b.error}>{logoError}</small>}
         </div>
       </details>
+      <BrandForm data={data} readOnly={ro} onAgency={onAgency} />
       <details className={b.group} open>
-        <summary>Contacto</summary>
+        <summary>Contacto en el sitio</summary>
         {text("whatsapp", "WhatsApp", { max: 40, placeholder: "+54 9 11 5555-1234" })}
         {st.whatsapp && !waNumber(st.whatsapp) && <small className={b.error}>Revisá el número: no parece un WhatsApp válido.</small>}
         {text("phone", "Teléfono", { max: 40, placeholder: "011 4555-1234" })}
@@ -910,6 +912,76 @@ function SettingsPanel({
         </div>
       </details>
     </div>
+  );
+}
+
+const CONTACT_KINDS = [
+  ["whatsapp", "WhatsApp"],
+  ["phone", "Teléfono"],
+  ["email", "Email"],
+  ["url", "Formulario o página de contacto"],
+] as const;
+
+/** The brand and inquiry channel of the agency's fichas (/demo/…): agencies.branding, saved with PATCH /api/panel. */
+function BrandForm({ data, readOnly, onAgency }: { data: Loaded; readOnly: boolean; onAgency: (patch: Record<string, unknown>) => Promise<boolean> }) {
+  const initial = {
+    primary: data.branding?.primary ?? "#24382e",
+    contactKind: data.branding?.contactKind ?? "whatsapp",
+    contactValue: data.branding?.contactValue ?? "",
+    website: data.agency.website ?? "",
+  };
+  const [form, setForm] = useState(initial);
+  const [saving, setSaving] = useState(false);
+  const changed = (Object.keys(initial) as (keyof typeof initial)[]).filter((k) => form[k] !== initial[k]);
+  return (
+    <details className={b.group}>
+      <summary>Marca en tus fichas</summary>
+      <p className={b.hint}>El color y el canal de consultas que usan las fichas de tus propiedades (los enlaces /demo/…).</p>
+      <label className={b.colorRow}>
+        <span>Color de las fichas</span>
+        <span className={b.color}>
+          <input type="color" disabled={readOnly} value={form.primary} onChange={(e) => setForm({ ...form, primary: e.target.value })} />
+          <code>{form.primary}</code>
+        </span>
+      </label>
+      <label className={b.field}>
+        <span className={b.label}>Canal principal de consultas</span>
+        <select disabled={readOnly} value={form.contactKind} onChange={(e) => setForm({ ...form, contactKind: e.target.value })}>
+          {CONTACT_KINDS.map(([id, l]) => (
+            <option key={id} value={id}>
+              {l}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className={b.field}>
+        <span className={b.label}>{CONTACT_KINDS.find(([id]) => id === form.contactKind)?.[1] ?? "Contacto"}</span>
+        <input disabled={readOnly} maxLength={300} value={form.contactValue} onChange={(e) => setForm({ ...form, contactValue: e.target.value })} />
+      </label>
+      <label className={b.field}>
+        <span className={b.label}>Otro sitio de la inmobiliaria (opcional)</span>
+        <input disabled={readOnly} maxLength={300} placeholder="inmobiliaria.com.ar" value={form.website} onChange={(e) => setForm({ ...form, website: e.target.value })} />
+      </label>
+      <button
+        type="button"
+        className={b.smallBtn}
+        disabled={readOnly || saving || !changed.length}
+        onClick={async () => {
+          const body: Record<string, unknown> = {};
+          for (const k of changed) {
+            if (k === "contactKind" || k === "contactValue") {
+              body.contactKind = form.contactKind;
+              body.contactValue = form.contactValue.trim();
+            } else body[k] = form[k];
+          }
+          setSaving(true);
+          await onAgency(body);
+          setSaving(false);
+        }}
+      >
+        {saving ? "Guardando…" : "Guardar marca"}
+      </button>
+    </details>
   );
 }
 
@@ -1569,10 +1641,13 @@ export function SiteBuilder() {
       .catch((e) => setError(errorText(e, "No pudimos cargar tu sitio.")));
   }, []);
   useEffect(load, [load]);
-  // The editor takes the whole screen: habita's header and footer step aside.
+  // The editor covers the whole screen; the page behind it does not scroll.
   useEffect(() => {
-    document.body.classList.add("site-builder-open");
-    return () => document.body.classList.remove("site-builder-open");
+    const before = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = before;
+    };
   }, []);
   async function pick(t: TemplateId) {
     setBusy(t);

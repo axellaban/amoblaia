@@ -1,8 +1,8 @@
 import { failure, HttpError } from "@/lib/commerce/http";
 import { requireAgency, requireAgencyRead } from "@/lib/agency/server";
-import { agencyCatalog } from "@/lib/agency/site";
 import { readJson } from "@/lib/demos/input";
-import { discardDraft, editorSite, listInquiries, publishDraft, resetSite, saveDraft } from "@/lib/site/server";
+import { brandingOf } from "@/lib/demos/server";
+import { agencyCatalog, discardDraft, editorSite, listInquiries, publishDraft, resetSite, saveDraft } from "@/lib/site/server";
 import { normalizeSite, templateSite, TEMPLATES, type TemplateId } from "@/lib/site/schema";
 export const runtime = "nodejs";
 
@@ -12,7 +12,7 @@ const PRIVATE = { "Cache-Control": "private, no-store" };
 export async function GET() {
   try {
     const { agency, role } = await requireAgencyRead();
-    const [site, catalog, inbox] = await Promise.all([editorSite(agency.id), agencyCatalog(agency.id), listInquiries(agency.id)]);
+    const [site, catalog, inbox, branding] = await Promise.all([editorSite(agency.id), agencyCatalog(agency.id), listInquiries(agency.id), brandingOf(agency.id)]);
     const unread = inbox.unread;
     return Response.json(
       {
@@ -21,6 +21,8 @@ export async function GET() {
         agency: { id: agency.id, name: agency.name, slug: agency.slug, sitePublished: agency.site_published, website: agency.website },
         catalog: catalog ? { ...catalog, logo: catalog.logo ? catalog.logo.replace(/^\/inmobiliaria\/[^/]+\/logo/, "/api/panel/logo") : null } : null,
         unread,
+        // The brand and contact of the agency's fichas (also edited here, in Ajustes → Marca en tus fichas).
+        branding: { primary: branding.primary ?? null, contactKind: branding.contactKind ?? null, contactValue: branding.contactValue ?? null },
       },
       { headers: PRIVATE },
     );
