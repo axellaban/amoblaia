@@ -1172,8 +1172,11 @@ async function mark(it: QueueItem, v: FollowupVersion, status: ExecutionStatus, 
     p_reason: reason || null,
     p_body: body || null,
   });
-  if (error?.message?.includes("FOLLOWUP_FIRST_CONTACT_CAP_REACHED"))
-    throw new HttpError(409, "Se alcanzó el límite interno de 50 contactos nuevos en 24 horas. El contacto sigue pendiente; no confirmes otro envío.");
+  if (error?.message?.includes("FOLLOWUP_FIRST_CONTACT_CAP_REACHED")) {
+    // The cap is the configured one (followup_quota_settings, 48 by default), never a fixed number.
+    const cap = await readQuotaSettings().then((q) => q.cap).catch(() => null);
+    throw new HttpError(409, `Se alcanzó el límite interno de ${cap ?? "contactos nuevos"}${cap ? " contactos nuevos" : ""} en 24 horas. El contacto sigue pendiente; no confirmes otro envío.`);
+  }
   if (error) throw missing(error) ? new HttpError(409, "Falta aplicar la migración 202612080001_followup_first_contact_cap.sql.") : new Error("FOLLOWUP_MARK_FAILED");
   return data as FollowupExecution;
 }
@@ -1245,10 +1248,16 @@ export async function openExecution(input: { agencyId: unknown; stage?: unknown;
  * Idempotent: confirming twice changes nothing.
  */
 export async function confirmExecution(input: { agencyId: unknown; stage?: unknown; action?: unknown; versionId?: unknown; text?: unknown }, actor: { id: string; name: string }, options: { includeItem?: boolean } = {}) {
-  if (typeof input.agencyId === "string") {
-    const before = await itemOf(input.agencyId).catch(() => null);
-    if (before?.it.execution?.status === "sent" && before.it.versionId === input.versionId)
-      return { execution: { status: "sent" as const, at: before.it.execution.at }, warning: null, item: strip(before.it), replayed: true };
+  // Idempotent by what was recorded, not by where the agency is now: once sent, a version moves the
+  // agency on, so a retried confirmation (a lost response, a double click) used to meet the next
+  // action and answer 409 for a send that did go out. One row per version and agency, never undone.
+  if (typeof input.agencyId === "string" && isUuid(input.agencyId) && typeof input.versionId === "string" && isUuid(input.versionId)) {
+    const { data: done } = await adminClient().from("followup_executions")
+      .select("status,updated_at").eq("version_id", input.versionId).eq("agency_id", input.agencyId).maybeSingle();
+    if ((done as { status?: string } | null)?.status === "sent") {
+      const after = options.includeItem === false ? null : await itemOf(input.agencyId).catch(() => null);
+      return { execution: { status: "sent" as const, at: (done as { updated_at: string }).updated_at }, warning: null, item: after ? strip(after.it) : null, replayed: true };
+    }
   }
   const { it, v } = await sameTask(input, actor.id);
   // Revalidate availability at confirmation: a claim or an open WhatsApp tab
