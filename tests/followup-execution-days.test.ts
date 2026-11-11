@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { executionDays, funnelCohorts, lastDays, queueDayState, weeklyByType, type DayExecution, type QueueDayRow } from "@/lib/followup/results";
+import { executionDays, firstContactState, funnelCohorts, lastDays, queueDayState, weeklyByType, type DayExecution, type QueueDayRow } from "@/lib/followup/results";
 
 const now = new Date("2026-11-11T15:00:00Z"); // 12:00 in Buenos Aires
 const label = (stage: string, action: string) => (action === "precios" ? "Precios" : stage === "no-contactado" ? "Saludo" : "Next best action");
@@ -86,5 +86,13 @@ describe("queueDayState: only what the queue assigns to today is pending", () =>
     expect(queueDayState({ blocked: "Ya le escribimos después de su última respuesta (10/11 18:00): esperá que conteste." }, now)).toBe("programada");
     // On Sunday nothing outside hours is owed.
     expect(queueDayState({ blocked: "Fuera de horario: los mensajes van de lunes a sábado de 9 a 19 (hora de Argentina)." }, new Date("2026-11-15T15:00:00Z"))).toBe("programada");
+  });
+});
+
+describe("firstContactState", () => {
+  it("a prospect stuck on data is not today's pending; later stages still are", () => {
+    expect(firstContactState("no-contactado", "bloqueada")).toBe("programada");
+    expect(firstContactState("no-contactado", "lista")).toBe("lista");
+    expect(firstContactState("no-responde", "bloqueada")).toBe("bloqueada");
   });
 });
