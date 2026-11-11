@@ -57,6 +57,8 @@ vi.mock("@/lib/followup/server", () => ({
   releaseClaim: fn("releaseClaim"),
   setSituation: fn("setSituation"),
   setStage: fn("setStage"),
+  readScript: fn("readScript", { body: "SCRIPT ORIGINAL HABITA", updated_at: "2026-11-10T20:00:00Z" }),
+  saveScript: fn("saveScript", { body: "SCRIPT EDITADO", updated_at: "2026-11-10T20:01:00Z" }),
   registerReply: fn("registerReply"),
   processReply: fn("processReply"),
   inbox: async () => [],
@@ -104,6 +106,16 @@ describe("Follow-up para Chapa", () => {
   it("sin la clave no responde", async () => {
     expect((await GET(req("GET", "?vista=followup", undefined, "Bearer otra"))).status).toBe(401);
     expect((await POST(req("POST", "", { followup: { op: "queue" } }, ""))).status).toBe(401);
+  });
+
+  it("Chapa lee y actualiza el mismo Script original de HABITA",async()=>{
+    const read=await GET(req("GET","?vista=script"));
+    expect(read.status).toBe(200);
+    expect(await read.json()).toMatchObject({body:"SCRIPT ORIGINAL HABITA"});
+    const changed=await POST(req("POST","",{by:"Facundo",followup:{op:"script-save",body:"SCRIPT EDITADO"}}));
+    expect(changed.status).toBe(200);
+    expect(await changed.json()).toMatchObject({body:"SCRIPT EDITADO"});
+    expect(calls.find(x=>x.fn==="saveScript")?.args).toEqual(["SCRIPT EDITADO",FACU]);
   });
 
   it("GET ?vista=followup devuelve la cola, las programadas y el resto del tablero", async () => {
