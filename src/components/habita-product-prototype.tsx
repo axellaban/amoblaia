@@ -19,10 +19,10 @@ const initialLeads: Lead[] = [
 const intent = (s: string) => /visita|visitar|verlo|conocer|turno|horario/i.test(s) ? "visita" : /precio|cu[aá]nto|financi|cr[eé]dito/i.test(s) ? "precio" : /busco|ambientes|zona|presupuesto|ten[eé]s/i.test(s) ? "busqueda" : "general";
 function answer(q: string) {
   const kind = intent(q);
-  const budget = q.match(/(?:usd|u\\$s|d[oó]lares?)\\s*([\\d.,]+)/i)?.[1] ?? q.match(/([\\d.,]+)\\s*(?:usd|u\\$s)/i)?.[1];
-  const amount = budget ? Number(budget.replace(/\\./g, "").replace(",", ".")) : null;
+  const budget = q.match(/(?:usd|u\$s|d[oó]lares?)\s*([\d.,]+)/i)?.[1] ?? q.match(/([\d.,]+)\s*(?:usd|u\$s)/i)?.[1];
+  const amount = budget ? Number(budget.replace(/\./g, "").replace(",", ".")) : null;
   const zone = inventory.find(p => q.toLowerCase().includes(p.zone.toLowerCase()));
-  const rooms = /3\\s*ambientes/i.test(q) ? 3 : /2\\s*ambientes/i.test(q) ? 2 : null;
+  const rooms = /3\s*ambientes/i.test(q) ? 3 : /2\s*ambientes/i.test(q) ? 2 : null;
   const matches = inventory.filter(p => (!zone || p.zone === zone.zone) && (!rooms || p.rooms === rooms) && (!amount || p.price <= amount));
   if (kind === "visita") return { text: "¡Claro! Puedo ayudarte a coordinar una visita. ¿Preferís mañana por la mañana o por la tarde? Un asesor confirmará la disponibilidad antes de reservar.", tag: "Visita solicitada" };
   if (kind === "precio") return { text: zone ? `El precio publicado de ${zone.name} es USD ${zone.price.toLocaleString("es-AR")}. No tengo condiciones de financiación verificadas; puedo derivar esa consulta a un asesor.` : "Tenemos propiedades desde USD 78.000 en esta demo. Para financiación y condiciones específicas te conectaría con un asesor.", tag: "Consulta comercial" };
