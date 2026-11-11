@@ -1097,7 +1097,7 @@ export const PAGE_PRESETS: { id: string; title: string; slug: string; build: () 
 
 const HEX = /^#[0-9a-f]{6}$/i;
 export const PAGE_SLUG = /^[a-z0-9](?:[a-z0-9-]{0,17}[a-z0-9])$/;
-const str = (v: unknown, max: number, fallback = "") => (typeof v === "string" ? v.replace(/\u0000/g, "").trim().slice(0, max) : fallback);
+const str = (v: unknown, max: number, fallback = "") => (typeof v === "string" ? v.replaceAll("\u0000", "").trim().slice(0, max) : fallback);
 const oneOf = <T extends string>(v: unknown, options: readonly T[], fallback: T): T => (typeof v === "string" && (options as readonly string[]).includes(v) ? (v as T) : fallback);
 const bool = (v: unknown, fallback: boolean) => (typeof v === "boolean" ? v : fallback);
 const color = (v: unknown, fallback: string) => (typeof v === "string" && HEX.test(v) ? v.toLowerCase() : fallback);

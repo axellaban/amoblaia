@@ -7,7 +7,7 @@ import { cloudConfigured } from "@/lib/supabase/config";
 export const runtime = "nodejs";
 
 const KINDS: InquiryKind[] = ["contacto", "tasacion", "propiedad", "newsletter"];
-const text = (v: unknown, max: number) => (typeof v === "string" ? v.replace(/\u0000/g, "").trim().slice(0, max) || null : null);
+const text = (v: unknown, max: number) => (typeof v === "string" ? v.replaceAll("\u0000", "").trim().slice(0, max) || null : null);
 
 /**
  * A form of an agency's published site (contacto, tasación, newsletter):
