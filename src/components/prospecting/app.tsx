@@ -18,7 +18,11 @@ const TABS: [Tab, string][] = [
   ["mensajes", "Mensajes y conversión"],
   ["ejecucion", "Bandeja de ejecución"],
 ];
-const POLL_MS = 60_000;
+// Each reload reads the whole dataset (about 2 MB) from Supabase, so the
+// interval weighs directly on the plan's egress.
+const POLL_MS = 180_000;
+/** Coming back to the window reloads only if what is shown is at least this old. */
+const FOCUS_STALE_MS = 60_000;
 
 /**
  * The team's acquisition center. Everything shown comes from the persisted
@@ -38,12 +42,23 @@ export function ProspectingApp({ initialTab }: { initialTab: Tab }) {
   const [detailVersion, setDetailVersion] = useState(0);
   const inflight = useRef(false);
 
-  const reload = useCallback(async () => {
+  const loadedAt = useRef(0);
+  // The database stamp what is shown was read with: timed reloads send it, and
+  // the server skips reading the dataset again when nothing was written since.
+  const stamp = useRef("0");
+  const load = useCallback(async (soft: boolean) => {
     if (inflight.current) return;
     inflight.current = true;
     setLoading(true);
     try {
-      const data = await api<Dataset>("/api/admin/prospeccion");
+      const data = await api<(Dataset & { stamp?: string | null }) | { unchanged: true }>(`/api/admin/prospeccion?si=${encodeURIComponent(soft ? stamp.current : "0")}`);
+      loadedAt.current = Date.now();
+      if ("unchanged" in data) {
+        setSyncedAt(new Date().toISOString());
+        setSyncError("");
+        return;
+      }
+      stamp.current = data.stamp || "0";
       setDs(data);
       setSyncedAt(data.now);
       setSyncError("");
@@ -54,6 +69,7 @@ export function ProspectingApp({ initialTab }: { initialTab: Tab }) {
       setLoading(false);
     }
   }, []);
+  const reload = useCallback(() => load(false), [load]);
   /** After any confirmed mutation: refresh the dataset and an open account. */
   const changed = useCallback(async () => {
     setDetailVersion((v) => v + 1);
@@ -62,14 +78,14 @@ export function ProspectingApp({ initialTab }: { initialTab: Tab }) {
 
   useEffect(() => {
     void reload();
-    const timer = window.setInterval(() => document.visibilityState === "visible" && void reload(), POLL_MS);
-    const onFocus = () => void reload();
+    const timer = window.setInterval(() => document.visibilityState === "visible" && void load(true), POLL_MS);
+    const onFocus = () => Date.now() - loadedAt.current >= FOCUS_STALE_MS && void load(true);
     window.addEventListener("focus", onFocus);
     return () => {
       window.clearInterval(timer);
       window.removeEventListener("focus", onFocus);
     };
-  }, [reload]);
+  }, [reload, load]);
 
   const select = (t: Tab) => {
     setTab(t);

@@ -1,13 +1,15 @@
+import { unlessUnchanged } from "@/lib/change-stamp";
 import { requireAdmin } from "@/lib/commerce/http";
 import { isUuid } from "@/lib/demos/shared";
 import { body, NO_STORE, prospectDataset, prospectFailure, prospectRpc, text } from "@/lib/prospecting/server";
 export const runtime = "nodejs";
 
 /** The private dataset of the acquisition panel. Metrics are computed from it with the shared rules. */
-export async function GET() {
+// With `?si=<stamp>` (the timed reload) it answers `{ unchanged: true }` if nothing was written since that stamp.
+export async function GET(request?: Request) {
   try {
     await requireAdmin();
-    return Response.json(await prospectDataset(), { headers: NO_STORE });
+    return Response.json(await unlessUnchanged(request, () => prospectDataset()), { headers: NO_STORE });
   } catch (e) {
     return prospectFailure(e);
   }
