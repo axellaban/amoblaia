@@ -300,16 +300,16 @@ export function weeklyByType(
   return out;
 }
 
-// ── Cohortes con el embudo del panel ───────────────────────────────────────
+// ── Cohortes con el embudo de Follow-up ────────────────────────────────────
 // Las mismas cohortes (semana de contacto, de primera respuesta, versión del
-// saludo), contadas con las etapas del panel de Inmobiliarias: cuántas de la
-// cohorte llegaron a cada etapa (la etapa comercial de hoy es la más alta probada).
+// saludo), contadas con las etapas comerciales de Follow-up desde Contactado:
+// cuántas de la cohorte llegaron a cada etapa (el paso del embudo de hoy).
 
-export type FunnelCohortAgency = CohortAgency & { commercial: number };
 export type FunnelCohortRow = { cohort: string; size: number; reached: number[] };
 
-export function funnelCohorts(agencies: FunnelCohortAgency[], stageCount: number, by: "contacto" | "respuesta" | "version", weeks = 8, now = new Date()): FunnelCohortRow[] {
-  const count = (own: FunnelCohortAgency[]) => Array.from({ length: stageCount }, (_, i) => own.filter((a) => a.commercial >= i).length);
+/** `thresholds[i]`: the first funnel step of stage i (an agency at that step or later reached it). */
+export function funnelCohorts(agencies: CohortAgency[], thresholds: readonly number[], by: "contacto" | "respuesta" | "version", weeks = 8, now = new Date()): FunnelCohortRow[] {
+  const count = (own: CohortAgency[]) => thresholds.map((t) => own.filter((a) => a.step >= t).length);
   if (by === "version") {
     const keys = [...new Set(agencies.filter((a) => a.firstContact).map((a) => a.greetingVersion))].sort((a, b) => (a ?? 0) - (b ?? 0));
     return keys.map((k) => {
