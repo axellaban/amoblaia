@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { ArrowLeft, ArrowRight, Bot, CalendarDays, CheckCircle2, MessageCircle, Send, Sparkles, UserRound } from "lucide-react";
 import { track } from "@/lib/analytics";
+import { PanelNav } from "@/components/panel-shell";
 
 type Product = "consultas" | "crm";
 type Lead = { id: number; name: string; interest: string; score: number; status: string; last: string; action: string };
@@ -53,7 +54,7 @@ export function ProductPrototype({ product }: { product: Product }) {
     setLeads(ls => ls.map(l => l.id === selected ? { ...l, status: "Visita pendiente", last: "Visita pendiente de confirmación", action: "Confirmar horario" } : l));
     metric("prototype_crm_action", "crm", { action: "advance_to_visit" });
   }
-  return <main className="container" style={{ maxWidth: 1020, padding: "32px 16px 80px" }}>
+  return <><PanelNav section="inicio" /><main className="account-page container ap-page" style={{ paddingTop: 32, paddingBottom: 80 }}>
     <Link href="/panel" style={{ display: "inline-flex", alignItems: "center", gap: 8, marginBottom: 24 }}><ArrowLeft size={18}/> Volver al panel</Link>
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
       <div><p style={{ fontSize: 12, letterSpacing: 2, opacity: .65 }}>HABITA · NUEVO</p><h1 style={{ margin: "6px 0" }}>{isChat ? "Consultas IA" : "CRM Inteligente"}</h1><p style={{ opacity: .75 }}>{isChat ? "Respondé consultas y convertí interesados en visitas." : "Priorizá oportunidades y definí la próxima acción."}</p></div>
@@ -106,7 +107,7 @@ export function ProductPrototype({ product }: { product: Product }) {
       <button type="button" className="button button-primary" onClick={() => { setRequest(true); metric("prototype_activation_intent", product); }}> {isChat ? "Quiero activar Consultas IA" : "Quiero probar el CRM"} <ArrowRight size={17}/></button>
       {request && <p role="status" style={{ marginTop: 16 }}>¡Gracias! Registramos tu interés en esta funcionalidad. Todavía no está disponible para activación real.</p>}
     </section>
-  </main>;
+  </main></>;
 }
 const card: React.CSSProperties = { padding: 22, border: "1px solid #e2e6e1", borderRadius: 18, background: "#fff", color: "#202c25" };
 const heading: React.CSSProperties = { display: "flex", alignItems: "center", gap: 10, fontSize: 20, margin: "0 0 16px" };
