@@ -75,7 +75,7 @@
 .sp-roomy {
   padding: 120px 0;
 }
-.flush {
+.section.flush {
   padding: 0;
 }
 .bg-default {
@@ -196,11 +196,11 @@
   padding: 0 18px;
   font-size: 14px;
 }
-.btn-outline .btn:not(.btnGhost) {
+.btn-outline .btn:not(.btnGhost):not(.searchGo) {
   background: transparent;
   color: var(--btn-bg) !important;
 }
-.btn-outline .btn:not(.btnGhost):hover {
+.btn-outline .btn:not(.btnGhost):not(.searchGo):hover {
   background: var(--btn-bg);
   color: var(--btn-ink) !important;
 }
@@ -338,19 +338,24 @@
 .headerCenter .headerRow {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
+  grid-template-areas:
+    ". brand end"
+    "nav nav nav";
+  row-gap: 0;
+  padding-top: 12px;
 }
 .headerCenter .brand {
-  grid-column: 2;
-  grid-row: 1;
+  grid-area: brand;
   justify-self: center;
 }
-.headerCenter .nav {
-  grid-column: 1;
-  grid-row: 1;
-}
 .headerCenter .headerEnd {
-  grid-column: 3;
-  grid-row: 1;
+  grid-area: end;
+  justify-self: end;
+}
+.headerCenter .nav {
+  grid-area: nav;
+  justify-content: center;
+  padding: 4px 0 8px;
 }
 
 /* ── Hero ── */
@@ -1699,6 +1704,7 @@
   }
   .headerCenter .headerRow {
     display: flex;
+    padding-top: 0;
   }
   .cols3,
   .split,

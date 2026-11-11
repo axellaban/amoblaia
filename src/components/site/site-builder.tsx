@@ -1221,7 +1221,12 @@ function Editor({ data, initial, setData, onReset }: { data: Loaded; initial: Si
   const setPage = (fn: (p: SitePage) => SitePage, key?: string) => update((d) => ({ ...d, pages: d.pages.map((p) => (p.id === page.id ? fn(p) : p)) }), key);
 
   function scrollTo(id: string) {
-    window.requestAnimationFrame(() => canvas.current?.querySelector(`[data-section-id="${id}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    window.requestAnimationFrame(() => {
+      const c = canvas.current;
+      const el = c?.querySelector(`[data-section-id="${id}"]`);
+      // Only the canvas scrolls (never the editor around it).
+      if (c && el) c.scrollTo({ top: c.scrollTop + el.getBoundingClientRect().top - c.getBoundingClientRect().top - 16, behavior: "smooth" });
+    });
   }
   const select = (id: string) => {
     setSelected(id);
