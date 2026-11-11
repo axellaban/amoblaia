@@ -1251,7 +1251,7 @@ export async function openExecution(input: { agencyId: unknown; stage?: unknown;
  * creada, sin enviar»), frees the agency and returns it as it is now.
  * Idempotent: confirming twice changes nothing.
  */
-export async function confirmExecution(input: { agencyId: unknown; stage?: unknown; action?: unknown; versionId?: unknown; text?: unknown }, actor: { id: string; name: string }, options: { includeItem?: boolean } = {}) {
+export async function confirmExecution(input: { agencyId: unknown; stage?: unknown; action?: unknown; versionId?: unknown; text?: unknown }, actor: { id: string; name: string }, options: { includeItem?: boolean; executedBy?: "humano" | "bot" } = {}) {
   // Idempotent by what was recorded, not by where the agency is now: once sent, a version moves the
   // agency on, so a retried confirmation (a lost response, a double click) used to meet the next
   // action and answer 409 for a send that did go out. One row per version and agency, never undone.
@@ -1273,6 +1273,11 @@ export async function confirmExecution(input: { agencyId: unknown; stage?: unkno
   const text = typeof input.text === "string" ? input.text.trim().slice(0, 8000) : "";
   const e = await mark(it, v, "sent", actor.id, null, text || null);
   const warnings: string[] = [];
+  // Sent from Chapa's extension mode (?agente=1): the browser extension executed it, not a person.
+  if (options.executedBy === "bot") {
+    const { error } = await adminClient().from("followup_executions").update({ executed_by: "bot" }).eq("id", e.id);
+    if (error) warnings.push("El envío quedó registrado, pero no se pudo marcar como hecho por la extensión.");
+  }
   const early = it.stage === "no-contactado" || it.stage === "no-responde";
   if (v.channel === "whatsapp" && early && it.action !== "encuesta_cierre") {
     try {

@@ -200,7 +200,8 @@ export async function runFollowupOp(op: unknown, b: Record<string, unknown>, act
       return openExecution(task, actor);
     case "confirm":
       await guard();
-      return confirmExecution({ ...task, text: b.texto }, actor, { includeItem: false });
+      // `ejecutor: "bot"`: confirmed from Chapa's extension mode (the browser extension, not a person).
+      return confirmExecution({ ...task, text: b.texto }, actor, { includeItem: false, executedBy: b.ejecutor === "bot" ? "bot" : "humano" });
     case "fail":
       await guard();
       return failExecution({ ...task, reason: b.motivo, kind: b.tipo }, actor);

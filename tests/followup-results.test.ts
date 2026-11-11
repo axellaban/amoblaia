@@ -67,20 +67,20 @@ describe("versionResults", () => {
 });
 
 describe("weeks and cohorts", () => {
-  it("groups reporting weeks by Friday close in Argentina", () => {
-    expect(weekOf("2026-11-09T12:00:00Z")).toBe("2026-11-13");
-    // Sunday 23:30 local belongs to the following Friday close.
-    expect(weekOf("2026-11-09T02:30:00Z")).toBe("2026-11-13");
-    expect(weekOf("2026-11-06T20:00:00Z")).toBe("2026-11-06");
-    expect(weekOf("2026-11-07T12:00:00Z")).toBe("2026-11-13");
+  it("groups reporting weeks Monday to Sunday in Argentina", () => {
+    expect(weekOf("2026-11-09T12:00:00Z")).toBe("2026-11-15");
+    // Sunday 23:30 local (Monday 02:30 UTC) still closes that Sunday's week.
+    expect(weekOf("2026-11-09T02:30:00Z")).toBe("2026-11-08");
+    expect(weekOf("2026-11-15T20:00:00Z")).toBe("2026-11-15");
+    expect(weekOf("2026-11-16T12:00:00Z")).toBe("2026-11-22");
   });
 
   it("weekly counts executions by send week and conversions by conversion week", () => {
     const list = [ex("a", "v1", "2026-11-02T12:00:00Z", 0, "2026-11-10T12:00:00Z")];
     const w = weekly(list, new Map([["a", 1]]), null, 2, new Date("2026-11-12T12:00:00Z"));
     expect(w).toEqual([
-      { week: "2026-11-06", executed: 1, conversions: 0 },
-      { week: "2026-11-13", executed: 0, conversions: 1 },
+      { week: "2026-11-08", executed: 1, conversions: 0 },
+      { week: "2026-11-15", executed: 0, conversions: 1 },
     ]);
   });
 
@@ -92,8 +92,8 @@ describe("weeks and cohorts", () => {
     ];
     const now = new Date("2026-11-12T12:00:00Z");
     expect(cohorts(agencies, "contacto", 2, now)).toEqual([
-      { cohort: "2026-11-06", size: 2, respondio: 1, interes: 1, demo: 1, cuenta: 0, suscripcion: 0 },
-      { cohort: "2026-11-13", size: 1, respondio: 0, interes: 0, demo: 0, cuenta: 0, suscripcion: 0 },
+      { cohort: "2026-11-08", size: 2, respondio: 1, interes: 1, demo: 1, cuenta: 0, suscripcion: 0 },
+      { cohort: "2026-11-15", size: 1, respondio: 0, interes: 0, demo: 0, cuenta: 0, suscripcion: 0 },
     ]);
     expect(cohorts(agencies, "respuesta", 2, now)[1].size).toBe(1);
     expect(bySegment(agencies).map((r) => [r.cohort, r.size])).toEqual([

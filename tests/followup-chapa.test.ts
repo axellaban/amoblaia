@@ -150,9 +150,17 @@ describe("Follow-up para Chapa", () => {
     const done = calls.filter((c) => c.fn !== "agentQueue");
     expect(done.map((c) => c.fn)).toEqual(["claimNext", "confirmExecution", "failExecution", "snooze", "setStage"]);
     expect(done[0].args).toEqual([{ agencyId: AG }, "https://habita.test", { id: AXEL, name: "Axel" }]);
-    expect(done[1].args).toEqual([{ agencyId: AG, stage: "no-contactado", action: "principal", versionId: "v1", text: "hola" }, { id: AXEL, name: "Axel" }, { includeItem: false }]);
+    expect(done[1].args).toEqual([{ agencyId: AG, stage: "no-contactado", action: "principal", versionId: "v1", text: "hola" }, { id: AXEL, name: "Axel" }, { includeItem: false, executedBy: "humano" }]);
     expect(done[2].args[0]).toMatchObject({ reason: "No tiene WhatsApp", kind: "sin_whatsapp" });
     expect(done[4].args).toEqual([AG, "no-responde", AXEL, "Axel"]);
+  });
+
+  it("lo confirmado desde el modo extensión de Chapa queda como hecho por un bot", async () => {
+    const task = { inmobiliaria: AG, etapa: "no-contactado", tarea: "principal", version: "v1" };
+    await POST(req("POST", "", { by: "Axel", followup: { op: "confirm", ...task, ejecutor: "bot" } }));
+    await POST(req("POST", "", { by: "Axel", followup: { op: "confirm", ...task, ejecutor: "cualquier cosa" } }));
+    const confirms = calls.filter((c) => c.fn === "confirmExecution");
+    expect(confirms.map((c) => (c.args[2] as { executedBy: string }).executedBy)).toEqual(["bot", "humano"]);
   });
 
   it("dos personas con el usuario por defecto: el claim de una frena a la otra", async () => {
