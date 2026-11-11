@@ -43,13 +43,22 @@ export function ProspectingApp({ initialTab }: { initialTab: Tab }) {
   const inflight = useRef(false);
 
   const loadedAt = useRef(0);
-  const reload = useCallback(async () => {
+  // The database stamp what is shown was read with: timed reloads send it, and
+  // the server skips reading the dataset again when nothing was written since.
+  const stamp = useRef("0");
+  const load = useCallback(async (soft: boolean) => {
     if (inflight.current) return;
     inflight.current = true;
     setLoading(true);
     try {
-      const data = await api<Dataset>("/api/admin/prospeccion");
+      const data = await api<(Dataset & { stamp?: string | null }) | { unchanged: true }>(`/api/admin/prospeccion?si=${encodeURIComponent(soft ? stamp.current : "0")}`);
       loadedAt.current = Date.now();
+      if ("unchanged" in data) {
+        setSyncedAt(new Date().toISOString());
+        setSyncError("");
+        return;
+      }
+      stamp.current = data.stamp || "0";
       setDs(data);
       setSyncedAt(data.now);
       setSyncError("");
@@ -60,6 +69,7 @@ export function ProspectingApp({ initialTab }: { initialTab: Tab }) {
       setLoading(false);
     }
   }, []);
+  const reload = useCallback(() => load(false), [load]);
   /** After any confirmed mutation: refresh the dataset and an open account. */
   const changed = useCallback(async () => {
     setDetailVersion((v) => v + 1);
@@ -68,14 +78,14 @@ export function ProspectingApp({ initialTab }: { initialTab: Tab }) {
 
   useEffect(() => {
     void reload();
-    const timer = window.setInterval(() => document.visibilityState === "visible" && void reload(), POLL_MS);
-    const onFocus = () => Date.now() - loadedAt.current >= FOCUS_STALE_MS && void reload();
+    const timer = window.setInterval(() => document.visibilityState === "visible" && void load(true), POLL_MS);
+    const onFocus = () => Date.now() - loadedAt.current >= FOCUS_STALE_MS && void load(true);
     window.addEventListener("focus", onFocus);
     return () => {
       window.clearInterval(timer);
       window.removeEventListener("focus", onFocus);
     };
-  }, [reload]);
+  }, [reload, load]);
 
   const select = (t: Tab) => {
     setTab(t);

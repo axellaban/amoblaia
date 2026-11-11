@@ -191,6 +191,8 @@ const isReply = (q: QueueItem) => q.group === "respuestas";
  * al volver a la pestaña y después de cada acción.
  */
 const POLL_MS = 180_000;
+/** Aunque nada haya cambiado en la base, cada cuánto se recalcula igual (la cola también depende de la hora). */
+const FULL_MS = 15 * 60_000;
 
 /** Los filtros elegidos en la cola: quedan aunque se cambie de pestaña o se ejecute una tras otra. */
 export type QueueState = { kpi: Filter; f: QueueFilter };
@@ -349,12 +351,27 @@ function ExecCenter({
     setData((d) => (initial.generatedAt > d.generatedAt ? initial : d));
   }, [initial]);
   const lastRefresh = useRef(0);
-  const refresh = useCallback(async () => {
+  // El sello de la base con el que se calculó lo que se ve, y cuándo se recalculó por última vez.
+  const stamp = useRef("0");
+  const lastFull = useRef(0);
+  /**
+   * Vuelve a pedir la cola. La recarga automática (`soft`) manda el sello: si nada
+   * cambió en la base, el servidor no recalcula ni baja nada. Igual se recalcula
+   * cada FULL_MS, porque la cola también cambia con la hora (vencimientos, pausas).
+   */
+  const load = useCallback(async (soft: boolean) => {
     setLoading(true);
     try {
-      const fresh = await api<QueueView>("/api/admin/follow-up/cola");
+      const si = soft && Date.now() - lastFull.current < FULL_MS ? stamp.current : "0";
+      const fresh = await api<(QueueView & { stamp?: string | null }) | { unchanged: true }>(`/api/admin/follow-up/cola?si=${encodeURIComponent(si)}`);
       lastRefresh.current = Date.now();
-      setData(fresh);
+      if ("unchanged" in fresh) {
+        setData((d) => ({ ...d, generatedAt: new Date().toISOString() }));
+      } else {
+        stamp.current = fresh.stamp || "0";
+        lastFull.current = Date.now();
+        setData(fresh);
+      }
       setPollError("");
     } catch (e) {
       setPollError(e instanceof Error ? e.message : "No pudimos actualizar la cola.");
@@ -362,21 +379,22 @@ function ExecCenter({
       setLoading(false);
     }
   }, []);
+  const refresh = useCallback(() => load(false), [load]);
   useEffect(() => {
-    lastRefresh.current = Date.now(); // la página recién trajo la cola
+    lastRefresh.current = lastFull.current = Date.now(); // la página recién trajo la cola
     const t = window.setInterval(() => {
-      if (!document.hidden) void refresh();
+      if (!document.hidden) void load(true);
     }, POLL_MS);
     // Al volver a la pestaña no se espera al próximo intervalo si lo que se ve ya es viejo.
     const onVisible = () => {
-      if (!document.hidden && Date.now() - lastRefresh.current >= POLL_MS) void refresh();
+      if (!document.hidden && Date.now() - lastRefresh.current >= POLL_MS) void load(true);
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       window.clearInterval(t);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [refresh]);
+  }, [load]);
 
   const { kpi, f } = state;
   const { queue, blocked, noInteresados, summary, rules } = data;

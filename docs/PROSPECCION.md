@@ -126,7 +126,7 @@ Flujo:
 
 **Bajas.** Pueden ser de toda la cuenta, de un canal o de un contacto. Cancelan los intentos preparados y bloquean preparar y abrir. Un contacto alternativo no levanta una baja de cuenta. Levantar una baja requiere motivo y queda en el historial.
 
-**Sincronización.** La vista recarga después de cada mutación, cada 3 minutos y al volver a la pestaña (si lo que se ve tiene más de un minuto). Cada recarga lee el dataset entero de Supabase, por eso el intervalo cuida el egress del plan. La hora de la última actualización está visible; si una actualización falla, se avisa y se ofrece «Actualizar». Sin conector, nada se actualiza desde WhatsApp o Gmail.
+**Sincronización.** La vista recarga después de cada mutación, cada 3 minutos y al volver a la pestaña (si lo que se ve tiene más de un minuto). Cada recarga lee el dataset entero de Supabase, por eso el intervalo cuida el egress del plan. Las recargas automáticas mandan el sello de la base (`?si=`, función `habita_change_stamp`) y, si nada se escribió desde entonces, el servidor responde `unchanged` sin leer el dataset. La hora de la última actualización está visible; si una actualización falla, se avisa y se ofrece «Actualizar». Sin conector, nada se actualiza desde WhatsApp o Gmail.
 
 ## 7. Importador
 
