@@ -1403,7 +1403,8 @@ function Root({ ctx, children }: { ctx: Ctx; children: React.ReactNode }) {
   const fonts = fontsHref([t.headingFont, t.bodyFont]);
   return (
     <div className={cx(s.site, s[`btn-${t.buttons}`], ctx.mode === "editor" && s.inEditor)} style={themeStyle(ctx.doc)}>
-      {fonts && <link rel="stylesheet" href={fonts} precedence="default" />}
+      {/* Not hoisted (no precedence): a blocked font never holds the page. */}
+      {fonts && <link rel="stylesheet" href={fonts} />}
       {children}
       {wa && (
         <div className={s.floatWrap}>
