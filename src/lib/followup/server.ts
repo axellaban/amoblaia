@@ -484,8 +484,12 @@ async function board(now = new Date()) {
   for (const e of ex) if (e.status === "sent") later(lastOurs, e.agency_id, e.sent_at);
   const lastReply = new Map<string, number>();
   const lastInterest = new Map<string, number>();
+  // Every reply of each agency (a «No interesado» is an answer, not a conversion): the greeting converts with the first one after it.
+  const repliesOf = new Map<string, number[]>();
   for (const e of ds?.events ?? []) {
     const agency = agencyOfAccount.get(e.account_id);
+    const at = Date.parse(e.occurred_at);
+    if (agency && !e.corrected && (e.type === "reply" || e.type === "interest") && Number.isFinite(at)) repliesOf.set(agency, [...(repliesOf.get(agency) ?? []), at]);
     if (agency && !e.corrected && (e.type === "reply" || e.type === "interest" || e.type === "not_interested")) later(lastReply, agency, e.occurred_at);
     if (agency && !e.corrected && e.type === "interest") later(lastInterest, agency, e.occurred_at);
   }
@@ -609,7 +613,11 @@ async function board(now = new Date()) {
     const sentAt = Date.parse(e.sent_at);
     const interest = lastInterest.get(e.agency_id);
     const demo = firstDemo.get(e.agency_id);
-    const observed = e.from_step < 1 && interest && interest >= sentAt
+    // The greeting's job is an answer: it converts with the first reply after it (it reaches «Contactados» just by going out).
+    const reply = (repliesOf.get(e.agency_id) ?? []).filter((t) => t >= sentAt).sort((a, b) => a - b)[0];
+    const observed = e.from_step < 0
+      ? reply ?? null
+      : e.from_step < 1 && interest && interest >= sentAt
       ? interest
       : e.from_step < 2 && demo && demo >= sentAt
         ? demo

@@ -147,7 +147,11 @@ describe("what prospected agencies did in the period (habita's funnel against it
     // The cohort funnel only sees the agency first greeted this week, which has no demo yet.
     expect(prospectingMetrics(data, week).demos.sent).toBe(0);
     // The period's activity sees the demo sent, visited and the account created this week; once per agency; never a non-prospected agency.
-    expect(periodActivity(data, src, week)).toEqual({ demosEnviadas: 1, visitadas: 1, conInteraccion: 1, cuentas: 1, activas: 1, clientes: 0 });
+    // «Interesados» includes the agencies that got their demo (Follow-up's «Interesado» comes before «Demo enviada»).
+    expect(periodActivity(data, src, week)).toEqual({ interesados: 1, demosEnviadas: 1, visitadas: 1, conInteraccion: 1, cuentas: 1, activas: 1, clientes: 0 });
+    // An interest recorded in the period counts too, once per agency.
+    const withInterest = ds([old, fresh], data.attempts, [...data.events, event(fresh, "interest", "2026-11-10T12:00:00-03:00"), event(old, "interest", "2026-11-10T12:00:00-03:00")]);
+    expect(periodActivity(withInterest, src, week).interesados).toBe(2);
     expect(prospectingMetrics(data, week, src).periodo?.visitadas).toBe(1);
     const day = prospectingMetrics(data, week, src).porDia.find((d) => d.date === "2026-11-09");
     expect(day?.periodo).toMatchObject({ demosEnviadas: 1, visitadas: 1, cuentas: 0 });

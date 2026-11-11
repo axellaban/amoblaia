@@ -43,6 +43,26 @@ describe("executionDays", () => {
     expect(day.stages.find((s) => s.stage === "sin-uso")).toEqual({ stage: "sin-uso", pending: 1, executed: 0, success: 0 });
   });
 
+  it("counts as successful an action whose agency advanced afterwards, even without the hour of the advance (never a greeting)", () => {
+    const executions = [
+      // Demo sent, then the agency created its account: no timestamp recorded, from_step 5 → now 6.
+      ex("a", "sin-cuenta", "2026-11-10T13:00:00Z", { from_step: 5 }),
+      // Two messages at the same step: only the last one takes it.
+      ex("b", "sin-interaccion", "2026-11-09T13:00:00Z", { from_step: 4 }),
+      ex("b", "sin-interaccion", "2026-11-10T13:00:00Z", { from_step: 4 }),
+      // Did not advance: not successful.
+      ex("c", "sin-cuenta", "2026-11-10T13:00:00Z", { from_step: 5 }),
+      // A greeting without a recorded reply is not successful, though it is at «Contactados» now.
+      ex("d", "no-contactado", "2026-11-10T13:00:00Z", { from_step: -1 }),
+    ];
+    const steps = new Map([["a", 6], ["b", 5], ["c", 5], ["d", 0]]);
+    const [d9, d10] = executionDays([], executions, steps, (s) => s, 3, now);
+    expect(d9.types.find((t) => t.type === "sin-interaccion")).toMatchObject({ human: 1, successHuman: 0 });
+    expect(d10.types.find((t) => t.type === "sin-interaccion")).toMatchObject({ human: 1, successHuman: 1 });
+    expect(d10.types.find((t) => t.type === "sin-cuenta")).toMatchObject({ human: 2, successHuman: 1 });
+    expect(d10.types.find((t) => t.type === "no-contactado")).toMatchObject({ human: 1, successHuman: 0 });
+  });
+
   it("marks the days without a photo of the queue", () => {
     const out = executionDays([], [ex("a", "no-contactado", "2026-11-11T13:00:00Z")], new Map(), label, 2, now);
     expect(out.map((d) => d.captured)).toEqual([false, false]);

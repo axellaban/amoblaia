@@ -25,8 +25,15 @@ export const WINDOWS = { "7": 7, "14": 14, todo: null } as const;
 export type WindowKey = keyof typeof WINDOWS;
 const DAY = 86_400_000;
 
-/** For each sent execution: whether the conversion after it is attributed to it, inside the window. */
-export function attribute(executions: ResultExecution[], stepNow: Map<string, number>, windowDays: number | null) {
+/**
+ * For each sent execution: whether the conversion after it is attributed to it, inside the window.
+ * `untimed` (only without a window): when the agency advanced past the step it was at when the message
+ * went out but nothing recorded when, the last message of that step still takes it. `from_step` is the
+ * step at send time and steps only move forward, so the advance came after the send; only the hour is
+ * unknown (no hours: it never enters a median or a weekly date). The greeting (from -1) is excluded: it
+ * moves the agency to «Contactados» by itself, so it only converts with a recorded reply.
+ */
+export function attribute(executions: ResultExecution[], stepNow: Map<string, number>, windowDays: number | null, untimed = false) {
   const sent = executions.filter((e) => e.status === "sent" && e.sent_at);
   const credited = new Map<ResultExecution, { hours: number }>();
   const assisted = new Set<ResultExecution>();
@@ -39,7 +46,14 @@ export function attribute(executions: ResultExecution[], stepNow: Map<string, nu
     // to be returned first by the database.
     const recorded = list.map((e) => e.converted_at ? Date.parse(e.converted_at) : NaN)
       .filter(Number.isFinite).sort((a, b) => a - b);
-    if (!recorded.length) continue;
+    if (!recorded.length) {
+      if (untimed && windowDays === null && e0.from_step >= 0) {
+        const last = [...list].sort((a, b) => Date.parse(b.sent_at!) - Date.parse(a.sent_at!))[0];
+        credited.set(last, { hours: NaN });
+        for (const e of list) if (e !== last) assisted.add(e);
+      }
+      continue;
+    }
     const t = recorded[0];
     // The last message sent before the conversion takes it; the earlier ones assisted.
     const before = list.filter((e) => Date.parse(e.sent_at!) <= t).sort((a, b) => Date.parse(b.sent_at!) - Date.parse(a.sent_at!));
@@ -181,7 +195,8 @@ export function blockReasons(reasons: string[]) {
 // Qué estuvo pendiente cada día (la foto diaria de la cola, más lo que se
 // ejecutó ese día aunque la foto no lo haya visto), cuánto se ejecutó, quién
 // (persona o bot) y cuánto fue exitoso: la ejecución tiene una conversión
-// atribuida (la misma atribución de arriba, sin límite de ventana).
+// atribuida (la misma atribución de arriba, sin límite de ventana; si se sabe
+// que avanzó pero no cuándo, igual cuenta: `untimed`).
 
 export type QueueDayRow = { day: string; agency_id: string; stage: string; action: string; state: "lista" | "bloqueada" | "programada" };
 export type DayExecution = ResultExecution & { executed_by?: "humano" | "bot" | null };
@@ -219,7 +234,7 @@ export function executionDays(
   n = 35,
   now = new Date(),
 ): ExecutionDay[] {
-  const { credited } = attribute(executions, stepNow, null);
+  const { credited } = attribute(executions, stepNow, null, true);
   const days = lastDays(n, now);
   const inRange = new Set(days);
   type Cell = { stage: string; action: string; state?: QueueDayRow["state"]; sent?: DayExecution; failed?: boolean };
