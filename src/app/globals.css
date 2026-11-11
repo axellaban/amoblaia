@@ -16410,6 +16410,10 @@ main:has(.ap-sidebar) {
 .ap-start-google > div {
   justify-self: center;
 }
+.ap-start-email {
+  justify-self: center;
+  font-size: 14px;
+}
 .ap-start-or {
   display: flex;
   align-items: center;
