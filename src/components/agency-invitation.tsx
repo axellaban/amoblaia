@@ -54,6 +54,8 @@ export function InvitationSignup({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
+  // A new access starts with Google (one tap, no password to invent); the e-mail is one tap away.
+  const [withEmail, setWithEmail] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [token, setToken] = useState("");
@@ -142,6 +144,8 @@ export function InvitationSignup({
     }
   }
 
+  // Signing in to an existing account, the team's preview or a form already started: the e-mail fields show.
+  const emailShown = mode === "existing" || preview || withEmail;
   const demos = invitation.properties;
   const credits = freeCreditsLine(invitation.freeCredits);
   const form = (
@@ -158,11 +162,27 @@ export function InvitationSignup({
           <div className="ap-start-google">
             {/* Back here signed in: the claim continues by itself (continuar=google). */}
             <GoogleSignIn next={`${here}${here.includes("?") ? "&" : "?"}continuar=google`} />
-            <p className="ap-start-or">
-              <span>o con tu email</span>
-            </p>
+            {emailShown ? (
+              <p className="ap-start-or">
+                <span>o con tu email</span>
+              </p>
+            ) : (
+              <button
+                type="button"
+                className="text-link ap-start-email"
+                {...cta("invitation_use_email", "invitation_page", "auth_signup", "navigation")}
+                onClick={() => {
+                  setWithEmail(true);
+                  track("signup_email_chosen", { origin: "invitation" });
+                }}
+              >
+                Prefiero usar mi email y una contraseña
+              </button>
+            )}
           </div>
         )}
+        {emailShown && (
+          <>
         <label>
           Email
           <input type="email" required autoComplete="email" inputMode="email" value={email} onChange={(e) => setEmail(e.target.value)} />
@@ -186,15 +206,19 @@ export function InvitationSignup({
           {mode === "new" && <small className="dm-help">Usá al menos 10 caracteres.</small>}
         </label>
         <Captcha onToken={onToken} reset={captchaReset} />
+          </>
+        )}
         {error && (
           <p className="inline-error" role="alert">
             {error}
           </p>
         )}
         {preview && <p className="inline-notice">Vista previa del equipo: así ve este paso la inmobiliaria. No se crea ninguna cuenta.</p>}
-        <button className="button button-primary button-large" disabled={busy || preview}>
-          {busy ? "Un momento…" : mode === "new" ? "Entrar a mi panel" : "Entrar y sumar mis demos"}
-        </button>
+        {emailShown && (
+          <button className="button button-primary button-large" disabled={busy || preview}>
+            {busy ? "Un momento…" : mode === "new" ? "Entrar a mi panel" : "Entrar y sumar mis demos"}
+          </button>
+        )}
         <p className="dm-help">
           {mode === "new" ? (
             <>
@@ -276,7 +300,7 @@ export function InvitationSignup({
         {demos
           ? `Preparamos ${demos === 1 ? "una propiedad" : `${demos} propiedades`} con fotos ambientadas para tu inmobiliaria. `
           : "Preparamos tu panel para que subas tus propiedades. "}
-        Creá tu acceso con tu email y una contraseña y entrás directo. {credits}
+        Entrá con Google en un clic, o con tu email, y vas directo a tu panel. {credits}
       </p>
       {form}
     </div>
