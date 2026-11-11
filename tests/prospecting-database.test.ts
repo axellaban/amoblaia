@@ -539,6 +539,22 @@ describe("Reads", () => {
     const again = await json<{ id: string; replayed: boolean }>("select habita_prospect_add($1,$2,null,null,null,null,null) as r", [admin, p.agency]);
     expect(again).toMatchObject({ id: p.account, replayed: true });
   });
+
+  // QA 2026-11-11 pm (OBS-012): the dataset and the derived stage ask, for every
+  // event, whether a correction points at it. Without an index on
+  // corrects_event_id each question read the whole table and the reads hit the
+  // statement timeout in production.
+  it("finds corrections of an event by index, not by reading the whole table", async () => {
+    const idx = await one<{ indexdef: string }>("select indexdef from pg_indexes where tablename='prospect_events' and indexname='prospect_events_corrects'");
+    expect(idx?.indexdef).toMatch(/\(corrects_event_id\) WHERE \(corrects_event_id IS NOT NULL\)/);
+    await db.exec("set enable_seqscan = off");
+    try {
+      const plan = (await db.query<{ "QUERY PLAN": string }>(`explain select 1 from prospect_events c where c.corrects_event_id='${id()}'`)).rows.map((r) => r["QUERY PLAN"]).join("\n");
+      expect(plan).toContain("prospect_events_corrects");
+    } finally {
+      await db.exec("reset enable_seqscan");
+    }
+  });
 });
 
 describe("Privacy", () => {
