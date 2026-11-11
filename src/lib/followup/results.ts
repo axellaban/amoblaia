@@ -176,3 +176,152 @@ export function blockReasons(reasons: string[]) {
   }
   return [...out.entries()].sort((a, b) => b[1] - a[1]).map(([reason, n]) => ({ reason, n }));
 }
+
+// ── Ejecución de la cola, por día ──────────────────────────────────────────
+// Qué estuvo pendiente cada día (la foto diaria de la cola, más lo que se
+// ejecutó ese día aunque la foto no lo haya visto), cuánto se ejecutó, quién
+// (persona o bot) y cuánto fue exitoso: la ejecución tiene una conversión
+// atribuida (la misma atribución de arriba, sin límite de ventana).
+
+export type QueueDayRow = { day: string; agency_id: string; stage: string; action: string; state: "lista" | "bloqueada" | "programada" };
+export type DayExecution = ResultExecution & { executed_by?: "humano" | "bot" | null };
+export type DayTypeCount = {
+  type: string;
+  stages: string[];
+  pending: number;
+  human: number;
+  bot: number;
+  successHuman: number;
+  successBot: number;
+  blocked: number;
+  unclaimed: number;
+  failed: number;
+  scheduled: number;
+};
+/** La misma cuenta por etapa técnica de la cola: para cruzar la ejecución de cada etapa con el paso del embudo al que lleva. */
+export type DayStageCount = { stage: string; pending: number; executed: number; success: number };
+export type ExecutionDay = { day: string; captured: boolean; types: DayTypeCount[]; stages: DayStageCount[] };
+
+/** The last `n` Buenos Aires dates, oldest first, ending today. */
+export function lastDays(n: number, now = new Date()) {
+  const out: string[] = [];
+  for (let i = n - 1; i >= 0; i--) out.push(artDay(now.getTime() - i * DAY));
+  return out;
+}
+/** YYYY-MM-DD in Buenos Aires (UTC-3 all year). */
+const artDay = (t: number | string) => new Date((typeof t === "number" ? t : Date.parse(t)) - 3 * 3_600_000).toISOString().slice(0, 10);
+
+export function executionDays(
+  rows: QueueDayRow[],
+  executions: DayExecution[],
+  stepNow: Map<string, number>,
+  label: (stage: string, action: string) => string,
+  n = 35,
+  now = new Date(),
+): ExecutionDay[] {
+  const { credited } = attribute(executions, stepNow, null);
+  const days = lastDays(n, now);
+  const inRange = new Set(days);
+  type Cell = { stage: string; action: string; state?: QueueDayRow["state"]; sent?: DayExecution; failed?: boolean };
+  const byDay = new Map<string, Map<string, Cell>>();
+  const cell = (day: string, agency: string, stage: string, action: string) => {
+    if (!byDay.has(day)) byDay.set(day, new Map());
+    const m = byDay.get(day)!;
+    const k = `${agency}:${stage}:${action}`;
+    if (!m.has(k)) m.set(k, { stage, action });
+    return m.get(k)!;
+  };
+  const captured = new Set<string>();
+  for (const r of rows) {
+    if (!inRange.has(r.day)) continue;
+    captured.add(r.day);
+    cell(r.day, r.agency_id, r.stage, r.action).state = r.state;
+  }
+  for (const e of executions) {
+    const action = e.action ?? "principal";
+    if (e.status === "sent" && e.sent_at) {
+      const d = artDay(e.sent_at);
+      if (inRange.has(d)) cell(d, e.agency_id, e.stage, action).sent = e;
+    } else if (e.status === "failed") {
+      const d = artDay(e.updated_at);
+      if (inRange.has(d)) cell(d, e.agency_id, e.stage, action).failed = true;
+    }
+  }
+  return days.map((day) => {
+    const types = new Map<string, DayTypeCount>();
+    const stages = new Map<string, DayStageCount>();
+    for (const c of byDay.get(day)?.values() ?? []) {
+      const type = label(c.stage, c.action);
+      if (!types.has(type)) types.set(type, { type, stages: [], pending: 0, human: 0, bot: 0, successHuman: 0, successBot: 0, blocked: 0, unclaimed: 0, failed: 0, scheduled: 0 });
+      const t = types.get(type)!;
+      if (!t.stages.includes(c.stage)) t.stages.push(c.stage);
+      // Rescheduled on purpose and not executed that day: shown, but not owed that day.
+      if (!c.sent && !c.failed && c.state === "programada") { t.scheduled++; continue; }
+      t.pending++;
+      if (!stages.has(c.stage)) stages.set(c.stage, { stage: c.stage, pending: 0, executed: 0, success: 0 });
+      const st = stages.get(c.stage)!;
+      st.pending++;
+      if (c.sent) st.executed++;
+      if (c.sent) {
+        const bot = c.sent.executed_by === "bot";
+        if (bot) t.bot++; else t.human++;
+        if (credited.has(c.sent)) { st.success++; if (bot) t.successBot++; else t.successHuman++; }
+      } else if (c.failed) t.failed++;
+      else if (c.state === "bloqueada") t.blocked++;
+      else t.unclaimed++;
+    }
+    return { day, captured: captured.has(day), types: [...types.values()].sort((a, b) => b.pending - a.pending || a.type.localeCompare(b.type)), stages: [...stages.values()] };
+  });
+}
+
+/** Executions and attributed conversions per week, for each type of action (the trend of each row). */
+export function weeklyByType(
+  executions: ResultExecution[],
+  stepNow: Map<string, number>,
+  windowDays: number | null,
+  label: (stage: string, action: string) => string,
+  weeks = 8,
+  now = new Date(),
+) {
+  const groups = new Map<string, ResultExecution[]>();
+  for (const e of executions) {
+    const t = label(e.stage, e.action ?? "principal");
+    groups.set(t, [...(groups.get(t) ?? []), e]);
+  }
+  // Attribution runs over every execution (a conversion belongs to the last message, whatever its type).
+  const { credited } = attribute(executions, stepNow, windowDays);
+  const out: Record<string, { week: string; executed: number; conversions: number }[]> = {};
+  for (const [t, list] of groups)
+    out[t] = lastWeeks(weeks, now).map((w) => ({
+      week: w,
+      executed: list.filter((e) => e.status === "sent" && e.sent_at && weekOf(e.sent_at) === w).length,
+      conversions: list.filter((e) => credited.has(e) && weekOf(e.sent_at!) === w).length,
+    }));
+  return out;
+}
+
+// ── Cohortes con el embudo del panel ───────────────────────────────────────
+// Las mismas cohortes (semana de contacto, de primera respuesta, versión del
+// saludo), contadas con las etapas del panel de Inmobiliarias: cuántas de la
+// cohorte llegaron a cada etapa (la etapa comercial de hoy es la más alta probada).
+
+export type FunnelCohortAgency = CohortAgency & { commercial: number };
+export type FunnelCohortRow = { cohort: string; size: number; reached: number[] };
+
+export function funnelCohorts(agencies: FunnelCohortAgency[], stageCount: number, by: "contacto" | "respuesta" | "version", weeks = 8, now = new Date()): FunnelCohortRow[] {
+  const count = (own: FunnelCohortAgency[]) => Array.from({ length: stageCount }, (_, i) => own.filter((a) => a.commercial >= i).length);
+  if (by === "version") {
+    const keys = [...new Set(agencies.filter((a) => a.firstContact).map((a) => a.greetingVersion))].sort((a, b) => (a ?? 0) - (b ?? 0));
+    return keys.map((k) => {
+      const own = agencies.filter((a) => a.firstContact && a.greetingVersion === k);
+      return { cohort: k === null ? "Antes de Follow-up (Adquisición)" : `Saludo V${k}`, size: own.length, reached: count(own) };
+    });
+  }
+  return lastWeeks(weeks, now).map((w) => {
+    const own = agencies.filter((a) => {
+      const at = by === "contacto" ? a.firstContact : a.firstReply;
+      return at && weekOf(at) === w;
+    });
+    return { cohort: w, size: own.length, reached: count(own) };
+  });
+}

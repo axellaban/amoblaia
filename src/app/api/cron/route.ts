@@ -5,6 +5,7 @@ import { adminClient } from "@/lib/supabase/server";
 import { runJob } from "@/lib/commerce/jobs";
 import { reconcileCheckout } from "@/lib/commerce/reconcile";
 import { advanceAiVideos } from "@/lib/video/ai";
+import { snapshotQueueDay } from "@/lib/followup/server";
 import {
   endLaunchPrices,
   processInbox,
@@ -101,6 +102,8 @@ export async function GET(request: Request) {
     await retireReversedSubscriptions(deadline - 150000).catch(() =>
       console.error("cron_reversed_subscriptions_failed"),
     );
+    // Follow-up: the photo of the day's queue (06:00 in Buenos Aires), for Resultados.
+    await snapshotQueueDay().catch(() => console.error("cron_followup_queue_day_failed"));
     // AI videos nobody came back to: finished clips are stored, stuck ones failed and refunded.
     await advanceAiVideos({}, Math.min(deadline - 150000, Date.now() + 60000)).catch(() =>
       console.error("cron_video_ai_failed"),

@@ -115,6 +115,8 @@ export type FollowupExecution = {
   sent_at: string | null;
   /** Cuándo se vio que avanzó después de ella (Fase 4). */
   converted_at?: string | null;
+  /** Quién la ejecutó: una persona del equipo o un bot (202612110001). */
+  executed_by?: "humano" | "bot" | null;
 };
 
 /**

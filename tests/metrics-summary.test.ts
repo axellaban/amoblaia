@@ -80,6 +80,18 @@ describe("prospecting", () => {
     expect([m.prospectados, m.contactados]).toEqual([2, 1]);
     expect(m.diario.map((d) => d.date)).toEqual(["2026-10-10"]);
   });
+
+  it("splits a closed range into the cohort contacted each day, with the same rules", () => {
+    const a = account(), b = account();
+    const m = prospectingMetrics(
+      ds([a, b], [send(a, "2026-10-05T10:00:00-03:00"), send(b, "2026-10-06T23:30:00-03:00")], [event(b, "reply", "2026-10-07T10:00:00-03:00")]),
+      { from: "2026-10-05", to: "2026-10-07" },
+    );
+    expect(m.porDia.map((d) => [d.date, d.contactados, d.respondieron])).toEqual([["2026-10-05", 1, 0], ["2026-10-06", 1, 1], ["2026-10-07", 0, 0]]);
+    expect(m.porDia[0].demos).toMatchObject({ sent: 0, entered: 0 });
+    // Without a closed range there is no per-day cohort.
+    expect(prospectingMetrics(ds([a], [send(a, "2026-10-05T10:00:00-03:00")]), {}).porDia).toEqual([]);
+  });
 });
 
 describe("demos", () => {
