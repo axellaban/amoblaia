@@ -576,6 +576,22 @@ function PanelHome({ data, reload, continuing }: { data: PanelSummary; reload: (
         <p>Generá contenido atractivo para tus propiedades y compartilo con tus clientes.</p>
       </header>
       <HomeCards creator={creator} onStart={(tool) => setPicker({ tool, preview: false })} />
+      {creator && (
+        <section aria-label="Nuevas herramientas comerciales" style={{ margin: "28px 0", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 280px), 1fr))", gap: 16 }}>
+          <article style={{ padding: 24, border: "1px solid #dbe6dd", borderRadius: 18, background: "#f5f8f4" }}>
+            <span style={{ fontSize: 12, letterSpacing: 1, color: "#3d6c4a", fontWeight: 700 }}>NUEVO · PROTOTIPO</span>
+            <h2 style={{ margin: "12px 0 8px" }}>Consultas IA</h2>
+            <p>Respondé consultas, calificá interesados y coordiná visitas, incluso fuera de horario.</p>
+            <Link href="/panel/consultas-ia" className="button button-primary" {...cta("panel_home_consultas_ia", "panel_home_cards", "consultas_ia_prototype")}>Probar Consultas IA <ArrowRight size={17} /></Link>
+          </article>
+          <article style={{ padding: 24, border: "1px solid #dbe6dd", borderRadius: 18, background: "#f5f8f4" }}>
+            <span style={{ fontSize: 12, letterSpacing: 1, color: "#3d6c4a", fontWeight: 700 }}>NUEVO · PROTOTIPO</span>
+            <h2 style={{ margin: "12px 0 8px" }}>CRM Inteligente</h2>
+            <p>Priorizá oportunidades, calificá leads y simulá el seguimiento de tu equipo.</p>
+            <Link href="/panel/crm-inteligente" className="button button-primary" {...cta("panel_home_crm_ia", "panel_home_cards", "crm_ia_prototype")}>Probar CRM Inteligente <ArrowRight size={17} /></Link>
+          </article>
+        </section>
+      )}
       {picker && (
         <StartPicker key={`${picker.tool}-${picker.preview}`} tool={picker.tool} existingCount={data.counts.total} preview={picker.preview} onClose={() => setPicker(null)} />
       )}
