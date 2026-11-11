@@ -544,6 +544,7 @@ const ACTION_LABEL: Record<string, string> = {
   agency_claim_link: "Creó una invitación",
   agency_claim_revoke: "Revocó una invitación",
   agency_claim: "La inmobiliaria reclamó su cuenta",
+  agency_release: "Liberó la cuenta (reclamo de prueba)",
 };
 const OPERATION_LABEL: Record<string, string> = {
   agency_data: "cambió los datos",

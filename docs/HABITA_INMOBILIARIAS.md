@@ -193,6 +193,12 @@ Para importar entre 100 y 300 propiedades por inmobiliaria haría falta:
    5. Publicar el sitio y abrir `/inmobiliaria/<slug>`.
 4. **Probar el reclamo.** Desde el editor de una demo del equipo, «Crear enlace para que
    la inmobiliaria se quede con sus demos» → abrir el enlace con otra cuenta.
+   Al terminar, en `/admin/inmobiliarias/<id>` → Invitaciones → «Liberar cuenta»
+   (`habita_release_agency`, migración `202611150001_agency_release.sql`): la
+   inmobiliaria vuelve a quedar sin cuenta, las fotos de las demos vuelven al equipo,
+   se borran las propiedades que creó la cuenta de prueba y los créditos de regalo
+   sin usar quedan reservados otra vez. Las invitaciones sin usar vuelven a
+   funcionar. Se rechaza si la cuenta compró créditos.
 
 ## 8. Pendiente
 
