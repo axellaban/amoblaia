@@ -35,6 +35,7 @@ import {
   stageOf,
   type OverrideStage,
   versionFor,
+  resultOf,
   versionStats,
   stepValue,
   type Channel,
@@ -712,12 +713,12 @@ function item(
   const offered = vs.filter((v) => v.stage === stage && (v.action ?? "principal") === (action ?? "principal"));
   const sent = mine.find((e) => e.status === "sent");
   const version = action ? (sent ? offered.find((v) => v.id === sent.version_id) ?? null : versionFor(r.id, offered, mine, action)) : null;
-  const done = sent ?? (version ? mine.find((e) => e.version_id === version.id) : undefined);
+  // Only a result counts (sent or failed): an «opened» never confirmed is as if nothing was done.
+  const done = resultOf(mine, version?.id ?? null);
   const uncontacted = stage === "no-contactado";
   const lastAction = lastActionOf({ executions: executionsOf, versions: vs, attempts: sends, activity: r.lastActivity });
   const checks: string[] = [];
   if (version?.channel === "whatsapp" && to.wa && to.needsReview) checks.push("Número sin validar: confirmá en el chat que es la inmobiliaria; al confirmar el envío queda validado.");
-  if (done?.status === "opened") checks.push(`Se abrió WhatsApp el ${whenText(done.updated_at)} sin confirmar: revisá el chat antes de reenviar.`);
   const short = own?.short_name?.trim() || shortName(r.name);
   return {
     agencyId: r.id,
@@ -1018,7 +1019,7 @@ async function prepare(it: QueueItem, origin: string, actor: { id: string; name:
   const checklist = [
     { key: "numero", label: "Número validado", ok: v.channel === "task" || (Boolean(it.wa) && !it.needsReview), note: v.channel === "task" ? "Tarea del equipo" : !it.wa ? "Falta su WhatsApp" : it.needsReview ? "Confirmá en el chat que es la inmobiliaria: queda validado al confirmar el envío" : "" },
     { key: "rechazo", label: "Situación habilitada para esta acción", ok: it.action === "encuesta_cierre" || !CLOSED_SITUATIONS.includes(it.situation), note: "" },
-    { key: "reciente", label: "Sin mensaje equivalente reciente", ok: !it.blocked, note: it.blocked ?? (it.execution?.status === "opened" ? "Se abrió WhatsApp antes sin confirmar: revisá el chat" : "") },
+    { key: "reciente", label: "Sin mensaje equivalente reciente", ok: !it.blocked, note: it.blocked ?? "" },
     { key: "horario", label: "Horario permitido", ok: !hours, note: hours ?? (it.group === "nuevos" ? "Lunes a sábado, de 9 a 18" : "Lunes a sábado, de 9 a 19") },
     { key: "variables", label: "Variables completas", ok: !holes.length, note: holes.length ? holes.map((h) => `{{${h}}}`).join(", ") : `{{inmobiliaria}} = «${it.shortName}»` },
     { key: "enlaces", label: "Enlaces listos", ok: linkOk, note: need.demo || need.panel ? (linkOk ? "Demo y panel armados" : "No se pudo armar un enlace") : "Este mensaje no lleva enlaces" },
