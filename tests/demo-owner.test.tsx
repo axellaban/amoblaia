@@ -76,13 +76,17 @@ describe("the agency's own demo, under its panel header", () => {
     expect(html).toContain("Después");
   });
 
-  it("leads its CTAs to the panel's visit (no account needed yet) and only «Activar mi cuenta gratis» to the invitation's sign-up", () => {
+  it("leads every CTA, «Activar mi cuenta gratis» included, to one destination: the panel's visit, in this tab", () => {
     const panel = hrefs.filter((h) => h.startsWith("/panel"));
     expect(panel.length).toBeGreaterThanOrEqual(1);
     // Generar and the photos still without a staging carry what was chosen (?accion=&foto=&estilo=) on the same visit.
-    expect(panel.every((h) => h === VISIT || h === INVITE || h.startsWith(`${VISIT}&accion=`))).toBe(true);
+    expect(panel.every((h) => h === VISIT || h.startsWith(`${VISIT}&accion=`))).toBe(true);
     expect(panel).toContain(VISIT);
-    expect(html).toMatch(/<a class="dv2-owner-save" href="\/panel\/empezar\?codigo=[^"]+"[^>]*>Activar mi cuenta gratis<\/a>/);
+    expect(panel).not.toContain(INVITE);
+    expect(html).toMatch(new RegExp(`<a class="dv2-owner-save" href="${VISIT.replace(/[?]/g, "\\?")}"[^>]*>Activar mi cuenta gratis</a>`));
+    // On phones the bar hides «Mi panel» and «Activar»: a fixed bar keeps the way in.
+    expect(html).toMatch(/<div class="dv2-sticky is-owner"><a class="dv2-save-demo-cta" href="[^"]+" data-cta="owner_sticky_panel"/);
+    expect(html).not.toMatch(/data-cta="owner_[a-z_]+"[^>]*target="_blank"/);
     // The only other ways out are the buyers' view and the plans, both inside the agency's environment,
     // and the sources of «El impacto en tu negocio», which open in another tab.
     const sources: string[] = IMPACT_STATS.map((s) => s.href);

@@ -86,7 +86,7 @@ CTAs instrumentados:
 
 | `cta_id` | Botón real | Destino |
 | --- | --- | --- |
-| `owner_inicio`, `owner_imagenes`, `owner_crear`, `owner_crear_movil`, `owner_guardar` | Barra del modo demostración: Inicio, Imágenes, Crear propiedad (desktop/móvil), Guardar mi panel | `signup_invitation` |
+| `owner_inicio`, `owner_imagenes`, `owner_crear`, `owner_crear_movil`, `owner_guardar` | Barra del modo demostración: Inicio, Imágenes, Crear propiedad (desktop/móvil), Guardar mi panel | `panel_visit` (desde el 11/11 también `owner_guardar`, «Activar mi cuenta gratis»; antes `signup_invitation`) |
 | `owner_my_properties` | Mis propiedades | `section_property` |
 | `owner_credits` | Créditos (abre el menú) | `credits_menu` |
 | `owner_generate_menu` | Generar sin registrarte | `styles_panel` |
@@ -98,7 +98,8 @@ CTAs instrumentados:
 | `owner_generate` | Generar (estilo sin versión) | `ai_generation` |
 | `invite_panel_lateral`, `invite_panel_final` | Probar esta propiedad en mi panel | `signup_invitation` |
 | `create_agency` | Crear mi inmobiliaria gratis | `agency_signup` |
-| `banner_by_habita` | «Por habita.» de la franja | `habita_studio` |
+| `banner_by_habita` | «Por habita.» de la franja (desde el 11/11, al alta con la demo en la misma pestaña; antes, `/estudio` en otra) | `agency_signup` (antes `habita_studio`) |
+| `owner_sticky_panel` | Continuar en mi panel (barra fija en celular, demo de la inmobiliaria) | `panel_visit` |
 | `pricing_buy_pack`, `pricing_buy_plan`, `pricing_buy_first_pack` | Comprar en /precios y en la sección Precios de la demo (`cta_location` con prefijo `demo_prices_`) | `checkout` o `signup_invitation` |
 | `pricing_start_free`, `pricing_buy_credits`, `pricing_staging_source` | Precios en /precios, en el panel y en la demo (`cta_location` `<superficie>_free`, `<superficie>_buy`, `<superficie>_impact`). `pricing_buy_credits` lleva en `plan` el paquete elegido. `pricing_sheet_pack` (tarjeta de precios) dejó de existir con `pricing` `v2` | `panel` o `signup_invitation`; `checkout` o `signup_invitation`; `external_source` |
 | `contact_whatsapp`, `contact_url`, `contact_phone`, `contact_email`, `contact_listing`, `schedule_visit`, `agency_website`, `open_map` | Contacto del comprador con la inmobiliaria | canal |

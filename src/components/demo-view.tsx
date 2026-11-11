@@ -62,7 +62,6 @@ import { ImpactStats } from "./business-impact";
 import {
   RETOUCH_STYLE,
   adminPhotoUrl,
-  ctaHref,
   DEMO_REF_KEY,
   publicImageUrl,
   publicVideoUrl,
@@ -202,6 +201,8 @@ export function DemoView({
   backToDemo?: string | null;
 }) {
   const { agency } = demo;
+  // An agency's presentation without its invitation: one way in, the sign-up with this demo.
+  const signupHref = source.kind === "public" ? `/panel/empezar?demo=${source.token}` : "/panel/empezar";
   const [pageUrl, setPageUrl] = useState("");
   // The agent's photo lives on the agency's site: if it fails, the initials stand in.
   const [agentPhotoFailed, setAgentPhotoFailed] = useState(false);
@@ -429,7 +430,8 @@ export function DemoView({
       {!owner && !backToDemo && presentation && demo.banner && (
         <div className="dv2-banner" role="note">
           Demo preparada para {agency.name} ·{" "}
-          <a href={ctaHref(demo.id, demo.agencyId)} {...external} {...cta("banner_by_habita", "banner", "habita_studio")} onClick={() => log("demo_cta_click")}>
+          {/* The same way in as «Crear mi inmobiliaria gratis», in this tab: one destination for the agency. */}
+          <a href={signupHref} {...cta("banner_by_habita", "banner", "agency_signup")} onClick={() => log("demo_cta_click")}>
             Por habita.
           </a>
         </div>
@@ -694,7 +696,7 @@ export function DemoView({
             <div className="dv2-habita-actions">
               <a
                 className="dv2-habita-cta"
-                href={source.kind === "public" ? `/panel/empezar?demo=${source.token}` : "/panel/empezar"}
+                href={signupHref}
                 {...cta("create_agency", "habita_section", "agency_signup")}
                 onClick={() => log("demo_agency_cta_clicked", { origen: "demo", cta_id: "create_agency", cta_location: "habita_section" }, true)}
               >
@@ -739,6 +741,19 @@ export function DemoView({
         </div>
       </footer>
       {primary && !owner && !contactInView && <div className="dv2-sticky">{contactLink(primary, "dv2-contact-main", "sticky_bar")}</div>}
+      {/* On phones the bar's «Mi panel» and «Activar» are hidden: the way into the panel stays at hand. */}
+      {owner && !pricesOn && (
+        <div className="dv2-sticky is-owner">
+          <a
+            className="dv2-save-demo-cta"
+            href={owner.panelHref}
+            {...cta("owner_sticky_panel", "sticky_bar", "panel_visit", "habita_b2b", { intent: "panel_home" })}
+            onClick={() => log("demo_agency_cta_clicked", { origen: "demo_barra_fija", cta_id: "owner_sticky_panel", cta_intent: "panel_home" }, true)}
+          >
+            Continuar en mi panel <ArrowRight size={17} aria-hidden="true" />
+          </a>
+        </div>
+      )}
     </div>
   );
 }
@@ -2137,7 +2152,8 @@ function OwnerHeader({
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [open]);
-  // «Activar mi cuenta gratis» is the invitation's sign-up; every other way opens the panel's visit. Each keeps its own id and what it was meant to open.
+  // Every way, «Activar mi cuenta gratis» included, opens the panel's visit: one destination, where the
+  // welcome offers to create the account (docs/ACCESO_PANEL.md). Each keeps its own id and what it was meant to open.
   const INTENT: Record<string, string> = {
     inicio: "panel_home",
     imagenes: "panel_images",
@@ -2146,8 +2162,8 @@ function OwnerHeader({
     guardar: "save_panel",
   };
   const go = (origin: string) => ({
-    href: origin === "guardar" ? owner.href : owner.panelHref,
-    ...cta(`owner_${origin}`, origin === "guardar" ? "owner_bar" : "owner_menu", origin === "guardar" ? "signup_invitation" : "panel_visit", "habita_b2b", { intent: INTENT[origin] }),
+    href: owner.panelHref,
+    ...cta(`owner_${origin}`, origin === "guardar" ? "owner_bar" : "owner_menu", "panel_visit", "habita_b2b", { intent: INTENT[origin] }),
     onClick: () => log("demo_agency_cta_clicked", { origen: `demo_encabezado_${origin}`, cta_id: `owner_${origin}`, cta_intent: INTENT[origin] }, true),
   });
   const versions = demo.photos.reduce((n, p) => n + p.versions.length, 0);

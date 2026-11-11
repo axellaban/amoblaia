@@ -153,6 +153,7 @@ describe("the demo's tracked actions", () => {
         "owner_share",
         "owner_another_property",
         "owner_generate",
+        "owner_sticky_panel",
       ]),
     );
     // The invitation code never goes into the tracked attributes.
@@ -163,6 +164,10 @@ describe("the demo's tracked actions", () => {
     const html = renderToStaticMarkup(<DemoView demo={demo} source={{ kind: "public", token: "tok" }} presentation />);
     expect(ids(html)).toEqual(expect.arrayContaining(["contact_whatsapp", "contact_listing", "banner_by_habita", "create_agency", "agency_website", "nav_contact"]));
     expect(html).toMatch(/data-cta="create_agency" data-cta-location="habita_section" data-cta-destination="agency_signup" data-cta-kind="habita_b2b"/);
+    // «Por habita.» and «Crear mi inmobiliaria gratis»: the same sign-up with this demo, in this tab.
+    expect(html).toMatch(/href="\/panel\/empezar\?demo=tok" data-cta="banner_by_habita"/);
+    expect(html).toMatch(/href="\/panel\/empezar\?demo=tok" data-cta="create_agency"/);
+    expect(html).not.toContain("/estudio?");
     expect(html).toMatch(/data-cta="contact_whatsapp" data-cta-location="gallery_side" data-cta-destination="whatsapp" data-cta-kind="buyer_contact"/);
   });
 

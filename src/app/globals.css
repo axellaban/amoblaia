@@ -7110,7 +7110,8 @@ h2 .accent {
     background: rgba(252, 252, 251, 0.97);
     border-top: 1px solid var(--line);
   }
-  .dv2-sticky .dv2-contact-main {
+  .dv2-sticky .dv2-contact-main,
+  .dv2-sticky.is-owner .dv2-save-demo-cta {
     width: 100%;
   }
   .dv2-stage.is-full ~ * {
