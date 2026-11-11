@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { executionDays, funnelCohorts, lastDays, weeklyByType, type DayExecution, type QueueDayRow } from "@/lib/followup/results";
+import { executionDays, funnelCohorts, lastDays, queueDayState, weeklyByType, type DayExecution, type QueueDayRow } from "@/lib/followup/results";
 
 const now = new Date("2026-11-11T15:00:00Z"); // 12:00 in Buenos Aires
 const label = (stage: string, action: string) => (action === "precios" ? "Precios" : stage === "no-contactado" ? "Saludo" : "Next best action");
@@ -68,5 +68,23 @@ describe("funnelCohorts", () => {
     const rows = funnelCohorts(list, T, "contacto", 1, now);
     expect(rows).toEqual([{ cohort: "2026-11-13", size: 4, reached: [3, 2, 2, 1, 1, 1] }]);
     expect(funnelCohorts([...list, a("2026-10-01T13:00:00Z", 0, null)], T, "version", 8, now).map((r) => r.cohort)).toEqual(["Antes de Follow-up (Adquisición)", "Saludo V1"]);
+  });
+});
+
+describe("queueDayState: only what the queue assigns to today is pending", () => {
+  // Wednesday 11/11, 12:00 in Buenos Aires.
+  it("counts what is ready, due later today, outside today's hours or stuck on data", () => {
+    expect(queueDayState({}, now)).toBe("lista");
+    expect(queueDayState({ dueAt: "2026-11-11T20:00:00Z", blocked: "Programada para el 11/11 17:00 (Seguimiento 2, a las 48 h de nuestro último mensaje)." }, now)).toBe("lista");
+    expect(queueDayState({ blocked: "Fuera de horario: los mensajes van de lunes a sábado de 9 a 19 (hora de Argentina)." }, now)).toBe("lista");
+    expect(queueDayState({ blocked: "Sin WhatsApp: cargalo en la ficha o marcala «Sin WhatsApp»." }, now)).toBe("bloqueada");
+  });
+  it("leaves out the first contacts beyond the daily cap, other days and those waiting for an answer", () => {
+    expect(queueDayState({ blocked: "Sin cupo para primer contacto: 48 registrados y 0 externos en 24 h, máximo 48. Se habilitará al liberarse un cupo." }, now)).toBe("programada");
+    expect(queueDayState({ dueAt: "2026-11-12T13:00:00Z", blocked: "Programada para el 12/11 10:00." }, now)).toBe("programada");
+    expect(queueDayState({ snoozedUntil: "2026-11-15T12:00:00Z", blocked: "Reprogramada para el 15/11." }, now)).toBe("programada");
+    expect(queueDayState({ blocked: "Ya le escribimos después de su última respuesta (10/11 18:00): esperá que conteste." }, now)).toBe("programada");
+    // On Sunday nothing outside hours is owed.
+    expect(queueDayState({ blocked: "Fuera de horario: los mensajes van de lunes a sábado de 9 a 19 (hora de Argentina)." }, new Date("2026-11-15T15:00:00Z"))).toBe("programada");
   });
 });

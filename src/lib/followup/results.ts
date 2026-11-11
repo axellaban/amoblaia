@@ -325,3 +325,24 @@ export function funnelCohorts(agencies: CohortAgency[], thresholds: readonly num
     return { cohort: w, size: own.length, reached: count(own) };
   });
 }
+
+// ── Qué le corresponde a hoy ────────────────────────────────────────────────
+// Pendiente de hoy es lo que la cola le asigna a hoy: lo listo, lo que vence o
+// vuelve hoy, lo que solo espera el horario de hoy y lo que está trabado por un
+// dato a corregir. No es de hoy («programada», no cuenta): lo que espera cupo de
+// primer contacto (el tope diario de saludos), lo programado o reprogramado para
+// otro día, lo que espera que la persona conteste y lo de un día no hábil.
+
+export type QueueDayInput = { dueAt?: string | null; snoozedUntil?: string | null; blocked?: string | null };
+const NOT_TODAY = [/^Sin cupo para primer contacto/i, /^Tope de \d+ contactos nuevos/i, /esper(á|ando) que (conteste|responda)/i, /los domingos no se escribe/i, /^D[ií]a no habilitado/i];
+export function queueDayState(q: QueueDayInput, now = new Date()): QueueDayRow["state"] {
+  const endOfToday = Date.parse(`${artDay(now.getTime())}T00:00:00-03:00`) + DAY;
+  if (q.dueAt && Date.parse(q.dueAt) >= endOfToday) return "programada";
+  if (q.snoozedUntil && Date.parse(q.snoozedUntil) >= endOfToday) return "programada";
+  const b = q.blocked;
+  if (!b) return "lista";
+  if (NOT_TODAY.some((r) => r.test(b))) return "programada";
+  // Due later today or only outside today's hours: still owed today.
+  if (/^(Programada para|Reprogramada|Fuera de horario|Fuera de la ventana)/i.test(b)) return new Date(now.getTime() - 3 * 3_600_000).getUTCDay() === 0 ? "programada" : "lista";
+  return "bloqueada";
+}
