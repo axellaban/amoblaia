@@ -577,19 +577,21 @@ function PanelHome({ data, reload, continuing }: { data: PanelSummary; reload: (
       </header>
       <HomeCards creator={creator} onStart={(tool) => setPicker({ tool, preview: false })} />
       {creator && (
-        <section aria-label="Nuevas herramientas comerciales" style={{ margin: "28px 0", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 280px), 1fr))", gap: 16 }}>
-          <article style={{ padding: 24, border: "1px solid #dbe6dd", borderRadius: 18, background: "#f5f8f4" }}>
-            <span style={{ fontSize: 12, letterSpacing: 1, color: "#3d6c4a", fontWeight: 700 }}>NUEVO · IA COMERCIAL</span>
-            <h2 style={{ margin: "12px 0 8px" }}>Consultas IA</h2>
-            <p>Respondé consultas, calificá interesados y coordiná visitas, incluso fuera de horario.</p>
-            <Link href="/panel/consultas-ia" className="button button-primary" {...cta("panel_home_consultas_ia", "panel_home_cards", "consultas_ia")}>Abrir Consultas IA <ArrowRight size={17} /></Link>
-          </article>
-          <article style={{ padding: 24, border: "1px solid #dbe6dd", borderRadius: 18, background: "#f5f8f4" }}>
-            <span style={{ fontSize: 12, letterSpacing: 1, color: "#3d6c4a", fontWeight: 700 }}>NUEVO · IA COMERCIAL</span>
-            <h2 style={{ margin: "12px 0 8px" }}>CRM Inteligente</h2>
-            <p>Priorizá oportunidades, calificá interesados y organizá los seguimientos de tu equipo.</p>
-            <Link href="/panel/crm-inteligente" className="button button-primary" {...cta("panel_home_crm_ia", "panel_home_cards", "crm_inteligente")}>Abrir CRM Inteligente <ArrowRight size={17} /></Link>
-          </article>
+        // Panel v4: the commercial tools stay right under the creation tools, as one quiet strip (secondary to Virtual Staging).
+        // Same links, labels and data-cta ids as v3, so the clicks before and after compare.
+        <section className="ap-explore" aria-label="Nuevas herramientas comerciales">
+          <p>
+            <span className="ap-chip">Nuevo · en exploración</span>
+            <span>Probá cómo responder consultas y ordenar interesados con IA, con datos de ejemplo.</span>
+          </p>
+          <div className="ap-explore-actions">
+            <Link href="/panel/consultas-ia" className="button button-small button-outline" {...cta("panel_home_consultas_ia", "panel_home_cards", "consultas_ia")}>
+              Abrir Consultas IA
+            </Link>
+            <Link href="/panel/crm-inteligente" className="button button-small button-outline" {...cta("panel_home_crm_ia", "panel_home_cards", "crm_inteligente")}>
+              Abrir CRM Inteligente
+            </Link>
+          </div>
         </section>
       )}
       {picker && (
