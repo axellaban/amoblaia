@@ -26,6 +26,7 @@ import {
   type MapSettings,
   type TitleFont,
 } from "./branding";
+import { BUYER_AGENT_MODES, type BuyerAgentMode } from "./buyer-agent";
 
 export async function readJson(request: Request, max = 16384) {
   if (Number(request.headers.get("content-length") || 0) > max)
@@ -239,6 +240,10 @@ export function settingsInput(raw: unknown, current: DemoSettings): DemoSettings
     const valid = v.styleOrder === "auto" || v.styleOrder === "catalog" || (Array.isArray(v.styleOrder) && v.styleOrder.length > 0 && v.styleOrder.every(isDemoStyle));
     if (!valid) throw new HttpError(400, "Orden de estilos inválido.");
     out.styleOrder = readStyleOrder(v.styleOrder);
+  }
+  if ("buyerAgent" in v) {
+    if (!BUYER_AGENT_MODES.includes(v.buyerAgent as BuyerAgentMode)) throw new HttpError(400, "Opción del asistente inválida.");
+    out.buyerAgent = v.buyerAgent;
   }
   if ("reviewedAt" in v) out.reviewedAt = v.reviewedAt === null ? null : new Date().toISOString();
   return readSettings(out);

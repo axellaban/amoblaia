@@ -3,6 +3,7 @@
 // browser; the panel's input validation lives in input.ts.
 import { cleanText, cleanUrl } from "./shared";
 import { isDemoStyle, type StyleOrderSetting } from "./styles";
+import { readBuyerAgentMode, type BuyerAgentMode } from "./buyer-agent";
 
 export const CONTACT_KINDS = ["whatsapp", "url", "phone", "email"] as const;
 export type ContactKind = (typeof CONTACT_KINDS)[number];
@@ -132,6 +133,12 @@ export type DemoSettings = {
    * the main style and every generated image stay as they are.
    */
   styleOrder: StyleOrderSetting;
+  /**
+   * «Asistente de la propiedad» in the agency's own view (lib/demos/buyer-agent.ts):
+   * "auto" follows the general test (off until the team turns it on); "show" and
+   * "hide" force it for QA or a live demo, and leave this demo out of the analysis.
+   */
+  buyerAgent: BuyerAgentMode;
 };
 export const DEFAULT_SETTINGS: DemoSettings = {
   propertyType: "residential",
@@ -165,6 +172,7 @@ export const DEFAULT_SETTINGS: DemoSettings = {
   videoPlacement: "below",
   // The order of the property's region (older demos without a saved choice read the same).
   styleOrder: "auto",
+  buyerAgent: "auto",
 };
 
 /** The colors of a page without branding: the neutral blue of habita. */
@@ -277,6 +285,7 @@ export function readSettings(raw: unknown): DemoSettings {
     showContact: v.showContact !== false,
     videoPlacement: VIDEO_PLACEMENTS.includes(v.videoPlacement as VideoPlacement) ? (v.videoPlacement as VideoPlacement) : "first",
     styleOrder: readStyleOrder(v.styleOrder),
+    buyerAgent: readBuyerAgentMode(v.buyerAgent),
   };
 }
 

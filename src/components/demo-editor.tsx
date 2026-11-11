@@ -65,6 +65,7 @@ import {
   type GenerationRow,
   type PropertySpace,
 } from "@/lib/demos/shared";
+import { BUYER_AGENT_MODES, BUYER_AGENT_MODE_LABEL } from "@/lib/demos/buyer-agent";
 
 const CONTACT_LABELS = {
   whatsapp: ["WhatsApp", "+54 9 223 555-1234"],
@@ -1556,6 +1557,15 @@ export function DemoEditor({
                       <input type="checkbox" checked={detail.settings.showData} onChange={(e) => setting({ showData: e.target.checked })} />
                       Mostrar datos de la propiedad
                     </label>
+                    <div className="dx-radios" role="radiogroup" aria-label="Asistente de la propiedad (vista de la inmobiliaria)">
+                      <span className="dx-check-help">Asistente de la propiedad (vista de la inmobiliaria)</span>
+                      {BUYER_AGENT_MODES.map((mode) => (
+                        <label key={mode}>
+                          <input type="radio" name="dx-pub-buyer-agent" checked={detail.settings.buyerAgent === mode} onChange={() => setting({ buyerAgent: mode })} />
+                          {BUYER_AGENT_MODE_LABEL[mode]}
+                        </label>
+                      ))}
+                    </div>
                     <small className="dx-check-help">
                       Usa la configuración definida en{" "}
                       <button type="button" className="text-link" onClick={() => pickTab("datos")}>
