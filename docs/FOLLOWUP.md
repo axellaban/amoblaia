@@ -55,7 +55,7 @@ Cada etapa lista sus inmobiliarias **ordenadas por score, de mayor a menor** (si
 
 **Última acción y fecha**: cada fila muestra: lo más reciente entre Follow-up (envío confirmado o «No se envió», en cualquier etapa), Adquisición (mensajes de la secuencia enviados) y lo que hizo la inmobiliaria (la misma «Última actividad» de `/admin/inmobiliarias`). Se calcula en el servidor (`lastActionOf` en `stages.ts`) y es la que ordena «las que esperan hace más tiempo». Un envío solo abierto no cuenta. En rojo si pasaron más de 5 días. «Ejecutar» arma el mensaje para esa inmobiliaria (su WhatsApp, sus links) sin registrar nada. Después:
 
-1. **Abrir WhatsApp con el mensaje**: `wa.me` con el número y el texto. Queda como «Abierto».
+1. **Abrir WhatsApp con el mensaje**: `wa.me` con el número y el texto. Se registra «Abierto» solo mientras dura la sesión: si no se marca el resultado (enviado o no salió), la inmobiliaria vuelve a la cola como si no se hubiera hecho nada (`resultOf` en `stages.ts`).
 2. **Confirmar envío**: cuenta como ejecución y abre la siguiente inmobiliaria pendiente.
 3. **No se envió** (con motivo): no cuenta.
 
@@ -136,7 +136,7 @@ Un número «por revisar» no bloquea: el agente confirma en el chat que es la i
 
 ### Tomar una inmobiliaria
 
-Al ejecutar, la sesión la toma 10 minutos (`followup_claims`, `habita_followup_claim`). Otra sesión ve «Tomada» y no puede tomarla. Al confirmar, marcar que no salió o soltarla, queda libre; si la sesión se corta, vuelve a la cola al vencer y, si ya se había abierto WhatsApp, avisa «revisá el chat antes de reenviar». Confirmar es idempotente. La fila confirmada no se mueve: «Siguiente pendiente» abre la próxima. «Abrir WhatsApp» usa `web.whatsapp.com/send` en una sola pestaña (ventana con nombre `habita-whatsapp`).
+Al ejecutar, la sesión la toma 10 minutos (`followup_claims`, `habita_followup_claim`). Otra sesión ve «Tomada» y no puede tomarla. Al confirmar, marcar que no salió o soltarla, queda libre; si la sesión se corta, vuelve a la cola al vencer como pendiente, aunque se haya abierto WhatsApp: solo cuenta un resultado marcado. Confirmar es idempotente. La fila confirmada no se mueve: «Siguiente pendiente» abre la próxima. «Abrir WhatsApp» usa `web.whatsapp.com/send` en una sola pestaña (ventana con nombre `habita-whatsapp`).
 
 ### API del agente (`/api/admin/followup/*`, sesión del equipo, JSON)
 

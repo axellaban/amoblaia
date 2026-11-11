@@ -189,6 +189,15 @@ function hash(text: string) {
 }
 
 /**
+ * What was done with an action, for the queue: the send if there is one, else the result recorded for
+ * the version on offer. Only a result counts (sent or failed): a WhatsApp opened without saying what
+ * happened («opened») is as if nothing was done, and the agency stays pending in the queue.
+ */
+export function resultOf<E extends Pick<FollowupExecution, "status" | "version_id">>(mine: E[], versionId: string | null) {
+  return mine.find((e) => e.status === "sent") ?? (versionId ? mine.find((e) => e.version_id === versionId && e.status !== "opened") : undefined);
+}
+
+/**
  * The version an agency gets in a stage: the one it already started with
  * (opened, sent or failed) while it is still offered, else the active one or,
  * with a test running, half of the agencies get the test.

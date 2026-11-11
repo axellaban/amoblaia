@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AGENCY_STEPS } from "@/lib/agency/demo-funnel";
-import { FOLLOWUP_STAGES, cleanVersion, fillMessage, personName, linksNeeded, missingVariables, pct, stageOf, versionFor, versionStats, type FollowupExecution, type FollowupVersion } from "@/lib/followup/stages";
+import { FOLLOWUP_STAGES, cleanVersion, fillMessage, personName, linksNeeded, missingVariables, pct, stageOf, resultOf, versionFor, versionStats, type FollowupExecution, type FollowupVersion } from "@/lib/followup/stages";
 
 const base = { lost: false, test: false, suppressed: false, pendingProspect: false };
 const v = (id: string, version: number, status: FollowupVersion["status"], body = "Hola {{decisor}}"): FollowupVersion => ({
@@ -159,5 +159,18 @@ describe("Validación de versiones coherente con reglas configurables", () => {
     expect(cleanVersion({ stage: "no-contactado", action: "precios", channel: "whatsapp", body: "Planes." })).toEqual({
       error: "Esta acción no está disponible en la etapa seleccionada.",
     });
+  });
+});
+
+describe("what the queue counts as done", () => {
+  const ex = (version_id: string, status: "opened" | "sent" | "failed") => ({ version_id, status });
+  it("an «opened» never confirmed is as if nothing was done: the agency stays pending", () => {
+    expect(resultOf([ex("v1", "opened")], "v1")).toBeUndefined();
+  });
+  it("a result counts: sent wins, failed is shown for the version on offer", () => {
+    expect(resultOf([ex("v1", "opened"), ex("v0", "sent")], "v1")?.status).toBe("sent");
+    expect(resultOf([ex("v1", "failed")], "v1")?.status).toBe("failed");
+    expect(resultOf([ex("v2", "failed")], "v1")).toBeUndefined();
+    expect(resultOf([], null)).toBeUndefined();
   });
 });
