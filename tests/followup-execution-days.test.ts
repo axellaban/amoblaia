@@ -38,6 +38,9 @@ describe("executionDays", () => {
       type: "Saludo", stages: ["no-contactado"], pending: 5, human: 1, bot: 2, successHuman: 1, successBot: 1, blocked: 1, unclaimed: 1, failed: 0, scheduled: 1,
     });
     expect(day.types.find((t) => t.type === "Precios")).toMatchObject({ pending: 1, failed: 1, human: 0 });
+    // The same day by stage of the queue: what the funnel step of each stage got.
+    expect(day.stages.find((s) => s.stage === "no-contactado")).toEqual({ stage: "no-contactado", pending: 5, executed: 3, success: 2 });
+    expect(day.stages.find((s) => s.stage === "sin-uso")).toEqual({ stage: "sin-uso", pending: 1, executed: 0, success: 0 });
   });
 
   it("marks the days without a photo of the queue", () => {

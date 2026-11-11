@@ -74,7 +74,24 @@ export function prospectingMetrics(ds: Dataset, r: Range) {
   }
   const etapas: Record<string, number> = {};
   for (const a of ds.accounts) etapas[a.stage] = (etapas[a.stage] ?? 0) + 1;
-  return { ...total, etapas, porSdr, porCanal, diario: series(days) };
+  return { ...total, etapas, porSdr, porCanal, diario: series(days), porDia: cohortDays(ds, r) };
+}
+
+const MAX_COHORT_DAYS = 62;
+/**
+ * The same funnel for the cohort contacted each day of the range (Resumen of Chapa Labs: «Cómo avanzó»).
+ * Only with a closed range of up to 62 days; empty otherwise. Each day uses the panel's own rules, so the
+ * days add up to the period's funnel.
+ */
+export function cohortDays(ds: Dataset, r: Range) {
+  if (!isDate(r.from) || !isDate(r.to)) return [];
+  const out = [];
+  for (let t = dayStart(r.from), n = 0; t <= dayStart(r.to) && n < MAX_COHORT_DAYS; t += 86_400_000, n++) {
+    const date = artDate(t + 12 * 3_600_000);
+    const s = summarize(ds, { from: date, to: date });
+    out.push({ date, contactados: s.sent, respondieron: s.replied.observed, interesados: s.interested.observed, demos: s.demo, vinculados: s.linked, activados: s.activated.observed, clientes: s.customers.observed });
+  }
+  return out;
 }
 
 /** Every commercial demo (prospected or not): how far its visitors and its agency went. */
