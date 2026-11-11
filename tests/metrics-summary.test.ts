@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { demoMetrics, prospectingMetrics, revenueMetrics } from "@/lib/metrics/summary";
+import { demoMetrics, periodActivity, prospectingMetrics, revenueMetrics } from "@/lib/metrics/summary";
 import type { Dataset, OutreachAttempt, ProspectAccount, ProspectEvent } from "@/lib/prospecting/types";
 
 // Metrics for the Chapa Labs dashboard. Synthetic, clearly fictitious data.
@@ -118,6 +118,39 @@ describe("revenue", () => {
       pay("u3", "2026-11-03T10:00:00-03:00", "rejected"),
     ], { from: "2026-11-01" });
     expect([m.pagos, m.ingresos, m.nuevos, m.clientes]).toEqual([2, 77800, 1, 2]);
+  });
+});
+
+describe("what prospected agencies did in the period (habita's funnel against its target)", () => {
+  it("counts a demo sent and visited this week even if the agency was greeted the week before", () => {
+    const old = account();
+    const fresh = account();
+    const outsider = uid();
+    const data = ds([old, fresh], [send(old, "2026-11-03T10:00:00-03:00"), send(fresh, "2026-11-08T10:00:00-03:00")], [
+      event(old, "activated", "2026-11-10T12:00:00-03:00"),
+      event(old, "purchased", "2026-11-01T12:00:00-03:00"),
+    ]);
+    const src = {
+      demos: [
+        { id: "d-old", agency_id: old.agency_id, status: "published", activity_level: 2, activity_visitors: 3, created_at: "2026-11-02T10:00:00-03:00", published_at: "2026-11-02T10:00:00-03:00", sent_at: "2026-11-09T10:00:00-03:00" },
+        { id: "d-out", agency_id: outsider, status: "published", activity_level: 1, activity_visitors: 1, created_at: "2026-11-09T10:00:00-03:00", published_at: null, sent_at: "2026-11-09T10:00:00-03:00" },
+      ],
+      activity: [
+        { demo_id: "d-old", kind: "visita", created_at: "2026-11-09T11:00:00-03:00" },
+        { demo_id: "d-old", kind: "interaccion", created_at: "2026-11-09T11:05:00-03:00" },
+        { demo_id: "d-old", kind: "visita", created_at: "2026-11-10T11:00:00-03:00" },
+        { demo_id: "d-out", kind: "visita", created_at: "2026-11-09T11:00:00-03:00" },
+      ],
+      claims: [{ id: old.agency_id, claimed_at: "2026-11-10T09:00:00-03:00" }, { id: fresh.agency_id, claimed_at: null }],
+    };
+    const week = { from: "2026-11-07", to: "2026-11-11" };
+    // The cohort funnel only sees the agency first greeted this week, which has no demo yet.
+    expect(prospectingMetrics(data, week).demos.sent).toBe(0);
+    // The period's activity sees the demo sent, visited and the account created this week; once per agency; never a non-prospected agency.
+    expect(periodActivity(data, src, week)).toEqual({ demosEnviadas: 1, visitadas: 1, conInteraccion: 1, cuentas: 1, activas: 1, clientes: 0 });
+    expect(prospectingMetrics(data, week, src).periodo?.visitadas).toBe(1);
+    const day = prospectingMetrics(data, week, src).porDia.find((d) => d.date === "2026-11-09");
+    expect(day?.periodo).toMatchObject({ demosEnviadas: 1, visitadas: 1, cuentas: 0 });
   });
 });
 
