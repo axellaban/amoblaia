@@ -51,7 +51,7 @@ import {
   Youtube,
 } from "lucide-react";
 import type { PublicSite, SiteProperty } from "@/lib/agency/site";
-import { FONT_VARIABLES, fontStack } from "@/lib/site/fonts";
+import { fontsHref, fontStack } from "@/lib/site/fonts";
 import {
   filterProperties,
   filtersFromQuery,
@@ -1400,8 +1400,11 @@ function themeStyle(doc: SiteDoc): React.CSSProperties {
 function Root({ ctx, children }: { ctx: Ctx; children: React.ReactNode }) {
   const t = ctx.doc.theme;
   const wa = ctx.doc.settings.whatsappButton ? whatsapp(ctx) : null;
+  const fonts = fontsHref([t.headingFont, t.bodyFont]);
   return (
-    <div className={cx(s.site, FONT_VARIABLES, s[`btn-${t.buttons}`], ctx.mode === "editor" && s.inEditor)} style={themeStyle(ctx.doc)}>
+    <div className={cx(s.site, s[`btn-${t.buttons}`], ctx.mode === "editor" && s.inEditor)} style={themeStyle(ctx.doc)}>
+      {/* Not hoisted (no precedence): a blocked font never holds the page. */}
+      {fonts && <link rel="stylesheet" href={fonts} />}
       {children}
       {wa && (
         <div className={s.floatWrap}>
