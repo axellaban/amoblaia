@@ -31,6 +31,7 @@ import {
   lastActionOf,
   placement,
   stageInfo,
+  COMMERCIAL_STAGES,
   stageOf,
   type OverrideStage,
   versionFor,
@@ -77,7 +78,6 @@ import {
 } from "./plan";
 import { DEFAULT_RULES, cleanRule, compatible, outsideWindow, type Rule } from "./rules";
 import { WINDOWS, blockReasons, bySegment, cohorts, executionDays, funnelCohorts, versionResults, weekly, weeklyByType, type QueueDayRow, type VersionResult, type WindowKey } from "./results";
-import { COMMERCIAL_STAGES, STAGE_STEP, stageIndex } from "@/lib/agency/commercial";
 import { cleanFilter, pickNext } from "./queue-filter";
 import { customStages } from "./commercial-catalog";
 import { readSituationOverrides, readStateCatalog, resolveCustomClassification } from "./state-catalog";
@@ -218,6 +218,8 @@ const EXECUTION_FIELDS = "id,version_id,stage,action,agency_id,from_step,status,
 // Written whenever the queue is computed (the panel, Chapa and the daily cron) and
 // never required: without the table, Resultados says there is no photo yet.
 const QUEUE_DAYS = 35;
+/** The funnel step of a paying customer (a subscription): the «Cliente» stage, which has no queue. */
+const CLIENT_STEP = 8;
 async function readQueueDays(now = new Date()): Promise<QueueDayRow[] | null> {
   const since = artDate(new Date(now.getTime() - (QUEUE_DAYS - 1) * DAY_MS));
   const out: QueueDayRow[] = [];
@@ -630,9 +632,7 @@ async function board(now = new Date()) {
   for (const e of ex) if (e.status === "sent") earlier(e.agency_id, e.sent_at);
   const greeting = new Map<string, number>();
   for (const e of ex) if (e.status === "sent" && e.stage === "no-contactado" && (e.action ?? "principal") === "principal") greeting.set(e.agency_id, vs.find((v) => v.id === e.version_id)?.version ?? 0);
-  const commercialAt = new Map(rows.map((r) => [r.id, stageIndex(r.stage)]));
   const facts = [...stepNow.keys()].map((id) => ({
-    commercial: commercialAt.get(id) ?? 0,
     firstContact: firstContact.has(id) ? new Date(firstContact.get(id)!).toISOString() : null,
     firstReply: firstReply.has(id) ? new Date(firstReply.get(id)!).toISOString() : null,
     step: stepNow.get(id) ?? -1,
@@ -805,13 +805,15 @@ function resultsOf(b: Awaited<ReturnType<typeof board>>, all: QueueItem[], queue
       blocked: all.filter((q) => q.action && q.execution?.status !== "sent" && q.blocked).length,
     },
     cohorts: { contacto: cohorts(b.facts, "contacto"), respuesta: cohorts(b.facts, "respuesta"), version: bySegment(b.facts) },
-    // The same cohorts counted with the six stages of the Inmobiliarias panel.
-    cohortFunnel: {
-      stages: COMMERCIAL_STAGES.map((key) => ({ key, title: STAGE_STEP[key] })),
-      contacto: funnelCohorts(b.facts, COMMERCIAL_STAGES.length, "contacto"),
-      respuesta: funnelCohorts(b.facts, COMMERCIAL_STAGES.length, "respuesta"),
-      version: funnelCohorts(b.facts, COMMERCIAL_STAGES.length, "version"),
-    },
+    // The same cohorts counted with Follow-up's commercial stages, from Contactado (the funnel of the panel).
+    cohortFunnel: (() => {
+      const stages = COMMERCIAL_STAGES.filter((c) => c.key !== "prospectado").map((c) => ({
+        key: c.key, title: c.title,
+        from: c.technical.length ? Math.min(...c.technical.map((t) => stageInfo(t).step)) : CLIENT_STEP,
+      }));
+      const t = stages.map((x) => x.from);
+      return { stages: stages.map(({ key, title }) => ({ key, title })), contacto: funnelCohorts(b.facts, t, "contacto"), respuesta: funnelCohorts(b.facts, t, "respuesta"), version: funnelCohorts(b.facts, t, "version") };
+    })(),
     // The name of each stage's actions («stage:action» → label): how Resultados groups rows by action.
     actionLabels: Object.fromEntries(FOLLOWUP_STAGES.flatMap((s) => actionsOf(s.key).map((a) => [`${s.key}:${a}`, label(s.key, a)]))),
     // «¿Se ejecutó la cola?»: day by day and by type of action. Successful: it has an attributed conversion.
