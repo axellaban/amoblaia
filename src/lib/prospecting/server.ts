@@ -92,16 +92,23 @@ export async function prospectDataset(options: { syncConversions?: boolean } = {
   return ds;
 }
 
+const DEMO_BATCH = 150;
+
 /** Demo steps per agency, from the demos table (published link = sent, activity level = steps reached). */
 async function demoProgress(agencyIds: string[]) {
   const out = new Map<string, DemoProgress>();
   if (!agencyIds.length) return out;
-  const { data, error } = await adminClient()
-    .from("demos")
-    .select("agency_id,status,activity_level")
-    .in("agency_id", agencyIds);
-  if (error) throw new Error(`DATABASE_${error.code}`);
-  for (const row of (data ?? []) as { agency_id: string; status: string; activity_level: number }[]) {
+  // In batches: every id goes in the URL, and with ~800 agencies the request is refused before reaching the database (no error code).
+  const rows: { agency_id: string; status: string; activity_level: number }[] = [];
+  for (let i = 0; i < agencyIds.length; i += DEMO_BATCH) {
+    const { data, error } = await adminClient()
+      .from("demos")
+      .select("agency_id,status,activity_level")
+      .in("agency_id", agencyIds.slice(i, i + DEMO_BATCH));
+    if (error) throw new Error(`DATABASE_${error.code ?? error.message ?? "unknown"}`);
+    rows.push(...((data ?? []) as typeof rows));
+  }
+  for (const row of rows) {
     const p = out.get(row.agency_id) ?? { created: false, sent: false, level: 0 as const };
     p.created = true;
     if (row.status === "published") p.sent = true;
