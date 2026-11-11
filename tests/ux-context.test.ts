@@ -23,6 +23,9 @@ describe("the flow of a page", () => {
     ["/inicio", "home"],
     ["/demo/tok", "demo"],
     ["/demo/tok/presentacion", "demo"],
+    ["/p/casa-en-palermo-abcdefghjk", "demo"],
+    ["/p/casa-en-palermo-abcdefghjk/ficha", "demo"],
+    ["/p/casa-en-palermo-abcdefghjk/precios", "demo"],
     ["/estudio", "studio"],
     ["/panel/empezar", "signup"],
     ["/panel/propiedades/1", "panel"],
@@ -38,11 +41,29 @@ describe("the flow of a page", () => {
     expect(flowOf("/precios-virtual-staging")).toBe("other");
     expect(flowOf("/demostracion")).toBe("other");
     expect(flowOf("/panelista")).toBe("other");
+    expect(flowOf("/planos")).toBe("other");
+    expect(flowOf("/privacidad")).toBe("other");
   });
 
   it("every flow has a version", () => {
     for (const path of ["/", "/demo/a", "/estudio", "/panel", "/precios", "/x"])
       expect(UX_VERSIONS[flowOf(path)]).toBeGreaterThan(0);
+  });
+});
+
+describe("the demo's short link", () => {
+  it("reports the demo flow and its version on every event, as /demo/<token> does", () => {
+    const short = uxContext("/p/casa-en-palermo-abcdefghjk");
+    expect(short).toEqual(uxContext("/demo/tok/presentacion"));
+    expect(short.flow_name).toBe("demo");
+    expect(short.ux_version).toBe(`v${UX_VERSIONS.demo}`);
+  });
+
+  it("adds it once, without touching what the event already says", () => {
+    const sent = withUxContext("demo_vista", { demo_id: "d1" }, "/p/casa-en-palermo-abcdefghjk");
+    expect(sent).toEqual({ ...uxContext("/p/casa-en-palermo-abcdefghjk"), demo_id: "d1" });
+    const fromEvent: Record<string, unknown> = withUxContext("$pageview", { $pathname: "/p/x-abcdefghjk/precios" }, "/otra");
+    expect(fromEvent.flow_name).toBe("demo");
   });
 });
 

@@ -40,7 +40,8 @@ const within = (pathname: string, base: string) => pathname === base || pathname
 
 export function flowOf(pathname: string): FlowName {
   if (pathname === "/" || within(pathname, "/inicio")) return "home";
-  if (within(pathname, "/demo")) return "demo";
+  // /p/<propiedad>-<codigo> is the demo's short link (and /ficha or /precios after it): the same presentation as /demo/<token>.
+  if (within(pathname, "/demo") || within(pathname, "/p")) return "demo";
   if (within(pathname, "/estudio")) return "studio";
   if (within(pathname, "/panel/empezar")) return "signup";
   if (within(pathname, "/panel")) return "panel";
