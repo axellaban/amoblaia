@@ -23,31 +23,16 @@ import {
 } from "@/lib/demos/input";
 import { cleanText, isUuid } from "@/lib/demos/shared";
 import { adminClient } from "@/lib/supabase/server";
+import { demoDetailFor, viewOf } from "@/lib/demos/detail-view";
 
 const PRIVATE = { "Cache-Control": "private, no-store" };
 type Params = { params: Promise<{ id: string }> };
-
-/** The team's notes and contact person about an agency are never shown to the agency. */
-function viewOf(detail: Awaited<ReturnType<typeof demoDetail>>, admin: boolean) {
-  // The agency's WhatsApp may come from the private prospecting base: team only.
-  return admin
-    ? detail
-    : {
-        ...detail,
-        demo: { ...detail.demo, agencyWhatsapp: null, agencyContact: null, sentAt: null, messageTemplate: null },
-        sendLog: undefined,
-        agency: { ...detail.agency, notes: null, contact_name: null },
-      };
-}
 
 export async function GET(_request: Request, { params }: Params) {
   try {
     const { id } = await params;
     const access = await requireDemoRead(id);
-    return Response.json(
-      { ...viewOf(await demoDetail(access.demo.id), access.admin), staging: stagingRule(access), readOnly: access.role === "viewer" },
-      { headers: PRIVATE },
-    );
+    return Response.json(await demoDetailFor(access), { headers: PRIVATE });
   } catch (e) {
     return failure(e);
   }
