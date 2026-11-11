@@ -1,4 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+// settingsInput (lib/demos/input.ts) reaches server modules; the logic tested here is pure.
+vi.mock("server-only", () => ({}));
 import {
   AGENT_SUGGESTIONS,
   BUYER_AGENT_OFF,
