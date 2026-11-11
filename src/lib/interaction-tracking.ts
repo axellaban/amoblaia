@@ -98,17 +98,43 @@ export function installInteractionTracking(): void {
     app_env: process.env.NEXT_PUBLIC_VERCEL_ENV || "local",
     tracking_version: 2,
   });
-  // Capture phase: runs before the element's own handler and before a navigation starts.
+  // Capture phase: runs before handlers and before navigation. Keep existing
+  // cta_clicked taxonomy unchanged, then cover *every* panel link/button with
+  // panel_cta_clicked, including legacy controls without data-cta.
   document.addEventListener(
     "click",
     (event) => {
       const target = event.target;
       if (!(target instanceof Element)) return;
       const el = target.closest<HTMLElement>("[data-cta]");
-      if (!el || el.matches(":disabled,[aria-disabled='true']")) return;
-      const leaving = leavesPage(el);
-      track("cta_clicked", ctaProperties(el, window.location.pathname), leaving);
-      if (leaving) window.dispatchEvent(new Event(LEAVING));
+      const control = target.closest<HTMLElement>("a,button,[role='button']");
+      if (el && !el.matches(":disabled,[aria-disabled='true']")) {
+        const leaving = leavesPage(el);
+        track("cta_clicked", ctaProperties(el, window.location.pathname), leaving);
+        if (leaving) window.dispatchEvent(new Event(LEAVING));
+      }
+      if (!window.location.pathname.startsWith("/panel") || !control || control.matches(":disabled,[aria-disabled='true']")) return;
+      // No labels, input values, names, URL query strings or dynamic object IDs
+      // are captured. The stable structural fallback makes unannotated controls
+      // measurable until they receive explicit data-cta identifiers.
+      const parent = control.parentElement;
+      const position = parent ? Array.from(parent.children).filter(n => n.matches("a,button,[role='button']")).indexOf(control) + 1 : 0;
+      const path = window.location.pathname;
+      const panelPath = /^\/panel\/propiedades\/[^/]+/.test(path) ? "/panel/propiedades/:id"
+        : /^\/panel\/[^/]+/.test(path) ? path.split("/").slice(0,3).join("/") : "/panel";
+      const kind = control.tagName.toLowerCase();
+      const cls = Array.from(control.classList).find(v => /^[a-zA-Z][\w-]{1,42}$/.test(v) && !v.startsWith("is-")) || "plain";
+      const id = el?.dataset.cta || `auto_${kind}_${cls.slice(0,32)}_${Math.max(position,0)}`;
+      track("panel_cta_clicked", {
+        cta_id: id.slice(0,90),
+        cta_location: el?.dataset.ctaLocation?.slice(0,80) || "unannotated",
+        cta_destination: el?.dataset.ctaDestination?.slice(0,80) || "unannotated",
+        cta_kind: el?.dataset.ctaKind?.slice(0,40) || "unclassified",
+        control_tag: kind,
+        panel_path: panelPath,
+        annotated: Boolean(el),
+        surface: "panel",
+      }, leavesPage(control));
     },
     { capture: true },
   );
