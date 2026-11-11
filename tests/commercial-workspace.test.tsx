@@ -22,6 +22,13 @@ describe("Commercial workspace navigation", () => {
     expect(html).toContain('href="/panel/crm-inteligente"');
   });
 
+  it.each(["consultas_ia","crm_inteligente"] as const)("keeps the full sidebar on %s for owners (Usuarios and Sitio web)", product => {
+    const html=renderToStaticMarkup(<CommercialWorkspace product={product} nav={{agencyName:"Inmobiliaria Test",role:"owner",tour:true}}/>);
+    expect(html).toContain('data-cta="panel_nav_usuarios"');
+    expect(html).toContain('data-cta="panel_nav_sitio"');
+    expect(html).toContain("Inmobiliaria Test");
+  });
+
   it.each(["consultas_ia","crm_inteligente"] as const)("renders %s with the sample-data disclaimer, CTA analytics and no prototype label", product => {
     const html=renderToStaticMarkup(<CommercialWorkspace product={product}/>);
     expect(html).toContain("Quiero usarlo");

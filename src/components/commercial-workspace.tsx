@@ -8,6 +8,7 @@ import {
   Sparkles, UserRound, UsersRound, WandSparkles, Zap
 } from "lucide-react";
 import { PanelNav } from "@/components/panel-shell";
+import type { AgencyRole } from "@/lib/agency/shared";
 import { cta } from "@/lib/interaction-tracking";
 import { track } from "@/lib/analytics";
 import {
@@ -18,6 +19,8 @@ import {
 import s from "./commercial-workspace.module.css";
 
 type Product = "consultas_ia" | "crm_inteligente";
+/** The sidebar as on every other panel page: the agency's name (mobile bar), its role (Usuarios, Sitio web) and the tour. */
+type Nav = { agencyName?: string; role?: AgencyRole; tour?: boolean };
 const log = (event: string, product: Product, extra: Record<string, string | number | boolean> = {}) =>
   track(event, { feature_key: product, demo_data: true, ...extra });
 
@@ -110,7 +113,7 @@ function ActivationPanel({ product, onClose }: { product: Product; onClose: () =
 }
 const intentLabel: Record<string,string> = {availability:"Disponibilidad",price:"Precio",viewing:"Visita",financing:"Financiación",search:"Búsqueda",greeting:"Saludo",unknown:"Consulta"};
 
-function ConsultasWorkspace() {
+function ConsultasWorkspace({ nav }: { nav: Nav }) {
   const product: Product="consultas_ia";
   const [tab,setTab]=useState<"inbox"|"flows"|"analytics"|"settings">("inbox");
   const [leads,setLeads]=useState<Lead[]>(initialLeads);
@@ -141,7 +144,7 @@ function ConsultasWorkspace() {
   function assignHuman() {setHandoff(xs=>xs.includes(selected)?xs.filter(x=>x!==selected):[...xs,selected]);log("commercial_handoff_toggled",product,{enabled:!handoff.includes(selected)});}
   function book(slot:string) {setAppointment(v=>({...v,[selected]:slot}));setLeads(ls=>ls.map(x=>x.id===selected?{...x,stage:"Visita",nextAction:"Confirmar visita con asesor"}:x));log("commercial_visit_requested",product,{slot_id:slot.replace(/\W+/g,"_")});}
   function chooseTab(next:typeof tab) {setTab(next);log("commercial_section_opened",product,{section:next});}
-  return <><PanelNav section="consultas_ia"/><main className={"account-page container ap-page "+s.page}>
+  return <><PanelNav section="consultas_ia" {...nav}/><main className={"account-page container ap-page "+s.page}>
     <FeatureHeader product={product} onRequest={()=>{setRequest(true);log("commercial_activation_request_opened",product,{entry:"header"});}}/>
     <div className={s.stats}>
       <Stat label="Conversaciones" value={leads.length} hint="Contactos de ejemplo" icon={MessageCircle}/>
@@ -193,7 +196,7 @@ function ConsultasWorkspace() {
   </main>{request&&<ActivationPanel product={product} onClose={()=>setRequest(false)}/>}</>;
 }
 
-function CrmWorkspace() {
+function CrmWorkspace({ nav }: { nav: Nav }) {
   const product: Product="crm_inteligente";
   const [leads,setLeads]=useState<Lead[]>(initialLeads);
   const [tasks,setTasks]=useState<Task[]>(initialTasks);
@@ -216,7 +219,7 @@ function CrmWorkspace() {
   function makeDraft(){setDraft("Hola, "+current.name.split(" ")[0]+". Soy del equipo de la inmobiliaria. Te escribo por "+propertyOf(current.propertyId).title+". ¿Te gustaría que coordinemos el próximo paso?");log("commercial_followup_drafted",product,{stage:current.stage});}
   function saveNote(){if(!note.trim())return;setLeads(xs=>xs.map(x=>x.id===selected?{...x,note:note.slice(0,300)}:x));setNote("");log("commercial_note_added",product);}
   function chooseTab(x:typeof tab){setTab(x);log("commercial_section_opened",product,{section:x});}
-  return <><PanelNav section="crm_inteligente"/><main className={"account-page container ap-page "+s.page}>
+  return <><PanelNav section="crm_inteligente" {...nav}/><main className={"account-page container ap-page "+s.page}>
     <FeatureHeader product={product} onRequest={()=>{setRequest(true);log("commercial_activation_request_opened",product,{entry:"header"});}}/>
     <div className={s.stats}>
       <Stat label="Oportunidades" value={leads.length} hint="Contactos de ejemplo" icon={UsersRound}/>
@@ -249,4 +252,4 @@ function CrmWorkspace() {
     <section className={s.bottomCta}><div><span className={s.eyebrow}>HACÉ CRECER TU OPERACIÓN</span><h2>Tu cartera de interesados merece un seguimiento real.</h2><p>Contanos cuál es el cuello de botella de tu inmobiliaria y ayudanos a priorizarlo.</p></div><button type="button" className={s.primary} onClick={()=>{setRequest(true);log("commercial_activation_request_opened",product,{entry:"footer"});}} {...cta("commercial_request_activation_footer","commercial_footer",product)}>Quiero usar el CRM <ArrowRight size={17}/></button></section>
   </main>{request&&<ActivationPanel product={product} onClose={()=>setRequest(false)}/>}</>;
 }
-export function CommercialWorkspace({ product }: { product: Product }) { return product==="consultas_ia"?<ConsultasWorkspace/>:<CrmWorkspace/>; }
+export function CommercialWorkspace({ product, nav = {} }: { product: Product; nav?: Nav }) { return product==="consultas_ia"?<ConsultasWorkspace nav={nav}/>:<CrmWorkspace nav={nav}/>; }

@@ -25,7 +25,8 @@ export const UX_VERSIONS: Record<FlowName, number> = {
   demo: 1,
   studio: 1,
   signup: 1,
-  panel: 3,
+  // v4: Consultas IA y CRM Inteligente pasan de dos tarjetas con botón primario a una franja secundaria en el inicio.
+  panel: 4,
   // v2 (rediseño de precios): los paquetes, su precio por crédito y el ahorro se ven
   // de entrada; 25 créditos «Recomendado» y preseleccionado; el resto, desplegable.
   pricing: 2,

@@ -32,6 +32,7 @@ En el PR indicá flujo, versión anterior y nueva, y qué cambió. Sin esto no s
 | Flujo | Versión | Desde | Qué cambió |
 | --- | --- | --- | --- |
 | `pricing` | `v1` → `v2` | Rediseño de precios | Los cuatro paquetes con precio total, precio por crédito y ahorro se ven de entrada; 25 créditos marcado «Recomendado» y preseleccionado; el CTA compra el paquete elegido; plan Gratis compacto al lado (solo en la página pública); datos NAR sobre home staging; «Cómo funcionan los créditos», «Qué incluye» y FAQ desplegables; desaparece la tarjeta de precios separada. |
+| `panel` | `v3` → `v4` | Capa comercial secundaria | En el inicio, Consultas IA y CRM Inteligente dejan de ser dos tarjetas con título y botón primario y pasan a una franja compacta debajo de las herramientas, con botones de contorno. Mismos textos, destinos y `cta_id` (`panel_home_consultas_ia`, `panel_home_crm_ia`), así que los clics se comparan entre versiones. Sus dos pantallas muestran la barra lateral completa (Usuarios y Sitio web para dueños y administradores). |
 
 ### Precios dentro de otros flujos
 
@@ -153,7 +154,7 @@ Algunos segmentos se definen por persona y no por sesión (por ejemplo, cuentas 
 
 ## 7. Nuevas soluciones comerciales y cobertura de CTA del panel (panel v3)
 
-Desde panel v3 el inicio mantiene las herramientas existentes y muestra Consultas IA y CRM Inteligente debajo de Virtual Staging. Los mismos accesos están en el sidebar debajo de API. Rutas: /panel/consultas-ia y /panel/crm-inteligente.
+Desde panel v3 el inicio mantiene las herramientas existentes y muestra Consultas IA y CRM Inteligente debajo de Virtual Staging; desde v4, como una franja secundaria. Los mismos accesos están en el sidebar debajo de API. Rutas: /panel/consultas-ia y /panel/crm-inteligente.
 
 **Los recorridos trabajan con datos de ejemplo:** las conversaciones y contactos no pertenecen a clientes reales, y no están conectados con WhatsApp. Las acciones no son mensajes enviados ni operaciones concretadas.
 

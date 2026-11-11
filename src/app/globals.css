@@ -9515,6 +9515,45 @@ h2 .accent {
   color: var(--ink);
   font-weight: 600;
 }
+/* Panel v4: Consultas IA and CRM Inteligente on the home, one quiet strip under the creation tools. */
+.ap-explore {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 20px;
+  margin: 22px 0 18px;
+  padding: 14px 20px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--paper);
+}
+.ap-explore p {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 14.5px;
+}
+.ap-explore .ap-chip {
+  color: var(--ink);
+  font-weight: 600;
+}
+.ap-explore-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+@media (max-width: 860px) {
+  .ap-explore-actions {
+    width: 100%;
+  }
+  .ap-explore-actions .button {
+    flex: 1 1 0;
+  }
+}
 .ap-steps {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
