@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { cache } from "react";
 import { DemoView } from "@/components/demo-view";
@@ -6,7 +7,7 @@ import { PricingPlans } from "@/components/pricing";
 import { buyerViewPath, inviteFor, presentationPath, pricesViewPath, type DemoInvite } from "@/lib/agency/demo-invite";
 import { invitationOf } from "@/lib/agency/invitation";
 import { publishedDemo } from "@/lib/demos/server";
-import { coverVersion, demoPath, ogImageUrl } from "@/lib/demos/shared";
+import { coverVersion, demoPath, ogImageUrl, stageWidth } from "@/lib/demos/shared";
 import type { Product } from "@/lib/commerce/catalog";
 import { cloudConfigured } from "@/lib/supabase/config";
 import { adminClient } from "@/lib/supabase/server";
@@ -142,6 +143,9 @@ export async function PublicDemo({
   // The plans live in the agency's environment: without it (a code no longer valid), the presentation itself.
   if (prices && !owner) redirect(shortPath ?? presentationPath(token, code));
   const plans = owner ? await plansOf(owner.href) : null;
+  // The big photo's width for this device: phones get a lighter one (lib/demos/shared.ts, STAGE_WIDTH).
+  const h = await headers();
+  const stage = stageWidth(h.get("user-agent"), h.get("sec-ch-ua-mobile"));
   // No floating assistant here: nothing covers the photo, the styles or the contact (demo and buyers' page alike).
-  return <DemoView demo={shown} source={{ kind: "public", token }} presentation={presentation} invite={invite} owner={owner} plans={plans} backToDemo={backToDemo} />;
+  return <DemoView demo={shown} source={{ kind: "public", token }} presentation={presentation} invite={invite} owner={owner} plans={plans} backToDemo={backToDemo} stage={stage} />;
 }
