@@ -14,7 +14,7 @@
 | P1 | Respuestas | El formulario manual omitía oportunidades cerradas («No interesado») aunque pudieran volver a escribir. | Incluirlas como opciones sin reactivarlas automáticamente. |
 | P1 | Resultados | Abrir el panel podía escribir `converted_at=now()` cuando no se conocía el momento real de conversión. | Lectura sin efectos laterales; usar solo fechas observadas de interés/demos, sin inventar fechas. |
 | P1 | Resultados | La atribución tomaba el primer timestamp según orden de filas, no el más antiguo acreditable. | Seleccionar la fecha observada más temprana. |
-| P2 | Resultados | Agrupaba por semana iniciada el lunes pese a la convención comercial de reportar semanas terminadas el viernes. | Agrupar por cierre de viernes en hora argentina (sábado–viernes). |
+| P2 | Resultados | Agrupaba por semana iniciada el lunes pese a la convención comercial de reportar semanas terminadas el viernes. | Agrupar por cierre de viernes en hora argentina (sábado–viernes). **Revertido el 11/11: la semana comercial es de lunes a domingo.** |
 
 ## Resultados reales de validación preliminar
 

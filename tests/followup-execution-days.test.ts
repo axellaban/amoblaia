@@ -66,7 +66,7 @@ describe("funnelCohorts", () => {
   it("counts how many of each cohort reached each Follow-up stage, from Contactado", () => {
     const list = [a("2026-11-09T13:00:00Z", 0), a("2026-11-10T13:00:00Z", 3), a("2026-11-10T13:00:00Z", 8), a("2026-11-10T14:00:00Z", -1)];
     const rows = funnelCohorts(list, T, "contacto", 1, now);
-    expect(rows).toEqual([{ cohort: "2026-11-13", size: 4, reached: [3, 2, 2, 1, 1, 1] }]);
+    expect(rows).toEqual([{ cohort: "2026-11-15", size: 4, reached: [3, 2, 2, 1, 1, 1] }]);
     expect(funnelCohorts([...list, a("2026-10-01T13:00:00Z", 0, null)], T, "version", 8, now).map((r) => r.cohort)).toEqual(["Antes de Follow-up (Adquisición)", "Saludo V1"]);
   });
 });

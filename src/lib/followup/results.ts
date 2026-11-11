@@ -109,11 +109,11 @@ export function versionResults(
   return rows;
 }
 
-/** Friday closing date of an instant's Sat–Fri reporting week in Argentina. */
+/** Sunday closing date of an instant's Mon–Sun reporting week in Argentina. */
 export function weekOf(iso: string) {
   const t = new Date(Date.parse(iso) - 3 * 3_600_000);
-  const daysToFriday = (5 - t.getUTCDay() + 7) % 7;
-  t.setUTCDate(t.getUTCDate() + daysToFriday);
+  const daysToSunday = (7 - t.getUTCDay()) % 7;
+  t.setUTCDate(t.getUTCDate() + daysToSunday);
   return t.toISOString().slice(0, 10);
 }
 export function lastWeeks(n: number, now = new Date()) {
