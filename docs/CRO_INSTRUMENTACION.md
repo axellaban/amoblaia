@@ -149,3 +149,50 @@ Algunos segmentos se definen por persona y no por sesión (por ejemplo, cuentas 
 - **`$dead_click`:** apagado en el proyecto. **`$exception`:** sin eventos en los últimos 30 días, porque la captura de excepciones no está activada. Los errores se ven en Vercel y en `console_error_count` de las grabaciones.
 - **Zona horaria del proyecto:** UTC. «Ayer» debe calcularse en hora de Argentina.
 - **`session_replay_events` trae metadatos**, no lo que ocurrió. Para eso hay que ver la grabación o usar Replay Vision, que consume créditos.
+
+
+## 7. Nuevas soluciones comerciales y cobertura de CTA del panel (panel v3)
+
+Desde panel v3 el inicio mantiene las herramientas existentes y muestra Consultas IA y CRM Inteligente debajo de Virtual Staging. Los mismos accesos están en el sidebar debajo de API. Rutas: /panel/consultas-ia y /panel/crm-inteligente.
+
+**Los recorridos trabajan con datos de ejemplo:** las conversaciones y contactos no pertenecen a clientes reales, y no están conectados con WhatsApp. Las acciones no son mensajes enviados ni operaciones concretadas.
+
+### Cobertura universal de clics en el panel
+
+src/lib/interaction-tracking.ts conserva el evento existente **cta_clicked** en elementos con data-cta, e incorpora **panel_cta_clicked** para cada clic en enlace, botón o role=button habilitado cuando la ruta comienza con /panel.
+
+- panel_cta_clicked ofrece cobertura global; cta_clicked ofrece identificación explícita. Nunca sumarlos: un CTA anotado produce ambos eventos.
+- Propiedades: cta_id, cta_location, cta_destination, cta_kind, control_tag, panel_path, annotated y surface=panel.
+- annotated=true: ID legible explícito. annotated=false: ID estructural auto_*, para detectar controles que aún no tienen data-cta.
+- No se registran textos de mensajes, valores de inputs, nombres de clientes, URL con identificadores ni parámetros privados. /panel/propiedades/:id se anonimiza.
+- Un clic no equivale a una acción exitosa: el evento de resultado es distinto.
+
+### Embudo de interés por producto
+
+| Paso | Evento y propiedades | Interpretación |
+| --- | --- | --- |
+| Acceso desde inicio | cta_clicked: panel_home_consultas_ia / panel_home_crm_ia | Clic a cada producto desde tarjetas |
+| Acceso desde sidebar | cta_clicked: panel_nav_consultas_ia / panel_nav_crm_inteligente | Clic a cada producto desde barra lateral |
+| Entrada | commercial_workspace_viewed y/o $pageview en la ruta | Visita al producto, no demanda confirmada |
+| Interacción Consultas IA | commercial_conversation_tested / commercial_visit_requested / commercial_handoff_toggled / commercial_rule_toggled | Interacciones con ejemplos, NO consultas reales |
+| Interacción CRM | commercial_lead_opened / commercial_lead_stage_changed / commercial_task_created / commercial_followup_drafted / commercial_rule_toggled | Trabajo con ejemplos, NO contactos reales |
+| Apertura de solicitud | commercial_activation_request_opened | Señal débil de intención |
+| **Solicitud guardada** | **commercial_activation_request_submitted** | Señal fuerte: la API respondió después de guardar en base |
+| Error al guardar | commercial_activation_request_failed | No contar como interesado confirmado |
+
+Eventos de los recorridos llevan feature_key=consultas_ia o feature_key=crm_inteligente, demo_data=true. El contexto lleva flow_name=panel, ux_version=v3 y deployment_id. El formulario solo registra las categorías volume_band, primary_pain, readiness: no texto libre.
+
+**Fuente de verdad:** tabla commercial_product_interest (un registro único por agencia, usuario y producto; vuelve a actualizar el mismo registro). PostHog puede perder eventos por bloqueadores, de modo que las solicitudes confirmadas deben cotejarse con la base.
+
+### CRO diario obligatorio
+
+Reportar ayer (hora Argentina) y períodos móviles de 7 y 14 días, con exclusión de cohorte interna 659781 e is_internal=true:
+
+1. Por cada producto: clics desde inicio, clics desde sidebar, visitas al producto, sesiones y navegadores únicos.
+2. Usuarios con una interacción significativa, sin confundir acciones en los ejemplos con operaciones inmobiliarias reales.
+3. Solicitudes abiertas, confirmadas (PostHog versus base), tasa confirmadas/visitantes únicos del producto y confirmadas/visitantes únicos del panel.
+4. Distribución de solicitudes por primary_pain, volume_band, readiness, dispositivo y día; origen de navegación cuando se pueda reconstruir por sesión.
+5. Cobertura: total panel_cta_clicked, ranking de cta_id, porcentaje annotated y controles sin identificación explícita más utilizados. No sumar cta_clicked y panel_cta_clicked.
+6. Grabaciones con evidencia real solamente, indicando sesiones sin grabación. Los person_id cuentan navegadores, no personas cross-device.
+
+Si aún no hay tráfico posterior al despliegue, informar SIN DATOS; nunca inferir usuarios activos ni conversiones de los seis contactos ficticios del entorno de demostración.
