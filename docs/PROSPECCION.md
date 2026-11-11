@@ -251,3 +251,72 @@ La misma lista de `/admin/inmobiliarias` (funnel de demos, pestañas por etapa c
 - `POST { inmobiliaria, accion: "link-demo" }` → el link de su última demo publicada como lo copia «Demo» (con código de reclamo si no tiene cuenta).
 - `POST { inmobiliaria, accion: "link-panel" }` → el link fijo de su panel.
 - `POST { accion: "recalcular-scores" }` → recalcula los lead scores.
+
+## 12. Prospectos: antes de la cola
+
+Las inmobiliarias que todavía no recibieron el saludo se trabajan en **Prospectos** (Chapa Labs → habita. → Prospectos): se les cargan los datos, se ordenan por ranking y las mejores pasan a la cola de Follow-up. Lo que pasa después (número válido, respuesta, interés, demo con interacción, cliente) se cruza con esos datos, para ir ajustando qué se prospecta. Migración: `supabase/migrations/202612140001_prospect_pool.sql`.
+
+### Modelo
+
+`prospect_profiles`, una fila por cuenta (opcional): `status`, `discard_reason`, `profile` (las variables, JSON), `score` con `score_components` y `scoring_version`, `explore`, `queued_at` y `queue_snapshot` (la foto de variables y ranking del día que entró a la cola). Privada como el resto: RLS sin permisos para `anon`/`authenticated`, escritura solo por `habita_prospect_pool_save` y lectura por `habita_prospect_pool`, ambas de `service_role`. El cambio de estado queda en el historial de la cuenta (`account_updated`).
+
+**Una cuenta sin perfil sigue como siempre.** Las que ya estaban (importadas de la planilla) no tienen perfil: si tienen WhatsApp figuran «En cola» y la cola las trata igual que antes. Aplicar la migración no cambia la operación. Una cuenta empieza a pasar por Prospectos cuando se la agrega desde ahí o cuando se la saca de la cola.
+
+### Estados
+
+| Estado | Qué significa | Cómo se llega |
+| --- | --- | --- |
+| Descubierto | Sabemos que existe; faltan sus datos | Sale de los datos |
+| Enriquecido | Tiene al menos la mitad de los datos clave | Sale de los datos |
+| Calificado | Cumple lo que hace falta para la cola | Sale de los datos |
+| En cola | Espera el saludo en Follow-up | Decisión («Pasar a la cola», «Sumar las mejores») |
+| Descartado | No se la contacta (con motivo) | Decisión |
+
+**Para entrar a la cola** (`missingForQueue`): un WhatsApp que se pueda usar, un aviso elegido para su demo y encaje de 40 o más. Sin datos el encaje queda neutro (43): no saber no es lo mismo que no encajar. Mientras una cuenta con perfil no está «En cola», la cola de Follow-up la muestra bloqueada: «En Prospectos (Enriquecido): todavía no entró a la cola» (`poolBlock`).
+
+### Variables (`FIELDS` en `src/lib/prospecting/pool.ts`)
+
+| Grupo | Variables |
+| --- | --- |
+| Fuente | Dónde la encontramos, lote |
+| Contacto | Confianza del número, tipo de línea, de quién es el número, WhatsApp Business, respuesta automática |
+| Quién decide | Estructura, decisor confirmado, agentes (el nombre y la zona siguen en la cuenta) |
+| Cartera | Avisos activos, operación principal, % residencial, precio mediano, antigüedad de los avisos, avisos nuevos en 30 días |
+| Necesidad visual | Avisos con ambientes vacíos, calidad de las fotos, si ya ambienta sus fotos, aviso para la demo, si sus fotos se pueden importar |
+| Madurez digital | Plataforma de la web, Instagram (seguidores y publicaciones), reseñas de Google, publicidad en Meta, avisos destacados |
+| Competencia | Proveedor de IA actual |
+
+Lo que no se cargó se completa, solo para mostrar y rankear, con lo que ya dice la planilla (confianza del número, avisos en Argenprop, Instagram). Agregar una variable es sumarla a `FIELDS`: el catálogo viaja en la respuesta y la ficha de Chapa la muestra sin cambios.
+
+### Ranking (`prospectos_v1`)
+
+Tres partes de 0 a 100 y un total: 35% contactabilidad, 45% encaje, 20% facilidad de armar la demo (`scoreOf`).
+
+- **Contactabilidad:** la confianza del número (verificado 90, enlace en su web 80, celular publicado 65, portal 50, directorio 35), +10 con web propia, ±10 según de quién es el número, −15 con respuesta automática; una línea fija queda en 15 y sin WhatsApp usable, en 0.
+- **Encaje:** avisos vacíos (hasta 40), tamaño de la cartera (20), todavía no ambienta (15), residencial (10), avisos nuevos (10), decisor confirmado (5). Con un proveedor de IA el encaje no pasa de 25; con amoblado virtual, de 45.
+- **Demo:** aviso elegido (50), fotos importables (30), calidad de las fotos (20).
+
+Es una hipótesis para ordenar, no una probabilidad de compra. Cambiar un peso es una versión nueva (`SCORING_VERSION`). Mientras la cuenta espera el saludo, su score en la cola de Follow-up es este ranking.
+
+### Exploración
+
+«Sumar las mejores» (`pickForQueue`) pasa a la cola las calificadas de mejor ranking y, de cada tanda de 5 o más, 15% al azar entre las demás que ya tienen WhatsApp y aviso. Quedan marcadas (`explore`) y en Aprendizajes se comparan contra las que entraron por ranking: sin eso el ranking solo se confirma a sí mismo.
+
+### Aprendizajes (`learnings`)
+
+Por cada variable, las inmobiliarias intentadas con cada valor y hasta dónde llegaron, con las reglas del §5: número válido (sobre las intentadas) y respuesta humana, interés, demo con interacción y clientes (sobre las de número válido). Con menos de 30 intentadas, «muestra chica». Además de las variables de Prospectos se cruzan el primer mensaje, el día del primer contacto, la zona, el SDR, la web, el score de la planilla y cómo entró a la cola. Las variables se toman de la foto de entrada a la cola cuando existe. `?mensaje=` deja solo las contactadas con ese primer mensaje: el mensaje pesa más que el prospecto y, sin separarlos, se confunden.
+
+### API (para Chapa Labs)
+
+- `GET /api/prospeccion?vista=prospectos[&mensaje=]` → `{ available, rows, counts, catalog, learning }`. `available: false` si falta la migración: la lista se ve, pero no se puede guardar.
+- `POST { by, prospectos: { op, ... } }`: `guardar { cuenta, valores, zona?, decisor? }`, `cola { cuenta, explorar? }`, `sacar`, `descartar { motivo }`, `reabrir`, `llenar { cantidad }`, `crear { nombre, web?, zona?, whatsapp?, valores?, confirmar? }` (409 `DUPLICATE` si se parece a una que ya está) y `recalcular`.
+
+Archivos: `src/lib/prospecting/pool.ts` (lógica pura), `pool-server.ts` (lecturas y operaciones) y los tests `prospecting-pool*.test.ts`.
+
+### Pendiente
+
+- Cargar los datos de las pendientes (hoy casi todas tienen solo lo de la planilla).
+- Que las filas nuevas de la planilla entren como «Descubierto» en vez de ir directo a la cola (hoy la importación no crea perfil).
+- Calibrar los pesos con los Aprendizajes cuando haya muestra, como `prospectos_v2`.
+- Llevarlo a Turnia (decisión del 11/11: primero habita. en producción).
+

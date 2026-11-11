@@ -4,6 +4,13 @@ Se detiene el trabajo a pedido del usuario para conservar créditos. Los cambios
 
 Producción: https://amoblaia.vercel.app/
 
+## Prospectos, antes de la cola — 11 de noviembre de 2026 (rama `claude/modest-fermat-ew2d3r`)
+
+- **Pendiente: aplicar en Supabase `202612140001_prospect_pool.sql`** (SQL Editor; se puede re-ejecutar). Sin ella, Prospectos en Chapa muestra la lista y el ranking pero no deja guardar, y la cola sigue como siempre.
+- Qué es, estados, variables, ranking y aprendizajes: [PROSPECCION.md](PROSPECCION.md) §12.
+- **Pendiente:** cargar los datos de las pendientes; que las filas nuevas de la planilla entren a Prospectos y no directo a la cola; calibrar los pesos del ranking con los Aprendizajes.
+- **Turnia: pendiente.** Se decidió poner primero habita. en producción. Para llevarlo, turniasalud tiene que exponer `GET ?vista=prospectos` y `POST { prospectos }` con sus propias variables y sus definiciones de embudo; la vista de Chapa ya lee el catálogo de la respuesta.
+
 ## Resultados renovado en Chapa Labs — 11 de noviembre de 2026 (rama `claude/affectionate-gauss-rdh9h1`)
 
 - **Pendiente: aplicar en Supabase `202612110001_followup_queue_days.sql`** (SQL Editor; se puede re-ejecutar). Sin ella todo sigue funcionando, pero «¿Se ejecutó la cola?» no tiene foto diaria: muestra solo lo ejecutado y avisa que falta la migración.
