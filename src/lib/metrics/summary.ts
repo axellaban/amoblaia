@@ -53,7 +53,7 @@ export type ActivitySources = { demos: DemoRow[]; activity: ActivityRow[]; claim
 
 /**
  * What prospected agencies did in the period, whenever they were first greeted (Chapa's «Embudo contra
- * la meta» for habita): distinct agencies whose demo was sent, that visited it, that interacted, that
+ * la meta» for habita): distinct agencies that showed interest (or got their demo), whose demo was sent, that visited it, that interacted, that
  * created their account, activated or paid within the range. Unlike the cohort funnel (`demos`, only the
  * agencies first greeted in the same period), a demo sent today to one greeted last week counts today.
  */
@@ -64,10 +64,14 @@ export function periodActivity(ds: Dataset, src: ActivitySources, r: Range) {
   const count = (ids: (string | null | undefined)[]) => new Set(ids.filter((id): id is string => Boolean(id) && prospected.has(id!))).size;
   const visits = (kinds: string[]) =>
     count(src.activity.filter((a) => a.demo_id && kinds.includes(a.kind) && inRange(a.created_at, r)).map((a) => agencyOfDemo.get(a.demo_id!)));
-  const events = (type: string) =>
-    count(ds.events.filter((e) => e.type === type && !e.corrected && inRange(e.occurred_at, r)).map((e) => agencyOfAccount.get(e.account_id)));
+  const eventAgencies = (type: string) =>
+    ds.events.filter((e) => e.type === type && !e.corrected && inRange(e.occurred_at, r)).map((e) => agencyOfAccount.get(e.account_id));
+  const events = (type: string) => count(eventAgencies(type));
+  const sent = src.demos.filter((d) => inRange(d.sent_at, r)).map((d) => d.agency_id);
   return {
-    demosEnviadas: count(src.demos.filter((d) => inRange(d.sent_at, r)).map((d) => d.agency_id)),
+    // «Interesado» en Follow-up incluye a las que ya recibieron la demo: interés registrado o demo enviada en el período.
+    interesados: count([...eventAgencies("interest"), ...sent]),
+    demosEnviadas: count(sent),
     visitadas: visits([...ACTIVITY]),
     conInteraccion: visits(ACTIVITY.filter((k) => k !== "visita")),
     cuentas: count(src.claims.filter((c) => inRange(c.claimed_at, r)).map((c) => c.id)),
