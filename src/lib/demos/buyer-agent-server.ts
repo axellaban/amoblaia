@@ -5,7 +5,7 @@ import { BUYER_AGENT_OFF, type BuyerAgentSettings } from "./buyer-agent";
 
 /**
  * The general test of the property assistant. Fails closed: without the
- * migration (202612120001_buyer_agent_demo.sql) or on any read error, it is
+ * migration (202612120002_buyer_agent_demo.sql) or on any read error, it is
  * off, so no agency sees the block unless its demo forces it.
  */
 export async function buyerAgentSettings(): Promise<BuyerAgentSettings & { ready: boolean; updatedAt: string | null }> {
@@ -35,7 +35,7 @@ export async function updateBuyerAgentSettings(input: { enabled?: unknown; share
     patch.buyer_agent_share = input.share;
   }
   const { error } = await adminClient().from("habita_experiment_settings").update(patch).eq("id", true);
-  if (error) throw new HttpError(503, "No se pudo guardar. Verificá que la migración 202612120001_buyer_agent_demo.sql esté aplicada.");
+  if (error) throw new HttpError(503, "No se pudo guardar. Verificá que la migración 202612120002_buyer_agent_demo.sql esté aplicada.");
   await adminClient()
     .from("admin_audit")
     .insert({ actor_id: actorId, action: "buyer_agent_settings", subject_id: null, details: patch })

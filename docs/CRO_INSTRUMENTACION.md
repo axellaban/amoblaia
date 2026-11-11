@@ -210,7 +210,7 @@ Bloque «Probá cómo respondería un asistente IA a un comprador» en la vista 
 | Prueba general encendida y demo en «Automático» | El porcentaje elegido de inmobiliarias (por defecto 50 %), por un hash fijo de `agency_id` | `asistente_demo:asistente` o `asistente_demo:control`, en todos los eventos de esa sesión, también en el grupo control |
 | Demo en «Mostrar siempre» u «Ocultar siempre» | Lo que diga la demo | No se registra: el evento del bloque lleva `forzado` y queda fuera del análisis |
 
-La prueba general se enciende en `/admin/inmobiliarias` (tabla `habita_experiment_settings`). Cada demo se fuerza en su editor, «Publicación y compartir» (`demos.settings.buyerAgent`). Sin la migración `202612120001_buyer_agent_demo.sql`, la prueba se lee apagada.
+La prueba general se enciende en `/admin/inmobiliarias` (tabla `habita_experiment_settings`). Cada demo se fuerza en su editor, «Publicación y compartir» (`demos.settings.buyerAgent`). Sin la migración `202612120002_buyer_agent_demo.sql`, la prueba se lee apagada.
 
 **Es una simulación.** Responde por reglas con los datos que la demo ya publica (precio, disponibilidad, características, ubicación). No afirma medidas, financiación ni datos no cargados. No envía mensajes, no agenda visitas y no guarda la conversación.
 
