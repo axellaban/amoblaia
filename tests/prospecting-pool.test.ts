@@ -157,3 +157,11 @@ describe("aprendizajes", () => {
     expect(v2.dimensions.some((x) => x.key === "message")).toBe(false);
   });
 });
+
+describe("catálogo: datos del relevamiento", () => {
+  it("acepta la fuente propia, el perfil en el portal y la nota del aviso para la demo", () => {
+    const { patch, errors } = cleanProfile({ source_channel: "relevamiento", portal_url: "https://www.argenprop.com/inmobiliaria-x", demo_listing_note: "Living vacío" });
+    expect(errors).toEqual([]);
+    expect(patch).toEqual({ source_channel: "relevamiento", portal_url: "https://www.argenprop.com/inmobiliaria-x", demo_listing_note: "Living vacío" });
+  });
+});

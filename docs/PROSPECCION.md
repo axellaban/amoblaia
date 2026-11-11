@@ -278,11 +278,11 @@ Las inmobiliarias que todavía no recibieron el saludo se trabajan en **Prospect
 
 | Grupo | Variables |
 | --- | --- |
-| Fuente | Dónde la encontramos, lote |
+| Fuente | Dónde la encontramos (portal, directorio, relevamiento propio…), lote, perfil en el portal |
 | Contacto | Confianza del número, tipo de línea, de quién es el número, WhatsApp Business, respuesta automática |
 | Quién decide | Estructura, decisor confirmado, agentes (el nombre y la zona siguen en la cuenta) |
 | Cartera | Avisos activos, operación principal, % residencial, precio mediano, antigüedad de los avisos, avisos nuevos en 30 días |
-| Necesidad visual | Avisos con ambientes vacíos, calidad de las fotos, si ya ambienta sus fotos, aviso para la demo, si sus fotos se pueden importar |
+| Necesidad visual | Avisos con ambientes vacíos, calidad de las fotos, si ya ambienta sus fotos, aviso para la demo y su nota, si sus fotos se pueden importar |
 | Madurez digital | Plataforma de la web, Instagram (seguidores y publicaciones), reseñas de Google, publicidad en Meta, avisos destacados |
 | Competencia | Proveedor de IA actual |
 
@@ -313,9 +313,23 @@ Por cada variable, las inmobiliarias intentadas con cada valor y hasta dónde ll
 
 Archivos: `src/lib/prospecting/pool.ts` (lógica pura), `pool-server.ts` (lecturas y operaciones) y los tests `prospecting-pool*.test.ts`.
 
+### Relevamiento del 11/11 (Pinamar y pendientes sin WhatsApp)
+
+Se relevaron las pendientes sin WhatsApp y todas las inmobiliarias de Pinamar (fuente `relevamiento`, lote en `source_batch`). Estado en producción al cierre del 11/11:
+
+| Estado | Inmobiliarias | De Pinamar | Score medio |
+| --- | --- | --- | --- |
+| En cola | 82 | 27 | 62 |
+| Descubierto | 312 | 56 | 34 |
+
+- La cola de primeros saludos pasó de 24 a 82 (casi dos días de cupo de 48).
+- 50 de las «Descubierto» ya tienen un WhatsApp encontrado pero sin confirmar (29 celulares publicados y 21 enlaces en su web): no entran a la cola hasta verificar que el número tiene WhatsApp. Es lo primero que sigue.
+- Las otras 262 no tienen número todavía.
+
 ### Pendiente
 
-- Cargar los datos de las pendientes (hoy casi todas tienen solo lo de la planilla).
+- Verificar el WhatsApp de las 50 «Descubierto» con número encontrado y pasarlas a la cola.
+- Seguir cargando los datos de las pendientes (las de la planilla tienen solo lo de la planilla).
 - Que las filas nuevas de la planilla entren como «Descubierto» en vez de ir directo a la cola (hoy la importación no crea perfil).
 - Calibrar los pesos con los Aprendizajes cuando haya muestra, como `prospectos_v2`.
 - Llevarlo a Turnia (decisión del 11/11: primero habita. en producción).
