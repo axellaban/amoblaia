@@ -50,6 +50,26 @@ function ActivationPanel({ product, onClose }: { product: Product; onClose: () =
   const [pain, setPain] = useState(product==="consultas_ia"?"responder_fuera_de_horario":"seguimiento");
   const [readiness, setReadiness] = useState("este_mes");
   const [done, setDone] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  async function submit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (busy) return;
+    setBusy(true); setError("");
+    try {
+      const res = await fetch("/api/panel/interes-comercial", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ product, volumeBand: volume, primaryPain: pain, readiness }),
+      });
+      if (!res.ok) throw new Error("No pudimos guardar tu solicitud. Probá nuevamente.");
+      log("commercial_activation_request_submitted",product,{volume_band:volume,primary_pain:pain,readiness});
+      setDone(true);
+    } catch {
+      setError("No pudimos registrar tu solicitud. Revisá tu conexión e intentá nuevamente.");
+      log("commercial_activation_request_failed",product);
+    } finally { setBusy(false); }
+  }
   return <div className={s.overlay} role="presentation" onMouseDown={(e)=>{if(e.target===e.currentTarget)onClose();}}>
     <section role="dialog" aria-modal="true" aria-label="Solicitar acceso a Habita" className={s.modal}>
       <button className={s.close} type="button" onClick={onClose} aria-label="Cerrar formulario">×</button>
@@ -58,7 +78,7 @@ function ActivationPanel({ product, onClose }: { product: Product; onClose: () =
         <div className={s.eyebrow}>ACCESO A HABITA</div>
         <h2>¿Lo activarías en tu inmobiliaria?</h2>
         <p>Contanos cómo trabajás hoy. Nos ayuda a priorizar la implementación para quienes más lo necesitan.</p>
-        <form onSubmit={(e)=>{e.preventDefault();log("commercial_activation_request_submitted",product,{volume_band:volume,primary_pain:pain,readiness});setDone(true);}}>
+        <form onSubmit={submit}>
           <label>¿Cuántas consultas o leads gestionás por semana?
             <select value={volume} onChange={(e)=>setVolume(e.target.value)} {...cta("commercial_intent_volume", "activation_form", product)}>
               <option value="1-10">1 a 10</option><option value="11-30">11 a 30</option><option value="31-100">31 a 100</option><option value="100+">Más de 100</option>
@@ -81,7 +101,7 @@ function ActivationPanel({ product, onClose }: { product: Product; onClose: () =
               <option value="mas_adelante">Más adelante</option>
             </select>
           </label>
-          <button className={s.primary} type="submit" {...cta("commercial_activation_request_submit", "activation_form", product)}>Solicitar acceso <ArrowRight size={16}/></button>
+          <button className={s.primary} type="submit" disabled={busy} {...cta("commercial_activation_request_submit", "activation_form", product)}>{busy?"Registrando…":"Solicitar acceso"} <ArrowRight size={16}/></button>{error&&<p role="alert" className={s.formError}>{error}</p>}
         </form>
         <small>Esta solicitud registra interés; no activa mensajes ni conecta cuentas de WhatsApp.</small>
       </> : <div className={s.done}><CheckCircle2 size={36}/><h2>¡Solicitud registrada!</h2><p>Gracias. Tomamos nota del problema que querés resolver. Todavía no se activó ningún servicio ni se enviaron mensajes.</p><button type="button" className={s.secondary} onClick={onClose} {...cta("commercial_activation_close", "activation_confirmation", product)}>Seguir explorando</button></div>}
