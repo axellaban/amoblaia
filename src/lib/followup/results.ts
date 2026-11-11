@@ -346,3 +346,12 @@ export function queueDayState(q: QueueDayInput, now = new Date()): QueueDayRow["
   if (/^(Programada para|Reprogramada|Fuera de horario|Fuera de la ventana)/i.test(b)) return new Date(now.getTime() - 3 * 3_600_000).getUTCDay() === 0 ? "programada" : "lista";
   return "bloqueada";
 }
+
+/**
+ * A prospect not yet contacted that is stuck on data (no WhatsApp, a possible duplicate, already contacted
+ * by the sheet) is never assigned to today: the daily first-contact quota only goes to those that can be
+ * contacted. So it is not today's pending either.
+ */
+export function firstContactState(stage: string, state: QueueDayRow["state"], firstStage = "no-contactado"): QueueDayRow["state"] {
+  return stage === firstStage && state === "bloqueada" ? "programada" : state;
+}

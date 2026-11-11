@@ -78,7 +78,7 @@ import {
   type Situation,
 } from "./plan";
 import { DEFAULT_RULES, cleanRule, compatible, outsideWindow, type Rule } from "./rules";
-import { WINDOWS, blockReasons, bySegment, cohorts, executionDays, funnelCohorts, queueDayState, versionResults, weekly, weeklyByType, type QueueDayRow, type VersionResult, type WindowKey } from "./results";
+import { WINDOWS, blockReasons, bySegment, cohorts, executionDays, firstContactState, funnelCohorts, queueDayState, versionResults, weekly, weeklyByType, type QueueDayRow, type VersionResult, type WindowKey } from "./results";
 import { cleanFilter, pickNext } from "./queue-filter";
 import { customStages } from "./commercial-catalog";
 import { readSituationOverrides, readStateCatalog, resolveCustomClassification } from "./state-catalog";
@@ -242,7 +242,7 @@ export async function recordQueueDay(all: QueueItem[], { force = false, now = ne
   const rows = all.filter(pending).map((q) => ({
     day, agency_id: q.agencyId, stage: q.stage, action: q.action!,
     // Only what the queue assigns to today counts as pending (results.ts → queueDayState).
-    state: queueDayState({ dueAt: q.dueAt, snoozedUntil: q.snoozedUntil, blocked: q.blocked }, now),
+    state: firstContactState(q.stage, queueDayState({ dueAt: q.dueAt, snoozedUntil: q.snoozedUntil, blocked: q.blocked }, now)),
     last_seen_at: at,
   }));
   for (let i = 0; i < rows.length; i += 500) {
