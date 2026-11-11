@@ -62,7 +62,8 @@ describe("the demo's short link", () => {
   it("adds it once, without touching what the event already says", () => {
     const sent = withUxContext("demo_vista", { demo_id: "d1" }, "/p/casa-en-palermo-abcdefghjk");
     expect(sent).toEqual({ ...uxContext("/p/casa-en-palermo-abcdefghjk"), demo_id: "d1" });
-    expect(withUxContext("$pageview", { $pathname: "/p/x-abcdefghjk/precios" }, "/otra").flow_name).toBe("demo");
+    const fromEvent: Record<string, unknown> = withUxContext("$pageview", { $pathname: "/p/x-abcdefghjk/precios" }, "/otra");
+    expect(fromEvent.flow_name).toBe("demo");
   });
 });
 
