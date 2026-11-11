@@ -1,10 +1,10 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
-  ArrowLeft, ArrowRight, BarChart3, Bell, Bot, CalendarDays, Check, CheckCircle2,
-  ChevronRight, Clock3, Filter, Inbox, ListTodo, MessageCircle, MoreHorizontal,
-  PauseCircle, PlayCircle, Plus, RotateCcw, Search, Send, Settings2, ShieldCheck,
+  ArrowLeft, ArrowRight, BarChart3, Bell, CalendarDays, Check, CheckCircle2,
+  ChevronRight, Clock3, Filter, Inbox, ListTodo, MessageCircle,
+  Plus, RotateCcw, Search, Send, Settings2, ShieldCheck,
   Sparkles, UserRound, UsersRound, WandSparkles, Zap
 } from "lucide-react";
 import { PanelNav } from "@/components/panel-shell";
@@ -12,7 +12,7 @@ import { cta } from "@/lib/interaction-tracking";
 import { track } from "@/lib/analytics";
 import {
   detectIntent, examples, formatMoney, initialLeads, initialTasks,
-  propertyOf, properties, replyFor, seedMessages, stages,
+  propertyOf, replyFor, seedMessages, stages,
   type Lead, type Message, type Stage, type Task
 } from "@/lib/habita-commercial-sandbox";
 import s from "./commercial-workspace.module.css";
@@ -116,7 +116,6 @@ function ConsultasWorkspace() {
   const [leads,setLeads]=useState<Lead[]>(initialLeads);
   const [selected,setSelected]=useState("martina");
   const [messages,setMessages]=useState<Record<string,Message[]>>(seedMessages);
-  const [query,setQuery]=useState("");
   const [reply,setReply]=useState("");
   const [search,setSearch]=useState("");
   const [auto,setAuto]=useState(true);
