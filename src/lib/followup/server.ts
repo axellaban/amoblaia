@@ -18,6 +18,7 @@ import { adminClient } from "@/lib/supabase/server";
 import {
   FOLLOWUP_STAGES,
   commercialOf,
+  contradictsFunnel,
   OUT,
   byScore,
   cleanVersion,
@@ -1699,10 +1700,16 @@ export async function setStage(agencyId: string, stage: unknown, actorId: string
   if (!isOverrideStage(stage)) throw new HttpError(400, "Etapa desconocida.");
   const { at } = await now(agencyId);
   const funnelStep = at.derived.reached === null ? -1 : at.derived.reached;
-  if (stage === at.derived.stage) await saveExtra(agencyId, { stage_override: null, override_step: null }, actorId);
-  else await saveExtra(agencyId, { stage_override: stage, override_step: funnelStep }, actorId);
-  await audit("stage", { id: actorId, name: actorName }, { agencyId, from: at.stage ?? "fuera", to: stage });
-  return { stage: stage === OUT ? null : stage, manual: stage !== at.derived.stage };
+  // Choosing the commercial stage it is already in (e.g. «Interesado» with the demo created) leaves the
+  // product's own state: the funnel goes on moving it. A stage behind what its demo already did is refused.
+  const sameCommercial = stage !== OUT && at.derived.stage !== null && commercialOf(stage) === commercialOf(at.derived.stage);
+  if (!sameCommercial && contradictsFunnel(stage, at.derived.reached))
+    throw new HttpError(409, `Su demo ya está en «${stageInfo(at.derived.stage!).title}»: esa etapa se actualiza sola con lo que pasa en la demo.`);
+  const target = sameCommercial ? at.derived.stage! : stage;
+  if (target === at.derived.stage) await saveExtra(agencyId, { stage_override: null, override_step: null }, actorId);
+  else await saveExtra(agencyId, { stage_override: target, override_step: funnelStep }, actorId);
+  await audit("stage", { id: actorId, name: actorName }, { agencyId, from: at.stage ?? "fuera", to: target });
+  return { stage: target === OUT ? null : target, manual: target !== at.derived.stage };
 }
 
 /**
