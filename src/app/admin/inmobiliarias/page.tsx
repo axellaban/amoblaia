@@ -27,6 +27,7 @@ import { commercialRows } from "@/lib/agency/commercial-server";
 import { AGENCY_STEPS, STEP_LABEL, agencyStep, demosInPeriod, funnelCounts, inPeriod, parsePeriod, shortDay, type Period } from "@/lib/agency/demo-funnel";
 import { AccountPill, AgencyThumb, DemoStepMenu, MoreMenu, RecalcScores, RowQuickActions, ScorePill, StagePill } from "@/components/admin-agency-hub";
 import { SupportViewButton } from "@/components/admin-agencies";
+import { BuyerAgentSwitch } from "@/components/admin-buyer-agent";
 import { requireAdminPage } from "@/lib/demos/admin-page";
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
@@ -111,6 +112,7 @@ export default async function AgenciesPage({ searchParams }: Props) {
           <Plus size={18} aria-hidden="true" /> Nueva inmobiliaria
         </Link>
       </header>
+      <BuyerAgentSwitch />
 
       {!rows ? (
         <div className="account-panel" role="alert">

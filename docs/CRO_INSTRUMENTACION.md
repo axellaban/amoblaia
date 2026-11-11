@@ -197,3 +197,38 @@ Reportar ayer (hora Argentina) y períodos móviles de 7 y 14 días, con exclusi
 6. Grabaciones con evidencia real solamente, indicando sesiones sin grabación. Los person_id cuentan navegadores, no personas cross-device.
 
 Si aún no hay tráfico posterior al despliegue, informar SIN DATOS; nunca inferir usuarios activos ni conversiones de los seis contactos ficticios del entorno de demostración.
+
+## 8. Asistente de la propiedad en la demo de la inmobiliaria (prueba `asistente_demo`)
+
+Bloque «Probá cómo respondería un asistente IA a un comprador» en la vista de la inmobiliaria de su propia demo (enlace con invitación), debajo de «¿Querés probarlo con otra propiedad?». Nunca en el enlace de compradores, en «Ver como comprador» ni en el sitio de la inmobiliaria. Componente: `src/components/buyer-agent.tsx`; lógica: `src/lib/demos/buyer-agent.ts`.
+
+**Apagado por defecto.** Quién lo ve:
+
+| Configuración | Quién lo ve | `experiment_variant` |
+| --- | --- | --- |
+| Prueba general apagada (inicio) y demo en «Automático» | Nadie | No se registra |
+| Prueba general encendida y demo en «Automático» | El porcentaje elegido de inmobiliarias (por defecto 50 %), por un hash fijo de `agency_id` | `asistente_demo:asistente` o `asistente_demo:control`, en todos los eventos de esa sesión, también en el grupo control |
+| Demo en «Mostrar siempre» u «Ocultar siempre» | Lo que diga la demo | No se registra: el evento del bloque lleva `forzado` y queda fuera del análisis |
+
+La prueba general se enciende en `/admin/inmobiliarias` (tabla `habita_experiment_settings`). Cada demo se fuerza en su editor, «Publicación y compartir» (`demos.settings.buyerAgent`). Sin la migración `202612120002_buyer_agent_demo.sql`, la prueba se lee apagada.
+
+**Es una simulación.** Responde por reglas con los datos que la demo ya publica (precio, disponibilidad, características, ubicación). No afirma medidas, financiación ni datos no cargados. No envía mensajes, no agenda visitas y no guarda la conversación.
+
+| Evento | Cuándo | Propiedades propias |
+| --- | --- | --- |
+| `integrated_demo_exposed` | La franja cerrada estuvo al menos 50 % en pantalla, una vez por vista | |
+| `buyer_agent_preview_opened` | «Probar», una vez por vista | |
+| `buyer_agent_question_submitted` | Envía una pregunta | `intent_category`, `question_source` (`suggested` o `typed`) |
+| `buyer_agent_response_displayed` | Se muestra la respuesta | `intent_category`, `answered_from_data` |
+| `buyer_agent_crm_preview_opened` | La tarjeta «Así llegaría a tu CRM» se completa por primera vez | |
+| `buyer_agent_visit_requested` | Elige un horario en la simulación | |
+| `integrated_product_access_requested` | El servidor guardó la solicitud (no se dispara si ya existía) | |
+
+Todos llevan `agency_id`, `demo_id`, `experiment_variant`, `entry_surface = demo_owner`, `device_type`, `property_context_present` e `is_simulation = true`. Nunca el texto de las preguntas.
+
+- **No mueven los pasos de la demo ni el lead score.** Los eventos del bloque van directo a PostHog, sin `reportDemoActivity` ni `leadEvent`: si no, el grupo con asistente parecería más interesado solo por tener un bloque más.
+- **No se suman con `commercial_*`.** Esos son del entorno de demostración del panel.
+- **Solicitudes: la fuente de verdad es la base.** `commercial_product_interest` con `product_key = asistente_propiedad`, `source_surface = demo_owner`, `user_id` vacío y `demo_id`. Una por inmobiliaria. Las visitas del equipo (tráfico interno) responden sin guardar.
+- **Versión de UX:** `demo` sigue en `v1` mientras dure la prueba: la variante ya distingue los grupos.
+
+Lectura: por variante, inmobiliarias expuestas (con `demo_vista` en modo inmobiliaria), cada paso del bloque, solicitudes en PostHog contra la base, y como guardas la entrada al panel, la activación (sección 3), el checkout y el pago. La unidad es la inmobiliaria.

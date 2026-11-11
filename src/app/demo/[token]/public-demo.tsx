@@ -6,7 +6,9 @@ import { DemoView } from "@/components/demo-view";
 import { PricingPlans } from "@/components/pricing";
 import { buyerViewPath, inviteFor, presentationPath, pricesViewPath, type DemoInvite } from "@/lib/agency/demo-invite";
 import { invitationOf } from "@/lib/agency/invitation";
-import { publishedDemo } from "@/lib/demos/server";
+import { publishedDemo, settingsOf } from "@/lib/demos/server";
+import { buyerAgentDecision, type BuyerAgentDecision } from "@/lib/demos/buyer-agent";
+import { buyerAgentSettings } from "@/lib/demos/buyer-agent-server";
 import { coverVersion, demoPath, ogImageUrl, stageWidth } from "@/lib/demos/shared";
 import type { Product } from "@/lib/commerce/catalog";
 import { cloudConfigured } from "@/lib/supabase/config";
@@ -126,6 +128,15 @@ export async function PublicDemo({
   const ownView = Boolean(invitation && invite && "href" in invite && !ficha);
   // The agency's own demo also shows the images it generated there before approving them (buyers never do).
   const shown = ownView ? ((await load(token, true)) ?? demo) : demo;
+  // «Asistente de la propiedad»: only in the agency's own view. Off unless the team's general test or this demo turns it on.
+  let agent: BuyerAgentDecision = { show: false, variant: null, assignment: "off" };
+  if (ownView)
+    try {
+      const [general, { settings }] = await Promise.all([buyerAgentSettings(), settingsOf(demo.id)]);
+      agent = buyerAgentDecision({ settings: general, mode: settings.buyerAgent, agencyId: demo.agencyId });
+    } catch {
+      console.error("buyer_agent_lookup_failed");
+    }
   const owner =
     ownView && invitation && invite && "href" in invite
       ? {
@@ -136,6 +147,7 @@ export async function PublicDemo({
           buyerHref: shortPath ? `${shortPath}/ficha` : buyerViewPath(token, invitation),
           demoHref: shortPath ?? presentationPath(token, invitation),
           pricesHref: shortPath ? `${shortPath}/precios` : pricesViewPath(token, invitation),
+          agent,
         }
       : null;
   // "Ver como comprador": the buyers' page, with only the way back to the agency's demo.

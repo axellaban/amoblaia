@@ -50,7 +50,9 @@ import {
 } from "lucide-react";
 import { Comparison } from "./comparison";
 import { PENDING_IMPORT_KEY, withIntent, type DemoIntent, type DemoInvite } from "@/lib/agency/demo-invite";
-import { registerSuperProperties, registerSuperPropertiesOnce, track, type EventProperties } from "@/lib/analytics";
+import { registerSuperProperties, registerSuperPropertiesOnce, setExperimentVariant, track, type EventProperties } from "@/lib/analytics";
+import { BuyerAgent, type AgentViewing } from "./buyer-agent";
+import { BUYER_AGENT_EXPERIMENT, type BuyerAgentDecision } from "@/lib/demos/buyer-agent";
 import { cta, startDemoEngagement, ViewTimer } from "@/lib/interaction-tracking";
 import { reportDemoActivity } from "@/lib/demos/activity-client";
 import { flushLeads, leadActiveTime, leadEvent, startLeadTracking } from "@/lib/leads/client";
@@ -116,6 +118,8 @@ export type OwnerMode = {
   /** The presentation itself and its plans: the two sections under the agency's bar, each with its own link. */
   demoHref: string;
   pricesHref: string;
+  /** «Asistente de la propiedad» (lib/demos/buyer-agent.ts): decided on the server; absent means not shown. */
+  agent?: BuyerAgentDecision;
 };
 
 const fileSlug = (text: string) =>
@@ -211,6 +215,12 @@ export function DemoView({
   // The agent's photo lives on the agency's site: if it fails, the initials stand in.
   const [agentPhotoFailed, setAgentPhotoFailed] = useState(false);
   const ownerMode = Boolean(owner);
+  // «Asistente de la propiedad»: what the gallery shows, and the agency's group in the test (both groups carry it).
+  const [viewing, setViewing] = useState<AgentViewing>(null);
+  const agentVariant = owner?.agent?.variant ?? null;
+  useEffect(() => {
+    if (source.kind === "public" && agentVariant) setExperimentVariant(BUYER_AGENT_EXPERIMENT, agentVariant);
+  }, [source.kind, agentVariant]);
   // How the visitor got here, never the invitation code itself.
   const linkKind = ownerMode
     ? "owner_invitation"
@@ -518,6 +528,7 @@ export function DemoView({
             )
           }
           owner={owner}
+          onViewing={owner?.agent?.show ? setViewing : undefined}
           ownerActions={
             owner && source.kind === "public" ? (
               <>
@@ -539,6 +550,9 @@ export function DemoView({
         {owner && source.kind === "public" && (
           <>
             <AnotherProperty owner={owner} log={log} />
+            {owner.agent?.show && (
+              <BuyerAgent demo={demo} token={source.token} code={owner.code} decision={owner.agent as BuyerAgentDecision} viewing={viewing} panelHref={owner.panelHref} />
+            )}
             {/* «El impacto en tu negocio»: right under «¿Querés probarlo con otra propiedad?», horizontal on a computer. */}
             <div className="bi-demo">
               <ImpactStats where="demo_owner" />
@@ -940,6 +954,7 @@ function Gallery({
   owner = null,
   ownerActions = null,
   stage = STAGE_WIDTH.other,
+  onViewing,
 }: {
   demo: PublicDemo;
   source: Source;
@@ -953,6 +968,8 @@ function Gallery({
   owner?: OwnerMode | null;
   /** The agency's "Descargar imágenes" and "Compartir ficha", under its styles. */
   ownerActions?: React.ReactNode;
+  /** The photo and style on screen, for the property assistant's context («Estás viendo»). */
+  onViewing?: (viewing: AgentViewing) => void;
 }) {
   const photos = demo.photos;
   const styleNames = useMemo(
@@ -1023,6 +1040,12 @@ function Gallery({
   // A version that fails to load leaves the original on screen.
   const showing = version && !stagedFailed ? version : null;
   const comparing = Boolean(showing && state.compare) && !videoOn;
+  // What the agency looks at, for the property assistant: the photo's name and the style on screen.
+  const viewingPhoto = photo ? photo.label || `Foto ${index + 1}` : null;
+  const viewingStyle = showing && !videoOn ? name(showing.style) : null;
+  useEffect(() => {
+    onViewing?.(viewingPhoto ? { photo: viewingPhoto, style: viewingStyle } : null);
+  }, [onViewing, viewingPhoto, viewingStyle]);
   const alt = (i: number, p: PublicPhoto) => `${demo.title}, foto ${i + 1}${p.label ? `: ${p.label}` : ""}`;
 
   const setState = useCallback(
