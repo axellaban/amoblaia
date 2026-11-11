@@ -4,6 +4,8 @@ import { currentUser } from "@/lib/supabase/server";
 import { cloudConfigured, cloudEnabled } from "@/lib/supabase/config";
 import { membershipFor } from "./server";
 import { visitorMembership } from "./visit";
+import { joinPath } from "./join";
+import { isAdmin } from "@/lib/commerce/http";
 
 /**
  * Gate of the agency panel's pages, with the same rules as its API: a
@@ -22,6 +24,8 @@ export async function requirePanelPage(next: string) {
   const membership = verified ? await membershipFor(verified) : null;
   if (verified && membership) return { user: verified, membership };
   const visit = await visitorMembership();
+  // Signed in after looking around an agency's panel from its link: the account enters it, no question asked.
+  if (visit && verified && !isAdmin(verified.email)) redirect(joinPath(next));
   if (visit) return { user: verified, membership: visit };
   if (!verified) redirect(`/acceso?modo=registro&next=${encodeURIComponent(next)}`);
   redirect("/panel/empezar");
