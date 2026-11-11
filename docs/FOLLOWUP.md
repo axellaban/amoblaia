@@ -16,6 +16,8 @@ Estas acciones nunca recalculan las etapas de producto ni envían WhatsApp. El p
 
 `/admin/follow-up`, debajo de Inmobiliarias en el panel del equipo. Una **next best action** por cada etapa del embudo, con las inmobiliarias que esperan en cada una y los números de cada versión, para iterar los mensajes con datos.
 
+**Prospectos (11/11/2026).** Una inmobiliaria que se trabaja en Prospectos (tiene perfil en `prospect_profiles`) no recibe el saludo hasta que se la pasa a la cola: mientras tanto figura bloqueada en «No contactado» con «En Prospectos (…): todavía no entró a la cola», y su score es el ranking de Prospectos. Las que no tienen perfil siguen como siempre. Ver `docs/PROSPECCION.md` §12.
+
 ## Etapas
 
 Son los que «se quedaron» en cada paso del embudo de Inmobiliarias (la parte naranja de cada barra, con «Todo»), más las cuentas de prospección todavía sin contactar:

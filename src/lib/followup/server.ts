@@ -12,6 +12,8 @@ import { isUuid } from "@/lib/demos/shared";
 import { contactFor, stableUuid } from "@/lib/prospecting/external";
 import { recordSend } from "@/lib/prospecting/record-send";
 import { prospectDataset, prospectRpc } from "@/lib/prospecting/server";
+import { poolGates } from "@/lib/prospecting/pool-server";
+import { poolBlock } from "@/lib/prospecting/pool";
 import type { Dataset, OutreachAttempt, ProspectAccount } from "@/lib/prospecting/types";
 import { artDate } from "@/lib/prospecting/time";
 import { adminClient } from "@/lib/supabase/server";
@@ -447,7 +449,7 @@ const whenText = (iso: string) => new Date(iso).toLocaleString("es-AR", { day: "
  * so the counters match the rows.
  */
 async function board(now = new Date()) {
-  const [rows, ds, vs, ex, extra, info, held, open, rules, overrides, catalog, extraStages, quota] = await Promise.all([
+  const [rows, ds, vs, ex, extra, info, held, open, rules, overrides, catalog, extraStages, quota, pool] = await Promise.all([
     commercialRows(),
     prospectDataset({ syncConversions: false }),
     versions(),
@@ -457,7 +459,13 @@ async function board(now = new Date()) {
     claims(),
     openReplies(),
     readRules(), readSituationOverrides(), readStateCatalog(), customStages(), readQuotaSettings(now),
+    poolGates().catch(() => new Map() as Awaited<ReturnType<typeof poolGates>>),
   ]);
+  // Prospectos: the ranking of an agency worked there is its score while it waits for the greeting.
+  for (const a of ds?.accounts ?? []) {
+    const ranked = pool.get(a.id)?.score;
+    if (a.stage === "pending" && ranked !== null && ranked !== undefined) a.score = ranked;
+  }
   const accounts = accountsByAgency(ds);
   const exOf = new Map<string, FollowupExecution[]>();
   for (const e of ex) exOf.set(e.agency_id, [...(exOf.get(e.agency_id) ?? []), e]);
@@ -587,6 +595,8 @@ async function board(now = new Date()) {
       lastReply: lastReply.get(r.id) ?? null,
       needsDemo: Boolean(version && /\{\{\s*demo\s*\}\}/.test(version.body)),
     });
+    // Still in Prospectos: it waits there until it is passed to the queue.
+    it.blocked = poolBlock(account ? pool.get(account.id) : undefined, it.stage, it.execution?.status === "sent") ?? it.blocked;
     if(own?.handoff_to)it.blocked=`Pasada a ${own.handoff_to}. Retomar para volver a ejecutar.`;
     items.set(r.id, it);
   }

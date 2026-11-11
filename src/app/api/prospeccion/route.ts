@@ -2,6 +2,7 @@ import { HttpError, isAdmin } from "@/lib/commerce/http";
 import { parsePeriod } from "@/lib/agency/demo-funnel";
 import { demoUrl, isUuid } from "@/lib/demos/shared";
 import { activity, contactFor, HEADER, stableUuid, toRow } from "@/lib/prospecting/external";
+import { poolView, runPoolOp } from "@/lib/prospecting/pool-server";
 import { recordSend } from "@/lib/prospecting/record-send";
 import { NO_STORE, prospectDataset, prospectFailure, prospectRpc } from "@/lib/prospecting/server";
 import { runSheetSync } from "@/lib/prospecting/sync";
@@ -37,6 +38,11 @@ export const maxDuration = 300;
  *                                     replies, snooze, priority, version-create, version-update,
  *                                     version-status o rule-save, con los campos de /api/admin/followup/*.
  *                                     `by` es quien opera: el usuario del equipo con ese nombre.
+ *
+ * Prospectos (las inmobiliarias antes de entrar a la cola, con su ranking y los aprendizajes):
+ *   GET ?vista=prospectos[&mensaje=]  { available, rows, counts, catalog, learning }.
+ *   POST { prospectos: { op, ... }, by } op = guardar, cola, sacar, descartar, reabrir, llenar, crear o
+ *                                     recalcular (ver lib/prospecting/pool-server.ts).
  *
  * Las acciones pasan por las mismas funciones que el panel del equipo (/admin/prospeccion), con sus
  * reglas: solo contactos revisados, bajas, secuencia de tres pasos, evidencia. «Mandé el mensaje»
@@ -104,6 +110,7 @@ export async function GET(request: Request) {
     const q = new URL(request.url).searchParams;
     if (q.get("vista") === "script") return Response.json(await readScript(), { headers: NO_STORE });
     if (q.get("vista") === "inmobiliarias") return Response.json(await agencyList(), { headers: NO_STORE });
+    if (q.get("vista") === "prospectos") return Response.json(await poolView(q.get("mensaje")?.trim().slice(0, 120) || null), { headers: NO_STORE });
     if (q.get("vista") === "followup") return Response.json(await cachedFollowupSnapshot(await team(), parsePeriod({ periodo: q.get("periodo") ?? "", desde: q.get("desde") ?? "", hasta: q.get("hasta") ?? "" })), { headers: NO_STORE });
     if (q.get("foto")) {
       const image = await agencyThumb(q.get("foto")!, q.get("w"));
@@ -231,13 +238,19 @@ export async function POST(request: Request) {
   if (!authorized(request)) return new Response("Unauthorized", { status: 401 });
   try {
     if (!cloudEnabled() || !cloudConfigured()) throw new HttpError(503, "La base de prospección no está disponible.");
-    const b = (await request.json().catch(() => null)) as { code?: unknown; action?: Action; by?: unknown; sync?: { csv?: unknown }; inmobiliaria?: unknown; accion?: unknown; enviada?: unknown; followup?: unknown } | null;
+    const b = (await request.json().catch(() => null)) as { code?: unknown; action?: Action; by?: unknown; sync?: { csv?: unknown }; inmobiliaria?: unknown; accion?: unknown; enviada?: unknown; followup?: unknown; prospectos?: unknown } | null;
     if (b?.followup && typeof b.followup === "object") {
       const f = b.followup as Record<string, unknown>;
       const actor = operatorFor(str(b.by, 80), await team(), await actorId());
       if (f.op === "script-save") return Response.json(await saveScript(f.body, actor.id), { headers: NO_STORE });
       const result = await runFollowupOp(f.op, f, actor, new URL(request.url).origin);
       if (f.op !== "queue" && f.op !== "replies") invalidateFollowupSnapshot();
+      return Response.json(result, { headers: NO_STORE });
+    }
+    if (b?.prospectos && typeof b.prospectos === "object") {
+      const p = b.prospectos as Record<string, unknown>;
+      const result = await runPoolOp(p.op, p, operatorFor(str(b.by, 80), await team(), await actorId()));
+      invalidateFollowupSnapshot();
       return Response.json(result, { headers: NO_STORE });
     }
     if (b?.accion === "recalcular-scores") return Response.json(await recalcScores(), { headers: NO_STORE });
