@@ -4,6 +4,12 @@ Se detiene el trabajo a pedido del usuario para conservar créditos. Los cambios
 
 Producción: https://amoblaia.vercel.app/
 
+## Resultados renovado en Chapa Labs — 11 de noviembre de 2026 (rama `claude/affectionate-gauss-rdh9h1`)
+
+- **Pendiente: aplicar en Supabase `202612110001_followup_queue_days.sql`** (SQL Editor; se puede re-ejecutar). Sin ella todo sigue funcionando, pero «¿Se ejecutó la cola?» no tiene foto diaria: muestra solo lo ejecutado y avisa que falta la migración.
+- La foto empieza a juntarse el día que se aplica: los días anteriores quedan marcados «sin foto».
+- Ver `docs/FOLLOWUP.md`, sección «Resultados: ejecución de la cola, acciones y cohortes del panel».
+
 ## Centro comercial en Chapa Labs — 8 de noviembre de 2026 (PR #200, en producción)
 
 - Chapa Labs (`chapa-labs.vercel.app/prospecting`, repo `facundogregorini-lab/chapa-labs`) es la pantalla comercial única de habita. y Turnia. Opera el Follow-up de habita. por `/api/prospeccion` (`GET ?vista=followup` y `POST { by, followup: { op } }`), con las mismas funciones que `/admin/follow-up` y la extensión (`src/lib/followup/chapa.ts`). Detalle en [FOLLOWUP.md](FOLLOWUP.md) → «Desde Chapa Labs»; el traspaso completo de los tres repos, en chapa-labs `docs/CENTRO_COMERCIAL.md`.

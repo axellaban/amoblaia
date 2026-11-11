@@ -252,6 +252,18 @@ Migración `202612060001_followup_results.sql`. Lógica pura en `src/lib/followu
 - **Opcional, decisión aparte**: la API de WhatsApp Business permitiría detectar respuestas sin una pestaña abierta (costo, plantillas aprobadas por Meta y reglas propias).
 - Selectores: `followup-results`, `followup-window-7|14|todo`, `followup-results-versions`, `followup-results-blocks`, `followup-results-cohorts`, `followup-cohort-contacto|respuesta|version`.
 
+## Resultados: ejecución de la cola, acciones y cohortes del panel (11/11/2026)
+
+Migración `202612110001_followup_queue_days.sql` (se puede re-ejecutar). Lógica pura en `src/lib/followup/results.ts` (`executionDays`, `weeklyByType`, `funnelCohorts`); la pantalla vive en Chapa Labs (`/prospecting?vista=rendimiento`).
+
+- **Foto diaria de la cola** (`followup_queue_days`): una fila por inmobiliaria, etapa, acción y día de Buenos Aires, con su estado (`lista`, `bloqueada`, `programada`). Se guarda al calcular la cola (como mucho una vez cada 10 minutos por instancia) y en el cron diario de las 06:00. Los días anteriores a la migración no tienen foto: Resultados los marca y no les calcula score.
+- **Pendientes de un día**: lo que la foto vio ese día más lo que se ejecutó o se marcó «No salió» ese día. Lo reprogramado a propósito (`programada`) se muestra aparte y no cuenta.
+- **Ejecutadas**: envíos confirmados ese día, separados por quién: `followup_executions.executed_by` (`humano` o `bot`; hoy todo es `humano`, no hay envíos automáticos).
+- **Exitosas**: ejecutadas con una conversión atribuida (la misma atribución al último mensaje, sin límite de ventana).
+- **Por tipo de acción**: cada día se desglosa por el nombre de la acción (`actionLabel`), así cada barra del embudo se abre en sus tipos.
+- **Tendencia por acción**: `windows[ventana].weeklyByType`, ejecutadas y conversiones por semana para cada tipo de acción.
+- **Cohortes con el embudo del panel** (`results.cohortFunnel`): las mismas cohortes, contadas con las seis etapas de `/admin/inmobiliarias` (Prospecto, Contactada, Demo enviada, Interactuó, Con panel, Cliente). Se conservan las cohortes anteriores (`results.cohorts`) por compatibilidad.
+
 ## Desde Chapa Labs (servidor a servidor)
 
 El panel comercial de Chapa Labs (`/prospecting`, «Hoy» con Avita y Turnia juntas) opera este mismo Follow-up por `/api/prospeccion`, con `Authorization: Bearer $PROSPECTING_API_SECRET` (o `$METRICS_SECRET`). Lógica en `src/lib/followup/chapa.ts`: llama a las mismas funciones que `/api/admin/followup/*`, con los mismos campos, así las reglas, los claims, la auditoría y los resultados son los mismos.

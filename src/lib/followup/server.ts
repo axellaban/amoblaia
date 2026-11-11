@@ -45,6 +45,7 @@ import {
   type VersionStats,
 } from "./stages";
 import {
+  isAction,
   CLOSED_SITUATIONS,
   allocateFirstContactSlots,
   remainingFirstContactSlots,
@@ -74,7 +75,8 @@ import {
   type Situation,
 } from "./plan";
 import { DEFAULT_RULES, cleanRule, compatible, outsideWindow, type Rule } from "./rules";
-import { WINDOWS, blockReasons, bySegment, cohorts, versionResults, weekly, type VersionResult, type WindowKey } from "./results";
+import { WINDOWS, blockReasons, bySegment, cohorts, executionDays, funnelCohorts, versionResults, weekly, weeklyByType, type QueueDayRow, type VersionResult, type WindowKey } from "./results";
+import { COMMERCIAL_STAGES, STAGE_STEP, stageIndex } from "@/lib/agency/commercial";
 import { cleanFilter, pickNext } from "./queue-filter";
 import { customStages } from "./commercial-catalog";
 import { readSituationOverrides, readStateCatalog, resolveCustomClassification } from "./state-catalog";
@@ -205,7 +207,49 @@ const executions = (agencyId?: string) =>
           if (error) throw missing(error) ? new HttpError(409, MISSING) : new Error("FOLLOWUP_READ_FAILED");
           return (data ?? []) as FollowupExecution[];
         })
-    : readAll<FollowupExecution>("followup_executions", "id,version_id,stage,action,agency_id,from_step,status,reason,created_at,updated_at,sent_at,converted_at");
+    // Who executed (person or bot) arrives with 202612110001; until it is applied, read without it.
+    : readAll<FollowupExecution>("followup_executions", `${EXECUTION_FIELDS},executed_by`)
+        .catch(() => readAll<FollowupExecution>("followup_executions", EXECUTION_FIELDS));
+const EXECUTION_FIELDS = "id,version_id,stage,action,agency_id,from_step,status,reason,created_at,updated_at,sent_at,converted_at";
+
+// ── La foto diaria de la cola (202612110001) ──
+// What was pending each Buenos Aires day, for «¿Se ejecutó la cola?» in Resultados.
+// Written whenever the queue is computed (the panel, Chapa and the daily cron) and
+// never required: without the table, Resultados says there is no photo yet.
+const QUEUE_DAYS = 35;
+async function readQueueDays(now = new Date()): Promise<QueueDayRow[] | null> {
+  const since = artDate(new Date(now.getTime() - (QUEUE_DAYS - 1) * DAY_MS));
+  const out: QueueDayRow[] = [];
+  for (let from = 0; from < 200000; from += PAGE) {
+    const { data, error } = await adminClient().from("followup_queue_days").select("day,agency_id,stage,action,state").gte("day", since).range(from, from + PAGE - 1);
+    if (error) return null;
+    out.push(...((data ?? []) as QueueDayRow[]));
+    if ((data ?? []).length < PAGE) break;
+  }
+  return out;
+}
+let queueDayWrittenAt = 0;
+/** Saves today's pending actions (once every 10 minutes per server instance unless forced). */
+export async function recordQueueDay(all: QueueItem[], { force = false, now = new Date() } = {}) {
+  if (!force && now.getTime() - queueDayWrittenAt < 10 * 60_000) return;
+  queueDayWrittenAt = now.getTime();
+  const day = artDate(now);
+  const at = now.toISOString();
+  const rows = all.filter(pending).map((q) => ({
+    day, agency_id: q.agencyId, stage: q.stage, action: q.action!,
+    state: q.dueAt ? "programada" : q.blocked ? "bloqueada" : "lista",
+    last_seen_at: at,
+  }));
+  for (let i = 0; i < rows.length; i += 500) {
+    const { error } = await adminClient().from("followup_queue_days").upsert(rows.slice(i, i + 500), { onConflict: "day,agency_id,stage,action" });
+    if (error) { if (!missing(error)) console.error("followup_queue_day_failed"); return; }
+  }
+}
+/** The daily cron: the photo of the queue at the start of the day, even if nobody opens the panel. */
+export async function snapshotQueueDay() {
+  const b = await board();
+  await recordQueueDay([...b.items.values()], { force: true });
+}
 
 /** The prospecting account of each agency: an open one before a lost or discarded one. */
 function accountsByAgency(ds: Dataset | null) {
@@ -585,7 +629,9 @@ async function board(now = new Date()) {
   for (const e of ex) if (e.status === "sent") earlier(e.agency_id, e.sent_at);
   const greeting = new Map<string, number>();
   for (const e of ex) if (e.status === "sent" && e.stage === "no-contactado" && (e.action ?? "principal") === "principal") greeting.set(e.agency_id, vs.find((v) => v.id === e.version_id)?.version ?? 0);
+  const commercialAt = new Map(rows.map((r) => [r.id, stageIndex(r.stage)]));
   const facts = [...stepNow.keys()].map((id) => ({
+    commercial: commercialAt.get(id) ?? 0,
     firstContact: firstContact.has(id) ? new Date(firstContact.get(id)!).toISOString() : null,
     firstReply: firstReply.has(id) ? new Date(firstReply.get(id)!).toISOString() : null,
     step: stepNow.get(id) ?? -1,
@@ -732,7 +778,8 @@ export type Change = Awaited<ReturnType<typeof auditOf>>[number];
 export type Results = ReturnType<typeof resultsOf>;
 
 /** La pestaña Resultados: por regla y versión (con ventana de 7, 14 días o sin límite), por semana, cohortes y bloqueos. */
-function resultsOf(b: Awaited<ReturnType<typeof board>>, all: QueueItem[]) {
+function resultsOf(b: Awaited<ReturnType<typeof board>>, all: QueueItem[], queueDays: QueueDayRow[] | null) {
+  const label = (stage: string, action: string) => actionLabel(stage as StageKey, (isAction(action) ? action : "principal"));
   const pendingByVersion = new Map<string, number>();
   for (const q of all) if (q.versionId && q.execution?.status !== "sent" && q.action) pendingByVersion.set(q.versionId, (pendingByVersion.get(q.versionId) ?? 0) + 1);
   const windows = Object.fromEntries(
@@ -741,9 +788,10 @@ function resultsOf(b: Awaited<ReturnType<typeof board>>, all: QueueItem[]) {
       {
         versions: versionResults(b.vs, b.ex, b.stepNow, WINDOWS[k], pendingByVersion).filter((r) => r.eligible > 0 || r.status !== "archived"),
         weekly: weekly(b.ex, b.stepNow, WINDOWS[k]),
+        weeklyByType: weeklyByType(b.ex, b.stepNow, WINDOWS[k], label),
       },
     ]),
-  ) as Record<WindowKey, { versions: VersionResult[]; weekly: ReturnType<typeof weekly> }>;
+  ) as Record<WindowKey, { versions: VersionResult[]; weekly: ReturnType<typeof weekly>; weeklyByType: ReturnType<typeof weeklyByType> }>;
   const sent = b.ex.filter((e) => e.status === "sent");
   const since30 = Date.now() - 30 * DAY_MS;
   return {
@@ -756,12 +804,27 @@ function resultsOf(b: Awaited<ReturnType<typeof board>>, all: QueueItem[]) {
       blocked: all.filter((q) => q.action && q.execution?.status !== "sent" && q.blocked).length,
     },
     cohorts: { contacto: cohorts(b.facts, "contacto"), respuesta: cohorts(b.facts, "respuesta"), version: bySegment(b.facts) },
+    // The same cohorts counted with the six stages of the Inmobiliarias panel.
+    cohortFunnel: {
+      stages: COMMERCIAL_STAGES.map((key) => ({ key, title: STAGE_STEP[key] })),
+      contacto: funnelCohorts(b.facts, COMMERCIAL_STAGES.length, "contacto"),
+      respuesta: funnelCohorts(b.facts, COMMERCIAL_STAGES.length, "respuesta"),
+      version: funnelCohorts(b.facts, COMMERCIAL_STAGES.length, "version"),
+    },
+    // «¿Se ejecutó la cola?»: day by day and by type of action. Successful: it has an attributed conversion.
+    execution: {
+      available: queueDays !== null,
+      stages: Object.fromEntries(FOLLOWUP_STAGES.map((s) => [s.key, s.title])),
+      days: executionDays(queueDays ?? [], b.ex, b.stepNow, label),
+    },
     blocks: blockReasons(all.filter((q) => q.action && q.execution?.status !== "sent" && q.blocked).map((q) => q.blocked!)),
   };
 }
 export async function followupOverview(period: Period = parsePeriod({})): Promise<{ chart: ReturnType<typeof chartCounts>; lostAt: number[]; chartRows: { agencyId: string; name: string; step: number | null; lost: boolean; score: number | null; whatsapp: string | null }[]; catalog: { stages: Awaited<ReturnType<typeof customStages>>; states: Awaited<ReturnType<typeof readStateCatalog>>; overrides: Awaited<ReturnType<typeof readSituationOverrides>> }; stages: StageView[]; queue: QueueItem[]; blocked: QueueItem[]; noInteresados: QueueItem[]; summary: QueueSummary; agencies: AgencyChoice[]; inbox: InboxItem[]; funnel: FunnelStep[]; rules: Rule[]; changes: Change[]; results: Results; generatedAt: string }> {
-  const [b, changes] = await Promise.all([board(), auditOf(null, 20)]);
+  const [b, changes, queueDays] = await Promise.all([board(), auditOf(null, 20), readQueueDays()]);
   const all = [...b.items.values()];
+  // Today's photo of the queue, before reading it back: what is pending now was pending today.
+  await recordQueueDay(all).catch(() => console.error("followup_queue_day_failed"));
   const inboxItems = inboxOf(b);
   const reached = b.rows.filter(row => !row.test).map(row => {
     const prospect = row.prospectFunnel;
@@ -792,7 +855,7 @@ export async function followupOverview(period: Period = parsePeriod({})): Promis
     funnel: funnelOf(b, all),
     rules: [...b.rules].sort((x, y) => x.position - y.position),
     changes,
-    results: resultsOf(b, all),
+    results: resultsOf(b, all, queueDays),
     generatedAt: new Date().toISOString(),
   };
 }
