@@ -66,6 +66,7 @@ import {
   DEMO_REF_KEY,
   publicImageUrl,
   publicVideoUrl,
+  STAGE_WIDTH,
   type PhotoVersion,
   type PublicDemo,
   type PublicPhoto,
@@ -187,6 +188,7 @@ export function DemoView({
   owner = null,
   plans = null,
   backToDemo = null,
+  stage = STAGE_WIDTH.other,
 }: {
   demo: PublicDemo;
   source: Source;
@@ -200,6 +202,8 @@ export function DemoView({
   plans?: React.ReactNode;
   /** The agency looking at its buyers' page ("Ver como comprador"): the way back to its demo, nothing else of its tools. */
   backToDemo?: string | null;
+  /** The big photo's width, chosen by the server for the device (STAGE_WIDTH). */
+  stage?: number;
 }) {
   const { agency } = demo;
   const [pageUrl, setPageUrl] = useState("");
@@ -483,6 +487,7 @@ export function DemoView({
         <Gallery
           demo={demo}
           source={source}
+          stage={stage}
           log={log}
           note={note}
           aside={
@@ -919,9 +924,12 @@ function Gallery({
   aside = null,
   owner = null,
   ownerActions = null,
+  stage = STAGE_WIDTH.other,
 }: {
   demo: PublicDemo;
   source: Source;
+  /** The big photo's width (STAGE_WIDTH): lighter on phones. */
+  stage?: number;
   log: (event: string, extra?: EventProperties, beacon?: boolean) => unknown;
   note: (event: string, extra?: EventProperties) => unknown;
   /** The buyers' column under the styles: the property's summary and the contact with the agency. */
@@ -1125,9 +1133,18 @@ function Gallery({
     const list = thumbs.current;
     const item = list?.querySelector<HTMLElement>(`[data-entry="${at}"]`);
     if (list && item) list.scrollTo({ left: item.offsetLeft - list.clientWidth / 2 + item.clientWidth / 2, behavior: "smooth" });
-    const next = photos[(index + 1) % Math.max(1, photos.length)];
-    if (next && next !== photo) new Image().src = urlFor(source, next.id, null, 2048);
-  }, [index, at, photos, photo, source]);
+    // The photos either arrow leads to start loading, as they will be shown: the original and the
+    // style the visit is on, so tapping "Siguiente" does not wait on a blank frame.
+    const count = Math.max(1, photos.length);
+    for (const near of new Set([photos[(index + 1) % count], photos[(index - 1 + count) % count]])) {
+      if (!near || near === photo) continue;
+      new Image().src = urlFor(source, near.id, null, stage);
+      const style = states[near.id]?.style ?? lastStyle.current;
+      const version = versionOf(near, style);
+      if (version) new Image().src = urlFor(source, near.id, version, stage);
+    }
+    // Preloads follow the photo on screen, not every change of style.
+  }, [index, at, photos, photo, source, stage]);
 
   // Every photo's proportions, measured up front from the thumbnail-sized original: opening one
   // never shows it in other proportions first (the frame of the agency's demo follows the photo).
@@ -1470,8 +1487,8 @@ function Gallery({
             ) : comparing && showing ? (
               <Comparison
                 key={stagedKey}
-                before={urlFor(source, photo.id, null, 2048, retries[originalKey])}
-                after={urlFor(source, photo.id, showing, 2048, retries[stagedKey])}
+                before={urlFor(source, photo.id, null, stage, retries[originalKey])}
+                after={urlFor(source, photo.id, showing, stage, retries[stagedKey])}
                 alt={`${alt(index, photo)}, ambientación ${name(showing.style)} con IA, ilustrativa`}
                 beforeAlt={`${alt(index, photo)}, original`}
                 beforeLabel="Antes"
@@ -1490,7 +1507,7 @@ function Gallery({
                 <img
                   key={`${photo.id}-${showing?.style ?? "o"}`}
                   className="dv2-photo"
-                  src={urlFor(source, photo.id, showing, 2048, showing ? retries[stagedKey] : retries[originalKey])}
+                  src={urlFor(source, photo.id, showing, stage, showing ? retries[stagedKey] : retries[originalKey])}
                   alt={showing ? `${alt(index, photo)}, ambientación ${name(showing.style)} con IA, ilustrativa` : alt(index, photo)}
                   draggable={false}
                   fetchPriority={index === 0 ? "high" : undefined}

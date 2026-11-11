@@ -21,6 +21,25 @@ export const DEMO_TEXT = {
 
 /** Display widths offered by the image routes; anything else is rounded up. */
 export const IMAGE_WIDTHS = [480, 960, 1600, 2048] as const;
+/**
+ * Width of the big photo of a demo. Phones get 960 px: a 390 px-wide screen at
+ * 2-3x shows it sharp and it weighs about a fifth of 2048, the width tablets
+ * and computers keep. Opened by WhatsApp on a cell connection, it is the LCP.
+ */
+export const STAGE_WIDTH = { phone: 960, other: 2048 } as const;
+
+/** A phone, from the request: Client Hints when the browser sends them, else its user agent. Tablets are not phones. */
+export function isPhone(userAgent: string | null | undefined, chMobile: string | null | undefined = null) {
+  if (chMobile === "?1") return true;
+  if (chMobile === "?0") return false;
+  const ua = userAgent ?? "";
+  if (/iPad|Tablet/i.test(ua)) return false;
+  return /iPhone|iPod|Android.+Mobile|Mobile.+Firefox|Windows Phone|Opera Mini|IEMobile/i.test(ua);
+}
+
+export const stageWidth = (userAgent: string | null | undefined, chMobile: string | null | undefined = null) =>
+  isPhone(userAgent, chMobile) ? STAGE_WIDTH.phone : STAGE_WIDTH.other;
+
 export function imageWidth(value: unknown) {
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0) return 1600;

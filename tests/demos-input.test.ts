@@ -16,6 +16,9 @@ import {
   cleanUrl,
   ctaHref,
   imageWidth,
+  isPhone,
+  STAGE_WIDTH,
+  stageWidth,
   ogImageUrl,
   orderStyles,
   pickCover,
@@ -117,6 +120,20 @@ describe("Sharing", () => {
     expect(imageWidth("700")).toBe(960);
     expect(imageWidth("99999")).toBe(2048);
     expect(imageWidth("x")).toBe(1600);
+  });
+  it("serves phones a lighter big photo, a width the image route already makes", () => {
+    const iphone = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 [FBAN/WhatsApp]";
+    const android = "Mozilla/5.0 (Linux; Android 14; SM-A145M) AppleWebKit/537.36 Chrome/131.0 Mobile Safari/537.36";
+    const tablet = "Mozilla/5.0 (Linux; Android 14; SM-X200) AppleWebKit/537.36 Chrome/131.0 Safari/537.36";
+    const ipad = "Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148";
+    const desktop = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36";
+    expect([iphone, android].map((ua) => isPhone(ua))).toEqual([true, true]);
+    expect([tablet, ipad, desktop, null].map((ua) => isPhone(ua))).toEqual([false, false, false, false]);
+    expect(isPhone(desktop, "?1")).toBe(true);
+    expect(isPhone(android, "?0")).toBe(false);
+    expect(stageWidth(iphone)).toBe(STAGE_WIDTH.phone);
+    expect(stageWidth(desktop)).toBe(STAGE_WIDTH.other);
+    for (const w of Object.values(STAGE_WIDTH)) expect(imageWidth(String(w))).toBe(w);
   });
   it("shows per style the approved version, else the newest deliverable one", () => {
     const g = (id: string, style: string, extra: Record<string, unknown> = {}) => ({
