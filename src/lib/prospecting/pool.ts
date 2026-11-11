@@ -64,8 +64,9 @@ export const GROUPS = [
 ] as const;
 
 export const FIELDS: Field[] = [
-  { key: "source_channel", label: "Dónde la encontramos", group: "fuente", type: "enum", key_data: true, options: opts(["argenprop", "Argenprop"], ["zonaprop", "Zonaprop"], ["mercadolibre", "MercadoLibre"], ["directorio", "Directorio"], ["google_maps", "Google Maps"], ["instagram", "Instagram"], ["referido", "Referido"], ["otro", "Otro"]) },
+  { key: "source_channel", label: "Dónde la encontramos", group: "fuente", type: "enum", key_data: true, options: opts(["argenprop", "Argenprop"], ["zonaprop", "Zonaprop"], ["mercadolibre", "MercadoLibre"], ["directorio", "Directorio"], ["google_maps", "Google Maps"], ["instagram", "Instagram"], ["referido", "Referido"], ["relevamiento", "Relevamiento propio"], ["otro", "Otro"]) },
   { key: "source_batch", label: "Lote", group: "fuente", type: "text", help: "La tanda en que se cargó, para comparar fuentes." },
+  { key: "portal_url", label: "Perfil en el portal", group: "fuente", type: "url", help: "Su página de inmobiliaria en Argenprop, Zonaprop u otro portal." },
 
   { key: "number_confidence", label: "Confianza del número", group: "contacto", type: "enum", key_data: true, options: opts(["verificado", "WhatsApp verificado"], ["link_web_propia", "Enlace de WhatsApp en su web"], ["celular_publicado", "Celular publicado"], ["portal", "Publicado en un portal"], ["directorio", "Directorio o fuente vieja"]) },
   { key: "line_type", label: "Tipo de línea", group: "contacto", type: "enum", key_data: true, options: opts(["celular", "Celular"], ["fijo", "Fijo"]) },
@@ -88,6 +89,7 @@ export const FIELDS: Field[] = [
   { key: "photo_quality", label: "Calidad de las fotos", group: "visual", type: "enum", key_data: true, options: opts(["profesional", "Profesional"], ["media", "Media"], ["celular", "De celular"]) },
   { key: "uses_staging", label: "Ya ambienta sus fotos", group: "visual", type: "enum", key_data: true, options: opts(["no", "No"], ["renders", "Renders"], ["amoblado_virtual", "Amoblado virtual"], ["video_tour", "Video o recorrido"]) },
   { key: "demo_listing_url", label: "Aviso para la demo", group: "visual", type: "url", key_data: true, help: "Un aviso con ambientes vacíos para armar su demo." },
+  { key: "demo_listing_note", label: "Nota del aviso para la demo", group: "visual", type: "text", help: "Qué tiene el aviso elegido (ambientes vacíos, fotos) o por qué falta." },
   { key: "demo_photos_importable", label: "Sus fotos se pueden importar", group: "visual", type: "enum", key_data: true, options: opts(["si", "Sí"], ["no", "No"]) },
 
   { key: "web_platform", label: "Plataforma de su web", group: "digital", type: "enum", key_data: true, options: opts(["tokko", "Tokko"], ["xintel", "Xintel"], ["mapaprop", "Mapaprop"], ["wordpress", "WordPress"], ["propia", "Desarrollo propio"], ["otra", "Otra"], ["sin_web", "No tiene web"]) },
