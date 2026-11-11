@@ -1,5 +1,3 @@
-import { adminClient } from "@/lib/supabase/server";
-
 /**
  * A short stamp that changes with any write to the database (SQL:
  * habita_change_stamp). Null before the migration or if it fails, and then
@@ -7,6 +5,8 @@ import { adminClient } from "@/lib/supabase/server";
  */
 export async function changeStamp(): Promise<string | null> {
   try {
+    // Loaded here so a route that never gets `?si=` does not need the server client.
+    const { adminClient } = await import("@/lib/supabase/server");
     const { data, error } = await adminClient().rpc("habita_change_stamp");
     return !error && typeof data === "string" && data ? data : null;
   } catch {
