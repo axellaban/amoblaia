@@ -6,8 +6,9 @@ import { summarize, isHumanReply, type Filters } from "@/lib/prospecting/metrics
 import { artDate, dayEnd, dayStart, isDate } from "@/lib/prospecting/time";
 import type { Dataset } from "@/lib/prospecting/types";
 
-export type DemoRow = { status: string; activity_level: number; activity_visitors: number; created_at: string; published_at: string | null };
-export type ActivityRow = { kind: string; created_at: string };
+export type DemoRow = { status: string; activity_level: number; activity_visitors: number; created_at: string; published_at: string | null; agency_id?: string; id?: string; sent_at?: string | null };
+export type ActivityRow = { kind: string; created_at: string; demo_id?: string };
+export type ClaimRow = { id: string; claimed_at: string | null };
 export type PaymentRow = { user_id: string; status: string; amount_cents: number; paid_at: string | null; created_at: string };
 export type Range = { from?: string | null; to?: string | null };
 
@@ -47,7 +48,35 @@ function funnel(ds: Dataset, f: Filters) {
   };
 }
 
-export function prospectingMetrics(ds: Dataset, r: Range) {
+/** What the activity counts need beyond the prospecting dataset: demos (who, when sent), their visits and the claims. */
+export type ActivitySources = { demos: DemoRow[]; activity: ActivityRow[]; claims: ClaimRow[] };
+
+/**
+ * What prospected agencies did in the period, whenever they were first greeted (Chapa's «Embudo contra
+ * la meta» for habita): distinct agencies whose demo was sent, that visited it, that interacted, that
+ * created their account, activated or paid within the range. Unlike the cohort funnel (`demos`, only the
+ * agencies first greeted in the same period), a demo sent today to one greeted last week counts today.
+ */
+export function periodActivity(ds: Dataset, src: ActivitySources, r: Range) {
+  const prospected = new Set(ds.accounts.map((a) => a.agency_id));
+  const agencyOfAccount = new Map(ds.accounts.map((a) => [a.id, a.agency_id]));
+  const agencyOfDemo = new Map(src.demos.filter((d) => d.id && d.agency_id).map((d) => [d.id!, d.agency_id!]));
+  const count = (ids: (string | null | undefined)[]) => new Set(ids.filter((id): id is string => Boolean(id) && prospected.has(id!))).size;
+  const visits = (kinds: string[]) =>
+    count(src.activity.filter((a) => a.demo_id && kinds.includes(a.kind) && inRange(a.created_at, r)).map((a) => agencyOfDemo.get(a.demo_id!)));
+  const events = (type: string) =>
+    count(ds.events.filter((e) => e.type === type && !e.corrected && inRange(e.occurred_at, r)).map((e) => agencyOfAccount.get(e.account_id)));
+  return {
+    demosEnviadas: count(src.demos.filter((d) => inRange(d.sent_at, r)).map((d) => d.agency_id)),
+    visitadas: visits([...ACTIVITY]),
+    conInteraccion: visits(ACTIVITY.filter((k) => k !== "visita")),
+    cuentas: count(src.claims.filter((c) => inRange(c.claimed_at, r)).map((c) => c.id)),
+    activas: events("activated"),
+    clientes: events("purchased"),
+  };
+}
+
+export function prospectingMetrics(ds: Dataset, r: Range, src?: ActivitySources) {
   const f: Filters = { from: r.from, to: r.to };
   const total = funnel(ds, f);
   const values = (pick: (a: Dataset["accounts"][number]) => string | null) =>
@@ -74,7 +103,7 @@ export function prospectingMetrics(ds: Dataset, r: Range) {
   }
   const etapas: Record<string, number> = {};
   for (const a of ds.accounts) etapas[a.stage] = (etapas[a.stage] ?? 0) + 1;
-  return { ...total, etapas, porSdr, porCanal, diario: series(days), porDia: cohortDays(ds, r) };
+  return { ...total, etapas, porSdr, porCanal, diario: series(days), porDia: cohortDays(ds, r, src), ...(src ? { periodo: periodActivity(ds, src, r) } : {}) };
 }
 
 const MAX_COHORT_DAYS = 62;
@@ -83,13 +112,13 @@ const MAX_COHORT_DAYS = 62;
  * Only with a closed range of up to 62 days; empty otherwise. Each day uses the panel's own rules, so the
  * days add up to the period's funnel.
  */
-export function cohortDays(ds: Dataset, r: Range) {
+export function cohortDays(ds: Dataset, r: Range, src?: ActivitySources) {
   if (!isDate(r.from) || !isDate(r.to)) return [];
   const out = [];
   for (let t = dayStart(r.from), n = 0; t <= dayStart(r.to) && n < MAX_COHORT_DAYS; t += 86_400_000, n++) {
     const date = artDate(t + 12 * 3_600_000);
     const s = summarize(ds, { from: date, to: date });
-    out.push({ date, contactados: s.sent, respondieron: s.replied.observed, interesados: s.interested.observed, demos: s.demo, vinculados: s.linked, activados: s.activated.observed, clientes: s.customers.observed });
+    out.push({ date, contactados: s.sent, respondieron: s.replied.observed, interesados: s.interested.observed, demos: s.demo, vinculados: s.linked, activados: s.activated.observed, clientes: s.customers.observed, ...(src ? { periodo: periodActivity(ds, src, { from: date, to: date }) } : {}) });
   }
   return out;
 }

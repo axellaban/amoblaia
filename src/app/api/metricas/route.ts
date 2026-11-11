@@ -3,7 +3,7 @@ import { cloudConfigured, cloudEnabled } from "@/lib/supabase/config";
 import { adminClient } from "@/lib/supabase/server";
 import { prospectDataset } from "@/lib/prospecting/server";
 import { isDate } from "@/lib/prospecting/time";
-import { demoMetrics, prospectingMetrics, revenueMetrics, type ActivityRow, type DemoRow, type PaymentRow } from "@/lib/metrics/summary";
+import { demoMetrics, prospectingMetrics, revenueMetrics, type ActivityRow, type ClaimRow, type DemoRow, type PaymentRow } from "@/lib/metrics/summary";
 export const runtime = "nodejs";
 
 const PAGE = 1000;
@@ -51,11 +51,12 @@ export async function GET(request: Request) {
   if ((from && !isDate(from)) || (to && !isDate(to))) return Response.json({ error: "Fechas inválidas (AAAA-MM-DD)." }, { status: 400 });
   const range = { from, to };
   try {
-    const [ds, demos, activity, payments] = await Promise.all([
+    const [ds, demos, activity, payments, claims] = await Promise.all([
       prospectDataset(),
-      all<DemoRow>("demos", "status,activity_level,activity_visitors,created_at,published_at"),
-      commercial<ActivityRow>("demo_activity_commercial", "demo_activity", "kind,created_at"),
+      all<DemoRow>("demos", "id,agency_id,status,activity_level,activity_visitors,created_at,published_at,sent_at"),
+      commercial<ActivityRow>("demo_activity_commercial", "demo_activity", "demo_id,kind,created_at"),
       commercial<PaymentRow>("payments_commercial", "payments", "user_id,status,amount_cents,paid_at,created_at"),
+      all<ClaimRow>("agencies", "id,claimed_at"),
     ]);
     return Response.json(
       {
@@ -63,7 +64,7 @@ export async function GET(request: Request) {
         generadoEn: new Date().toISOString(),
         desde: from,
         hasta: to,
-        prospeccion: prospectingMetrics(ds, range),
+        prospeccion: prospectingMetrics(ds, range, { demos, activity, claims }),
         demos: demoMetrics(demos, activity, range),
         ingresos: revenueMetrics(payments, range),
       },
