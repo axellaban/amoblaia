@@ -108,6 +108,23 @@ export function nextAction(stage: CommercialStage, demos: { total: number; publi
 
 export type ActivityFact = { at: string; text: string };
 
+/**
+ * «Última actividad» is the agency's engagement only: what the agency (or a
+ * buyer it sent its demo to) did. What the team does (create the agency or
+ * its demos, edit a property, send the demo, QA) never counts.
+ */
+export const ACTIVITY_HINT =
+  "Lo último que hizo la inmobiliaria: abrir o usar una demo, responder, crear su cuenta o trabajar en su panel. No cuenta lo que hace el equipo (crear, editar o enviar).";
+
+/** The latest external visit of its demos, said by what it was (internal visitors never count). */
+export function demoVisitFact(rows: { last_event_at: string; is_internal: boolean; score: number; visitor_type: string }[]): ActivityFact | null {
+  let last: (typeof rows)[number] | null = null;
+  for (const r of rows) if (!r.is_internal && r.last_event_at && (!last || r.last_event_at > last.last_event_at)) last = r;
+  if (!last) return null;
+  const text = last.visitor_type === "buyer" ? "Un comprador vio su demo" : last.score > 0 ? "Interactuó con la demo" : "Abrió la demo";
+  return { at: last.last_event_at, text };
+}
+
 /** The most recent of the known facts (ties keep the first given), or null. */
 export function lastActivity(facts: (ActivityFact | null | undefined)[]): ActivityFact | null {
   let best: ActivityFact | null = null;
@@ -156,7 +173,7 @@ export type CommercialRow = {
   /** Prospecting: its step (0 contacted, 1 interested; demo-funnel.ts), when it was first contacted and whether the account is lost. Absent: never contacted. */
   prospectFunnel?: { step: number; at: string; lost?: boolean; replied?: boolean } | null;
   /** Its demos: when each was created and the funnel step it reached (demo-funnel.ts). */
-  demos: { createdAt: string; step: number; id?: string; sent?: boolean }[];
+  demos: { createdAt: string; step: number; id?: string; sent?: boolean; activityLevel?: number; generated?: boolean }[];
   /** Its contact WhatsApp, as loaded on the agency (null when unknown). */
   whatsapp?: string | null;
   /** Its latest published demo, whose agency link the list copies (null without one). */

@@ -38,7 +38,7 @@ describe("Reading a listing", () => {
     fetchMock.impl = async () => {
       throw new FetchFailure("challenge", 403);
     };
-    await expect(readListing("https://inmo.com.ar/ficha/1")).rejects.toThrow(/verificación anti-robots.*Zonaprop o Argenprop/);
+    await expect(readListing("https://inmo.com.ar/ficha/1")).rejects.toThrow(/verificación anti-robots.*otro sitio o cargá las fotos a mano/);
     fetchMock.impl = async () => {
       throw new FetchFailure("blocked", 403);
     };

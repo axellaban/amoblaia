@@ -8,6 +8,7 @@ import { analyzeListing, type ReadMeta } from "@/lib/listings/analyze";
 import { decodeHtml } from "@/lib/listings/charset";
 import { FetchFailure, publicAddress, safeFetch, type FetchErrorCode } from "@/lib/listings/fetch";
 import { baseOf, ownPhotos, propertyPart, sameFileKey } from "@/lib/listings/photos";
+import { ARGENPROP_GALLERY_MARK, argenpropGalleryUrl } from "@/lib/listings/platforms";
 import { renderProvider } from "@/lib/listings/render";
 import { cleanText, cleanUrl } from "./shared";
 import { toDemo, type ImportedDemo } from "./import";
@@ -388,10 +389,36 @@ const PAGE_ERRORS: Record<FetchErrorCode, [number, string]> = {
   timeout: [504, "La publicación tardó demasiado en responder. Probá de nuevo en un rato o cargá las fotos a mano."],
   too_large: [413, "La página es demasiado grande."],
   too_many_redirects: [502, "La publicación redirige demasiadas veces."],
-  blocked: [502, "El sitio de la inmobiliaria no deja leer la publicación desde nuestros servidores. Probá con el enlace de la misma propiedad en Zonaprop o Argenprop, o cargá las fotos a mano."],
-  challenge: [502, "El sitio pide una verificación anti-robots que no salteamos. Probá con el enlace de la misma propiedad en Zonaprop o Argenprop, o cargá las fotos a mano."],
+  // Zonaprop and Argenprop also refuse our servers (Cloudflare and AWS WAF): never offered as the way out.
+  blocked: [502, "El sitio no deja leer la publicación desde nuestros servidores. Probá con el enlace de la misma propiedad en otro sitio o cargá las fotos a mano."],
+  challenge: [502, "El sitio pide una verificación anti-robots que no salteamos. Probá con el enlace de la misma propiedad en otro sitio o cargá las fotos a mano."],
   http_error: [502, "La publicación respondió con un error. Revisá la URL."],
 };
+
+/** The portals that publish other agencies' listings, by the address pasted. */
+export type Portal = "zonaprop" | "argenprop";
+const PORTAL_NAMES: Record<Portal, string> = { zonaprop: "Zonaprop", argenprop: "Argenprop" };
+export function portalOf(raw: string): Portal | null {
+  try {
+    const host = new URL(raw).hostname.toLowerCase();
+    if (/(^|\.)zonaprop\.com\.ar$/.test(host)) return "zonaprop";
+    if (/(^|\.)argenprop\.com$/.test(host)) return "argenprop";
+  } catch {
+    // Not an address.
+  }
+  return null;
+}
+
+/**
+ * A portal that refuses the request: named, and the way out is the agency's
+ * own site (the portal shows who publishes it) or the photos by hand, never
+ * the other portal, which refuses our servers too.
+ */
+function portalRefusal(portal: Portal, code: "blocked" | "challenge"): string {
+  const name = PORTAL_NAMES[portal];
+  const why = code === "challenge" ? `${name} pide una verificación anti-robots a nuestros servidores y no la salteamos.` : `${name} no deja leer la publicación desde nuestros servidores.`;
+  return `${why} Pegá el enlace de la misma propiedad en el sitio de la inmobiliaria que la publica o cargá las fotos a mano.`;
+}
 
 /**
  * Why one photo could not be downloaded, in words the panel shows next to it
@@ -430,9 +457,17 @@ export class ListingFetchError extends HttpError {
     readonly code: FetchErrorCode,
     readonly upstreamStatus: number | null,
     kind: "page" | "image",
+    portal: Portal | null = null,
   ) {
     const [status, message] = kind === "page" ? PAGE_ERRORS[code] : imageError(code, upstreamStatus);
-    super(status, code === "http_error" && kind === "page" && upstreamStatus ? `La publicación respondió con error ${upstreamStatus}. Revisá la URL.` : message);
+    super(
+      status,
+      kind === "page" && portal && (code === "blocked" || code === "challenge")
+        ? portalRefusal(portal, code)
+        : code === "http_error" && kind === "page" && upstreamStatus
+          ? `La publicación respondió con error ${upstreamStatus}. Revisá la URL.`
+          : message,
+    );
   }
 }
 
@@ -442,7 +477,7 @@ export async function fetchPublic(raw: string, kind: "page" | "image") {
     const res = await safeFetch(raw, kind);
     return { url: res.url, type: res.type, body: res.body, durationMs: res.durationMs };
   } catch (e) {
-    if (e instanceof FetchFailure) throw new ListingFetchError(e.code, e.status, kind);
+    if (e instanceof FetchFailure) throw new ListingFetchError(e.code, e.status, kind, kind === "page" ? portalOf(raw) : null);
     throw e;
   }
 }
@@ -482,6 +517,23 @@ export function importListing(html: string, pageUrl: string, meta: ReadMeta = { 
 }
 
 /**
+ * Argenprop's ficha loads its gallery apart: it is read too (same host, same
+ * checks) and appended for the template, so all the photos come in, not the
+ * 5 of the header. Without it the header's photos are kept.
+ */
+async function withArgenpropGallery(html: string, pageUrl: string): Promise<string> {
+  if (portalOf(pageUrl) !== "argenprop") return html;
+  const gallery = argenpropGalleryUrl(html, pageUrl);
+  if (!gallery) return html;
+  try {
+    const res = await safeFetch(gallery, "page", { timeoutMs: 8000 });
+    return `${html}\n${ARGENPROP_GALLERY_MARK}\n${decodeHtml(res.body, res.type).text}`;
+  } catch {
+    return html;
+  }
+}
+
+/**
  * Reads the page: a direct request first; when the site refuses it (403/503,
  * bot check), times out or only sends an empty shell drawn by JavaScript, the
  * render provider if one is configured and approved. Without one, the
@@ -514,13 +566,14 @@ async function readPage(address: string): Promise<{ html: string; url: string; m
       return { html: rendered.html, url: checked.toString(), meta: { strategy: "render_provider", provider: provider.id, durationMs: Date.now() - started, charset: "utf-8" } };
   }
   if (failure) throw failure;
-  throw new HttpError(422, "La publicación se arma con JavaScript y no trae los datos en la página. Cargá las fotos a mano o usá el enlace de Zonaprop o Argenprop.");
+  throw new HttpError(422, "La publicación se arma con JavaScript y no trae los datos en la página. Cargá las fotos a mano o probá con el enlace de la misma propiedad en otro sitio.");
 }
 
 export async function readListing(raw: unknown) {
   const address = cleanUrl(raw);
   if (!address) throw new HttpError(400, "Pegá la URL de la ficha de la propiedad.");
-  const page = await readPage(address);
+  const read = await readPage(address);
+  const page = { ...read, html: await withArgenpropGallery(read.html, read.url) };
   const listing = parseListing(page.html, page.url);
   // Keep the address the admin pasted (the redirect target may be a tracking URL).
   return { ...listing, listingUrl: address, imported: importListing(page.html, page.url, page.meta) };

@@ -17,4 +17,10 @@ describe("globals.css", () => {
     }
     expect(depth, "bloques sin cerrar").toBe(0);
   });
+
+  it("lets the «Ambientar con IA» / «Editar con IA» mode buttons wrap instead of clipping their label", () => {
+    const css = readFileSync("src/app/globals.css", "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    const rule = /\.pw-modes button \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(rule).not.toContain("nowrap");
+  });
 });

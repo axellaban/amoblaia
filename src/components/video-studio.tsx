@@ -971,9 +971,21 @@ function Studio({
     return () => window.removeEventListener("beforeunload", warn);
   }, [busy]);
 
+  // A double click: `busy` only changes after the awaits below, so a second click used to create a second video.
+  const generating = useRef(false);
   async function generate() {
-    if (!plan || busy || !canEdit) return;
+    if (!plan || busy || !canEdit || generating.current) return;
     if (aiMode) return startAi();
+    generating.current = true;
+    try {
+      await generateClassic();
+    } finally {
+      generating.current = false;
+    }
+  }
+
+  async function generateClassic() {
+    if (!plan || !canEdit) return;
     setError("");
     setFresh(null);
     const started = Date.now();

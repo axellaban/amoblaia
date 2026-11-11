@@ -1,0 +1,526 @@
+/* Habita Follow-up — visual refresh, strictly presentational.
+   No rule, queue, state, filter, action, route, or copy changes.
+   Scoped to .fu-page to avoid affecting the rest of Habita. */
+
+.fu-page {
+  --fu-ui-forest: #183d2d;
+  --fu-ui-green: #207c52;
+  --fu-ui-green-hover: #155c3f;
+  --fu-ui-mint: #edf7f0;
+  --fu-ui-cream: #f8f7f2;
+  --fu-ui-text: #1d3228;
+  --fu-ui-muted: #60756b;
+  --fu-ui-border: #dce6dd;
+  --fu-ui-warm: #c98a63;
+  --fu-ui-shadow: 0 12px 32px rgba(25, 58, 41, .045), 0 2px 7px rgba(25, 58, 41, .025);
+  --fu-ui-shadow-focus: 0 16px 35px rgba(25, 58, 41, .09);
+  --fr-green: var(--fu-ui-green);
+  --fr-ink: var(--fu-ui-text);
+  --fr-muted: var(--fu-ui-muted);
+  --fr-line: var(--fu-ui-border);
+  --fr-greenbg: var(--fu-ui-mint);
+  --fr-greenline: #c5e2cf;
+  --fr-soft: #f8faf7;
+  color: var(--fu-ui-text);
+  background: radial-gradient(ellipse at 92% 0, #e7f2e9 0, transparent 31%), var(--fu-ui-cream);
+  font-family: var(--font-manrope), "Manrope", Arial, sans-serif;
+  min-height: 100dvh;
+  max-width: none;
+  width: 100%;
+  padding: 30px clamp(18px, 2.4vw, 40px) 65px;
+}
+.fu-page .ah-head {
+  align-items: center;
+  margin-bottom: 24px;
+}
+.fu-page .ah-head h1 {
+  font-size: clamp(28px, 2.2vw, 38px);
+  color: var(--fu-ui-forest);
+  font-weight: 800;
+  letter-spacing: -.045em;
+  line-height: 1.13;
+}
+.fu-page .ah-head p { color: var(--fu-ui-muted); font-size: 13.5px; max-width: 750px; line-height: 1.6; margin-top: 6px; }
+
+/* Navigation — exactly the same five tabs and their existing handlers. */
+.fu-page .fu-tabs {
+  display: flex;
+  width: fit-content;
+  max-width: 100%;
+  padding: 5px;
+  margin-bottom: 22px;
+  border: 1px solid var(--fu-ui-border);
+  border-radius: 15px;
+  background: rgba(255,255,255,.9);
+  box-shadow: 0 3px 12px #193a2909;
+  gap: 3px;
+}
+.fu-page .fu-tab {
+  min-height: 44px;
+  padding: 11px 17px;
+  border-radius: 10px;
+  font-size: 13.5px;
+  font-weight: 650;
+  transition: background .17s ease, color .17s ease;
+  white-space: nowrap;
+}
+.fu-page .fu-tab:hover:not(.is-on) { background: #edf5ee; }
+.fu-page .fu-tab.is-on { background: var(--fu-ui-forest); color: #fff; box-shadow: 0 3px 9px #183d2d20; }
+
+/* Shared premium surfaces and calmer typography */
+.fu-page .fu-qcard,
+.fu-page .fu-qpanel,
+.fu-page .fu-convs,
+.fu-page .fu-card,
+.fu-page .fu-kpi,
+.fu-page .fu-detail-card,
+.fu-page .fu-fcard,
+.fu-page .fu-box,
+.fu-page .fu-rulecard,
+.fu-page .fu-flowrow {
+  border-color: var(--fu-ui-border);
+  border-radius: 16px;
+  box-shadow: var(--fu-ui-shadow);
+  background-color: #fff;
+}
+.fu-page .fu-qcard { border-radius: 18px; overflow: visible; }
+.fu-page .fu-qpanel { border-radius: 18px; }
+.fu-page h2,
+.fu-page h3 { color: var(--fu-ui-forest); letter-spacing: -.025em; }
+.fu-page h2 { font-weight: 750; }
+.fu-page :is(input, select, textarea) {
+  border-color: #d5e1d6;
+  border-radius: 10px;
+  color: var(--fu-ui-text);
+  background-color: #fff;
+}
+.fu-page :is(input, select, textarea):focus-visible,
+.fu-page :is(button, a, summary):focus-visible {
+  outline: 3px solid #a6dcc1;
+  outline-offset: 2px;
+}
+.fu-page .fu-note { color: var(--fu-ui-muted); line-height: 1.55; }
+.fu-page .fu-iconbtn { border-radius: 10px; min-width: 40px; min-height: 40px; }
+.fu-page .button,
+.fu-page button.button,
+.fu-page a.button {
+  border-radius: 12px;
+  min-height: 42px;
+  font-weight: 750;
+  letter-spacing: -.01em;
+  transition: transform .17s ease, background .17s ease, box-shadow .17s ease;
+}
+.fu-page .button-primary {
+  background: var(--fu-ui-forest);
+  color: #fff;
+  box-shadow: 0 5px 12px rgba(24, 61, 45, .12);
+}
+.fu-page .button-primary:hover:not(:disabled) {
+  background: var(--fu-ui-green-hover);
+  box-shadow: 0 7px 15px rgba(24, 61, 45, .17);
+  transform: translateY(-1px);
+}
+.fu-page .button-outline { background: #fff; color: var(--fu-ui-forest); border-color: #cfddd2; }
+.fu-page .button-outline:hover:not(:disabled) { background: #f1f7f2; }
+.fu-page button:disabled { transform: none !important; }
+
+/* KPI / stages */
+.fu-page .fu-kpis,
+.fu-page .fu-kpis.fu-kpis-5 { gap: 12px; }
+.fu-page .fu-kpi {
+  padding: 17px 19px;
+  gap: 6px;
+  min-height: 119px;
+  color: var(--fu-ui-text);
+  transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+.fu-page button.fu-kpi:hover { transform: translateY(-2px); box-shadow: var(--fu-ui-shadow-focus); }
+.fu-page .fu-kpi.is-on { border: 2px solid var(--fu-ui-green); padding: 16px 18px; background: var(--fu-ui-mint); }
+.fu-page .fu-kpi span { font-size: 12.5px; font-weight: 650; color: var(--fu-ui-muted); }
+.fu-page .fu-kpi b { font-size: clamp(25px, 2.6vw, 34px); font-weight: 800; color: var(--fu-ui-forest); letter-spacing: -.045em; }
+.fu-page .fu-kpi small { font-size: 11.5px; line-height: 1.4; color: var(--fu-ui-muted); }
+.fu-page .fu-qbar { margin: 3px 0 12px; gap: 13px; }
+.fu-page .fu-qchip {
+  border-radius: 11px;
+  min-height: 42px;
+  padding: 9px 13px;
+  border-color: var(--fu-ui-border);
+  background: #fff;
+  color: var(--fu-ui-forest);
+  box-shadow: 0 2px 5px #173b2b05;
+}
+.fu-page .fu-qchip.is-on { background: var(--fu-ui-forest); color: #fff; border-color: var(--fu-ui-forest); }
+.fu-page .fu-qchips { gap: 7px; padding-bottom: 7px; }
+.fu-page .fu-qbanner {
+  min-height: 45px;
+  padding: 10px 14px;
+  border-radius: 13px;
+  background: #edf7f0;
+  color: #24573d;
+  font-size: 13px;
+  line-height: 1.55;
+  margin: 3px 0;
+}
+
+/* Queue: retained table on desktop, improved hierarchy and tappable actions. */
+.fu-page .fu-qcardhead { padding: 5px 20px 4px; gap: 14px; }
+.fu-page .fu-qcardhead h2 { font-size: 17.5px; font-weight: 800; letter-spacing: -.035em; }
+.fu-page .fu-qtools { gap: 9px; }
+.fu-page .fu-qsel { gap: 6px; color: var(--fu-ui-muted); }
+.fu-page .fu-qsel select { min-height: 42px; max-width: 225px; font-size: 13px; padding: 9px 11px; }
+.fu-page .fu-qcard .fu-search input { width: min(230px, 100%); min-height: 42px; padding: 9px 11px; font-size: 13px; }
+.fu-page .fu-qwide-q { min-width: 950px; }
+.fu-page .fu-qcard .fu-qth {
+  background: #f7f9f6;
+  color: #728278;
+  letter-spacing: .055em;
+  border-block: 1px solid #e7eee7;
+}
+.fu-page .fu-qcard .fu-qrow.fu-qrow-q {
+  padding-block: 12px;
+  align-items: center;
+  font-size: 12.5px;
+  gap: 11px;
+}
+.fu-page .fu-qi { border-color: #e8eee8; transition: background .16s ease, box-shadow .16s ease; }
+.fu-page .fu-qi:hover { background: #f8fbf8; }
+.fu-page .fu-qi.is-on { background: #edf7f0; box-shadow: inset 3px 0 0 var(--fu-ui-green); }
+.fu-page .fu-qname { min-width: 0; }
+.fu-page .fu-qname a { font-size: 13.5px; font-weight: 800; color: #193d2c; letter-spacing: -.01em; }
+.fu-page .fu-qname a:hover { text-decoration: underline; text-decoration-color: #a1cdb1; }
+.fu-page .fu-qname > span { line-height: 1.4; font-size: 11.5px; color: var(--fu-ui-muted); }
+.fu-page .fu-qcard .fu-score {
+  border-radius: 999px;
+  background: #e5f3e8;
+  color: #196943;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.fu-page .fu-qact { line-height: 1.45; }
+.fu-page .fu-qact span:last-child { font-size: 11.5px; }
+.fu-page .fu-qcontact { gap: 2px; }
+.fu-page .fu-qcontact > span:last-child { color: var(--fu-ui-muted); }
+.fu-page .fu-pill { border-radius: 999px; font-weight: 650; }
+.fu-page .fu-qcard .fu-qrow .button { min-height: 39px; border-radius: 10px; font-size: 12.5px; }
+.fu-page [data-testid="followup-whatsapp-review"] {
+  width: 36px !important;
+  height: 36px !important;
+  border-radius: 10px;
+  background: #eaf8ef;
+  color: #128c61 !important;
+  transition: background .15s ease, transform .15s ease;
+}
+.fu-page [data-testid="followup-whatsapp-review"]:hover { background: #d8f0e0; transform: translateY(-1px); }
+.fu-page [data-testid="followup-quick-correct"] > summary {
+  min-height: 26px; padding-block: 3px; font-size: 11.5px !important;
+  color: #28734d !important; text-underline-offset: 3px;
+}
+.fu-page [data-testid="followup-quick-correct"][open] { z-index: 20; }
+
+/* Selected contact / execution: same fields and actions, more legible. */
+.fu-page .fu-qside { top: 14px; }
+.fu-page .fu-qpanel { font-size: 13.5px; gap: 12px; border-radius: 18px; }
+.fu-page .fu-qpanelhead {
+  padding: 13px 15px;
+  background: linear-gradient(115deg,#edf7f0,#f7faf6);
+  color: var(--fu-ui-forest);
+  font-weight: 750;
+  border-color: #d3e6d7;
+}
+.fu-page .fu-qpanel > *:not(.fu-qpanelhead) { margin-inline: 15px; }
+.fu-page .fu-qidentname { font-size: 18px; line-height: 1.22; }
+.fu-page .fu-qident span { line-height: 1.55; font-size: 12.5px; }
+.fu-page .fu-qrulebox,
+.fu-page [data-testid="followup-execution-focus"] {
+  border-radius: 13px !important;
+  border-color: #c7e3d0 !important;
+  background: #eff8f1;
+  line-height: 1.55;
+}
+.fu-page [data-testid="followup-execution-focus"] b {
+  font-size: 13px;
+  color: #23573d;
+}
+.fu-page [data-testid="followup-message"] {
+  background: #fff;
+  border-color: #e0e9e0;
+  border-radius: 12px;
+  color: #273d30;
+  padding: 11px 12px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.fu-page [data-testid^="followup-execution-"][open] > summary { margin-bottom: 10px; }
+.fu-page :is([data-testid="followup-execution-checks"],[data-testid="followup-execution-notes"],[data-testid="followup-execution-context"],[data-testid="followup-execution-history"],[data-testid="followup-execution-rule"]) {
+  border-radius: 12px !important;
+  padding: 12px 14px !important;
+  background: #fff;
+}
+.fu-page details > summary { list-style-position: inside; }
+.fu-page details > summary:hover { color: var(--fu-ui-green-hover); }
+.fu-page .fu-qbtns {
+  border-radius: 0 0 13px 13px;
+  background: rgba(255,255,255,.98) !important;
+  padding: 13px !important;
+  box-shadow: 0 -5px 20px #173b2b0c !important;
+  margin-inline: 0 !important;
+}
+.fu-page .fu-qbtns .button,
+.fu-page .fu-qbig { min-height: 48px; font-size: 13.5px; }
+.fu-page .fu-qbtns .button-primary { box-shadow: 0 5px 13px rgba(24,61,45,.2); }
+
+/* Inbox, funnel, rules and results: polish only; existing controls untouched. */
+.fu-page .fu-inboxgrid { gap: 18px; }
+.fu-page .fu-convs { border-radius: 17px; }
+.fu-page .fu-conv {
+  padding: 16px 17px;
+  border-color: #e6eee7;
+  gap: 7px;
+  transition: background .15s ease;
+}
+.fu-page .fu-conv:hover { background: #f8faf7; }
+.fu-page .fu-conv.is-on { background: #ecf7ef; box-shadow: inset 4px 0 0 var(--fu-ui-green); }
+.fu-page .fu-convhead b { font-size: 14px; }
+.fu-page .fu-convtext { line-height: 1.65; color: #3f5749; }
+.fu-page .fu-bubble { border-radius: 15px; padding: 14px 17px; line-height: 1.65; }
+.fu-page .fu-class { min-height: 45px; border-radius: 12px; }
+.fu-page .fu-fcards {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 10px;
+}
+.fu-page .fu-fcard { gap: 9px; padding: 17px; min-height: 132px; }
+.fu-page .fu-fcard span { font-size: 13px; color: var(--fu-ui-muted); }
+.fu-page .fu-fcard b { font-size: 27px; font-weight: 800; color: var(--fu-ui-forest); letter-spacing: -.05em; }
+.fu-page .fu-fcard.is-on { background: #eef8f0; border-color: var(--fu-ui-green); border-width: 2px; padding: 16px; }
+.fu-page .fu-frules { gap: 14px; }
+.fu-page .fu-frule { border-radius: 15px; padding: 16px; gap: 9px; background: #fff; box-shadow: var(--fu-ui-shadow); }
+.fu-page .fu-flowrow { border-radius: 16px; padding: 12px; }
+.fu-page .fu-flowrow .fu-flowstep { border-radius: 12px; min-height: 57px; background: #fff; }
+.fu-page .fu-flowrow .fu-flowstep.is-on { background: #ecf7ef; border-color: var(--fu-ui-green); }
+.fu-page .fu-page .fu-workspace,
+.fu-page [data-testid="followup-rules-workspace"] { gap: 17px; }
+.fu-page [data-testid="followup-rules-list"] { padding: 18px !important; }
+.fu-page .fu-rulecard {
+  border-radius: 12px;
+  padding: 12px;
+  transition: border-color .15s ease, background .15s ease;
+}
+.fu-page .fu-rulecard.is-on { background: #edf8ef; border-color: #5ab781; }
+.fu-page .fu-box { padding: 15px; border-radius: 13px; gap: 9px; }
+.fu-page .fu-box h4 { font-size: 13px; font-weight: 800; }
+.fu-page .fu-rgrid { gap: 14px; }
+.fu-page .fu-results { gap: 18px; }
+.fu-page .fu-rgrid > *, .fu-page .fu-results .fu-card { border-radius: 16px; }
+.fu-page .fu-results .fu-kpi { min-height: 112px; }
+.fu-page .fu-bars { border-color: #dae8dc; }
+.fu-page .fu-blockbars i { border-radius: 99px; }
+
+/* Tablet: use space without sacrificing existing editing controls. */
+@media (max-width: 1280px) {
+  .fu-page .fu-fcards { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .fu-page [data-testid="followup-rules-workspace"] {
+    grid-template-columns: minmax(250px, .8fr) minmax(0, 2fr) !important;
+  }
+  .fu-page [data-testid="followup-rule-detail"] { min-width: 0 !important; }
+}
+@media (max-width: 1000px) {
+  .fu-page .fu-fcards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .fu-page .fu-tabs { width: 100%; overflow-x: auto; flex-wrap: nowrap; scrollbar-width: thin; }
+  .fu-page .fu-tab { flex: 0 0 auto; }
+  .fu-page [data-testid="followup-rules-workspace"] { grid-template-columns: minmax(0, 1fr) !important; overflow-x: visible !important; }
+  .fu-page [data-testid="followup-rule-detail"] { min-width: 0 !important; }
+  .fu-page .fu-workspace { grid-template-columns: minmax(0, 1fr); }
+  .fu-page .fu-qgrid { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Mobile: turn the existing queue row into a card.
+   All nine fields and their existing buttons remain accessible. */
+@media (max-width: 760px) {
+  .fu-page {
+    padding: 17px 12px 38px;
+    background: var(--fu-ui-cream);
+  }
+  .fu-page .ah-head { margin-bottom: 14px; }
+  .fu-page .ah-head h1 { font-size: 27px; }
+  .fu-page .ah-head p { font-size: 12px; line-height: 1.5; }
+  .fu-page .fu-tabs {
+    margin-bottom: 17px;
+    padding: 4px;
+    border-radius: 13px;
+    gap: 2px;
+  }
+  .fu-page .fu-tab { min-height: 44px; padding: 10px 13px; font-size: 12px; }
+  .fu-page .fu-kpis,
+  .fu-page .fu-kpis.fu-kpis-5 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 9px; }
+  .fu-page .fu-kpi { min-height: 103px; padding: 13px; }
+  .fu-page .fu-kpi.is-on { padding: 12px; }
+  .fu-page .fu-kpi b { font-size: 27px; }
+  .fu-page .fu-kpi small { font-size: 10.5px; }
+  .fu-page .fu-qbar { flex-wrap: wrap; gap: 7px; margin-bottom: 9px; }
+  .fu-page .fu-qbarlabel { width: 100%; }
+  .fu-page .fu-qchips { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 8px; }
+  .fu-page .fu-qchip { min-height: 43px; padding: 9px 11px; }
+  .fu-page .fu-qbanner { font-size: 11.7px; line-height: 1.55; padding: 11px; }
+  .fu-page .fu-qcard { padding-top: 12px; border-radius: 17px; gap: 10px; }
+  .fu-page .fu-qcardhead { display: grid; gap: 12px; padding: 3px 13px; }
+  .fu-page .fu-qcardhead h2 { font-size: 17px; }
+  .fu-page .fu-qtools { display: flex; gap: 9px; flex-wrap: wrap; align-items: stretch; }
+  .fu-page .fu-qsel { flex: 1 1 150px; display: grid; gap: 5px; }
+  .fu-page .fu-qsel select { max-width: none; width: 100%; min-height: 44px; }
+  .fu-page .fu-search { flex: 1 1 180px; min-width: 0; }
+  .fu-page .fu-qcard .fu-search input { width: 100%; min-height: 44px; }
+  .fu-page .fu-qtools .button { flex: 1 1 160px; min-height: 46px; }
+  .fu-page .fu-qlist { overflow-x: visible; }
+  .fu-page .fu-qwide-q { min-width: 0 !important; }
+  .fu-page .fu-qcard .fu-qth { display: none; }
+  .fu-page .fu-qcard .fu-qi {
+    border: 1px solid var(--fu-ui-border);
+    border-radius: 15px;
+    margin: 0 10px 9px;
+    background: #fff;
+    box-shadow: 0 3px 10px #193a2909;
+    overflow: visible;
+  }
+  .fu-page .fu-qcard .fu-qi.is-on { box-shadow: inset 3px 0 0 var(--fu-ui-green), 0 3px 10px #193a2909; }
+  .fu-page .fu-qcard .fu-qrow.fu-qrow-q {
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr) auto !important;
+    grid-template-areas:
+      "score name priority"
+      "score city situation"
+      "action action action"
+      "last last whatsapp"
+      "execute execute execute";
+    align-items: center;
+    row-gap: 8px;
+    column-gap: 10px;
+    padding: 15px !important;
+    font-size: 12px;
+  }
+  .fu-page .fu-qcard .fu-qrow.fu-qrow-q > :nth-child(1) { grid-area: score; align-self: start; }
+  .fu-page .fu-qcard .fu-qrow.fu-qrow-q > :nth-child(2) { grid-area: name; min-width: 0; }
+  .fu-page .fu-qcard .fu-qrow.fu-qrow-q > :nth-child(3) { grid-area: city; color: var(--fu-ui-muted); font-size: 11.5px; }
+  .fu-page .fu-qcard .fu-qrow.fu-qrow-q > :nth-child(4) { grid-area: situation; justify-self: end; }
+  .fu-page .fu-qcard .fu-qrow.fu-qrow-q > :nth-child(5) {
+    grid-area: action; border-top: 1px solid #edf1eb; padding-top: 11px;
+    font-size: 14px; white-space: normal;
+  }
+  .fu-page .fu-qcard .fu-qrow.fu-qrow-q > :nth-child(5)::before {
+    content: "PRÓXIMA ACCIÓN"; display: block; color: #6d7c72;
+    font-weight: 800; letter-spacing: .07em; font-size: 9.5px; margin-bottom: 4px;
+  }
+  .fu-page .fu-qcard .fu-qrow.fu-qrow-q > :nth-child(5) small { line-height: 1.5; margin-top: 4px; }
+  .fu-page .fu-qcard .fu-qrow.fu-qrow-q > :nth-child(6) { grid-area: last; min-width: 0; overflow-wrap: anywhere; font-size: 11px; }
+  .fu-page .fu-qcard .fu-qrow.fu-qrow-q > :nth-child(7) {
+    grid-area: whatsapp; justify-self: end; min-width: 0;
+    display: flex; align-items: center; gap: 5px; flex-wrap: wrap; justify-content: flex-end;
+  }
+  .fu-page .fu-qcard .fu-qrow.fu-qrow-q > :nth-child(7) .fu-mono { font-size: 10px; }
+  .fu-page .fu-qcard .fu-qrow.fu-qrow-q > :nth-child(7) > span:last-child { font-size: 10px; }
+  .fu-page .fu-qcard .fu-qrow.fu-qrow-q > :nth-child(8) { grid-area: priority; justify-self: end; }
+  .fu-page .fu-qcard .fu-qrow.fu-qrow-q > :nth-child(9) { grid-area: execute; width: 100%; }
+  .fu-page .fu-qcard .fu-qrow.fu-qrow-q > :nth-child(9).button,
+  .fu-page .fu-qcard .fu-qrow.fu-qrow-q > :nth-child(9) .button { width: 100%; min-height: 46px; font-size: 13px; }
+  .fu-page .fu-qcard .fu-qrow.fu-qrow-q > :nth-child(9).fu-qst { display: flex; align-items: center; justify-content: center; min-height: 40px; }
+  .fu-page .fu-qname a { font-size: 14px; }
+  .fu-page .fu-qname > span { font-size: 11px; }
+  .fu-page .fu-qcard .fu-score { width: 39px; height: 39px; display: grid; place-items: center; font-size: 12px; }
+  .fu-page .fu-qcard .fu-blocked { padding: 0 15px 13px !important; margin: 0; }
+  .fu-page [data-testid="followup-quick-correct"] > summary { min-height: 32px; align-items: center; }
+  .fu-page [data-testid="followup-quick-correct"] > div {
+    width: min(320px, calc(100vw - 55px)) !important;
+    min-width: 0 !important;
+    max-width: calc(100vw - 55px);
+    left: 0;
+  }
+  /* Keep the same execution panel; when opened it occupies the phone screen.
+     No new steps, dialog handlers, or confirmation logic are introduced. */
+  .fu-page .fu-qside:has(> .fu-qpanel.is-exec) {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 1100;
+    background: var(--fu-ui-cream);
+    padding: max(8px, env(safe-area-inset-top)) 9px 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  .fu-page .fu-qside:has(> .fu-qpanel.is-exec) > .fu-qpanel.is-exec {
+    min-height: calc(100dvh - 15px);
+    height: auto;
+    max-height: none !important;
+    overflow: visible !important;
+    display: flex !important;
+    flex-direction: column;
+    gap: 12px;
+    border-radius: 18px 18px 0 0;
+    box-shadow: none;
+    padding-bottom: 0;
+  }
+  .fu-page .fu-qside:has(> .fu-qpanel.is-exec) .fu-qpanelhead { position: sticky; top: 0; z-index: 4; }
+  .fu-page .fu-qside:has(> .fu-qpanel.is-exec) .fu-qbtns {
+    position: sticky !important;
+    bottom: 0 !important;
+    z-index: 5;
+    padding: 12px 13px max(14px, env(safe-area-inset-bottom)) !important;
+    margin-top: auto !important;
+  }
+  .fu-page .fu-qident { flex-wrap: wrap; }
+  .fu-page .fu-qwa { justify-items: start; }
+  .fu-page .fu-qidentname { font-size: 19px; }
+  .fu-page .fu-qmsg { font-size: 14px; }
+  .fu-page .fu-qbtns .button { min-height: 50px; font-size: 14px; }
+
+  /* Same flow and rule selectors, stacked rather than horizontally clipped. */
+  .fu-page .fu-fcards {
+    display: flex; flex-wrap: nowrap; overflow-x: auto; gap: 10px;
+    padding: 2px 2px 10px; scroll-snap-type: x proximity;
+  }
+  .fu-page .fu-fcard { flex: 0 0 165px; min-height: 122px; scroll-snap-align: start; }
+  .fu-page .fu-fdetail { gap: 12px; }
+  .fu-page .fu-frules { grid-template-columns: minmax(0, 1fr); }
+  .fu-page .fu-inboxgrid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .fu-page .fu-conv { padding: 14px; }
+  .fu-page .fu-rulecard { padding: 12px; }
+  .fu-page [data-testid="followup-rules-workspace"] {
+    display: grid !important;
+    grid-template-columns: minmax(0,1fr) !important;
+    gap: 12px !important;
+    overflow-x: visible !important;
+  }
+  .fu-page [data-testid="followup-rule-detail"] { min-width: 0 !important; width: 100%; }
+  .fu-page [data-testid="followup-rules-list"] { min-width: 0 !important; padding: 13px !important; }
+  .fu-page .fu-rgrid { grid-template-columns: minmax(0,1fr); grid-template-areas: "when" "what" "msg" "pv"; }
+  .fu-page .fu-partgrid,
+  .fu-page .fu-qtwo.is-msg { grid-template-columns: minmax(0, 1fr) !important; }
+  .fu-page .fu-flowrow { padding: 9px; }
+  .fu-page .fu-flowrow .fu-flowstep { min-width: 155px; }
+  .fu-page .fu-flowrow .fu-flow { overflow-x: auto; }
+  .fu-page .fu-rgrid .fu-pvcol { max-width: 100%; }
+  .fu-page .fu-rgrid :is(input, select, textarea),
+  .fu-page .fu-page .fu-msg-row :is(input, select, textarea) { max-width: 100%; }
+  .fu-page .fu-rgrid .fu-box { min-width: 0; }
+  .fu-page .fu-rgrid > .fu-mededit { display: contents; }
+  .fu-page .fu-results .fu-rgrid { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .fu-page .fu-results .fu-bars { height: 165px; overflow-x: auto; }
+  .fu-page .fu-results .fu-tbl { min-width: 660px; }
+  .fu-page .fu-results .fu-card { max-width: 100%; overflow-x: auto; }
+}
+@media (max-width: 390px) {
+  .fu-page .fu-qcard .fu-qrow.fu-qrow-q {
+    grid-template-columns: 36px minmax(0,1fr) !important;
+    grid-template-areas:
+      "score name"
+      "city situation"
+      "priority priority"
+      "action action"
+      "last whatsapp"
+      "execute execute";
+  }
+  .fu-page .fu-qcard .fu-qrow.fu-qrow-q > :nth-child(8) { justify-self: start; }
+  .fu-page .fu-qcard .fu-qrow.fu-qrow-q > :nth-child(7) { justify-self: end; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fu-page .fu-tab, .fu-page .button, .fu-page .fu-qi, .fu-page .fu-kpi,
+  .fu-page [data-testid="followup-whatsapp-review"] { transition: none !important; transform: none !important; }
+}

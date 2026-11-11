@@ -6,6 +6,9 @@
 import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
 import {
+  Building2,
+  Bot,
+  ContactRound,
   ChevronDown,
   CircleHelp,
   Compass,
@@ -38,6 +41,7 @@ import { reopenTour } from "./panel-tour";
 
 export type PanelSection =
   | "inicio"
+  | "mis_propiedades"
   | "propiedades"
   | "imagenes"
   | "video"
@@ -46,6 +50,8 @@ export type PanelSection =
   | "planos"
   | "redes"
   | "api"
+  | "consultas_ia"
+  | "crm_inteligente"
   | "creditos"
   | "usuarios"
   | "cuenta";
@@ -56,6 +62,7 @@ type Item = { id: PanelSection; href: string; label: string; icon: typeof Home; 
 const GROUPS = (): Item[][] => [
   [
     { id: "inicio", href: "/panel", label: "Inicio", icon: Home },
+    { id: "mis_propiedades", href: "/panel/mis-propiedades", label: "Mis propiedades", icon: Building2 },
     { id: "propiedades", href: "/panel/propiedades", label: "Mis demostraciones", icon: LayoutGrid },
     { id: "imagenes", href: "/panel/imagenes", label: "Estudio de imágenes", icon: Images },
     ...(videoEnabled() ? [{ id: "video", href: "/panel/video", label: "Video", icon: PlayCircle, future: "video" } as Item] : []),
@@ -68,6 +75,8 @@ const GROUPS = (): Item[][] => [
     { id: "planos", href: "/panel/planos", label: "Planos", icon: SquareDashed, future: "planos" },
     { id: "redes", href: "/panel/redes", label: "Redes", icon: Share2, future: "redes" },
     { id: "api", href: "/panel/api", label: "API", icon: Code2, future: "api" },
+    { id: "consultas_ia", href: "/panel/consultas-ia", label: "Consultas IA", icon: Bot },
+    { id: "crm_inteligente", href: "/panel/crm-inteligente", label: "CRM Inteligente", icon: ContactRound },
   ],
   [
     { id: "creditos", href: "/panel/creditos", label: "Precios y créditos", icon: CreditCard },

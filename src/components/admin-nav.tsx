@@ -3,16 +3,18 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect } from "react";
-import { Bot, Building2, Megaphone, ShieldCheck } from "lucide-react";
+import { Bot, Building2, Megaphone, RefreshCcw, ScrollText, ShieldCheck } from "lucide-react";
 import { markInternal } from "@/lib/interaction-tracking";
 
 /**
- * Three sections. Leads and demos live inside each agency now, so their
+ * The team's sections. Leads and demos live inside each agency now, so their
  * old addresses (and the demo editor under /admin/demos) light «Inmobiliarias».
  */
 const LINKS: { href: string; label: string; icon: typeof Bot; also?: string[] }[] = [
   { href: "/admin/prospeccion", label: "Adquisición", icon: Megaphone },
   { href: "/admin/inmobiliarias", label: "Inmobiliarias", icon: Building2, also: ["/admin/demos", "/admin/leads"] },
+  { href: "/admin/follow-up", label: "Follow-up", icon: RefreshCcw },
+  { href: "/admin/script", label: "Script", icon: ScrollText },
   { href: "/admin/asistente", label: "Miguel Ángel", icon: Bot },
   { href: "/admin/internos", label: "Tráfico interno", icon: ShieldCheck },
 ];

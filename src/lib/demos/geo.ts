@@ -263,7 +263,9 @@ export function geoCandidates(rawHtml: string, ownEnd = rawHtml.length): GeoCand
   // Data attributes of one element.
   for (const m of html.matchAll(/<[a-z][^>]*\bdata-(?:lat|latitude|latitud)\s*=\s*["']([^"']+)["'][^>]*>/gi)) {
     const lng = m[0].match(/\bdata-(?:lng|lon|long|longitude|longitud)\s*=\s*["']([^"']+)["']/i);
-    if (lng) add(Number(m[1]), Number(lng[1]), "data-attribute", 0.75, m.index ?? 0);
+    // "-34,5867" (decimal comma, as Argenprop writes them) is -34.5867.
+    const num = (v: string) => Number(/^\s*-?\d{1,3},\d+\s*$/.test(v) ? v.replace(",", ".") : v);
+    if (lng) add(num(m[1]), num(lng[1]), "data-attribute", 0.75, m.index ?? 0);
   }
   // Meta tags about the page itself.
   const meta = (name: string) =>
@@ -351,7 +353,11 @@ function insideNamed(html: string, at: number, words: RegExp) {
     const tag = m[1].toLowerCase();
     const between = html.slice((m.index ?? 0) + m[0].length, at);
     let depth = 1;
-    for (const t of between.matchAll(new RegExp(`<(/?)${tag}\\b[^>]*>`, "gi"))) depth += t[1] ? -1 : 1;
+    // Once the named element closes, later elements of the same tag are not inside it.
+    for (const t of between.matchAll(new RegExp(`<(/?)${tag}\\b[^>]*>`, "gi"))) {
+      depth += t[1] ? -1 : 1;
+      if (!depth) break;
+    }
     if (depth > 0) return true;
   }
   return false;

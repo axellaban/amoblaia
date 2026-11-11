@@ -55,9 +55,12 @@ export function ImpactStats({ variant = "band", where, note = true }: { variant?
 const usd = (n: number) => `US$ ${Math.round(n).toLocaleString("es-AR")}`;
 const pct = (n: number) => `${String(n).replace(".", ",")}%`;
 
-/** What a better sale could mean: price × estimated improvement, and the agency's commission on it. */
-export function impactOf(price: number, improvement: number, commission: number) {
-  const value = (price * improvement) / 100;
+/**
+ * What a better sale could mean: price × estimated price improvement, grown by
+ * the estimated improvement in sales volume, and the agency's commission on it.
+ */
+export function impactOf(price: number, improvement: number, commission: number, volume = 0) {
+  const value = ((price * improvement) / 100) * (1 + volume / 100);
   return { value, commission: (value * commission) / 100 };
 }
 
@@ -69,22 +72,23 @@ export function habitaCostUsd(properties: number, unitCents: number = DEFAULT_UN
 const MAX_PROPERTIES = 10000;
 const clampProps = (n: number) => (Number.isFinite(n) ? Math.min(MAX_PROPERTIES, Math.max(1, Math.round(n))) : 1);
 
-const SLIDERS = [
-  { key: "price", label: "Precio promedio de la propiedad", min: 30000, max: 1000000, step: 5000, show: usd },
-  { key: "improvement", label: "Mejora estimada del precio", min: 1, max: 19, step: 1, show: pct },
+const SLIDERS: readonly { key: "price" | "commission" | "improvement" | "volume"; label: string; min: number; max: number; step: number; show: (n: number) => string }[] = [
+  { key: "price", label: "Precio promedio por propiedad", min: 30000, max: 1000000, step: 5000, show: usd },
   { key: "commission", label: "Comisión inmobiliaria", min: 1, max: 6, step: 0.5, show: pct },
-] as const;
+  { key: "improvement", label: "Mejora estimada en precio", min: 0, max: 20, step: 1, show: pct },
+  { key: "volume", label: "Mejora estimada en volumen", min: 0, max: 100, step: 1, show: pct },
+];
 
 type Values = Record<(typeof SLIDERS)[number]["key"], number>;
 
 /** «¿Cuánto podrías ganar con una mejor venta?»: an estimate the agency moves with its own numbers. */
 export function ImpactCalculator({ where, unitCents }: { where: string; unitCents?: number }) {
   const id = useId();
-  const [v, setV] = useState<Values>({ price: 150000, improvement: 10, commission: 3 });
+  const [v, setV] = useState<Values>({ price: 150000, commission: 3, improvement: 10, volume: 20 });
   const [props, setProps] = useState(1);
   const [propsText, setPropsText] = useState("1");
   const [touched, setTouched] = useState(false);
-  const one = impactOf(v.price, v.improvement, v.commission);
+  const one = impactOf(v.price, v.improvement, v.commission, v.volume);
   const r = { value: one.value * props, commission: one.commission * props };
   const cost = habitaCostUsd(props, unitCents);
   const roi = cost > 0 ? r.commission / cost : 0;
@@ -155,7 +159,7 @@ export function ImpactCalculator({ where, unitCents }: { where: string; unitCent
       <div className="bi-calc-result" aria-live={touched ? "polite" : "off"}>
         <span>Mayor valor de venta</span>
         <strong>+{usd(r.value)}</strong>
-        <span>Tu comisión extra</span>
+        <span>Beneficio incremental</span>
         <strong className="is-small">+{usd(r.commission)}</strong>
         <div className="bi-calc-roi">
           <div>
@@ -163,7 +167,7 @@ export function ImpactCalculator({ where, unitCents }: { where: string; unitCent
             <b>≈ {usd(cost)}</b>
           </div>
           <div className="is-right">
-            <span>Retorno (ROI)</span>
+            <span className="is-roi">Retorno sobre inversión</span>
             <b className="is-big">{Math.round(roi).toLocaleString("es-AR")}x</b>
           </div>
         </div>

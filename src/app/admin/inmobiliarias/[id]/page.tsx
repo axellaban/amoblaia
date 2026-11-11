@@ -20,7 +20,7 @@ import { AddToProspecting } from "@/components/prospecting/add-agency";
 import { ClaimReviewNotice } from "@/components/admin-claim-review";
 import { HttpError } from "@/lib/commerce/http";
 import { adminAgency, agencyClaimInfo } from "@/lib/agency/admin";
-import { COMMERCIAL_STAGES, STAGE_STEP, accountState, agoText, nextAction, stageIndex } from "@/lib/agency/commercial";
+import { ACTIVITY_HINT, COMMERCIAL_STAGES, STAGE_STEP, accountState, agoText, nextAction, stageIndex } from "@/lib/agency/commercial";
 import { agencyActivity, commercialRow, demoScoresOf, type AgencyActivity } from "@/lib/agency/commercial-server";
 import { ROLE_LABEL } from "@/lib/agency/shared";
 import { agencyStage, STAGE_LABEL } from "@/lib/agency/stage";
@@ -201,7 +201,7 @@ function Summary({ data, row, action, demos, phone }: { data: Data; row: Row; ac
             </div>
             <div>
               <dt>Última actividad</dt>
-              <dd>{row.lastActivity ? `${agoText(row.lastActivity.at)} · ${row.lastActivity.text}` : "—"}</dd>
+              <dd title={ACTIVITY_HINT}>{row.lastActivity ? `${agoText(row.lastActivity.at)} · ${row.lastActivity.text}` : "Sin actividad suya"}</dd>
             </div>
           </dl>
         </section>
