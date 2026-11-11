@@ -173,8 +173,11 @@ export function DemoEditor({
   agencyContext,
   studio = false,
   onUseInDemo,
+  initial = null,
 }: {
   id: string;
+  /** The property as the server already read it with the page: shown at once, with no request first. */
+  initial?: DemoDetail | null;
   mode?: "admin" | "agency";
   /** Inside "Estudio de imágenes": only the photo workspace (every photo together), no ficha sections. */
   studio?: boolean;
@@ -246,7 +249,11 @@ export function DemoEditor({
   }, [apply]);
   const load = useCallback(async () => apply(await api<DemoDetail>(base)), [apply, base]);
   useEffect(() => {
+    // Came with the page: applied as soon as the editor runs, with no request first. (Not used to render on
+    // the server: the editor reads this browser's storage, and its first render must match.)
+    if (initial) return apply(initial);
     void load().catch((e) => setLoadError(e instanceof Error ? e.message : "No pudimos cargar la propiedad."));
+    // Once per property: later changes come through `load` and `apply`.
   }, [load]);
 
   // Deep links: ?seccion=… or #section opens that fold and takes the focus there; ?volver= is the way back.
