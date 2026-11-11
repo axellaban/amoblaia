@@ -46,6 +46,7 @@ import {
 } from "./stages";
 import {
   isAction,
+  actionsOf,
   CLOSED_SITUATIONS,
   allocateFirstContactSlots,
   remainingFirstContactSlots,
@@ -811,6 +812,8 @@ function resultsOf(b: Awaited<ReturnType<typeof board>>, all: QueueItem[], queue
       respuesta: funnelCohorts(b.facts, COMMERCIAL_STAGES.length, "respuesta"),
       version: funnelCohorts(b.facts, COMMERCIAL_STAGES.length, "version"),
     },
+    // The name of each stage's actions («stage:action» → label): how Resultados groups rows by action.
+    actionLabels: Object.fromEntries(FOLLOWUP_STAGES.flatMap((s) => actionsOf(s.key).map((a) => [`${s.key}:${a}`, label(s.key, a)]))),
     // «¿Se ejecutó la cola?»: day by day and by type of action. Successful: it has an attributed conversion.
     execution: {
       available: queueDays !== null,
