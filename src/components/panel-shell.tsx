@@ -7,6 +7,8 @@ import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
 import {
   Building2,
+  Bot,
+  ContactRound,
   ChevronDown,
   CircleHelp,
   Compass,
@@ -48,6 +50,8 @@ export type PanelSection =
   | "planos"
   | "redes"
   | "api"
+  | "consultas_ia"
+  | "crm_inteligente"
   | "creditos"
   | "usuarios"
   | "cuenta";
@@ -71,6 +75,8 @@ const GROUPS = (): Item[][] => [
     { id: "planos", href: "/panel/planos", label: "Planos", icon: SquareDashed, future: "planos" },
     { id: "redes", href: "/panel/redes", label: "Redes", icon: Share2, future: "redes" },
     { id: "api", href: "/panel/api", label: "API", icon: Code2, future: "api" },
+    { id: "consultas_ia", href: "/panel/consultas-ia", label: "Consultas IA", icon: Bot },
+    { id: "crm_inteligente", href: "/panel/crm-inteligente", label: "CRM Inteligente", icon: ContactRound },
   ],
   [
     { id: "creditos", href: "/panel/creditos", label: "Precios y créditos", icon: CreditCard },
