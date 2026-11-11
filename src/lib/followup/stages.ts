@@ -140,6 +140,19 @@ export const isOverrideStage = (v: unknown): v is OverrideStage => v === OUT || 
 export type Override = { stage: OverrideStage; step: number } | null;
 
 /**
+ * A correction that puts the agency behind what already happened with its demo
+ * («Interesado, sin demo» when the demo exists, «No abrió» when it visited…)
+ * contradicts a fact: it never holds. From «Interesado» on, each step is a fact
+ * of the funnel; a correction can go forward or back to the conversation steps
+ * («Prospectado», «Contactado»), never back inside the demo's steps.
+ */
+export function contradictsFunnel(stage: OverrideStage, reached: number | null) {
+  if (stage === OUT) return false;
+  const step = stageInfo(stage).step;
+  return step >= 1 && step < stepValue(reached);
+}
+
+/**
  * Where an agency goes in Follow-up: its stage from the funnel, unless the
  * team (or the extension) corrected it. The correction holds while the funnel
  * still says what it said then (`override.step`, the funnel's step when it was
@@ -148,7 +161,7 @@ export type Override = { stage: OverrideStage; step: number } | null;
  */
 export function placement(derived: { reached: number | null; stage: StageKey | null }, override: Override) {
   const funnel = stepValue(derived.reached);
-  if (override && override.step === funnel) {
+  if (override && override.step === funnel && !contradictsFunnel(override.stage, derived.reached)) {
     if (override.stage === OUT) return { stage: null, step: funnel, manual: true };
     return { stage: override.stage, step: stageInfo(override.stage).step, manual: true };
   }

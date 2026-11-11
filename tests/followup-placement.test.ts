@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { OUT, byScore, cleanVersion, placement } from "@/lib/followup/stages";
+import { OUT, byScore, cleanVersion, contradictsFunnel, placement } from "@/lib/followup/stages";
 
 describe("placement", () => {
   it("uses the funnel's stage without a correction", () => {
@@ -9,8 +9,35 @@ describe("placement", () => {
     expect(placement({ reached: 0, stage: "no-responde" }, { stage: "sin-demo", step: 0 })).toEqual({ stage: "sin-demo", step: 1, manual: true });
     expect(placement({ reached: null, stage: "no-contactado" }, { stage: OUT, step: -1 })).toEqual({ stage: null, step: -1, manual: true });
   });
+  it("never holds a correction behind what its demo already did", () => {
+    // Larco, Echarte: demo created (sin-enviar), set to «Interesado» → sin-demo by hand.
+    expect(placement({ reached: 2, stage: "sin-enviar" }, { stage: "sin-demo", step: 2 })).toEqual({ stage: "sin-enviar", step: 2, manual: false });
+    // Pluchino: demo sent (no-abrio), held at sin-demo / sin-enviar by hand.
+    expect(placement({ reached: 3, stage: "no-abrio" }, { stage: "sin-demo", step: 3 })).toEqual({ stage: "no-abrio", step: 3, manual: false });
+    expect(placement({ reached: 3, stage: "no-abrio" }, { stage: "sin-enviar", step: 3 })).toEqual({ stage: "no-abrio", step: 3, manual: false });
+    // Palma: visited (sin-interaccion), set to «No abrió» by hand.
+    expect(placement({ reached: 4, stage: "sin-interaccion" }, { stage: "no-abrio", step: 4 })).toEqual({ stage: "sin-interaccion", step: 4, manual: false });
+    // Cepeñas: interacted (sin-cuenta), set to «No abrió» by hand.
+    expect(placement({ reached: 5, stage: "sin-cuenta" }, { stage: "no-abrio", step: 5 })).toEqual({ stage: "sin-cuenta", step: 5, manual: false });
+  });
+  it("still allows a correction forward, back to the conversation steps or out", () => {
+    expect(placement({ reached: 2, stage: "sin-enviar" }, { stage: "no-abrio", step: 2 })).toEqual({ stage: "no-abrio", step: 3, manual: true });
+    expect(placement({ reached: 3, stage: "no-abrio" }, { stage: "no-responde", step: 3 })).toEqual({ stage: "no-responde", step: 0, manual: true });
+    expect(placement({ reached: 3, stage: "no-abrio" }, { stage: OUT, step: 3 })).toEqual({ stage: null, step: 3, manual: true });
+  });
   it("lets the funnel rule again once something real happens", () => {
     expect(placement({ reached: 3, stage: "no-abrio" }, { stage: "sin-demo", step: 0 })).toEqual({ stage: "no-abrio", step: 3, manual: false });
+  });
+});
+
+describe("contradictsFunnel", () => {
+  it("is true only for a demo step behind the funnel", () => {
+    expect(contradictsFunnel("sin-demo", 2)).toBe(true);
+    expect(contradictsFunnel("sin-enviar", 2)).toBe(false);
+    expect(contradictsFunnel("no-responde", 5)).toBe(false);
+    expect(contradictsFunnel("no-contactado", 0)).toBe(false);
+    expect(contradictsFunnel(OUT, 5)).toBe(false);
+    expect(contradictsFunnel("sin-uso", null)).toBe(false);
   });
 });
 
