@@ -18,7 +18,11 @@ const TABS: [Tab, string][] = [
   ["mensajes", "Mensajes y conversión"],
   ["ejecucion", "Bandeja de ejecución"],
 ];
-const POLL_MS = 60_000;
+// Each reload reads the whole dataset (about 2 MB) from Supabase, so the
+// interval weighs directly on the plan's egress.
+const POLL_MS = 180_000;
+/** Coming back to the window reloads only if what is shown is at least this old. */
+const FOCUS_STALE_MS = 60_000;
 
 /**
  * The team's acquisition center. Everything shown comes from the persisted
@@ -38,12 +42,14 @@ export function ProspectingApp({ initialTab }: { initialTab: Tab }) {
   const [detailVersion, setDetailVersion] = useState(0);
   const inflight = useRef(false);
 
+  const loadedAt = useRef(0);
   const reload = useCallback(async () => {
     if (inflight.current) return;
     inflight.current = true;
     setLoading(true);
     try {
       const data = await api<Dataset>("/api/admin/prospeccion");
+      loadedAt.current = Date.now();
       setDs(data);
       setSyncedAt(data.now);
       setSyncError("");
@@ -63,7 +69,7 @@ export function ProspectingApp({ initialTab }: { initialTab: Tab }) {
   useEffect(() => {
     void reload();
     const timer = window.setInterval(() => document.visibilityState === "visible" && void reload(), POLL_MS);
-    const onFocus = () => void reload();
+    const onFocus = () => Date.now() - loadedAt.current >= FOCUS_STALE_MS && void reload();
     window.addEventListener("focus", onFocus);
     return () => {
       window.clearInterval(timer);

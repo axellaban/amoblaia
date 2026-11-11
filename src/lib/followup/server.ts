@@ -867,7 +867,7 @@ export async function followupOverview(period: Period = parsePeriod({})): Promis
   };
 }
 
-/** La cola de ejecución recalculada (lo que la pantalla vuelve a pedir cada 45 segundos y después de confirmar un envío). */
+/** La cola de ejecución recalculada (lo que la pantalla vuelve a pedir cada 3 minutos, al volver a la pestaña y después de confirmar un envío). */
 export async function followupQueueView() {
   const b = await board();
   const all = [...b.items.values()];

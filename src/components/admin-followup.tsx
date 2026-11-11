@@ -184,8 +184,13 @@ type Filter = "listas" | "respuestas" | "demos" | "bloqueadas";
 const QPAGE = 25;
 const PRIORITY_LABEL = { alta: "Alta", media: "Media", baja: "Baja" } as const;
 const isReply = (q: QueueItem) => q.group === "respuestas";
-/** Cada cuánto se vuelve a pedir la cola mientras la pestaña está a la vista. */
-const POLL_MS = 45_000;
+/**
+ * Cada cuánto se vuelve a pedir la cola mientras la pestaña está a la vista.
+ * Cada pedido recalcula el tablero entero (unos 2,5 MB leídos de Supabase), así
+ * que el intervalo pesa directo en el egress del plan: 3 minutos, más el pedido
+ * al volver a la pestaña y después de cada acción.
+ */
+const POLL_MS = 180_000;
 
 /** Los filtros elegidos en la cola: quedan aunque se cambie de pestaña o se ejecute una tras otra. */
 export type QueueState = { kpi: Filter; f: QueueFilter };
@@ -343,10 +348,12 @@ function ExecCenter({
   useEffect(() => {
     setData((d) => (initial.generatedAt > d.generatedAt ? initial : d));
   }, [initial]);
+  const lastRefresh = useRef(0);
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
       const fresh = await api<QueueView>("/api/admin/follow-up/cola");
+      lastRefresh.current = Date.now();
       setData(fresh);
       setPollError("");
     } catch (e) {
@@ -356,10 +363,19 @@ function ExecCenter({
     }
   }, []);
   useEffect(() => {
+    lastRefresh.current = Date.now(); // la página recién trajo la cola
     const t = window.setInterval(() => {
       if (!document.hidden) void refresh();
     }, POLL_MS);
-    return () => window.clearInterval(t);
+    // Al volver a la pestaña no se espera al próximo intervalo si lo que se ve ya es viejo.
+    const onVisible = () => {
+      if (!document.hidden && Date.now() - lastRefresh.current >= POLL_MS) void refresh();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearInterval(t);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [refresh]);
 
   const { kpi, f } = state;
@@ -528,7 +544,7 @@ function ExecCenter({
         <span className="fu-grow">{banner}</span>
         <span className={`fu-qsync${pollError ? " is-error" : ""}`} data-testid="followup-queue-sync" role={pollError ? "alert" : "status"}>
           <span className="fu-qdot" aria-hidden="true" />
-          {loading ? "Actualizando…" : pollError ? `No se pudo actualizar (${pollError})` : `Actualizada a las ${hhmm(data.generatedAt)} · cada 45 s`}
+          {loading ? "Actualizando…" : pollError ? `No se pudo actualizar (${pollError})` : `Actualizada a las ${hhmm(data.generatedAt)} · cada 3 min`}
         </span>
         <button type="button" className="fu-iconbtn" aria-label="Actualizar la cola" title="Actualizar" data-testid="followup-queue-refresh" disabled={loading} onClick={() => void refresh()}>
           <RefreshCw size={15} aria-hidden="true" className={loading ? "fu-spin" : undefined} />
