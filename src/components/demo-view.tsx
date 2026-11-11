@@ -188,6 +188,7 @@ export function DemoView({
   plans = null,
   backToDemo = null,
   stage = STAGE_WIDTH.other,
+  embedded = false,
 }: {
   demo: PublicDemo;
   source: Source;
@@ -203,6 +204,8 @@ export function DemoView({
   backToDemo?: string | null;
   /** The big photo's width, chosen by the server for the device (STAGE_WIDTH). */
   stage?: number;
+  /** Inside the agency's own website (Sitio web): its header replaces habita's strip. */
+  embedded?: boolean;
 }) {
   const { agency } = demo;
   // An agency's presentation without its invitation: one way in, the sign-up with this demo.
@@ -440,7 +443,7 @@ export function DemoView({
           </a>
         </div>
       )}
-      {!owner && (
+      {!owner && !embedded && (
         <header className="dv2-header is-buyer">
           <div className="container">
             <span className="dv2-owner-habita dv2-habita-mark" aria-label="Habita">

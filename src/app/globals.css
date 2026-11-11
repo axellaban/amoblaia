@@ -30791,3 +30791,13 @@ dialog.pt-layer::backdrop {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* Panel → Sitio web: the builder takes the whole screen (site-builder.tsx). */
+body.site-builder-open {
+  overflow: hidden;
+}
+body.site-builder-open .header,
+body.site-builder-open .footer,
+body.site-builder-open .skip-link {
+  display: none;
+}
