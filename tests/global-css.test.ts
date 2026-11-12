@@ -35,5 +35,8 @@ describe("globals.css", () => {
     const block = /@media \(max-width: 860px\) \{([\s\S]*?)\n\}/.exec(css)?.[1] ?? "";
     expect(block).toMatch(/\.nav \{\s*gap: 12px;/);
     expect(block).toMatch(/\.nav-links \{\s*gap: 12px;/);
+    // It must come after the last base «.nav { gap }» rule, or that rule wins at any width.
+    const lastBase = Math.max(...[...css.matchAll(/^\.nav \{[^}]*gap:/gm)].map((m) => m.index ?? 0));
+    expect(css.indexOf("@media (max-width: 860px)")).toBeGreaterThan(lastBase);
   });
 });
