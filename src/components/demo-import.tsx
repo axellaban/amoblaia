@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import type { FieldStatus, ImportedDemo, ReportRow } from "@/lib/demos/import";
 import type { ImportDiagnostics } from "@/lib/listings/types";
 import type { EditorPhoto } from "@/lib/demos/shared";
-import { AgencyWhatsappField, ApiError, api } from "./admin-demos";
+import { AgencyWhatsappField, ApiError, api, VisitAccountError } from "./admin-demos";
 
 const STATUS: Record<FieldStatus, string> = {
   found: "Encontrado",
@@ -270,6 +270,8 @@ export async function syncPhotos(base: string, images: string[], onStatus: (text
       if (!ids.includes(id)) ids.push(id);
       done.push(url);
     } catch (e) {
+      // A guest's visit: the first photo already asked for the account; the rest would ask again, one by one.
+      if (e instanceof VisitAccountError) throw e;
       failedUrls.push(url);
       reasons[url] = e instanceof ApiError ? e.message : "No hubo respuesta del servidor (conexión cortada).";
     }
