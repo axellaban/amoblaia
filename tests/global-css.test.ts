@@ -23,4 +23,17 @@ describe("globals.css", () => {
     const rule = /\.pw-modes button \{([^}]*)\}/.exec(css)?.[1] ?? "";
     expect(rule).not.toContain("nowrap");
   });
+
+  it("keeps the failed imports' long links inside a phone's width", () => {
+    const css = readFileSync("src/app/globals.css", "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(/\.ap-failed \{([^}]*)\}/.exec(css)?.[1] ?? "").toMatch(/grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+    expect(/\.ap-failed strong \{([^}]*)\}/.exec(css)?.[1] ?? "").toMatch(/overflow-wrap:\s*anywhere/);
+  });
+
+  it("tightens the header between 800 and 860px so the signed-in actions fit an upright iPad", () => {
+    const css = readFileSync("src/app/globals.css", "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    const block = /@media \(max-width: 860px\) \{([\s\S]*?)\n\}/.exec(css)?.[1] ?? "";
+    expect(block).toMatch(/\.nav \{\s*gap: 12px;/);
+    expect(block).toMatch(/\.nav-links \{\s*gap: 12px;/);
+  });
 });

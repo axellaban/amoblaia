@@ -81,7 +81,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     // The action it tried (its API path, without ids), for the exploration funnel.
     const action = `${(init.method ?? "GET").toUpperCase()} ${path.split("?")[0].replace(/[0-9a-f]{8}-[0-9a-f-]{27}/gi, ":id")}`;
     window.dispatchEvent(new CustomEvent(VISIT_ACCOUNT_EVENT, { detail: { action } }));
-    throw new ApiError(payload.error || "Para guardar tus cambios, necesitás acceder a tu cuenta.", r.status, payload);
+    throw new VisitAccountError(payload.error || "Para guardar tus cambios, necesitás acceder a tu cuenta.", r.status, payload);
   }
   if (r.status === 401) {
     window.location.assign(`/acceso?next=${encodeURIComponent(window.location.pathname)}`);
@@ -102,6 +102,8 @@ export class ApiError extends Error {
     super(message);
   }
 }
+/** The visit asked for the account: the action stops here, so a loop does not ask once per item. */
+export class VisitAccountError extends ApiError {}
 
 /** The buyers' link, or the one for presenting the demo to the agency (it may show the strip).
  * Callers may run while rendering (the send dialog's preview), so on the server
