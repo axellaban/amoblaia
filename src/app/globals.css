@@ -20707,9 +20707,13 @@ body:has(.pv-root) .pb-root {
   margin: 0;
   color: var(--pr-muted, #5f6f64);
 }
-/* «Funnel de demos»: seven steps over the list, by the demo's creation date. */
+/* «Funnel de demos»: seven steps over the list, by the demo's creation date.
+   The column is minmax(0, 1fr) so the chart can shrink and scroll inside it
+   (761–1280px): with the default «auto» it took the chart's full width and an
+   upright iPad got horizontal scroll on the whole page. */
 .ah-dfunnel {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   margin-bottom: 20px;
   padding: 20px 22px;

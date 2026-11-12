@@ -39,4 +39,11 @@ describe("globals.css", () => {
     const lastBase = Math.max(...[...css.matchAll(/^\.nav \{[^}]*gap:/gm)].map((m) => m.index ?? 0));
     expect(css.indexOf("@media (max-width: 860px)")).toBeGreaterThan(lastBase);
   });
+
+  // QA 2026-11-12 am: /admin/inmobiliarias scrolled sideways on an upright iPad.
+  it("lets the admin funnel chart scroll inside its card instead of widening the page", () => {
+    const css = readFileSync("src/app/globals.css", "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    const base = /^\.ah-dfunnel \{([^}]*)\}/m.exec(css)?.[1] ?? "";
+    expect(base).toMatch(/grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+  });
 });
