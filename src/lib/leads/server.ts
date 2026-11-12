@@ -64,13 +64,24 @@ export async function recomputeDemo(demoId: string, internal?: Set<string>) {
   return scores;
 }
 
-/** Best effort, after a response: a failure is logged and the next batch fixes it. */
-export async function recomputeQuietly(demoId: string) {
-  try {
-    await recomputeDemo(demoId);
-  } catch {
-    console.error("lead_recompute_failed");
+/**
+ * Best effort, after a response. Two batches of the same demo can recalculate
+ * at once and the later replace hits the primary key (409): it is retried,
+ * re-reading the events, so the newest batch is not left out until the next
+ * one. Only when every try fails is it logged.
+ */
+export async function recomputeQuietly(demoId: string, recompute: (id: string) => Promise<unknown> = recomputeDemo, waitMs = 400) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await recompute(demoId);
+      return true;
+    } catch {
+      if (attempt === 3) break;
+      await new Promise((r) => setTimeout(r, waitMs * attempt + Math.random() * waitMs));
+    }
   }
+  console.error("lead_recompute_failed");
+  return false;
 }
 
 /** Every demo with events, one after another: the audit recalculation. */

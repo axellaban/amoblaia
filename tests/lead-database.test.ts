@@ -103,6 +103,25 @@ describe("lead scores", () => {
     expect(rows[0].signals).toEqual(["Eligió un estilo"]);
   });
 
+  // QA 2026-11-12 am: two batches of the same demo at once made the second
+  // insert hit the primary key (409, lead_recompute_failed). The function
+  // takes a per-demo transaction lock first, so they run one after the other.
+  it("holds a per-demo lock while it replaces the scores", async () => {
+    const { demo: d, agency } = await demo();
+    const rows = JSON.stringify([{ visitor_id: "v1", agency_id: agency, score: 10, classification: "cold", score_version: "lead_score_v1" }]);
+    await db.exec("begin");
+    try {
+      await db.query("select habita_lead_replace_scores($1,$2::jsonb)", [d, rows]);
+      const held = await one<{ n: number }>("select count(*)::int n from pg_locks where locktype = 'advisory' and pid = pg_backend_pid()");
+      expect(held!.n).toBe(1);
+    } finally {
+      await db.exec("rollback");
+    }
+    await db.query("select habita_lead_replace_scores($1,$2::jsonb)", [d, rows]);
+    await db.query("select habita_lead_replace_scores($1,$2::jsonb)", [d, rows]);
+    expect((await one<{ n: number }>("select count(*)::int n from lead_visitor_scores where demo_id = $1", [d]))!.n).toBe(1);
+  });
+
   it("refuses a score out of 0–100", async () => {
     const { demo: d, agency } = await demo();
     await expect(
