@@ -18227,6 +18227,12 @@ main:has(.ap-sidebar) {
   color: var(--muted);
   font-size: 13px;
 }
+/* The fixed choices («Importar nueva propiedad desde URL») wrap on a phone instead of
+   ending in «…»; only property names (.sp-prop, .sp-featured) keep the ellipsis. */
+.sp-option .sp-option-text strong {
+  white-space: normal;
+  overflow-wrap: break-word;
+}
 .sp-thumb {
   display: grid;
   place-items: center;
