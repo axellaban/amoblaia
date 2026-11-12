@@ -137,9 +137,21 @@ export function derivedSituation(f: {
   return "sin_respuesta";
 }
 
-/** Una corrección manual vale mientras el embudo siga en el paso en que se hizo (como la de la etapa). */
+/**
+ * Una pregunta puntual, no una postura: se responde en el paso en que se hizo
+ * y no sigue al avanzar el embudo (si no, cada etapa nueva volvería a mandar precios).
+ */
+const STEP_SCOPED: Situation[] = ["pregunta_precios"];
+
+/**
+ * La situación es lo último que expresó la inmobiliaria y vale hasta que
+ * exprese otra cosa: avanzar de etapa (mandarle la demo, que la abra) no la
+ * cambia. Así quien pidió «más adelante» lo sigue pidiendo con la demo enviada.
+ * Sin ninguna marcada, vale la que dicen los datos.
+ */
 export function currentSituation(derived: Situation, manual: { situation: Situation; step: number } | null, step: number) {
-  return manual && manual.step === step ? { situation: manual.situation, manual: true } : { situation: derived, manual: false };
+  if (!manual || (manual.step !== step && STEP_SCOPED.includes(manual.situation))) return { situation: derived, manual: false };
+  return { situation: manual.situation, manual: true };
 }
 
 export type Planned = { action: Action | null; afterHours: number; reason: string | null; rule?: Rule | null };

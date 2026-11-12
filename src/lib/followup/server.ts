@@ -1362,7 +1362,8 @@ const SITUATION_FACT: Partial<Record<Situation, "reply" | "interest" | "lost">> 
 
 /**
  * POST …/situation: what happened in the conversation, with the original
- * text. It holds while the funnel stays in the same step. It is also recorded
+ * text. It holds until the agency says something else, whatever the stage
+ * (a price question only in its step). It is also recorded
  * in Adquisición where it means something there (a reply, interest, a loss, a
  * do-not-contact, an invalid number), best effort: the answer says what could
  * not be recorded.
