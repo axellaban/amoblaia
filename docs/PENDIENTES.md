@@ -4,6 +4,13 @@ Se detiene el trabajo a pedido del usuario para conservar créditos. Los cambios
 
 Producción: https://amoblaia.vercel.app/
 
+## Prospectos: relevamiento de la costa — 12 de noviembre de 2026 (rama `claude/confident-knuth-bu91z7`)
+
+- Cargado en producción (base): 229 inmobiliarias nuevas de la costa (Mar del Plata, Miramar, Pinamar/Cariló/Valeria/Ostende, Villa Gesell, Partido de la Costa, Mar Chiquita, Necochea, Monte Hermoso), sacadas de las que publican hoy en Argenprop, del padrón del Colegio de Martilleros de Dolores (comado.com.ar) y de sus webs; 109 WhatsApp nuevos (por revisar, con fuente); perfiles con ranking para las 394 pendientes (lotes «Costa 11/2026» y «Pendientes 11/2026»); 58 calificadas pasadas a la cola con su foto.
+- Código: operación `enriquecer` para cargar relevamientos en tanda; campos `portal_url`, `demo_listing_note`, `research_notes` y fuente «Relevamiento web»; dimensión «Lote» en Aprendizajes.
+- **Pendiente:** 49 inmobiliarias con WhatsApp y sin aviso para la demo (no pasan a la cola hasta elegirlo); 263 sin WhatsApp (Argenprop no publica el teléfono sin dejar una consulta); el resto del padrón de comado (La Costa, Gesell) quedó a medias porque el sitio limita las consultas.
+- **Turnia:** no aplica este relevamiento (es de inmobiliarias); la operación `enriquecer` se lleva cuando Turnia tenga Prospectos.
+
 ## Prospectos, antes de la cola — 11 de noviembre de 2026 (rama `claude/modest-fermat-ew2d3r`)
 
 - **Pendiente: aplicar en Supabase `202612140001_prospect_pool.sql`** (SQL Editor; se puede re-ejecutar). Sin ella, Prospectos en Chapa muestra la lista y el ranking pero no deja guardar, y la cola sigue como siempre.

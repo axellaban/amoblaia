@@ -309,7 +309,7 @@ Por cada variable, las inmobiliarias intentadas con cada valor y hasta dónde ll
 ### API (para Chapa Labs)
 
 - `GET /api/prospeccion?vista=prospectos[&mensaje=]` → `{ available, rows, counts, catalog, learning }`. `available: false` si falta la migración: la lista se ve, pero no se puede guardar.
-- `POST { by, prospectos: { op, ... } }`: `guardar { cuenta, valores, zona?, decisor? }`, `cola { cuenta, explorar? }`, `sacar`, `descartar { motivo }`, `reabrir`, `llenar { cantidad }`, `crear { nombre, web?, zona?, whatsapp?, valores?, confirmar? }` (409 `DUPLICATE` si se parece a una que ya está) y `recalcular`.
+- `POST { by, prospectos: { op, ... } }`: `guardar { cuenta, valores, zona?, decisor? }`, `cola { cuenta, explorar? }`, `sacar`, `descartar { motivo }`, `reabrir`, `llenar { cantidad }`, `crear { nombre, web?, zona?, whatsapp?, valores?, confirmar? }` (409 `DUPLICATE` si se parece a una que ya está) `recalcular` y `enriquecer { filas, lote? }`: carga un relevamiento en tanda (hasta 300 filas `{ cuenta?, nombre, zona?, web?, decisor?, whatsapp?, whatsapp_fuente?, confianza?, valores?, descartar? }`). Reconoce la cuenta por id, nombre, web propia (no portales ni redes) o WhatsApp y si no existe la crea; el WhatsApp nuevo entra a revisar con su fuente y su confianza (`CONFIDENCE_TEXT`, hasta 60 caracteres); una cuenta que no tenía WhatsApp queda en Prospectos y no salta a la cola; una fila con errores no frena a las demás.
 
 Archivos: `src/lib/prospecting/pool.ts` (lógica pura), `pool-server.ts` (lecturas y operaciones) y los tests `prospecting-pool*.test.ts`.
 

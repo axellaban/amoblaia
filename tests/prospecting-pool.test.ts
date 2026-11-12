@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  autoStatus, cleanProfile, completeness, confidenceOf, learnings, MIN_FIT, missingForQueue, outcomesOf, pickForQueue, poolBlock, scoreOf, variables,
+  autoStatus, cleanProfile, completeness, CONFIDENCE_TEXT, confidenceOf, learnings, MIN_FIT, missingForQueue, outcomesOf, pickForQueue, poolBlock, sameAccount, scoreOf, variables,
   type LearnRow, type Profile,
 } from "@/lib/prospecting/pool";
 import type { Dataset, ProspectAccount, ProspectContact } from "@/lib/prospecting/types";
@@ -30,6 +30,12 @@ describe("catálogo de Prospectos", () => {
     expect(confidenceOf(contact({ confidence: "Celular publicado; WhatsApp y vigencia por confirmar" }))).toBe("celular_publicado");
     expect(confidenceOf(contact({ confidence: "Celular publicado en directorio oficial; WhatsApp no verificado" }))).toBe("directorio");
     expect(confidenceOf(null)).toBeNull();
+  });
+  it("la confianza que escribe un relevamiento entra en la base y se lee como la misma opción", () => {
+    for (const [key, text] of Object.entries(CONFIDENCE_TEXT)) {
+      expect(text.length).toBeLessThanOrEqual(60);
+      expect(confidenceOf(contact({ confidence: text }))).toBe(key);
+    }
   });
   it("completa con la planilla lo que no se cargó, sin pisar lo cargado", () => {
     const a = account({ contacts: [contact({ confidence: "WhatsApp verificado" })] });
@@ -155,5 +161,17 @@ describe("aprendizajes", () => {
     const v2 = learnings(rows, 30, "Saludo V2");
     expect(v2.total.n).toBe(1);
     expect(v2.dimensions.some((x) => x.key === "message")).toBe(false);
+  });
+});
+
+describe("la misma inmobiliaria", () => {
+  const list = [account({ id: "a1", name: "Pérez & Asociados", website: "https://www.perez.test/contacto" }), account({ id: "a2", name: "Otra", website: "https://www.argenprop.com/inmobiliarias/otra", contacts: [contact({ address: "+5492235000002" })] })];
+  it("la reconoce por nombre, web propia o WhatsApp", () => {
+    expect(sameAccount(list, { name: "perez asociados" })?.id).toBe("a1");
+    expect(sameAccount(list, { website: "perez.test" })?.id).toBe("a1");
+    expect(sameAccount(list, { whatsapp: "+5492235000002" })?.id).toBe("a2");
+  });
+  it("una web de portal no la hace la misma", () => {
+    expect(sameAccount(list, { name: "Distinta", website: "https://www.argenprop.com/inmobiliarias/distinta" })).toBeNull();
   });
 });

@@ -4,8 +4,8 @@ import { isUuid } from "@/lib/demos/shared";
 import { adminClient } from "@/lib/supabase/server";
 import { normalizeWhatsapp } from "./import";
 import {
-  autoStatus, cleanProfile, completeness, EXPLORE_SHARE, FIELDS, GROUPS, learnings, MIN_FIT, missingForQueue, outcomesOf, pickForQueue,
-  scoreOf, SCORING_VERSION, STATUS_HELP, STATUS_LABEL, variables, WEIGHTS, whatsappOf,
+  autoStatus, cleanProfile, completeness, CONFIDENCE_TEXT, EXPLORE_SHARE, FIELDS, GROUPS, learnings, MIN_FIT, missingForQueue, outcomesOf, pickForQueue,
+  sameAccount, scoreOf, SCORING_VERSION, STATUS_HELP, STATUS_LABEL, variables, WEIGHTS, whatsappOf,
   type Extra, type LearnRow, type PoolStatus, type Profile, type Score,
 } from "./pool";
 import { ProspectError, prospectDataset, prospectRpc } from "./server";
@@ -195,14 +195,14 @@ const savePool = (actor: string, account: string, patch: Record<string, unknown>
   prospectRpc<ProfileRow>("habita_prospect_pool_save", { p_actor: actor, p_account: account, p_patch: patch });
 
 /** Guarda con el ranking recalculado y el estado que sale de los datos. */
-async function persist(actor: string, account: ProspectAccount, row: ProfileRow | undefined, extra: Extra | undefined, changes: Record<string, unknown>, force: Partial<{ status: PoolStatus; discard_reason: string; explore: boolean }> = {}) {
+async function persist(actor: string, account: ProspectAccount, row: ProfileRow | undefined, extra: Extra | undefined, changes: Record<string, unknown>, force: Partial<{ status: PoolStatus; discard_reason: string; explore: boolean; from: PoolStatus }> = {}) {
   const profile = { ...(row?.profile ?? {}) } as Record<string, unknown>;
   for (const [k, v] of Object.entries(changes)) {
     if (v === null) delete profile[k];
     else profile[k] = v;
   }
   // Sin perfil y con WhatsApp es una cuenta de antes de Prospectos: ya estaba en la cola.
-  const before: PoolStatus = row?.status ?? (whatsappOf(account) ? "en_cola" : "descubierto");
+  const before: PoolStatus = row?.status ?? force.from ?? (whatsappOf(account) ? "en_cola" : "descubierto");
   const explore = force.explore ?? row?.explore ?? false;
   const { vars } = variables(account, profile as Profile, extra);
   const score = scoreOf(account, vars);
@@ -223,15 +223,6 @@ async function persist(actor: string, account: ProspectAccount, row: ProfileRow 
   return { saved: await savePool(actor, account.id, patch), missing, score };
 }
 
-const normalized = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-const host = (url: string | null) => {
-  try {
-    return url ? new URL(/^https?:\/\//i.test(url) ? url : `https://${url}`).hostname.replace(/^www\./, "").toLowerCase() : "";
-  } catch {
-    return "";
-  }
-};
-
 /**
  * Las operaciones de la vista Prospectos, para el panel de Chapa Labs:
  *   guardar    { cuenta, valores, zona?, decisor? }   carga datos y recalcula ranking y estado
@@ -242,6 +233,7 @@ const host = (url: string | null) => {
  *   llenar     { cantidad }                           suma a la cola las mejores + exploración
  *   crear      { nombre, web?, zona?, whatsapp?, valores?, confirmar? }
  *   recalcular                                        rehace el ranking de todas con perfil
+ *   enriquecer { filas, lote? }                       carga un relevamiento en tanda (ver `enrich`)
  */
 export async function runPoolOp(op: unknown, b: Op, actor: { id: string; name: string }) {
   switch (op) {
@@ -320,12 +312,7 @@ export async function runPoolOp(op: unknown, b: Op, actor: { id: string; name: s
       if (phone && !wa?.address) throw new HttpError(400, wa?.review ?? "No reconocimos ese WhatsApp.");
       const [ds, data] = await Promise.all([prospectDataset({ syncConversions: false }), poolData()]);
       if (!data) throw new ProspectError(503, "Falta aplicar la migración de Prospectos (202612140001_prospect_pool.sql) en Supabase.", "MIGRATION_MISSING");
-      const same = ds.accounts.find(
-        (a) =>
-          normalized(a.name) === normalized(name) ||
-          (website && host(a.website) && host(a.website) === host(website)) ||
-          (wa?.address && a.contacts.some((c) => c.address === wa.address)),
-      );
+      const same = sameAccount(ds.accounts, { name, website, whatsapp: wa?.address });
       if (same && b.confirmar !== true) throw new ProspectError(409, `Ya está en la base como «${same.name}» (mismo nombre, web o WhatsApp).`, "DUPLICATE", same.id);
       const created = await prospectRpc<{ id: string }>("habita_prospect_add", { p_actor: actor.id, p_agency: null, p_name: name, p_website: website, p_sdr: str(b.sdr, 80) || null, p_campaign: null, p_zone: str(b.zona, 120) || null });
       if (wa?.address)
@@ -339,6 +326,8 @@ export async function runPoolOp(op: unknown, b: Op, actor: { id: string; name: s
       const { missing } = await persist(actor.id, again.account, again.row, again.extra, {});
       return { ok: true, id: created.id, missing };
     }
+    case "enriquecer":
+      return enrich(b, actor);
     case "recalcular": {
       const [ds, data] = await Promise.all([prospectDataset({ syncConversions: false }), poolData()]);
       if (!data) throw new ProspectError(503, "Falta aplicar la migración de Prospectos (202612140001_prospect_pool.sql) en Supabase.", "MIGRATION_MISSING");
@@ -355,4 +344,92 @@ export async function runPoolOp(op: unknown, b: Op, actor: { id: string; name: s
     default:
       throw new HttpError(400, "Operación de Prospectos desconocida.");
   }
+}
+
+
+/**
+ * Un relevamiento en tanda (por ejemplo, el de una zona nueva o el de las que no tenían WhatsApp):
+ *   filas: [{ cuenta?, nombre, zona?, web?, decisor?, whatsapp?, whatsapp_fuente?, confianza?, valores?, descartar? }]
+ *   lote:  nombre de la tanda; queda en «Lote» y se compara en Aprendizajes.
+ * Cada fila se busca por `cuenta` o por el mismo nombre, web o WhatsApp; si no existe, se crea. El
+ * WhatsApp nuevo entra a revisar (se valida al confirmar el saludo) y una cuenta que no tenía
+ * WhatsApp queda en Prospectos: no salta a la cola hasta que se la pasa. Las variables se suman
+ * a las que ya tiene y el ranking se recalcula. Una fila con errores no frena a las demás.
+ */
+async function enrich(b: Op, actor: { id: string; name: string }) {
+  const rows = Array.isArray(b.filas) ? (b.filas as Record<string, unknown>[]) : [];
+  if (!rows.length || rows.length > 300) throw new HttpError(400, "Mandá entre 1 y 300 filas.");
+  const batch = str(b.lote, 80) || null;
+  let [ds, data] = await Promise.all([prospectDataset({ syncConversions: false }), poolData()]);
+  if (!data) throw new ProspectError(503, "Falta aplicar la migración de Prospectos (202612140001_prospect_pool.sql) en Supabase.", "MIGRATION_MISSING");
+  const errors: { fila: number; nombre: string; error: string }[] = [];
+  const touched = new Map<string, { patch: Record<string, unknown>; from: PoolStatus | undefined; discard: string | null }>();
+  let created = 0;
+  let contacts = 0;
+
+  for (const [i, r] of rows.entries()) {
+    const name = str(r.nombre, 120);
+    try {
+      const website = str(r.web, 300) || null;
+      const phone = str(r.whatsapp, 60);
+      const wa = phone ? normalizeWhatsapp(phone, phone) : null;
+      if (phone && !wa?.address) throw new HttpError(400, wa?.review ?? "No reconocimos ese WhatsApp.");
+      let account = isUuid(r.cuenta) ? ds.accounts.find((a) => a.id === r.cuenta) ?? null : sameAccount(ds.accounts, { name, website, whatsapp: wa?.address });
+      if (!account) {
+        if (!name) throw new HttpError(400, "Falta el nombre.");
+        const made = await prospectRpc<{ id: string }>("habita_prospect_add", { p_actor: actor.id, p_agency: null, p_name: name, p_website: website, p_sdr: str(r.sdr, 80) || null, p_campaign: null, p_zone: str(r.zona, 120) || null });
+        ds = await prospectDataset({ syncConversions: false });
+        account = ds.accounts.find((a) => a.id === made.id) ?? null;
+        if (!account) throw new HttpError(500, "No se pudo crear la cuenta.");
+        created++;
+      }
+      // Una cuenta de antes de Prospectos con WhatsApp ya estaba en la cola; sin WhatsApp, entra a Prospectos.
+      const prior = touched.get(account.id);
+      const from = prior?.from ?? (data.profiles.some((p) => p.account_id === account!.id) ? undefined : whatsappOf(account) ? "en_cola" : "descubierto");
+
+      const fields: Record<string, unknown> = {};
+      const zone = str(r.zona, 120);
+      if (zone && !account.zone) fields.zone = zone;
+      const decisor = str(r.decisor, 160);
+      if (decisor && !account.decision_maker) fields.decision_maker = decisor;
+      if (Object.keys(fields).length) await prospectRpc("habita_prospect_update", { p_actor: actor.id, p_account: account.id, p_version: account.version, p_patch: fields });
+
+      if (wa?.address && !account.contacts.some((c) => c.address === wa.address)) {
+        const confidence = str(r.confianza, 40);
+        await prospectRpc("habita_prospect_contact", {
+          p_actor: actor.id, p_account: account.id, p_contact: null,
+          p_fields: {
+            channel: "whatsapp", address: wa.address, address_original: wa.original, is_primary: !whatsappOf(account),
+            needs_review: true, review_reason: wa.review ?? "Número relevado: confirmá en el chat que es la inmobiliaria.",
+            confidence: CONFIDENCE_TEXT[confidence] ?? CONFIDENCE_TEXT.celular_publicado,
+            source: `Prospectos · relevamiento${batch ? ` ${batch}` : ""} (${actor.name})`, source_url: str(r.whatsapp_fuente, 500) || null,
+          },
+        });
+        contacts++;
+      }
+
+      const { patch, errors: bad } = cleanProfile({ ...((r.valores as Record<string, unknown>) ?? {}), ...(batch ? { source_batch: batch } : {}) });
+      // Un dato mal relevado no tira la fila: se guarda lo demás y se avisa.
+      if (bad.length) errors.push({ fila: i + 1, nombre: name || account.name, error: bad.join(" ") });
+      for (const [k, v] of Object.entries(patch)) if (v === null) delete patch[k];
+      touched.set(account.id, { patch: { ...(prior?.patch ?? {}), ...patch }, from, discard: str(r.descartar, 300) || prior?.discard || null });
+    } catch (e) {
+      errors.push({ fila: i + 1, nombre: name, error: e instanceof Error ? e.message : "Error." });
+    }
+  }
+
+  // Con todo cargado, el ranking y el estado de cada una.
+  [ds, data] = await Promise.all([prospectDataset({ syncConversions: false }), poolData()]);
+  const profiles = new Map((data?.profiles ?? []).map((p) => [p.account_id, p]));
+  const extras = new Map((data?.extra ?? []).map((x) => [x.account_id, x]));
+  const result: { id: string; name: string; status: PoolStatus; score: number; missing: string[] }[] = [];
+  for (const [id, t] of touched) {
+    const account = ds.accounts.find((a) => a.id === id);
+    if (!account) continue;
+    const force = t.discard ? { status: "descartado" as const, discard_reason: t.discard } : { from: t.from };
+    const { saved, missing, score } = await persist(actor.id, account, profiles.get(id), extras.get(id), t.patch, force);
+    result.push({ id, name: account.name, status: saved.status, score: score.total, missing });
+  }
+  result.sort((x, y) => y.score - x.score);
+  return { ok: true, created, contacts, updated: result.length, errors, rows: result };
 }

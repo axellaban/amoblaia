@@ -64,8 +64,9 @@ export const GROUPS = [
 ] as const;
 
 export const FIELDS: Field[] = [
-  { key: "source_channel", label: "Dónde la encontramos", group: "fuente", type: "enum", key_data: true, options: opts(["argenprop", "Argenprop"], ["zonaprop", "Zonaprop"], ["mercadolibre", "MercadoLibre"], ["directorio", "Directorio"], ["google_maps", "Google Maps"], ["instagram", "Instagram"], ["referido", "Referido"], ["otro", "Otro"]) },
+  { key: "source_channel", label: "Dónde la encontramos", group: "fuente", type: "enum", key_data: true, options: opts(["argenprop", "Argenprop"], ["zonaprop", "Zonaprop"], ["mercadolibre", "MercadoLibre"], ["directorio", "Directorio"], ["google_maps", "Google Maps"], ["instagram", "Instagram"], ["referido", "Referido"], ["relevamiento", "Relevamiento web"], ["otro", "Otro"]) },
   { key: "source_batch", label: "Lote", group: "fuente", type: "text", help: "La tanda en que se cargó, para comparar fuentes." },
+  { key: "research_notes", label: "Notas del relevamiento", group: "fuente", type: "text", help: "Lo que vale saber antes del saludo." },
 
   { key: "number_confidence", label: "Confianza del número", group: "contacto", type: "enum", key_data: true, options: opts(["verificado", "WhatsApp verificado"], ["link_web_propia", "Enlace de WhatsApp en su web"], ["celular_publicado", "Celular publicado"], ["portal", "Publicado en un portal"], ["directorio", "Directorio o fuente vieja"]) },
   { key: "line_type", label: "Tipo de línea", group: "contacto", type: "enum", key_data: true, options: opts(["celular", "Celular"], ["fijo", "Fijo"]) },
@@ -77,6 +78,7 @@ export const FIELDS: Field[] = [
   { key: "decision_confirmed", label: "Decisor confirmado", group: "decisor", type: "bool" },
   { key: "agents", label: "Agentes", group: "decisor", type: "number", min: 0, max: 500 },
 
+  { key: "portal_url", label: "Perfil en un portal", group: "cartera", type: "url" },
   { key: "listings_total", label: "Avisos activos", group: "cartera", type: "number", min: 0, max: 20000, key_data: true },
   { key: "main_operation", label: "Operación principal", group: "cartera", type: "enum", options: opts(["venta", "Venta"], ["alquiler", "Alquiler"], ["temporario", "Alquiler temporario"], ["mixto", "Mixto"]) },
   { key: "pct_residential", label: "% residencial", group: "cartera", type: "number", min: 0, max: 100, key_data: true },
@@ -88,6 +90,7 @@ export const FIELDS: Field[] = [
   { key: "photo_quality", label: "Calidad de las fotos", group: "visual", type: "enum", key_data: true, options: opts(["profesional", "Profesional"], ["media", "Media"], ["celular", "De celular"]) },
   { key: "uses_staging", label: "Ya ambienta sus fotos", group: "visual", type: "enum", key_data: true, options: opts(["no", "No"], ["renders", "Renders"], ["amoblado_virtual", "Amoblado virtual"], ["video_tour", "Video o recorrido"]) },
   { key: "demo_listing_url", label: "Aviso para la demo", group: "visual", type: "url", key_data: true, help: "Un aviso con ambientes vacíos para armar su demo." },
+  { key: "demo_listing_note", label: "Por qué ese aviso", group: "visual", type: "text" },
   { key: "demo_photos_importable", label: "Sus fotos se pueden importar", group: "visual", type: "enum", key_data: true, options: opts(["si", "Sí"], ["no", "No"]) },
 
   { key: "web_platform", label: "Plataforma de su web", group: "digital", type: "enum", key_data: true, options: opts(["tokko", "Tokko"], ["xintel", "Xintel"], ["mapaprop", "Mapaprop"], ["wordpress", "WordPress"], ["propia", "Desarrollo propio"], ["otra", "Otra"], ["sin_web", "No tiene web"]) },
@@ -160,11 +163,48 @@ export function confidenceOf(c: Pick<ProspectContact, "confidence" | "verified">
   return null;
 }
 
+/**
+ * Cómo queda escrita la confianza de un WhatsApp relevado (la base admite hasta 60 caracteres).
+ * `confidenceOf` la vuelve a leer como la misma opción del catálogo.
+ */
+export const CONFIDENCE_TEXT: Record<string, string> = {
+  verificado: "WhatsApp verificado",
+  link_web_propia: "Enlace de WhatsApp en web propia (relevamiento)",
+  celular_publicado: "Celular publicado (relevamiento); WhatsApp por confirmar",
+  portal: "En un portal (relevamiento); WhatsApp por confirmar",
+  directorio: "Directorio (relevamiento); WhatsApp por confirmar",
+};
+
 const num = (v: unknown) => {
   if (v === null || v === undefined || v === "") return null;
   const n = typeof v === "number" ? v : Number(String(v).replace(",", "."));
   return Number.isFinite(n) ? n : null;
 };
+
+/** El nombre sin tildes, mayúsculas ni signos, para reconocer la misma inmobiliaria. */
+export const normalizedName = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+/** El dominio de una web, sin www. */
+export const hostOf = (url: string | null | undefined) => {
+  try {
+    return url ? new URL(/^https?:\/\//i.test(url) ? url : `https://${url}`).hostname.replace(/^www\./, "").toLowerCase() : "";
+  } catch {
+    return "";
+  }
+};
+/** La cuenta que ya existe con el mismo nombre, web o WhatsApp. Las webs de portales y redes no cuentan como propias. */
+export function sameAccount<T extends Pick<ProspectAccount, "name" | "website" | "contacts">>(list: T[], q: { name?: string | null; website?: string | null; whatsapp?: string | null }) {
+  const name = q.name ? normalizedName(q.name) : "";
+  const shared = /(^|\.)(argenprop\.com|zonaprop\.com\.ar|mercadolibre\.com\.ar|facebook\.com|instagram\.com|tuinmobiliaria\.com\.ar|blogspot\.com)$/;
+  const site = hostOf(q.website);
+  const ownSite = site && !shared.test(site) ? site : "";
+  return (
+    list.find((a) =>
+      (name && normalizedName(a.name) === name) ||
+      (ownSite && hostOf(a.website) === ownSite) ||
+      (q.whatsapp && a.contacts.some((c) => c.address === q.whatsapp)),
+    ) ?? null
+  );
+}
 
 export type Extra = { address?: string | null; source?: string | null; source_data?: Record<string, unknown> | null; source_notes?: string | null };
 
@@ -343,6 +383,7 @@ export const DIMENSIONS: Dimension[] = [
   { key: "sdr", label: "SDR", of: (r) => r.account.sdr?.trim() || null },
   { key: "source_channel", label: "Dónde la encontramos", of: (r) => label("source_channel", r.vars.source_channel) },
   { key: "structure", label: "Estructura", of: (r) => label("structure", r.vars.structure) },
+  { key: "source_batch", label: "Lote", of: (r) => (typeof r.vars.source_batch === "string" && r.vars.source_batch.trim()) || null },
   { key: "listings_total", label: "Avisos activos", of: (r) => band(num(r.vars.listings_total), [[20, "Menos de 20"], [100, "20 a 99"], [251, "100 a 250"]], "Más de 250") },
   { key: "empty", label: "Avisos vacíos", of: (r) => band(num(r.vars.empty_listings), [[1, "Ninguno"], [5, "1 a 4"], [20, "5 a 19"]], "20 o más") },
   { key: "uses_staging", label: "Ya ambienta sus fotos", of: (r) => label("uses_staging", r.vars.uses_staging) },

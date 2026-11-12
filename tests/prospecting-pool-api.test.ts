@@ -181,4 +181,36 @@ describe("/api/prospeccion · Prospectos", () => {
     expect(state.rpcs.find((x) => x.name === "habita_prospect_contact")?.args).toMatchObject({ p_account: uuid(50), p_fields: { channel: "whatsapp", address: "+5492235000000", needs_review: true } });
     expect(saves()[0].p_patch).toMatchObject({ status: "descubierto", profile: { source_channel: "google_maps" } });
   });
+  it("enriquecer: carga un relevamiento en tanda, sin que una sin WhatsApp salte a la cola", async () => {
+    // La que se crea aparece en la base en la lectura siguiente (el grabador devuelve uuid(50)).
+    (state.dataset as { accounts: unknown[] }).accounts.push(account(50, { name: "Creada en la tanda", contacts: [] }));
+    const r = await post({
+      op: "enriquecer",
+      lote: "Costa 11/2026",
+      filas: [
+        { nombre: "inmobiliaria ficticia 2", whatsapp: "2235111111", whatsapp_fuente: "https://ficticia2.test/contacto", confianza: "link_web_propia", valores: { demo_listing_url: "https://ficticia2.test/aviso/9", listings_total: 30 } },
+        { cuenta: uuid(1), valores: { web_platform: "tokko", pct_residential: 400 } },
+        { nombre: "Costa Nueva", zona: "Pinamar", decisor: "Martillera Test", web: "https://www.argenprop.com/inmobiliarias/x" },
+        { nombre: "Mal número", whatsapp: "12" },
+      ],
+    });
+    expect(r.status).toBe(200);
+    const b = await r.json();
+    expect(b).toMatchObject({ ok: true, created: 1, contacts: 1, updated: 3 });
+    expect(b.errors.map((e: { fila: number }) => e.fila)).toEqual([2, 4]);
+    // El WhatsApp relevado entra a revisar, con su fuente y su confianza.
+    expect(state.rpcs.find((x) => x.name === "habita_prospect_contact")?.args).toMatchObject({
+      p_account: uuid(2), p_fields: { address: "+5492235111111", needs_review: true, is_primary: true, source_url: "https://ficticia2.test/contacto", confidence: expect.stringMatching(/web propia/) },
+    });
+    // Una web de portal no hace que dos inmobiliarias distintas parezcan la misma: se crea.
+    expect(state.rpcs.find((x) => x.name === "habita_prospect_add")?.args).toMatchObject({ p_name: "Costa Nueva", p_zone: "Pinamar" });
+    expect(state.rpcs.find((x) => x.name === "habita_prospect_update")?.args).toMatchObject({ p_account: uuid(50), p_patch: { decision_maker: "Martillera Test" } });
+    const by = Object.fromEntries(saves().map((s) => [s.p_account, s.p_patch]));
+    expect(by[uuid(2)]).toMatchObject({ status: "descubierto", profile: { demo_listing_url: "https://ficticia2.test/aviso/9", listings_total: 30, source_batch: "Costa 11/2026" } });
+    expect(by[uuid(2)].snapshot).toBeUndefined();
+    // La de antes, que ya estaba en la cola, sigue ahí; el dato válido se guarda igual.
+    expect(by[uuid(1)]).toMatchObject({ status: "en_cola", profile: { web_platform: "tokko" } });
+    expect(by[uuid(50)]).toMatchObject({ status: "descubierto" });
+    expect((await post({ op: "enriquecer", filas: [] })).status).toBe(400);
+  });
 });
