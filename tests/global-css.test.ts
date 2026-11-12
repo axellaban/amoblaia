@@ -46,4 +46,12 @@ describe("globals.css", () => {
     const base = /^\.ah-dfunnel \{([^}]*)\}/m.exec(css)?.[1] ?? "";
     expect(base).toMatch(/grid-template-columns:\s*minmax\(0,\s*1fr\)/);
   });
+
+  it("lets the start choices («Importar nueva propiedad desde URL») wrap on a phone instead of ending in «…»", () => {
+    const css = readFileSync("src/app/globals.css", "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    const rule = /\.sp-option \.sp-option-text strong \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(rule).toMatch(/white-space:\s*normal/);
+    // Property names in the lists keep the ellipsis.
+    expect(/^\.sp-option-text strong \{([^}]*)\}/m.exec(css)?.[1] ?? "").toContain("nowrap");
+  });
 });
