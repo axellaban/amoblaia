@@ -99,15 +99,15 @@ async function demoProgress(agencyIds: string[]) {
   const out = new Map<string, DemoProgress>();
   if (!agencyIds.length) return out;
   // In batches: every id goes in the URL, and with ~800 agencies the request is refused before reaching the database (no error code).
-  const rows: { agency_id: string; status: string; activity_level: number }[] = [];
-  for (let i = 0; i < agencyIds.length; i += DEMO_BATCH) {
-    const { data, error } = await adminClient()
-      .from("demos")
-      .select("agency_id,status,activity_level")
-      .in("agency_id", agencyIds.slice(i, i + DEMO_BATCH));
+  // The batches go at once, not one after the other: this read is part of every Follow-up operation.
+  const batches: string[][] = [];
+  for (let i = 0; i < agencyIds.length; i += DEMO_BATCH) batches.push(agencyIds.slice(i, i + DEMO_BATCH));
+  const pages = await Promise.all(batches.map(async (ids) => {
+    const { data, error } = await adminClient().from("demos").select("agency_id,status,activity_level").in("agency_id", ids);
     if (error) throw new Error(`DATABASE_${error.code ?? error.message ?? "unknown"}`);
-    rows.push(...((data ?? []) as typeof rows));
-  }
+    return (data ?? []) as { agency_id: string; status: string; activity_level: number }[];
+  }));
+  const rows = pages.flat();
   for (const row of rows) {
     const p = out.get(row.agency_id) ?? { created: false, sent: false, level: 0 as const };
     p.created = true;
