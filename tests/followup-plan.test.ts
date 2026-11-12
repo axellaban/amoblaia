@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { byPriority, currentSituation, defaultPriority, replyRoute, derivedSituation, groupOf, nameKey, nextAction, outsideHours, shortName, splitMessages } from "@/lib/followup/plan";
+import { DEFAULT_RULES } from "@/lib/followup/rules";
 
 const facts = { suppressed: false, accountStage: "pending", lostReason: null, sheetStatus: "Pendiente", hasNumber: true, allInvalid: false };
 
@@ -17,9 +18,23 @@ describe("derivedSituation (la hoja y Adquisición, sin copiar nada)", () => {
     expect(derivedSituation({ ...facts, accountStage: "conversation", sheetStatus: "Responde saludo inicial" })).toBe("confirmo_numero");
   });
 
-  it("keeps a manual situation while the funnel stays in the same step", () => {
+  it("keeps what the agency last said when the funnel moves on", () => {
+    expect(currentSituation("sin_respuesta", null, 0)).toEqual({ situation: "sin_respuesta", manual: false });
+    expect(currentSituation("interesado", { situation: "mas_adelante", step: 0 }, 3)).toEqual({ situation: "mas_adelante", manual: true });
+    expect(currentSituation("interesado", { situation: "confirmo_numero", step: 0 }, 3)).toEqual({ situation: "confirmo_numero", manual: true });
+    expect(currentSituation("interesado", { situation: "rechazo", step: 0 }, 3)).toEqual({ situation: "rechazo", manual: true });
+  });
+
+  it("a price question is answered in its step and does not follow the funnel", () => {
     expect(currentSituation("sin_respuesta", { situation: "pregunta_precios", step: 0 }, 0)).toEqual({ situation: "pregunta_precios", manual: true });
     expect(currentSituation("interesado", { situation: "pregunta_precios", step: 0 }, 1)).toEqual({ situation: "interesado", manual: false });
+  });
+
+  it("a demo sent to someone who asked for later does not get the 24 h follow-up", () => {
+    const rules = DEFAULT_RULES.map((r) => (r.key === "no-abrio:principal" ? { ...r, situations: ["sin_respuesta", "confirmo_numero", "interesado"] as typeof r.situations } : r));
+    const sit = currentSituation("interesado", { situation: "mas_adelante", step: 0 }, 3).situation;
+    expect(nextAction("no-abrio", sit, {}, rules).action).toBeNull();
+    expect(nextAction("no-abrio", "interesado", {}, rules)).toMatchObject({ action: "principal", afterHours: 24 });
   });
 });
 
