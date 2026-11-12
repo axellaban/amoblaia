@@ -659,6 +659,9 @@ async function board(now = new Date()) {
     greetingVersion: greeting.get(id) ?? null,
   }));
   return { rows, items, closedItems, vs, ex, stepNow, newToday: fresh.size, quota, open, names: new Map(rows.map((r) => [r.id, r.name])), rules, facts,
+    // The prospecting dataset this board was built from: claiming reuses it to
+    // build the message instead of reading the whole dataset a second time.
+    ds,
     // Catalog already fetched to calculate which actions are eligible; reuse it
     // in the Chapa snapshot instead of making three additional DB round trips.
     catalog: { stages: extraStages, states: catalog, overrides },
@@ -976,7 +979,7 @@ export async function claimNext(input: { agencyId?: unknown; filter?: unknown; s
     if (it.execution?.status === "sent") throw new HttpError(409, `Ya se confirmó «${it.actionLabel}» con ${it.name}.`);
     if (it.blocked) throw new HttpError(409, it.blocked);
     await lock(it, actor);
-    return prepare(it, origin, actor, b.vs);
+    return prepare(it, origin, actor, b.vs, b.ds);
   }
   // La cola se recalcula ahora (no la que tiene la pantalla) y se toma solo lo que entra en el filtro elegido.
   // Filtering after the first 500 globally ranked prospects silently loses
@@ -993,7 +996,7 @@ export async function claimNext(input: { agencyId?: unknown; filter?: unknown; s
       },
     ),
   );
-  return it ? prepare(it, origin, actor) : null;
+  return it ? prepare(it, origin, actor, currentBoard.vs, currentBoard.ds) : null;
 }
 
 async function lock(it: QueueItem, actor: { id: string; name: string }) {
@@ -1011,18 +1014,26 @@ async function release(agencyId: string, actorId: string) {
  * «Link demo» and «Link panel»), its WhatsApp and the version it gets. A text
  * with «---» lines is several messages, sent one after the other.
  */
-async function prepare(it: QueueItem, origin: string, actor: { id: string; name: string }, knownVersions?: FollowupVersion[]) {
+async function prepare(it: QueueItem, origin: string, actor: { id: string; name: string }, knownVersions?: FollowupVersion[], knownDataset?: Dataset | null) {
   const vs = knownVersions ?? await versions();
   const v = vs.find((x) => x.id === it.versionId);
   if (!v) throw new HttpError(409, `Falta el texto de «${it.actionLabel}».`);
   const need = linksNeeded(v);
-  const [demo, panel, account] = await Promise.all([
+  // The board that validated this task already read the prospecting dataset
+  // (account and SDR). Claiming used to read it again here, with the global
+  // conversion sync in front (two RPCs of ~0.7-0.8 s each on average, up to
+  // 8 s under load, plus the demo batches), just to get the account. Taking a
+  // task is not a reason to sync every agency's conversions: the panel and the
+  // writes that need it (confirm, situations, imports) still run that sync.
+  // The links and the history now load at the same time.
+  const known = knownDataset ? accountsByAgency(knownDataset).get(it.agencyId) : undefined;
+  const [demo, panel, loaded, history] = await Promise.all([
     need.demo ? agencyDemoLink(it.agencyId, actor.id, origin).then((l) => l.url).catch(() => null) : null,
     need.panel ? agencyPanelLink(it.agencyId, actor.id, origin).then((l) => l.url).catch(() => null) : null,
-    prospectDataset()
-      .then((ds) => accountsByAgency(ds).get(it.agencyId))
-      .catch(() => undefined),
+    knownDataset ? undefined : prospectDataset().then((ds) => accountsByAgency(ds).get(it.agencyId)).catch(() => undefined),
+    knownDataset ? historyOf(it.agencyId, known?.id ?? null, vs) : null,
   ]);
+  const account = known ?? loaded;
   const message = fillMessage(v.body, { inmobiliaria: it.shortName, decisor: it.person, sdr: account?.sdr || actor.name, demo, panel });
   const holes = missingVariables(message);
   const warnings: string[] = [...it.checks];
@@ -1032,7 +1043,7 @@ async function prepare(it: QueueItem, origin: string, actor: { id: string; name:
   if (v.channel === "whatsapp" && !it.wa) warnings.push("Falta su WhatsApp: cargalo en la ficha de la inmobiliaria.");
   const ready = !holes.length && (v.channel === "task" || Boolean(it.wa));
   const messages = splitMessages(message);
-  const history = await historyOf(it.agencyId, account?.id ?? null, vs);
+  const historyRows = history ?? await historyOf(it.agencyId, account?.id ?? null, vs);
   const hours = v.channel === "whatsapp" ? (it.window ? outsideWindow(it.window) : outsideHours(it.group)) : null;
   const linkOk = (!need.demo || Boolean(demo)) && (!need.panel || Boolean(panel));
   // Lo que el agente revisa antes de mandar. «Número validado» queda pendiente con un número sin validar: se valida al confirmar.
@@ -1081,7 +1092,7 @@ async function prepare(it: QueueItem, origin: string, actor: { id: string; name:
     item: it,
     lockedUntil: new Date(Date.now() + 600_000).toISOString(),
     checklist,
-    history,
+    history: historyRows,
     context: {
       score: it.score,
       priority: it.priority,
