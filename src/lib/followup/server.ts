@@ -827,10 +827,11 @@ function resultsOf(b: Awaited<ReturnType<typeof board>>, all: QueueItem[], queue
     cohorts: { contacto: cohorts(b.facts, "contacto"), respuesta: cohorts(b.facts, "respuesta"), version: bySegment(b.facts) },
     // The same cohorts counted with Follow-up's commercial stages, from Contactado (the funnel of the panel).
     cohortFunnel: (() => {
-      const stages = COMMERCIAL_STAGES.filter((c) => c.key !== "prospectado").map((c) => ({
-        key: c.key, title: c.title,
-        from: c.technical.length ? Math.min(...c.technical.map((t) => stageInfo(t).step)) : CLIENT_STEP,
-      }));
+      const stages = COMMERCIAL_STAGES.filter((c) => c.key !== "prospectado").flatMap((c) => {
+        const stage = { key: c.key as string, title: c.title as string, from: c.technical.length ? Math.min(...c.technical.map((t) => stageInfo(t).step)) : CLIENT_STEP };
+        // «Demo con interacción»: inside Demo enviada, the demos that went past a visit (from «Interactuó, sin cuenta»).
+        return c.key === "demo-enviada" ? [stage, { key: "demo-interaccion", title: "Demo con interacción", from: stageInfo("sin-cuenta").step }] : [stage];
+      });
       const t = stages.map((x) => x.from);
       return { stages: stages.map(({ key, title }) => ({ key, title })), contacto: funnelCohorts(b.facts, t, "contacto"), respuesta: funnelCohorts(b.facts, t, "respuesta"), version: funnelCohorts(b.facts, t, "version") };
     })(),
