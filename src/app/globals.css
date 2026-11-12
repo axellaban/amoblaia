@@ -1708,6 +1708,17 @@ fieldset {
     font-size: 37px;
   }
 }
+/* Between the menu's collapse (800px) and here, the signed-in header («Mi cuenta» and
+   «Ir a mi inmobiliaria») was 20-30px wider than the screen: an iPad held upright
+   scrolled sideways on the home and /precios (QA 12/11 am). */
+@media (max-width: 860px) {
+  .nav {
+    gap: 12px;
+  }
+  .nav-links {
+    gap: 12px;
+  }
+}
 @media (max-width: 800px) {
   .header {
     height: 74px;
@@ -8946,6 +8957,14 @@ h2 .accent {
   display: grid;
   gap: 2px;
   min-width: 0;
+}
+/* A failed import's link has no spaces: without these, its grid track takes the
+   link's whole width and the panel home scrolls sideways on a phone (QA 12/11 am). */
+.ap-failed {
+  grid-template-columns: minmax(0, 1fr);
+}
+.ap-failed strong {
+  overflow-wrap: anywhere;
 }
 .ap-failed small,
 .ap-grants small,
