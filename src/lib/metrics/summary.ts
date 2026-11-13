@@ -52,31 +52,45 @@ function funnel(ds: Dataset, f: Filters) {
 export type ActivitySources = { demos: DemoRow[]; activity: ActivityRow[]; claims: ClaimRow[] };
 
 /**
- * What prospected agencies did in the period, whenever they were first greeted (Chapa's «Embudo contra
- * la meta» for habita): distinct agencies that showed interest (or got their demo), whose demo was sent, that visited it, that interacted, that
- * created their account, activated or paid within the range. Unlike the cohort funnel (`demos`, only the
- * agencies first greeted in the same period), a demo sent today to one greeted last week counts today.
+ * What prospected agencies reached in the period, whenever they were first greeted (Chapa's «Embudo contra
+ * la meta» for habita): distinct agencies that showed interest (or got their demo), whose demo was sent, that
+ * visited it, that interacted, that created their account, activated or paid within the range. Unlike the
+ * cohort funnel (`demos`, only the agencies first greeted in the same period), a demo sent today to one
+ * greeted last week counts today.
+ *
+ * Each agency counts in the period where it reached the step for the FIRST time: marking it «Interesada» again
+ * in Follow-up, re-sending its demo or visiting it again next week does not count it again (on 10/11 41
+ * agencies already interested were re-marked in Follow-up and «Interesados» jumped to 49 in one week).
  */
 export function periodActivity(ds: Dataset, src: ActivitySources, r: Range) {
   const prospected = new Set(ds.accounts.map((a) => a.agency_id));
   const agencyOfAccount = new Map(ds.accounts.map((a) => [a.id, a.agency_id]));
   const agencyOfDemo = new Map(src.demos.filter((d) => d.id && d.agency_id).map((d) => [d.id!, d.agency_id!]));
-  const count = (ids: (string | null | undefined)[]) => new Set(ids.filter((id): id is string => Boolean(id) && prospected.has(id!))).size;
-  const visits = (kinds: string[]) =>
-    count(src.activity.filter((a) => a.demo_id && kinds.includes(a.kind) && inRange(a.created_at, r)).map((a) => agencyOfDemo.get(a.demo_id!)));
-  const eventAgencies = (type: string) =>
-    ds.events.filter((e) => e.type === type && !e.corrected && inRange(e.occurred_at, r)).map((e) => agencyOfAccount.get(e.account_id));
-  const events = (type: string) => count(eventAgencies(type));
-  const sent = src.demos.filter((d) => inRange(d.sent_at, r)).map((d) => d.agency_id);
+  type Fact = [agency: string | null | undefined, at: string | null | undefined];
+  /** Prospected agencies whose first fact (ever, not only in the range) falls in the range. */
+  const firstIn = (facts: Fact[]) => {
+    const first = new Map<string, number>();
+    for (const [agency, at] of facts) {
+      const t = at ? Date.parse(at) : NaN;
+      if (!agency || !prospected.has(agency) || !Number.isFinite(t)) continue;
+      if (!first.has(agency) || t < first.get(agency)!) first.set(agency, t);
+    }
+    return [...first.values()].filter((t) => inRange(new Date(t).toISOString(), r)).length;
+  };
+  const visits = (kinds: readonly string[]): Fact[] =>
+    src.activity.filter((a) => a.demo_id && kinds.includes(a.kind)).map((a) => [agencyOfDemo.get(a.demo_id!), a.created_at]);
+  const events = (type: string): Fact[] =>
+    ds.events.filter((e) => e.type === type && !e.corrected).map((e) => [agencyOfAccount.get(e.account_id), e.occurred_at]);
+  const sent: Fact[] = src.demos.map((d) => [d.agency_id, d.sent_at]);
   return {
-    // «Interesado» en Follow-up incluye a las que ya recibieron la demo: interés registrado o demo enviada en el período.
-    interesados: count([...eventAgencies("interest"), ...sent]),
-    demosEnviadas: count(sent),
-    visitadas: visits([...ACTIVITY]),
-    conInteraccion: visits(ACTIVITY.filter((k) => k !== "visita")),
-    cuentas: count(src.claims.filter((c) => inRange(c.claimed_at, r)).map((c) => c.id)),
-    activas: events("activated"),
-    clientes: events("purchased"),
+    // «Interesado» en Follow-up incluye a las que ya recibieron la demo: el primer interés registrado o la primera demo enviada.
+    interesados: firstIn([...events("interest"), ...sent]),
+    demosEnviadas: firstIn(sent),
+    visitadas: firstIn(visits(ACTIVITY)),
+    conInteraccion: firstIn(visits(ACTIVITY.filter((k) => k !== "visita"))),
+    cuentas: firstIn(src.claims.map((c) => [c.id, c.claimed_at])),
+    activas: firstIn(events("activated")),
+    clientes: firstIn(events("purchased")),
   };
 }
 
