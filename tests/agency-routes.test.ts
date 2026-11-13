@@ -506,6 +506,16 @@ describe("Credits of an agency", () => {
     expect(state.rpcs.filter((c) => c.name === "amobla_account").map((c) => c.args.p_user)).toEqual([OWNER]);
   });
 
+  it("lists only movements that moved credits (QA 13/11: «free_results_enabled: 0» se veía en el panel)", async () => {
+    state.tables.credit_grants = [];
+    state.tables.credit_ledger = [
+      { user_id: OWNER, delta: -3, reason: "video_reserved", created_at: "2026-11-04T10:00:00Z" },
+      { user_id: OWNER, delta: 0, reason: "free_results_enabled", created_at: "2026-11-02T10:00:00Z" },
+    ];
+    const body = await (await creditos.GET()).json();
+    expect(body.ledger.map((l: { reason: string }) => l.reason)).toEqual(["video_reserved"]);
+  });
+
   it("reports a balance it could not read as unknown, not as zero", async () => {
     state.creditsError = true;
     const body = await (await creditos.GET()).json();
