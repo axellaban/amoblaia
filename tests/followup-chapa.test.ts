@@ -47,7 +47,7 @@ vi.mock("@/lib/followup/server", () => ({
     stages: [{ key: "no-contactado", title: "No contactado", goal: "Contactados", versions: [], queue: [{ agencyId: AG, action: "principal", dueAt: "2026-11-10T12:00:00Z", execution: null }] }],
     rules: [],
     changes: [],
-    results: { versions: [] },
+    results: { versions: [], actors: [{ actorId: FACU_ID, executions: 2, conversions: 1 }] },
   }),
   agentQueue: async (...args: unknown[]) => (calls.push({ fn: "agentQueue", args }), { queue: [{ agencyId: AG, name: "Inmo", claim: board.claim }] }),
   claimNext: fn("claimNext"),

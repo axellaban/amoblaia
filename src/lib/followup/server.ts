@@ -80,7 +80,7 @@ import {
   type Situation,
 } from "./plan";
 import { DEFAULT_RULES, cleanRule, compatible, outsideWindow, type Rule } from "./rules";
-import { WINDOWS, blockReasons, bySegment, cohorts, executionDays, firstContactState, funnelCohorts, queueDayState, versionResults, weekly, weeklyByType, type QueueDayRow, type VersionResult, type WindowKey } from "./results";
+import { PERIODS, blockReasons, bySegment, cohorts, executionDays, attribute, firstContactState, funnelCohorts, periodStart, queueDayState, versionResults, weekly, weeklyByType, type QueueDayRow, type VersionResult, type WindowKey } from "./results";
 import { cleanFilter, pickNext } from "./queue-filter";
 import { customStages } from "./commercial-catalog";
 import { readSituationOverrides, readStateCatalog, resolveCustomClassification } from "./state-catalog";
@@ -214,7 +214,7 @@ const executions = (agencyId?: string) =>
     // Who executed (person or bot) arrives with 202612110001; until it is applied, read without it.
     : readAll<FollowupExecution>("followup_executions", `${EXECUTION_FIELDS},executed_by`)
         .catch(() => readAll<FollowupExecution>("followup_executions", EXECUTION_FIELDS));
-const EXECUTION_FIELDS = "id,version_id,stage,action,agency_id,from_step,status,reason,created_at,updated_at,sent_at,converted_at";
+const EXECUTION_FIELDS = "id,version_id,stage,action,agency_id,from_step,status,reason,created_at,updated_at,sent_at,converted_at,actor_id";
 
 // ── La foto diaria de la cola (202612110001) ──
 // What was pending each Buenos Aires day, for «¿Se ejecutó la cola?» in Resultados.
@@ -618,8 +618,10 @@ async function board(now = new Date()) {
   // GETs must not mutate real conversion history. Credit only an observed
   // post-send interest or demo creation timestamp. For later steps we don't
   // know the exact event time; never fabricate one using the time of this GET.
+  // The stored converted_at is not trusted: old rows carry the time of a read, not of a fact. It is always recomputed here.
   for (const e of ex) {
-    if (e.status !== "sent" || !e.sent_at || e.converted_at || (stepNow.get(e.agency_id) ?? -1) <= e.from_step) continue;
+    e.converted_at = null;
+    if (e.status !== "sent" || !e.sent_at || (stepNow.get(e.agency_id) ?? -1) <= e.from_step) continue;
     const sentAt = Date.parse(e.sent_at);
     const interest = lastInterest.get(e.agency_id);
     const demo = firstDemo.get(e.agency_id);
@@ -801,25 +803,41 @@ export type FunnelStep = { key: StageKey; title: string; goal: string; waiting: 
 export type Change = Awaited<ReturnType<typeof auditOf>>[number];
 export type Results = ReturnType<typeof resultsOf>;
 
-/** La pestaña Resultados: por regla y versión (con ventana de 7, 14 días o sin límite), por semana, cohortes y bloqueos. */
+/** La pestaña Resultados: por regla y versión (en el período: esta semana, 7 o 14 días, o sin límite), por semana, cohortes y bloqueos. */
 function resultsOf(b: Awaited<ReturnType<typeof board>>, all: QueueItem[], queueDays: QueueDayRow[] | null) {
   const label = (stage: string, action: string) => actionLabel(stage as StageKey, (isAction(action) ? action : "principal"));
   const pendingByVersion = new Map<string, number>();
   for (const q of all) if (q.versionId && q.execution?.status !== "sent" && q.action) pendingByVersion.set(q.versionId, (pendingByVersion.get(q.versionId) ?? 0) + 1);
+  // One entry per period (by send date). The weekly series are the last 8 weeks whatever the period.
+  const weeks = weekly(b.ex, b.stepNow);
+  const byType = weeklyByType(b.ex, b.stepNow, label);
   const windows = Object.fromEntries(
-    (Object.keys(WINDOWS) as WindowKey[]).map((k) => [
+    (Object.keys(PERIODS) as WindowKey[]).map((k) => [
       k,
       {
-        versions: versionResults(b.vs, b.ex, b.stepNow, WINDOWS[k], pendingByVersion).filter((r) => r.eligible > 0 || r.status !== "archived"),
-        weekly: weekly(b.ex, b.stepNow, WINDOWS[k]),
-        weeklyByType: weeklyByType(b.ex, b.stepNow, WINDOWS[k], label),
+        label: PERIODS[k],
+        since: periodStart(k) === null ? null : new Date(periodStart(k)!).toISOString(),
+        versions: versionResults(b.vs, b.ex, b.stepNow, periodStart(k), pendingByVersion).filter((r) => r.eligible > 0 || r.status !== "archived"),
+        weekly: weeks,
+        weeklyByType: byType,
       },
     ]),
-  ) as Record<WindowKey, { versions: VersionResult[]; weekly: ReturnType<typeof weekly>; weeklyByType: ReturnType<typeof weeklyByType> }>;
+  ) as Record<WindowKey, { label: string; since: string | null; versions: VersionResult[]; weekly: ReturnType<typeof weekly>; weeklyByType: ReturnType<typeof weeklyByType> }>;
   const sent = b.ex.filter((e) => e.status === "sent");
+  // Executions and conversions by who executed them, with the same attribution as the rest of Resultados.
+  const { credited } = attribute(b.ex, b.stepNow, null, true);
+  const actorStats = new Map<string | null, { executions: number; conversions: number }>();
+  for (const e of sent) {
+    const k = e.actor_id ?? null;
+    const cur = actorStats.get(k) ?? { executions: 0, conversions: 0 };
+    cur.executions++;
+    if (credited.has(e)) cur.conversions++;
+    actorStats.set(k, cur);
+  }
   const since30 = Date.now() - 30 * DAY_MS;
   return {
     windows,
+    actors: [...actorStats].map(([actorId, x]) => ({ actorId, ...x })),
     totals: {
       executed30: sent.filter((e) => e.sent_at && Date.parse(e.sent_at) >= since30).length,
       replies30: b.facts.filter((f) => f.firstReply && Date.parse(f.firstReply) >= since30).length,

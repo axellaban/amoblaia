@@ -70,17 +70,15 @@ function guardClaim(it: Pick<QueueItem, "name" | "claim"> | undefined, actor: Op
   if (c && c.until > new Date().toISOString() && c.actorId === actor.id && c.by && c.by !== actor.name) throw new HttpError(409, `${it!.name} la está ejecutando ${c.by}.`);
 }
 
-/** Envíos confirmados y conversiones por quien ejecutó (el usuario del equipo). */
-async function byActor(team: TeamUser[]) {
-  const { data, error } = await adminClient().from("followup_executions").select("actor_id,status,converted_at").eq("status", "sent").limit(20000);
-  if (error) return [];
+/** Envíos confirmados y conversiones por quien ejecutó (el usuario del equipo), con la atribución de Resultados. */
+function byActor(team: TeamUser[], actors: { actorId: string | null; executions: number; conversions: number }[]) {
   const name = new Map(team.map((u) => [u.id, actorName(u)]));
   const out = new Map<string, { executions: number; conversions: number }>();
-  for (const e of (data ?? []) as { actor_id: string | null; converted_at: string | null }[]) {
-    const k = (e.actor_id && name.get(e.actor_id)) || "Equipo";
+  for (const a of actors) {
+    const k = (a.actorId && name.get(a.actorId)) || "Equipo";
     const cur = out.get(k) ?? { executions: 0, conversions: 0 };
-    cur.executions++;
-    if (e.converted_at) cur.conversions++;
+    cur.executions += a.executions;
+    cur.conversions += a.conversions;
     out.set(k, cur);
   }
   return [...out].map(([actor, x]) => ({ actor, ...x, rate: x.executions ? x.conversions / x.executions : null }));
@@ -88,7 +86,8 @@ async function byActor(team: TeamUser[]) {
 
 /** Lo que Chapa muestra: la cola, las bloqueadas, la bandeja, el embudo, las reglas y los resultados. */
 export async function followupSnapshot(team: TeamUser[] = [], period?: Period) {
-  const [o, actors] = await Promise.all([followupOverview(period), byActor(team)]);
+  const o = await followupOverview(period);
+  const actors = byActor(team, o.results.actors ?? []);
   // The Follow-up engine already read this catalog to determine executable tasks.
   // Keep a compatibility fallback for older snapshots and isolated test mocks.
   const [catalogStages, catalogStates, catalogOverrides] = o.catalog

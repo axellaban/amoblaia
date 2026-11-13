@@ -1,9 +1,12 @@
 // Follow-up, Fase 4: qué acción y qué versión mueven inmobiliarias. Puro: lo
 // comparten el servidor y los tests.
 //
-// - Ejecutados: envíos confirmados (una vez por versión e inmobiliaria).
-// - Conversión: la inmobiliaria pasó del paso en que estaba al enviarla, dentro
-//   de la ventana (7 o 14 días desde el envío; «sin límite»: cuando sea).
+// - Ejecutados: envíos confirmados (una vez por versión e inmobiliaria), en el
+//   período elegido por fecha de envío (esta semana, últimos 7 o 14 días, o
+//   sin límite).
+// - Conversión: la inmobiliaria pasó del paso en que estaba al enviarla. Es la
+//   misma definición que «Exitosas» en la ejecución de la cola: si se sabe que
+//   avanzó pero no cuándo, igual cuenta (el saludo, solo con una respuesta).
 // - Atribución al último mensaje: si varios mensajes de la misma etapa
 //   precedieron a una misma conversión, cuenta solo el último antes de ella; los
 //   otros figuran como asistencia. Una conversión nunca suma dos veces.
@@ -21,9 +24,20 @@ export type ResultExecution = {
   converted_at?: string | null;
 };
 export type ResultVersion = { id: string; stage: string; action?: string | null; version: number; status: string };
-export const WINDOWS = { "7": 7, "14": 14, todo: null } as const;
-export type WindowKey = keyof typeof WINDOWS;
+/** Períodos del filtro de Resultados, por fecha de envío (días de Buenos Aires). */
+export const PERIODS = { semana: "Esta semana", "7": "Últimos 7 días", "14": "Últimos 14 días", todo: "Sin límite" } as const;
+export type WindowKey = keyof typeof PERIODS;
 const DAY = 86_400_000;
+const ART = 3 * 3_600_000;
+
+/** Desde cuándo cuenta un período (ms), o null sin límite: la semana arranca el lunes a las 0 h de Buenos Aires. */
+export function periodStart(k: WindowKey, now = new Date()): number | null {
+  if (k === "todo") return null;
+  const local = new Date(now.getTime() - ART);
+  local.setUTCHours(0, 0, 0, 0);
+  const back = k === "semana" ? (local.getUTCDay() + 6) % 7 : Number(k) - 1;
+  return local.getTime() - back * DAY + ART;
+}
 
 /**
  * For each sent execution: whether the conversion after it is attributed to it, inside the window.
@@ -87,16 +101,18 @@ export function versionResults(
   versions: ResultVersion[],
   executions: ResultExecution[],
   stepNow: Map<string, number>,
-  windowDays: number | null,
+  since: number | null,
   pendingByVersion: Map<string, number>,
   small = 30,
 ): VersionResult[] {
-  const { credited, assisted } = attribute(executions, stepNow, windowDays);
+  // The attribution runs over every execution (the last message takes the conversion); the period only filters what is shown.
+  const { credited, assisted } = attribute(executions, stepNow, null, true);
+  const inPeriod = (iso: string | null) => since === null || (iso !== null && Date.parse(iso) >= since);
   const rows = versions.map((v) => {
     const mine = executions.filter((e) => e.version_id === v.id);
-    const sent = mine.filter((e) => e.status === "sent");
+    const sent = mine.filter((e) => e.status === "sent" && inPeriod(e.sent_at));
     const conv = sent.filter((e) => credited.has(e));
-    const hours = conv.map((e) => credited.get(e)!.hours).sort((a, b) => a - b);
+    const hours = conv.map((e) => credited.get(e)!.hours).filter(Number.isFinite).sort((a, b) => a - b);
     return {
       versionId: v.id,
       stage: v.stage,
@@ -109,7 +125,7 @@ export function versionResults(
       assisted: sent.filter((e) => assisted.has(e)).length,
       rate: sent.length ? conv.length / sent.length : null,
       medianHours: hours.length ? hours[Math.floor((hours.length - 1) / 2)] : null,
-      failed: mine.filter((e) => e.status === "failed").length,
+      failed: mine.filter((e) => e.status === "failed" && inPeriod(e.updated_at)).length,
       smallSample: sent.length < small,
       best: false,
     };
@@ -137,13 +153,13 @@ export function lastWeeks(n: number, now = new Date()) {
   return out;
 }
 
-/** Executions sent and conversions attributed (inside the window), per week. */
-export function weekly(executions: ResultExecution[], stepNow: Map<string, number>, windowDays: number | null, weeks = 8, now = new Date()) {
-  const { credited } = attribute(executions, stepNow, windowDays);
+/** Executions sent per week and how many of them converted (by the week they were sent, so the rate of a week is its own). */
+export function weekly(executions: ResultExecution[], stepNow: Map<string, number>, weeks = 8, now = new Date()) {
+  const { credited } = attribute(executions, stepNow, null, true);
   return lastWeeks(weeks, now).map((w) => ({
     week: w,
     executed: executions.filter((e) => e.status === "sent" && e.sent_at && weekOf(e.sent_at) === w).length,
-    conversions: [...credited.entries()].filter(([e, c]) => weekOf(new Date(Date.parse(e.sent_at!) + c.hours * 3_600_000).toISOString()) === w).length,
+    conversions: [...credited.keys()].filter((e) => weekOf(e.sent_at!) === w).length,
   }));
 }
 
@@ -293,7 +309,6 @@ export function executionDays(
 export function weeklyByType(
   executions: ResultExecution[],
   stepNow: Map<string, number>,
-  windowDays: number | null,
   label: (stage: string, action: string) => string,
   weeks = 8,
   now = new Date(),
@@ -304,7 +319,7 @@ export function weeklyByType(
     groups.set(t, [...(groups.get(t) ?? []), e]);
   }
   // Attribution runs over every execution (a conversion belongs to the last message, whatever its type).
-  const { credited } = attribute(executions, stepNow, windowDays);
+  const { credited } = attribute(executions, stepNow, null, true);
   const out: Record<string, { week: string; executed: number; conversions: number }[]> = {};
   for (const [t, list] of groups)
     out[t] = lastWeeks(weeks, now).map((w) => ({
