@@ -117,6 +117,8 @@ export type FollowupExecution = {
   converted_at?: string | null;
   /** Quién la ejecutó: una persona del equipo o un bot (202612110001). */
   executed_by?: "humano" | "bot" | null;
+  /** Quién del equipo la confirmó. */
+  actor_id?: string | null;
 };
 
 /**

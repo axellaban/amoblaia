@@ -2988,7 +2988,7 @@ function ChangeLog({ changes }: { changes: Change[] }) {
   );
 }
 
-const WINDOW_LABEL: Record<WindowKey, string> = { "7": "7 días", "14": "14 días", todo: "Sin límite" };
+const WINDOW_LABEL: Record<WindowKey, string> = { semana: "Esta semana", "7": "Últimos 7 días", "14": "Últimos 14 días", todo: "Sin límite" };
 const COHORT_COLS = [
   ["respondio", "Respondieron"],
   ["interes", "Interesadas"],
@@ -3001,7 +3001,7 @@ const hoursText = (h: number | null) => (h === null ? "—" : h < 48 ? `${Math.r
 
 /** Resultados (Fase 4): qué acción y qué versión mueven inmobiliarias, con ventana de atribución, cohortes y bloqueos. */
 function ResultsView({ results }: { results: Results }) {
-  const [win, setWin] = useState<WindowKey>("7");
+  const [win, setWin] = useState<WindowKey>("semana");
   const [cohortBy, setCohortBy] = useState<"contacto" | "respuesta" | "version">("contacto");
   const data = results.windows[win];
   const maxWeek = Math.max(1, ...data.weekly.map((w) => w.executed));
@@ -3010,7 +3010,7 @@ function ResultsView({ results }: { results: Results }) {
   return (
     <section className="fu-results" data-testid="followup-results">
       <div className="fu-filters">
-        <span className="fu-lbl">Ventana de conversión</span>
+        <span className="fu-lbl">Enviadas en</span>
         {(Object.keys(WINDOW_LABEL) as WindowKey[]).map((k) => (
           <button key={k} type="button" className={`fu-chip${win === k ? " is-on" : ""}`} aria-pressed={win === k} data-testid={`followup-window-${k}`} onClick={() => setWin(k)}>
             {WINDOW_LABEL[k]}
@@ -3041,10 +3041,10 @@ function ResultsView({ results }: { results: Results }) {
       </div>
       <div className="fu-rgrid">
         <div className="fu-card">
-          <b className="fu-cardtitle">Evolución semanal · {WINDOW_LABEL[win].toLowerCase()}</b>
+          <b className="fu-cardtitle">Evolución semanal · últimas 8 semanas</b>
           <div className="fu-legend">
             <span><i className="is-ex" /> Ejecutadas</span>
-            <span><i className="is-cv" /> Conversiones atribuidas</span>
+            <span><i className="is-cv" /> De esas, con conversión</span>
           </div>
           <div className="fu-bars" role="img" aria-label="Ejecutadas y conversiones por semana">
             {data.weekly.map((w) => (
@@ -3124,7 +3124,7 @@ function ResultsView({ results }: { results: Results }) {
           </table>
         </div>
         <p className="fu-note">
-          Conversión: la inmobiliaria pasó del paso en que estaba al recibir el mensaje, dentro de la ventana. Si varios mensajes de la misma etapa la precedieron, cuenta solo el último (los otros son asistencias): una conversión nunca suma dos veces. «MEJOR» se marca solo entre versiones con 30 o más ejecutadas. La actividad de producto ya excluye el tráfico interno; las acciones comerciales no se excluyen.
+          Cuenta los mensajes enviados en el período. Conversión: la inmobiliaria pasó del paso en que estaba al recibir el mensaje (el saludo, cuando contestó), la misma definición que «Exitosas» en Chapa. Si varios mensajes de la misma etapa la precedieron, cuenta solo el último (los otros son asistencias): una conversión nunca suma dos veces. «MEJOR» se marca solo entre versiones con 30 o más ejecutadas. La actividad de producto ya excluye el tráfico interno; las acciones comerciales no se excluyen.
         </p>
       </div>
       <div className="fu-card">

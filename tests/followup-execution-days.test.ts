@@ -73,7 +73,7 @@ describe("executionDays", () => {
 describe("weeklyByType", () => {
   it("counts each type's executions and attributed conversions per week", () => {
     const list = [ex("a", "no-contactado", "2026-11-09T13:00:00Z", { converted_at: "2026-11-10T13:00:00Z" }), ex("b", "sin-uso", "2026-11-09T13:00:00Z")];
-    const out = weeklyByType(list, new Map([["a", 1]]), 7, label, 2, now);
+    const out = weeklyByType(list, new Map([["a", 1]]), label, 2, now);
     expect(out.Saludo.at(-1)).toMatchObject({ executed: 1, conversions: 1 });
     expect(out["Next best action"].at(-1)).toMatchObject({ executed: 1, conversions: 0 });
   });

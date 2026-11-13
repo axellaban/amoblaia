@@ -242,17 +242,18 @@ Selectores: `followup-funnel`, `followup-funnel-stage`, `followup-funnel-rule`, 
 
 Migración `202612060001_followup_results.sql`. Lógica pura en `src/lib/followup/results.ts`.
 
-- **Cuándo convirtió**: el embudo no guarda cuándo se llegó a cada paso. Cada ejecución guarda `converted_at` (y `converted_step`) la primera vez que el panel ve que la inmobiliaria avanzó: la hora exacta cuando se conoce (el interés registrado, la demo creada) o, si no, ese momento. Las conversiones anteriores a esta fase quedan con la hora en que se vieron por primera vez.
-- **Ventana**: 7 días, 14 días o sin límite desde el envío.
+- **Cuándo convirtió** (histórico; ver «Conversión» abajo): el embudo no guarda cuándo se llegó a cada paso. Cada ejecución guarda `converted_at` (y `converted_step`) la primera vez que el panel ve que la inmobiliaria avanzó: la hora exacta cuando se conoce (el interés registrado, la demo creada) o, si no, ese momento. Las conversiones anteriores a esta fase quedan con la hora en que se vieron por primera vez.
+- **Período** (desde el 13/11): esta semana (desde el lunes, hora de Argentina; es el que se abre), últimos 7 días, últimos 14 días o sin límite. Filtra los mensajes **por fecha de envío**; antes era una ventana de atribución (7 o 14 días desde el envío) y no filtraba lo ejecutado: los tres botones mostraban las mismas ejecutadas y casi las mismas conversiones, y como los pasos después de la demo no tienen hora de avance, nunca convertían.
+- **Conversión** (desde el 13/11): la misma que «Exitosas» en la ejecución de la cola (`attribute(…, null, untimed)`): el saludo, con la primera respuesta después de él; el resto, cuando la inmobiliaria pasó del paso en que estaba al recibirlo, aunque no se sepa la hora. El `converted_at` guardado en la base no se usa: tenía horas de lectura del panel, no de un hecho (11 saludos «convertidos» sin respuesta), y se recalcula siempre.
 - **Atribución al último mensaje**: si varios mensajes de la misma etapa precedieron a una conversión, cuenta solo el último antes de ella; los otros son asistencias. Una conversión nunca suma dos veces.
 - **Por regla y versión**: elegibles (ejecutadas + las que hoy esperan esa versión), ejecutadas, conversiones (+ asistencias), tasa, tiempo mediano a la conversión, «No salieron» y muestra. «MEJOR» solo entre versiones con 30 o más ejecutadas (el mínimo es a confirmar con Facu).
-- **Evolución semanal**: ejecutadas por semana de envío y conversiones atribuidas por semana de conversión (semanas de lunes a domingo, hora de Argentina).
+- **Evolución semanal**: últimas 8 semanas, ejecutadas por semana de envío y cuántas de ellas convirtieron (semanas de lunes a domingo, hora de Argentina). No depende del período.
 - **Cohortes**: por semana de primer contacto, por semana de primera respuesta y por versión del saludo; cuántas respondieron, mostraron interés, recibieron la demo, crearon la cuenta y se suscribieron.
 - **Motivos de bloqueo** agregados.
 - **Tráfico interno**: la actividad de producto (visitas e interacción de las demos) ya lo excluye (`docs/TRAFICO_INTERNO.md`); las acciones comerciales no se excluyen.
 - **Caso I (suscripción)**: una inmobiliaria suscripta sale de Follow-up (no tiene etapa), así que no le queda ninguna tarea de captación; su historial (ejecuciones, respuestas, auditoría) se conserva.
 - **Opcional, decisión aparte**: la API de WhatsApp Business permitiría detectar respuestas sin una pestaña abierta (costo, plantillas aprobadas por Meta y reglas propias).
-- Selectores: `followup-results`, `followup-window-7|14|todo`, `followup-results-versions`, `followup-results-blocks`, `followup-results-cohorts`, `followup-cohort-contacto|respuesta|version`.
+- Selectores: `followup-results`, `followup-window-semana|7|14|todo`, `followup-results-versions`, `followup-results-blocks`, `followup-results-cohorts`, `followup-cohort-contacto|respuesta|version`.
 
 ## Resultados: ejecución de la cola, acciones y cohortes del panel (11/11/2026)
 
@@ -263,7 +264,7 @@ Migración `202612110001_followup_queue_days.sql` (se puede re-ejecutar). Lógic
 - **Ejecutadas**: envíos confirmados ese día, separados por quién: `followup_executions.executed_by` (`humano` o `bot`; hoy todo es `humano`, no hay envíos automáticos).
 - **Exitosas**: ejecutadas con una conversión atribuida (la misma atribución al último mensaje, sin límite de ventana). Desde el 11/11: el saludo convierte con la **primera respuesta** después de él (antes pedía «interés»: 4 de 81 cuando 40 habían respondido), y una acción cuya inmobiliaria pasó de paso cuenta aunque no se sepa la hora del avance (`attribute(…, untimed)` en `results.ts`; antes, las acciones después de la demo no podían salir exitosas). El saludo nunca usa ese atajo: llega a «Contactados» con solo salir.
 - **Por tipo de acción**: cada día se desglosa por el nombre de la acción (`actionLabel`), así cada barra del embudo se abre en sus tipos.
-- **Tendencia por acción**: `windows[ventana].weeklyByType`, ejecutadas y conversiones por semana para cada tipo de acción.
+- **Tendencia por acción**: `windows[período].weeklyByType` (igual en todos los períodos), ejecutadas y conversiones por semana para cada tipo de acción.
 - **Cohortes con el embudo del panel** (`results.cohortFunnel`): las mismas cohortes, contadas con las seis etapas de `/admin/inmobiliarias` (Prospecto, Contactada, Demo enviada, Interactuó, Con panel, Cliente). Entre «Demo enviada» y «Cuenta creada» suma «Demo visitada» (`demo-visitada`: llegó a «Visitó, sin interactuar» o más) y «Demo con interacción» (`demo-interaccion`: llegó a «Interactuó, sin cuenta» o más). Se conservan las cohortes anteriores (`results.cohorts`) por compatibilidad.
 
 ## Desde Chapa Labs (servidor a servidor)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { attribute, blockReasons, bySegment, cohorts, versionResults, weekOf, weekly, type ResultExecution } from "@/lib/followup/results";
+import { attribute, blockReasons, bySegment, cohorts, periodStart, versionResults, weekOf, weekly, type ResultExecution } from "@/lib/followup/results";
 
 const ex = (agency: string, version: string, sent: string, from = 0, converted: string | null = null, status: ResultExecution["status"] = "sent"): ResultExecution => ({
   version_id: version,
@@ -37,13 +37,30 @@ describe("attribution", () => {
 });
 
 describe("versionResults", () => {
+  it("counts only what was sent in the period; the conversion is the same as «Exitosas»", () => {
+    const versions = [{ id: "v1", stage: "sin-cuenta", action: "principal", version: 1, status: "active" }];
+    // Sent last week and this week; both agencies advanced, no time recorded (later steps never have one).
+    const list = [ex("a", "v1", "2026-11-07T12:00:00Z", 5), ex("b", "v1", "2026-11-10T12:00:00Z", 5), ex("c", "v1", "2026-11-11T12:00:00Z", 5)];
+    const step = new Map([["a", 6], ["b", 6], ["c", 5]]);
+    const now = new Date("2026-11-12T15:00:00Z");
+    expect(versionResults(versions, list, step, periodStart("semana", now), new Map())[0]).toMatchObject({ executed: 2, conversions: 1, medianHours: null });
+    expect(versionResults(versions, list, step, periodStart("7", now), new Map())[0]).toMatchObject({ executed: 3, conversions: 2 });
+    expect(versionResults(versions, list, step, null, new Map())[0]).toMatchObject({ executed: 3, conversions: 2 });
+  });
+
+  it("a greeting converts only with a reply, never by going out", () => {
+    const versions = [{ id: "g", stage: "no-contactado", action: "principal", version: 1, status: "active" }];
+    const list = [ex("a", "g", "2026-11-10T12:00:00Z", -1), ex("b", "g", "2026-11-10T12:00:00Z", -1, "2026-11-10T15:00:00Z")];
+    expect(versionResults(versions, list, new Map([["a", 0], ["b", 0]]), null, new Map())[0]).toMatchObject({ executed: 2, conversions: 1 });
+  });
+
   it("counts eligible, executed, conversions, rate, time, failures and the sample", () => {
     const versions = [
       { id: "v1", stage: "no-responde", action: "principal", version: 1, status: "active" },
       { id: "v2", stage: "no-responde", action: "principal", version: 2, status: "test" },
     ];
     const list = [ex("a", "v1", "2026-11-01T10:00:00Z", 0, "2026-11-02T10:00:00Z"), ex("b", "v1", "2026-11-01T10:00:00Z"), ex("c", "v2", "2026-11-01T10:00:00Z", 0, null, "failed")];
-    const rows = versionResults(versions, list, new Map([["a", 1], ["b", 0]]), 7, new Map([["v1", 3]]));
+    const rows = versionResults(versions, list, new Map([["a", 1], ["b", 0]]), null, new Map([["v1", 3]]));
     expect(rows[0]).toMatchObject({ eligible: 5, executed: 2, conversions: 1, rate: 0.5, medianHours: 24, failed: 0, smallSample: true, best: false });
     expect(rows[1]).toMatchObject({ executed: 0, failed: 1, rate: null });
   });
@@ -61,8 +78,20 @@ describe("versionResults", () => {
       step.set(`a${i}`, i < 6 ? 1 : 0);
       step.set(`b${i}`, i < 12 ? 1 : 0);
     }
-    const rows = versionResults(versions, list, step, 7, new Map());
+    const rows = versionResults(versions, list, step, null, new Map());
     expect(rows.map((r) => r.best)).toEqual([false, true]);
+  });
+});
+
+describe("periodStart", () => {
+  it("starts the week on Monday and the last N days at 0 h in Buenos Aires", () => {
+    const now = new Date("2026-11-13T15:00:00Z"); // Friday 12:00 ART
+    expect(new Date(periodStart("semana", now)!).toISOString()).toBe("2026-11-09T03:00:00.000Z");
+    expect(new Date(periodStart("7", now)!).toISOString()).toBe("2026-11-07T03:00:00.000Z");
+    expect(new Date(periodStart("14", now)!).toISOString()).toBe("2026-10-31T03:00:00.000Z");
+    expect(periodStart("todo", now)).toBeNull();
+    // Monday 01:00 ART is already the new week.
+    expect(new Date(periodStart("semana", new Date("2026-11-16T04:00:00Z"))!).toISOString()).toBe("2026-11-16T03:00:00.000Z");
   });
 });
 
@@ -75,12 +104,12 @@ describe("weeks and cohorts", () => {
     expect(weekOf("2026-11-16T12:00:00Z")).toBe("2026-11-22");
   });
 
-  it("weekly counts executions by send week and conversions by conversion week", () => {
+  it("weekly counts executions and their conversions by the week they were sent", () => {
     const list = [ex("a", "v1", "2026-11-02T12:00:00Z", 0, "2026-11-10T12:00:00Z")];
-    const w = weekly(list, new Map([["a", 1]]), null, 2, new Date("2026-11-12T12:00:00Z"));
+    const w = weekly(list, new Map([["a", 1]]), 2, new Date("2026-11-12T12:00:00Z"));
     expect(w).toEqual([
-      { week: "2026-11-08", executed: 1, conversions: 0 },
-      { week: "2026-11-15", executed: 0, conversions: 1 },
+      { week: "2026-11-08", executed: 1, conversions: 1 },
+      { week: "2026-11-15", executed: 0, conversions: 0 },
     ]);
   });
 
