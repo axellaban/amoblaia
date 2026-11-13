@@ -17,6 +17,7 @@ vi.mock("@/lib/followup/server", () => ({
     rules: [],
     generatedAt: new Date(Date.now()+(++generation)*10).toISOString(),
   }),
+  invalidateBoard: () => undefined,
 }));
 import { GET } from "../src/app/api/admin/follow-up/cola/route";
 

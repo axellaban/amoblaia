@@ -241,10 +241,11 @@ export async function POST(request: Request) {
     const b = (await request.json().catch(() => null)) as { code?: unknown; action?: Action; by?: unknown; sync?: { csv?: unknown }; inmobiliaria?: unknown; accion?: unknown; enviada?: unknown; followup?: unknown; prospectos?: unknown } | null;
     if (b?.followup && typeof b.followup === "object") {
       const f = b.followup as Record<string, unknown>;
-      const actor = operatorFor(str(b.by, 80), await team(), await actorId());
+      const [users, fallback] = await Promise.all([team(), actorId()]);
+      const actor = operatorFor(str(b.by, 80), users, fallback);
       if (f.op === "script-save") return Response.json(await saveScript(f.body, actor.id), { headers: NO_STORE });
       const result = await runFollowupOp(f.op, f, actor, new URL(request.url).origin);
-      if (f.op !== "queue" && f.op !== "replies") invalidateFollowupSnapshot();
+      if (f.op !== "queue" && f.op !== "replies") invalidateFollowupSnapshot({ keepBoard: f.op === "claim" || f.op === "open" || f.op === "release" });
       return Response.json(result, { headers: NO_STORE });
     }
     if (b?.prospectos && typeof b.prospectos === "object") {

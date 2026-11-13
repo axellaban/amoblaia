@@ -680,6 +680,35 @@ async function board(now = new Date()) {
   };
 }
 
+// The board is ~15 reads (the prospecting dataset alone is ~2 MB) and every
+// view and every «Ejecutar» used to rebuild it from scratch. Reads share one
+// copy per warm instance for a few seconds, and two requests at the same time
+// wait for the same build. Writes always use a fresh board(), clear this one
+// (invalidateBoard, called by every write route), and the claim re-checks in
+// the database what matters for the agency it takes (lock + not sent yet).
+// Readers must not mutate it.
+const BOARD_TTL_MS = 20_000;
+type Board = Awaited<ReturnType<typeof board>>;
+let boardCache: { until: number; value: Board } | null = null;
+let boardPending: Promise<Board> | null = null;
+let boardRevision = 0;
+export function invalidateBoard() {
+  boardRevision++;
+  boardCache = null;
+  boardPending = null;
+}
+function sharedBoard(): Promise<Board> {
+  if (boardCache && boardCache.until > Date.now()) return Promise.resolve(boardCache.value);
+  if (boardPending) return boardPending;
+  const generation = boardRevision;
+  const request = board().then((value) => {
+    if (generation === boardRevision) boardCache = { until: Date.now() + BOARD_TTL_MS, value };
+    return value;
+  }).finally(() => { if (boardPending === request) boardPending = null; });
+  boardPending = request;
+  return request;
+}
+
 /** Why it cannot be executed now (in order of what to fix first), or null. */
 function blockReason(
   it: QueueItem,
@@ -889,7 +918,7 @@ function resultsOf(b: Awaited<ReturnType<typeof board>>, all: QueueItem[], queue
   };
 }
 export async function followupOverview(period: Period = parsePeriod({})): Promise<{ chart: ReturnType<typeof chartCounts>; lostAt: number[]; chartRows: { agencyId: string; name: string; step: number | null; lost: boolean; score: number | null; whatsapp: string | null }[]; catalog: { stages: Awaited<ReturnType<typeof customStages>>; states: Awaited<ReturnType<typeof readStateCatalog>>; overrides: Awaited<ReturnType<typeof readSituationOverrides>> }; stages: StageView[]; queue: QueueItem[]; blocked: QueueItem[]; noInteresados: QueueItem[]; summary: QueueSummary; agencies: AgencyChoice[]; inbox: InboxItem[]; funnel: FunnelStep[]; rules: Rule[]; changes: Change[]; results: Results; executed: ExecutedItem[]; generatedAt: string }> {
-  const [b, changes, queueDays] = await Promise.all([board(), auditOf(null, 20), readQueueDays()]);
+  const [b, changes, queueDays] = await Promise.all([sharedBoard(), auditOf(null, 20), readQueueDays()]);
   const all = [...b.items.values()];
   // Today's photo of the queue, before reading it back: what is pending now was pending today.
   await recordQueueDay(all).catch(() => console.error("followup_queue_day_failed"));
@@ -931,7 +960,7 @@ export async function followupOverview(period: Period = parsePeriod({})): Promis
 
 /** La cola de ejecución recalculada (lo que la pantalla vuelve a pedir cada 3 minutos, al volver a la pestaña y después de confirmar un envío). */
 export async function followupQueueView() {
-  const b = await board();
+  const b = await sharedBoard();
   const all = [...b.items.values()];
   return {
     queue: executable(all),
@@ -1026,7 +1055,7 @@ const strip = (q: QueueItem) => q;
 
 /** GET /api/admin/followup/queue: what's left, in order, and the next one free for this session. */
 export async function agentQueue(actorId: string, limit = 50) {
-  const b = await board();
+  const b = await sharedBoard();
   const all = [...b.items.values()];
   const live = new Date().toISOString();
   const ready = executable(all);
@@ -1040,9 +1069,9 @@ export async function agentQueue(actorId: string, limit = 50) {
 }
 
 /** The agency as Follow-up sees it now (the same computation as the page). */
-async function itemOf(agencyId: string) {
+async function itemOf(agencyId: string, { shared = false } = {}) {
   if (!isUuid(agencyId)) throw new HttpError(404, "No encontramos la inmobiliaria.");
-  const b = await board();
+  const b = await (shared ? sharedBoard() : board());
   const it = b.items.get(agencyId);
   if (!it) throw new HttpError(409, "Ya no está en Follow-up (avanzó, se perdió o se sacó). Actualizá la lista.");
   return { it, b };
@@ -1055,10 +1084,19 @@ async function itemOf(agencyId: string) {
  */
 export async function claimNext(input: { agencyId?: unknown; filter?: unknown; skip?: unknown }, origin: string, actor: { id: string; name: string }) {
   if (typeof input.agencyId === "string" && input.agencyId) {
-    const { it, b } = await itemOf(input.agencyId);
+    // «Ejecutar» on one agency: the board the queue was just built from (a few
+    // seconds old at most) instead of rebuilding all of it. What can change in
+    // those seconds is checked in the database: the lock is atomic, and a send
+    // confirmed meanwhile (from another instance) is read before answering.
+    const { it, b } = await itemOf(input.agencyId, { shared: true });
     if (it.execution?.status === "sent") throw new HttpError(409, `Ya se confirmó «${it.actionLabel}» con ${it.name}.`);
     if (it.blocked) throw new HttpError(409, it.blocked);
-    await lock(it, actor);
+    const [, sent] = await Promise.all([lock(it, actor), sentAlready(it)]);
+    if (sent) {
+      await release(it.agencyId, actor.id).catch(() => undefined);
+      invalidateBoard();
+      throw new HttpError(409, `Ya se confirmó «${it.actionLabel}» con ${it.name}. Actualizá la lista.`);
+    }
     return prepare(it, origin, actor, b.vs, b.ds);
   }
   // La cola se recalcula ahora (no la que tiene la pantalla) y se toma solo lo que entra en el filtro elegido.
@@ -1079,6 +1117,13 @@ export async function claimNext(input: { agencyId?: unknown; filter?: unknown; s
   return it ? prepare(it, origin, actor, currentBoard.vs, currentBoard.ds) : null;
 }
 
+/** Whether this agency's current version was confirmed as sent (read now, not from the board). */
+async function sentAlready(it: QueueItem) {
+  if (!it.versionId) return false;
+  const { data, error } = await adminClient().from("followup_executions").select("status").eq("agency_id", it.agencyId).eq("version_id", it.versionId).maybeSingle();
+  if (error) throw new HttpError(503, "No pudimos verificar la tarea. Reintentá.");
+  return (data as { status?: string } | null)?.status === "sent";
+}
 async function lock(it: QueueItem, actor: { id: string; name: string }) {
   const { error } = await adminClient().rpc("habita_followup_claim", { p_actor: actor.id, p_actor_name: actor.name, p_agency: it.agencyId, p_stage: it.stage, p_action: it.action, p_seconds: 600 });
   if (!error) return;
@@ -1263,9 +1308,9 @@ export async function setPriority(agencyId: string, raw: unknown, actorId: strin
 export type Prepared = Awaited<ReturnType<typeof prepare>>;
 
 /** Same agency, same action, same version: or the queue moved under the agent's feet. */
-async function sameTask(input: { agencyId: unknown; stage?: unknown; action?: unknown; versionId?: unknown }, actorId: string) {
+async function sameTask(input: { agencyId: unknown; stage?: unknown; action?: unknown; versionId?: unknown }, actorId: string, { shared = false } = {}) {
   if (typeof input.agencyId !== "string") throw new HttpError(400, "Falta la inmobiliaria.");
-  const { it, b } = await itemOf(input.agencyId);
+  const { it, b } = await itemOf(input.agencyId, { shared });
   if (input.stage !== undefined && input.stage !== it.stage) throw new HttpError(409, `Ya no está en «${isStageKey(input.stage) ? stageInfo(input.stage).title : input.stage}»: ahora está en «${stageInfo(it.stage).title}». Actualizá la lista.`);
   if (input.action !== undefined && input.action !== (it.action ?? null)) throw new HttpError(409, `La próxima acción cambió: ahora es «${it.actionLabel ?? "ninguna"}». Actualizá la lista.`);
   const v = b.vs.find((x) => x.id === input.versionId);
@@ -1348,7 +1393,8 @@ export async function registerManualGreeting(agencyId: unknown, sentAt: unknown,
 
 /** «Abrir WhatsApp»: queda como abierto (no cuenta como enviado). */
 export async function openExecution(input: { agencyId: unknown; stage?: unknown; action?: unknown; versionId?: unknown }, actor: { id: string; name: string }) {
-  const { it, v } = await sameTask(input, actor.id);
+  // Opening WhatsApp records nothing sent: the shared board is enough (the lock is atomic, the confirmation re-checks everything).
+  const { it, v } = await sameTask(input, actor.id, { shared: true });
   await lock(it, actor);
   const e = await mark(it, v, "opened", actor.id);
   return { execution: { status: e.status, at: e.updated_at } };
@@ -1396,7 +1442,8 @@ export async function confirmExecution(input: { agencyId: unknown; stage?: unkno
       const contact = account ? contactFor(account, "whatsapp") : null;
       if (account && contact?.needs_review) {
         await prospectRpc("habita_prospect_contact", { p_actor: actor.id, p_account: account.id, p_contact: contact.id, p_fields: { verified: true } });
-        const fresh = await prospectDataset();
+        // The conversion sync already ran in the read above: re-read only to see the verified contact.
+        const fresh = await prospectDataset({ syncConversions: false });
         account = accountsByAgency(fresh).get(it.agencyId);
         if (account) await recordSend(actor.id, fresh, account, { channel: "whatsapp", text: text || v.body }, actor.name, "Follow-up");
       } else if (account) await recordSend(actor.id, ds, account, { channel: "whatsapp", text: text || v.body }, actor.name, "Follow-up");

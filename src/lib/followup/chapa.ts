@@ -34,6 +34,7 @@ import {
   updateVersion,
   type ExecutedItem,
   type QueueItem,
+  invalidateBoard,
 } from "./server";
 
 // Follow-up para el panel comercial de Chapa Labs (/prospecting), de servidor a servidor por
@@ -145,7 +146,13 @@ const snapshots = new Map<string, { until: number; value: Snapshot }>();
 const pending = new Map<string, Promise<Snapshot>>();
 let snapshotRevision = 0;
 
-export function invalidateFollowupSnapshot() {
+/**
+ * `keepBoard`: taking, opening or freeing a task only changes its lock, which
+ * the database enforces by itself; the shared board stays, so the next
+ * «Ejecutar» does not rebuild the whole queue.
+ */
+export function invalidateFollowupSnapshot({ keepBoard = false }: { keepBoard?: boolean } = {}) {
+  if (!keepBoard) invalidateBoard();
   snapshotRevision++;
   snapshots.clear();
   pending.clear();
