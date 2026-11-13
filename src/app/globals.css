@@ -12999,6 +12999,8 @@ a.dm-agency:hover {
 .ap-img-drop {
   position: relative;
   display: grid;
+  /* The native file field is wider than a phone's dialog: an auto column would take its width and clip the text. */
+  grid-template-columns: minmax(0, 1fr);
   justify-items: center;
   gap: 4px;
   padding: 22px;
@@ -18168,6 +18170,8 @@ main:has(.ap-sidebar) {
 .sp-list,
 .sp-files {
   display: grid;
+  /* Without it the column takes the row's full width (thumbnail, name, four buttons) and on a phone «Quitar» falls outside the dialog. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
   margin: 0;
   padding: 0;
