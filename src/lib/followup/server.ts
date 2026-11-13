@@ -875,6 +875,8 @@ function resultsOf(b: Awaited<ReturnType<typeof board>>, all: QueueItem[], queue
       const t = stages.map((x) => x.from);
       return { stages: stages.map(({ key, title }) => ({ key, title })), contacto: funnelCohorts(b.facts, t, "contacto"), respuesta: funnelCohorts(b.facts, t, "respuesta"), version: funnelCohorts(b.facts, t, "version") };
     })(),
+    // What counts as a conversion for an action of each stage (the same rule as attribute()): shown under each action in Chapa.
+    conversionLabels: Object.fromEntries(FOLLOWUP_STAGES.map((s) => [s.key, s.step < 0 ? "Respondió el saludo" : `Pasó a «${s.goal}»`])),
     // The name of each stage's actions («stage:action» → label): how Resultados groups rows by action.
     actionLabels: Object.fromEntries(FOLLOWUP_STAGES.flatMap((s) => actionsOf(s.key).map((a) => [`${s.key}:${a}`, label(s.key, a)]))),
     // «¿Se ejecutó la cola?»: day by day and by type of action. Successful: it has an attributed conversion.
