@@ -4,7 +4,7 @@
  * próxima» toma solo lo que se ve con los filtros elegidos.
  */
 import { GROUPS, SITUATIONS, byQueueOrder, isQueueOrder, type QueueOrder, type Group, type Situation } from "./plan";
-import { compatible, type Rule } from "./rules";
+import { compatible, stagesOf, type Rule } from "./rules";
 import { FOLLOWUP_STAGES, commercialOf, isCommercialStage, type CommercialStageKey, type StageKey } from "./stages";
 
 /** Lo que el motor eligió para una inmobiliaria, lo justo para filtrarla. */
@@ -27,7 +27,7 @@ export const NO_FILTER: QueueFilter = { stage: null, rule: null, situation: null
 
 /** Las reglas de la etapa que pueden elegir una acción: activas, de su etapa y en orden. */
 export function stageRules(rules: Rule[], stage: StageKey) {
-  return rules.filter((r) => r.enabled && r.stage === stage && compatible(stage, r.action) && (!r.after_action || compatible(stage, r.after_action))).sort((a, b) => a.position - b.position);
+  return rules.filter((r) => r.enabled && stagesOf(r).includes(stage) && compatible(r.stage, r.action) && (!r.after_action || compatible(r.stage, r.after_action))).sort((a, b) => a.position - b.position);
 }
 
 const norm = (s: string) =>

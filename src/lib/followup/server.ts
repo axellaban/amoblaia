@@ -144,11 +144,19 @@ const extras = async (agencyId?: string) => {
 /** Las reglas activas e inactivas (Fase 3). Sin la tabla, la migración falta. */
 const missingGenerationField = (error: { code?: string; message?: string } | null) =>
   Boolean(error && (error.code === "42703" || error.code === "PGRST204" || /min_demo_activity_level/i.test(error.message ?? "")));
+const RULE_COLS = "key,name,stage,product_stages,situations,action,after_hours,after_action,position,enabled,hours_from,hours_to,days,min_demo_activity_level,catalog_situation";
+/** Sin la columna `product_stages` (migración 202612160001), la regla corre solo en su etapa ancla. */
+const missingProductStages = (error: { code?: string; message?: string } | null) => Boolean(error && /product_stages/i.test(error.message ?? ""));
 async function readRules(): Promise<Rule[]> {
   const db = adminClient();
   const latest = await db.from("followup_rules")
-    .select("key,name,stage,situations,action,after_hours,after_action,position,enabled,hours_from,hours_to,days,min_demo_activity_level,catalog_situation")
+    .select(RULE_COLS)
     .limit(500);
+  if (missingProductStages(latest.error)) {
+    const old = await db.from("followup_rules").select(RULE_COLS.replace("product_stages,", "")).limit(500);
+    if (old.error) throw missing(old.error) ? new HttpError(409, MISSING) : new Error("FOLLOWUP_READ_FAILED");
+    return ((old.data ?? []) as unknown as Rule[]).map((r) => ({ ...r, after_hours: Number(r.after_hours), min_demo_activity_level: Number(r.min_demo_activity_level ?? 0) }));
+  }
   if (!missingGenerationField(latest.error)) {
     if (latest.error) throw missing(latest.error) ? new HttpError(409, MISSING) : new Error("FOLLOWUP_READ_FAILED");
     return ((latest.data ?? []) as Rule[]).map((r) => ({
@@ -357,6 +365,8 @@ export type QueueItem = {
   snoozedUntil: string | null;
   /** La regla que eligió su acción (null: fija por código). */
   ruleKey: string | null;
+  /** La subetapa donde vive el mensaje de la acción: la ancla de la regla (igual a `stage` salvo en reglas con varias situaciones de avance). */
+  messageStage: StageKey;
   /** Ventana horaria de esa regla. */
   window: { hours_from: number; hours_to: number; days: number[] } | null;
   /** Demo prometida: cuándo mostró interés (va primera; a los 30 minutos está atrasada). */
@@ -677,7 +687,7 @@ function blockReason(
 ) {
   if (!it.action) return it.actionReason ?? "Sin acción para esta situación.";
   if (it.execution?.status === "sent") return null;
-  if (!it.versionId) return `Falta el texto de «${it.actionLabel}»: cargalo en la etapa «${stageInfo(it.stage).title}».`;
+  if (!it.versionId) return `Falta el texto de «${it.actionLabel}»: cargalo en la etapa «${stageInfo(it.messageStage).title}».`;
   if (it.stage === "no-contactado") {
     if (f.sheet?.sentDate) return `Ya contactada: la hoja tiene fecha de envío ${f.sheet.sentDate}. Corregí su estado.`;
     if (f.lastOurs) return `Ya le escribimos el ${whenText(new Date(f.lastOurs).toISOString())}. Corregí su estado.`;
@@ -728,13 +738,18 @@ function item(
   const matchingRules = rules.filter(rule => !rule.catalog_situation || productKeys.includes(rule.catalog_situation) || (sit.manual && rule.catalog_situation === own?.catalog_situation));
   const alreadySurveyed = executionsOf.some(e => e.action === "encuesta_cierre" && e.status === "sent");
   if (alreadySurveyed) doneMap.encuesta_cierre = true;
-  const next = nextAction(stage, sit.situation, doneMap, sit.situation === "rechazo" && !surveyReply ? [] : matchingRules, demoGenerated);
+  // A step already went out if it was sent in this stage or with the rule's own message (its anchor stage):
+  // a rule that covers several product situations sends its message once.
+  const wasSent = (a: Action, anchor: StageKey) => Boolean(doneMap[a]) || executionsOf.some((e) => e.status === "sent" && e.stage === anchor && (e.action ?? "principal") === a);
+  const next = nextAction(stage, sit.situation, wasSent, sit.situation === "rechazo" && !surveyReply ? [] : matchingRules, demoGenerated);
+  // Where the message of the action lives: the rule's anchor stage (the agency's own stage for the rules of always).
+  const anchor = next.rule?.stage ?? stage;
   // The rule's window, or the one of the rule that sent the last step (for the row of a finished sequence).
   const window = next.rule ?? rules.find((x) => x.stage === stage && x.action === (stageSent[0]?.action ?? "principal")) ?? null;
   // Nothing left to send but something went out: the row shows that last one as sent.
   const action = next.action ?? (surveyReply && stageSent.some(e => e.action === "encuesta_cierre") ? "encuesta_cierre" : null) ?? (!CLOSED_SITUATIONS.includes(sit.situation) && stageSent[0] ? ((stageSent[0].action ?? "principal") as Action) : null);
-  const mine = executionsOf.filter((e) => e.stage === stage && (e.action ?? "principal") === (action ?? "principal"));
-  const offered = vs.filter((v) => v.stage === stage && (v.action ?? "principal") === (action ?? "principal"));
+  const mine = executionsOf.filter((e) => e.stage === anchor && (e.action ?? "principal") === (action ?? "principal"));
+  const offered = vs.filter((v) => v.stage === anchor && (v.action ?? "principal") === (action ?? "principal"));
   const sent = mine.find((e) => e.status === "sent");
   const version = action ? (sent ? offered.find((v) => v.id === sent.version_id) ?? null : versionFor(r.id, offered, mine, action)) : null;
   // Only a result counts (sent or failed): an «opened» never confirmed is as if nothing was done.
@@ -775,7 +790,8 @@ function item(
     situationNote: sit.manual ? (own?.situation_note ?? null) : null,
     handoffTo: own?.handoff_to ?? null,
     action,
-    actionLabel: action ? actionLabel(stage, action) : null,
+    actionLabel: action ? actionLabel(anchor, action) : null,
+    messageStage: anchor,
     group: groupOf(stage, action),
     afterHours: next.action ? next.afterHours : 0,
     ruleKey: next.rule?.key ?? null,
@@ -1210,7 +1226,7 @@ async function sameTask(input: { agencyId: unknown; stage?: unknown; action?: un
   if (input.stage !== undefined && input.stage !== it.stage) throw new HttpError(409, `Ya no está en «${isStageKey(input.stage) ? stageInfo(input.stage).title : input.stage}»: ahora está en «${stageInfo(it.stage).title}». Actualizá la lista.`);
   if (input.action !== undefined && input.action !== (it.action ?? null)) throw new HttpError(409, `La próxima acción cambió: ahora es «${it.actionLabel ?? "ninguna"}». Actualizá la lista.`);
   const v = b.vs.find((x) => x.id === input.versionId);
-  if (!v || v.stage !== it.stage || (v.action ?? "principal") !== it.action) throw new HttpError(409, "Esa versión ya no corresponde a esta acción. Actualizá la lista.");
+  if (!v || v.stage !== it.messageStage || (v.action ?? "principal") !== it.action) throw new HttpError(409, "Esa versión ya no corresponde a esta acción. Actualizá la lista.");
   if (it.claim && it.claim.until > new Date().toISOString() && it.claim.actorId !== actorId) throw new HttpError(409, `${it.name} la está ejecutando ${it.claim.by}.`);
   return { it, v };
 }
@@ -1647,7 +1663,17 @@ export async function saveRule(key: unknown, input: Record<string, unknown>, act
   if (id.length > 80) throw new HttpError(400, "Regla desconocida.");
   const before = typeof key === "string" && key ? (await db.from("followup_rules").select("*").eq("key", key).maybeSingle()).data : null;
   if (typeof key === "string" && key && !before) throw new HttpError(404, "No encontramos esa regla.");
-  const catalogKey = typeof input.catalog_situation === "string" && input.catalog_situation ? input.catalog_situation : null;
+  // An editor that doesn't know the product situations (an older panel) keeps the ones the rule had.
+  const kept = Array.isArray((before as { product_stages?: unknown } | null)?.product_stages) ? ((before as { product_stages: StageKey[] }).product_stages) : [];
+  if (input.product_stages === undefined && before?.stage === clean.stage && kept.length) clean.product_stages = kept;
+  const covered = clean.product_stages ?? [clean.stage];
+  if (covered.some((s) => commercialOf(s) !== commercialOf(clean.stage))) throw new HttpError(400, "Las situaciones de avance tienen que ser de la misma etapa que la regla.");
+  if (clean.enabled && covered.some((s) => !compatible(s, clean.action) || (clean.after_action && !compatible(s, clean.after_action))))
+    throw new HttpError(400, "La acción de la regla no está disponible en todas las situaciones de avance elegidas.");
+  // With several product situations chosen in the rule, a product state of the catalog would narrow it back to one: the rule's own list wins.
+  const rawCatalog = typeof input.catalog_situation === "string" && input.catalog_situation ? input.catalog_situation : null;
+  const productState = rawCatalog && covered.length > 1 ? (await readStateCatalog()).some(s => s.key === rawCatalog && s.source === "product") : false;
+  const catalogKey = productState ? null : rawCatalog;
   if (catalogKey) {
     const definition = (await readStateCatalog()).find(s => s.key === catalogKey && s.active);
     if (!definition) throw new HttpError(400, "Revisá la situación personalizada de la regla.");
@@ -1663,11 +1689,16 @@ export async function saveRule(key: unknown, input: Record<string, unknown>, act
   const payload = { key: id, ...clean, catalog_situation: catalogKey, updated_by: actor.id, updated_at: new Date().toISOString() };
   // Only reordering may change an existing rule's position. An editor may have been open before a reorder.
   const { position, ...fields } = payload;
-  const write = (values: typeof fields | Omit<typeof fields, "min_demo_activity_level">) => before
+  const write = (values: typeof fields | Omit<typeof fields, "min_demo_activity_level"> | Omit<typeof fields, "product_stages">) => before
     ? db.from("followup_rules").update(values).eq("key", id)
     : db.from("followup_rules").insert({ ...values, position });
-  const latest = await write(fields)
-    .select("key,name,stage,situations,action,after_hours,after_action,position,enabled,hours_from,hours_to,days,min_demo_activity_level,catalog_situation").single();
+  let latest = await write(fields).select(RULE_COLS).single();
+  if (missingProductStages(latest.error)) {
+    if (covered.length > 1 || covered[0] !== clean.stage) throw new HttpError(409, "Falta aplicar la migración 202612160001_followup_rule_product_stages.sql en Supabase.");
+    const { product_stages: unused, ...old } = fields;
+    void unused;
+    latest = await write(old).select(RULE_COLS.replace("product_stages,", "")).single() as unknown as typeof latest;
+  }
   let saved: Rule;
   if (missingGenerationField(latest.error)) {
     if (clean.min_demo_activity_level === 3) throw new HttpError(409, "Aplicá la migración de estados antes de activar «Generó imagen».");

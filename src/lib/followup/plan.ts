@@ -3,7 +3,7 @@
 // (grupos de la cola). Puro: lo comparten el servidor, el navegador y los tests.
 
 import { FOLLOWUP_STAGES, type StageKey } from "./stages";
-import { DEFAULT_RULES, pickRule, type Rule } from "./rules";
+import { DEFAULT_RULES, pickRule, type Done, type Rule } from "./rules";
 
 /** Qué pasó en la conversación. No crea etapas: el embudo sigue siendo el mismo. */
 export const SITUATIONS = {
@@ -173,7 +173,7 @@ export type Planned = { action: Action | null; afterHours: number; reason: strin
  * etapas pasa a preparar la demo. Todo lo demás sale de las reglas
  * (`followup_rules`, editables en «Mensajes y reglas»; por defecto, las de la Fase 2).
  */
-export function nextAction(stage: StageKey, situation: Situation, done: Partial<Record<Action, boolean>> = {}, rules: Rule[] = DEFAULT_RULES, demoGenerated = false): Planned {
+export function nextAction(stage: StageKey, situation: Situation, done: Done = {}, rules: Rule[] = DEFAULT_RULES, demoGenerated = false): Planned {
   const none = (reason: string): Planned => ({ action: null, afterHours: 0, reason, rule: null });
   if (situation !== "rechazo" && CLOSED_SITUATIONS.includes(situation)) return none(`${SITUATIONS[situation]}: no se le escribe más.`);
   const early = stage === "no-contactado" || stage === "no-responde";
