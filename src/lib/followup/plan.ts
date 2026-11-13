@@ -2,7 +2,7 @@
 // (acción, fija por código), si se puede hacer ahora (bloqueos) y en qué orden
 // (grupos de la cola). Puro: lo comparten el servidor, el navegador y los tests.
 
-import type { StageKey } from "./stages";
+import { FOLLOWUP_STAGES, type StageKey } from "./stages";
 import { DEFAULT_RULES, pickRule, type Rule } from "./rules";
 
 /** Qué pasó en la conversación. No crea etapas: el embudo sigue siendo el mismo. */
@@ -68,12 +68,19 @@ export type Action = keyof typeof ACTIONS;
 export const isAction = (v: unknown): v is Action => typeof v === "string" && v in ACTIONS;
 /** Las acciones de cada etapa: viven en rules.ts (fuente única). */
 export { ACTIONS_OF, actionsOf, compatible } from "./rules";
-/** Nombre de la acción para el equipo: en «No contactado», la principal es el saludo. */
+/**
+ * Nombre de la acción para el equipo: en «No contactado», la principal es el
+ * saludo; donde no tiene un nombre propio, dice a qué etapa lleva.
+ */
 export function actionLabel(stage: StageKey, action: Action) {
-  if (action === "principal") return stage === "no-contactado" ? "Saludo" : stage === "no-responde" ? "Saludo sin respuesta" : stage === "sin-demo" ? "Crear demo" : stage === "sin-enviar" ? "Enviar demo" : stage === "no-abrio" ? "Seguimiento de demo 1" : ACTIONS.principal;
+  if (action === "principal") return stage === "no-contactado" ? "Saludo" : stage === "no-responde" ? "Saludo sin respuesta" : stage === "sin-demo" ? "Crear demo" : stage === "sin-enviar" ? "Enviar demo" : stage === "no-abrio" ? "Seguimiento de demo 1" : nextStepLabel(stage);
   if (action === "seguimiento_2") return stage === "no-abrio" ? "Seguimiento de demo 2" : "Seguimiento 2";
   return ACTIONS[action];
 }
+const nextStepLabel = (stage: StageKey) => {
+  const goal = FOLLOWUP_STAGES.find((s) => s.key === stage)?.goal;
+  return goal ? `Llevar a: ${goal}` : ACTIONS.principal;
+};
 /** Cuándo se dispara cada acción, para el equipo. */
 export function actionWhen(stage: StageKey, action: Action) {
   const step = SEQUENCE_OF(stage).find((x) => x.action === action);

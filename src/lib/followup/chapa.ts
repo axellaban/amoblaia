@@ -3,7 +3,7 @@ import type { Period } from "@/lib/agency/demo-funnel";
 import { HttpError } from "@/lib/commerce/http";
 import { adminClient } from "@/lib/supabase/server";
 import { actorName } from "./actor";
-import { ACTIONS, GROUPS, SITUATIONS } from "./plan";
+import { GROUPS, SITUATIONS, actionLabel } from "./plan";
 import { actionsOf } from "./rules";
 import { FOLLOWUP_STAGES } from "./stages";
 import { createStage, customStages } from "./commercial-catalog";
@@ -107,7 +107,7 @@ export async function followupSnapshot(team: TeamUser[] = [], period?: Period) {
       })),
       states: catalogStates ?? [], overrides: catalogOverrides ?? [],
       canonical: canonicalClassifierOptions(),
-      actions: Object.fromEntries(FOLLOWUP_STAGES.map((s) => [s.key, actionsOf(s.key).map((key) => ({ key, label: ACTIONS[key] }))])),
+      actions: Object.fromEntries(FOLLOWUP_STAGES.map((s) => [s.key, actionsOf(s.key).map((key) => ({ key, label: actionLabel(s.key, key) }))])),
       available: catalogStages !== null && catalogStates !== null && catalogOverrides !== null,
     },
     summary: o.summary,
