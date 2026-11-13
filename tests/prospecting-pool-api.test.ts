@@ -99,12 +99,12 @@ describe("/api/prospeccion · Prospectos", () => {
     expect(by[uuid(1)]).toMatchObject({ status: "en_cola", legacy: true, missing: [] });
     expect(by[uuid(2)]).toMatchObject({ status: "descubierto", legacy: true, address: "Calle Falsa 123", inferred: { instagram: "@ficticia2" } });
     expect(by[uuid(2)].missing.join(" ")).toMatch(/WhatsApp/);
-    expect(by[uuid(3)]).toMatchObject({ status: "calificado", legacy: false, missing: [] });
+    expect(by[uuid(3)]).toMatchObject({ status: "calificado", legacy: false, missing: [], demoPath: "importar", warnings: [] });
     expect(by[uuid(5)].score.caps.join(" ")).toMatch(/proveedor de IA/);
     // El estado se deriva de los datos al leer: la 5 tiene pocos datos cargados.
     expect(b.counts).toMatchObject({ total: 4, en_cola: 1, calificado: 1, descubierto: 2 });
     expect(b.catalog.fields.length).toBeGreaterThan(20);
-    expect(b.catalog.scoringVersion).toBe("prospectos_v1");
+    expect(b.catalog.scoringVersion).toBe("prospectos_v2");
     // Aprendizajes: la única intentada es la ya contactada.
     expect(b.learning.total).toMatchObject({ n: 1, valid: 1, replied: 1 });
     expect(b.learning.messages).toEqual(["Histórico (planilla)"]);
@@ -126,7 +126,7 @@ describe("/api/prospeccion · Prospectos", () => {
     expect(r.status).toBe(200);
     expect(state.rpcs.find((x) => x.name === "habita_prospect_update")?.args).toMatchObject({ p_account: uuid(2), p_version: 2, p_patch: { zone: "Centro" } });
     const [s] = saves();
-    expect(s).toMatchObject({ p_account: uuid(2), p_actor: ACTOR, p_patch: { profile: { listings_total: 40, empty_listings: 10 }, status: "descubierto", scoring_version: "prospectos_v1", explore: false } });
+    expect(s).toMatchObject({ p_account: uuid(2), p_actor: ACTOR, p_patch: { profile: { listings_total: 40, empty_listings: 10 }, status: "descubierto", scoring_version: "prospectos_v2", explore: false } });
     expect(s.p_patch.snapshot).toBeUndefined();
     // Una de antes de Prospectos que ya estaba en la cola no sale de la cola por cargarle datos.
     await post({ op: "guardar", cuenta: uuid(1), valores: { listings_total: 40 } });
@@ -142,7 +142,7 @@ describe("/api/prospeccion · Prospectos", () => {
     expect((await post({ op: "cola", cuenta: uuid(3) })).status).toBe(200);
     const [s] = saves();
     expect(s.p_patch).toMatchObject({ status: "en_cola", explore: false });
-    expect(s.p_patch.snapshot).toMatchObject({ scoring_version: "prospectos_v1", profile: { empty_listings: 20, demo_listing_url: READY.demo_listing_url } });
+    expect(s.p_patch.snapshot).toMatchObject({ scoring_version: "prospectos_v2", profile: { empty_listings: 20, demo_listing_url: READY.demo_listing_url } });
     // Con proveedor de IA no entra por ranking, pero sí por exploración.
     expect((await post({ op: "cola", cuenta: uuid(5) })).status).toBe(409);
     expect((await post({ op: "cola", cuenta: uuid(5), explorar: true })).status).toBe(200);

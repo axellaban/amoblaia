@@ -6,12 +6,57 @@
 // ajusta a mano con la tabla de aprendizajes y cada ajuste es una versión nueva.
 import type { Dataset, ProspectAccount, ProspectContact } from "./types";
 
-export const SCORING_VERSION = "prospectos_v1";
+export const SCORING_VERSION = "prospectos_v2";
 /** Encaje mínimo para entrar a la cola por ranking (el cupo de exploración no lo exige). */
 export const MIN_FIT = 40;
 /** Parte de cada tanda que entra al azar, para que el ranking no se confirme solo. */
 export const EXPLORE_SHARE = 0.15;
 export const WEIGHTS = { contact: 0.35, fit: 0.45, demo: 0.2 };
+/**
+ * Parte de cada tanda que puede ir a demos con fotos cargadas a mano (avisos que no se importan):
+ * se arman, pero cuestan trabajo del equipo, así que no ocupan el cupo de las que se importan.
+ */
+export const MANUAL_SHARE = 0.1;
+
+/**
+ * Los portales que no dejan leer sus avisos desde nuestros servidores (Zonaprop: Cloudflare;
+ * Argenprop: AWS WAF desde Vercel). Ver «Importador: Zonaprop y Argenprop» en docs/PENDIENTES.md.
+ */
+const BLOCKED_PORTALS: [RegExp, string][] = [
+  [/(^|\.)zonaprop\.com\.ar$/, "Zonaprop"],
+  [/(^|\.)argenprop\.com$/, "Argenprop"],
+];
+/** El portal que no deja importar, si el enlace es de uno. */
+export function blockedPortalOf(url: unknown): string | null {
+  if (typeof url !== "string" || !url) return null;
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return BLOCKED_PORTALS.find(([re]) => re.test(host))?.[1] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Cómo se arma la demo de esta inmobiliaria:
+ *   importar   el aviso elegido se puede importar (su web, o no se sabe que no)
+ *   manual     el equipo cargará las fotos a mano (marcado en «Demo con fotos a mano»)
+ *   bloqueado  el aviso no se puede importar (Zonaprop, Argenprop o marcado «No») y nadie decidió cargarlo a mano
+ *   sin_aviso  todavía no se eligió aviso
+ */
+export type DemoPath = "importar" | "manual" | "bloqueado" | "sin_aviso";
+export const DEMO_PATH_LABEL: Record<DemoPath, string> = {
+  importar: "Importando el aviso",
+  manual: "Con fotos a mano",
+  bloqueado: "Aviso que no se importa",
+  sin_aviso: "Sin aviso elegido",
+};
+export function demoPathOf(v: Profile): DemoPath {
+  if (!v.demo_listing_url) return "sin_aviso";
+  if (v.demo_manual === true) return "manual";
+  if (blockedPortalOf(v.demo_listing_url) || v.demo_photos_importable === "no") return "bloqueado";
+  return "importar";
+}
 
 export type PoolStatus = "descubierto" | "enriquecido" | "calificado" | "en_cola" | "descartado";
 export const STATUS_LABEL: Record<PoolStatus, string> = {
@@ -24,7 +69,7 @@ export const STATUS_LABEL: Record<PoolStatus, string> = {
 export const STATUS_HELP: Record<PoolStatus, string> = {
   descubierto: "Sabemos que existe; faltan sus datos.",
   enriquecido: "Tiene al menos la mitad de los datos clave.",
-  calificado: "Tiene WhatsApp, un aviso para la demo y encaje suficiente: puede entrar a la cola.",
+  calificado: "Tiene WhatsApp, un aviso que se puede importar (o su demo va con fotos a mano) y encaje suficiente: puede entrar a la cola.",
   en_cola: "Ya está en la cola de Follow-up, esperando el saludo.",
   descartado: "No se la va a contactar.",
 };
@@ -90,7 +135,8 @@ export const FIELDS: Field[] = [
   { key: "uses_staging", label: "Ya ambienta sus fotos", group: "visual", type: "enum", key_data: true, options: opts(["no", "No"], ["renders", "Renders"], ["amoblado_virtual", "Amoblado virtual"], ["video_tour", "Video o recorrido"]) },
   { key: "demo_listing_url", label: "Aviso para la demo", group: "visual", type: "url", key_data: true, help: "Un aviso con ambientes vacíos para armar su demo." },
   { key: "demo_listing_note", label: "Nota del aviso para la demo", group: "visual", type: "text", help: "Qué tiene el aviso elegido (ambientes vacíos, fotos) o por qué falta." },
-  { key: "demo_photos_importable", label: "Sus fotos se pueden importar", group: "visual", type: "enum", key_data: true, options: opts(["si", "Sí"], ["no", "No"]) },
+  { key: "demo_photos_importable", label: "Sus fotos se pueden importar", group: "visual", type: "enum", key_data: true, options: opts(["si", "Sí"], ["no", "No"]), help: "Un aviso de Zonaprop o Argenprop nunca se importa (no dejan leerlos desde nuestros servidores): se marca «No» solo. El aviso tiene que ser de su web." },
+  { key: "demo_manual", label: "Demo con fotos a mano", group: "visual", type: "bool", help: "Para las que no tienen un aviso que se importe (sin web, o su web no deja): el equipo carga las fotos a mano. Entra a la cola con cupo chico." },
 
   { key: "web_platform", label: "Plataforma de su web", group: "digital", type: "enum", key_data: true, options: opts(["tokko", "Tokko"], ["xintel", "Xintel"], ["mapaprop", "Mapaprop"], ["wordpress", "WordPress"], ["propia", "Desarrollo propio"], ["otra", "Otra"], ["sin_web", "No tiene web"]) },
   { key: "instagram", label: "Instagram", group: "digital", type: "text" },
@@ -188,6 +234,11 @@ export function variables(a: ProspectAccount, profile: Profile, extra: Extra = {
   fill("instagram", ig || null);
   if (/argenprop/i.test(String(sheet["Perfil Argenprop"] ?? ""))) fill("source_channel", "argenprop");
   if (!a.website) fill("web_platform", "sin_web");
+  // Un aviso de Zonaprop o Argenprop no se importa, diga lo que diga la carga a mano.
+  if (blockedPortalOf(v.demo_listing_url) && v.demo_photos_importable !== "no") {
+    v.demo_photos_importable = "no";
+    if (!inferred.includes("demo_photos_importable")) inferred.push("demo_photos_importable");
+  }
   return { vars: v, inferred };
 }
 
@@ -228,7 +279,8 @@ export function scoreOf(a: Pick<ProspectAccount, "contacts" | "website">, v: Pro
 
   const demo =
     (v.demo_listing_url ? 50 : 0) +
-    (({ si: 30, no: 0 } as Record<string, number>)[String(v.demo_photos_importable)] ?? 12) +
+    // Con fotos a mano la demo se arma igual, pero cuesta trabajo: vale como «no se importa».
+    (v.demo_manual === true ? 0 : (({ si: 30, no: 0 } as Record<string, number>)[String(v.demo_photos_importable)] ?? 12)) +
     (({ profesional: 20, media: 15, celular: 8 } as Record<string, number>)[String(v.photo_quality)] ?? 8);
 
   return {
@@ -247,13 +299,29 @@ export function completeness(v: Profile) {
 }
 
 /** Lo que falta para entrar a la cola. El cupo de exploración no exige el encaje mínimo. */
-export function missingForQueue(a: Pick<ProspectAccount, "contacts" | "suppressed">, v: Profile, s: Score, explore = false) {
+export function missingForQueue(a: Pick<ProspectAccount, "contacts" | "suppressed" | "website">, v: Profile, s: Score, explore = false) {
   const out: string[] = [];
   if (a.suppressed) out.push("Tiene una baja: no se la contacta.");
   if (!whatsappOf(a)) out.push("Falta un WhatsApp que se pueda usar.");
-  if (!v.demo_listing_url) out.push("Falta elegir el aviso para su demo.");
+  const why = demoBlock(a, v);
+  if (why) out.push(why);
   if (!explore && s.fit < MIN_FIT) out.push(`Encaje ${s.fit}: el mínimo para entrar por ranking es ${MIN_FIT}.`);
   return out;
+}
+
+/**
+ * Por qué todavía no se podría armar su demo, o `null`. Se pide antes del saludo: si no, el
+ * problema aparece recién cuando la inmobiliaria ya mostró interés y espera su demo.
+ */
+export function demoBlock(a: Pick<ProspectAccount, "website">, v: Profile): string | null {
+  const path = demoPathOf(v);
+  if (path === "sin_aviso") return "Falta elegir el aviso para su demo.";
+  if (path !== "bloqueado") return null;
+  const portal = blockedPortalOf(v.demo_listing_url);
+  const why = portal ? `El aviso para la demo es de ${portal}, que no deja importar las fotos.` : "Las fotos del aviso para la demo no se pueden importar.";
+  return a.website
+    ? `${why} Elegí el mismo aviso (u otro con ambientes vacíos) en su web, o marcá «Demo con fotos a mano».`
+    : `${why} No tiene web propia: marcá «Demo con fotos a mano» si el equipo va a cargarlas.`;
 }
 
 /** El estado que sale de los datos. «En cola» y «Descartado» son decisiones y no se pisan. */
@@ -263,20 +331,37 @@ export function autoStatus(current: PoolStatus | null, missing: string[], comple
   return complete >= 0.5 ? "enriquecido" : "descubierto";
 }
 
-export type Candidate = { id: string; score: number; status: PoolStatus; hardReady: boolean };
+export type Candidate = { id: string; score: number; status: PoolStatus; hardReady: boolean; manual?: boolean };
+/** Cuántas de una tanda pueden ir con fotos a mano: una de cada 10 (ninguna en tandas de menos de 5). */
+export const manualCap = (n: number, share = MANUAL_SHARE) => (n >= 5 ? Math.max(1, Math.floor(n * share)) : 0);
 /**
  * A quién sumar a la cola: los mejores calificados por ranking y, de cada tanda de 5 o más, una
- * parte al azar entre las demás que tienen WhatsApp y aviso para la demo (exploración).
+ * parte al azar entre las demás que tienen WhatsApp y una demo que se puede armar (exploración).
+ * Las de demo con fotos a mano no pasan de `manualCap` en toda la tanda.
  */
-export function pickForQueue(list: Candidate[], count: number, rand: () => number = Math.random, share = EXPLORE_SHARE) {
+export function pickForQueue(list: Candidate[], count: number, rand: () => number = Math.random, share = EXPLORE_SHARE, manualShare = MANUAL_SHARE) {
   const n = Math.max(0, Math.floor(count));
+  let manualLeft = manualCap(n, manualShare);
+  const take = (c: Candidate) => {
+    if (!c.manual) return true;
+    if (manualLeft <= 0) return false;
+    manualLeft--;
+    return true;
+  };
   const ranked = list.filter((c) => c.status === "calificado").sort((x, y) => y.score - x.score || x.id.localeCompare(y.id));
   const others = list.filter((c) => c.status !== "calificado" && c.status !== "en_cola" && c.status !== "descartado" && c.hardReady);
   const exploreWanted = n >= 5 ? Math.max(1, Math.round(n * share)) : 0;
   const pool = [...others];
   const explore: string[] = [];
-  while (explore.length < exploreWanted && pool.length) explore.push(pool.splice(Math.floor(rand() * pool.length), 1)[0].id);
-  const top = ranked.slice(0, n - explore.length).map((c) => c.id);
+  while (explore.length < exploreWanted && pool.length) {
+    const c = pool.splice(Math.floor(rand() * pool.length), 1)[0];
+    if (take(c)) explore.push(c.id);
+  }
+  const top: string[] = [];
+  for (const c of ranked) {
+    if (top.length >= n - explore.length) break;
+    if (take(c)) top.push(c.id);
+  }
   return { top, explore };
 }
 
@@ -340,6 +425,7 @@ export const DIMENSIONS: Dimension[] = [
   { key: "explore", label: "Cómo entró a la cola", of: (r) => (r.explore ? "Exploración (al azar)" : r.score === null ? null : "Por ranking") },
   { key: "number_confidence", label: "Confianza del número", of: (r) => label("number_confidence", r.vars.number_confidence) },
   { key: "web", label: "Web propia", of: (r) => (r.account.website ? "Con web" : "Sin web") },
+  { key: "demo_path", label: "Cómo se arma su demo", of: (r) => (r.vars.demo_listing_url ? DEMO_PATH_LABEL[demoPathOf(r.vars)] : null) },
   { key: "zone", label: "Zona", of: (r) => r.account.zone?.trim() || null },
   { key: "decisor", label: "Quién decide (planilla)", of: (r) => r.account.decision_maker?.trim() || null },
   { key: "sdr", label: "SDR", of: (r) => r.account.sdr?.trim() || null },

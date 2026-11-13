@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  autoStatus, cleanProfile, completeness, confidenceOf, learnings, MIN_FIT, missingForQueue, outcomesOf, pickForQueue, poolBlock, scoreOf, variables,
+  autoStatus, blockedPortalOf, cleanProfile, completeness, confidenceOf, demoPathOf, learnings, manualCap, MIN_FIT, missingForQueue, outcomesOf, pickForQueue, poolBlock, scoreOf, variables,
   type LearnRow, type Profile,
 } from "@/lib/prospecting/pool";
 import type { Dataset, ProspectAccount, ProspectContact } from "@/lib/prospecting/types";
@@ -98,6 +98,58 @@ describe("entrada a la cola", () => {
     // Una tanda chica no explora, y sin candidatas para explorar se completa por ranking.
     expect(pickForQueue(list, 3, () => 0)).toEqual({ top: ["q0", "q1", "q2"], explore: [] });
     expect(pickForQueue(list.filter((c) => c.status === "calificado"), 6).top).toHaveLength(6);
+  });
+});
+
+describe("demo que se puede armar", () => {
+  const argenprop = "https://www.argenprop.com/departamento-en-venta--20179647";
+  const zonaprop = "https://www.zonaprop.com.ar/propiedades/clasificado/veclapin-ficticio-60302623.html";
+  it("reconoce los portales que no dejan importar, y nada más", () => {
+    expect(blockedPortalOf(argenprop)).toBe("Argenprop");
+    expect(blockedPortalOf(zonaprop)).toBe("Zonaprop");
+    expect(blockedPortalOf("https://ficticia.test/propiedad/1")).toBeNull();
+    expect(blockedPortalOf("https://argenprop.com.ficticia.test/a")).toBeNull();
+    expect(blockedPortalOf("no es un enlace")).toBeNull();
+  });
+  it("un aviso de portal se marca «no se importa» aunque se haya cargado «sí», y baja la parte de demo", () => {
+    const { vars, inferred } = variables(account(), { ...strong, demo_listing_url: argenprop });
+    expect(vars.demo_photos_importable).toBe("no");
+    expect(inferred).toContain("demo_photos_importable");
+    expect(scoreOf(account(), vars).demo).toBeLessThan(scoreOf(account(), strong).demo);
+  });
+  it("un aviso de portal no entra a la cola, ni por exploración; con web pide el aviso de su web", () => {
+    const a = account();
+    const { vars } = variables(a, { ...strong, demo_listing_url: argenprop });
+    expect(demoPathOf(vars)).toBe("bloqueado");
+    const missing = missingForQueue(a, vars, scoreOf(a, vars));
+    expect(missing).toHaveLength(1);
+    expect(missing[0]).toMatch(/es de Argenprop.*en su web/);
+    expect(missingForQueue(a, vars, scoreOf(a, vars), true)).toHaveLength(1);
+  });
+  it("sin web lo dice, y con «Demo con fotos a mano» puede entrar", () => {
+    const a = account({ website: null });
+    const { vars } = variables(a, { ...strong, demo_listing_url: zonaprop });
+    expect(missingForQueue(a, vars, scoreOf(a, vars))[0]).toMatch(/No tiene web propia/);
+    const manual = { ...vars, demo_manual: true };
+    expect(demoPathOf(manual)).toBe("manual");
+    expect(missingForQueue(a, manual, scoreOf(a, manual))).toHaveLength(0);
+  });
+  it("una web propia marcada «no se importa» también frena", () => {
+    const v = { ...strong, demo_photos_importable: "no" };
+    expect(demoPathOf(v)).toBe("bloqueado");
+    expect(missingForQueue(account(), v, scoreOf(account(), v))[0]).toMatch(/no se pueden importar/);
+  });
+  it("las de fotos a mano tienen cupo chico en cada tanda", () => {
+    expect([manualCap(3), manualCap(5), manualCap(10), manualCap(48)]).toEqual([0, 1, 1, 4]);
+    const list = [
+      ...[99, 98, 97, 96].map((score, i) => ({ id: `m${i}`, score, status: "calificado" as const, hardReady: true, manual: true })),
+      ...[50, 40, 30, 20, 10, 5, 4, 3, 2, 1].map((score, i) => ({ id: `q${i}`, score, status: "calificado" as const, hardReady: true })),
+    ];
+    const pick = pickForQueue(list, 10, () => 0);
+    expect([...pick.top, ...pick.explore].filter((id) => id.startsWith("m"))).toEqual(["m0"]);
+    expect(pick.top).toHaveLength(10);
+    // Tanda chica: ninguna a mano (se pueden pasar de a una con «Pasar a la cola»).
+    expect(pickForQueue(list, 3, () => 0).top).toEqual(["q0", "q1", "q2"]);
   });
 });
 
