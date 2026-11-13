@@ -4,8 +4,8 @@ import { isUuid } from "@/lib/demos/shared";
 import { adminClient } from "@/lib/supabase/server";
 import { normalizeWhatsapp } from "./import";
 import {
-  autoStatus, cleanProfile, completeness, EXPLORE_SHARE, FIELDS, GROUPS, learnings, MIN_FIT, missingForQueue, outcomesOf, pickForQueue,
-  scoreOf, SCORING_VERSION, STATUS_HELP, STATUS_LABEL, variables, WEIGHTS, whatsappOf,
+  autoStatus, cleanProfile, completeness, DEMO_PATH_LABEL, demoBlock, demoPathOf, EXPLORE_SHARE, FIELDS, GROUPS, learnings, MANUAL_SHARE, MIN_FIT,
+  missingForQueue, outcomesOf, pickForQueue, scoreOf, SCORING_VERSION, STATUS_HELP, STATUS_LABEL, variables, WEIGHTS, whatsappOf,
   type Extra, type LearnRow, type PoolStatus, type Profile, type Score,
 } from "./pool";
 import { ProspectError, prospectDataset, prospectRpc } from "./server";
@@ -93,7 +93,8 @@ function describe(a: ProspectAccount, row: ProfileRow | undefined, extra: Extra 
   const current: PoolStatus | null = row?.status ?? (wa ? "en_cola" : null);
   const missing = missingForQueue(a, vars, score, row?.explore ?? false);
   const status = autoStatus(current, missing, complete);
-  return { vars, inferred, score, complete, wa, legacy, missing, status };
+  const demoPath = demoPathOf(vars);
+  return { vars, inferred, score, complete, wa, legacy, missing, status, demoPath };
 }
 
 const contacted = (ds: Dataset) => new Set(ds.attempts.filter((t) => t.status === "sent").map((t) => t.account_id));
@@ -133,6 +134,10 @@ export async function poolView(message: string | null = null) {
         sheetScore: a.score,
         complete: Math.round(d.complete * 100),
         missing: d.status === "en_cola" || d.status === "descartado" ? [] : d.missing,
+        demoPath: d.demoPath,
+        demoPathLabel: DEMO_PATH_LABEL[d.demoPath],
+        // Ya en la cola con un aviso que no se importa: se avisa, sin sacarla sola (eso lo decide el equipo).
+        warnings: d.status === "en_cola" && !d.legacy && d.demoPath === "bloqueado" ? [demoBlock(a, d.vars)!] : [],
         profile: row?.profile ?? {},
         inferred: Object.fromEntries(d.inferred.map((k) => [k, d.vars[k]])),
         notes: extra?.source_notes ?? null,
@@ -174,6 +179,7 @@ export async function poolView(message: string | null = null) {
       weights: WEIGHTS,
       minFit: MIN_FIT,
       exploreShare: EXPLORE_SHARE,
+      manualShare: MANUAL_SHARE,
     },
     learning: { ...learnings(learnRows, ds.settings?.small_sample ?? 30, message), message, messages: allMessages },
   };
@@ -296,7 +302,7 @@ export async function runPoolOp(op: unknown, b: Op, actor: { id: string; name: s
       const pick = pickForQueue(
         pending.map((a) => {
           const d = described.get(a.id)!;
-          return { id: a.id, score: d.score.total, status: d.status, hardReady: Boolean(d.wa) && Boolean(d.vars.demo_listing_url) };
+          return { id: a.id, score: d.score.total, status: d.status, hardReady: Boolean(d.wa) && (d.demoPath === "importar" || d.demoPath === "manual"), manual: d.demoPath === "manual" };
         }),
         count,
       );

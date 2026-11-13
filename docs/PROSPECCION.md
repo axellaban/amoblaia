@@ -272,7 +272,7 @@ Las inmobiliarias que todavía no recibieron el saludo se trabajan en **Prospect
 | En cola | Espera el saludo en Follow-up | Decisión («Pasar a la cola», «Sumar las mejores») |
 | Descartado | No se la contacta (con motivo) | Decisión |
 
-**Para entrar a la cola** (`missingForQueue`): un WhatsApp que se pueda usar, un aviso elegido para su demo y encaje de 40 o más. Sin datos el encaje queda neutro (43): no saber no es lo mismo que no encajar. Mientras una cuenta con perfil no está «En cola», la cola de Follow-up la muestra bloqueada: «En Prospectos (Enriquecido): todavía no entró a la cola» (`poolBlock`).
+**Para entrar a la cola** (`missingForQueue`): un WhatsApp que se pueda usar, una demo que se pueda armar (ver abajo) y encaje de 40 o más. Sin datos el encaje queda neutro (43): no saber no es lo mismo que no encajar. Mientras una cuenta con perfil no está «En cola», la cola de Follow-up la muestra bloqueada: «En Prospectos (Enriquecido): todavía no entró a la cola» (`poolBlock`).
 
 ### Variables (`FIELDS` en `src/lib/prospecting/pool.ts`)
 
@@ -282,33 +282,51 @@ Las inmobiliarias que todavía no recibieron el saludo se trabajan en **Prospect
 | Contacto | Confianza del número, tipo de línea, de quién es el número, WhatsApp Business, respuesta automática |
 | Quién decide | Estructura, decisor confirmado, agentes (el nombre y la zona siguen en la cuenta) |
 | Cartera | Avisos activos, operación principal, % residencial, precio mediano, antigüedad de los avisos, avisos nuevos en 30 días |
-| Necesidad visual | Avisos con ambientes vacíos, calidad de las fotos, si ya ambienta sus fotos, aviso para la demo y su nota, si sus fotos se pueden importar |
+| Necesidad visual | Avisos con ambientes vacíos, calidad de las fotos, si ya ambienta sus fotos, aviso para la demo y su nota, si sus fotos se pueden importar, demo con fotos a mano |
 | Madurez digital | Plataforma de la web, Instagram (seguidores y publicaciones), reseñas de Google, publicidad en Meta, avisos destacados |
 | Competencia | Proveedor de IA actual |
 
 Lo que no se cargó se completa, solo para mostrar y rankear, con lo que ya dice la planilla (confianza del número, avisos en Argenprop, Instagram). Agregar una variable es sumarla a `FIELDS`: el catálogo viaja en la respuesta y la ficha de Chapa la muestra sin cambios.
 
-### Ranking (`prospectos_v1`)
+### Demo que se puede armar (desde el 13/11)
+
+La demo se arma cuando la inmobiliaria ya mostró interés. Si recién ahí se descubre que su aviso no se importa, la demo se demora en el peor momento. Por eso se pide antes del saludo (`demoPathOf`, `demoBlock`):
+
+| Cómo se arma su demo | Cuándo | ¿Entra a la cola? |
+| --- | --- | --- |
+| Importando el aviso | Hay aviso y no es de un portal que bloquea ni está marcado «No se importa» | Sí |
+| Aviso que no se importa | El aviso es de **Zonaprop o Argenprop** (no dejan leerlos desde nuestros servidores: Cloudflare y AWS WAF; ver `PENDIENTES.md`), o «Sus fotos se pueden importar» = No | No, tampoco por exploración. Con web: elegir el mismo aviso en su web. Sin web: marcar «Demo con fotos a mano» |
+| Con fotos a mano | «Demo con fotos a mano» = Sí: el equipo carga las fotos | Sí, con cupo chico |
+| Sin aviso elegido | Falta el aviso | No |
+
+- Un aviso de Zonaprop o Argenprop deja «Sus fotos se pueden importar» en «No» solo, aunque se haya cargado «Sí».
+- **Cupo de fotos a mano** (`MANUAL_SHARE`, 10%): «Sumar las mejores» no suma más de una de cada 10 (`manualCap`; ninguna en tandas de menos de 5). Una por una, con «Pasar a la cola», no tienen tope: es decisión del equipo.
+- Las que ya estaban **en cola** con un aviso que no se importa no salen solas: la vista las marca en `warnings` para que el equipo cambie el aviso o las saque.
+- No tener web no descarta: en lo contactado hasta el 13/11 las sin web respondieron igual que las con web. Solo cuesta más armar su demo.
+
+### Ranking (`prospectos_v2`)
 
 Tres partes de 0 a 100 y un total: 35% contactabilidad, 45% encaje, 20% facilidad de armar la demo (`scoreOf`).
 
 - **Contactabilidad:** la confianza del número (verificado 90, enlace en su web 80, celular publicado 65, portal 50, directorio 35), +10 con web propia, ±10 según de quién es el número, −15 con respuesta automática; una línea fija queda en 15 y sin WhatsApp usable, en 0.
 - **Encaje:** avisos vacíos (hasta 40), tamaño de la cartera (20), todavía no ambienta (15), residencial (10), avisos nuevos (10), decisor confirmado (5). Con un proveedor de IA el encaje no pasa de 25; con amoblado virtual, de 45.
-- **Demo:** aviso elegido (50), fotos importables (30), calidad de las fotos (20).
+- **Demo:** aviso elegido (50), fotos importables (30; 12 si no se sabe; 0 si no se importan o la demo va con fotos a mano), calidad de las fotos (20).
+
+`prospectos_v2` (13/11) cambia, respecto de `v1`, que un aviso de Zonaprop o Argenprop cuenta como «no se importa» y que la demo con fotos a mano no suma esos 30. Después de publicarlo, correr «Recalcular» para que las cuentas con perfil tomen la versión nueva.
 
 Es una hipótesis para ordenar, no una probabilidad de compra. Cambiar un peso es una versión nueva (`SCORING_VERSION`). Mientras la cuenta espera el saludo, su score en la cola de Follow-up es este ranking.
 
 ### Exploración
 
-«Sumar las mejores» (`pickForQueue`) pasa a la cola las calificadas de mejor ranking y, de cada tanda de 5 o más, 15% al azar entre las demás que ya tienen WhatsApp y aviso. Quedan marcadas (`explore`) y en Aprendizajes se comparan contra las que entraron por ranking: sin eso el ranking solo se confirma a sí mismo.
+«Sumar las mejores» (`pickForQueue`) pasa a la cola las calificadas de mejor ranking y, de cada tanda de 5 o más, 15% al azar entre las demás que ya tienen WhatsApp y una demo que se puede armar (importando o con fotos a mano, dentro del cupo). Quedan marcadas (`explore`) y en Aprendizajes se comparan contra las que entraron por ranking: sin eso el ranking solo se confirma a sí mismo.
 
 ### Aprendizajes (`learnings`)
 
-Por cada variable, las inmobiliarias intentadas con cada valor y hasta dónde llegaron, con las reglas del §5: número válido (sobre las intentadas) y respuesta humana, interés, demo con interacción y clientes (sobre las de número válido). Con menos de 30 intentadas, «muestra chica». Además de las variables de Prospectos se cruzan el primer mensaje, el día del primer contacto, la zona, el SDR, la web, el score de la planilla y cómo entró a la cola. Las variables se toman de la foto de entrada a la cola cuando existe. `?mensaje=` deja solo las contactadas con ese primer mensaje: el mensaje pesa más que el prospecto y, sin separarlos, se confunden.
+Por cada variable, las inmobiliarias intentadas con cada valor y hasta dónde llegaron, con las reglas del §5: número válido (sobre las intentadas) y respuesta humana, interés, demo con interacción y clientes (sobre las de número válido). Con menos de 30 intentadas, «muestra chica». Además de las variables de Prospectos se cruzan el primer mensaje, el día del primer contacto, la zona, el SDR, la web, cómo se arma su demo, el score de la planilla y cómo entró a la cola. Las variables se toman de la foto de entrada a la cola cuando existe. `?mensaje=` deja solo las contactadas con ese primer mensaje: el mensaje pesa más que el prospecto y, sin separarlos, se confunden.
 
 ### API (para Chapa Labs)
 
-- `GET /api/prospeccion?vista=prospectos[&mensaje=]` → `{ available, rows, counts, catalog, learning }`. `available: false` si falta la migración: la lista se ve, pero no se puede guardar.
+- `GET /api/prospeccion?vista=prospectos[&mensaje=]` → `{ available, rows, counts, catalog, learning }`. Cada fila trae `demoPath` y `demoPathLabel` (cómo se arma su demo) y `warnings` (las en cola con un aviso que no se importa); el catálogo, `manualShare`. `available: false` si falta la migración: la lista se ve, pero no se puede guardar.
 - `POST { by, prospectos: { op, ... } }`: `guardar { cuenta, valores, zona?, decisor? }`, `cola { cuenta, explorar? }`, `sacar`, `descartar { motivo }`, `reabrir`, `llenar { cantidad }`, `crear { nombre, web?, zona?, whatsapp?, valores?, confirmar? }` (409 `DUPLICATE` si se parece a una que ya está) y `recalcular`.
 
 Archivos: `src/lib/prospecting/pool.ts` (lógica pura), `pool-server.ts` (lecturas y operaciones) y los tests `prospecting-pool*.test.ts`.
@@ -329,6 +347,7 @@ Se relevaron las pendientes sin WhatsApp y todas las inmobiliarias de Pinamar (f
 ### Pendiente
 
 - Verificar el WhatsApp de las 50 «Descubierto» con número encontrado y pasarlas a la cola.
+- Cambiar el aviso de Argenprop por el de su web en las 53 que tienen web (al 13/11: 23 en «Descubierto» y 30 en cola, 7 de ellas sin saludar). Las 116 «Descubierto» sin web y con aviso de Argenprop: decidir una por una si van con fotos a mano.
 - Seguir cargando los datos de las pendientes (las de la planilla tienen solo lo de la planilla).
 - Que las filas nuevas de la planilla entren como «Descubierto» en vez de ir directo a la cola (hoy la importación no crea perfil).
 - Calibrar los pesos con los Aprendizajes cuando haya muestra, como `prospectos_v2`.
