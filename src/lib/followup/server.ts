@@ -2,7 +2,7 @@ import { AGENCY_STEPS as chartSteps, demosInPeriod, inPeriod, parsePeriod, funne
 import "server-only";
 import { HttpError } from "@/lib/commerce/http";
 import { agencyStep } from "@/lib/agency/demo-funnel";
-import { commercialRow, commercialRows } from "@/lib/agency/commercial-server";
+import { commercialRow, commercialRows, demoFirstActivity } from "@/lib/agency/commercial-server";
 import type { CommercialRow } from "@/lib/agency/commercial";
 import { createAgencyRecord } from "@/lib/agency/admin-edit";
 import { agencyDemoLink, setDemosSent } from "@/lib/agency/external";
@@ -917,12 +917,13 @@ function resultsOf(b: Awaited<ReturnType<typeof board>>, all: QueueItem[], queue
     blocks: blockReasons(all.filter((q) => q.action && q.execution?.status !== "sent" && q.blocked).map((q) => q.blocked!)),
   };
 }
-export async function followupOverview(period: Period = parsePeriod({})): Promise<{ chart: ReturnType<typeof chartCounts>; lostAt: number[]; chartRows: { agencyId: string; name: string; step: number | null; lost: boolean; score: number | null; whatsapp: string | null }[]; catalog: { stages: Awaited<ReturnType<typeof customStages>>; states: Awaited<ReturnType<typeof readStateCatalog>>; overrides: Awaited<ReturnType<typeof readSituationOverrides>> }; stages: StageView[]; queue: QueueItem[]; blocked: QueueItem[]; noInteresados: QueueItem[]; summary: QueueSummary; agencies: AgencyChoice[]; inbox: InboxItem[]; funnel: FunnelStep[]; rules: Rule[]; changes: Change[]; results: Results; executed: ExecutedItem[]; generatedAt: string }> {
+export async function followupOverview(period: Period = parsePeriod({})): Promise<{ chart: ReturnType<typeof chartCounts>; lostAt: number[]; chartRows: { agencyId: string; name: string; step: number | null; lost: boolean; score: number | null; whatsapp: string | null }[]; catalog: { stages: Awaited<ReturnType<typeof customStages>>; states: Awaited<ReturnType<typeof readStateCatalog>>; overrides: Awaited<ReturnType<typeof readSituationOverrides>> }; stages: StageView[]; queue: QueueItem[]; blocked: QueueItem[]; noInteresados: QueueItem[]; summary: QueueSummary; agencies: AgencyChoice[]; inbox: InboxItem[]; funnel: FunnelStep[]; rules: Rule[]; changes: Change[]; results: Results; executed: ExecutedItem[]; funnelDates: FunnelDates[]; generatedAt: string }> {
   const [b, changes, queueDays] = await Promise.all([sharedBoard(), auditOf(null, 20), readQueueDays()]);
   const all = [...b.items.values()];
   // Today's photo of the queue, before reading it back: what is pending now was pending today.
   await recordQueueDay(all).catch(() => console.error("followup_queue_day_failed"));
   const inboxItems = inboxOf(b);
+  const firsts = await demoFirstActivity(b.rows.flatMap((r) => r.demos.map((d) => d.id ?? ""))).catch(() => new Map<string, { visitAt: string | null; interactAt: string | null }>());
   const reached = b.rows.filter(row => !row.test).map(row => {
     const prospect = row.prospectFunnel;
     return { agencyId: row.id, name: row.name, score: row.score, whatsapp: row.whatsapp ?? null, step: agencyStep(prospect && inPeriod(prospect.at, period) ? prospect.step : null, demosInPeriod(row.demos, period).step), lost: Boolean(prospect?.lost) };
@@ -954,6 +955,7 @@ export async function followupOverview(period: Period = parsePeriod({})): Promis
     changes,
     results: resultsOf(b, all, queueDays),
     executed: executedRecent(b),
+    funnelDates: funnelDatesOf(b.rows, firsts),
     generatedAt: new Date().toISOString(),
   };
 }
@@ -1025,6 +1027,34 @@ function executedRecent(b: Awaited<ReturnType<typeof board>>, now = new Date()):
         execution: { status: "sent" as const, at, reason: null, executedBy: e.executed_by ?? null, actorId: e.actor_id ?? null },
       }];
     });
+}
+
+/**
+ * La fecha en que cada inmobiliaria llegó a cada paso del embudo (AGENCY_STEPS), sin filtro de período:
+ * Chapa compara «esta semana» con «la semana pasada a esta altura» contando quién llegó a cada paso en
+ * cada tramo. `at[i]` es null cuando no se sabe (llegó por la etapa del Sheet, o sin fecha guardada);
+ * Chapa toma entonces la del paso siguiente que sí la tenga («a más tardar»).
+ */
+export type FunnelDates = { id: string; step: number; lost: boolean; at: (string | null)[] };
+function funnelDatesOf(rows: Awaited<ReturnType<typeof board>>["rows"], firsts: Map<string, { visitAt: string | null; interactAt: string | null }>): FunnelDates[] {
+  const min = (xs: (string | null | undefined)[]) => xs.filter((v): v is string => Boolean(v)).sort()[0] ?? null;
+  return rows.filter((r) => !r.test).flatMap((r) => {
+    const step = agencyStep(r.prospectFunnel?.step ?? null, demosInPeriod(r.demos, parsePeriod({})).step);
+    if (step === null) return [];
+    const ids = r.demos.map((d) => d.id ?? "");
+    const all = [
+      r.prospectFunnel?.at ?? null,
+      r.prospectFunnel?.interestAt ?? null,
+      min(r.demos.map((d) => d.createdAt)),
+      min(r.demos.map((d) => d.sentAt)),
+      min(ids.map((id) => firsts.get(id)?.visitAt)),
+      min(ids.map((id) => firsts.get(id)?.interactAt)),
+      r.claimedAt ?? null,
+      r.ownerActiveAt ?? null,
+      r.subscribedAt ?? null,
+    ];
+    return [{ id: r.id, step, lost: Boolean(r.prospectFunnel?.lost), at: all.slice(0, step + 1) }];
+  });
 }
 
 const pending = (q: QueueItem) => q.action !== null && q.execution?.status !== "sent";
