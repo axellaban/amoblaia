@@ -1435,7 +1435,20 @@ const SITUATION_FACT: Partial<Record<Situation, "reply" | "interest" | "lost">> 
  * do-not-contact, an invalid number), best effort: the answer says what could
  * not be recorded.
  */
-export async function setSituation(agencyId: string, raw: unknown, note: unknown, actor: { id: string; name: string }, receivedAt = new Date().toISOString()) {
+/**
+ * When the agency wrote, as the extension read it in the chat (`hora`). Without
+ * it, now. It is the time the reply, the interest or the loss are recorded with,
+ * so «respuesta reciente» and the demo promise count from the real message.
+ */
+export function replyTime(raw: unknown): string {
+  if (raw === undefined || raw === null || raw === "") return new Date().toISOString();
+  const at = new Date(String(raw));
+  if (Number.isNaN(at.getTime()) || at.getTime() > Date.now() + 120_000) throw new HttpError(400, "Hora inválida.");
+  return at.toISOString();
+}
+
+export async function setSituation(agencyId: string, raw: unknown, note: unknown, actor: { id: string; name: string }, hora?: unknown) {
+  const receivedAt = replyTime(hora);
   const custom = typeof raw === "string" && raw.startsWith("custom_") ? await resolveCustomClassification(raw) : null;
   if (custom) {
     const current = (await board()).items.get(agencyId);
@@ -1459,13 +1472,13 @@ export async function setSituation(agencyId: string, raw: unknown, note: unknown
       const fact = SITUATION_FACT[situation];
       const key = stableUuid(`followup-situation:${agencyId}:${situation}:${text}`);
       if (fact === "reply")
-        await prospectRpc("habita_prospect_record", { p_actor: actor.id, p_key: key, p_account: account.id, p_type: "reply", p_occurred_at: new Date().toISOString(), p_precision: "time", p_channel: "whatsapp", p_contact: null, p_attempt: null, p_evidence: evidence, p_details: { situation, proposal: situation === "neutro" }, p_corrects: null });
+        await prospectRpc("habita_prospect_record", { p_actor: actor.id, p_key: key, p_account: account.id, p_type: "reply", p_occurred_at: receivedAt, p_precision: "time", p_channel: "whatsapp", p_contact: null, p_attempt: null, p_evidence: evidence, p_details: { situation, proposal: situation === "neutro" }, p_corrects: null });
       // Ya interesada (un interés vigente, de Follow-up o de Adquisición): no se registra otro, así el embudo
       // no la vuelve a contar el día en que se la vuelve a marcar.
       if (fact === "interest" && !(await hasInterest(account.id)))
-        await prospectRpc("habita_prospect_record", { p_actor: actor.id, p_key: key, p_account: account.id, p_type: "interest", p_occurred_at: new Date().toISOString(), p_precision: "time", p_channel: "whatsapp", p_contact: null, p_attempt: null, p_evidence: evidence, p_details: { situation }, p_corrects: null });
+        await prospectRpc("habita_prospect_record", { p_actor: actor.id, p_key: key, p_account: account.id, p_type: "interest", p_occurred_at: receivedAt, p_precision: "time", p_channel: "whatsapp", p_contact: null, p_attempt: null, p_evidence: evidence, p_details: { situation }, p_corrects: null });
       if (fact === "lost")
-        await prospectRpc("habita_prospect_record", { p_actor: actor.id, p_key: key, p_account: account.id, p_type: "lost", p_occurred_at: new Date().toISOString(), p_precision: "time", p_channel: "whatsapp", p_contact: null, p_attempt: null, p_evidence: evidence, p_details: { situation, reason: situation === "proveedor_ia" ? "Cuenta con proveedor de IA" : "No interesado" }, p_corrects: null });
+        await prospectRpc("habita_prospect_record", { p_actor: actor.id, p_key: key, p_account: account.id, p_type: "lost", p_occurred_at: receivedAt, p_precision: "time", p_channel: "whatsapp", p_contact: null, p_attempt: null, p_evidence: evidence, p_details: { situation, reason: situation === "proveedor_ia" ? "Cuenta con proveedor de IA" : "No interesado" }, p_corrects: null });
       if (situation === "no_contactar" && !account.suppressed)
         await prospectRpc("habita_prospect_suppress", { p_actor: actor.id, p_account: account.id, p_scope: "account", p_channel: null, p_contact: null, p_reason: text || "Pidió no ser contactada (Follow-up)" });
       if (situation === "sin_whatsapp" || situation === "numero_incorrecto") {
@@ -1543,8 +1556,7 @@ export async function registerReply(
   if (typeof input.agencyId !== "string" || !isUuid(input.agencyId)) throw new HttpError(400, "Falta la inmobiliaria.");
   const text = typeof input.text === "string" ? input.text.trim().slice(0, 4000) : "";
   if (!text) throw new HttpError(400, "Falta el texto de la respuesta (en un audio: «Audio»).");
-  const at = input.receivedAt ? new Date(String(input.receivedAt)) : new Date();
-  if (Number.isNaN(at.getTime()) || at.getTime() > Date.now() + 120_000) throw new HttpError(400, "Hora inválida.");
+  const at = new Date(replyTime(input.receivedAt));
   const rawClassification = typeof input.classification === "string" ? input.classification.trim() : "";
   const custom = rawClassification.startsWith("custom_") ? await resolveCustomClassification(rawClassification) : null;
   if (rawClassification.startsWith("custom_") && !custom) throw new HttpError(400, "Estado personalizado desconocido o inactivo. Revisá el catálogo.");
