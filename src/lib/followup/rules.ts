@@ -172,9 +172,9 @@ export function cleanRule(input: Record<string, unknown>, situations: readonly s
   if (minimum !== 0 && minimum !== 3) return { error: "La condición de generación debe ser 0 o 3." };
   const stageKey = input.stage as StageKey;
   if (minimum === 3 && !["no-abrio", "sin-interaccion", "sin-cuenta"].includes(stageKey)) return { error: "La condición Generó imagen solo corresponde a Demo enviada." };
-  if (afterAction && !compatible(stageKey, afterAction)) return { error: "El paso previo no es una acción de esta etapa." };
-  // Una regla con acción fuera de su etapa puede quedar apagada (para no perderla), pero no encendida ni nueva.
+  // Una regla con acción o paso previo fuera de su etapa puede quedar apagada (para no perderla), pero no encendida ni nueva.
   const enabled = input.enabled !== false;
+  if (enabled && afterAction && !compatible(stageKey, afterAction)) return { error: "El paso previo no es una acción de esta etapa." };
   if (enabled && !compatible(stageKey, input.action as Action)) return { error: "Una regla con acción no disponible en su etapa no se puede activar." };
   const position = num(input.position);
   const name = typeof input.name === "string" ? input.name.trim().replace(/\s+/g, " ") : "";

@@ -53,6 +53,13 @@ describe("rules (Fase 3)", () => {
     expect(cleanRule({ ...survey, action: "principal" }, SITS, ACTS, STAGES)).toHaveProperty("error");
   });
 
+  it("lets a rule whose action or previous step is out of its stage be turned off, never on", () => {
+    const stray = { ...DEFAULT_RULES[0], stage: "no-contactado", action: "presentacion_seguimiento", after_action: "presentacion", situations: ["confirmo_numero", "derivo"], after_hours: 48 };
+    expect(cleanRule({ ...stray, enabled: false }, SITS, ACTS, STAGES)).toMatchObject({ enabled: false, action: "presentacion_seguimiento", after_action: "presentacion" });
+    expect(cleanRule({ ...stray, enabled: true }, SITS, ACTS, STAGES)).toHaveProperty("error");
+    expect(cleanRule({ ...stray, action: "principal", enabled: true }, SITS, ACTS, STAGES)).toEqual({ error: "El paso previo no es una acción de esta etapa." });
+  });
+
   it("covers every stage and situation without throwing", () => {
     for (const st of STAGES) for (const si of SITS) for (const a of [{}, { principal: true }, { principal: true, seguimiento_2: true }]) expect(() => pickRule(DEFAULT_RULES, st as Rule["stage"], si as Rule["situations"][number], a)).not.toThrow();
   });
