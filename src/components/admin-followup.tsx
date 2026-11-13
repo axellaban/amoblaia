@@ -9,7 +9,7 @@ import { CTA_KEYS, CTA_LABEL, COMMERCIAL_STAGES, FOLLOWUP_STAGES, OUT, VARIABLES
 import { GROUPS, REPLY_CLASSES, SITUATIONS, QUEUE_ORDERS, actionLabel, actionsOf, byQueueOrder, commercialTier, compatible, splitMessages, type QueueOrder, type Action, type ReplyClass, type Situation } from "@/lib/followup/plan";
 import type { AgencyChoice, Change, FunnelStep, InboxItem, Prepared, QueueItem, QueueSummary, QueueView, Results, StageView } from "@/lib/followup/server";
 import { NO_FILTER, OTHER_RULES, isEmptyFilter, matchesFilter, stageRules, type QueueFilter } from "@/lib/followup/queue-filter";
-import type { CohortRow, WindowKey } from "@/lib/followup/results";
+import { PERIOD_ORDER, type CohortRow, type WindowKey } from "@/lib/followup/results";
 import type { CustomStage } from "@/lib/followup/commercial-catalog";
 import { daysText, type Rule } from "@/lib/followup/rules";
 
@@ -3011,7 +3011,7 @@ function ResultsView({ results }: { results: Results }) {
     <section className="fu-results" data-testid="followup-results">
       <div className="fu-filters">
         <span className="fu-lbl">Enviadas en</span>
-        {(Object.keys(WINDOW_LABEL) as WindowKey[]).map((k) => (
+        {PERIOD_ORDER.map((k) => (
           <button key={k} type="button" className={`fu-chip${win === k ? " is-on" : ""}`} aria-pressed={win === k} data-testid={`followup-window-${k}`} onClick={() => setWin(k)}>
             {WINDOW_LABEL[k]}
           </button>
@@ -3101,7 +3101,7 @@ function ResultsView({ results }: { results: Results }) {
                 <tr key={v.versionId}>
                   <td>
                     <b>{actionLabel(v.stage as StageKey, v.action as Action)}</b>
-                    <small>{stageTitle(v.stage)}</small>
+                    <small>{stageTitle(v.stage)} · Conversión: {results.conversionLabels[v.stage] ?? "avanzó de paso"}</small>
                   </td>
                   <td>
                     V{v.version} <span className={`fu-st is-${v.status}`}>{STATUS_LABEL[v.status as VersionStatus] ?? v.status}</span>

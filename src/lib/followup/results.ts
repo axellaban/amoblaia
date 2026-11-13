@@ -27,6 +27,8 @@ export type ResultVersion = { id: string; stage: string; action?: string | null;
 /** Períodos del filtro de Resultados, por fecha de envío (días de Buenos Aires). */
 export const PERIODS = { semana: "Esta semana", "7": "Últimos 7 días", "14": "Últimos 14 días", todo: "Sin límite" } as const;
 export type WindowKey = keyof typeof PERIODS;
+/** The periods in display order (an object lists numeric keys first). */
+export const PERIOD_ORDER: WindowKey[] = ["semana", "7", "14", "todo"];
 const DAY = 86_400_000;
 const ART = 3 * 3_600_000;
 
