@@ -987,7 +987,8 @@ function funnelOf(b: Awaited<ReturnType<typeof board>>, all: QueueItem[]): Funne
 }
 
 /**
- * Los envíos confirmados de los últimos 8 días (cubre «Hoy», «Ayer» y «Esta semana» desde el lunes),
+ * Los envíos confirmados de los últimos 15 días (cubre «Hoy», «Ayer» y «Esta semana» desde el lunes, y el
+ * mismo tramo del período anterior para la variación de cada tarjeta),
  * uno por envío y el más reciente primero, para la cola de Chapa: lo que ya salió deja la cola, así
  * que «Hoy» no se puede armar con ella. Cada uno con la inmobiliaria como está ahora, pero la etapa,
  * la acción y la fecha son las del envío; `execution.executedBy` y `actorId` dicen quién lo hizo.
@@ -996,7 +997,7 @@ export type ExecutedItem = Omit<QueueItem, "execution"> & {
   execution: { status: "sent"; at: string; reason: null; executedBy: "humano" | "bot" | null; actorId: string | null };
 };
 function executedRecent(b: Awaited<ReturnType<typeof board>>, now = new Date()): ExecutedItem[] {
-  const from = now.getTime() - 8 * DAY_MS;
+  const from = now.getTime() - 15 * DAY_MS;
   const closed = new Map(b.closedItems.map((q) => [q.agencyId, q]));
   return b.ex
     .filter((e) => e.status === "sent" && e.sent_at && Date.parse(e.sent_at) >= from)
