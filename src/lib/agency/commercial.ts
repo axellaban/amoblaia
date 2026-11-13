@@ -171,9 +171,13 @@ export type CommercialRow = {
   /** A test agency (QA): out of the demos funnel. */
   test: boolean;
   /** Prospecting: its step (0 contacted, 1 interested; demo-funnel.ts), when it was first contacted and whether the account is lost. Absent: never contacted. */
-  prospectFunnel?: { step: number; at: string; lost?: boolean; replied?: boolean } | null;
+  prospectFunnel?: { step: number; at: string; lost?: boolean; replied?: boolean; interestAt?: string | null } | null;
   /** Its demos: when each was created and the funnel step it reached (demo-funnel.ts). */
-  demos: { createdAt: string; step: number; id?: string; sent?: boolean; activityLevel?: number; generated?: boolean }[];
+  demos: { createdAt: string; step: number; id?: string; sent?: boolean; sentAt?: string | null; activityLevel?: number; generated?: boolean }[];
+  /** Cuándo creó su cuenta, cuándo se vio por primera vez trabajando en su panel (a más tardar) y cuándo se suscribió: para la fecha de cada paso del embudo. */
+  claimedAt?: string | null;
+  ownerActiveAt?: string | null;
+  subscribedAt?: string | null;
   /** Its contact WhatsApp, as loaded on the agency (null when unknown). */
   whatsapp?: string | null;
   /** Its latest published demo, whose agency link the list copies (null without one). */

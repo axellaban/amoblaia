@@ -71,18 +71,25 @@ async function demosOf(agencyId: string | null) {
   }
 }
 
+/** The owners with an active subscription, each with the date it started (the earliest one). */
 async function subscribedOwners(owners: string[]) {
-  if (!owners.length) return new Set<string>();
+  const out = new Map<string, string>();
+  if (!owners.length) return out;
   const rows = await optional(async () => {
-    const out: { user_id: string }[] = [];
+    const found: { user_id: string; created_at?: string | null }[] = [];
     for (let i = 0; i < owners.length; i += 200) {
-      const { data, error } = await adminClient().from("subscriptions").select("user_id").eq("status", "authorized").in("user_id", owners.slice(i, i + 200));
+      const { data, error } = await adminClient().from("subscriptions").select("user_id,created_at").eq("status", "authorized").in("user_id", owners.slice(i, i + 200));
       if (error) throw new Error("COMMERCIAL_SUBSCRIPTIONS_FAILED");
-      out.push(...((data ?? []) as { user_id: string }[]));
+      found.push(...((data ?? []) as { user_id: string; created_at?: string | null }[]));
     }
-    return out;
+    return found;
   });
-  return new Set(rows.map((r) => r.user_id));
+  for (const r of rows) {
+    const at = r.created_at ?? "";
+    const prev = out.get(r.user_id);
+    if (prev === undefined || (at && (!prev || at < prev))) out.set(r.user_id, at);
+  }
+  return out;
 }
 
 /**
@@ -159,7 +166,7 @@ async function prospectStages(agencyId: string | null) {
  * (contactedSend, same rule as /admin/prospeccion and /api/metricas).
  */
 async function prospectFunnel(accounts: ProspectRow[]) {
-  const out = new Map<string, { step: number; at: string; lost: boolean; replied: boolean }>();
+  const out = new Map<string, { step: number; at: string; lost: boolean; replied: boolean; interestAt: string | null }>();
   /** Each agency's latest reply or interest: its own engagement for «Última actividad». */
   const replies = new Map<string, ActivityFact>();
   if (!accounts.length) return { funnel: out, replies };
@@ -209,8 +216,12 @@ async function prospectFunnel(accounts: ProspectRow[]) {
       if (!prev || e.occurred_at > prev.at) replies.set(a.agency_id, { at: e.occurred_at, text: e.type === "interest" ? "Mostró interés" : "Respondió el mensaje" });
     }
     const at = own.map((e) => e.occurred_at).sort()[0] ?? a.created_at;
+    // When it first showed interest (null when only the stage says so).
+    const interest = own.filter((e) => e.type === "interest").map((e) => e.occurred_at).sort()[0] ?? null;
     const prev = out.get(a.agency_id);
-    if (!prev || step > prev.step) out.set(a.agency_id, { step, at: prev && prev.at < at ? prev.at : at, lost: a.stage === "lost", replied });
+    const interestAt = [prev?.interestAt, interest].filter((v): v is string => Boolean(v)).sort()[0] ?? null;
+    if (!prev || step > prev.step) out.set(a.agency_id, { step, at: prev && prev.at < at ? prev.at : at, lost: a.stage === "lost", replied, interestAt });
+    else if (interestAt !== prev.interestAt) prev.interestAt = interestAt;
   }
   return { funnel: out, replies };
 }
@@ -303,11 +314,11 @@ export async function commercialRows(only: string | null = null): Promise<Commer
     const share = published.find((d) => d.token);
     // Its account worked in its panel: an image, an import, or a property it created itself.
     const ownerAction = a.owner_id ? actions.get(a.owner_id) ?? null : null;
-    const created = own
+    const createdByOwner = own
       .filter((d) => a.owner_id && d.created_by === a.owner_id && d.created_at > since)
       .map((d) => d.created_at)
-      .sort()
-      .at(-1);
+      .sort();
+    const created = createdByOwner.at(-1);
     const ownerActive = Boolean(ownerAction || created);
     // The cover of its latest published demo, else of any demo.
     const cover = [...published, ...own].find((d) => d.cover_photo_id)?.cover_photo_id ?? null;
@@ -336,6 +347,10 @@ export async function commercialRows(only: string | null = null): Promise<Commer
       subscribed: isSubscribed,
       prospect: Boolean(prospectStage),
       prospectFunnel: funnelOf.get(a.id) ?? null,
+      claimedAt: a.owner_id ? a.claimed_at : null,
+      // The first property it created, else its latest panel action: «a más tardar» for the funnel's date.
+      ownerActiveAt: ownerActive ? (createdByOwner[0] ?? ownerAction?.at ?? null) : null,
+      subscribedAt: isSubscribed ? subscribed.get(a.owner_id!) || null : null,
       properties: own.length,
       published: published.length,
       score,
@@ -351,6 +366,7 @@ export async function commercialRows(only: string | null = null): Promise<Commer
         activityLevel: d.activity_level ?? 0,
         generated: generated.has(d.id),
         createdAt: d.created_at,
+        sentAt: d.sent_at,
         step: funnelStep({
           sentAt: d.sent_at,
           activityLevel: d.activity_level ?? 0,
@@ -364,6 +380,36 @@ export async function commercialRows(only: string | null = null): Promise<Commer
 }
 
 /** One agency's row, or null when it does not exist. */
+/**
+ * When each demo was first visited and first used (a click, a comparison or a download), outside the
+ * team: demo_activity keeps one row per visitor and kind with the moment it happened. For the date of the
+ * funnel's «Con visita» and «Con interacción» steps (Chapa's funnel compares periods by that date).
+ */
+export async function demoFirstActivity(demoIds: string[]) {
+  const out = new Map<string, { visitAt: string | null; interactAt: string | null }>();
+  const ids = [...new Set(demoIds.filter(Boolean))];
+  for (let start = 0; start < ids.length; start += 200) {
+    const batch = ids.slice(start, start + 200);
+    for (let offset = 0; offset < 50_000; offset += PAGE) {
+      const { data, error } = await adminClient().from("demo_activity")
+        .select("demo_id,kind,created_at")
+        .in("demo_id", batch).in("kind", ["visita", "interaccion", "descarga"]).eq("is_internal", false)
+        .order("created_at", { ascending: true })
+        .range(offset, offset + PAGE - 1);
+      if (error) return out;
+      const rows = (data ?? []) as { demo_id: string; kind: string; created_at: string }[];
+      for (const r of rows) {
+        const cur = out.get(r.demo_id) ?? { visitAt: null, interactAt: null };
+        if (r.kind === "visita") { if (!cur.visitAt || r.created_at < cur.visitAt) cur.visitAt = r.created_at; }
+        else if (!cur.interactAt || r.created_at < cur.interactAt) cur.interactAt = r.created_at;
+        out.set(r.demo_id, cur);
+      }
+      if (rows.length < PAGE) break;
+    }
+  }
+  return out;
+}
+
 export async function commercialRow(agencyId: string) {
   return (await commercialRows(agencyId))[0] ?? null;
 }

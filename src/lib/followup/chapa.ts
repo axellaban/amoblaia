@@ -130,6 +130,8 @@ export async function followupSnapshot(team: TeamUser[] = [], period?: Period) {
     chart: o.chart,
     lostAt: o.lostAt,
     chartRows: o.chartRows,
+    // La fecha de llegada a cada paso, para comparar el embudo con el período anterior.
+    funnelDates: o.funnelDates ?? [],
     chartPeriod: period ?? { key: 'todo', from: null, to: null },
     stages: o.stages.map((s) => ({ key: s.key, title: s.title, goal: s.goal, waiting: s.queue.length, versions: s.versions })),
     rules: o.rules,
