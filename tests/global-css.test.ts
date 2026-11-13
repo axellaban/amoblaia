@@ -47,6 +47,13 @@ describe("globals.css", () => {
     expect(base).toMatch(/grid-template-columns:\s*minmax\(0,\s*1fr\)/);
   });
 
+  it("keeps the photo drop zone inside a phone's dialog (QA 13/11: «Arrastrá tus fotos o elegí archi…» cortado en Galaxy S8)", () => {
+    const css = readFileSync("src/app/globals.css", "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(/\.ap-img-drop \{([^}]*)\}/.exec(css)?.[1] ?? "").toMatch(/grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+    // The chosen files' rows too: their «Quitar» button fell outside the dialog.
+    expect(/\.sp-files \{([^}]*)\}/.exec(css)?.[1] ?? "").toMatch(/grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+  });
+
   it("lets the start choices («Importar nueva propiedad desde URL») wrap on a phone instead of ending in «…»", () => {
     const css = readFileSync("src/app/globals.css", "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
     const rule = /\.sp-option \.sp-option-text strong \{([^}]*)\}/.exec(css)?.[1] ?? "";
