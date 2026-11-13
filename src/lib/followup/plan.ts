@@ -222,9 +222,10 @@ export function byPriority<T extends { group: Group; score: number | null; since
 
 /**
  * Orden de la cola por impacto y esfuerzo. Un mensaje sale en un minuto y crear
- * una demo lleva unos diez: lo rápido va primero, para que una demo no frene los
- * saludos ni las respuestas, y la demo prometida no espera más de una hora.
- * P0–P6 son segmentos operativos, no probabilidades calculadas ni scores predictivos.
+ * una demo lleva unos diez. Con pocos saludos pendientes, la demo prometida va
+ * antes; si se acumulan más de `GREETING_BACKLOG`, los saludos pasan adelante
+ * hasta volver a ese número, y el resto sigue en su lugar de siempre.
+ * P0–P7 son segmentos operativos, no probabilidades calculadas ni scores predictivos.
  */
 export const QUEUE_ORDERS = { comercial: "Prioridad comercial recomendada", antiguedad: "Mayor tiempo esperando", score: "Mayor score comercial", anterior: "Prioridad anterior" } as const;
 export type QueueOrder = keyof typeof QUEUE_ORDERS;
@@ -233,38 +234,46 @@ type CommercialQueueItem = { stage: StageKey; situation: Situation; group: Group
   promisedAt?: string | null; lastReplyAt?: string | null; priorityManual?: boolean; action?: Action | null };
 const recent = (at: string | null | undefined, now: number, hours: number) =>
   Boolean(at && Number.isFinite(Date.parse(at)) && Date.parse(at) <= now && now - Date.parse(at) <= hours * 3_600_000);
-/** Una demo prometida espera como mucho esto detrás de los mensajes rápidos; pasadas 24 h es recuperación. */
-export const DEMO_WAIT_MINUTES = 60;
-export function commercialTier(q: CommercialQueueItem, now = Date.now()): { tier: number; reason: string } {
-  // They wrote and wait for our answer: it never sinks with age (it used to drop to P4 after 2 h).
+
+/** Más de esta cantidad de saludos pendientes y los saludos pasan a P2, antes de crear demos. */
+export const GREETING_BACKLOG = 10;
+/** Lo que el orden necesita saber de la cola entera: cuántos saludos están listos para enviar. */
+export type QueueContext = { greetings: number };
+/** Saludos listos para enviar: sin contactar, con acción, sin bloqueo y sin confirmar. */
+export function queueContext(items: { stage: StageKey; action?: Action | null; blocked?: string | null; execution?: { status: string } | null }[]): QueueContext {
+  return { greetings: items.filter((q) => q.stage === "no-contactado" && q.action && !q.blocked && q.execution?.status !== "sent").length };
+}
+
+export function commercialTier(q: CommercialQueueItem, now = Date.now(), ctx: QueueContext = { greetings: 0 }): { tier: number; reason: string } {
+  // They wrote and wait for our answer: it never sinks with age.
   if (q.action === "presentacion" || q.action === "precios")
     return { tier: 0, reason: "Respondió: espera nuestra contestación" };
   if (recent(q.lastReplyAt, now, 2) && ["interesado", "pregunta_precios", "confirmo_numero"].includes(q.situation))
     return { tier: 0, reason: "Respuesta comercial reciente (menos de 2 h)" };
-  if (q.action === "encuesta_cierre") return { tier: 5, reason: "Despedida y encuesta" };
+  if (q.action === "encuesta_cierre") return { tier: 6, reason: "Despedida y encuesta" };
   if (q.stage === "sin-enviar") return { tier: 1, reason: "Demo creada: falta enviarla" };
-  if (q.stage === "sin-demo") {
-    if (recent(q.promisedAt, now, 24) && !recent(q.promisedAt, now, DEMO_WAIT_MINUTES / 60))
-      return { tier: 2, reason: "Demo prometida hace más de 1 h: crearla" };
+  if (q.stage === "no-contactado")
+    return ctx.greetings > GREETING_BACKLOG
+      ? { tier: 2, reason: `Saludos acumulados (${ctx.greetings} pendientes, más de ${GREETING_BACKLOG})` }
+      : { tier: 5, reason: "Saludo: un minuto, alimenta el embudo" };
+  if (q.stage === "sin-demo")
     return recent(q.promisedAt, now, 24)
-      ? { tier: 6, reason: "Crear demo (10 min): después de los mensajes rápidos" }
-      : { tier: 6, reason: "Interés antiguo: crear demo después de los mensajes rápidos" };
-  }
+      ? { tier: 3, reason: "Demo prometida: crearla" }
+      : { tier: 7, reason: "Interés antiguo: crear demo después de los mensajes" };
   if (["sin-interaccion", "sin-cuenta", "sin-uso", "sin-suscripcion"].includes(q.stage))
-    return { tier: 3, reason: "Actividad de producto: oportunidad de activación" };
-  if (q.stage === "no-abrio") return { tier: 3, reason: "Demo enviada, pendiente de visita" };
-  if (q.stage === "no-contactado") return { tier: 4, reason: "Saludo: un minuto, alimenta el embudo" };
-  return { tier: 5, reason: "Seguimiento según su regla vigente" };
+    return { tier: 4, reason: "Actividad de producto: oportunidad de activación" };
+  if (q.stage === "no-abrio") return { tier: 4, reason: "Demo enviada, pendiente de visita" };
+  return { tier: 6, reason: "Seguimiento según su regla vigente" };
 }
-export function byQueueOrder<T extends CommercialQueueItem>(a: T, b: T, order: QueueOrder = "comercial", now = Date.now()): number {
+export function byQueueOrder<T extends CommercialQueueItem>(a: T, b: T, order: QueueOrder = "comercial", now = Date.now(), ctx: QueueContext = { greetings: 0 }): number {
   if (order === "anterior") return byPriority(a, b);
   if (order === "antiguedad") return a.since.localeCompare(b.since) || byPriority(a, b);
   if (order === "score") return (b.score ?? -1) - (a.score ?? -1) || byPriority(a, b);
-  const ta = commercialTier(a, now).tier, tb = commercialTier(b, now).tier;
-  // Among demos to make, the freshest promise first: an old one is recovery.
-  const fresh = (x: T) => (x.stage === "sin-demo" && recent(x.promisedAt, now, 24) ? 0 : 1);
+  const ta = commercialTier(a, now, ctx).tier, tb = commercialTier(b, now, ctx).tier;
+  // Among promised demos, the oldest promise first.
+  const promise = ta === 3 && tb === 3 ? (a.promisedAt ?? "").localeCompare(b.promisedAt ?? "") : 0;
   return ta - tb
-    || (ta === 6 ? fresh(a) - fresh(b) : 0)
+    || promise
     || PRIORITY_ORDER.indexOf(a.priority ?? defaultPriority(a.group)) - PRIORITY_ORDER.indexOf(b.priority ?? defaultPriority(b.group))
     || (b.score ?? -1) - (a.score ?? -1)
     || a.since.localeCompare(b.since);

@@ -58,6 +58,7 @@ import {
   actionLabel,
   byPriority,
   byQueueOrder,
+  queueContext,
   currentSituation,
   derivedSituation,
   groupOf,
@@ -958,7 +959,11 @@ function funnelOf(b: Awaited<ReturnType<typeof board>>, all: QueueItem[]): Funne
 
 const pending = (q: QueueItem) => q.action !== null && q.execution?.status !== "sent";
 /** The ones that can be executed now, in priority order (taken ones included: the page shows who has them). */
-const executable = (all: QueueItem[]) => all.filter((q) => pending(q) && !q.blocked).sort((a, b) => byQueueOrder(a, b));
+const executable = (all: QueueItem[]) => {
+  const ready = all.filter((q) => pending(q) && !q.blocked);
+  const ctx = queueContext(ready);
+  return ready.sort((a, b) => byQueueOrder(a, b, "comercial", Date.now(), ctx));
+};
 function summarize(all: QueueItem[], newToday: number, inboxCount = 0, quota: QuotaSettings = {cap:48,outsideToday:0,externalUpdatedAt:null}): QueueSummary {
   const today = artDate(new Date());
   const live = new Date().toISOString();

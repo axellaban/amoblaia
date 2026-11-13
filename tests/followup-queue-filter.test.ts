@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { NO_FILTER, OTHER_RULES, cleanFilter, isEmptyFilter, matchesFilter, pickNext, stageRules, type Filterable } from "@/lib/followup/queue-filter";
-import { CLOSED_SITUATIONS, SITUATIONS, allocateFirstContactSlots, remainingFirstContactSlots, byQueueOrder, commercialTier, groupOf, nextAction, type Action, type Situation } from "@/lib/followup/plan";
+import { CLOSED_SITUATIONS, SITUATIONS, allocateFirstContactSlots, remainingFirstContactSlots, byQueueOrder, commercialTier, groupOf, queueContext, nextAction, type Action, type Situation } from "@/lib/followup/plan";
 import { DEFAULT_RULES, type Rule } from "@/lib/followup/rules";
 import { COMMERCIAL_STAGES, FOLLOWUP_STAGES, commercialOf, technicalOf, type StageKey } from "@/lib/followup/stages";
 
@@ -197,10 +197,10 @@ describe("Priorización comercial y No interesado", () => {
     const readyDemo = q("sin-enviar", "interesado");
     expect(commercialTier(fresh, now).tier).toBe(0);
     expect(commercialTier(readyDemo, now).tier).toBe(1);
-    expect(commercialTier(stale, now).tier).toBe(6);
+    expect(commercialTier(stale, now).tier).toBe(7);
     expect([stale, readyDemo, fresh].sort((a, b) => byQueueOrder(a, b, "comercial", now))).toEqual([fresh, readyDemo, stale]);
   });
-  it("lo rápido va antes que crear una demo, y la demo prometida no espera más de una hora", () => {
+  it("con 10 saludos o menos, la demo prometida va antes que los saludos", () => {
     const saludo = q("no-contactado", "sin_respuesta");
     const seguimiento = q("no-responde", "sin_respuesta");
     const activacion = q("sin-cuenta", "interesado");
@@ -210,9 +210,35 @@ describe("Priorización comercial y No interesado", () => {
     const demoNueva = q("sin-demo", "interesado", { promisedAt: "2026-11-09T17:40:00Z" });
     const demoTarde = q("sin-demo", "interesado", { promisedAt: "2026-11-09T15:00:00Z" });
     const demoVieja = q("sin-demo", "interesado", { promisedAt: "2026-10-24T18:00:00Z" });
-    expect([presentacion, enviar, demoTarde, activacion, saludo, seguimiento, demoNueva, demoVieja].map((x) => commercialTier(x, now).tier)).toEqual([0, 1, 2, 3, 4, 5, 6, 6]);
-    expect([demoVieja, demoNueva, seguimiento, saludo, activacion, demoTarde, enviar, presentacion].sort((a, b) => byQueueOrder(a, b, "comercial", now)))
-      .toEqual([presentacion, enviar, demoTarde, activacion, saludo, seguimiento, demoNueva, demoVieja]);
+    const ctx = { greetings: 10 };
+    expect([presentacion, enviar, demoTarde, demoNueva, activacion, saludo, seguimiento, demoVieja].map((x) => commercialTier(x, now, ctx).tier)).toEqual([0, 1, 3, 3, 4, 5, 6, 7]);
+    expect([demoVieja, demoNueva, seguimiento, saludo, activacion, demoTarde, enviar, presentacion].sort((a, b) => byQueueOrder(a, b, "comercial", now, ctx)))
+      .toEqual([presentacion, enviar, demoTarde, demoNueva, activacion, saludo, seguimiento, demoVieja]);
+  });
+  it("con más de 10 saludos pendientes, los saludos pasan a P2, antes de crear demos", () => {
+    const saludo = q("no-contactado", "sin_respuesta");
+    const enviar = q("sin-enviar", "interesado");
+    const presentacion = q("no-responde", "confirmo_numero", { action: "presentacion" as const });
+    const demo = q("sin-demo", "interesado", { promisedAt: "2026-11-09T15:00:00Z" });
+    const ctx = { greetings: 11 };
+    expect(commercialTier(saludo, now, ctx)).toEqual({ tier: 2, reason: "Saludos acumulados (11 pendientes, más de 10)" });
+    expect([demo, saludo, enviar, presentacion].sort((a, b) => byQueueOrder(a, b, "comercial", now, ctx))).toEqual([presentacion, enviar, saludo, demo]);
+    // La cuenta: solo los saludos listos (sin bloqueo y sin confirmar).
+    const items = [
+      ...Array.from({ length: 11 }, () => ({ stage: "no-contactado" as const, action: "principal" as const, blocked: null, execution: null })),
+      { stage: "no-contactado" as const, action: "principal" as const, blocked: "Sin cupo", execution: null },
+      { stage: "no-contactado" as const, action: "principal" as const, blocked: null, execution: { status: "sent" } },
+      { stage: "sin-demo" as const, action: "principal" as const, blocked: null, execution: null },
+    ];
+    expect(queueContext(items)).toEqual({ greetings: 11 });
+  });
+  it("tomar la próxima cuenta los saludos de toda la cola, aunque el filtro muestre solo demos", async () => {
+    const saludos = Array.from({ length: 11 }, (_, i) => ({ ...agency(`Saludo ${i}`, "no-contactado", "sin_respuesta"), agencyId: `s${i}`, claim: null, score: 50, since: "2026-11-09T10:00:00Z" }));
+    const demo = { ...agency("Demo", "sin-demo", "interesado"), agencyId: "demo", claim: null, score: 90, since: "2026-11-09T15:00:00Z", promisedAt: "2026-11-09T15:00:00Z" };
+    const chosen = await pickNext([demo, ...saludos], { filter: { ...NO_FILTER, order: "comercial" }, rules: DEFAULT_RULES, actorId: "operador", now: "2026-11-09T18:00:00Z" }, async () => true);
+    expect(chosen?.agencyId).toBe("s0");
+    const fewer = await pickNext([demo, ...saludos.slice(0, 10)], { filter: { ...NO_FILTER, order: "comercial" }, rules: DEFAULT_RULES, actorId: "operador", now: "2026-11-09T18:00:00Z" }, async () => true);
+    expect(fewer?.agencyId).toBe("demo");
   });
   it("elige score o antigüedad cuando el usuario cambia el modo", () => {
     const a = q("sin-demo", "interesado", { score: 90, since: "2026-11-08T18:00:00Z" });
