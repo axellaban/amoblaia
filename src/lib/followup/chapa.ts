@@ -32,6 +32,7 @@ import {
   snooze,
   unsnooze,
   updateVersion,
+  type ExecutedItem,
   type QueueItem,
 } from "./server";
 
@@ -84,6 +85,11 @@ function byActor(team: TeamUser[], actors: { actorId: string | null; executions:
   return [...out].map(([actor, x]) => ({ actor, ...x, rate: x.executions ? x.conversions / x.executions : null }));
 }
 
+function executedFor(team: TeamUser[], rows: ExecutedItem[]) {
+  const name = new Map(team.map((u) => [u.id, actorName(u)]));
+  return rows.map((q) => ({ ...q, execution: { ...q.execution, by: (q.execution.actorId && name.get(q.execution.actorId)) || null } }));
+}
+
 /** Lo que Chapa muestra: la cola, las bloqueadas, la bandeja, el embudo, las reglas y los resultados. */
 export async function followupSnapshot(team: TeamUser[] = [], period?: Period) {
   const o = await followupOverview(period);
@@ -115,6 +121,9 @@ export async function followupSnapshot(team: TeamUser[] = [], period?: Period) {
     // El mismo conjunto de cierres que muestra el Follow-up de Habita: nunca se ejecuta desde Chapa.
     noInteresados: o.noInteresados,
     scheduled: o.stages.flatMap((s) => s.queue).filter((q) => q.dueAt && q.action && q.execution?.status !== "sent"),
+    // Los envíos confirmados de la semana, para «Hoy / Ayer / Esta semana» de la cola: con el nombre
+    // de quien lo confirmó (el usuario del equipo) además de si fue una persona o el bot.
+    executed: executedFor(team, o.executed ?? []),
     inbox: o.inbox,
     funnel: o.funnel,
     chart: o.chart,

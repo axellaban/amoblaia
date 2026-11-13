@@ -888,7 +888,7 @@ function resultsOf(b: Awaited<ReturnType<typeof board>>, all: QueueItem[], queue
     blocks: blockReasons(all.filter((q) => q.action && q.execution?.status !== "sent" && q.blocked).map((q) => q.blocked!)),
   };
 }
-export async function followupOverview(period: Period = parsePeriod({})): Promise<{ chart: ReturnType<typeof chartCounts>; lostAt: number[]; chartRows: { agencyId: string; name: string; step: number | null; lost: boolean; score: number | null; whatsapp: string | null }[]; catalog: { stages: Awaited<ReturnType<typeof customStages>>; states: Awaited<ReturnType<typeof readStateCatalog>>; overrides: Awaited<ReturnType<typeof readSituationOverrides>> }; stages: StageView[]; queue: QueueItem[]; blocked: QueueItem[]; noInteresados: QueueItem[]; summary: QueueSummary; agencies: AgencyChoice[]; inbox: InboxItem[]; funnel: FunnelStep[]; rules: Rule[]; changes: Change[]; results: Results; generatedAt: string }> {
+export async function followupOverview(period: Period = parsePeriod({})): Promise<{ chart: ReturnType<typeof chartCounts>; lostAt: number[]; chartRows: { agencyId: string; name: string; step: number | null; lost: boolean; score: number | null; whatsapp: string | null }[]; catalog: { stages: Awaited<ReturnType<typeof customStages>>; states: Awaited<ReturnType<typeof readStateCatalog>>; overrides: Awaited<ReturnType<typeof readSituationOverrides>> }; stages: StageView[]; queue: QueueItem[]; blocked: QueueItem[]; noInteresados: QueueItem[]; summary: QueueSummary; agencies: AgencyChoice[]; inbox: InboxItem[]; funnel: FunnelStep[]; rules: Rule[]; changes: Change[]; results: Results; executed: ExecutedItem[]; generatedAt: string }> {
   const [b, changes, queueDays] = await Promise.all([board(), auditOf(null, 20), readQueueDays()]);
   const all = [...b.items.values()];
   // Today's photo of the queue, before reading it back: what is pending now was pending today.
@@ -924,6 +924,7 @@ export async function followupOverview(period: Period = parsePeriod({})): Promis
     rules: [...b.rules].sort((x, y) => x.position - y.position),
     changes,
     results: resultsOf(b, all, queueDays),
+    executed: executedRecent(b),
     generatedAt: new Date().toISOString(),
   };
 }
@@ -954,6 +955,46 @@ function funnelOf(b: Awaited<ReturnType<typeof board>>, all: QueueItem[]): Funne
     const here = reach(s.step);
     return { key: s.key, title: s.title, goal: s.goal, waiting: all.filter((q) => q.stage === s.key).length, reached: here, rate: here ? reach(s.step + 1) / here : null };
   });
+}
+
+/**
+ * Los envíos confirmados de los últimos 8 días (cubre «Hoy», «Ayer» y «Esta semana» desde el lunes),
+ * uno por envío y el más reciente primero, para la cola de Chapa: lo que ya salió deja la cola, así
+ * que «Hoy» no se puede armar con ella. Cada uno con la inmobiliaria como está ahora, pero la etapa,
+ * la acción y la fecha son las del envío; `execution.executedBy` y `actorId` dicen quién lo hizo.
+ */
+export type ExecutedItem = Omit<QueueItem, "execution"> & {
+  execution: { status: "sent"; at: string; reason: null; executedBy: "humano" | "bot" | null; actorId: string | null };
+};
+function executedRecent(b: Awaited<ReturnType<typeof board>>, now = new Date()): ExecutedItem[] {
+  const from = now.getTime() - 8 * DAY_MS;
+  const closed = new Map(b.closedItems.map((q) => [q.agencyId, q]));
+  return b.ex
+    .filter((e) => e.status === "sent" && e.sent_at && Date.parse(e.sent_at) >= from)
+    .sort((x, y) => String(y.sent_at).localeCompare(String(x.sent_at)))
+    .flatMap((e) => {
+      const it = b.items.get(e.agency_id) ?? closed.get(e.agency_id);
+      if (!it) return [];
+      const action = (e.action ?? "principal") as Action;
+      const label = actionLabel(e.stage, action);
+      const at = e.sent_at!;
+      return [{
+        ...it,
+        stage: e.stage,
+        situation: it.stage === e.stage ? it.situation : ("sin_respuesta" as QueueItem["situation"]),
+        action,
+        actionLabel: label,
+        messageStage: e.stage,
+        lastAction: { at, text: label, source: "followup" as const },
+        since: at,
+        blocked: null,
+        claim: null,
+        dueAt: null,
+        snoozedUntil: null,
+        versionId: e.version_id,
+        execution: { status: "sent" as const, at, reason: null, executedBy: e.executed_by ?? null, actorId: e.actor_id ?? null },
+      }];
+    });
 }
 
 const pending = (q: QueueItem) => q.action !== null && q.execution?.status !== "sent";
