@@ -221,9 +221,10 @@ export function byPriority<T extends { group: Group; score: number | null; since
 
 
 /**
- * Orden alternativo de la cola. El comercial no premia eternamente una promesa
- * antigua: respuestas frescas y demos listas ganan a oportunidades estancadas.
- * P0–P5 son segmentos operativos, no probabilidades calculadas ni scores predictivos.
+ * Orden de la cola por impacto y esfuerzo. Un mensaje sale en un minuto y crear
+ * una demo lleva unos diez: lo rápido va primero, para que una demo no frene los
+ * saludos ni las respuestas, y la demo prometida no espera más de una hora.
+ * P0–P6 son segmentos operativos, no probabilidades calculadas ni scores predictivos.
  */
 export const QUEUE_ORDERS = { comercial: "Prioridad comercial recomendada", antiguedad: "Mayor tiempo esperando", score: "Mayor score comercial", anterior: "Prioridad anterior" } as const;
 export type QueueOrder = keyof typeof QUEUE_ORDERS;
@@ -232,25 +233,38 @@ type CommercialQueueItem = { stage: StageKey; situation: Situation; group: Group
   promisedAt?: string | null; lastReplyAt?: string | null; priorityManual?: boolean; action?: Action | null };
 const recent = (at: string | null | undefined, now: number, hours: number) =>
   Boolean(at && Number.isFinite(Date.parse(at)) && Date.parse(at) <= now && now - Date.parse(at) <= hours * 3_600_000);
+/** Una demo prometida espera como mucho esto detrás de los mensajes rápidos; pasadas 24 h es recuperación. */
+export const DEMO_WAIT_MINUTES = 60;
 export function commercialTier(q: CommercialQueueItem, now = Date.now()): { tier: number; reason: string } {
+  // They wrote and wait for our answer: it never sinks with age (it used to drop to P4 after 2 h).
+  if (q.action === "presentacion" || q.action === "precios")
+    return { tier: 0, reason: "Respondió: espera nuestra contestación" };
   if (recent(q.lastReplyAt, now, 2) && ["interesado", "pregunta_precios", "confirmo_numero"].includes(q.situation))
     return { tier: 0, reason: "Respuesta comercial reciente (menos de 2 h)" };
+  if (q.action === "encuesta_cierre") return { tier: 5, reason: "Despedida y encuesta" };
   if (q.stage === "sin-enviar") return { tier: 1, reason: "Demo creada: falta enviarla" };
-  if (q.stage === "sin-demo" && recent(q.promisedAt, now, 24))
-    return { tier: 2, reason: "Interés reciente: falta crear la demo" };
+  if (q.stage === "sin-demo") {
+    if (recent(q.promisedAt, now, 24) && !recent(q.promisedAt, now, DEMO_WAIT_MINUTES / 60))
+      return { tier: 2, reason: "Demo prometida hace más de 1 h: crearla" };
+    return recent(q.promisedAt, now, 24)
+      ? { tier: 6, reason: "Crear demo (10 min): después de los mensajes rápidos" }
+      : { tier: 6, reason: "Interés antiguo: crear demo después de los mensajes rápidos" };
+  }
   if (["sin-interaccion", "sin-cuenta", "sin-uso", "sin-suscripcion"].includes(q.stage))
     return { tier: 3, reason: "Actividad de producto: oportunidad de activación" };
   if (q.stage === "no-abrio") return { tier: 3, reason: "Demo enviada, pendiente de visita" };
-  if (q.stage === "no-contactado") return { tier: 5, reason: "Primer contacto: adquisición" };
-  if (q.stage === "sin-demo") return { tier: 4, reason: "Interés antiguo: recuperación, no urgencia perpetua" };
-  return { tier: 4, reason: "Seguimiento según su regla vigente" };
+  if (q.stage === "no-contactado") return { tier: 4, reason: "Saludo: un minuto, alimenta el embudo" };
+  return { tier: 5, reason: "Seguimiento según su regla vigente" };
 }
 export function byQueueOrder<T extends CommercialQueueItem>(a: T, b: T, order: QueueOrder = "comercial", now = Date.now()): number {
   if (order === "anterior") return byPriority(a, b);
   if (order === "antiguedad") return a.since.localeCompare(b.since) || byPriority(a, b);
   if (order === "score") return (b.score ?? -1) - (a.score ?? -1) || byPriority(a, b);
   const ta = commercialTier(a, now).tier, tb = commercialTier(b, now).tier;
+  // Among demos to make, the freshest promise first: an old one is recovery.
+  const fresh = (x: T) => (x.stage === "sin-demo" && recent(x.promisedAt, now, 24) ? 0 : 1);
   return ta - tb
+    || (ta === 6 ? fresh(a) - fresh(b) : 0)
     || PRIORITY_ORDER.indexOf(a.priority ?? defaultPriority(a.group)) - PRIORITY_ORDER.indexOf(b.priority ?? defaultPriority(b.group))
     || (b.score ?? -1) - (a.score ?? -1)
     || a.since.localeCompare(b.since);

@@ -197,8 +197,22 @@ describe("Priorización comercial y No interesado", () => {
     const readyDemo = q("sin-enviar", "interesado");
     expect(commercialTier(fresh, now).tier).toBe(0);
     expect(commercialTier(readyDemo, now).tier).toBe(1);
-    expect(commercialTier(stale, now).tier).toBe(4);
+    expect(commercialTier(stale, now).tier).toBe(6);
     expect([stale, readyDemo, fresh].sort((a, b) => byQueueOrder(a, b, "comercial", now))).toEqual([fresh, readyDemo, stale]);
+  });
+  it("lo rápido va antes que crear una demo, y la demo prometida no espera más de una hora", () => {
+    const saludo = q("no-contactado", "sin_respuesta");
+    const seguimiento = q("no-responde", "sin_respuesta");
+    const activacion = q("sin-cuenta", "interesado");
+    const enviar = q("sin-enviar", "interesado");
+    // Respondió ayer y todavía espera la presentación: no baja por antigüedad.
+    const presentacion = q("no-responde", "confirmo_numero", { action: "presentacion" as const, lastReplyAt: "2026-11-08T12:00:00Z" });
+    const demoNueva = q("sin-demo", "interesado", { promisedAt: "2026-11-09T17:40:00Z" });
+    const demoTarde = q("sin-demo", "interesado", { promisedAt: "2026-11-09T15:00:00Z" });
+    const demoVieja = q("sin-demo", "interesado", { promisedAt: "2026-10-24T18:00:00Z" });
+    expect([presentacion, enviar, demoTarde, activacion, saludo, seguimiento, demoNueva, demoVieja].map((x) => commercialTier(x, now).tier)).toEqual([0, 1, 2, 3, 4, 5, 6, 6]);
+    expect([demoVieja, demoNueva, seguimiento, saludo, activacion, demoTarde, enviar, presentacion].sort((a, b) => byQueueOrder(a, b, "comercial", now)))
+      .toEqual([presentacion, enviar, demoTarde, activacion, saludo, seguimiento, demoNueva, demoVieja]);
   });
   it("elige score o antigüedad cuando el usuario cambia el modo", () => {
     const a = q("sin-demo", "interesado", { score: 90, since: "2026-11-08T18:00:00Z" });
