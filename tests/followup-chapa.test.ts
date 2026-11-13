@@ -69,6 +69,7 @@ vi.mock("@/lib/followup/server", () => ({
   updateVersion: fn("updateVersion"),
   setVersionStatus: fn("setVersionStatus"),
   saveRule: fn("saveRule"),
+  invalidateBoard: () => undefined,
 }));
 import { GET, POST } from "../src/app/api/prospeccion/route";
 import { invalidateFollowupSnapshot, operatorFor } from "../src/lib/followup/chapa";
