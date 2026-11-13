@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { actionLabel, byPriority, nextAction, isSituation } from "@/lib/followup/plan";
-import { DEFAULT_RULES, cleanRule, compatible, outsideWindow, pickRule, type Rule } from "@/lib/followup/rules";
+import { DEFAULT_RULES, cleanRule, compatible, outsideWindow, pickRule, stagesOf, type Rule } from "@/lib/followup/rules";
+import { stageRules } from "@/lib/followup/queue-filter";
 
 const SITS = ["sin_respuesta", "confirmo_numero", "interesado", "neutro", "pregunta_precios", "mas_adelante", "derivo", "rechazo"];
 const ACTS = ["principal", "seguimiento_2", "presentacion", "presentacion_seguimiento", "precios", "encuesta_cierre"];
@@ -175,5 +176,40 @@ describe("recontact classifications", () => {
       action: "principal", afterHours: 72,
     });
     expect(nextAction("no-abrio", "recontactar_mas_adelante", {}, [rule]).action).toBeNull();
+  });
+});
+
+describe("Avance dentro de la regla: una regla corre en varias subetapas de su etapa", () => {
+  const base = DEFAULT_RULES.find((r) => r.key === "sin-demo:principal")!;
+  const prices: Rule = { ...base, key: "interesado:precios", stage: "sin-demo", product_stages: ["sin-demo", "sin-enviar"], situations: ["pregunta_precios"], action: "precios", after_hours: 0, position: 1 };
+  const rules = [...DEFAULT_RULES, prices];
+
+  it("sin la lista, la regla corre solo en su etapa, como siempre", () => {
+    expect(stagesOf(base)).toEqual(["sin-demo"]);
+    expect(stagesOf({ ...base, product_stages: [] })).toEqual(["sin-demo"]);
+  });
+  it("elige la misma regla en cada subetapa que cubre, y en ninguna otra", () => {
+    expect(pickRule(rules, "sin-demo", "pregunta_precios", {}).rule?.key).toBe("interesado:precios");
+    expect(pickRule(rules, "sin-enviar", "pregunta_precios", {}).rule?.key).toBe("interesado:precios");
+    expect(pickRule(rules, "no-abrio", "pregunta_precios", {}).rule?.key).not.toBe("interesado:precios");
+    expect(stageRules(rules, "sin-enviar").some((r) => r.key === "interesado:precios")).toBe(true);
+  });
+  it("el avance y la respuesta se cumplen juntos: otra respuesta no la dispara", () => {
+    expect(pickRule(rules, "sin-enviar", "sin_respuesta", {}).rule?.key).toBe("sin-enviar:principal");
+  });
+  it("su mensaje sale una vez: lo que ya salió se mira en la etapa ancla", () => {
+    const sent = (action: string, anchor: string) => action === "precios" && anchor === "sin-demo";
+    const pick = pickRule([prices], "sin-enviar", "pregunta_precios", sent);
+    expect(pick.action).toBeNull();
+    expect(pick.reason).toMatch(/precios/i);
+  });
+  it("guardar: por defecto la etapa de la regla; rechaza una subetapa desconocida o sin esa acción", () => {
+    expect(cleanRule({ ...base }, SITS, ACTS, STAGES)).toMatchObject({ product_stages: ["sin-demo"] });
+    expect(cleanRule({ ...prices }, SITS, ACTS, STAGES)).toMatchObject({ product_stages: ["sin-demo", "sin-enviar"] });
+    expect(cleanRule({ ...prices, product_stages: ["otra"] }, SITS, ACTS, STAGES)).toHaveProperty("error");
+    expect(cleanRule({ ...prices, product_stages: [] }, SITS, ACTS, STAGES)).toHaveProperty("error");
+    const second = { ...DEFAULT_RULES.find((r) => r.key === "no-abrio:seguimiento_2")!, product_stages: ["no-abrio", "sin-interaccion"] };
+    expect(cleanRule(second, SITS, ACTS, STAGES)).toHaveProperty("error");
+    expect(cleanRule({ ...second, enabled: false }, SITS, ACTS, STAGES)).toMatchObject({ enabled: false });
   });
 });

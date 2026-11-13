@@ -11,7 +11,7 @@ import type { AgencyChoice, Change, FunnelStep, InboxItem, Prepared, QueueItem, 
 import { NO_FILTER, OTHER_RULES, isEmptyFilter, matchesFilter, stageRules, type QueueFilter } from "@/lib/followup/queue-filter";
 import type { CohortRow, WindowKey } from "@/lib/followup/results";
 import type { CustomStage } from "@/lib/followup/commercial-catalog";
-import { daysText, type Rule } from "@/lib/followup/rules";
+import { daysText, stagesOf, type Rule } from "@/lib/followup/rules";
 
 
 /** Presentational-only stage glyphs; stage filters keep their original callbacks. */
@@ -415,7 +415,7 @@ function ExecCenter({
   const catalog = useContext(SituationCatalog);
   const commercial = f.commercial ?? (f.stage ? commercialOf(f.stage) : null);
   const selectedStageTitle = COMMERCIAL_STAGES.find(s => s.key === commercial)?.title ?? "Todas las etapas";
-  const own = commercial ? technicalOf(commercial).flatMap(key => stageRules(rules,key)) : [];
+  const own = commercial ? [...new Set(technicalOf(commercial).flatMap(key => stageRules(rules,key)))].sort((a, b) => a.position - b.position) : [];
   const count = (g: QueueFilter) => base.filter((q) => fits(q, g)).length;
   const isFree = (q: QueueItem) => statusOf(q)?.status !== "sent" && !q.blocked && !(q.claim && q.claim.until > live);
   const free = closedView ? [] : list.filter(isFree);
@@ -773,8 +773,8 @@ function RuleBox({ q, rules }: { q: QueueItem; rules: Rule[] }) {
     <div className="fu-qrulebox" data-testid="followup-applied-rule" data-rule={q.ruleKey ?? ""}>
       <Tag size={15} aria-hidden="true" />
       <span>
-        <b>Regla aplicada: {r ? ruleTitle(q.stage, r) : (q.actionLabel ?? "—")}</b>
-        <small>{r ? ruleWhen(q.stage, r) : "La acción no sale de una regla activa de la etapa."}</small>
+        <b>Regla aplicada: {r ? ruleTitle(r.stage, r) : (q.actionLabel ?? "—")}</b>
+        <small>{r ? ruleWhen(r.stage, r) : "La acción no sale de una regla activa de la etapa."}</small>
       </span>
     </div>
   );
@@ -827,7 +827,7 @@ function Recommended({ item: q, stage, rules, onExecute }: { item: QueueItem | n
   const checks = [
     { label: "Número validado", ok: Boolean(q.wa) && !q.needsReview, note: !q.wa ? "Falta su WhatsApp" : q.needsReview ? "Se valida al confirmar el envío" : "" },
     { label: `Situación: ${SITUATIONS[q.situation]}`, ok: true, note: "" },
-    { label: `Regla: ${ruleOf(rules, q) ? ruleTitle(q.stage, ruleOf(rules, q)!) : (q.actionLabel ?? "—")}`, ok: Boolean(q.ruleKey), note: "" },
+    { label: `Regla: ${ruleOf(rules, q) ? ruleTitle(ruleOf(rules, q)!.stage, ruleOf(rules, q)!) : (q.actionLabel ?? "—")}`, ok: Boolean(q.ruleKey), note: "" },
     { label: "Horario permitido", ok: !q.blocked, note: hours },
   ];
   return (
@@ -1117,7 +1117,7 @@ function ExecPanel({
         ) : <span>Sin acciones registradas.</span>}
       </details>
       <details data-testid="followup-execution-rule" className="fu-qbox" style={{ margin: "6px 0", padding: 10 }}>
-        <summary style={{ cursor: "pointer", fontWeight: 600 }}>Regla: {ruleOf(rules, item) ? ruleTitle(item.stage, ruleOf(rules, item)!) : (item.actionLabel ?? "—")} · Ver detalles</summary>
+        <summary style={{ cursor: "pointer", fontWeight: 600 }}>Regla: {ruleOf(rules, item) ? ruleTitle(ruleOf(rules, item)!.stage, ruleOf(rules, item)!) : (item.actionLabel ?? "—")} · Ver detalles</summary>
         <RuleBox q={item} rules={rules} />
         <p className="fu-qflow" data-testid="followup-after-confirm"><ArrowRight size={14} aria-hidden="true" /> {afterConfirm(item, rules)}</p>
       </details>
@@ -1489,7 +1489,14 @@ function ReplyForm({ agencies, onDone }: { agencies: AgencyChoice[]; onDone: () 
 }
 
 const SITUATION_OPTIONS = ["sin_respuesta", "confirmo_numero", "neutro", "pregunta_precios", "mas_adelante", "derivo", "interesado", "rechazo"] as const;
-const ruleSituations = (r: Rule) => (r.situations.length ? r.situations.map((x) => SITUATIONS[x as Situation]).join(", ") : "Cualquier situación");
+/** Las condiciones de una regla en una línea: su avance (si la etapa tiene más de uno y no los cubre todos) y sus respuestas. */
+const ruleSituations = (r: Rule) => {
+  const all = technicalOf(commercialOf(r.stage));
+  const covered = stagesOf(r);
+  const progress = all.length > 1 && covered.length < all.length ? covered.map(technicalStateLabel) : [];
+  const replies = r.situations.map((x) => SITUATIONS[x as Situation]);
+  return [...progress, ...replies].join(", ") || "Cualquier situación";
+};
 
 /** Embudo y etapas (Fase 3): las etapas en tarjetas con su avance; la elegida, con sus reglas, sus versiones y sus inmobiliarias. */
 function Funnel({ chart, chartStep, custom, funnel, stages, rules, onRules }: { chart: React.ReactNode; chartStep: number | null; custom: CustomStage[]; funnel: FunnelStep[]; stages: StageView[]; rules: Rule[]; onRules: () => void }) {
@@ -1590,6 +1597,12 @@ function ruleWhen(stage: StageKey, r: Rule) {
   const after = r.after_action ? ` y ya salió «${actionLabel(stage, r.after_action as Action)}»` : "";
   const timing = r.after_hours ? `a las ${r.after_hours} h de nuestro último mensaje` : "enseguida";
   return `Si ${ruleSituations(r).toLowerCase()}${after} · ${timing} · ${daysText(r.days)} de ${r.hours_from} a ${r.hours_to}`;
+}
+
+/** Las situaciones de avance que una copia conserva en su etapa nueva: las que existen ahí, con la suya. */
+function carried(template: Rule, stage: StageKey, available: StageKey[]) {
+  const kept = stagesOf(template).filter((k) => available.includes(k));
+  return kept.includes(stage) ? kept : [stage];
 }
 
 /** Cómo se llama una regla: su nombre, o la acción si no tiene. */
@@ -1913,7 +1926,7 @@ function RulesWorkspace({ stages, rules, changes }: { stages: StageView[]; rules
           {adding && steps.length ? (
             <RuleEditor key={`${stage.key}:new:${template?.key ?? ""}`} stage={stage} rule={null} template={template} seed={seedOf(template)} sample={sample}
               nextPosition={nextPosition} siblings={sameStepRules} defaultSituation={stage.key === "no-contactado" ? "sin_respuesta" : stage.key === "no-responde" ? "confirmo_numero" : "interesado"}
-              availableStages={steps} onStageChange={(key) => go(() => setStageKey(key))}
+              availableStages={steps} onStageChange={(key, draft) => { setDirty({}); setTemplate(draft); setStageKey(key); }}
               onDirty={markDirty("regla")} onAdded={() => setSelected(null)} />
           ) : current ? (
             <RuleEditor key={`${effectiveStage.key}:${current.key}:${JSON.stringify(current)}`} stage={effectiveStage} rule={current}
@@ -1935,7 +1948,7 @@ function RulesWorkspace({ stages, rules, changes }: { stages: StageView[]; rules
 function templateIssue(stage: StageKey, r: Rule, catalog: React.ContextType<typeof SituationCatalog>) {
     const allowed = visibleSituations(commercialOf(stage), catalog.overrides).map(o => o.key);
     if (!compatible(stage,r.action)) return "Elegí una acción disponible en «Qué se ejecuta».";
-    if (r.after_action && !compatible(stage,r.after_action)) return "Elegí un paso previo de esta etapa o seleccioná «Ningún paso».";
+    if (r.after_action && !compatible(stage,r.after_action)) return "El paso previo de la regla no existe en esta etapa: quitalo en «Cuándo se ejecuta».";
     if (r.min_demo_activity_level && !["no-abrio","sin-interaccion","sin-cuenta"].includes(stage)) return "Requiere una demo enviada.";
     if (r.situations.some(s => !allowed.includes(s))) return "Habilitá la situación en Etapas y situaciones.";
     if (r.catalog_situation && !catalog.states.some(s => s.key === r.catalog_situation && s.active && (!s.product_stage || s.product_stage === stage) &&
@@ -2182,7 +2195,8 @@ function RuleEditor({
   nextPosition: number;
   defaultSituation?: Situation;
   availableStages?: StageKey[];
-  onStageChange?: (key: StageKey) => void;
+  /** Regla nueva: al sacar la situación de avance donde vive su mensaje, la regla pasa a otra y conserva lo cargado. */
+  onStageChange?: (key: StageKey, draft: Rule) => void;
   siblings?: Rule[];
   onDirty: (dirty: boolean) => void;
   onAdded?: () => void;
@@ -2194,8 +2208,8 @@ function RuleEditor({
     catalog.custom.some(c => c.key === s.commercial_stage && c.technical_stage === stage.key)));
   const available = actionsOf(stage.key);
   const blank: Rule = template
-    ? { ...template, key: "", name: template.name ?? null, stage: stage.key, position: nextPosition, enabled: true, days: [...template.days], situations: [...template.situations] }
-    : { key: "", name: null, stage: stage.key, situations: [defaultSituation], action: available[0], after_hours: 48, after_action: null, position: nextPosition, enabled: true, hours_from: 9, hours_to: 19, days: [1, 2, 3, 4, 5, 6] };
+    ? { ...template, key: "", name: template.name ?? null, stage: stage.key, product_stages: carried(template, stage.key, availableStages), position: nextPosition, enabled: true, days: [...template.days], situations: [...template.situations] }
+    : { key: "", name: null, stage: stage.key, product_stages: [stage.key], situations: [defaultSituation], action: available[0], after_hours: 48, after_action: null, position: nextPosition, enabled: true, hours_from: 9, hours_to: 19, days: [1, 2, 3, 4, 5, 6] };
   const base = rule ? { ...rule, name: rule.name ?? null } : blank;
   const [r, setR] = useState<Rule>(base);
   const issue = template ? templateIssue(stage.key, r, catalog) : "";
@@ -2219,6 +2233,15 @@ function RuleEditor({
   useEffect(() => () => report.current(false), []);
 
   const set = (patch: Partial<Rule>) => setR({ ...r, ...patch });
+  // Situaciones de avance: las subetapas de la etapa en las que corre la regla. El mensaje vive en `stage.key`.
+  const progress = availableStages.length ? availableStages : [stage.key];
+  const covered = stagesOf(r);
+  const toggleProgress = (key: StageKey) => {
+    const next = progress.filter((k) => (k === key ? !covered.includes(k) : covered.includes(k)));
+    if (!next.length) return;
+    if (next.includes(stage.key)) return set({ product_stages: next });
+    if (!rule && onStageChange) onStageChange(next[0], { ...r, product_stages: next });
+  };
   const toggleSituation = (x: Situation) => {
     if (x === "rechazo" || r.action === "encuesta_cierre") {
       if (msgDirty && !window.confirm(DISCARD)) return;
@@ -2339,25 +2362,33 @@ function RuleEditor({
           <h4>
             <CalendarDays size={16} aria-hidden="true" /> Cuándo se ejecuta
           </h4>
-          <label className="fu-f">
-            <span>Etapa del embudo</span>
-            <select aria-label="Etapa del embudo de la regla" value={stage.key} disabled={Boolean(rule) || !onStageChange}
-              onChange={(e) => onStageChange?.(e.target.value as StageKey)}>
-              {(availableStages.length ? availableStages : [stage.key]).map((key) => (
-                <option key={key} value={key}>{technicalStateLabel(key)}</option>
-              ))}
-            </select>
-            {rule && <small>Para mover una regla a otra etapa, creá una nueva con las mismas condiciones; así se conserva el historial.</small>}
-          </label>
+          {progress.length > 1 && <div className="fu-f" data-testid="followup-rule-progress">
+            <span>Avance (cualquiera de)</span>
+            <div className="fu-chips">
+              {progress.map((key) => {
+                const on = covered.includes(key);
+                const fixed = on && (covered.length === 1 || (key === stage.key && Boolean(rule)));
+                const unavailable = !on && (!compatible(key, r.action as Action) || Boolean(r.after_action && !compatible(key, r.after_action)));
+                return (
+                  <button key={key} type="button" className={`fu-chipbtn${on ? " is-on" : ""}`} aria-pressed={on} disabled={fixed || unavailable} data-stage={key}
+                    title={fixed ? (covered.length === 1 ? "La regla necesita al menos una" : "El mensaje de esta regla vive acá") : unavailable ? "La acción de la regla no existe en esta situación" : on ? "Quitar" : "Agregar"}
+                    onClick={() => toggleProgress(key)}>
+                    {on ? "✓ " : "+ "}{technicalStateLabel(key)}
+                  </button>
+                );
+              })}
+            </div>
+            <small>Sale del embudo, sola. La regla corre si la inmobiliaria está en alguna de las marcadas.</small>
+          </div>}
           <div className="fu-f">
-            <span>Situación (cualquiera de)</span>
+            <span>Respuesta (cualquiera de)</span>
             <div className="fu-chips">
               {r.situations.map((x) => (
                 <button key={x} type="button" className="fu-chipbtn is-on" aria-pressed="true" title="Quitar" onClick={() => toggleSituation(x)}>
                   ✓ {baseOptions.find(o => o.key === x)?.label ?? SITUATIONS[x]}
                 </button>
               ))}
-              {!r.situations.length && <span className="fu-chipbtn is-on is-static">✓ Cualquier situación</span>}
+              {!r.situations.length && <span className="fu-chipbtn is-on is-static">✓ Cualquier respuesta</span>}
               {remaining.length > 0 && (
                 <select className="fu-chipadd" value="" aria-label="Agregar situación" onChange={(e) => e.target.value && toggleSituation(e.target.value as Rule["situations"][number])}>
                   <option value="">+ Agregar</option>
@@ -2370,7 +2401,7 @@ function RuleEditor({
               )}
             </div>
           </div>
-          {specific.length > 0 && <label className="fu-f">Situación personalizada
+          {specific.some(s => s.source !== "product") && <label className="fu-f">Situación personalizada
               <select value={r.catalog_situation ?? ""} onChange={e => {
                 const definition = specific.find(s => s.key === e.target.value);
                 if (definition?.source === "product") {
@@ -2384,28 +2415,18 @@ function RuleEditor({
                 if (action !== r.action) setMsgDirty(false);
                 set({ catalog_situation: definition.key, situations: [definition.maps_to], action, after_action: null });
               }}><option value="">Todas las que cumplan la condición</option>
-              {specific.filter(s => (s.product_stage === stage.key || SITUATION_OPTIONS.some(x => x === s.maps_to)) && (s.maps_to !== "rechazo" || compatible(stage.key, "encuesta_cierre"))).map(s => <option key={s.key} value={s.key}>{s.label}</option>)}</select>
+              {specific.filter(s => s.source !== "product" && SITUATION_OPTIONS.some(x => x === s.maps_to) && (s.maps_to !== "rechazo" || compatible(stage.key, "encuesta_cierre"))).map(s => <option key={s.key} value={s.key}>{s.label}</option>)}</select>
           </label>}
-          <label className="fu-f">
-            <span>Paso previo</span>
-            <select value={r.after_action ?? ""} onChange={(e) => set({ after_action: (e.target.value || null) as Rule["after_action"] })}>
-              {r.after_action && !compatible(stage.key,r.after_action) && <option disabled value={r.after_action}>{actionLabel(template?.stage ?? stage.key,r.after_action)} · no disponible</option>}
-              <option value="">Ningún paso</option>
-              {available
-                .filter((a) => a !== r.action && a !== "encuesta_cierre")
-                .map((a) => (
-                  <option key={a} value={a}>
-                    {actionLabel(stage.key, a)}
-                  </option>
-                ))}
-            </select>
-          </label>
           <div className="fu-f">
             <span>Espera</span>
             <div className="fu-wait">
               <input type="number" min={0} max={720} step={1} value={r.after_hours} onChange={(e) => set({ after_hours: Number(e.target.value) })} data-testid="followup-rule-hours" aria-label="Espera en horas" />
               <small>horas desde nuestro último mensaje</small>
             </div>
+            {r.after_action && <small data-testid="followup-rule-after">
+              Sale después de «{actionLabel(template?.stage ?? stage.key, r.after_action)}».{" "}
+              <button type="button" className="button button-small button-outline" onClick={() => set({ after_action: null })}>Quitar paso previo</button>
+            </small>}
           </div>
           <div className="fu-f">
             <span>Horario de envío</span>

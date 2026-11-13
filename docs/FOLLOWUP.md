@@ -350,3 +350,21 @@ En **Estados y reglas** el funnel comercial filtra las reglas; la columna izquie
 - La vista **Contactado → No interesados** muestra pérdidas cerradas (incluidas las que Adquisición ya había sacado del funnel de envío), sin habilitar «Ejecutar». El estado canónico `rechazo` ahora se presenta «No interesado» para no romper datos históricos; `no_contactar` sigue siendo una exclusión distinta.
 - El detalle de ejecución muestra primero el mensaje o tarea; las validaciones, observaciones para extensión, contexto, historial y regla están plegados por defecto. El pie con «Abrir WhatsApp / Confirmar envío», o «Crear demo», se mantiene visible al desplazarse.
 - No se agregaron envíos automáticos, ni una octava etapa, ni cambios de esquema de base de datos.
+
+## Avance y respuesta dentro de la regla (13/11/2026)
+
+Migraciones `202612160001_followup_rule_product_stages.sql` (columna) y `202612160002_followup_rule_merge.sql` (junta las reglas gemelas; va después del deploy).
+
+Una regla se define con la **etapa** (una de las comerciales, la fija la pestaña) y dos grupos de situaciones, los dos «cualquiera de»:
+
+- **Avance** (`followup_rules.product_stages`): las subetapas del embudo en las que corre, todas de la misma etapa comercial. Sale del embudo, sola: demo pendiente de crear, demo creada sin enviar, no visitó, visitó sin interactuar, interactuó. No se marca a mano.
+- **Respuesta** (`situations`): lo que dijo por WhatsApp. Vacía: cualquiera.
+
+La regla corre si la inmobiliaria está en alguna subetapa marcada **y** tiene alguna de las respuestas marcadas. Gana la primera por prioridad, como antes.
+
+- **Etapa ancla** (`stage`): la subetapa donde vive el mensaje de la regla (`followup_versions.stage`). El motor busca la versión, lo ya enviado y el A/B en la ancla (`QueueItem.messageStage`), no en la subetapa de la inmobiliaria. Una regla que cubre varias subetapas manda su mensaje una vez por inmobiliaria (`followup_executions` es única por versión e inmobiliaria).
+- **Historial y métricas:** la ejecución guarda `from_step` con el paso real de la inmobiliaria, así la conversión no cambia. Su `stage` es el de la versión (la ancla): en Resultados, los envíos de una regla con varias subetapas se cuentan en la fila de la ancla.
+- **Guardado** (`cleanRule`, `saveRule`): sin `product_stages`, vale la etapa de la regla; un panel que no manda el campo conserva las subetapas que la regla tenía. Las subetapas tienen que ser de la misma etapa comercial y la acción tiene que existir en todas.
+- **Editor:** «Etapa del embudo» se reemplazó por los chips de **Avance** (solo en etapas con más de una subetapa: Interesado y Demo enviada). El chip de la ancla no se puede quitar en una regla guardada. Se sacó **Paso previo**: el motor lo respeta en las reglas que lo tienen, y el editor lo muestra con «Quitar paso previo». La **Espera** sigue editable. «Situación personalizada» ya no ofrece los estados de producto del catálogo: los reemplaza Avance.
+- **Sin la migración:** el panel y la cola siguen funcionando; cada regla corre solo en su etapa y guardar una con varias subetapas avisa que falta la migración.
+- **Pendiente en Chapa Labs:** su editor de reglas (`/prospecting/habita`, «Reglas y mensajes») todavía muestra «Etapa del embudo» y «Paso previo». Mientras tanto no rompe nada: al guardar desde ahí, la regla conserva sus subetapas.

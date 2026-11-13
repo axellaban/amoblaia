@@ -47,8 +47,14 @@ export type Rule = {
   key: string;
   /** Nombre que se le pone en el panel (opcional; sin nombre se muestra la acción). El motor no lo usa. */
   name?: string | null;
+  /** Etapa ancla: la subetapa donde vive el mensaje de la regla (`followup_versions.stage`). */
   stage: StageKey;
-  /** Situaciones a las que aplica; vacía: cualquiera (las cerradas nunca). */
+  /**
+   * Situaciones de avance: las subetapas del embudo en las que corre la regla
+   * (todas de la misma etapa comercial). Vacía o ausente: solo la ancla.
+   */
+  product_stages?: StageKey[];
+  /** Situaciones de respuesta a las que aplica; vacía: cualquiera (las cerradas nunca). */
   situations: Situation[];
   catalog_situation?: string | null;
   action: Action;
@@ -98,6 +104,12 @@ export const DEFAULT_RULES: Rule[] = [
   ...OTHER_STAGES.map((stage) => rule({ key: `${stage}:principal`, stage, situations: [], action: "principal", after_hours: stage === "sin-demo" || stage === "sin-enviar" ? 0 : 48, after_action: null, position: 40 })),
 ];
 
+/** Las subetapas en las que corre la regla. */
+export const stagesOf = (r: Pick<Rule, "stage" | "product_stages">): StageKey[] => (r.product_stages?.length ? r.product_stages : [r.stage]);
+
+/** Qué pasos ya salieron: un mapa por acción, o una función que mira la regla (su ancla). */
+export type Done = Partial<Record<Action, boolean>> | ((action: Action, anchor: StageKey) => boolean);
+
 export type RulePick = { rule: Rule | null; action: Action | null; afterHours: number; reason: string | null };
 
 /**
@@ -106,10 +118,11 @@ export type RulePick = { rule: Rule | null; action: Action | null; afterHours: n
  * Las situaciones cerradas y «interesado» en las dos primeras etapas no llegan
  * acá (las resuelve el código: ninguna regla puede escribirle a un rechazo).
  */
-export function pickRule(rules: Rule[], stage: StageKey, situation: Situation, done: Partial<Record<Action, boolean>>, demoGenerated = false): RulePick {
-  // Las incompatibles (acción fuera de la etapa) no se ejecutan, aunque estén encendidas en la base.
+export function pickRule(rules: Rule[], stage: StageKey, situation: Situation, done: Done, demoGenerated = false): RulePick {
+  const was = (action: Action, anchor: StageKey) => (typeof done === "function" ? done(action, anchor) : Boolean(done[action]));
+  // Las incompatibles (acción fuera de la etapa ancla) no se ejecutan, aunque estén encendidas en la base.
   const own = rules
-    .filter((r) => r.enabled && r.stage === stage && compatible(stage, r.action) && (!r.after_action || compatible(stage, r.after_action)))
+    .filter((r) => r.enabled && stagesOf(r).includes(stage) && compatible(r.stage, r.action) && (!r.after_action || compatible(r.stage, r.after_action)))
     .filter((r) => {
       if (situation === "rechazo" || r.action === "encuesta_cierre")
         return situation === "rechazo" && r.action === "encuesta_cierre" && r.situations.length === 1 && r.situations[0] === "rechazo";
@@ -120,13 +133,13 @@ export function pickRule(rules: Rule[], stage: StageKey, situation: Situation, d
     .filter((r) => (r.min_demo_activity_level ?? 0) === 0 || demoGenerated)
     .sort((a, b) => a.position - b.position);
   for (const r of own) {
-    if (done[r.action]) continue;
-    if (r.after_action && !done[r.after_action]) continue;
+    if (was(r.action, r.stage)) continue;
+    if (r.after_action && !was(r.after_action, r.stage)) continue;
     return { rule: r, action: r.action, afterHours: r.after_hours, reason: null };
   }
   if (!own.length) return { rule: null, action: null, afterHours: 0, reason: "Ninguna regla activa para esta etapa y situación." };
-  if (situation === "pregunta_precios" && done.precios) return { rule: null, action: null, afterHours: 0, reason: "Ya se le respondió por precios: esperá su respuesta." };
-  if (done.presentacion && (situation === "confirmo_numero" || situation === "derivo"))
+  if (situation === "pregunta_precios" && own.some((r) => r.action === "precios" && was("precios", r.stage))) return { rule: null, action: null, afterHours: 0, reason: "Ya se le respondió por precios: esperá su respuesta." };
+  if (own.some((r) => was("presentacion", r.stage)) && (situation === "confirmo_numero" || situation === "derivo"))
     return { rule: null, action: null, afterHours: 0, reason: "Secuencia terminada: no respondió a la presentación ni a su seguimiento." };
   return { rule: null, action: null, afterHours: 0, reason: own.length === 1 ? "Secuencia terminada: ya se mandó su acción." : `Secuencia terminada: sin respuesta después de ${own.length} mensajes.` };
 }
@@ -172,16 +185,25 @@ export function cleanRule(input: Record<string, unknown>, situations: readonly s
   if (minimum !== 0 && minimum !== 3) return { error: "La condición de generación debe ser 0 o 3." };
   const stageKey = input.stage as StageKey;
   if (minimum === 3 && !["no-abrio", "sin-interaccion", "sin-cuenta"].includes(stageKey)) return { error: "La condición Generó imagen solo corresponde a Demo enviada." };
+  // Situaciones de avance: sin el campo, solo la etapa ancla (las reglas de siempre).
+  const rawStages = input.product_stages === undefined || input.product_stages === null ? [stageKey] : input.product_stages;
+  if (!Array.isArray(rawStages) || rawStages.some((s) => typeof s !== "string" || !stages.includes(s))) return { error: "Situación de avance desconocida." };
+  const productStages = (stages as StageKey[]).filter((s) => rawStages.includes(s));
+  if (!productStages.length) return { error: "Elegí al menos una situación de avance." };
+  if (minimum === 3 && productStages.some((s) => !["no-abrio", "sin-interaccion", "sin-cuenta"].includes(s))) return { error: "La condición Generó imagen solo corresponde a Demo enviada." };
   // Una regla con acción o paso previo fuera de su etapa puede quedar apagada (para no perderla), pero no encendida ni nueva.
   const enabled = input.enabled !== false;
   if (enabled && afterAction && !compatible(stageKey, afterAction)) return { error: "El paso previo no es una acción de esta etapa." };
   if (enabled && !compatible(stageKey, input.action as Action)) return { error: "Una regla con acción no disponible en su etapa no se puede activar." };
+  const outside = productStages.find((s) => !compatible(s, input.action as Action) || (afterAction && !compatible(s, afterAction)));
+  if (enabled && outside) return { error: "La acción de la regla no está disponible en todas las situaciones de avance elegidas." };
   const position = num(input.position);
   const name = typeof input.name === "string" ? input.name.trim().replace(/\s+/g, " ") : "";
   if (name.length > 80) return { error: "El nombre de la regla va hasta 80 caracteres." };
   return {
     name: name || null,
     stage: input.stage as StageKey,
+    product_stages: productStages,
     situations: sits,
     action: input.action as Action,
     after_hours: Math.round(after * 10) / 10,
