@@ -850,8 +850,11 @@ function resultsOf(b: Awaited<ReturnType<typeof board>>, all: QueueItem[], queue
     cohortFunnel: (() => {
       const stages = COMMERCIAL_STAGES.filter((c) => c.key !== "prospectado").flatMap((c) => {
         const stage = { key: c.key as string, title: c.title as string, from: c.technical.length ? Math.min(...c.technical.map((t) => stageInfo(t).step)) : CLIENT_STEP };
-        // «Demo con interacción»: inside Demo enviada, the demos that went past a visit (from «Interactuó, sin cuenta»).
-        return c.key === "demo-enviada" ? [stage, { key: "demo-interaccion", title: "Demo con interacción", from: stageInfo("sin-cuenta").step }] : [stage];
+        // Inside Demo enviada, the demos that were visited (from «Visitó, sin interactuar») and those that went
+        // past a visit (from «Interactuó, sin cuenta»).
+        return c.key === "demo-enviada"
+          ? [stage, { key: "demo-visitada", title: "Demo visitada", from: stageInfo("sin-interaccion").step }, { key: "demo-interaccion", title: "Demo con interacción", from: stageInfo("sin-cuenta").step }]
+          : [stage];
       });
       const t = stages.map((x) => x.from);
       return { stages: stages.map(({ key, title }) => ({ key, title })), contacto: funnelCohorts(b.facts, t, "contacto"), respuesta: funnelCohorts(b.facts, t, "respuesta"), version: funnelCohorts(b.facts, t, "version") };
@@ -1378,6 +1381,17 @@ export async function releaseClaim(agencyId: unknown, actorId: string) {
   return { released: true };
 }
 
+/** Whether the account already has an interest that was not corrected afterwards. */
+async function hasInterest(accountId: string) {
+  const db = adminClient();
+  const { data, error } = await db.from("prospect_events").select("id").eq("account_id", accountId).eq("type", "interest").limit(50);
+  if (error || !data?.length) return false;
+  const ids = (data as { id: string }[]).map((e) => e.id);
+  const { data: fixes } = await db.from("prospect_events").select("corrects_event_id").in("corrects_event_id", ids);
+  const corrected = new Set(((fixes ?? []) as { corrects_event_id: string | null }[]).map((f) => f.corrects_event_id));
+  return ids.some((id) => !corrected.has(id));
+}
+
 /** Lo que cada situación registra en Adquisición, para que el embudo y la hoja digan lo mismo. */
 const SITUATION_FACT: Partial<Record<Situation, "reply" | "interest" | "lost">> = {
   confirmo_numero: "reply",
@@ -1423,7 +1437,9 @@ export async function setSituation(agencyId: string, raw: unknown, note: unknown
       const key = stableUuid(`followup-situation:${agencyId}:${situation}:${text}`);
       if (fact === "reply")
         await prospectRpc("habita_prospect_record", { p_actor: actor.id, p_key: key, p_account: account.id, p_type: "reply", p_occurred_at: new Date().toISOString(), p_precision: "time", p_channel: "whatsapp", p_contact: null, p_attempt: null, p_evidence: evidence, p_details: { situation, proposal: situation === "neutro" }, p_corrects: null });
-      if (fact === "interest")
+      // Ya interesada (un interés vigente, de Follow-up o de Adquisición): no se registra otro, así el embudo
+      // no la vuelve a contar el día en que se la vuelve a marcar.
+      if (fact === "interest" && !(await hasInterest(account.id)))
         await prospectRpc("habita_prospect_record", { p_actor: actor.id, p_key: key, p_account: account.id, p_type: "interest", p_occurred_at: new Date().toISOString(), p_precision: "time", p_channel: "whatsapp", p_contact: null, p_attempt: null, p_evidence: evidence, p_details: { situation }, p_corrects: null });
       if (fact === "lost")
         await prospectRpc("habita_prospect_record", { p_actor: actor.id, p_key: key, p_account: account.id, p_type: "lost", p_occurred_at: new Date().toISOString(), p_precision: "time", p_channel: "whatsapp", p_contact: null, p_attempt: null, p_evidence: evidence, p_details: { situation, reason: situation === "proveedor_ia" ? "Cuenta con proveedor de IA" : "No interesado" }, p_corrects: null });
