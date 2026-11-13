@@ -58,6 +58,16 @@ function fakeDb() {
           rows = [made];
           return q;
         },
+        upsert: (row: Row, opts?: { onConflict?: string; ignoreDuplicates?: boolean }) => {
+          op = "upsert";
+          if (error()) return q;
+          const key = opts?.onConflict ?? "id";
+          const found = (state.tables[table] ?? []).find((r) => r[key] === row[key]);
+          if (found && !opts?.ignoreDuplicates) Object.assign(found, row);
+          if (!found) (state.tables[table] ??= []).push({ ...row });
+          rows = found ? [found] : [row];
+          return q;
+        },
         update: (row: Row) => {
           op = "update";
           if (error()) return q;

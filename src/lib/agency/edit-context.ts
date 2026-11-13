@@ -1,7 +1,7 @@
 import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { User } from "@supabase/supabase-js";
-import { HttpError, isAdmin, rpc } from "@/lib/commerce/http";
+import { HttpError, isAdmin } from "@/lib/commerce/http";
 import { isUuid } from "@/lib/demos/shared";
 import { adminClient } from "@/lib/supabase/server";
 import { EDIT_HEADER } from "./edit-scope";
@@ -86,8 +86,14 @@ export function requireEditContext(request: Request, actor: Pick<User, "id" | "e
  * Profiles back admin_audit's actor reference.
  */
 export async function auditAgency(actorId: string, agencyId: string, action: string, details: Record<string, unknown> = {}) {
-  await rpc("amobla_account", { p_user: actorId, p_trial: false });
-  const { error } = await adminClient().from("admin_audit").insert({ actor_id: actorId, action, subject_id: agencyId, details });
+  const db = adminClient();
+  // Only the profile row is needed (admin_audit.actor_id references it). Not
+  // amobla_account: it locks the profile (FOR UPDATE) and recomputes credits,
+  // so several writes at once (reordering photos) queued on that lock until
+  // the statement timeout and their audit rows were lost (QA 13/11 pm).
+  const profile = await db.from("profiles").upsert({ id: actorId }, { onConflict: "id", ignoreDuplicates: true });
+  if (profile.error) throw new Error("AGENCY_AUDIT_FAILED");
+  const { error } = await db.from("admin_audit").insert({ actor_id: actorId, action, subject_id: agencyId, details });
   if (error) throw new Error("AGENCY_AUDIT_FAILED");
 }
 
