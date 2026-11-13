@@ -147,7 +147,7 @@ Al ejecutar, la sesión la toma 10 minutos (`followup_claims`, `habita_followup_
 - `POST open` `{ inmobiliaria, etapa, tarea, version }` → abierta (no cuenta como enviada).
 - `POST confirm` `{ inmobiliaria, etapa, tarea, version, texto }` → la ejecución, el aviso si algo no se pudo registrar y la inmobiliaria como quedó.
 - `POST fail` `{ inmobiliaria, etapa, tarea, version, motivo, tipo? }` (`sin_whatsapp`, `numero_incorrecto`).
-- `POST situation` `{ inmobiliaria, situacion, texto? }` (texto original de la respuesta).
+- `POST situation` `{ inmobiliaria, situacion, texto?, hora? }` (texto original de la respuesta y la hora en que la escribió, ISO; sin hora, la del registro). Chapa: `op: situation` con los mismos campos.
 - `POST release` `{ inmobiliaria }`.
 
 Si la etapa, la acción o la versión cambiaron desde que se leyó la cola, la API responde 409 con el motivo: el agente actualiza y sigue.
@@ -198,6 +198,7 @@ Un paso que todavía no venció queda **Programado** («Programada para el …»
 `followup_replies`: cada respuesta de WhatsApp con su texto original, la hora, la clasificación y la confianza.
 
 - La extensión la registra con `POST /api/admin/followup/reply` `{ inmobiliaria, texto, hora?, clasificacion?, confianza?, hasta?, contactoNombre?, contactoWhatsapp? }`. Clasificaciones: confirmo_numero, interesado, neutro, pregunta_precios, mas_adelante, derivo, rechazo, proveedor_ia, no_contactar, audio, pregunta_no_cubierta.
+- **Hora real del mensaje** (13/11/2026): `hora` es cuándo escribió la inmobiliaria, como se ve en el chat. Con ella se guardan la respuesta, el interés y la pérdida en Adquisición (`occurred_at`), y de ahí salen «respuesta reciente» (P0), la demo prometida (24 h) y la última respuesta. Antes `situation` siempre guardaba la hora del registro: las respuestas leídas a la mañana siguiente figuraban como recientes. Sin `hora`, sigue siendo la del registro. Una hora inválida o futura responde 400 (`replyTime` en `server.ts`).
 - Con clasificación y confianza ≥ 70 % se aplica sola: la situación (registrada en Adquisición con el texto como evidencia) y la próxima acción. Un audio, una pregunta no cubierta o confianza baja va **a Facu** y no se manda nada. Sin clasificación queda en la bandeja.
 - Mientras tenga una respuesta sin resolver, la inmobiliaria queda bloqueada en la cola y se suelta si alguien la tenía tomada.
 - «Pide más adelante» con fecha la reprograma. «Derivó» con un contacto nuevo lo suma a la misma inmobiliaria (cuenta de prospección), como contacto principal, sin duplicarla.
@@ -344,7 +345,7 @@ En **Estados y reglas** el funnel comercial filtra las reglas; la columna izquie
 
 
 ## Cola rápida, priorización y corrección de estados (noviembre 2026)
-- Por defecto «Prioridad comercial recomendada»: P0 respuesta comercial de menos de 2 h; P1 demo creada pendiente de enviar; P2 interés de menos de 24 h pendiente de demo; P3 demos/activación; P4 seguimientos o interés antiguo; P5 prospectos nuevos. Se utiliza solo como orden operativo, no es un modelo predictivo. Las reglas de horario, bloqueos y no contactar no se alteran.
+- Por defecto «Prioridad comercial recomendada», por impacto y esfuerzo (13/11/2026): un mensaje sale en un minuto y crear una demo lleva unos diez. P0 respondió y espera nuestra contestación (presentación o precios, sin importar la antigüedad) o respuesta comercial de menos de 2 h; P1 demo creada pendiente de enviar; **P2 saludos, solo si hay más de 10 pendientes** (`GREETING_BACKLOG`); P3 crear la demo prometida (interés de menos de 24 h, la promesa más vieja primero); P4 seguimiento de demo enviada y activación; P5 saludos (10 o menos pendientes); P6 otros seguimientos y la despedida; P7 crear demo de interés antiguo. «Pendientes» son los saludos listos de toda la cola (sin bloqueo, sin confirmar y dentro del cupo diario), no solo los que muestra el filtro (`queueContext`): se recuentan en cada lectura y en cada «Tomar la próxima», así que con 11 o más los saludos van primero hasta quedar 10, y esos 10 vuelven a P5, detrás de las demos prometidas. Antes, los saludos iban últimos, detrás de todas las demos por crear (mediana de envío 17:40 el 11/11), y la presentación bajaba a P4 pasadas las 2 h (mediana 26 h el 10/11). Se utiliza solo como orden operativo, no es un modelo predictivo. Las reglas de horario, bloqueos, cupo y no contactar no se alteran. «Prioridad anterior» conserva el criterio viejo.
 - Selector de orden: prioridad comercial / antigüedad / score / criterio anterior. La UI manda `orden` al servidor para «Tomar la próxima», por lo que no elige contactos de otra prioridad. La extensión antigua que omite el parámetro conserva el orden recibido.
 - Desde cada fila de la cola se puede **Editar etapa / estado**, usando los endpoints autenticados ya existentes: `accion: estado` y `accion: situacion`. Las correcciones son auditadas. Se solicita confirmación al cambiar de etapa. No disparan un envío por sí solas.
 - El ícono WhatsApp junto al número abre `web.whatsapp.com/send?phone=...` en una pestaña reutilizable, sin texto precargado ni evento de ejecución. Solo sirve para revisar la conversación.

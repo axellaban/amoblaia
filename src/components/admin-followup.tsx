@@ -6,7 +6,7 @@ import { Fragment, createContext, useContext, useCallback, useEffect, useMemo, u
 import { ArrowLeft, ArrowRight, Building2, CalendarDays, CheckCheck, ChevronDown, ChevronRight, ClipboardCopy, Copy, GripVertical, Info, KeyRound, Layers, Link2, MessageCircle, MessageSquare, MoreVertical, Pencil, Phone, Plus, RefreshCw, Send, Tag, Target, Trash2, Undo2, Video, X } from "lucide-react";
 import { api } from "@/components/admin-demos";
 import { CTA_KEYS, CTA_LABEL, COMMERCIAL_STAGES, FOLLOWUP_STAGES, OUT, VARIABLES, commercialOf, isCommercialStage, technicalOf, technicalStateLabel, fillMessage, missingVariables, pct, type Channel, type Cta, type CommercialStageKey, type StageKey, type VersionStatus } from "@/lib/followup/stages";
-import { GROUPS, REPLY_CLASSES, SITUATIONS, QUEUE_ORDERS, actionLabel, actionsOf, byQueueOrder, commercialTier, compatible, splitMessages, type QueueOrder, type Action, type ReplyClass, type Situation } from "@/lib/followup/plan";
+import { GROUPS, REPLY_CLASSES, SITUATIONS, QUEUE_ORDERS, actionLabel, actionsOf, byQueueOrder, commercialTier, compatible, queueContext, splitMessages, type QueueOrder, type Action, type ReplyClass, type Situation } from "@/lib/followup/plan";
 import type { AgencyChoice, Change, FunnelStep, InboxItem, Prepared, QueueItem, QueueSummary, QueueView, Results, StageView } from "@/lib/followup/server";
 import { NO_FILTER, OTHER_RULES, isEmptyFilter, matchesFilter, stageRules, type QueueFilter } from "@/lib/followup/queue-filter";
 import { PERIOD_ORDER, type CohortRow, type WindowKey } from "@/lib/followup/results";
@@ -411,7 +411,10 @@ function ExecCenter({
           ? all.filter((q) => q.group === "demos" && !q.snoozedUntil)
           : queue;
   const fits = (q: QueueItem, g: QueueFilter) => matchesFilter(q, g, rules);
-  const list = base.filter((q) => fits(q, f)).sort((a, b) => byQueueOrder(a, b, order));
+  // Saludos pendientes de toda la cola (no solo los filtrados): decide si pasan a P2.
+  const qctx = queueContext(queue.filter((q) => statusOf(q)?.status !== "sent"));
+  const nowMs = Date.now();
+  const list = base.filter((q) => fits(q, f)).sort((a, b) => byQueueOrder(a, b, order, nowMs, qctx));
   const catalog = useContext(SituationCatalog);
   const commercial = f.commercial ?? (f.stage ? commercialOf(f.stage) : null);
   const selectedStageTitle = COMMERCIAL_STAGES.find(s => s.key === commercial)?.title ?? "Todas las etapas";
@@ -671,9 +674,9 @@ function ExecCenter({
                         <span className="fu-cell">
                           <span className="fu-pill is-sit">{SITUATIONS[q.situation]}</span>
                         </span>
-                        <span className="fu-cell fu-bold" title={commercialTier(q).reason}>
+                        <span className="fu-cell fu-bold" title={commercialTier(q, nowMs, qctx).reason}>
                           {q.actionLabel ?? "Sin seguimiento"}
-                          {!closedView && <small style={{ display: "block", fontSize: "11px", fontWeight: 400, opacity: 0.75 }}>P{commercialTier(q).tier} · {commercialTier(q).reason}</small>}
+                          {!closedView && <small style={{ display: "block", fontSize: "11px", fontWeight: 400, opacity: 0.75 }}>P{commercialTier(q, nowMs, qctx).tier} · {commercialTier(q, nowMs, qctx).reason}</small>}
                         </span>
                         <div className="fu-qact">
                           <span>{q.lastAction ? q.lastAction.text : "Sin acciones"}</span>

@@ -217,7 +217,7 @@ export async function runFollowupOp(op: unknown, b: Record<string, unknown>, act
       return setHandoff(ID(b), b.para ?? null, actor);
     case "situation":
       if (!ID(b)) throw new HttpError(400, "Falta la inmobiliaria.");
-      return setSituation(ID(b), b.situacion, b.texto, actor);
+      return setSituation(ID(b), b.situacion, b.texto, actor, b.hora);
     case "reply":
       return typeof b.id === "string"
         ? processReply(b.id, { classification: b.clasificacion, until: b.hasta, contactName: b.contactoNombre, contactWhatsapp: b.contactoWhatsapp, facu: b.facu, note: b.nota }, actor)
