@@ -153,6 +153,12 @@ describe("what prospected agencies did in the period (habita's funnel against it
     const withInterest = ds([old, fresh], data.attempts, [...data.events, event(fresh, "interest", "2026-11-10T12:00:00-03:00"), event(old, "interest", "2026-11-10T12:00:00-03:00")]);
     expect(periodActivity(withInterest, src, week).interesados).toBe(2);
     expect(prospectingMetrics(data, week, src).periodo?.visitadas).toBe(1);
+    // Re-marked «Interesada» this week, but interested since October: it does not count again.
+    const remarked = ds([old, fresh], data.attempts, [...data.events, event(fresh, "interest", "2026-10-20T12:00:00-03:00"), event(fresh, "interest", "2026-11-10T12:00:00-03:00")]);
+    expect(periodActivity(remarked, src, week).interesados).toBe(1);
+    // A visit this week to a demo first visited the week before does not count again either.
+    const revisit = { ...src, activity: [{ demo_id: "d-old", kind: "visita", created_at: "2026-11-01T11:00:00-03:00" }, ...src.activity] };
+    expect(periodActivity(data, revisit, week)).toMatchObject({ visitadas: 0, conInteraccion: 1 });
     const day = prospectingMetrics(data, week, src).porDia.find((d) => d.date === "2026-11-09");
     expect(day?.periodo).toMatchObject({ demosEnviadas: 1, visitadas: 1, cuentas: 0 });
   });
