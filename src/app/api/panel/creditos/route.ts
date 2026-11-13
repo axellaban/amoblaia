@@ -32,6 +32,8 @@ export async function GET() {
         .from("credit_ledger")
         .select("delta,reason,created_at")
         .eq("user_id", owner)
+        // `free_results_enabled` is a 0 marker, not a movement the agency made.
+        .neq("delta", 0)
         .order("created_at", { ascending: false })
         .limit(30),
     ]);

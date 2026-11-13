@@ -65,6 +65,7 @@ import { videoEnabled } from "@/lib/agency/flags";
 import { StartPicker, toolPath, type StartTool } from "./start-picker";
 import { PanelTour, continuingWork } from "./panel-tour";
 import { Loop, LoopVideo } from "./loop-art";
+import { ledgerLabel, visibleMovement } from "@/lib/credits-ledger";
 
 type Section = PanelSection;
 export { PanelNav };
@@ -2139,17 +2140,6 @@ type CreditsInfo = {
   grants?: { id: string; remaining: number; total: number; expires_at: string | null; source_key: string; revoked: boolean }[];
   ledger?: { delta: number; reason: string; created_at: string }[];
 };
-const REASONS: Record<string, string> = {
-  photo_reserved: "Foto ambientada",
-  technical_failure: "Devolución por falla técnica",
-  payment: "Compra",
-  free_monthly: "Créditos gratis del mes",
-  annual_period: "Plan anual",
-  // Welcome credits and the team's grants share this reason.
-  admin_adjustment: "Créditos de habita",
-  trial: "Prueba",
-};
-
 /**
  * The agency's credits: its real balance (one balance, its owner's), then the
  * packs to buy more (`plans`, the pricing of /precios in its panel variant),
@@ -2238,12 +2228,12 @@ function CreditsSection({ plans }: { plans?: React.ReactNode }) {
           ) : (
             <p>Todavía no hay créditos cargados. Comprá un paquete para transformar las fotos de tus propiedades.</p>
           )}
-          {info.ledger && info.ledger.length > 0 && (
+          {info.ledger && info.ledger.some(visibleMovement) && (
             <ul className="ap-grants" aria-label="Últimos movimientos">
-              {info.ledger.map((l, i) => (
+              {info.ledger.filter(visibleMovement).map((l, i) => (
                 <li key={i}>
                   <span>
-                    {REASONS[l.reason] ?? l.reason}: {l.delta > 0 ? `+${l.delta}` : l.delta}
+                    {ledgerLabel(l.reason)}: {l.delta > 0 ? `+${l.delta}` : l.delta}
                   </span>
                   <small>{new Date(l.created_at).toLocaleDateString("es-AR")}</small>
                 </li>
