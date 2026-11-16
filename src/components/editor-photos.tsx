@@ -59,6 +59,8 @@ import {
   versionNumber,
   viewLabel,
   type CellState,
+  cellLive,
+  creationSettled,
   type Task,
   type ViewMode,
 } from "@/lib/demos/editor-logic";
@@ -1716,10 +1718,21 @@ function CreatePanel({
     setStep("choose");
     setQuote(null);
     setDone("");
+    setStarted(null);
   };
   const state = stateOf(value.style);
   const exists = state.kind === "ready";
-  const live = state.kind === "running" || state.kind === "queued" || state.kind === "waiting" || (state.kind === "ready" && state.running);
+  const live = cellLive(state);
+  // «Creando…» lasts while the creation started here is in progress: once it ends (ready, failed or
+  // in review), the note goes away instead of saying it is still being created next to «¡Imagen lista!».
+  const [started, setStarted] = useState<{ state: CellState; sawLive: boolean } | null>(null);
+  if (started) {
+    if (live && !started.sawLive) setStarted({ ...started, sawLive: true });
+    else if (creationSettled(started.state, state, started.sawLive)) {
+      setStarted(null);
+      setDone("");
+    }
+  }
   // Since when this style is being created: the server's record, or the moment this tab asked for it.
   const liveRow = live ? photo.generations.find((g) => g.style === value.style && (g.status === "queued" || g.status === "running")) : undefined;
   const askedAt = useMemo(() => Date.now(), [photo.id, value.style, live]);
@@ -1807,6 +1820,7 @@ function CreatePanel({
         setStep("choose");
         setQuote(null);
         setDone(`Creando ${styleName(value.style)}: aparece en «Versiones de esta foto» y se abre sola cuando esté lista.`);
+        setStarted({ state, sawLive: false });
       } else setError("No se inició: revisá el mensaje del editor. Lo que elegiste se conserva.");
     } finally {
       setWorking(false);
