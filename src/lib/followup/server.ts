@@ -619,7 +619,7 @@ async function board(now = new Date()) {
     const gate = account ? pool.get(account.id) : undefined;
     it.candidateUrl = gate?.candidateUrl ?? null;
     it.candidateReference = gate?.candidateReference ?? null;
-    if (!it.blocked && !it.candidateReference && (it.stage === "no-contactado" || /\{\{\s*inmueble_candidato\s*\}\}/.test(version?.body ?? "")))
+    if (!it.blocked && (!it.candidateUrl || !it.candidateReference) && (it.stage === "no-contactado" || /\{\{\s*inmueble_candidato\s*\}\}/.test(version?.body ?? "")))
       it.blocked = "Completar inmueble candidato en Prospectos.";
     // Still in Prospectos: it waits there until it is passed to the queue.
     it.blocked = poolBlock(account ? pool.get(account.id) : undefined, it.stage, it.execution?.status === "sent") ?? it.blocked;
