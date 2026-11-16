@@ -290,7 +290,7 @@ export function cleanVersion(input: { stage?: unknown; action?: unknown; channel
   if (unknown.length) return { error: `Variable desconocida: {{${unknown[0]}}}. Se pueden usar ${Object.keys(VARIABLES).map((k) => `{{${k}}}`).join(", ")}.` } as const;
   const trigger = typeof input.trigger === "string" ? input.trigger.trim().slice(0, 120) : "";
   const ctas = Array.isArray(input.ctas) ? CTA_KEYS.filter((k) => (input.ctas as unknown[]).includes(k)) : [];
-  const status = input.status === "test" ? "test" : "active";
+  const status = input.status === "archived" ? "archived" : input.status === "test" ? "test" : "active";
   const notes = typeof input.notes === "string" ? input.notes.trim() : "";
   if (notes.length > 4000) return { error: "Las observaciones superan los 4000 caracteres." } as const;
   const action: Action = input.action === undefined || input.action === null ? "principal" : isAction(input.action) ? input.action : ("" as Action);
