@@ -26,6 +26,25 @@ export type CellState =
   | { kind: "uncertain"; generation: GenerationRow }
   | { kind: "none" };
 
+/** A style is being created (or about to be) for the photo. */
+export function cellLive(state: CellState) {
+  return state.kind === "running" || state.kind === "queued" || state.kind === "waiting" || (state.kind === "ready" && state.running);
+}
+
+/**
+ * Whether the creation the panel just started has ended, so its «Creando…»
+ * note can go away. `started` is the style's state when it was confirmed and
+ * `sawLive` whether it has been seen in progress since. It ends when it is no
+ * longer in progress after having been, or when the photo already shows a
+ * different version, failed or needs review (a creation too fast to be seen).
+ */
+export function creationSettled(started: CellState, now: CellState, sawLive: boolean) {
+  if (cellLive(now)) return false;
+  if (sawLive) return true;
+  if (now.kind === "failed" || now.kind === "uncertain") return true;
+  return now.kind === "ready" && (started.kind !== "ready" || started.generationId !== now.generationId);
+}
+
 export function cellState(photo: EditorPhoto, style: string, waiting: boolean): CellState {
   const discarded = new Set(photo.discarded);
   const attempts = photo.generations.filter((g) => g.style === style && !discarded.has(g.id));
