@@ -74,6 +74,7 @@ export const CTA_LABEL: Record<Cta, string> = {
 };
 export const VARIABLES = {
   inmobiliaria: "Nombre de la inmobiliaria",
+  inmueble_candidato: "Inmueble candidato",
   decisor: "Nombre de quien decide",
   sdr: "Quien envía",
   demo: "Link a su demo",

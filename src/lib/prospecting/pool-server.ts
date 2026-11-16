@@ -40,13 +40,20 @@ async function poolData(): Promise<PoolData | null> {
  * El estado de cada cuenta con perfil y su ranking, para la cola de Follow-up. Sin la migración,
  * o si la lectura falla, devuelve vacío: la cola sigue como siempre.
  */
-export async function poolGates(): Promise<Map<string, { status: PoolStatus; score: number | null }>> {
-  const out = new Map<string, { status: PoolStatus; score: number | null }>();
+type PoolGate = { status: PoolStatus; score: number | null; candidateUrl: string | null; candidateReference: string | null };
+
+export async function poolGates(): Promise<Map<string, PoolGate>> {
+  const out = new Map<string, PoolGate>();
   for (let from = 0; from < 50000; from += 1000) {
-    const { data, error } = await adminClient().from("prospect_profiles").select("account_id,status,score").range(from, from + 999);
+    const { data, error } = await adminClient().from("prospect_profiles").select("account_id,status,score,profile,queue_snapshot").order("account_id").range(from, from + 999);
     if (error) return new Map();
-    for (const r of (data ?? []) as { account_id: string; status: PoolStatus; score: number | string | null }[])
-      out.set(r.account_id, { status: r.status, score: r.score === null ? null : Number(r.score) });
+    for (const r of (data ?? []) as ProfileRow[]) {
+      const snapshot = r.queue_snapshot?.profile;
+      const source = snapshot?.demo_listing_url && snapshot.demo_listing_reference ? snapshot : r.profile;
+      const candidateUrl = typeof source?.demo_listing_url === "string" ? source.demo_listing_url : null;
+      const candidateReference = candidateUrl && typeof source?.demo_listing_reference === "string" ? source.demo_listing_reference : null;
+      out.set(r.account_id, { status: r.status, score: r.score, candidateUrl, candidateReference });
+    }
     if ((data ?? []).length < 1000) break;
   }
   return out;
@@ -202,6 +209,10 @@ async function persist(actor: string, account: ProspectAccount, row: ProfileRow 
     else profile[k] = v;
   }
   // Sin perfil y con WhatsApp es una cuenta de antes de Prospectos: ya estaba en la cola.
+  const frozen = row?.queue_snapshot?.profile;
+  if (row?.status === "en_cola" && frozen?.demo_listing_url && frozen.demo_listing_reference &&
+      ["demo_listing_url", "demo_listing_reference"].some((key) => key in changes && changes[key] !== frozen[key]))
+    throw new HttpError(409, "Sacá la inmobiliaria de la cola para cambiar el inmueble elegido y volvé a ingresarla.");
   const before: PoolStatus = row?.status ?? (whatsappOf(account) ? "en_cola" : "descubierto");
   const explore = force.explore ?? row?.explore ?? false;
   const { vars } = variables(account, profile as Profile, extra);
@@ -296,7 +307,7 @@ export async function runPoolOp(op: unknown, b: Op, actor: { id: string; name: s
       const pick = pickForQueue(
         pending.map((a) => {
           const d = described.get(a.id)!;
-          return { id: a.id, score: d.score.total, status: d.status, hardReady: Boolean(d.wa) && Boolean(d.vars.demo_listing_url) };
+          return { id: a.id, score: d.score.total, status: d.status, hardReady: Boolean(d.wa && d.vars.demo_listing_url && d.vars.demo_listing_reference) };
         }),
         count,
       );
