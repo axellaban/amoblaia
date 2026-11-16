@@ -254,6 +254,14 @@ export async function runFollowupOp(op: unknown, b: Record<string, unknown>, act
     case "owner":
       if (!ID(b)) throw new HttpError(400, "Falta la inmobiliaria.");
       return setOwner(ID(b), b.responsable, actor.id, actor.name);
+    case "ab-configure": {
+      const { data, error } = await adminClient().rpc("habita_ab_configure", {
+        p_actor: actor.id, p_control: b.control, p_variant: b.variant ?? null, p_body: b.body ?? null,
+        p_control_intent: b.controlIntent ?? null, p_variant_intent: b.variantIntent ?? null, p_winner: b.winner ?? null,
+      });
+      if (error) throw new HttpError(409, error.message);
+      return { ok: true, id: data };
+    }
     case "version-create":
       return createVersion((b.valores as Record<string, unknown>) ?? {}, actor.id);
     case "version-update":
