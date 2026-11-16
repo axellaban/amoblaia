@@ -108,7 +108,7 @@ async function readAll<T>(table: string, columns: string) {
   }
   return out;
 }
-const VERSION_FIELDS = "id,stage,action,version,channel,trigger_label,body,ctas,status,created_at,status_at,notes,edited_at";
+const VERSION_FIELDS = "id,stage,action,version,channel,trigger_label,body,ctas,status,created_at,status_at,notes,edited_at,reply_intent";
 const versions = () => readAll<FollowupVersion>("followup_versions", VERSION_FIELDS);
 
 /** What Follow-up keeps of each agency: its corrected stage, and the address, zone and score of the ones added by hand. */
@@ -461,7 +461,7 @@ const whenText = (iso: string) => new Date(iso).toLocaleString("es-AR", { day: "
  * so the counters match the rows.
  */
 async function board(now = new Date()) {
-  const [rows, ds, vs, ex, extra, info, held, open, rules, overrides, catalog, extraStages, quota, pool] = await Promise.all([
+  const [rows, ds, vs, ex, extra, info, held, open, rules, overrides, catalog, extraStages, quota, pool, runs] = await Promise.all([
     commercialRows(),
     prospectDataset({ syncConversions: false }),
     versions(),
@@ -472,6 +472,7 @@ async function board(now = new Date()) {
     openReplies(),
     readRules(), readSituationOverrides(), readStateCatalog(), customStages(), readQuotaSettings(now),
     poolGates().catch(() => new Map() as Awaited<ReturnType<typeof poolGates>>),
+    readAll<{ id: string; control_id: string; variant_id: string; started_at: string; ended_at: string | null }>("followup_ab_runs", "id,control_id,variant_id,started_at,ended_at"),
   ]);
   // Prospectos: the ranking of an agency worked there is its score while it waits for the greeting.
   for (const a of ds?.accounts ?? []) {
@@ -503,6 +504,7 @@ async function board(now = new Date()) {
   for (const [agency, list] of sendsOf) for (const t of list) later(lastOurs, agency, t.sent_at);
   for (const e of ex) if (e.status === "sent") later(lastOurs, e.agency_id, e.sent_at);
   const lastReply = new Map<string, number>();
+  const interestEvents = new Map<string, number[]>();
   const lastInterest = new Map<string, number>();
   // Every reply of each agency (a «No interesado» is an answer, not a conversion): the greeting converts with the first one after it.
   const repliesOf = new Map<string, number[]>();
@@ -511,7 +513,10 @@ async function board(now = new Date()) {
     const at = Date.parse(e.occurred_at);
     if (agency && !e.corrected && (e.type === "reply" || e.type === "interest") && Number.isFinite(at)) repliesOf.set(agency, [...(repliesOf.get(agency) ?? []), at]);
     if (agency && !e.corrected && (e.type === "reply" || e.type === "interest" || e.type === "not_interested")) later(lastReply, agency, e.occurred_at);
-    if (agency && !e.corrected && e.type === "interest") later(lastInterest, agency, e.occurred_at);
+    if (agency && !e.corrected && e.type === "interest") {
+      later(lastInterest, agency, e.occurred_at);
+      interestEvents.set(agency, [...(interestEvents.get(agency) ?? []), at]);
+    }
   }
 
   const stepNow = new Map<string, number>();
@@ -614,7 +619,7 @@ async function board(now = new Date()) {
     const gate = account ? pool.get(account.id) : undefined;
     it.candidateUrl = gate?.candidateUrl ?? null;
     it.candidateReference = gate?.candidateReference ?? null;
-    if (!it.blocked && !it.candidateReference && (it.stage === "no-contactado" || /\{\{\s*inmueble_candidato\s*\}\}/.test(version?.body ?? "")))
+    if (!it.blocked && (!it.candidateUrl || !it.candidateReference) && (it.stage === "no-contactado" || /\{\{\s*inmueble_candidato\s*\}\}/.test(version?.body ?? "")))
       it.blocked = "Completar inmueble candidato en Prospectos.";
     // Still in Prospectos: it waits there until it is passed to the queue.
     it.blocked = poolBlock(account ? pool.get(account.id) : undefined, it.stage, it.execution?.status === "sent") ?? it.blocked;
@@ -677,7 +682,26 @@ async function board(now = new Date()) {
     step: stepNow.get(id) ?? -1,
     greetingVersion: greeting.get(id) ?? null,
   }));
-  return { rows, items, closedItems, vs, ex, stepNow, newToday: fresh.size, quota, open, names: new Map(rows.map((r) => [r.id, r.name])), rules, facts,
+  const realAgencies = new Set(rows.filter(r => !r.test).map(r => r.id));
+  const experiments = runs.sort((a,b) => b.started_at.localeCompare(a.started_at)).map(run => {
+    const start = Date.parse(run.started_at), end = run.ended_at ? Date.parse(run.ended_at) : Infinity;
+    const seen = new Set<string>();
+    const arms = [run.control_id, run.variant_id].map(id => ({ id, mature: 0, interested: 0, pending: 0 }));
+    const ordered = ex.filter(e => e.stage === "no-contactado" && e.status === "sent" && e.sent_at && realAgencies.has(e.agency_id))
+      .sort((a,b) => a.sent_at!.localeCompare(b.sent_at!));
+    for (const e of ordered) {
+      const sent = Date.parse(e.sent_at!), arm = arms.find(a => a.id === e.version_id);
+      if (seen.has(e.agency_id)) continue;
+      seen.add(e.agency_id);
+      if (!arm || sent < start || sent >= end || (firstContact.get(e.agency_id) ?? sent) < sent - 60000) continue;
+      const deadline = sent + 72 * 3600000;
+      if (now.getTime() < deadline) { arm.pending++; continue; }
+      arm.mature++;
+      if (interestEvents.get(e.agency_id)?.some(t => t >= sent && t <= deadline)) arm.interested++;
+    }
+    return { ...run, arms };
+  });
+  return { experiments, rows, items, closedItems, vs, ex, stepNow, newToday: fresh.size, quota, open, names: new Map(rows.map((r) => [r.id, r.name])), rules, facts,
     // The prospecting dataset this board was built from: claiming reuses it to
     // build the message instead of reading the whole dataset a second time.
     ds,
@@ -770,6 +794,7 @@ function item(
   const stageSent = executionsOf.filter((e) => e.stage === stage && e.status === "sent").sort((a, b) => (b.sent_at ?? "").localeCompare(a.sent_at ?? ""));
   const doneMap: Partial<Record<Action, boolean>> = {};
   for (const e of stageSent) doneMap[(e.action ?? "principal") as Action] = true;
+  if (executionsOf.some(e => e.status === "sent" && e.stage === "no-contactado" && vs.some(v => v.id === e.version_id && v.reply_intent === "offer_demo"))) doneMap.presentacion = true;
   const demoGenerated = r.demos.some((d) => d.generated === true);
   const matchingRules = rules.filter(rule => !rule.catalog_situation || productKeys.includes(rule.catalog_situation) || (sit.manual && rule.catalog_situation === own?.catalog_situation));
   const alreadySurveyed = executionsOf.some(e => e.action === "encuesta_cierre" && e.status === "sent");
@@ -924,7 +949,7 @@ function resultsOf(b: Awaited<ReturnType<typeof board>>, all: QueueItem[], queue
     blocks: blockReasons(all.filter((q) => q.action && q.execution?.status !== "sent" && q.blocked).map((q) => q.blocked!)),
   };
 }
-export async function followupOverview(period: Period = parsePeriod({})): Promise<{ chart: ReturnType<typeof chartCounts>; lostAt: number[]; chartRows: { agencyId: string; name: string; step: number | null; lost: boolean; score: number | null; whatsapp: string | null }[]; catalog: { stages: Awaited<ReturnType<typeof customStages>>; states: Awaited<ReturnType<typeof readStateCatalog>>; overrides: Awaited<ReturnType<typeof readSituationOverrides>> }; stages: StageView[]; queue: QueueItem[]; blocked: QueueItem[]; noInteresados: QueueItem[]; summary: QueueSummary; agencies: AgencyChoice[]; inbox: InboxItem[]; funnel: FunnelStep[]; rules: Rule[]; changes: Change[]; results: Results; executed: ExecutedItem[]; funnelDates: FunnelDates[]; generatedAt: string }> {
+export async function followupOverview(period: Period = parsePeriod({})): Promise<{ chart: ReturnType<typeof chartCounts>; lostAt: number[]; chartRows: { agencyId: string; name: string; step: number | null; lost: boolean; score: number | null; whatsapp: string | null }[]; catalog: { stages: Awaited<ReturnType<typeof customStages>>; states: Awaited<ReturnType<typeof readStateCatalog>>; overrides: Awaited<ReturnType<typeof readSituationOverrides>> }; stages: StageView[]; queue: QueueItem[]; blocked: QueueItem[]; noInteresados: QueueItem[]; summary: QueueSummary; agencies: AgencyChoice[]; inbox: InboxItem[]; funnel: FunnelStep[]; rules: Rule[]; changes: Change[]; results: Results & { experiments: Board["experiments"] }; executed: ExecutedItem[]; funnelDates: FunnelDates[]; generatedAt: string }> {
   const [b, changes, queueDays] = await Promise.all([sharedBoard(), auditOf(null, 20), readQueueDays()]);
   const all = [...b.items.values()];
   // Today's photo of the queue, before reading it back: what is pending now was pending today.
@@ -960,7 +985,7 @@ export async function followupOverview(period: Period = parsePeriod({})): Promis
     funnel: funnelOf(b, all),
     rules: [...b.rules].sort((x, y) => x.position - y.position),
     changes,
-    results: resultsOf(b, all, queueDays),
+    results: { ...resultsOf(b, all, queueDays), experiments: b.experiments },
     executed: executedRecent(b),
     funnelDates: funnelDatesOf(b.rows, firsts),
     generatedAt: new Date().toISOString(),
@@ -1238,6 +1263,7 @@ async function prepare(it: QueueItem, origin: string, actor: { id: string; name:
     situation: it.situation,
     versionId: v.id,
     version: v.version,
+    replyIntent: v.reply_intent ?? null,
     channel: v.channel,
     ctas: v.ctas,
     notes: v.notes,

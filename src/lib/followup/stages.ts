@@ -84,6 +84,7 @@ export type MessageContext = Partial<Record<keyof typeof VARIABLES, string | nul
 
 export type VersionStatus = "active" | "test" | "archived";
 export type FollowupVersion = {
+  reply_intent?: "confirm_number" | "offer_demo" | null;
   id: string;
   stage: StageKey;
   /** La acción dentro de la etapa: la principal, o la presentación y los precios en «Contactado». */
