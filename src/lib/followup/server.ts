@@ -314,6 +314,8 @@ export type QueueItem = {
   name: string;
   /** El nombre para {{inmobiliaria}}: el corto cargado a mano, o el de la ficha sin paréntesis ni forma societaria. */
   shortName: string;
+  candidateUrl?: string | null;
+  candidateReference?: string | null;
   shortNameManual: boolean;
   person: string | null;
   phone: string | null;
@@ -609,6 +611,11 @@ async function board(now = new Date()) {
       lastReply: lastReply.get(r.id) ?? null,
       needsDemo: Boolean(version && /\{\{\s*demo\s*\}\}/.test(version.body)),
     });
+    const gate = account ? pool.get(account.id) : undefined;
+    it.candidateUrl = gate?.candidateUrl ?? null;
+    it.candidateReference = gate?.candidateReference ?? null;
+    if (!it.blocked && !it.candidateReference && (it.stage === "no-contactado" || /\{\{\s*inmueble_candidato\s*\}\}/.test(version?.body ?? "")))
+      it.blocked = "Completar inmueble candidato en Prospectos.";
     // Still in Prospectos: it waits there until it is passed to the queue.
     it.blocked = poolBlock(account ? pool.get(account.id) : undefined, it.stage, it.execution?.status === "sent") ?? it.blocked;
     if(own?.handoff_to)it.blocked=`Pasada a ${own.handoff_to}. Retomar para volver a ejecutar.`;
@@ -1190,7 +1197,7 @@ async function prepare(it: QueueItem, origin: string, actor: { id: string; name:
     knownDataset ? historyOf(it.agencyId, known?.id ?? null, vs) : null,
   ]);
   const account = known ?? loaded;
-  const message = fillMessage(v.body, { inmobiliaria: it.shortName, decisor: it.person, sdr: account?.sdr || actor.name, demo, panel });
+  const message = fillMessage(v.body, { inmueble_candidato: it.candidateReference, inmobiliaria: it.shortName, decisor: it.person, sdr: account?.sdr || actor.name, demo, panel });
   const holes = missingVariables(message);
   const warnings: string[] = [...it.checks];
   if (holes.includes("demo")) warnings.push("Todavía no tiene una demo publicada: publicala antes de mandar este mensaje.");
@@ -1218,7 +1225,7 @@ async function prepare(it: QueueItem, origin: string, actor: { id: string; name:
     if (late !== null) checklist.unshift({ key: "promesa", label: "Demo prometida a tiempo", ok: late <= 30, note: `Mostró interés hace ${late} min · máximo 30` });
     if (it.stage === "sin-demo")
       checklist.push(
-        { key: "propiedad", label: "Propiedad elegida e importada", ok: it.properties > 0, note: it.properties ? `${it.properties} en su panel` : "Buscá una en su web e importala" },
+        { key: "propiedad", label: "Propiedad elegida e importada", ok: it.properties > 0, note: it.candidateUrl ? `${it.candidateReference}: ${it.candidateUrl}` : it.properties ? `${it.properties} en su panel` : "Buscá una en su web e importala" },
         { key: "publicada", label: "Demo generada, revisada y publicada", ok: it.hasDemo, note: it.hasDemo ? "Publicada" : "Al publicarla pasa sola a «Demo creada, sin enviar»" },
       );
   }

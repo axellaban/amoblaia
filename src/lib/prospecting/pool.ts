@@ -89,6 +89,7 @@ export const FIELDS: Field[] = [
   { key: "photo_quality", label: "Calidad de las fotos", group: "visual", type: "enum", key_data: true, options: opts(["profesional", "Profesional"], ["media", "Media"], ["celular", "De celular"]) },
   { key: "uses_staging", label: "Ya ambienta sus fotos", group: "visual", type: "enum", key_data: true, options: opts(["no", "No"], ["renders", "Renders"], ["amoblado_virtual", "Amoblado virtual"], ["video_tour", "Video o recorrido"]) },
   { key: "demo_listing_url", label: "Aviso para la demo", group: "visual", type: "url", key_data: true, help: "Un aviso con ambientes vacíos para armar su demo." },
+  { key: "demo_listing_reference", label: "Cómo mencionar este inmueble en WhatsApp", group: "visual", type: "text", help: "Usá el artículo, tipo de inmueble y calle o barrio del aviso. Ej.: el PH de tres ambientes en San Bernardo." },
   { key: "demo_listing_note", label: "Nota del aviso para la demo", group: "visual", type: "text", help: "Qué tiene el aviso elegido (ambientes vacíos, fotos) o por qué falta." },
   { key: "demo_photos_importable", label: "Sus fotos se pueden importar", group: "visual", type: "enum", key_data: true, options: opts(["si", "Sí"], ["no", "No"]) },
 
@@ -252,6 +253,7 @@ export function missingForQueue(a: Pick<ProspectAccount, "contacts" | "suppresse
   if (a.suppressed) out.push("Tiene una baja: no se la contacta.");
   if (!whatsappOf(a)) out.push("Falta un WhatsApp que se pueda usar.");
   if (!v.demo_listing_url) out.push("Falta elegir el aviso para su demo.");
+  if (!v.demo_listing_reference) out.push("Completar inmueble candidato: falta su referencia para WhatsApp.");
   if (!explore && s.fit < MIN_FIT) out.push(`Encaje ${s.fit}: el mínimo para entrar por ranking es ${MIN_FIT}.`);
   return out;
 }
@@ -270,7 +272,7 @@ export type Candidate = { id: string; score: number; status: PoolStatus; hardRea
  */
 export function pickForQueue(list: Candidate[], count: number, rand: () => number = Math.random, share = EXPLORE_SHARE) {
   const n = Math.max(0, Math.floor(count));
-  const ranked = list.filter((c) => c.status === "calificado").sort((x, y) => y.score - x.score || x.id.localeCompare(y.id));
+  const ranked = list.filter((c) => c.status === "calificado" && c.hardReady).sort((x, y) => y.score - x.score || x.id.localeCompare(y.id));
   const others = list.filter((c) => c.status !== "calificado" && c.status !== "en_cola" && c.status !== "descartado" && c.hardReady);
   const exploreWanted = n >= 5 ? Math.max(1, Math.round(n * share)) : 0;
   const pool = [...others];

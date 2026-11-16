@@ -52,7 +52,7 @@ const account = (n: number, o: Record<string, unknown> = {}) => ({
 const profile = (n: number, status: string, values: Record<string, unknown> = {}, o: Record<string, unknown> = {}) => ({
   account_id: uuid(n), status, discard_reason: null, profile: values, score: null, score_components: {}, scoring_version: null, explore: false, queued_at: null, queue_snapshot: null, updated_at: "2026-11-10T00:00:00Z", ...o,
 });
-const READY = { empty_listings: 20, listings_total: 60, uses_staging: "no", demo_listing_url: "https://ficticia.test/aviso/1", demo_photos_importable: "si" };
+const READY = { empty_listings: 20, listings_total: 60, uses_staging: "no", demo_listing_url: "https://ficticia.test/aviso/1", demo_listing_reference: "el PH de prueba", demo_photos_importable: "si" };
 const saves = () => state.rpcs.filter((r) => r.name === "habita_prospect_pool_save").map((r) => r.args as { p_account: string; p_actor: string; p_patch: Record<string, unknown> });
 
 beforeEach(() => {
@@ -82,7 +82,7 @@ beforeEach(() => {
     last_import: null,
   };
   state.pool = {
-    profiles: [profile(3, "calificado", READY), profile(5, "enriquecido", { demo_listing_url: "https://ficticia.test/aviso/5", ai_provider: "Otra IA" })],
+    profiles: [profile(3, "calificado", READY), profile(5, "enriquecido", { demo_listing_reference: "la casa de prueba", demo_listing_url: "https://ficticia.test/aviso/5", ai_provider: "Otra IA" })],
     extra: [{ account_id: uuid(2), address: "Calle Falsa 123", source: "planilla", source_data: { Instagram: "@ficticia2" }, source_notes: "Nota de prueba" }],
   };
 });

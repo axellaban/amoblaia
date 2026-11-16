@@ -16,7 +16,7 @@ const account = (o: Partial<ProspectAccount> = {}): ProspectAccount => ({
   lost_reason: null, next_action: null, due_at: null, due_precision: "time", version: 1, created_at: "2026-11-01T00:00:00Z", imported: false, demos: 0,
   suppressed: false, contacts: [contact()], ...o,
 });
-const strong: Profile = { number_confidence: "verificado", listings_total: 80, empty_listings: 30, uses_staging: "no", pct_residential: 90, new_listings_30d: 8, demo_listing_url: "https://ficticia.test/aviso/1", demo_photos_importable: "si", photo_quality: "media" };
+const strong: Profile = { number_confidence: "verificado", listings_total: 80, empty_listings: 30, uses_staging: "no", pct_residential: 90, new_listings_30d: 8, demo_listing_url: "https://ficticia.test/aviso/1", demo_listing_reference: "el PH de prueba", demo_photos_importable: "si", photo_quality: "media" };
 
 describe("catálogo de Prospectos", () => {
   it("valida cada dato contra su tipo y deja borrar con vacío", () => {
@@ -69,9 +69,9 @@ describe("entrada a la cola", () => {
     const a = account({ contacts: [] });
     const s = scoreOf(a, {});
     // Sin datos el encaje queda neutro (no se sabe, no es malo): faltan el WhatsApp y el aviso.
-    expect(missingForQueue(a, {}, s)).toHaveLength(2);
+    expect(missingForQueue(a, {}, s)).toHaveLength(3);
     const b = account();
-    const weak: Profile = { demo_listing_url: "https://x.test/a", empty_listings: 0, uses_staging: "amoblado_virtual", pct_residential: 10, new_listings_30d: 0, listings_total: 2 };
+    const weak: Profile = { demo_listing_reference: "la casa de prueba", demo_listing_url: "https://x.test/a", empty_listings: 0, uses_staging: "amoblado_virtual", pct_residential: 10, new_listings_30d: 0, listings_total: 2 };
     expect(missingForQueue(b, weak, scoreOf(b, weak))).toHaveLength(1);
     expect(missingForQueue(b, weak, scoreOf(b, weak), true)).toHaveLength(0);
     expect(missingForQueue(b, strong, scoreOf(b, strong))).toHaveLength(0);
