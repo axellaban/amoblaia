@@ -218,7 +218,9 @@ async function persist(actor: string, account: ProspectAccount, row: ProfileRow 
   const { vars } = variables(account, profile as Profile, extra);
   const score = scoreOf(account, vars);
   const missing = missingForQueue(account, vars, score, explore);
-  const status = force.status ?? autoStatus(before, missing, completeness(vars));
+  const calculated = autoStatus(before, missing, completeness(vars));
+  // Only promote pending, eligible accounts; explicit removal/discard remains authoritative.
+  const status = force.status ?? (account.stage === "pending" && !account.suppressed && calculated === "calificado" && missing.length === 0 ? "en_cola" : calculated);
   const patch: Record<string, unknown> = {
     profile: changes,
     status,
