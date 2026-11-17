@@ -202,7 +202,7 @@ const savePool = (actor: string, account: string, patch: Record<string, unknown>
   prospectRpc<ProfileRow>("habita_prospect_pool_save", { p_actor: actor, p_account: account, p_patch: patch });
 
 /** Guarda con el ranking recalculado y el estado que sale de los datos. */
-async function persist(actor: string, account: ProspectAccount, row: ProfileRow | undefined, extra: Extra | undefined, changes: Record<string, unknown>, force: Partial<{ status: PoolStatus; discard_reason: string; explore: boolean }> = {}) {
+async function persist(actor: string, account: ProspectAccount, row: ProfileRow | undefined, extra: Extra | undefined, changes: Record<string, unknown>, force: Partial<{ status: PoolStatus; discard_reason: string; explore: boolean; autoQueue: boolean }> = {}) {
   const profile = { ...(row?.profile ?? {}) } as Record<string, unknown>;
   for (const [k, v] of Object.entries(changes)) {
     if (v === null) delete profile[k];
@@ -220,7 +220,7 @@ async function persist(actor: string, account: ProspectAccount, row: ProfileRow 
   const missing = missingForQueue(account, vars, score, explore);
   const calculated = autoStatus(before, missing, completeness(vars));
   // Only promote pending, eligible accounts; explicit removal/discard remains authoritative.
-  const status = force.status ?? (account.stage === "pending" && !account.suppressed && calculated === "calificado" && missing.length === 0 ? "en_cola" : calculated);
+  const status = force.status ?? (force.autoQueue === true && account.stage === "pending" && !account.suppressed && calculated === "calificado" && missing.length === 0 ? "en_cola" : calculated);
   const patch: Record<string, unknown> = {
     profile: changes,
     status,
@@ -267,7 +267,7 @@ export async function runPoolOp(op: unknown, b: Op, actor: { id: string; name: s
       if (typeof b.decisor === "string") fields.decision_maker = str(b.decisor, 160) || null;
       if (!Object.keys(patch).length && !Object.keys(fields).length) throw new HttpError(400, "No hay cambios.");
       if (Object.keys(fields).length) await prospectRpc("habita_prospect_update", { p_actor: actor.id, p_account: account.id, p_version: account.version, p_patch: fields });
-      const { missing, score } = await persist(actor.id, account, row, extra, patch);
+      const { missing, score } = await persist(actor.id, account, row, extra, patch, { autoQueue: true });
       return { ok: true, missing, score: score.total };
     }
     case "cola": {
@@ -349,7 +349,7 @@ export async function runPoolOp(op: unknown, b: Op, actor: { id: string; name: s
       const fresh = (await prospectDataset({ syncConversions: false })).accounts.find((a) => a.id === created.id)!;
       await persist(actor.id, fresh, undefined, undefined, patch, { status: "descubierto" });
       const again = await load(created.id);
-      const { missing } = await persist(actor.id, again.account, again.row, again.extra, {});
+      const { missing } = await persist(actor.id, again.account, again.row, again.extra, {}, { autoQueue: true });
       return { ok: true, id: created.id, missing };
     }
     case "recalcular": {
@@ -360,7 +360,7 @@ export async function runPoolOp(op: unknown, b: Op, actor: { id: string; name: s
       for (const row of data.profiles) {
         const a = ds.accounts.find((x) => x.id === row.account_id);
         if (!a || a.stage !== "pending") continue;
-        await persist(actor.id, a, row, extras.get(a.id), {});
+        await persist(actor.id, a, row, extras.get(a.id), {}, { autoQueue: true });
         changed++;
       }
       return { ok: true, changed };
