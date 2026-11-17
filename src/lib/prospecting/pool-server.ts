@@ -306,7 +306,12 @@ export async function runPoolOp(op: unknown, b: Op, actor: { id: string; name: s
       const profiles = new Map(data.profiles.map((p) => [p.account_id, p]));
       const extras = new Map(data.extra.map((x) => [x.account_id, x]));
       const sent = contacted(ds);
-      const pending = ds.accounts.filter((a) => a.stage === "pending" && !sent.has(a.id) && !a.suppressed);
+      // Bulk replenishment must honor explicit manual removals and discards too.
+      const pending = ds.accounts.filter((a) => {
+        const profile = profiles.get(a.id);
+        return a.stage === "pending" && !sent.has(a.id) && !a.suppressed &&
+          profile?.status !== "descartado" && !(profile?.queued_at && profile.status !== "en_cola");
+      });
       const described = new Map(pending.map((a) => [a.id, describe(a, profiles.get(a.id), extras.get(a.id))]));
       const pick = pickForQueue(
         pending.map((a) => {
