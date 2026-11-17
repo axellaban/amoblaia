@@ -273,6 +273,8 @@ export async function runPoolOp(op: unknown, b: Op, actor: { id: string; name: s
     case "cola": {
       const { account, row, extra } = await load(b.cuenta);
       if (account.stage !== "pending") throw new HttpError(409, "Esa inmobiliaria ya fue contactada.");
+      if (account.suppressed) throw new HttpError(409, "Esta inmobiliaria está excluida de contactos.");
+      if (row?.status === "descartado") throw new HttpError(409, "Reabrí primero la inmobiliaria descartada.");
       const explore = b.explorar === true;
       const { vars } = variables(account, row?.profile ?? {}, extra);
       const missing = missingForQueue(account, vars, scoreOf(account, vars), explore);
