@@ -259,7 +259,7 @@ const host = (url: string | null) => {
 export async function runPoolOp(op: unknown, b: Op, actor: { id: string; name: string }) {
   switch (op) {
     case "guardar": {
-      const { account, row, extra } = await load(b.cuenta);
+      const { ds, account, row, extra } = await load(b.cuenta);
       const { patch, errors } = cleanProfile(b.valores ?? {});
       if (errors.length) throw new HttpError(400, errors.join(" "));
       const fields: Record<string, unknown> = {};
@@ -267,12 +267,12 @@ export async function runPoolOp(op: unknown, b: Op, actor: { id: string; name: s
       if (typeof b.decisor === "string") fields.decision_maker = str(b.decisor, 160) || null;
       if (!Object.keys(patch).length && !Object.keys(fields).length) throw new HttpError(400, "No hay cambios.");
       if (Object.keys(fields).length) await prospectRpc("habita_prospect_update", { p_actor: actor.id, p_account: account.id, p_version: account.version, p_patch: fields });
-      const { missing, score } = await persist(actor.id, account, row, extra, patch, { autoQueue: true });
+      const { missing, score } = await persist(actor.id, account, row, extra, patch, { autoQueue: !contacted(ds).has(account.id) });
       return { ok: true, missing, score: score.total };
     }
     case "cola": {
-      const { account, row, extra } = await load(b.cuenta);
-      if (account.stage !== "pending") throw new HttpError(409, "Esa inmobiliaria ya fue contactada.");
+      const { ds, account, row, extra } = await load(b.cuenta);
+      if (account.stage !== "pending" || contacted(ds).has(account.id)) throw new HttpError(409, "Esa inmobiliaria ya fue contactada.");
       if (account.suppressed) throw new HttpError(409, "Esta inmobiliaria está excluida de contactos.");
       if (row?.status === "descartado") throw new HttpError(409, "Reabrí primero la inmobiliaria descartada.");
       const explore = b.explorar === true;
@@ -363,10 +363,11 @@ export async function runPoolOp(op: unknown, b: Op, actor: { id: string; name: s
       const [ds, data] = await Promise.all([prospectDataset({ syncConversions: false }), poolData()]);
       if (!data) throw new ProspectError(503, "Falta aplicar la migración de Prospectos (202612140001_prospect_pool.sql) en Supabase.", "MIGRATION_MISSING");
       const extras = new Map(data.extra.map((x) => [x.account_id, x]));
+      const sent = contacted(ds);
       let changed = 0;
       for (const row of data.profiles) {
         const a = ds.accounts.find((x) => x.id === row.account_id);
-        if (!a || a.stage !== "pending") continue;
+        if (!a || a.stage !== "pending" || sent.has(a.id)) continue;
         await persist(actor.id, a, row, extras.get(a.id), {}, { autoQueue: true });
         changed++;
       }
