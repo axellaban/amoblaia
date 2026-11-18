@@ -53,6 +53,7 @@ const profile = (n: number, status: string, values: Record<string, unknown> = {}
   account_id: uuid(n), status, discard_reason: null, profile: values, score: null, score_components: {}, scoring_version: null, explore: false, queued_at: null, queue_snapshot: null, updated_at: "2026-11-10T00:00:00Z", ...o,
 });
 const READY = { empty_listings: 20, listings_total: 60, uses_staging: "no", demo_listing_url: "https://ficticia.test/aviso/1", demo_listing_reference: "el PH de prueba", demo_photos_importable: "si" };
+type PoolFixture = { profiles: ReturnType<typeof profile>[] };
 const saves = () => state.rpcs.filter((r) => r.name === "habita_prospect_pool_save").map((r) => r.args as { p_account: string; p_actor: string; p_patch: Record<string, unknown> });
 
 beforeEach(() => {
@@ -108,6 +109,28 @@ describe("/api/prospeccion · Prospectos", () => {
     // Aprendizajes: la única intentada es la ya contactada.
     expect(b.learning.total).toMatchObject({ n: 1, valid: 1, replied: 1 });
     expect(b.learning.messages).toEqual(["Histórico (planilla)"]);
+  });
+  it("GET: «Ya trabajadas» junta las que están en cola y las contactadas, con en qué quedaron", async () => {
+    (state.pool as PoolFixture).profiles.push(profile(2, "descartado", {}, { discard_reason: "Cerró la oficina" }));
+    const b = await (await get("vista=prospectos")).json();
+    const by = Object.fromEntries(b.history.map((x: { id: string }) => [x.id, x]));
+    expect(by[uuid(4)]).toMatchObject({ situation: "respondio", situationLabel: "Respondió", firstContactAt: "2026-11-03T15:00:00Z", at: "2026-11-03T15:00:00Z" });
+    expect(by[uuid(1)]).toMatchObject({ situation: "en_cola" });
+    expect(by[uuid(2)]).toMatchObject({ situation: "descartada", detail: "Cerró la oficina" });
+    // Las que se siguen prospectando no figuran.
+    expect(by[uuid(3)]).toBeUndefined();
+    expect(by[uuid(5)]).toBeUndefined();
+    expect(b.historyCounts).toMatchObject({ total: 3, respondio: 1, en_cola: 1, descartada: 1 });
+    expect(b.catalog.situations.map((x: { key: string }) => x.key)).toContain("cliente");
+  });
+  it("un aviso de portal no deja pasar a la cola", async () => {
+    (state.pool as PoolFixture).profiles[0] = profile(3, "calificado", { ...READY, demo_listing_url: "https://www.zonaprop.com.ar/propiedades/x-1.html" });
+    const b = await (await get("vista=prospectos")).json();
+    const row = b.rows.find((x: { id: string }) => x.id === uuid(3));
+    expect(row.status).not.toBe("calificado");
+    expect(row.missing.join(" ")).toMatch(/Zonaprop: elegí el mismo u otro en su web propia/);
+    const r = await post({ op: "cola", cuenta: uuid(3) });
+    expect(r.status).toBe(409);
   });
 
   it("sin la migración la vista lo dice y las operaciones no guardan", async () => {

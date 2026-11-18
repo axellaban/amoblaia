@@ -247,12 +247,38 @@ export function completeness(v: Profile) {
   return KEY_FIELDS.filter((f) => v[f.key] !== undefined && v[f.key] !== "").length / KEY_FIELDS.length;
 }
 
+/**
+ * Los portales que no dejan leer el aviso desde nuestros servidores (Zonaprop y MercadoLibre piden
+ * verificación anti-robots; Argenprop la pide a veces): la demo se arma con el aviso de la web de la
+ * inmobiliaria. Devuelve el nombre del portal, o `null` si el link es de otra web.
+ */
+const PORTALS: [RegExp, string][] = [
+  [/(^|\.)argenprop\.com$/, "Argenprop"],
+  [/(^|\.)zonaprop\.com\.ar$/, "Zonaprop"],
+  [/(^|\.)mercadolibre\.com\.ar$/, "MercadoLibre"],
+];
+export function portalOfListing(url: unknown): string | null {
+  if (typeof url !== "string" || !url.trim()) return null;
+  try {
+    const host = new URL(/^https?:\/\//i.test(url.trim()) ? url.trim() : `https://${url.trim()}`).hostname.toLowerCase();
+    return PORTALS.find(([re]) => re.test(host))?.[1] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Tiene el aviso para la demo como lo pide la cola: de su web propia y con su referencia para WhatsApp. */
+export function demoReady(v: Profile) {
+  return Boolean(v.demo_listing_url && v.demo_listing_reference && !portalOfListing(v.demo_listing_url));
+}
+
 /** Lo que falta para entrar a la cola. El cupo de exploración no exige el encaje mínimo. */
 export function missingForQueue(a: Pick<ProspectAccount, "contacts" | "suppressed">, v: Profile, s: Score, explore = false) {
   const out: string[] = [];
   if (a.suppressed) out.push("Tiene una baja: no se la contacta.");
   if (!whatsappOf(a)) out.push("Falta un WhatsApp que se pueda usar.");
   if (!v.demo_listing_url) out.push("Falta elegir el aviso para su demo.");
+  else if (portalOfListing(v.demo_listing_url)) out.push(`El aviso para la demo es de ${portalOfListing(v.demo_listing_url)}: elegí el mismo u otro en su web propia.`);
   if (!v.demo_listing_reference) out.push("Completar inmueble candidato: falta su referencia para WhatsApp.");
   if (!explore && s.fit < MIN_FIT) out.push(`Encaje ${s.fit}: el mínimo para entrar por ranking es ${MIN_FIT}.`);
   return out;
@@ -330,6 +356,43 @@ export function outcomesOf(ds: Dataset) {
     });
   }
   return out;
+}
+
+// ── Ya trabajadas ───────────────────────────────────────────────────────────
+
+/** En qué quedó una inmobiliaria que ya se trabajó, de lo más avanzado a lo menos. */
+export const HISTORY_SITUATIONS = [
+  { key: "cliente", label: "Cliente" },
+  { key: "demo", label: "Demo con interacción" },
+  { key: "interesada", label: "Interesada" },
+  { key: "respondio", label: "Respondió" },
+  { key: "contactada", label: "Contactada, sin respuesta" },
+  { key: "en_cola", label: "En cola, sin contactar" },
+  { key: "numero_invalido", label: "Número inválido" },
+  { key: "perdida", label: "Perdida" },
+  { key: "baja", label: "Pidió no ser contactada" },
+  { key: "descartada", label: "Descartada" },
+] as const;
+export type HistorySituation = (typeof HISTORY_SITUATIONS)[number]["key"];
+
+/**
+ * La situación de una inmobiliaria para la lista «Ya trabajadas», o `null` si todavía se está
+ * prospectando (Descubierto, Enriquecido o Calificado, sin contactar). Una baja o una pérdida pesan
+ * más que lo que haya respondido antes: es lo último que dijo. Ser cliente pesa más que todo.
+ */
+export function historySituation(a: Pick<ProspectAccount, "stage" | "suppressed" | "contacts">, o: Outcome, pool: PoolStatus | null, contacted: boolean): HistorySituation | null {
+  const wa = a.contacts.filter((c) => c.channel === "whatsapp");
+  if (o.customer) return "cliente";
+  if (a.suppressed) return "baja";
+  if (a.stage === "lost") return "perdida";
+  if (a.stage === "discarded" || pool === "descartado") return "descartada";
+  if (o.engaged) return "demo";
+  if (o.interested) return "interesada";
+  if (o.replied) return "respondio";
+  if (contacted) return "contactada";
+  if (wa.length > 0 && wa.every((c) => c.invalid)) return "numero_invalido";
+  if (pool === "en_cola") return "en_cola";
+  return null;
 }
 
 const band = (n: number | null, cuts: [number, string][], rest: string) => {

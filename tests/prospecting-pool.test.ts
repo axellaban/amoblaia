@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  autofillNeed, autoStatus, cleanProfile, completeness, confidenceOf, FILL_MAX, learnings, MIN_FIT, missingForQueue, outcomesOf, pickForQueue, poolBlock, scoreOf, variables,
+  autofillNeed, autoStatus, cleanProfile, completeness, confidenceOf, demoReady, FILL_MAX, historySituation, learnings, MIN_FIT, missingForQueue, outcomesOf, pickForQueue, poolBlock, portalOfListing, scoreOf, variables,
   type LearnRow, type Profile,
 } from "@/lib/prospecting/pool";
 import type { Dataset, ProspectAccount, ProspectContact } from "@/lib/prospecting/types";
@@ -110,6 +110,51 @@ describe("la cola de Follow-up", () => {
     // Ya saludada o en otra etapa: Prospectos no la frena.
     expect(poolBlock({ status: "enriquecido" }, "no-contactado", true)).toBeNull();
     expect(poolBlock({ status: "enriquecido" }, "no-responde", false)).toBeNull();
+  });
+});
+
+describe("aviso para la demo de la web propia", () => {
+  it("reconoce los portales que no dejan leer el aviso", () => {
+    expect(portalOfListing("https://www.argenprop.com/departamento-en-venta--1")).toBe("Argenprop");
+    expect(portalOfListing("www.zonaprop.com.ar/propiedades/x-1.html")).toBe("Zonaprop");
+    expect(portalOfListing("https://inmuebles.mercadolibre.com.ar/x")).toBe("MercadoLibre");
+    expect(portalOfListing("https://ficticia.test/propiedad/1")).toBeNull();
+    expect(portalOfListing("https://argenprop.com.ficticia.test/1")).toBeNull();
+    expect(portalOfListing("")).toBeNull();
+    expect(portalOfListing(null)).toBeNull();
+  });
+  it("un aviso de portal no entra a la cola ni a «Sumar las mejores»", () => {
+    const a = account();
+    const portal: Profile = { ...strong, demo_listing_url: "https://www.argenprop.com/casa-en-venta--1" };
+    const missing = missingForQueue(a, portal, scoreOf(a, portal));
+    expect(missing).toEqual(["El aviso para la demo es de Argenprop: elegí el mismo u otro en su web propia."]);
+    // También en exploración: sin web propia no se arma la demo.
+    expect(missingForQueue(a, portal, scoreOf(a, portal), true)).toHaveLength(1);
+    expect(autoStatus("calificado", missing, 1)).toBe("enriquecido");
+    expect(demoReady(portal)).toBe(false);
+    expect(demoReady(strong)).toBe(true);
+    expect(demoReady({ demo_listing_url: "https://ficticia.test/1" })).toBe(false);
+  });
+});
+
+describe("ya trabajadas", () => {
+  const o = (x: Partial<Parameters<typeof historySituation>[1]> = {}) => ({ attempted: false, valid: false, replied: false, interested: false, engaged: false, customer: false, firstAt: null, ...x });
+  it("dice en qué quedó cada inmobiliaria, de lo más avanzado a lo menos", () => {
+    expect(historySituation(account(), o(), "descubierto", false)).toBeNull();
+    expect(historySituation(account(), o(), "calificado", false)).toBeNull();
+    expect(historySituation(account(), o(), "en_cola", false)).toBe("en_cola");
+    expect(historySituation(account(), o(), "descartado", false)).toBe("descartada");
+    expect(historySituation(account({ stage: "sent" }), o({ attempted: true }), "en_cola", true)).toBe("contactada");
+    expect(historySituation(account({ stage: "conversation" }), o({ replied: true }), null, true)).toBe("respondio");
+    expect(historySituation(account({ stage: "interested" }), o({ replied: true, interested: true }), null, true)).toBe("interesada");
+    expect(historySituation(account({ stage: "activated" }), o({ engaged: true, interested: true }), null, true)).toBe("demo");
+    expect(historySituation(account({ stage: "customer" }), o({ customer: true }), null, true)).toBe("cliente");
+    expect(historySituation(account({ contacts: [contact({ invalid: true })] }), o({ attempted: true }), "descubierto", false)).toBe("numero_invalido");
+  });
+  it("una baja o una pérdida pesan más que lo que respondió antes; ser cliente, más que todo", () => {
+    expect(historySituation(account({ stage: "lost" }), o({ replied: true, interested: true }), null, true)).toBe("perdida");
+    expect(historySituation(account({ suppressed: true, stage: "conversation" }), o({ replied: true }), null, true)).toBe("baja");
+    expect(historySituation(account({ suppressed: true, stage: "customer" }), o({ customer: true }), null, true)).toBe("cliente");
   });
 });
 

@@ -4,7 +4,7 @@ import { isUuid } from "@/lib/demos/shared";
 import { adminClient } from "@/lib/supabase/server";
 import { normalizeWhatsapp } from "./import";
 import {
-  autoStatus, cleanProfile, completeness, EXPLORE_SHARE, FILL_MAX, FIELDS, GROUPS, learnings, MIN_FIT, missingForQueue, outcomesOf, pickForQueue,
+  autoStatus, cleanProfile, completeness, demoReady, HISTORY_SITUATIONS, historySituation, EXPLORE_SHARE, FILL_MAX, FIELDS, GROUPS, learnings, MIN_FIT, missingForQueue, outcomesOf, pickForQueue,
   scoreOf, SCORING_VERSION, STATUS_HELP, STATUS_LABEL, variables, WEIGHTS, whatsappOf,
   type Extra, type LearnRow, type PoolStatus, type Profile, type Score,
 } from "./pool";
@@ -169,11 +169,56 @@ export async function poolView(message: string | null = null) {
   const counts = { total: rows.length } as Record<string, number>;
   for (const r of rows) counts[r.status] = (counts[r.status] ?? 0) + 1;
 
+  // Ya trabajadas: todo lo que salió de la prospección (en cola, contactada, lead, cliente,
+  // perdida, baja o descartada), para no volver a prospectar lo mismo y ver en qué quedó.
+  const lastSent = new Map<string, string>();
+  for (const t of ds.attempts)
+    if (t.status === "sent" && t.sent_at && (lastSent.get(t.account_id) ?? "") < t.sent_at) lastSent.set(t.account_id, t.sent_at);
+  const label = new Map<string, string>(HISTORY_SITUATIONS.map((s) => [s.key, s.label]));
+  const history = ds.accounts
+    .map((a) => {
+      const row = profiles.get(a.id);
+      const outcome = outcomes.get(a.id)!;
+      const pool = row?.status ?? (a.stage === "pending" && !sent.has(a.id) && whatsappOf(a) ? "en_cola" : null);
+      const situation = historySituation(a, outcome, pool, sent.has(a.id) || (a.stage !== "pending" && a.stage !== "discarded"));
+      if (!situation) return null;
+      const wa = whatsappOf(a) ?? a.contacts.find((c) => c.channel === "whatsapp" && c.address) ?? null;
+      const detail =
+        situation === "descartada" ? row?.discard_reason ?? a.lost_reason :
+        situation === "perdida" ? a.lost_reason :
+        situation === "en_cola" ? (row?.explore ? "Entró por exploración" : null) : null;
+      const at = lastSent.get(a.id) ?? (situation === "en_cola" ? row?.queued_at : null) ?? row?.updated_at ?? a.created_at;
+      return {
+        id: a.id,
+        agencyId: a.agency_id,
+        name: a.name,
+        zone: a.zone,
+        website: a.website,
+        whatsapp: wa?.address ?? null,
+        sdr: a.sdr,
+        situation,
+        situationLabel: label.get(situation)!,
+        detail: detail?.trim() || null,
+        firstContactAt: outcome.firstAt,
+        lastContactAt: lastSent.get(a.id) ?? null,
+        queuedAt: row?.queued_at ?? null,
+        at,
+        demoListing: typeof row?.profile?.demo_listing_url === "string" ? row.profile.demo_listing_url : null,
+      };
+    })
+    .filter((h): h is NonNullable<typeof h> => h !== null)
+    .sort((x, y) => (y.at ?? "").localeCompare(x.at ?? "") || x.name.localeCompare(y.name));
+  const historyCounts = { total: history.length } as Record<string, number>;
+  for (const h of history) historyCounts[h.situation] = (historyCounts[h.situation] ?? 0) + 1;
+
   return {
     available: Boolean(data),
     rows,
     counts,
+    history,
+    historyCounts,
     catalog: {
+      situations: HISTORY_SITUATIONS,
       groups: GROUPS,
       fields: FIELDS,
       statuses: (Object.keys(STATUS_LABEL) as PoolStatus[]).map((key) => ({ key, label: STATUS_LABEL[key], help: STATUS_HELP[key] })),
@@ -251,7 +296,7 @@ export async function fillQueue(count: number, actorId: string | null) {
   const pick = pickForQueue(
     pending.map((a) => {
       const d = described.get(a.id)!;
-      return { id: a.id, score: d.score.total, status: d.status, hardReady: Boolean(d.wa && d.vars.demo_listing_url && d.vars.demo_listing_reference) };
+      return { id: a.id, score: d.score.total, status: d.status, hardReady: Boolean(d.wa) && demoReady(d.vars) };
     }),
     n,
   );
