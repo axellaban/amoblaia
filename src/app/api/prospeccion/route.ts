@@ -4,6 +4,8 @@ import { demoUrl, isUuid } from "@/lib/demos/shared";
 import { activity, contactFor, HEADER, stableUuid, toRow } from "@/lib/prospecting/external";
 import { poolView, runPoolOp } from "@/lib/prospecting/pool-server";
 import { readAutofill, runAutofill, updateAutofill } from "@/lib/prospecting/autofill";
+import { checkListings, prepareDemo, sweepDemoPrep } from "@/lib/prospecting/demo-prep";
+import { after } from "next/server";
 import { recordSend } from "@/lib/prospecting/record-send";
 import { NO_STORE, prospectDataset, prospectFailure, prospectRpc } from "@/lib/prospecting/server";
 import { runSheetSync } from "@/lib/prospecting/sync";
@@ -16,6 +18,15 @@ import { cloudConfigured, cloudEnabled } from "@/lib/supabase/config";
 import { adminClient } from "@/lib/supabase/server";
 export const runtime = "nodejs";
 export const maxDuration = 300;
+
+/** Background work after answering. Outside a request (tests) there is none: it is skipped, never a failure. */
+function afterResponse(work: () => Promise<void>) {
+  try {
+    after(work);
+  } catch {
+    // No request scope: nothing to schedule.
+  }
+}
 
 /**
  * La prospección de habita. para el panel comercial de Chapa Labs, servidor a servidor, como la API
@@ -45,7 +56,9 @@ export const maxDuration = 300;
  *   POST { prospectos: { op, ... }, by } op = guardar, cola, sacar, descartar, reabrir, llenar, crear o
  *                                     recalcular (ver lib/prospecting/pool-server.ts); automatico
  *                                     { activo?, meta? } configura el llenado automático y completar
- *                                     lo corre ahora (lib/prospecting/autofill.ts).
+ *                                     lo corre ahora (lib/prospecting/autofill.ts); comprobar { cuenta }
+ *                                     lee de prueba sus avisos y preparar { cuenta } los deja en su
+ *                                     panel como «Lista para importar» (lib/prospecting/demo-prep.ts).
  *
  * Las acciones pasan por las mismas funciones que el panel del equipo (/admin/prospeccion), con sus
  * reglas: solo contactos revisados, bajas, secuencia de tres pasos, evidencia. «Mandé el mensaje»
@@ -117,7 +130,11 @@ export async function GET(request: Request) {
       const [view, autofill] = await Promise.all([poolView(q.get("mensaje")?.trim().slice(0, 120) || null), readAutofill()]);
       return Response.json({ ...view, autofill }, { headers: NO_STORE });
     }
-    if (q.get("vista") === "followup") return Response.json(await cachedFollowupSnapshot(await team(), parsePeriod({ periodo: q.get("periodo") ?? "", desde: q.get("desde") ?? "", hasta: q.get("hasta") ?? "" })), { headers: NO_STORE });
+    if (q.get("vista") === "followup") {
+      // «Crear demo» pending: its listings are left in the agency's panel after answering.
+      afterResponse(async () => { await sweepDemoPrep(await actorId().catch(() => null)).catch(() => console.error("prospect_demo_prep_sweep_failed")); });
+      return Response.json(await cachedFollowupSnapshot(await team(), parsePeriod({ periodo: q.get("periodo") ?? "", desde: q.get("desde") ?? "", hasta: q.get("hasta") ?? "" })), { headers: NO_STORE });
+    }
     if (q.get("foto")) {
       const image = await agencyThumb(q.get("foto")!, q.get("w"));
       return new Response(new Uint8Array(image), { headers: { "Content-Type": "image/jpeg", "Cache-Control": "private, max-age=3600" } });
@@ -251,12 +268,24 @@ export async function POST(request: Request) {
       const actor = operatorFor(str(b.by, 80), users, fallback);
       if (f.op === "script-save") return Response.json(await saveScript(f.body, actor.id), { headers: NO_STORE });
       const result = await runFollowupOp(f.op, f, actor, new URL(request.url).origin);
+      // An interest registered now puts «Crear demo» in the queue: its listings go to the panel right away.
+      afterResponse(async () => { await sweepDemoPrep(actor.id).catch(() => console.error("prospect_demo_prep_sweep_failed")); });
       if (f.op !== "queue" && f.op !== "replies") invalidateFollowupSnapshot({ keepBoard: f.op === "claim" || f.op === "open" || f.op === "release" });
       return Response.json(result, { headers: NO_STORE });
     }
     if (b?.prospectos && typeof b.prospectos === "object") {
       const p = b.prospectos as Record<string, unknown>;
       if (p.op === "automatico") return Response.json({ ok: true, autofill: await updateAutofill(p) }, { headers: NO_STORE });
+      if (p.op === "comprobar" || p.op === "preparar") {
+        if (!isUuid(p.cuenta)) throw new HttpError(404, "No encontramos esa inmobiliaria en Prospectos.");
+        if (p.op === "comprobar") return Response.json({ ok: true, ...(await checkListings(p.cuenta, { force: true })) }, { headers: NO_STORE });
+        const { data: acc } = await adminClient().from("prospect_accounts").select("agency_id").eq("id", p.cuenta).maybeSingle();
+        if (!acc?.agency_id) throw new HttpError(404, "No encontramos esa inmobiliaria en Prospectos.");
+        const actor = operatorFor(str(b.by, 80), await team(), await actorId());
+        const prep = await prepareDemo(p.cuenta, acc.agency_id as string, actor.id, actor.name);
+        invalidateFollowupSnapshot();
+        return Response.json({ ok: true, prep }, { headers: NO_STORE });
+      }
       if (p.op === "completar") {
         const actor = operatorFor(str(b.by, 80), await team(), await actorId());
         const run = await runAutofill({ actor: actor.id, by: actor.name, force: true });
@@ -264,6 +293,9 @@ export async function POST(request: Request) {
         return Response.json({ ok: true, run, autofill: await readAutofill() }, { headers: NO_STORE });
       }
       const result = await runPoolOp(p.op, p, operatorFor(str(b.by, 80), await team(), await actorId()));
+      // The listings just saved are read on trial after answering (nothing is created).
+      if (p.op === "guardar" && isUuid(p.cuenta) && (result as { toCheck?: number }).toCheck)
+        afterResponse(async () => { await checkListings(p.cuenta as string).catch(() => console.error("prospect_listing_check_failed")); });
       invalidateFollowupSnapshot();
       return Response.json(result, { headers: NO_STORE });
     }

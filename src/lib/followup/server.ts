@@ -13,6 +13,7 @@ import { contactFor, stableUuid } from "@/lib/prospecting/external";
 import { recordSend } from "@/lib/prospecting/record-send";
 import { prospectDataset, prospectRpc } from "@/lib/prospecting/server";
 import { poolGates } from "@/lib/prospecting/pool-server";
+import type { DemoPrep } from "@/lib/prospecting/pool";
 import { poolBlock, portalOfListing } from "@/lib/prospecting/pool";
 import type { Dataset, OutreachAttempt, ProspectAccount } from "@/lib/prospecting/types";
 import { artDate } from "@/lib/prospecting/time";
@@ -279,6 +280,14 @@ export async function firstContactWaiting(now = new Date()) {
   return [...b.items.values()].filter((q) => q.stage === "no-contactado" && pending(q) && capacityOnly(q.blocked)).length;
 }
 
+/** «Crear demo» pending: the agencies whose listings Prospectos can leave in their panel. */
+export async function demoPrepTargets() {
+  const b = await sharedBoard();
+  return [...b.items.values()]
+    .filter((q) => q.stage === "sin-demo" && q.action === "principal" && pending(q) && !q.hasDemo)
+    .map((q) => ({ agencyId: q.agencyId, properties: q.properties, prepared: Boolean(q.demoKit?.prep) }));
+}
+
 /** The prospecting account of each agency: an open one before a lost or discarded one. */
 function accountsByAgency(ds: Dataset | null) {
   const out = new Map<string, ProspectAccount>();
@@ -329,6 +338,8 @@ export type QueueItem = {
   shortName: string;
   candidateUrl?: string | null;
   candidateReference?: string | null;
+  /** «Crear demo»: las precargas cargadas en Prospectos y lo que ya quedó en su panel. */
+  demoKit?: { preloads: string[]; prep: DemoPrep | null } | null;
   shortNameManual: boolean;
   person: string | null;
   phone: string | null;
@@ -632,6 +643,7 @@ async function board(now = new Date()) {
     const gate = account ? pool.get(account.id) : undefined;
     it.candidateUrl = gate?.candidateUrl ?? null;
     it.candidateReference = gate?.candidateReference ?? null;
+    it.demoKit = gate ? { preloads: gate.kit.items.filter((i) => i.key !== "demo_listing_url" && i.url).map((i) => i.url!), prep: gate.demoPrep } : null;
     if (!it.blocked && (!it.candidateUrl || !it.candidateReference) && (it.stage === "no-contactado" || /\{\{\s*inmueble_candidato\s*\}\}/.test(version?.body ?? "")))
       it.blocked = "Completar inmueble candidato en Prospectos.";
     // The demo is built from the agency's own site: a portal listing cannot be read from our servers.
@@ -755,6 +767,28 @@ function sharedBoard(): Promise<Board> {
   }).finally(() => { if (boardPending === request) boardPending = null; });
   boardPending = request;
   return request;
+}
+
+/** «Crear demo»: the main listing, as Prospectos left it (already in the panel, or only chosen). */
+function mainPrepNote(it: QueueItem) {
+  const main = it.demoKit?.prep?.items.find((i) => i.key === "demo_listing_url");
+  if (main?.ok) return `Ya está en su panel, lista para importar${main.photos ? ` (${main.photos} fotos)` : ""}: abrila en «Mis propiedades», importá las fotos y seguí con la demo. ${it.candidateReference ?? ""}: ${main.url}`.trim();
+  if (main && !main.ok) return `No se pudo dejar en su panel (${main.error}). Importala a mano: ${it.candidateUrl ?? main.url}`;
+  return it.candidateUrl ? `${it.candidateReference}: ${it.candidateUrl}` : it.properties ? `${it.properties} en su panel` : "Buscá una en su web e importala";
+}
+const preloadsReady = (it: QueueItem) => (it.demoKit?.prep?.items ?? []).filter((i) => i.key !== "demo_listing_url" && i.ok).length;
+/** The two preloads: already left in the panel, chosen in Prospectos (to paste), or to look for. */
+function preloadNote(it: QueueItem) {
+  const ready = preloadsReady(it);
+  if (ready >= 2) return "Ya quedaron en su panel como «Lista para importar»: no hace falta buscarlas.";
+  const failed = (it.demoKit?.prep?.items ?? []).filter((i) => i.key !== "demo_listing_url" && !i.ok);
+  const chosen = it.demoKit?.preloads ?? [];
+  const parts = [ready ? `${ready} ya en su panel.` : ""];
+  if (failed.length) parts.push(`No se pudieron dejar: ${failed.map((f) => `${f.url} (${f.error})`).join("; ")}.`);
+  const toPaste = chosen.filter((u) => !(it.demoKit?.prep?.items ?? []).some((i) => i.ok && i.url === u));
+  if (toPaste.length) parts.push(`Elegidas en Prospectos, para pegar en «Dejar 2 propiedades precargadas»: ${toPaste.join(" · ")}.`);
+  if (ready + toPaste.length < 2) parts.push(`Buscá ${2 - ready - toPaste.length} más en su web.`);
+  return parts.filter(Boolean).join(" ");
 }
 
 /** Why it cannot be executed now (in order of what to fix first), or null. */
@@ -1267,7 +1301,8 @@ async function prepare(it: QueueItem, origin: string, actor: { id: string; name:
     if (late !== null) checklist.unshift({ key: "promesa", label: "Demo prometida a tiempo", ok: late <= 30, note: `Mostró interés hace ${late} min · máximo 30` });
     if (it.stage === "sin-demo")
       checklist.push(
-        { key: "propiedad", label: "Propiedad elegida e importada", ok: it.properties > 0, note: it.candidateUrl ? `${it.candidateReference}: ${it.candidateUrl}` : it.properties ? `${it.properties} en su panel` : "Buscá una en su web e importala" },
+        { key: "propiedad", label: "Propiedad elegida e importada", ok: it.properties > 0, note: mainPrepNote(it) },
+        { key: "precargas", label: "2 propiedades precargadas", ok: preloadsReady(it) >= 2, note: preloadNote(it) },
         { key: "publicada", label: "Demo generada, revisada y publicada", ok: it.hasDemo, note: it.hasDemo ? "Publicada" : "Al publicarla pasa sola a «Demo creada, sin enviar»" },
       );
   }

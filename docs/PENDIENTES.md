@@ -4,6 +4,12 @@ Se detiene el trabajo a pedido del usuario para conservar créditos. Los cambios
 
 Producción: https://amoblaia.vercel.app/
 
+## Avisos para «Crear demo» — 18 de noviembre de 2026
+
+- Migración `202612280001_prospect_demo_prep.sql`: aplicada en producción el 18/11.
+- Prospectos guarda las dos precargas, lee de prueba cada aviso y, al pasar a Interesado, deja los tres en su panel como «Lista para importar». Detalle en [PROSPECCION.md](PROSPECCION.md) §12.
+- **Pendiente:** cargar las precargas en las que ya están en la cola, y actualizar las «Observaciones para la extensión» de «Crear demo» (V2) para que use lo preparado antes de buscar. Lo decide Facu.
+
 ## Llenado automático de la cola — 18 de noviembre de 2026 (rama `claude/practical-hawking-4xayl8`)
 
 - **Pendiente: aplicar en Supabase `202612270001_prospect_autofill.sql`** (SQL Editor; se puede re-ejecutar). Sin ella no corre y Prospectos lo avisa. Queda activo, con la meta del cupo diario (48).

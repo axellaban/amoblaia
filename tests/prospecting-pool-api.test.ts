@@ -189,6 +189,15 @@ describe("/api/prospeccion · Prospectos", () => {
     expect((await post({ op: "llenar", cantidad: 0 })).status).toBe(400);
   });
 
+  it("guardar: no acepta una precarga que repite el aviso principal y avisa qué avisos quedan por leer", async () => {
+    const bad = await post({ op: "guardar", cuenta: uuid(3), valores: { demo_preload_url_2: "https://www.ficticia.test/aviso/1/" } });
+    expect(bad.status).toBe(400);
+    expect((await bad.json()).error).toMatch(/Precarga 2.*mismo aviso/);
+    expect(saves()).toEqual([]);
+    const ok = await post({ op: "guardar", cuenta: uuid(3), valores: { demo_preload_url_2: "https://ficticia.test/aviso/2" } });
+    expect(await ok.json()).toMatchObject({ ok: true, toCheck: 2 });
+  });
+
   it("llenado automático: sin su migración la vista lo marca no disponible y no se configura ni corre", async () => {
     const b = await (await get("vista=prospectos")).json();
     expect(b.autofill).toMatchObject({ available: false, enabled: false });

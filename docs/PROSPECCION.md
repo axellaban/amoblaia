@@ -322,6 +322,17 @@ La cola de primeros saludos se completa sola cada mañana. El cron de las 06:00 
 
 API: `POST { prospectos: { op: "automatico", activo?, meta? } }` (`meta: null` vuelve al cupo) y `{ op: "completar" }`; `GET ?vista=prospectos` suma `autofill`.
 
+### Avisos para «Crear demo» (`src/lib/prospecting/demo-prep.ts`)
+
+Cada demo lleva tres avisos de la misma inmobiliaria: el de la demo publicada («Aviso para la demo») y dos que le quedan precargados en «Mis propiedades» («Precarga 2» y «Precarga 3»). Se eligen en Prospectos, así la extensión no los busca al ejecutar la cola.
+
+- **Precargas:** dos campos más del catálogo (`demo_preload_url_2`, `demo_preload_url_3`). No son obligatorias para entrar a la cola: si faltan, la extensión las busca como antes. No se acepta un aviso repetido entre los tres (`repeatedListings`).
+- **Lectura de prueba** (`listing_checks`): al guardar un aviso nuevo, habita. lo lee después de responder, con el mismo lector de las importaciones y sin crear nada. Guarda si se importa, con cuántas fotos, o por qué no. Un aviso principal que no se puede importar no deja entrar a la cola. «Comprobar avisos» los vuelve a leer, y el cron de las 06:00 lee los que quedaron sin leer (30 por día, primero los de la cola).
+- **Preparación** (`demo_prep`): cuando la cola le pone «Crear demo» (Interesado, sin demo), habita. importa los tres avisos a su panel como «Lista para importar»: datos guardados y fotos pendientes, sin ambientar nada ni usar créditos. Corre después de cada lectura o acción de Follow-up de Chapa (como mucho una vez por minuto) y en el cron. Si la extensión ya cargó propiedades a mano, no se toca nada. Un aviso que falló se reintenta hasta 3 veces, cada 6 horas como mínimo. «Dejar en su panel» lo hace en el momento.
+- **En la tarea «Crear demo»**, el checklist dice qué quedó listo: «Propiedad elegida e importada» (ya está en su panel, con cuántas fotos) y «2 propiedades precargadas» (listas, para pegar o para buscar).
+- Las importaciones quedan a nombre de `PROSPECTING_ACTOR_ID` o, sin él, del primer usuario del equipo. Turnia no lo necesita: su demo no lleva propiedades.
+- Migración: `supabase/migrations/202612280001_prospect_demo_prep.sql`. API: `POST { prospectos: { op: "comprobar" | "preparar", cuenta } }`; cada fila de `GET ?vista=prospectos` suma `kit` y `demoPrep`.
+
 ### Aprendizajes (`learnings`)
 
 Por cada variable, las inmobiliarias intentadas con cada valor y hasta dónde llegaron, con las reglas del §5: número válido (sobre las intentadas) y respuesta humana, interés, demo con interacción y clientes (sobre las de número válido). Con menos de 30 intentadas, «muestra chica». Además de las variables de Prospectos se cruzan el primer mensaje, el día del primer contacto, la zona, el SDR, la web, el score de la planilla y cómo entró a la cola. Las variables se toman de la foto de entrada a la cola cuando existe. `?mensaje=` deja solo las contactadas con ese primer mensaje: el mensaje pesa más que el prospecto y, sin separarlos, se confunden.

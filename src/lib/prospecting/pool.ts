@@ -91,6 +91,8 @@ export const FIELDS: Field[] = [
   { key: "demo_listing_url", label: "Aviso para la demo", group: "visual", type: "url", key_data: true, help: "Un aviso con ambientes vacíos para armar su demo." },
   { key: "demo_listing_reference", label: "Cómo mencionar este inmueble en WhatsApp", group: "visual", type: "text", help: "Usá el artículo, tipo de inmueble y calle o barrio del aviso. Ej.: el PH de tres ambientes en San Bernardo." },
   { key: "demo_listing_note", label: "Nota del aviso para la demo", group: "visual", type: "text", help: "Qué tiene el aviso elegido (ambientes vacíos, fotos) o por qué falta." },
+  { key: "demo_preload_url_2", label: "Precarga 2", group: "visual", type: "url", help: "Otro aviso individual de la misma inmobiliaria, de su web propia: queda en su panel listo para importar con un clic." },
+  { key: "demo_preload_url_3", label: "Precarga 3", group: "visual", type: "url", help: "Un tercer aviso de la misma inmobiliaria, distinto de los otros dos. Mejor si muestra otro ambiente." },
   { key: "demo_photos_importable", label: "Sus fotos se pueden importar", group: "visual", type: "enum", key_data: true, options: opts(["si", "Sí"], ["no", "No"]) },
 
   { key: "web_platform", label: "Plataforma de su web", group: "digital", type: "enum", key_data: true, options: opts(["tokko", "Tokko"], ["xintel", "Xintel"], ["mapaprop", "Mapaprop"], ["wordpress", "WordPress"], ["propia", "Desarrollo propio"], ["otra", "Otra"], ["sin_web", "No tiene web"]) },
@@ -272,13 +274,108 @@ export function demoReady(v: Profile) {
   return Boolean(v.demo_listing_url && v.demo_listing_reference && !portalOfListing(v.demo_listing_url));
 }
 
+// ── Avisos de la demo: el principal y las dos precargas ────────────────────
+
+/** Los tres avisos que usa «Crear demo»: el de la demo publicada y los dos que quedan precargados. */
+export const LISTING_KEYS = ["demo_listing_url", "demo_preload_url_2", "demo_preload_url_3"] as const;
+export type ListingKey = (typeof LISTING_KEYS)[number];
+export const LISTING_LABEL: Record<ListingKey, string> = { demo_listing_url: "Aviso para la demo", demo_preload_url_2: "Precarga 2", demo_preload_url_3: "Precarga 3" };
+/** La lectura de prueba de un aviso: si se importa, con cuántas fotos, o por qué no. */
+export type ListingCheck = { ok: boolean; photos: number; title: string | null; error: string | null; at: string };
+export type ListingChecks = Record<string, ListingCheck>;
+/** Cada aviso importado a su panel al pasar a Interesado: la propiedad queda «Lista para importar». */
+export type DemoPrepItem = { key: ListingKey; url: string; ok: boolean; demoId: string | null; photos: number; error: string | null };
+export type DemoPrep = { at: string; attempts: number; by: string; items: DemoPrepItem[] };
+
+/** Si hay que (volver a) preparar: nunca preparada, un aviso nuevo, o un intento fallido viejo (hasta 3). */
+export function prepDue(v: Profile, prep: DemoPrep | null | undefined, now = Date.now()) {
+  const listings = listingsOf(v);
+  if (!listings.length) return false;
+  if (!prep) return true;
+  const missing = listings.some((l) => !prep.items.some((i) => i.ok && sameListing(i.url, l.url)));
+  if (!missing) return false;
+  const fresh = listings.some((l) => !prep.items.some((i) => sameListing(i.url, l.url)));
+  return fresh || (prep.attempts < 3 && now - Date.parse(prep.at) > 6 * 3600_000);
+}
+
+/** La misma publicación escrita distinto (mayúsculas, «www», barra final, parámetros de campaña) cuenta como una. */
+export function sameListing(a: unknown, b: unknown) {
+  const norm = (u: unknown) => {
+    if (typeof u !== "string" || !u.trim()) return null;
+    try {
+      const x = new URL(/^https?:\/\//i.test(u.trim()) ? u.trim() : `https://${u.trim()}`);
+      for (const k of [...x.searchParams.keys()]) if (/^(utm_|fbclid|gclid)/i.test(k)) x.searchParams.delete(k);
+      return `${x.hostname.replace(/^www\./, "").toLowerCase()}${x.pathname.replace(/\/+$/, "")}${x.search}`;
+    } catch {
+      return u.trim().toLowerCase();
+    }
+  };
+  const x = norm(a);
+  return x !== null && x === norm(b);
+}
+
+/** Los avisos cargados, en orden, sin repetidos. */
+export function listingsOf(v: Profile) {
+  const out: { key: ListingKey; url: string }[] = [];
+  for (const key of LISTING_KEYS) {
+    const url = v[key];
+    if (typeof url === "string" && url.trim() && !out.some((o) => sameListing(o.url, url))) out.push({ key, url: url.trim() });
+  }
+  return out;
+}
+
+/** Dos avisos iguales entre el principal y las precargas: se avisa al guardar, no se guarda. */
+export function repeatedListings(v: Profile) {
+  const set = LISTING_KEYS.map((k) => [k, v[k]] as const).filter(([, u]) => typeof u === "string" && u);
+  for (let i = 0; i < set.length; i++)
+    for (let j = i + 1; j < set.length; j++)
+      if (sameListing(set[i][1], set[j][1])) return `«${LISTING_LABEL[set[j][0]]}» es el mismo aviso que «${LISTING_LABEL[set[i][0]]}»: elegí otro.`;
+  return null;
+}
+
+/** La lectura de prueba de ese aviso, si se hizo. */
+export function checkOf(checks: ListingChecks | null | undefined, url: unknown): ListingCheck | null {
+  if (!checks || typeof url !== "string") return null;
+  const hit = Object.entries(checks).find(([u]) => sameListing(u, url));
+  return hit ? hit[1] : null;
+}
+
+/** Los avisos que todavía no se leyeron (o cambiaron desde la última lectura). */
+export function uncheckedListings(v: Profile, checks: ListingChecks | null | undefined) {
+  return listingsOf(v).filter((l) => !checkOf(checks, l.url));
+}
+
+/**
+ * Lo que «Crear demo» va a encontrar listo: los avisos cargados, cuáles se leyeron bien y qué falta.
+ * Las precargas no son obligatorias para la cola: si faltan, la extensión las busca como antes.
+ */
+export function demoKit(v: Profile, checks: ListingChecks | null | undefined) {
+  const items = LISTING_KEYS.map((key) => {
+    const url = typeof v[key] === "string" && String(v[key]).trim() ? String(v[key]).trim() : null;
+    return { key, label: LISTING_LABEL[key], url, check: url ? checkOf(checks, url) : null };
+  });
+  const preloads = items.filter((i) => i.key !== "demo_listing_url" && i.url && i.check?.ok).length;
+  const notes: string[] = [];
+  for (const i of items) {
+    if (!i.url) { if (i.key !== "demo_listing_url") notes.push(`Falta «${i.label}».`); continue; }
+    if (!i.check) notes.push(`«${i.label}»: todavía no se comprobó que se pueda importar.`);
+    else if (!i.check.ok) notes.push(`«${i.label}» no se puede importar: ${i.check.error ?? "no se pudo leer"}`);
+  }
+  return { items, preloads, notes };
+}
+
 /** Lo que falta para entrar a la cola. El cupo de exploración no exige el encaje mínimo. */
-export function missingForQueue(a: Pick<ProspectAccount, "contacts" | "suppressed">, v: Profile, s: Score, explore = false) {
+export function missingForQueue(a: Pick<ProspectAccount, "contacts" | "suppressed">, v: Profile, s: Score, explore = false, checks?: ListingChecks | null) {
   const out: string[] = [];
   if (a.suppressed) out.push("Tiene una baja: no se la contacta.");
   if (!whatsappOf(a)) out.push("Falta un WhatsApp que se pueda usar.");
   if (!v.demo_listing_url) out.push("Falta elegir el aviso para su demo.");
   else if (portalOfListing(v.demo_listing_url)) out.push(`El aviso para la demo es de ${portalOfListing(v.demo_listing_url)}: elegí el mismo u otro en su web propia.`);
+  else {
+    // Leído y sin poder importarse: mejor cambiarlo ahora que descubrirlo al armar la demo.
+    const check = checkOf(checks, v.demo_listing_url);
+    if (check && !check.ok) out.push(`El aviso para la demo no se puede importar (${check.error ?? "no se pudo leer"}): elegí otro.`);
+  }
   if (!v.demo_listing_reference) out.push("Completar inmueble candidato: falta su referencia para WhatsApp.");
   if (!explore && s.fit < MIN_FIT) out.push(`Encaje ${s.fit}: el mínimo para entrar por ranking es ${MIN_FIT}.`);
   return out;
