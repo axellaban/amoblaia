@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  autofillNeed, autoStatus, cleanProfile, completeness, confidenceOf, demoReady, FILL_MAX, historySituation, learnings, MIN_FIT, missingForQueue, outcomesOf, pickForQueue, poolBlock, portalOfListing, scoreOf, variables,
+  autofillNeed, autoStatus, cleanProfile, completeness, confidenceOf, demoKit, demoReady, FILL_MAX, prepDue, repeatedListings, sameListing, historySituation, learnings, MIN_FIT, missingForQueue, outcomesOf, pickForQueue, poolBlock, portalOfListing, scoreOf, variables,
   type LearnRow, type Profile,
 } from "@/lib/prospecting/pool";
 import type { Dataset, ProspectAccount, ProspectContact } from "@/lib/prospecting/types";
@@ -225,5 +225,49 @@ describe("autofillNeed", () => {
     expect(autofillNeed(Number.NaN, 0)).toBe(0);
     expect(autofillNeed(20, Number.NaN)).toBe(20);
     expect(autofillNeed(20.7, 3.2)).toBe(17);
+  });
+});
+
+describe("avisos de la demo: principal y precargas", () => {
+  const main = "https://ficticia.test/propiedad/1";
+  it("la misma publicación escrita distinto cuenta como una", () => {
+    expect(sameListing("https://www.ficticia.test/propiedad/1/?utm_source=x", main)).toBe(true);
+    expect(sameListing("https://ficticia.test/propiedad/2", main)).toBe(false);
+    expect(sameListing("", "")).toBe(false);
+  });
+  it("avisa si una precarga repite el principal u otra precarga", () => {
+    expect(repeatedListings({ demo_listing_url: main, demo_preload_url_2: "https://ficticia.test/propiedad/1/" })).toMatch(/Precarga 2.*mismo aviso.*Aviso para la demo/);
+    expect(repeatedListings({ demo_listing_url: main, demo_preload_url_2: "https://ficticia.test/p/2", demo_preload_url_3: "https://ficticia.test/p/2" })).toMatch(/Precarga 3/);
+    expect(repeatedListings({ demo_listing_url: main, demo_preload_url_2: "https://ficticia.test/p/2", demo_preload_url_3: "https://ficticia.test/p/3" })).toBeNull();
+  });
+  it("demoKit dice qué está listo y qué falta, sin exigir las precargas", () => {
+    const at = "2026-11-18T10:00:00Z";
+    const kit = demoKit({ demo_listing_url: main, demo_preload_url_2: "https://ficticia.test/p/2" }, {
+      [main]: { ok: true, photos: 12, title: "Casa", error: null, at },
+      "https://ficticia.test/p/2": { ok: false, photos: 0, title: null, error: "La publicación no trae fotos.", at },
+    });
+    expect(kit.preloads).toBe(0);
+    expect(kit.notes).toEqual(["«Precarga 2» no se puede importar: La publicación no trae fotos.", "Falta «Precarga 3»."]);
+  });
+  it("un aviso principal que no se puede importar no deja entrar a la cola; sin leer, sí", () => {
+    const v: Profile = { ...strong, demo_listing_url: main };
+    const s = scoreOf(account(), v);
+    expect(missingForQueue(account(), v, s)).toEqual([]);
+    const bad = { [main]: { ok: false, photos: 0, title: null, error: "El sitio bloquea la lectura.", at: "2026-11-18T10:00:00Z" } };
+    expect(missingForQueue(account(), v, s, false, bad)).toEqual(["El aviso para la demo no se puede importar (El sitio bloquea la lectura.): elegí otro."]);
+  });
+  it("prepDue: se prepara una vez, de nuevo con un aviso nuevo y reintenta lo fallido hasta 3 veces cada 6 horas", () => {
+    const v: Profile = { demo_listing_url: main, demo_preload_url_2: "https://ficticia.test/p/2" };
+    const now = Date.parse("2026-11-18T12:00:00Z");
+    const ok = (url: string) => ({ key: "demo_listing_url" as const, url, ok: true, demoId: "d", photos: 3, error: null });
+    const bad = (url: string) => ({ ...ok(url), ok: false, demoId: null, error: "x" });
+    expect(prepDue({}, null, now)).toBe(false);
+    expect(prepDue(v, null, now)).toBe(true);
+    expect(prepDue(v, { at: "2026-11-18T11:00:00Z", attempts: 1, by: "t", items: [ok(main), ok("https://ficticia.test/p/2")] }, now)).toBe(false);
+    expect(prepDue({ ...v, demo_preload_url_3: "https://ficticia.test/p/3" }, { at: "2026-11-18T11:00:00Z", attempts: 1, by: "t", items: [ok(main), ok("https://ficticia.test/p/2")] }, now)).toBe(true);
+    const failed = { at: "2026-11-18T11:00:00Z", attempts: 1, by: "t", items: [ok(main), bad("https://ficticia.test/p/2")] };
+    expect(prepDue(v, failed, now)).toBe(false);
+    expect(prepDue(v, { ...failed, at: "2026-11-18T04:00:00Z" }, now)).toBe(true);
+    expect(prepDue(v, { ...failed, at: "2026-11-18T04:00:00Z", attempts: 3 }, now)).toBe(false);
   });
 });

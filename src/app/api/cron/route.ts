@@ -7,6 +7,7 @@ import { reconcileCheckout } from "@/lib/commerce/reconcile";
 import { advanceAiVideos } from "@/lib/video/ai";
 import { snapshotQueueDay } from "@/lib/followup/server";
 import { runAutofill } from "@/lib/prospecting/autofill";
+import { checkPendingListings, prepareInterested } from "@/lib/prospecting/demo-prep";
 import { isUuid } from "@/lib/demos/shared";
 import {
   endLaunchPrices,
@@ -108,6 +109,10 @@ export async function GET(request: Request) {
     // ones, before the photo, so the day's queue is the one that gets recorded.
     const actor = [process.env.PROSPECTING_ACTOR_ID, process.env.PROSPECT_SYNC_ACTOR_ID].map((v) => v?.trim()).find((v) => isUuid(v)) ?? null;
     await runAutofill({ actor }).catch(() => console.error("cron_prospect_autofill_failed"));
+    // «Crear demo»: the listings of the ones already interested go to their panel; then a trial
+    // read of the listings saved without one, so a listing that cannot be imported shows up today.
+    await prepareInterested({ actorId: actor, by: "Preparación diaria", limit: 10, deadline: deadline - 200000 }).catch(() => console.error("cron_prospect_demo_prep_failed"));
+    await checkPendingListings({ limit: 30, deadline: deadline - 170000 }).catch(() => console.error("cron_prospect_listing_check_failed"));
     // Follow-up: the photo of the day's queue (06:00 in Buenos Aires), for Resultados.
     await snapshotQueueDay().catch(() => console.error("cron_followup_queue_day_failed"));
     // AI videos nobody came back to: finished clips are stored, stuck ones failed and refunded.

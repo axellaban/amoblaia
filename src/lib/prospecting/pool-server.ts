@@ -6,7 +6,8 @@ import { normalizeWhatsapp } from "./import";
 import {
   autoStatus, cleanProfile, completeness, demoReady, HISTORY_SITUATIONS, historySituation, EXPLORE_SHARE, FILL_MAX, FIELDS, GROUPS, learnings, MIN_FIT, missingForQueue, outcomesOf, pickForQueue,
   scoreOf, SCORING_VERSION, STATUS_HELP, STATUS_LABEL, variables, WEIGHTS, whatsappOf,
-  type Extra, type LearnRow, type PoolStatus, type Profile, type Score,
+  demoKit, repeatedListings, uncheckedListings,
+  type DemoPrep, type Extra, type LearnRow, type ListingChecks, type PoolStatus, type Profile, type Score,
 } from "./pool";
 import { ProspectError, prospectDataset, prospectRpc } from "./server";
 import type { Dataset, ProspectAccount } from "./types";
@@ -22,6 +23,10 @@ type ProfileRow = {
   explore: boolean;
   queued_at: string | null;
   queue_snapshot: { profile?: Profile; score?: number } | null;
+  /** La lectura de prueba de cada aviso (202612280001). */
+  listing_checks?: ListingChecks | null;
+  /** Lo que se dejó en su panel al pasar a Interesado (202612280001). */
+  demo_prep?: DemoPrep | null;
   updated_at: string;
 };
 type PoolData = { profiles: ProfileRow[]; extra: ({ account_id: string } & Extra)[] };
@@ -40,19 +45,29 @@ async function poolData(): Promise<PoolData | null> {
  * El estado de cada cuenta con perfil y su ranking, para la cola de Follow-up. Sin la migración,
  * o si la lectura falla, devuelve vacío: la cola sigue como siempre.
  */
-type PoolGate = { status: PoolStatus; score: number | null; candidateUrl: string | null; candidateReference: string | null };
+type PoolGate = {
+  status: PoolStatus; score: number | null; candidateUrl: string | null; candidateReference: string | null;
+  /** Lo que «Crear demo» encuentra listo: las precargas cargadas y lo que se importó al pasar a Interesado. */
+  kit: ReturnType<typeof demoKit>; demoPrep: DemoPrep | null;
+};
 
 export async function poolGates(): Promise<Map<string, PoolGate>> {
   const out = new Map<string, PoolGate>();
+  // Without 202612280001 the new columns are missing: read the rest, so the gates never disappear.
+  let columns = "account_id,status,score,profile,queue_snapshot,listing_checks,demo_prep";
   for (let from = 0; from < 50000; from += 1000) {
-    const { data, error } = await adminClient().from("prospect_profiles").select("account_id,status,score,profile,queue_snapshot").order("account_id").range(from, from + 999);
+    let { data, error } = await adminClient().from("prospect_profiles").select(columns).order("account_id").range(from, from + 999);
+    if (error && from === 0 && columns.includes("demo_prep")) {
+      columns = "account_id,status,score,profile,queue_snapshot";
+      ({ data, error } = await adminClient().from("prospect_profiles").select(columns).order("account_id").range(from, from + 999));
+    }
     if (error) return new Map();
-    for (const r of (data ?? []) as ProfileRow[]) {
+    for (const r of (data ?? []) as unknown as ProfileRow[]) {
       const snapshot = r.queue_snapshot?.profile;
       const source = snapshot?.demo_listing_url && snapshot.demo_listing_reference ? snapshot : r.profile;
       const candidateUrl = typeof source?.demo_listing_url === "string" ? source.demo_listing_url : null;
       const candidateReference = candidateUrl && typeof source?.demo_listing_reference === "string" ? source.demo_listing_reference : null;
-      out.set(r.account_id, { status: r.status, score: r.score, candidateUrl, candidateReference });
+      out.set(r.account_id, { status: r.status, score: r.score, candidateUrl, candidateReference, kit: demoKit(r.profile ?? {}, r.listing_checks), demoPrep: r.demo_prep ?? null });
     }
     if ((data ?? []).length < 1000) break;
   }
@@ -98,9 +113,10 @@ function describe(a: ProspectAccount, row: ProfileRow | undefined, extra: Extra 
   // Sin perfil es una cuenta de antes de Prospectos: si tiene WhatsApp ya está en la cola, como siempre.
   const legacy = !row;
   const current: PoolStatus | null = row?.status ?? (wa ? "en_cola" : null);
-  const missing = missingForQueue(a, vars, score, row?.explore ?? false);
+  const missing = missingForQueue(a, vars, score, row?.explore ?? false, row?.listing_checks);
   const status = autoStatus(current, missing, complete);
-  return { vars, inferred, score, complete, wa, legacy, missing, status };
+  const kit = demoKit(vars, row?.listing_checks);
+  return { vars, inferred, score, complete, wa, legacy, missing, status, kit };
 }
 
 const contacted = (ds: Dataset) => new Set(ds.attempts.filter((t) => t.status === "sent").map((t) => t.account_id));
@@ -139,6 +155,9 @@ export async function poolView(message: string | null = null) {
         score: roundScore(d.score),
         sheetScore: a.score,
         complete: Math.round(d.complete * 100),
+        // Los tres avisos de «Crear demo», con su lectura de prueba, y lo que ya quedó en su panel.
+        kit: d.kit,
+        demoPrep: row?.demo_prep ?? null,
         missing: d.status === "en_cola" || d.status === "descartado" ? [] : d.missing,
         profile: row?.profile ?? {},
         inferred: Object.fromEntries(d.inferred.map((k) => [k, d.vars[k]])),
@@ -262,7 +281,7 @@ async function persist(actor: string | null, account: ProspectAccount, row: Prof
   const explore = force.explore ?? row?.explore ?? false;
   const { vars } = variables(account, profile as Profile, extra);
   const score = scoreOf(account, vars);
-  const missing = missingForQueue(account, vars, score, explore);
+  const missing = missingForQueue(account, vars, score, explore, row?.listing_checks);
   const status = force.status ?? autoStatus(before, missing, completeness(vars));
   const patch: Record<string, unknown> = {
     profile: changes,
@@ -340,16 +359,24 @@ export async function runPoolOp(op: unknown, b: Op, actor: { id: string; name: s
       if (typeof b.zona === "string") fields.zone = str(b.zona, 120) || null;
       if (typeof b.decisor === "string") fields.decision_maker = str(b.decisor, 160) || null;
       if (!Object.keys(patch).length && !Object.keys(fields).length) throw new HttpError(400, "No hay cambios.");
+      const merged: Profile = { ...(row?.profile ?? {}) };
+      for (const [k, v] of Object.entries(patch)) {
+        if (v === null) delete merged[k];
+        else merged[k] = v;
+      }
+      const repeated = repeatedListings(merged);
+      if (repeated) throw new HttpError(400, repeated);
       if (Object.keys(fields).length) await prospectRpc("habita_prospect_update", { p_actor: actor.id, p_account: account.id, p_version: account.version, p_patch: fields });
       const { missing, score } = await persist(actor.id, account, row, extra, patch);
-      return { ok: true, missing, score: score.total };
+      // Los avisos nuevos o cambiados se leen de prueba enseguida (la ruta lo hace después de responder).
+      return { ok: true, missing, score: score.total, toCheck: uncheckedListings(merged, row?.listing_checks).length };
     }
     case "cola": {
       const { account, row, extra } = await load(b.cuenta);
       if (account.stage !== "pending") throw new HttpError(409, "Esa inmobiliaria ya fue contactada.");
       const explore = b.explorar === true;
       const { vars } = variables(account, row?.profile ?? {}, extra);
-      const missing = missingForQueue(account, vars, scoreOf(account, vars), explore);
+      const missing = missingForQueue(account, vars, scoreOf(account, vars), explore, row?.listing_checks);
       if (missing.length) throw new HttpError(409, `Todavía no puede entrar a la cola. ${missing.join(" ")}`);
       await persist(actor.id, account, row, extra, {}, { status: "en_cola", explore });
       return { ok: true };
@@ -359,7 +386,7 @@ export async function runPoolOp(op: unknown, b: Op, actor: { id: string; name: s
       const { account, row, extra } = await load(b.cuenta);
       // De vuelta a Prospectos: el estado sale de los datos.
       const { vars } = variables(account, row?.profile ?? {}, extra);
-      const status = autoStatus("descubierto", missingForQueue(account, vars, scoreOf(account, vars)), completeness(vars));
+      const status = autoStatus("descubierto", missingForQueue(account, vars, scoreOf(account, vars), false, row?.listing_checks), completeness(vars));
       await persist(actor.id, account, row, extra, {}, { status, explore: false });
       return { ok: true, status };
     }
