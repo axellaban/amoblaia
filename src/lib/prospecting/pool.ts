@@ -251,7 +251,9 @@ export function completeness(v: Profile) {
 export function missingForQueue(a: Pick<ProspectAccount, "contacts" | "suppressed">, v: Profile, s: Score, explore = false) {
   const out: string[] = [];
   if (a.suppressed) out.push("Tiene una baja: no se la contacta.");
-  if (!whatsappOf(a)) out.push("Falta un WhatsApp que se pueda usar.");
+  const wa = whatsappOf(a);
+  if (!wa) out.push("Falta un WhatsApp que se pueda usar.");
+  else if (wa.needs_review) out.push("El WhatsApp requiere revisión antes de entrar a la cola.");
   if (!v.demo_listing_url) out.push("Falta elegir el aviso para su demo.");
   if (!v.demo_listing_reference) out.push("Completar inmueble candidato: falta su referencia para WhatsApp.");
   if (!explore && s.fit < MIN_FIT) out.push(`Encaje ${s.fit}: el mínimo para entrar por ranking es ${MIN_FIT}.`);
