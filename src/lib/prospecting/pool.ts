@@ -284,7 +284,20 @@ export const LISTING_LABEL: Record<ListingKey, string> = { demo_listing_url: "Av
 export type ListingCheck = { ok: boolean; photos: number; title: string | null; error: string | null; at: string };
 export type ListingChecks = Record<string, ListingCheck>;
 /** Cada aviso importado a su panel al pasar a Interesado: la propiedad queda «Lista para importar». */
-export type DemoPrepItem = { key: ListingKey; url: string; ok: boolean; demoId: string | null; photos: number; error: string | null };
+export type DemoPrepItem = {
+  key: ListingKey;
+  url: string;
+  ok: boolean;
+  demoId: string | null;
+  /** Las fotos que trae la publicación. */
+  photos: number;
+  error: string | null;
+  /** Solo la de la demo: cuántas fotos quedaron en la propiedad (0: ninguna, se vuelve a intentar). */
+  imported?: number;
+  photoError?: string;
+  /** Una precarga que no se eligió en Prospectos: se encontró en el sitio de la inmobiliaria. */
+  found?: boolean;
+};
 export type DemoPrep = { at: string; attempts: number; by: string; items: DemoPrepItem[] };
 
 /** Si hay que (volver a) preparar: nunca preparada, un aviso nuevo, o un intento fallido viejo (hasta 3). */
@@ -293,9 +306,13 @@ export function prepDue(v: Profile, prep: DemoPrep | null | undefined, now = Dat
   if (!listings.length) return false;
   if (!prep) return true;
   const missing = listings.some((l) => !prep.items.some((i) => i.ok && sameListing(i.url, l.url)));
-  if (!missing) return false;
+  // The demo's property is in the panel but none of its photos came: it is tried again.
+  const noPhotos = prep.items.some((i) => i.key === "demo_listing_url" && i.ok && i.imported === 0);
+  if (!missing && !noPhotos) return false;
   const fresh = listings.some((l) => !prep.items.some((i) => sameListing(i.url, l.url)));
-  return fresh || (prep.attempts < 3 && now - Date.parse(prep.at) > 6 * 3600_000);
+  // Photos that did not come are retried soon; a listing that could not be imported, hours later.
+  const wait = noPhotos && !missing ? 10 * 60_000 : 6 * 3600_000;
+  return fresh || (prep.attempts < 3 && now - Date.parse(prep.at) > wait);
 }
 
 /** La misma publicación escrita distinto (mayúsculas, «www», barra final, parámetros de campaña) cuenta como una. */

@@ -8,6 +8,22 @@ const state = vi.hoisted(() => ({
   reads: [] as string[],
   imports: [] as { url: string; key: string; agencyId: string; userId: string | null }[],
   targets: [] as { agencyId: string; properties: number; prepared: boolean }[],
+  photoImports: [] as string[],
+  photoResult: { total: 8, added: 8, already: 0, failed: 0, reasons: [] as string[], attempts: 1 },
+  found: [] as { url: string; title: string | null; photos: number; interiors: number | null }[],
+  discoveries: [] as { agencyId: string; want: number; exclude: string[] }[],
+}));
+vi.mock("@/lib/demos/auto-prep", () => ({
+  importListingPhotos: async (demoId: string) => {
+    state.photoImports.push(demoId);
+    return state.photoResult;
+  },
+}));
+vi.mock("@/lib/agency/preload-discovery", () => ({
+  findPreloads: async (agencyId: string, o: { want: number; exclude: string[] }) => {
+    state.discoveries.push({ agencyId, want: o.want, exclude: o.exclude });
+    return state.found.slice(0, o.want);
+  },
 }));
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/supabase/server", () => {
@@ -50,6 +66,7 @@ vi.mock("@/lib/agency/import-flow", () => ({
 }));
 vi.mock("@/lib/followup/server", () => ({ demoPrepTargets: async () => state.targets }));
 import { checkListings, checkPendingListings, prepareDemo, prepareInterested } from "../src/lib/prospecting/demo-prep";
+import { prepDue, type Profile } from "../src/lib/prospecting/pool";
 
 const URL1 = "https://ficticia.test/propiedad/1";
 const URL2 = "https://ficticia.test/propiedad/2";
@@ -59,6 +76,10 @@ type StoredRow = { profile: Record<string, unknown>; listing_checks: Record<stri
 const row = (n: number) => state.tables.prospect_profiles.find((r) => r.account_id === uuid(n)) as unknown as StoredRow;
 
 beforeEach(() => {
+  state.photoImports = [];
+  state.photoResult = { total: 8, added: 8, already: 0, failed: 0, reasons: [], attempts: 1 };
+  state.found = [];
+  state.discoveries = [];
   state.reads = [];
   state.imports = [];
   state.targets = [];
@@ -101,7 +122,7 @@ describe("lectura de prueba de los avisos", () => {
 describe("preparar la demo al pasar a Interesado", () => {
   it("deja los tres avisos en su panel a nombre del equipo y no repite lo que ya quedó", async () => {
     const prep = await prepareDemo(uuid(1), uuid(101), uuid(900), "Facu");
-    expect(prep.items.map((i) => [i.key, i.ok, i.photos])).toEqual([["demo_listing_url", true, 3], ["demo_preload_url_2", true, 3], ["demo_preload_url_3", true, 3]]);
+    expect(prep.items.map((i) => [i.key, i.ok, i.photos])).toEqual([["demo_listing_url", true, 8], ["demo_preload_url_2", true, 3], ["demo_preload_url_3", true, 3]]);
     expect(state.imports.map((i) => [i.url, i.agencyId, i.userId])).toEqual([[URL1, uuid(101), uuid(900)], [URL2, uuid(101), uuid(900)], [URL3, uuid(101), uuid(900)]]);
     expect(row(1).demo_prep).toMatchObject({ attempts: 1, by: "Facu" });
     await prepareDemo(uuid(1), uuid(101), uuid(900), "Facu");
@@ -124,6 +145,50 @@ describe("preparar la demo al pasar a Interesado", () => {
     row(4).demo_prep.at = "2026-11-01T00:00:00Z";
     await prepareDemo(uuid(4), uuid(104), uuid(900), "Facu");
     expect(state.imports.at(-1)!.key).not.toBe(before);
+  });
+
+  it("trae las fotos de la propiedad de la demo en el momento, no solo la deja pendiente", async () => {
+    const prep = await prepareDemo(uuid(1), uuid(101), uuid(900), "Facu");
+    const main = prep.items.find((i) => i.key === "demo_listing_url")!;
+    expect(state.photoImports).toEqual([main.demoId]);
+    expect(main).toMatchObject({ photos: 8, imported: 8 });
+    // Las precargas quedan para que la inmobiliaria las importe con un clic.
+    expect(prep.items.filter((i) => i.key !== "demo_listing_url").every((i) => i.imported === undefined)).toBe(true);
+  });
+
+  it("si no llegó ninguna foto, vuelve a intentarlo sin volver a importar la ficha", async () => {
+    state.photoResult = { total: 8, added: 0, already: 0, failed: 8, reasons: ["La foto ya no está en el sitio (error 404)."], attempts: 3 };
+    const first = await prepareDemo(uuid(1), uuid(101), uuid(900), "Facu");
+    expect(first.items[0]).toMatchObject({ imported: 0, photoError: "La foto ya no está en el sitio (error 404)." });
+    expect(prepDue(row(1).profile as Profile, row(1).demo_prep as never, Date.parse(first.at) + 5 * 60_000)).toBe(false);
+    expect(prepDue(row(1).profile as Profile, row(1).demo_prep as never, Date.parse(first.at) + 11 * 60_000)).toBe(true);
+    state.photoResult = { total: 8, added: 8, already: 0, failed: 0, reasons: [], attempts: 1 };
+    const again = await prepareDemo(uuid(1), uuid(101), uuid(900), "Facu");
+    expect(state.imports.length).toBe(3);
+    expect(state.photoImports.length).toBe(2);
+    expect(again.items[0]).toMatchObject({ imported: 8 });
+    expect(prepDue(row(1).profile as Profile, row(1).demo_prep as never, Date.now() + 86_400_000)).toBe(false);
+  });
+
+  it("sin precargas elegidas, busca 2 en el sitio de la inmobiliaria, las importa y las anota en Prospectos", async () => {
+    state.tables.prospect_profiles.push(profile(5, { demo_listing_url: URL1 }));
+    state.found = [
+      { url: "https://ficticia.test/propiedad/41", title: "PH", photos: 9, interiors: 3 },
+      { url: "https://ficticia.test/propiedad/42", title: "Depto", photos: 6, interiors: 2 },
+    ];
+    const prep = await prepareDemo(uuid(5), uuid(105), uuid(900), "Facu");
+    expect(state.discoveries).toEqual([{ agencyId: uuid(105), want: 2, exclude: [URL1, URL1] }]);
+    expect(prep.items.map((i) => [i.key, i.url, i.ok, i.found ?? false])).toEqual([
+      ["demo_listing_url", URL1, true, false],
+      ["demo_preload_url_2", "https://ficticia.test/propiedad/41", true, true],
+      ["demo_preload_url_3", "https://ficticia.test/propiedad/42", true, true],
+    ]);
+    expect(row(5).profile).toMatchObject({ demo_preload_url_2: "https://ficticia.test/propiedad/41", demo_preload_url_3: "https://ficticia.test/propiedad/42" });
+  });
+
+  it("una precarga elegida a mano no se reemplaza por una del sitio", async () => {
+    await prepareDemo(uuid(1), uuid(101), uuid(900), "Facu");
+    expect(state.discoveries).toEqual([]);
   });
 
   it("prepara solo las de «Crear demo» sin propiedades cargadas a mano", async () => {

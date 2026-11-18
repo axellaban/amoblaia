@@ -44,6 +44,19 @@ select has_function_privilege('authenticated',
 12. **Vista previa** muestra exactamente la página pública, también en borrador, como comprador o como presentación.
 13. **Publicar demo** → hay dos enlaces: **presentación** (`/demo/<token>/presentacion` (con invitación: `/demo/<token>/presentacion/<codigo>`; sin `?` ni `&`), para la inmobiliaria, con la franja si está activada) y **compradores** (`/demo/<token>`, limpio). **Compartir por WhatsApp** le manda los dos a la inmobiliaria. **Despublicar** corta el acceso al instante; **Generar un enlace nuevo** invalida el anterior.
 
+## Preparar demo completa (equipo)
+
+En el editor de la propiedad dentro de «Editar inmobiliaria» (`/admin/inmobiliarias/<id>/propiedades/<demo>`, pestaña «Fotos y espacios»). Un botón hace todo, en orden, y muestra cada paso:
+
+1. **Fotos**: trae las que faltan de la publicación con el mismo lector de «Completar desde la publicación» (lectura nueva y hasta 3 vueltas para las que fallan). Las que ya están no se duplican.
+2. **Elegir**: clasifica cada foto mirando la imagen (OpenAI, `OPENAI_VISION_MODEL`, por defecto `gpt-4.1-mini`; una consulta con miniaturas): ambiente, si tiene muebles y qué tan buena es para mostrar una ambientación. Toma el mejor living, comedor y dormitorio (un living comedor sirve para los dos; si falta un ambiente, completa con otro de esos), con Amoblar o Rediseñar según tenga muebles. La mejor queda de portada y primera en la galería; Nórdico queda como estilo principal. Sin clave de OpenAI, elige por el orden de las fotos y lo dice.
+3. **Versiones**: Nórdico y Minimalista de las 3 fotos (6 versiones), por la misma cola del editor (una por vez). Lo que ya existe no se repite.
+4. **Publicar**: cuando las 6 están listas. Si alguna falló, no publica y dice cuáles regenerar; al volver a tocar el botón sigue desde ahí.
+
+No se cierra la pestaña mientras corre (la cola vive en el navegador). Quien prepara —o la extensión— solo revisa el antes y el después. Ruta: `POST /api/admin/demos/<id>/preparar` con `{ step: "fotos" }` o `{ step: "elegir" }` (solo el equipo; no genera ni usa créditos). Debajo está **Dejar 2 propiedades precargadas** con **Elegir 2 en su sitio**, que busca en la web de la inmobiliaria dos publicaciones con fotos interiores y las deja listas para importar (`POST /api/admin/inmobiliarias/<id>/precargas`, solo lee).
+
+**Vista previa del enlace**: al publicar (y al cambiar portada, estilo principal, orden o enlace) se genera la imagen de vista previa y se guarda en el bucket (`og-cache/<hash>.jpg`, una por original y versión). La ruta `og=1` la sirve desde ahí, así WhatsApp la encuentra lista desde el primer envío.
+
 ## Cómo funciona
 
 ### Autorización

@@ -1156,7 +1156,7 @@ function ExecPanel({
           <>
             {(prepared.ctas.includes("create_demo") || creatingDemo) && (
               <Link className="button button-small button-primary" href={prepared.links.createDemo} target="_blank" onClick={() => void mark("opened")}>
-                <Plus size={16} aria-hidden="true" /> Crear demo
+                <Plus size={16} aria-hidden="true" /> {prepared.links.demoId ? "Abrir el editor de la demo" : "Crear demo"}
               </Link>
             )}
             {creatingDemo ? (
@@ -3798,7 +3798,7 @@ function Execute({ item, exec, onDone, onClose, onNext }: { item: QueueItem; exe
           <>
             {(prepared.ctas.includes("create_demo") || creatingDemo) && (
               <Link className="button button-small button-primary" href={prepared.links.createDemo} target="_blank" onClick={() => void mark("opened")}>
-                <Plus size={16} aria-hidden="true" /> Crear demo
+                <Plus size={16} aria-hidden="true" /> {prepared.links.demoId ? "Abrir el editor de la demo" : "Crear demo"}
               </Link>
             )}
             {creatingDemo ? (

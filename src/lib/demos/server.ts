@@ -1179,6 +1179,45 @@ export async function renderPreview(paths: { original: string; staged: string | 
     .toBuffer();
 }
 
+/** Where a rendered link preview is kept: one file per original and version (a new version is a new file). */
+const previewCachePath = (paths: { original: string; staged: string | null }) =>
+  `og-cache/${createHash("sha256").update(`v1|${paths.original}|${paths.staged ?? ""}`).digest("hex")}.jpg`;
+
+/**
+ * The link preview card, rendered once and kept in storage: WhatsApp gives up on a slow image the
+ * first time it reads a link, and drawing it (two downloads and the composition) took too long.
+ * Served from the stored copy afterwards; a copy that cannot be stored is still returned.
+ */
+export async function cachedPreview(paths: { original: string; staged: string | null }) {
+  const path = previewCachePath(paths);
+  const hit = await download(path).catch(() => null);
+  if (hit) return hit;
+  const image = await renderPreview(paths);
+  if (image)
+    await adminClient()
+      .storage.from(BUCKET)
+      .upload(path, image, { contentType: "image/jpeg", upsert: true })
+      .catch(() => null);
+  return image;
+}
+
+/**
+ * At publishing: the preview card of the link (the one in its metadata) is drawn and stored right
+ * away, so the first time the link is sent, WhatsApp already finds it ready.
+ */
+export async function warmLinkPreview(demoId: string) {
+  const { data } = await adminClient().from("demos").select("token,status").eq("id", demoId).maybeSingle();
+  const row = data as { token: string; status: string } | null;
+  if (!row || row.status !== "published") return false;
+  const demo = await publishedDemo(row.token);
+  if (!demo?.cover) return false;
+  const version = coverVersion(demo.cover, demo.styles[0]?.id ?? "");
+  const style = version && demoStyleOrder.includes(version.style) ? version.style : null;
+  const paths = await publicImagePaths(row.token, demo.cover.id, style, version ? version.v : "o");
+  if (!paths) return false;
+  return Boolean(await cachedPreview(paths));
+}
+
 /** Reads a stored image and returns a web-sized JPEG. */
 export async function renderImage(path: string, width: number) {
   const bytes = await download(path);
