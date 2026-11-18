@@ -202,7 +202,7 @@ const savePool = (actor: string, account: string, patch: Record<string, unknown>
   prospectRpc<ProfileRow>("habita_prospect_pool_save", { p_actor: actor, p_account: account, p_patch: patch });
 
 /** Guarda con el ranking recalculado y el estado que sale de los datos. */
-async function persist(actor: string, account: ProspectAccount, row: ProfileRow | undefined, extra: Extra | undefined, changes: Record<string, unknown>, force: Partial<{ status: PoolStatus; discard_reason: string; explore: boolean; autoQueue: boolean; manualHold: boolean }> = {}) {
+async function persist(actor: string, account: ProspectAccount, row: ProfileRow | undefined, extra: Extra | undefined, changes: Record<string, unknown>, force: Partial<{ status: PoolStatus; discard_reason: string; explore: boolean; manualHold: boolean }> = {}) {
   const profile = { ...(row?.profile ?? {}) } as Record<string, unknown>;
   for (const [k, v] of Object.entries(changes)) {
     if (v === null) delete profile[k];
@@ -219,8 +219,8 @@ async function persist(actor: string, account: ProspectAccount, row: ProfileRow 
   const score = scoreOf(account, vars);
   const missing = missingForQueue(account, vars, score, explore);
   const calculated = autoStatus(before, missing, completeness(vars));
-  // Only promote pending, eligible accounts; explicit removal/discard remains authoritative.
-  const status = force.status ?? (force.autoQueue === true && account.stage === "pending" && !account.suppressed && !(row?.profile as Record<string, unknown> | undefined)?.manual_queue_hold && !(row?.queued_at && row.status !== "en_cola") && calculated === "calificado" && missing.length === 0 ? "en_cola" : calculated);
+  // Qualification is independent from admission: only the ranked selection or an explicit manual action may admit a prospect.
+  const status = force.status ?? calculated;
   const patch: Record<string, unknown> = {
     expected_updated_at: row?.updated_at ?? null,
     profile: force.manualHold === undefined ? changes : { ...changes, manual_queue_hold: force.manualHold ? true : null },
@@ -260,7 +260,7 @@ const host = (url: string | null) => {
 export async function runPoolOp(op: unknown, b: Op, actor: { id: string; name: string }) {
   switch (op) {
     case "guardar": {
-      const { ds, account, row, extra } = await load(b.cuenta);
+      const { account, row, extra } = await load(b.cuenta);
       const { patch, errors } = cleanProfile(b.valores ?? {});
       if (errors.length) throw new HttpError(400, errors.join(" "));
       const fields: Record<string, unknown> = {};
@@ -268,7 +268,7 @@ export async function runPoolOp(op: unknown, b: Op, actor: { id: string; name: s
       if (typeof b.decisor === "string") fields.decision_maker = str(b.decisor, 160) || null;
       if (!Object.keys(patch).length && !Object.keys(fields).length) throw new HttpError(400, "No hay cambios.");
       if (Object.keys(fields).length) await prospectRpc("habita_prospect_update", { p_actor: actor.id, p_account: account.id, p_version: account.version, p_patch: fields });
-      const { missing, score } = await persist(actor.id, account, row, extra, patch, { autoQueue: !contacted(ds).has(account.id) });
+      const { missing, score } = await persist(actor.id, account, row, extra, patch);
       return { ok: true, missing, score: score.total };
     }
     case "cola": {
@@ -357,7 +357,7 @@ export async function runPoolOp(op: unknown, b: Op, actor: { id: string; name: s
       const fresh = (await prospectDataset({ syncConversions: false })).accounts.find((a) => a.id === created.id)!;
       await persist(actor.id, fresh, undefined, undefined, patch, { status: "descubierto" });
       const again = await load(created.id);
-      const { missing } = await persist(actor.id, again.account, again.row, again.extra, {}, { autoQueue: true });
+      const { missing } = await persist(actor.id, again.account, again.row, again.extra, {});
       return { ok: true, id: created.id, missing };
     }
     case "recalcular": {
@@ -369,7 +369,7 @@ export async function runPoolOp(op: unknown, b: Op, actor: { id: string; name: s
       for (const row of data.profiles) {
         const a = ds.accounts.find((x) => x.id === row.account_id);
         if (!a || a.stage !== "pending" || sent.has(a.id)) continue;
-        await persist(actor.id, a, row, extras.get(a.id), {}, { autoQueue: true });
+        await persist(actor.id, a, row, extras.get(a.id), {});
         changed++;
       }
       return { ok: true, changed };
