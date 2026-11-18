@@ -55,7 +55,8 @@ const URL1 = "https://ficticia.test/propiedad/1";
 const URL2 = "https://ficticia.test/propiedad/2";
 const URL3 = "https://ficticia.test/propiedad/3";
 const profile = (n: number, values: Record<string, unknown>, o: Record<string, unknown> = {}) => ({ account_id: uuid(n), status: "calificado", profile: values, listing_checks: {}, demo_prep: null, ...o });
-const row = (n: number) => state.tables.prospect_profiles.find((r) => r.account_id === uuid(n)) as Record<string, any>;
+type StoredRow = { profile: Record<string, unknown>; listing_checks: Record<string, Record<string, unknown>>; demo_prep: { at: string } & Record<string, unknown> };
+const row = (n: number) => state.tables.prospect_profiles.find((r) => r.account_id === uuid(n)) as unknown as StoredRow;
 
 beforeEach(() => {
   state.reads = [];
