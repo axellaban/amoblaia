@@ -202,7 +202,7 @@ const savePool = (actor: string, account: string, patch: Record<string, unknown>
   prospectRpc<ProfileRow>("habita_prospect_pool_save", { p_actor: actor, p_account: account, p_patch: patch });
 
 /** Guarda con el ranking recalculado y el estado que sale de los datos. */
-async function persist(actor: string, account: ProspectAccount, row: ProfileRow | undefined, extra: Extra | undefined, changes: Record<string, unknown>, force: Partial<{ status: PoolStatus; discard_reason: string; explore: boolean; autoQueue: boolean }> = {}) {
+async function persist(actor: string, account: ProspectAccount, row: ProfileRow | undefined, extra: Extra | undefined, changes: Record<string, unknown>, force: Partial<{ status: PoolStatus; discard_reason: string; explore: boolean; autoQueue: boolean; manualHold: boolean }> = {}) {
   const profile = { ...(row?.profile ?? {}) } as Record<string, unknown>;
   for (const [k, v] of Object.entries(changes)) {
     if (v === null) delete profile[k];
@@ -220,9 +220,9 @@ async function persist(actor: string, account: ProspectAccount, row: ProfileRow 
   const missing = missingForQueue(account, vars, score, explore);
   const calculated = autoStatus(before, missing, completeness(vars));
   // Only promote pending, eligible accounts; explicit removal/discard remains authoritative.
-  const status = force.status ?? (force.autoQueue === true && account.stage === "pending" && !account.suppressed && !(row?.queued_at && row.status !== "en_cola") && calculated === "calificado" && missing.length === 0 ? "en_cola" : calculated);
+  const status = force.status ?? (force.autoQueue === true && account.stage === "pending" && !account.suppressed && !(row?.profile as Record<string, unknown> | undefined)?.manual_queue_hold && !(row?.queued_at && row.status !== "en_cola") && calculated === "calificado" && missing.length === 0 ? "en_cola" : calculated);
   const patch: Record<string, unknown> = {
-    profile: changes,
+    profile: force.manualHold === undefined ? changes : { ...changes, manual_queue_hold: force.manualHold ? true : null },
     status,
     score: score.total,
     score_components: { contact: score.contact, fit: score.fit, demo: score.demo, parts: score.parts, caps: score.caps },
@@ -279,7 +279,7 @@ export async function runPoolOp(op: unknown, b: Op, actor: { id: string; name: s
       const { vars } = variables(account, row?.profile ?? {}, extra);
       const missing = missingForQueue(account, vars, scoreOf(account, vars), explore);
       if (missing.length) throw new HttpError(409, `Todavía no puede entrar a la cola. ${missing.join(" ")}`);
-      await persist(actor.id, account, row, extra, {}, { status: "en_cola", explore });
+      await persist(actor.id, account, row, extra, {}, { status: "en_cola", explore, manualHold: false });
       return { ok: true };
     }
     case "sacar":
@@ -288,7 +288,7 @@ export async function runPoolOp(op: unknown, b: Op, actor: { id: string; name: s
       // De vuelta a Prospectos: el estado sale de los datos.
       const { vars } = variables(account, row?.profile ?? {}, extra);
       const status = autoStatus("descubierto", missingForQueue(account, vars, scoreOf(account, vars)), completeness(vars));
-      await persist(actor.id, account, row, extra, {}, { status, explore: false });
+      await persist(actor.id, account, row, extra, {}, { status, explore: false, manualHold: op === "sacar" });
       return { ok: true, status };
     }
     case "descartar": {
@@ -310,13 +310,13 @@ export async function runPoolOp(op: unknown, b: Op, actor: { id: string; name: s
       const pending = ds.accounts.filter((a) => {
         const profile = profiles.get(a.id);
         return a.stage === "pending" && !sent.has(a.id) && !a.suppressed &&
-          profile?.status !== "descartado" && !(profile?.queued_at && profile.status !== "en_cola");
+          profile?.status !== "descartado" && !(profile?.profile as Record<string, unknown> | undefined)?.manual_queue_hold && !(profile?.queued_at && profile.status !== "en_cola");
       });
       const described = new Map(pending.map((a) => [a.id, describe(a, profiles.get(a.id), extras.get(a.id))]));
       const pick = pickForQueue(
         pending.map((a) => {
           const d = described.get(a.id)!;
-          return { id: a.id, score: d.score.total, status: d.status, hardReady: Boolean(d.wa && d.vars.demo_listing_url && d.vars.demo_listing_reference) };
+          return { id: a.id, score: d.score.total, status: d.status, hardReady: missingForQueue(a, d.vars, d.score, true).length === 0 };
         }),
         count,
       );
