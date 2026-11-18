@@ -1,14 +1,27 @@
 import "server-only";
+import { createHash } from "node:crypto";
 import sharp from "sharp";
 import { buildPrompt } from "@/lib/catalog";
 import { HttpError } from "./http";
 import { WATERMARK_PNG } from "./watermark";
 import { MAX_UPLOAD_BYTES as MAX_BYTES } from "@/lib/photo-limits";
 export { MAX_BYTES };
-/** The stored original: upright, at most 2048 px, JPEG. The bytes are decoded for real, not trusted by type. */
+/**
+ * How each kind of photo is stored. The photo without staging (the original) only has to look right
+ * next to its staging and feed the model, which works at about 1.5k px: 1600 px and a strong JPEG.
+ * The staging is what the agency shows: it keeps its size and a near-lossless JPEG.
+ */
+export const ORIGINAL_MAX_PX = 1600;
+export const ORIGINAL_JPEG = { quality: 75, mozjpeg: true } as const;
+export const STAGING_JPEG = { quality: 88, mozjpeg: true } as const;
+/**
+ * The stored original: upright, at most 1600 px, compressed. The bytes are decoded for real, not
+ * trusted by type. `hash` identifies the photo as before (the 2048 px, quality 94 encoding), so a
+ * photo uploaded again still finds the copy stored before this compression.
+ */
 export async function normalizePhoto(bytes: Buffer) {
   try {
-    return await sharp(bytes, {
+    const identity = await sharp(bytes, {
       limitInputPixels: 40_000_000,
       animated: false,
     })
@@ -21,9 +34,24 @@ export async function normalizePhoto(bytes: Buffer) {
       })
       .jpeg({ quality: 94 })
       .toBuffer();
+    return {
+      image: await compactOriginal(identity),
+      hash: createHash("sha256").update(identity).digest("hex"),
+    };
   } catch {
     throw new HttpError(400, "No pudimos leer la imagen. Probá con otra foto.");
   }
+}
+/** A photo without staging, as stored. */
+export function compactOriginal(image: Buffer) {
+  return sharp(image, { limitInputPixels: 40_000_000 })
+    .resize({ width: ORIGINAL_MAX_PX, height: ORIGINAL_MAX_PX, fit: "inside", withoutEnlargement: true })
+    .jpeg(ORIGINAL_JPEG)
+    .toBuffer();
+}
+/** A staging, as stored: same size, careful compression. */
+export function compactStaging(image: Buffer) {
+  return sharp(image, { limitInputPixels: 40_000_000 }).jpeg(STAGING_JPEG).toBuffer();
 }
 export async function readPhoto(request: Request) {
   if (Number(request.headers.get("content-length") || 0) > MAX_BYTES + 16384)
@@ -48,9 +76,10 @@ export async function readPhoto(request: Request) {
   } catch {
     throw new HttpError(400, "Elegí un ambiente, estilo y operación válidos.");
   }
-  const image = await normalizePhoto(Buffer.from(await file.arrayBuffer()));
+  const { image, hash } = await normalizePhoto(Buffer.from(await file.arrayBuffer()));
   return {
     image,
+    hash,
     prompt,
     room,
     style,
@@ -81,7 +110,7 @@ async function watermark(image: Buffer) {
     .toBuffer();
   return sharp(image)
     .composite([{ input: mark, gravity: "center", blend: "over" }])
-    .jpeg({ quality: 88 })
+    .jpeg(STAGING_JPEG)
     .toBuffer();
 }
 /**
@@ -165,7 +194,7 @@ export async function renderPhoto(
       fit: "inside",
       withoutEnlargement: true,
     })
-    .jpeg({ quality: 94 })
+    .jpeg(STAGING_JPEG)
     .toBuffer();
   const result = free ? await watermark(resized) : resized;
   // Keep raw usage. A cost is only estimated with explicitly configured per-token rates.

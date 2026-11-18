@@ -454,6 +454,7 @@ export function AdminDashboard() {
             ))}
             {!data.events.length && <p>Sin errores registrados.</p>}
           </section>
+          <ImageCompaction />
           <MusicLibrary />
         </>
       )}
@@ -467,6 +468,51 @@ type MusicStatus = { model: string; enabled: boolean; tracks: { id: string; genr
  * a few cents each) and kept in Habita's storage. Agencies see only the
  * tracks already made.
  */
+type CompactResult = { done: number; savedMb: number; missing: number; failed: number; left: number };
+/** Recompresses the stored photos (the ones without staging first) until none are left. */
+function ImageCompaction() {
+  const [working, setWorking] = useState(false);
+  const [total, setTotal] = useState({ done: 0, savedMb: 0, failed: 0, left: -1 });
+  const [error, setError] = useState("");
+  async function run() {
+    setError("");
+    setWorking(true);
+    try {
+      for (;;) {
+        const r = await fetch("/api/admin/imagenes", { method: "POST" });
+        const p = (await r.json().catch(() => ({}))) as Partial<CompactResult> & { error?: string };
+        if (!r.ok) throw new Error(p.error || "No pudimos comprimir las fotos.");
+        setTotal((t) => ({ done: t.done + (p.done ?? 0), savedMb: Math.round((t.savedMb + (p.savedMb ?? 0)) * 10) / 10, failed: t.failed + (p.failed ?? 0), left: p.left ?? 0 }));
+        if (!p.left || !p.done) break;
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No pudimos comprimir las fotos.");
+    }
+    setWorking(false);
+  }
+  return (
+    <section className="account-panel">
+      <h2>Espacio de las fotos</h2>
+      <p>
+        Recomprime las fotos guardadas: las que no tienen staging, al máximo (1600 px); los stagings, con cuidado y sin achicarlos. Se hace solo
+        un rato cada día; este botón lo termina ahora. Dejá la pestaña abierta: cada tanda tarda unos minutos.
+      </p>
+      {error && (
+        <p className="inline-error" role="alert">
+          {error}
+        </p>
+      )}
+      <p>
+        <button type="button" className="button button-small button-primary" disabled={working} onClick={() => void run()}>
+          {working ? "Comprimiendo…" : "Comprimir fotos guardadas"}
+        </button>{" "}
+        {total.left >= 0 &&
+          `${total.done} fotos procesadas · ${total.savedMb} MB liberados · ${total.left === 0 ? "no queda ninguna" : `faltan ${total.left}`}${total.failed ? ` · ${total.failed} con error` : ""}`}
+      </p>
+    </section>
+  );
+}
+
 function MusicLibrary() {
   const [status, setStatus] = useState<MusicStatus | null>(null);
   const [working, setWorking] = useState<string | null>(null);

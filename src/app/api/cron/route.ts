@@ -3,6 +3,7 @@ import { sameSecret } from "@/lib/session";
 import { cloudConfigured, cloudEnabled } from "@/lib/supabase/config";
 import { adminClient } from "@/lib/supabase/server";
 import { runJob } from "@/lib/commerce/jobs";
+import { compactStoredImages } from "@/lib/commerce/compact";
 import { reconcileCheckout } from "@/lib/commerce/reconcile";
 import { advanceAiVideos } from "@/lib/video/ai";
 import { snapshotQueueDay } from "@/lib/followup/server";
@@ -125,6 +126,8 @@ export async function GET(request: Request) {
       } catch {
         console.error("cron_job_failed", job.id);
       }
+    // With the time left: the photos stored before the current compression, a slice per day.
+    await compactStoredImages(deadline).catch(() => console.error("cron_compact_images_failed"));
   });
   return Response.json({ scheduled: true });
 }

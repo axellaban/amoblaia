@@ -1,6 +1,5 @@
 import "server-only";
 import { parseToolRef } from "@/lib/demos/tool-ref";
-import { createHash } from "node:crypto";
 import { adminClient } from "@/lib/supabase/server";
 import { HttpError, rpc } from "./http";
 import { ProviderError, maskPng, readPhoto, renderPhoto } from "./images";
@@ -66,7 +65,7 @@ export async function enqueuePhoto(
   )
     throw new HttpError(400, "Identificador de solicitud inválido.");
   const db = adminClient();
-  const hash = createHash("sha256").update(photo.image).digest("hex");
+  const hash = photo.hash;
   const path = `${userId}/${hash}/original.jpg`;
   let lookup = db
     .from("projects")
