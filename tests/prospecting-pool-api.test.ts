@@ -166,6 +166,15 @@ describe("/api/prospeccion · Prospectos", () => {
     expect((await post({ op: "llenar", cantidad: 0 })).status).toBe(400);
   });
 
+  it("llenado automático: sin su migración la vista lo marca no disponible y no se configura ni corre", async () => {
+    const b = await (await get("vista=prospectos")).json();
+    expect(b.autofill).toMatchObject({ available: false, enabled: false });
+    expect((await post({ op: "automatico", activo: true })).status).toBe(503);
+    expect((await post({ op: "automatico", meta: 0 })).status).toBe(400);
+    expect((await post({ op: "completar" })).status).toBe(503);
+    expect(saves()).toEqual([]);
+  });
+
   it("crear: avisa si ya está en la base y, si no, la crea con su WhatsApp por revisar", async () => {
     const dup = await post({ op: "crear", nombre: "inmobiliaria ficticia 1" });
     expect(dup.status).toBe(409);

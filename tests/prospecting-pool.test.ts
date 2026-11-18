@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  autoStatus, cleanProfile, completeness, confidenceOf, learnings, MIN_FIT, missingForQueue, outcomesOf, pickForQueue, poolBlock, scoreOf, variables,
+  autofillNeed, autoStatus, cleanProfile, completeness, confidenceOf, FILL_MAX, learnings, MIN_FIT, missingForQueue, outcomesOf, pickForQueue, poolBlock, scoreOf, variables,
   type LearnRow, type Profile,
 } from "@/lib/prospecting/pool";
 import type { Dataset, ProspectAccount, ProspectContact } from "@/lib/prospecting/types";
@@ -163,5 +163,22 @@ describe("catálogo: datos del relevamiento", () => {
     const { patch, errors } = cleanProfile({ source_channel: "relevamiento", portal_url: "https://www.argenprop.com/inmobiliaria-x", demo_listing_note: "Living vacío" });
     expect(errors).toEqual([]);
     expect(patch).toEqual({ source_channel: "relevamiento", portal_url: "https://www.argenprop.com/inmobiliaria-x", demo_listing_note: "Living vacío" });
+  });
+});
+
+describe("autofillNeed", () => {
+  it("suma lo que falta para la meta", () => {
+    expect(autofillNeed(48, 4)).toBe(44);
+    expect(autofillNeed(48, 0)).toBe(48);
+  });
+  it("no suma si la cola ya tiene la meta o más", () => {
+    expect(autofillNeed(48, 48)).toBe(0);
+    expect(autofillNeed(10, 30)).toBe(0);
+  });
+  it("no pasa del máximo por vez ni acepta valores raros", () => {
+    expect(autofillNeed(500, 0)).toBe(FILL_MAX);
+    expect(autofillNeed(Number.NaN, 0)).toBe(0);
+    expect(autofillNeed(20, Number.NaN)).toBe(20);
+    expect(autofillNeed(20.7, 3.2)).toBe(17);
   });
 });

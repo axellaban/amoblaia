@@ -6,6 +6,8 @@ import { runJob } from "@/lib/commerce/jobs";
 import { reconcileCheckout } from "@/lib/commerce/reconcile";
 import { advanceAiVideos } from "@/lib/video/ai";
 import { snapshotQueueDay } from "@/lib/followup/server";
+import { runAutofill } from "@/lib/prospecting/autofill";
+import { isUuid } from "@/lib/demos/shared";
 import {
   endLaunchPrices,
   processInbox,
@@ -102,6 +104,10 @@ export async function GET(request: Request) {
     await retireReversedSubscriptions(deadline - 150000).catch(() =>
       console.error("cron_reversed_subscriptions_failed"),
     );
+    // Prospectos: top the first-greeting queue up to the day's target with the best qualified
+    // ones, before the photo, so the day's queue is the one that gets recorded.
+    const actor = [process.env.PROSPECTING_ACTOR_ID, process.env.PROSPECT_SYNC_ACTOR_ID].map((v) => v?.trim()).find((v) => isUuid(v)) ?? null;
+    await runAutofill({ actor }).catch(() => console.error("cron_prospect_autofill_failed"));
     // Follow-up: the photo of the day's queue (06:00 in Buenos Aires), for Resultados.
     await snapshotQueueDay().catch(() => console.error("cron_followup_queue_day_failed"));
     // AI videos nobody came back to: finished clips are stored, stuck ones failed and refunded.

@@ -3,6 +3,7 @@ import { parsePeriod } from "@/lib/agency/demo-funnel";
 import { demoUrl, isUuid } from "@/lib/demos/shared";
 import { activity, contactFor, HEADER, stableUuid, toRow } from "@/lib/prospecting/external";
 import { poolView, runPoolOp } from "@/lib/prospecting/pool-server";
+import { readAutofill, runAutofill, updateAutofill } from "@/lib/prospecting/autofill";
 import { recordSend } from "@/lib/prospecting/record-send";
 import { NO_STORE, prospectDataset, prospectFailure, prospectRpc } from "@/lib/prospecting/server";
 import { runSheetSync } from "@/lib/prospecting/sync";
@@ -40,9 +41,11 @@ export const maxDuration = 300;
  *                                     `by` es quien opera: el usuario del equipo con ese nombre.
  *
  * Prospectos (las inmobiliarias antes de entrar a la cola, con su ranking y los aprendizajes):
- *   GET ?vista=prospectos[&mensaje=]  { available, rows, counts, catalog, learning }.
+ *   GET ?vista=prospectos[&mensaje=]  { available, rows, counts, catalog, learning, autofill }.
  *   POST { prospectos: { op, ... }, by } op = guardar, cola, sacar, descartar, reabrir, llenar, crear o
- *                                     recalcular (ver lib/prospecting/pool-server.ts).
+ *                                     recalcular (ver lib/prospecting/pool-server.ts); automatico
+ *                                     { activo?, meta? } configura el llenado automático y completar
+ *                                     lo corre ahora (lib/prospecting/autofill.ts).
  *
  * Las acciones pasan por las mismas funciones que el panel del equipo (/admin/prospeccion), con sus
  * reglas: solo contactos revisados, bajas, secuencia de tres pasos, evidencia. «Mandé el mensaje»
@@ -110,7 +113,10 @@ export async function GET(request: Request) {
     const q = new URL(request.url).searchParams;
     if (q.get("vista") === "script") return Response.json(await readScript(), { headers: NO_STORE });
     if (q.get("vista") === "inmobiliarias") return Response.json(await agencyList(), { headers: NO_STORE });
-    if (q.get("vista") === "prospectos") return Response.json(await poolView(q.get("mensaje")?.trim().slice(0, 120) || null), { headers: NO_STORE });
+    if (q.get("vista") === "prospectos") {
+      const [view, autofill] = await Promise.all([poolView(q.get("mensaje")?.trim().slice(0, 120) || null), readAutofill()]);
+      return Response.json({ ...view, autofill }, { headers: NO_STORE });
+    }
     if (q.get("vista") === "followup") return Response.json(await cachedFollowupSnapshot(await team(), parsePeriod({ periodo: q.get("periodo") ?? "", desde: q.get("desde") ?? "", hasta: q.get("hasta") ?? "" })), { headers: NO_STORE });
     if (q.get("foto")) {
       const image = await agencyThumb(q.get("foto")!, q.get("w"));
@@ -250,6 +256,13 @@ export async function POST(request: Request) {
     }
     if (b?.prospectos && typeof b.prospectos === "object") {
       const p = b.prospectos as Record<string, unknown>;
+      if (p.op === "automatico") return Response.json({ ok: true, autofill: await updateAutofill(p) }, { headers: NO_STORE });
+      if (p.op === "completar") {
+        const actor = operatorFor(str(b.by, 80), await team(), await actorId());
+        const run = await runAutofill({ actor: actor.id, by: actor.name, force: true });
+        invalidateFollowupSnapshot();
+        return Response.json({ ok: true, run, autofill: await readAutofill() }, { headers: NO_STORE });
+      }
       const result = await runPoolOp(p.op, p, operatorFor(str(b.by, 80), await team(), await actorId()));
       invalidateFollowupSnapshot();
       return Response.json(result, { headers: NO_STORE });

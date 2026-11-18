@@ -282,6 +282,19 @@ export function pickForQueue(list: Candidate[], count: number, rand: () => numbe
   return { top, explore };
 }
 
+/** Lo más que suma por vez «Sumar las mejores» (y el llenado automático). */
+export const FILL_MAX = 100;
+
+/**
+ * Cuántas sumar en el llenado automático: las que faltan para que la cola tenga `target` primeros
+ * saludos listos o esperando cupo. Nunca negativo ni más de `FILL_MAX`.
+ */
+export function autofillNeed(target: number, waiting: number) {
+  const t = Number.isFinite(target) ? Math.floor(target) : 0;
+  const w = Number.isFinite(waiting) ? Math.max(0, Math.floor(waiting)) : 0;
+  return Math.max(0, Math.min(FILL_MAX, t - w));
+}
+
 // ── Aprendizajes ────────────────────────────────────────────────────────────
 
 export type Outcome = { attempted: boolean; valid: boolean; replied: boolean; interested: boolean; engaged: boolean; customer: boolean; firstAt: string | null };
