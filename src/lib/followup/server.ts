@@ -13,7 +13,7 @@ import { contactFor, stableUuid } from "@/lib/prospecting/external";
 import { recordSend } from "@/lib/prospecting/record-send";
 import { prospectDataset, prospectRpc } from "@/lib/prospecting/server";
 import { poolGates } from "@/lib/prospecting/pool-server";
-import { poolBlock } from "@/lib/prospecting/pool";
+import { poolBlock, portalOfListing } from "@/lib/prospecting/pool";
 import type { Dataset, OutreachAttempt, ProspectAccount } from "@/lib/prospecting/types";
 import { artDate } from "@/lib/prospecting/time";
 import { adminClient } from "@/lib/supabase/server";
@@ -634,6 +634,10 @@ async function board(now = new Date()) {
     it.candidateReference = gate?.candidateReference ?? null;
     if (!it.blocked && (!it.candidateUrl || !it.candidateReference) && (it.stage === "no-contactado" || /\{\{\s*inmueble_candidato\s*\}\}/.test(version?.body ?? "")))
       it.blocked = "Completar inmueble candidato en Prospectos.";
+    // The demo is built from the agency's own site: a portal listing cannot be read from our servers.
+    const portal = portalOfListing(it.candidateUrl);
+    if (!it.blocked && portal && it.stage === "no-contactado" && it.execution?.status !== "sent")
+      it.blocked = `El aviso para la demo es de ${portal}: elegí uno de su web propia en Prospectos.`;
     // Still in Prospectos: it waits there until it is passed to the queue.
     it.blocked = poolBlock(account ? pool.get(account.id) : undefined, it.stage, it.execution?.status === "sent") ?? it.blocked;
     if(own?.handoff_to)it.blocked=`Pasada a ${own.handoff_to}. Retomar para volver a ejecutar.`;

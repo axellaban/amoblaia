@@ -274,6 +274,12 @@ Las inmobiliarias que todavía no recibieron el saludo se trabajan en **Prospect
 
 **Para entrar a la cola** (`missingForQueue`): un WhatsApp que se pueda usar, un aviso elegido para su demo y encaje de 40 o más. Sin datos el encaje queda neutro (43): no saber no es lo mismo que no encajar. Mientras una cuenta con perfil no está «En cola», la cola de Follow-up la muestra bloqueada: «En Prospectos (Enriquecido): todavía no entró a la cola» (`poolBlock`).
 
+**El aviso para la demo tiene que ser de su web propia (18/11).** Argenprop, Zonaprop y MercadoLibre no dejan leer el aviso desde nuestros servidores (de 216 demos creadas hasta el 17/11, 201 salieron de webs propias y 3 de Argenprop), así que un aviso de portal no cuenta para entrar a la cola: falta «El aviso para la demo es de Argenprop: elegí el mismo u otro en su web propia» (`portalOfListing`, `demoReady`). Vale también para la exploración y el llenado automático. El link del portal se guarda en «Perfil en el portal»: sirve para encontrar la inmobiliaria y su web. Las que ya estaban en cola con un aviso de portal quedan bloqueadas en Follow-up («El aviso para la demo es de Argenprop: elegí uno de su web propia en Prospectos»): se sacan de la cola, se cambia el aviso y se vuelven a pasar. Una inmobiliaria sin web propia no entra a la cola por ahora.
+
+### Ya trabajadas
+
+La vista trae, además de las pendientes, `history`: cada inmobiliaria que ya salió de la prospección, con en qué quedó (`historySituation`), para no volver a prospectar lo mismo. Situaciones, de lo más avanzado a lo menos: Cliente, Demo con interacción, Interesada, Respondió, Contactada sin respuesta, En cola sin contactar, Número inválido, Perdida, Pidió no ser contactada (baja) y Descartada. Una baja o una pérdida pesan más que lo que haya respondido antes; ser cliente, más que todo. Cada fila trae zona, web, WhatsApp, SDR, el motivo (descarte o pérdida), el primer y el último contacto, cuándo entró a la cola y el aviso elegido; se ordena por la fecha más reciente. Las que siguen en Descubierto, Enriquecido o Calificado no figuran: están en la lista de Prospectos.
+
 ### Variables (`FIELDS` en `src/lib/prospecting/pool.ts`)
 
 | Grupo | Variables |
@@ -322,7 +328,7 @@ Por cada variable, las inmobiliarias intentadas con cada valor y hasta dónde ll
 
 ### API (para Chapa Labs)
 
-- `GET /api/prospeccion?vista=prospectos[&mensaje=]` → `{ available, rows, counts, catalog, learning }`. `available: false` si falta la migración: la lista se ve, pero no se puede guardar.
+- `GET /api/prospeccion?vista=prospectos[&mensaje=]` → `{ available, rows, counts, history, historyCounts, catalog, learning, autofill }` (`catalog.situations`: las situaciones de «Ya trabajadas»). `available: false` si falta la migración: la lista se ve, pero no se puede guardar.
 - `POST { by, prospectos: { op, ... } }`: `guardar { cuenta, valores, zona?, decisor? }`, `cola { cuenta, explorar? }`, `sacar`, `descartar { motivo }`, `reabrir`, `llenar { cantidad }`, `crear { nombre, web?, zona?, whatsapp?, valores?, confirmar? }` (409 `DUPLICATE` si se parece a una que ya está) y `recalcular`.
 
 Archivos: `src/lib/prospecting/pool.ts` (lógica pura), `pool-server.ts` (lecturas y operaciones) y los tests `prospecting-pool*.test.ts`.
