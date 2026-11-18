@@ -62,6 +62,7 @@ vi.mock("@/lib/commerce/images", () => ({
   renderPhoto: vi.fn(),
   readPhoto: async () => ({
     image: Buffer.from("photo"),
+    hash: "a".repeat(64),
     requestKey: "00000000-0000-4000-8000-000000000001",
     projectId: null,
     room: "living",

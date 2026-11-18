@@ -5,7 +5,7 @@ import sharp from "sharp";
 import { adminClient } from "@/lib/supabase/server";
 import { BUCKET } from "@/lib/commerce/jobs";
 import { HttpError, rpc } from "@/lib/commerce/http";
-import { normalizePhoto } from "@/lib/commerce/images";
+import { normalizePhoto, STAGING_JPEG } from "@/lib/commerce/images";
 import {
   DEFAULT_ACCENT,
   DEFAULT_PRIMARY,
@@ -1243,7 +1243,7 @@ export async function saveRetouch(params: {
     .modulate({ brightness: ops.brightness })
     .linear(ops.linear.a, ops.linear.b)
     .recomb(ops.tint)
-    .jpeg({ quality: 90, progressive: true })
+    .jpeg(STAGING_JPEG)
     .toBuffer();
   const path = `retouches/${params.photoId}/${randomBytes(12).toString("hex")}.jpg`;
   const upload = await db.storage.from(BUCKET).upload(path, image, { contentType: "image/jpeg", upsert: false });
@@ -1410,8 +1410,7 @@ export async function addPhoto(
 ) {
   const db = adminClient();
   const existing = await photosOf(demo.property_id);
-  const image = await normalizePhoto(bytes);
-  const hash = createHash("sha256").update(image).digest("hex");
+  const { image, hash } = await normalizePhoto(bytes);
   const originalHash = `demo:${hash}`;
   // Reimporting a listing: a photo already in the demo is returned as is (with its stagings).
   if (opts.reuse) {
