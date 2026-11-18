@@ -311,6 +311,10 @@ function derived(r: CommercialRow, account: ProspectAccount | undefined) {
     suppressed: Boolean(account?.suppressed),
     pendingProspect: Boolean(account && !closed),
   });
+  // A demo only counts as created once it is published: a draft (property imported, styles or
+  // publication pending) still needs «Crear demo». Otherwise it lands in «Enviar demo», blocked by
+  // the missing {{demo}} link, and no task offers to finish it.
+  if (stage === "sin-enviar" && !r.shareDemo) return { reached, stage: "sin-demo" as const };
   return { reached, stage };
 }
 
@@ -395,7 +399,7 @@ export type QueueItem = {
   messageStage: StageKey;
   /** Ventana horaria de esa regla. */
   window: { hours_from: number; hours_to: number; days: number[] } | null;
-  /** Demo prometida: cuándo mostró interés (va primera; a los 30 minutos está atrasada). */
+  /** Demo prometida: cuándo mostró interés (va primera en la cola; nunca vence ni sale de la cola). */
   promisedAt: string | null;
   /** Last recorded inbound reply/interest, not our last outbound. */
   lastReplyAt: string | null;
@@ -605,7 +609,7 @@ async function board(now = new Date()) {
       it.action = null; it.actionLabel = null; it.ruleKey = null; it.versionId = null;
       it.versionChannel = null; it.actionReason = "Situación deshabilitada en esta etapa.";
     }
-    // A promised demo (interested, the demo still to make or to send) goes first; past 30 minutes it is late.
+    // A promised demo (interested, the demo still to make or to send) goes first. No deadline: only priority.
     const interest = lastInterest.get(r.id);
     if (interest && it.action !== "encuesta_cierre" && (it.stage === "sin-demo" || it.stage === "sin-enviar") && it.execution?.status !== "sent") {
       it.promisedAt = new Date(interest).toISOString();
@@ -1295,10 +1299,11 @@ async function prepare(it: QueueItem, origin: string, actor: { id: string; name:
     { key: "enlaces", label: "Enlaces listos", ok: linkOk, note: need.demo || need.panel ? (linkOk ? "Demo y panel armados" : "No se pudo armar un enlace") : "Este mensaje no lleva enlaces" },
     { key: "mensaje", label: "Mensaje listo", ok: ready, note: `${messages.length} ${messages.length === 1 ? "mensaje" : "mensajes"} · V${v.version}` },
   ];
-  // A demo to make: what the panel can check by itself, and the promise (30 minutes at most).
+  // A demo to make: what the panel can check by itself, and the promise (priority only).
   if (it.action === "principal" && (it.stage === "sin-demo" || it.stage === "sin-enviar")) {
     const late = it.promisedAt ? Math.round((Date.now() - Date.parse(it.promisedAt)) / 60000) : null;
-    if (late !== null) checklist.unshift({ key: "promesa", label: "Demo prometida a tiempo", ok: late <= 30, note: `Mostró interés hace ${late} min · máximo 30` });
+    // Only a priority signal: the queue puts it first; it never blocks, expires or leaves the queue.
+    if (late !== null) checklist.unshift({ key: "promesa", label: "Demo prometida", ok: true, note: `Mostró interés hace ${late} min · va primera en la cola` });
     if (it.stage === "sin-demo")
       checklist.push(
         { key: "propiedad", label: "Propiedad elegida e importada", ok: it.properties > 0, note: mainPrepNote(it) },
