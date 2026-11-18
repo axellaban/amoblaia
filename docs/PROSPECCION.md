@@ -302,6 +302,20 @@ Es una hipótesis para ordenar, no una probabilidad de compra. Cambiar un peso e
 
 «Sumar las mejores» (`pickForQueue`) pasa a la cola las calificadas de mejor ranking y, de cada tanda de 5 o más, 15% al azar entre las demás que ya tienen WhatsApp y aviso. Quedan marcadas (`explore`) y en Aprendizajes se comparan contra las que entraron por ranking: sin eso el ranking solo se confirma a sí mismo.
 
+### Llenado automático (`src/lib/prospecting/autofill.ts`)
+
+La cola de primeros saludos se completa sola cada mañana. El cron de las 06:00 de Buenos Aires (`/api/cron`), antes de sacar la foto del día, cuenta los primeros saludos que la cola tiene listos o esperando cupo (`firstContactWaiting`; los bloqueados por algo que hay que arreglar no cuentan) y suma con «Sumar las mejores» (`fillQueue`, la misma regla de ranking y exploración) lo que falta para la meta (`autofillNeed`, como mucho 100).
+
+- **Meta:** por defecto, el cupo diario de primeros saludos (`followup_quota_settings.cap`, 48). Se cambia desde Chapa Labs → habita. → Prospectos.
+- **Prender o apagar:** el mismo bloque de Prospectos. Apagado, la cola se llena solo a mano.
+- **«Completar ahora»:** corre lo mismo en el momento, a nombre de quien lo toca.
+- **La última corrida** (`autofill_last`): cuándo, la meta, cuántos esperaban, cuántos se pidieron, cuántos entraron (y cuántos por exploración) y cuántos faltaron por falta de calificadas. Chapa la muestra debajo del bloque.
+- Las que entran quedan con su foto de entrada a la cola, como si se las hubiera sumado a mano; las del cron quedan a nombre de `PROSPECTING_ACTOR_ID`.
+- Migración: `supabase/migrations/202612270001_prospect_autofill.sql` (columnas `autofill_enabled`, `autofill_target` y `autofill_last` en `followup_quota_settings`). Sin ella no corre y Prospectos lo avisa.
+- Turnia no lo necesita: no tiene Prospectos y sus pendientes entran directo a su cola.
+
+API: `POST { prospectos: { op: "automatico", activo?, meta? } }` (`meta: null` vuelve al cupo) y `{ op: "completar" }`; `GET ?vista=prospectos` suma `autofill`.
+
 ### Aprendizajes (`learnings`)
 
 Por cada variable, las inmobiliarias intentadas con cada valor y hasta dónde llegaron, con las reglas del §5: número válido (sobre las intentadas) y respuesta humana, interés, demo con interacción y clientes (sobre las de número válido). Con menos de 30 intentadas, «muestra chica». Además de las variables de Prospectos se cruzan el primer mensaje, el día del primer contacto, la zona, el SDR, la web, el score de la planilla y cómo entró a la cola. Las variables se toman de la foto de entrada a la cola cuando existe. `?mensaje=` deja solo las contactadas con ese primer mensaje: el mensaje pesa más que el prospecto y, sin separarlos, se confunden.

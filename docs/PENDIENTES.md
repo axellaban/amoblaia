@@ -4,6 +4,12 @@ Se detiene el trabajo a pedido del usuario para conservar créditos. Los cambios
 
 Producción: https://amoblaia.vercel.app/
 
+## Llenado automático de la cola — 18 de noviembre de 2026 (rama `claude/practical-hawking-4xayl8`)
+
+- **Pendiente: aplicar en Supabase `202612270001_prospect_autofill.sql`** (SQL Editor; se puede re-ejecutar). Sin ella no corre y Prospectos lo avisa. Queda activo, con la meta del cupo diario (48).
+- Cada mañana a las 06:00 suma a la cola las mejores calificadas hasta la meta; se prende, se apaga y se cambia la meta desde Chapa → habita. → Prospectos. Detalle en [PROSPECCION.md](PROSPECCION.md) §12.
+- Turnia no lo necesita: no tiene Prospectos y sus pendientes entran directo a su cola.
+
 ## Prospectos, antes de la cola — 11 de noviembre de 2026 (rama `claude/modest-fermat-ew2d3r`)
 
 - **Pendiente: aplicar en Supabase `202612140001_prospect_pool.sql`** (SQL Editor; se puede re-ejecutar). Sin ella, Prospectos en Chapa muestra la lista y el ranking pero no deja guardar, y la cola sigue como siempre.

@@ -266,6 +266,19 @@ export async function snapshotQueueDay() {
   await recordQueueDay([...b.items.values()], { force: true });
 }
 
+/** Waiting only for capacity (the daily first-contact cap or the conversation limit), not for a fix. */
+const capacityOnly = (blocked: string | null) =>
+  !blocked || blocked.startsWith("Sin cupo para primer contacto") || blocked.startsWith("Tope de conversaciones");
+/**
+ * First greetings the queue holds that can go out today or as soon as a slot frees up. The
+ * blocked ones (missing candidate listing, possible duplicate, no WhatsApp…) do not count: they
+ * need someone to fix them. Prospectos' autofill tops the queue up to its target from this.
+ */
+export async function firstContactWaiting(now = new Date()) {
+  const b = await board(now);
+  return [...b.items.values()].filter((q) => q.stage === "no-contactado" && pending(q) && capacityOnly(q.blocked)).length;
+}
+
 /** The prospecting account of each agency: an open one before a lost or discarded one. */
 function accountsByAgency(ds: Dataset | null) {
   const out = new Map<string, ProspectAccount>();

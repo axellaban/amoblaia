@@ -4,7 +4,7 @@ import { isUuid } from "@/lib/demos/shared";
 import { adminClient } from "@/lib/supabase/server";
 import { normalizeWhatsapp } from "./import";
 import {
-  autoStatus, cleanProfile, completeness, EXPLORE_SHARE, FIELDS, GROUPS, learnings, MIN_FIT, missingForQueue, outcomesOf, pickForQueue,
+  autoStatus, cleanProfile, completeness, EXPLORE_SHARE, FILL_MAX, FIELDS, GROUPS, learnings, MIN_FIT, missingForQueue, outcomesOf, pickForQueue,
   scoreOf, SCORING_VERSION, STATUS_HELP, STATUS_LABEL, variables, WEIGHTS, whatsappOf,
   type Extra, type LearnRow, type PoolStatus, type Profile, type Score,
 } from "./pool";
@@ -198,11 +198,11 @@ async function load(accountId: unknown) {
   return { ds, account, row: data.profiles.find((p) => p.account_id === account.id), extra: data.extra.find((x) => x.account_id === account.id) };
 }
 
-const savePool = (actor: string, account: string, patch: Record<string, unknown>) =>
+const savePool = (actor: string | null, account: string, patch: Record<string, unknown>) =>
   prospectRpc<ProfileRow>("habita_prospect_pool_save", { p_actor: actor, p_account: account, p_patch: patch });
 
 /** Guarda con el ranking recalculado y el estado que sale de los datos. */
-async function persist(actor: string, account: ProspectAccount, row: ProfileRow | undefined, extra: Extra | undefined, changes: Record<string, unknown>, force: Partial<{ status: PoolStatus; discard_reason: string; explore: boolean }> = {}) {
+async function persist(actor: string | null, account: ProspectAccount, row: ProfileRow | undefined, extra: Extra | undefined, changes: Record<string, unknown>, force: Partial<{ status: PoolStatus; discard_reason: string; explore: boolean }> = {}) {
   const profile = { ...(row?.profile ?? {}) } as Record<string, unknown>;
   for (const [k, v] of Object.entries(changes)) {
     if (v === null) delete profile[k];
@@ -232,6 +232,37 @@ async function persist(actor: string, account: ProspectAccount, row: ProfileRow 
   if (status === "en_cola" && before !== "en_cola")
     patch.snapshot = { at: new Date().toISOString(), profile: vars, score: score.total, components: patch.score_components, scoring_version: SCORING_VERSION, explore };
   return { saved: await savePool(actor, account.id, patch), missing, score };
+}
+
+/**
+ * Suma a la cola las mejores calificadas y el cupo de exploración (`pickForQueue`). La usan
+ * «Sumar las mejores» y el llenado automático. `null` si falta la migración de Prospectos.
+ */
+export async function fillQueue(count: number, actorId: string | null) {
+  const n = Math.max(0, Math.min(FILL_MAX, Math.floor(count)));
+  const [ds, data] = await Promise.all([prospectDataset({ syncConversions: false }), poolData()]);
+  if (!data) return null;
+  if (!n) return [];
+  const profiles = new Map(data.profiles.map((p) => [p.account_id, p]));
+  const extras = new Map(data.extra.map((x) => [x.account_id, x]));
+  const sent = contacted(ds);
+  const pending = ds.accounts.filter((a) => a.stage === "pending" && !sent.has(a.id) && !a.suppressed);
+  const described = new Map(pending.map((a) => [a.id, describe(a, profiles.get(a.id), extras.get(a.id))]));
+  const pick = pickForQueue(
+    pending.map((a) => {
+      const d = described.get(a.id)!;
+      return { id: a.id, score: d.score.total, status: d.status, hardReady: Boolean(d.wa && d.vars.demo_listing_url && d.vars.demo_listing_reference) };
+    }),
+    n,
+  );
+  const added: { id: string; name: string; explore: boolean }[] = [];
+  for (const [ids, explore] of [[pick.top, false], [pick.explore, true]] as const)
+    for (const id of ids) {
+      const a = pending.find((x) => x.id === id)!;
+      await persist(actorId, a, profiles.get(id), extras.get(id), {}, { status: "en_cola", explore });
+      added.push({ id, name: a.name, explore });
+    }
+  return added;
 }
 
 const normalized = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
@@ -296,28 +327,9 @@ export async function runPoolOp(op: unknown, b: Op, actor: { id: string; name: s
     }
     case "llenar": {
       const count = Number(b.cantidad);
-      if (!Number.isInteger(count) || count < 1 || count > 100) throw new HttpError(400, "Indicá cuántas sumar a la cola (de 1 a 100).");
-      const [ds, data] = await Promise.all([prospectDataset({ syncConversions: false }), poolData()]);
-      if (!data) throw new ProspectError(503, "Falta aplicar la migración de Prospectos (202612140001_prospect_pool.sql) en Supabase.", "MIGRATION_MISSING");
-      const profiles = new Map(data.profiles.map((p) => [p.account_id, p]));
-      const extras = new Map(data.extra.map((x) => [x.account_id, x]));
-      const sent = contacted(ds);
-      const pending = ds.accounts.filter((a) => a.stage === "pending" && !sent.has(a.id) && !a.suppressed);
-      const described = new Map(pending.map((a) => [a.id, describe(a, profiles.get(a.id), extras.get(a.id))]));
-      const pick = pickForQueue(
-        pending.map((a) => {
-          const d = described.get(a.id)!;
-          return { id: a.id, score: d.score.total, status: d.status, hardReady: Boolean(d.wa && d.vars.demo_listing_url && d.vars.demo_listing_reference) };
-        }),
-        count,
-      );
-      const added: { id: string; name: string; explore: boolean }[] = [];
-      for (const [ids, explore] of [[pick.top, false], [pick.explore, true]] as const)
-        for (const id of ids) {
-          const a = pending.find((x) => x.id === id)!;
-          await persist(actor.id, a, profiles.get(id), extras.get(id), {}, { status: "en_cola", explore });
-          added.push({ id, name: a.name, explore });
-        }
+      if (!Number.isInteger(count) || count < 1 || count > FILL_MAX) throw new HttpError(400, `Indicá cuántas sumar a la cola (de 1 a ${FILL_MAX}).`);
+      const added = await fillQueue(count, actor.id);
+      if (!added) throw new ProspectError(503, "Falta aplicar la migración de Prospectos (202612140001_prospect_pool.sql) en Supabase.", "MIGRATION_MISSING");
       return { ok: true, added, asked: count };
     }
     case "crear": {
