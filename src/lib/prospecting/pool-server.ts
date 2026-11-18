@@ -222,6 +222,7 @@ async function persist(actor: string, account: ProspectAccount, row: ProfileRow 
   // Only promote pending, eligible accounts; explicit removal/discard remains authoritative.
   const status = force.status ?? (force.autoQueue === true && account.stage === "pending" && !account.suppressed && !(row?.profile as Record<string, unknown> | undefined)?.manual_queue_hold && !(row?.queued_at && row.status !== "en_cola") && calculated === "calificado" && missing.length === 0 ? "en_cola" : calculated);
   const patch: Record<string, unknown> = {
+    expected_updated_at: row?.updated_at ?? null,
     profile: force.manualHold === undefined ? changes : { ...changes, manual_queue_hold: force.manualHold ? true : null },
     status,
     score: score.total,
