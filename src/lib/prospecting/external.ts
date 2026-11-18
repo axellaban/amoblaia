@@ -10,6 +10,8 @@ export const HEADER = [
   "ID", "Inmobiliaria", "Saludo", "Teléfono", "Confianza del número", "Email", "Web", "Zona", "SDR", "Campaña", "Prioridad", "Score",
   "Estado", "Mensajes", "Primer contacto", "Último contacto", "Último canal", "Próximo paso", "Fecha del próximo paso",
   "Link de su demo", "Abrió la demo", "Probó la demo", "Respondió", "Interesado", "Reunión", "Cliente", "Motivo de pérdida", "Baja", "Actualizado",
+  // Para los enlaces de la ficha en Chapa (su panel, su ficha del equipo): el id de la inmobiliaria, no el de la cuenta.
+  "Inmobiliaria ID",
 ] as const;
 
 /** «AAAA-MM-DD HH:mm» en Buenos Aires (o solo el día, si el dato es de día). */
@@ -89,6 +91,7 @@ export function toRow(ds: Dataset, a: ProspectAccount, demo: Demo | undefined) {
     "Motivo de pérdida": a.lost_reason ?? "",
     Baja: a.suppressed ? "sí" : "",
     Actualizado: a.version,
+    "Inmobiliaria ID": a.agency_id ?? "",
   };
   return HEADER.map((h) => values[h]);
 }
