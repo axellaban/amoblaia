@@ -631,7 +631,26 @@ export async function demoDetail(id: string): Promise<DemoDetail> {
     }),
     spaces: spaces.list,
     spacesReady: spaces.ready,
+    pendingImport: photos.length ? null : await pendingImportOf(demo.id),
   };
+}
+
+/**
+ * A property saved from its listing whose photos are still to bring in («Lista para importar»):
+ * the import that holds them, so the editor offers to bring them with one click. Null otherwise.
+ */
+async function pendingImportOf(demoId: string): Promise<DemoDetail["pendingImport"]> {
+  const { data, error } = await adminClient()
+    .from("property_imports")
+    .select("id,pending_images")
+    .eq("demo_id", demoId)
+    .eq("status", "partial")
+    .eq("photos_done", 0)
+    .order("created_at", { ascending: false })
+    .limit(1);
+  if (error) return null;
+  const row = (data ?? [])[0] as { id: string; pending_images: string[] | null } | undefined;
+  return row?.pending_images?.length ? { importId: row.id, images: row.pending_images } : null;
 }
 
 /**

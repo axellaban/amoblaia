@@ -133,6 +133,8 @@ export type WorkspaceActions = {
   request: (tasks: Task[], opts?: { fresh?: boolean; quoted?: boolean }) => Promise<boolean>;
   cancelPending: () => number;
   notice: (text: string) => void;
+  /** «Lista para importar»: brings the photos still waiting in its listing's import (no credits). */
+  importPending?: () => void;
 };
 
 type Quote = { payer: "team" | "agency"; credits: number | null; newPhotos: number; blocked: string | null };
@@ -319,8 +321,20 @@ export function PhotoWorkspace({
     setReady({ photoId: p.id, versionId: made.id });
   }, [photos, awaitingTool, activeId]);
 
+  const waiting = detail.pendingImport?.images.length ?? 0;
   if (!photos.length)
-    return (
+    return waiting && actions.importPending && !detail.readOnly ? (
+      <div className="pw-empty" data-testid="pending-import">
+        <p>
+          Lista para importar: sus datos ya están cargados y la publicación tiene {waiting} {waiting === 1 ? "foto" : "fotos"}. Traelas con un clic y seguí
+          con la demo. No usa créditos.
+        </p>
+        <button type="button" className="button button-primary" disabled={busy} onClick={actions.importPending}>
+          <Download size={16} aria-hidden="true" /> Importar {waiting} {waiting === 1 ? "foto" : "fotos"} de la publicación
+        </button>
+        <UploadButton label="O subir fotos" onFiles={(f) => actions.upload(f, null)} />
+      </div>
+    ) : (
       <div className="pw-empty">
         <p>Todavía no hay fotos. Agregalas acá o desde la publicación original.</p>
         <UploadButton label="Agregar fotos" onFiles={(f) => actions.upload(f, null)} primary />

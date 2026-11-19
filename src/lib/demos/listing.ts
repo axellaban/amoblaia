@@ -569,6 +569,55 @@ async function readPage(address: string): Promise<{ html: string; url: string; m
   throw new HttpError(422, "La publicación se arma con JavaScript y no trae los datos en la página. Cargá las fotos a mano o probá con el enlace de la misma propiedad en otro sitio.");
 }
 
+const NOT_A_LISTING = /\.(jpe?g|png|webp|gif|svg|pdf|css|js|xml|ico)$|\/(contacto|contact|nosotros|about|empresa|servicios|tasaciones?|login|registro|blog|noticias|favoritos|politica|terminos)(\/|$)/i;
+
+/**
+ * Other listings of the same site linked from a listing's page («propiedades similares», the
+ * site's own menu), shaped like it: same host, same depth and first part of the path (or the
+ * same query keys). A suggestion only: each one is read before it is used.
+ */
+export function siblingListings(html: string, pageUrl: string, max = 12) {
+  let main: URL;
+  try {
+    main = new URL(pageUrl);
+  } catch {
+    return [];
+  }
+  const host = (u: URL) => u.hostname.replace(/^www\./, "").toLowerCase();
+  const parts = (u: URL) => u.pathname.split("/").filter(Boolean);
+  const mainParts = parts(main);
+  const mainKeys = [...main.searchParams.keys()].filter((k) => !/^(utm_|fbclid|gclid)/i.test(k)).sort().join("&");
+  const out: string[] = [];
+  const seen = new Set([`${host(main)}${main.pathname.replace(/\/+$/, "")}${main.search}`]);
+  for (const [, href] of html.matchAll(/<a\b[^>]*\bhref\s*=\s*["']([^"'#]+)["']/gi)) {
+    const abs = absolute(decodeEntities(href), main.toString());
+    if (!abs) continue;
+    const u = new URL(abs);
+    if (host(u) !== host(main) || NOT_A_LISTING.test(u.pathname)) continue;
+    const p = parts(u);
+    const keys = [...u.searchParams.keys()].filter((k) => !/^(utm_|fbclid|gclid)/i.test(k)).sort().join("&");
+    const shaped = mainKeys
+      ? keys === mainKeys && u.pathname === main.pathname
+      : p.length === mainParts.length && p.length > 0 && (p.length === 1 ? /\d{3,}/.test(p[0]) || p[0].split("-").length >= 4 : p[0] === mainParts[0]);
+    if (!shaped) continue;
+    for (const k of [...u.searchParams.keys()]) if (/^(utm_|fbclid|gclid)/i.test(k)) u.searchParams.delete(k);
+    const key = `${host(u)}${u.pathname.replace(/\/+$/, "")}${u.search}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(u.toString());
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+/** The listings linked from this listing's page that look like listings of the same site. */
+export async function readSiblingListings(raw: unknown, max = 12) {
+  const address = cleanUrl(raw);
+  if (!address) return [];
+  const read = await readPage(address);
+  return siblingListings(read.html, read.url, max);
+}
+
 export async function readListing(raw: unknown) {
   const address = cleanUrl(raw);
   if (!address) throw new HttpError(400, "Pegá la URL de la ficha de la propiedad.");

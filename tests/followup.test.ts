@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AGENCY_STEPS } from "@/lib/agency/demo-funnel";
-import { FOLLOWUP_STAGES, cleanVersion, fillMessage, personName, linksNeeded, missingVariables, pct, stageOf, resultOf, versionFor, versionStats, type FollowupExecution, type FollowupVersion } from "@/lib/followup/stages";
+import { FOLLOWUP_STAGES, cleanVersion, fillMessage, personName, precargasText, linksNeeded, missingVariables, pct, stageOf, resultOf, versionFor, versionStats, type FollowupExecution, type FollowupVersion } from "@/lib/followup/stages";
 
 const base = { lost: false, test: false, suppressed: false, pendingProspect: false };
 const v = (id: string, version: number, status: FollowupVersion["status"], body = "Hola {{decisor}}"): FollowupVersion => ({
@@ -90,9 +90,14 @@ describe("messages", () => {
 
   it("drops {{decisor}} with its comma when there is no name", () => {
     expect(fillMessage("Hola {{decisor}}, soy {{sdr}} de habita.", { sdr: "Facu" })).toBe("Hola, soy Facu de habita.");
-    // {{precargas}}: su línea solo va con las 2 propiedades en el panel; sin ellas, sale el resto igual.
-    const body = "acá te dejo el acceso a su panel\n\n{{panel}}\n\n---\n\nya les dejé {{precargas}} listas: en un clic las prueban";
-    expect(fillMessage(body, { panel: "https://p", precargas: "2 de sus propiedades" })).toContain("ya les dejé 2 de sus propiedades listas");
+    // {{precargas}}: «2 … listas», «una … lista» o, sin ninguna en el panel, su línea no va y sale el resto igual.
+    const body = "acá te dejo el acceso a su panel\n\n{{panel}}\n\n---\n\nya les dejé {{precargas}} en el panel: en un clic lo prueban";
+    expect(precargasText(2)).toBe("2 de sus propiedades listas");
+    expect(precargasText(3)).toBe("2 de sus propiedades listas");
+    expect(precargasText(1)).toBe("una de sus propiedades lista");
+    expect(precargasText(0)).toBeNull();
+    expect(fillMessage(body, { panel: "https://p", precargas: precargasText(2) })).toContain("ya les dejé 2 de sus propiedades listas en el panel");
+    expect(fillMessage(body, { panel: "https://p", precargas: precargasText(1) })).toContain("ya les dejé una de sus propiedades lista en el panel");
     const without = fillMessage(body, { panel: "https://p" });
     expect(without).not.toContain("precargas");
     expect(without).not.toContain("ya les dejé");

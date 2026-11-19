@@ -140,6 +140,8 @@ Un número «por revisar» no bloquea: el agente confirma en el chat que es la i
 
 Al ejecutar, la sesión la toma 10 minutos (`followup_claims`, `habita_followup_claim`). Otra sesión ve «Tomada» y no puede tomarla. Al confirmar, marcar que no salió o soltarla, queda libre; si la sesión se corta, vuelve a la cola al vencer como pendiente, aunque se haya abierto WhatsApp: solo cuenta un resultado marcado. Confirmar es idempotente. La fila confirmada no se mueve: «Siguiente pendiente» abre la próxima. «Abrir WhatsApp» usa `web.whatsapp.com/send` en una sola pestaña (ventana con nombre `habita-whatsapp`).
 
+**Lo que es de una persona (19/11/2026).** «Pasada a Facu/Axel» y «Asignada a Facu» (una respuesta que no resuelve el script) siguen en `blocked`, que es lo que la saca de la cola de la extensión y de «tomar la siguiente». Pero si es lo único que la frena, el ítem trae `heldFor` (`Facu` o `Axel`) y esa persona la toma por id con «Ejecutar» y la confirma como cualquier otra; la confirmación del bot se rechaza. Sin `heldFor` si debajo hay otro bloqueo (cupo, inmueble candidato, Prospectos, reprogramada) o es un primer contacto (el cupo diario no la cuenta).
+
 ### API del agente (`/api/admin/followup/*`, sesión del equipo, JSON)
 
 - `GET queue?limite=50` → `{ summary, next, queue, blocked }`: la próxima libre para esta sesión, las ejecutables en orden y las bloqueadas con su motivo.
@@ -226,6 +228,7 @@ La next best action sale de reglas guardadas en la base, editables en **Mensajes
 ### Demos en la cola
 
 - **Demo prometida**: una inmobiliaria que mostró interés con la demo por crear o por enviar va primera en la cola, con prioridad alta. El checklist muestra hace cuánto mostró interés, pero es solo prioridad: no vence, no bloquea ni la saca de la cola.
+- **Crear demo a mano**: en la tarea «Crear demo», el botón «Crear demo» abre la propiedad que Prospectos dejó en su panel (con «Importar fotos de la publicación» a un clic) o, si no hay, una demo nueva. El ítem «Propiedad elegida e importada» se tilda cuando esa propiedad ya tiene sus fotos.
 - **Demo en borrador**: una demo cuenta como creada recién cuando está publicada. Si hay una propiedad importada o una demo sin publicar, la inmobiliaria sigue en «Crear demo» (no pasa a «Enviar demo», que quedaría bloqueada sin enlace).
 - «Interesado, sin demo»: el checklist suma «Propiedad elegida e importada» y «Demo generada, revisada y publicada», que el panel verifica solo; al publicarla pasa sola a «Demo creada, sin enviar», cuyo paso (enviar la demo) sale enseguida.
 

@@ -643,7 +643,8 @@ function ExecCenter({
                   const exec = statusOf(q);
                   const status = exec?.status ?? "pending";
                   const busy = Boolean(q.claim && q.claim.until > live) && q.agencyId !== detail?.id;
-                  const isBlocked = Boolean(q.blocked) && status !== "sent";
+                  // Lo que es de Facu o Axel se ejecuta igual que el resto: solo no lo toma la extensión.
+                  const isBlocked = Boolean(q.blocked) && !q.heldFor && status !== "sent";
                   return (
                     <div
                       key={q.agencyId}
@@ -3479,7 +3480,7 @@ function QueueCorrection({ item: q, onSaved }: { item: QueueItem; onSaved: () =>
 function QueueRow({ stage, item: q, exec, open, onToggle, onDone, onNext }: { stage: StageView; item: QueueItem; exec: Exec; open: boolean; onToggle: () => void; onDone: (e: Exec) => void; onNext: () => void }) {
   const status = exec?.status ?? "pending";
   const taken = Boolean(q.claim && q.claim.until > new Date().toISOString());
-  const blocked = status !== "sent" ? q.blocked : null;
+  const blocked = status !== "sent" && !q.heldFor ? q.blocked : null;
   const version = stage.versions.find((v) => v.id === q.versionId);
   const testing = stage.versions.some((v) => v.status === "test");
   const late = q.lastAction ? daysSince(q.lastAction.at) > LATE_DAYS : false;

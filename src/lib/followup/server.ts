@@ -48,7 +48,7 @@ import {
   type LastAction,
   type StageKey,
   type VersionStats,
-  PRECARGAS_TEXT,
+  precargasText,
 } from "./stages";
 import {
   isAction,
@@ -384,6 +384,12 @@ export type QueueItem = {
   /** Por qué no se puede ejecutar ahora; null: está en la cola. */
   blocked: string | null;
   handoffTo: "Facu" | "Axel" | null;
+  /**
+   * Para quién queda la tarea cuando lo único que la frena es que es de una persona (pasada a Facu o
+   * Axel, o con una respuesta para Facu). Sigue fuera de la cola de la extensión (`blocked`), pero esa
+   * persona la puede tomar con «Ejecutar» como cualquier otra. null: no es eso (o hay otro bloqueo).
+   */
+  heldFor: "Facu" | "Axel" | null;
   /** Lo que el agente revisa antes de mandar (número sin validar, un WhatsApp abierto sin confirmar). */
   checks: string[];
   /** Otra sesión la tiene tomada (o esta misma). */
@@ -658,7 +664,12 @@ async function board(now = new Date()) {
       it.blocked = `El aviso para la demo es de ${portal}: elegí uno de su web propia en Prospectos.`;
     // Still in Prospectos: it waits there until it is passed to the queue.
     it.blocked = poolBlock(account ? pool.get(account.id) : undefined, it.stage, it.execution?.status === "sent") ?? it.blocked;
+    // «Para Facu» (o Axel) no es un bloqueo para esa persona: solo saca la tarea de la extensión.
+    // Si debajo hay otro motivo real (cupo, inmueble candidato, Prospectos), sigue sin poder ejecutarse.
+    const forFacuReply = it.blocked?.startsWith("Asignada a Facu") ? "Facu" as const : null;
+    const underneath = forFacuReply ? null : it.blocked;
     if(own?.handoff_to)it.blocked=`Pasada a ${own.handoff_to}. Retomar para volver a ejecutar.`;
+    it.heldFor = it.stage !== "no-contactado" && !underneath && !it.dueAt && !snoozed ? (own?.handoff_to ?? forFacuReply) : null;
     items.set(r.id, it);
   }
   // Respect remaining first-contact capacity rather than calling every
@@ -775,10 +786,31 @@ function sharedBoard(): Promise<Board> {
   return request;
 }
 
-/** «Crear demo»: the main listing, as Prospectos left it (already in the panel, or only chosen). */
-function mainPrepNote(it: QueueItem) {
+/** «Crear demo»: the main property Prospectos left in its panel, as it is now (its photos brought or not). */
+type PreparedMain = { demoId: string; photos: number; listingPhotos: number; url: string };
+async function preparedMain(it: QueueItem): Promise<PreparedMain | null> {
+  const main = it.demoKit?.prep?.items.find((i) => i.key === "demo_listing_url" && i.ok && i.demoId);
+  if (!main?.demoId) return null;
+  const db = adminClient();
+  const { data } = await db.from("demos").select("id,property_id,agency_id").eq("id", main.demoId).maybeSingle();
+  const demo = data as { id: string; property_id: string; agency_id: string } | null;
+  // Deleted from its panel, or moved: «Crear demo» starts from scratch.
+  if (!demo || demo.agency_id !== it.agencyId) return null;
+  const { count } = await db.from("demo_photos").select("id", { count: "exact", head: true }).eq("property_id", demo.property_id);
+  return { demoId: demo.id, photos: count ?? 0, listingPhotos: main.photos, url: main.url };
+}
+/** Where «Crear demo» opens: the prepared property (its photos one click away), or a new one. */
+function createDemoLink(it: QueueItem, main: PreparedMain | null) {
+  return main
+    ? `/admin/inmobiliarias/${it.agencyId}/propiedades/${main.demoId}?${new URLSearchParams({ seccion: "fotos" })}`
+    : `/admin/inmobiliarias/${it.agencyId}/propiedades/nueva`;
+}
+/** «Crear demo»: the main listing, as Prospectos left it (in the panel with or without its photos, or only chosen). */
+function mainPrepNote(it: QueueItem, prepared: PreparedMain | null) {
+  if (prepared?.photos) return `Ya está en su panel con sus ${prepared.photos} fotos: abrila con «Crear demo» y generá las versiones. ${it.candidateReference ?? ""}: ${prepared.url}`.trim();
+  if (prepared)
+    return `Ya está en su panel, pero faltan sus fotos${prepared.listingPhotos ? ` (${prepared.listingPhotos} en la publicación)` : ""}: tocá «Crear demo» y después «Importar fotos de la publicación». ${it.candidateReference ?? ""}: ${prepared.url}`.trim();
   const main = it.demoKit?.prep?.items.find((i) => i.key === "demo_listing_url");
-  if (main?.ok) return `Ya está en su panel, lista para importar${main.photos ? ` (${main.photos} fotos)` : ""}: abrila en «Mis propiedades», importá las fotos y seguí con la demo. ${it.candidateReference ?? ""}: ${main.url}`.trim();
   if (main && !main.ok) return `No se pudo dejar en su panel (${main.error}). Importala a mano: ${it.candidateUrl ?? main.url}`;
   return it.candidateUrl ? `${it.candidateReference}: ${it.candidateUrl}` : it.properties ? `${it.properties} en su panel` : "Buscá una en su web e importala";
 }
@@ -907,6 +939,7 @@ function item(
     situationManual: sit.manual,
     situationNote: sit.manual ? (own?.situation_note ?? null) : null,
     handoffTo: own?.handoff_to ?? null,
+    heldFor: null,
     action,
     actionLabel: action ? actionLabel(anchor, action) : null,
     messageStage: anchor,
@@ -1219,7 +1252,8 @@ export async function claimNext(input: { agencyId?: unknown; filter?: unknown; s
     // confirmed meanwhile (from another instance) is read before answering.
     const { it, b } = await itemOf(input.agencyId, { shared: true });
     if (it.execution?.status === "sent") throw new HttpError(409, `Ya se confirmó «${it.actionLabel}» con ${it.name}.`);
-    if (it.blocked) throw new HttpError(409, it.blocked);
+    // Lo que es de una persona (Facu, Axel) lo toma esa persona desde su vista: solo se pide por id.
+    if (it.blocked && !it.heldFor) throw new HttpError(409, it.blocked);
     const [, sent] = await Promise.all([lock(it, actor), sentAlready(it)]);
     if (sent) {
       await release(it.agencyId, actor.id).catch(() => undefined);
@@ -1281,16 +1315,17 @@ async function prepare(it: QueueItem, origin: string, actor: { id: string; name:
   // writes that need it (confirm, situations, imports) still run that sync.
   // The links and the history now load at the same time.
   const known = knownDataset ? accountsByAgency(knownDataset).get(it.agencyId) : undefined;
-  const [demo, panel, loaded, history] = await Promise.all([
+  const [demo, panel, loaded, history, prepared] = await Promise.all([
     need.demo ? agencyDemoLink(it.agencyId, actor.id, origin).then((l) => l.url).catch(() => null) : null,
     need.panel ? agencyPanelLink(it.agencyId, actor.id, origin).then((l) => l.url).catch(() => null) : null,
     knownDataset ? undefined : prospectDataset().then((ds) => accountsByAgency(ds).get(it.agencyId)).catch(() => undefined),
     knownDataset ? historyOf(it.agencyId, known?.id ?? null, vs) : null,
+    it.stage === "sin-demo" ? preparedMain(it).catch(() => null) : null,
   ]);
   const account = known ?? loaded;
   const withPreloads = /\{\{\s*precargas\s*\}\}/.test(v.body);
-  const preloadsOk = preloadsReady(it) >= 2;
-  const message = fillMessage(v.body, { inmueble_candidato: it.candidateReference, inmobiliaria: it.shortName, decisor: it.person, sdr: account?.sdr || actor.name, demo, panel, precargas: preloadsOk ? PRECARGAS_TEXT : null });
+  const preloads = preloadsReady(it);
+  const message = fillMessage(v.body, { inmueble_candidato: it.candidateReference, inmobiliaria: it.shortName, decisor: it.person, sdr: account?.sdr || actor.name, demo, panel, precargas: precargasText(preloads) });
   const holes = missingVariables(message);
   const warnings: string[] = [...it.checks];
   if (holes.includes("demo")) warnings.push("Todavía no tiene una demo publicada: publicala antes de mandar este mensaje.");
@@ -1312,9 +1347,9 @@ async function prepare(it: QueueItem, origin: string, actor: { id: string; name:
     { key: "enlaces", label: "Enlaces listos", ok: linkOk, note: need.demo || need.panel ? (linkOk ? "Demo y panel armados" : "No se pudo armar un enlace") : "Este mensaje no lleva enlaces" },
     { key: "mensaje", label: "Mensaje listo", ok: ready, note: `${messages.length} ${messages.length === 1 ? "mensaje" : "mensajes"} · V${v.version}` },
   ];
-  // A message that mentions the 2 preloads: only with both already in the panel; otherwise that line is left out.
+  // A message that mentions the preloads: «2 … listas», «una … lista», or (none in the panel) that line is left out.
   if (withPreloads)
-    checklist.push({ key: "precargas_mensaje", label: "2 propiedades listas para importar", ok: true, note: preloadsOk ? "Ya están en su panel: va la línea de las precargas" : "No están las dos en su panel: la línea de las precargas no se manda" });
+    checklist.push({ key: "precargas_mensaje", label: "Propiedades listas para importar", ok: true, note: preloads >= 2 ? "Las 2 están en su panel: la línea dice «2 de sus propiedades listas»" : preloads === 1 ? "Hay 1 en su panel: la línea dice «una de sus propiedades lista»" : "Ninguna en su panel: la línea de las precargas no se manda" });
   // A demo to make: what the panel can check by itself, and the promise (priority only).
   if (it.action === "principal" && (it.stage === "sin-demo" || it.stage === "sin-enviar")) {
     const late = it.promisedAt ? Math.round((Date.now() - Date.parse(it.promisedAt)) / 60000) : null;
@@ -1322,7 +1357,8 @@ async function prepare(it: QueueItem, origin: string, actor: { id: string; name:
     if (late !== null) checklist.unshift({ key: "promesa", label: "Demo prometida", ok: true, note: `Mostró interés hace ${late} min · va primera en la cola` });
     if (it.stage === "sin-demo")
       checklist.push(
-        { key: "propiedad", label: "Propiedad elegida e importada", ok: it.properties > 0, note: mainPrepNote(it) },
+        // Prepared by Prospectos, it counts once its photos are in; otherwise, any property in its panel.
+        { key: "propiedad", label: "Propiedad elegida e importada", ok: prepared ? prepared.photos > 0 : it.properties > 0, note: mainPrepNote(it, prepared) },
         { key: "precargas", label: "2 propiedades precargadas", ok: preloadsReady(it) >= 2, note: preloadNote(it) },
         { key: "publicada", label: "Demo generada, revisada y publicada", ok: it.hasDemo, note: it.hasDemo ? "Publicada" : "Al publicarla pasa sola a «Demo creada, sin enviar»" },
       );
@@ -1348,7 +1384,7 @@ async function prepare(it: QueueItem, origin: string, actor: { id: string; name:
     warnings,
     // web.whatsapp.com reuses the same tab (the page opens it in a named window); the first message goes prefilled.
     whatsappUrl: v.channel === "whatsapp" && it.wa && ready ? `https://web.whatsapp.com/send?phone=${it.wa}&text=${encodeURIComponent(messages[0] ?? message)}` : null,
-    links: { demo, panel, createDemo: `/admin/inmobiliarias/${it.agencyId}/propiedades/nueva` },
+    links: { demo, panel, createDemo: createDemoLink(it, prepared) },
     execution: it.execution,
     /** La inmobiliaria como la ve la cola ahora (la pantalla la muestra aunque su lista esté desactualizada). */
     item: it,
@@ -1560,7 +1596,9 @@ export async function confirmExecution(input: { agencyId: unknown; stage?: unkno
   // Revalidate availability at confirmation: a claim or an open WhatsApp tab
   // never reserves permission to exceed the first-contact cap or send to a
   // newly closed contact.
-  if (v.channel === "whatsapp" && it.blocked) throw new HttpError(409, `No confirmes el envío: ${it.blocked} Actualizá la cola.`);
+  if (v.channel === "whatsapp" && it.blocked && !it.heldFor) throw new HttpError(409, `No confirmes el envío: ${it.blocked} Actualizá la cola.`);
+  // La extensión nunca ejecuta lo que es de una persona.
+  if (options.executedBy === "bot" && it.heldFor) throw new HttpError(409, `No confirmes el envío: es para ${it.heldFor}.`);
   // Crear demo is confirmed by publication in the product, never by a manual task-send click.
   if (it.stage === "sin-demo" && it.action === "principal" && v.channel === "task") throw new HttpError(409, "La demo todavía no está publicada. Creala desde el panel: al publicarla, Habita avanzará automáticamente a «Demo creada, sin enviar».");
   const text = typeof input.text === "string" ? input.text.trim().slice(0, 8000) : "";
