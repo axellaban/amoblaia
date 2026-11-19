@@ -90,6 +90,14 @@ describe("messages", () => {
 
   it("drops {{decisor}} with its comma when there is no name", () => {
     expect(fillMessage("Hola {{decisor}}, soy {{sdr}} de habita.", { sdr: "Facu" })).toBe("Hola, soy Facu de habita.");
+    // {{precargas}}: su línea solo va con las 2 propiedades en el panel; sin ellas, sale el resto igual.
+    const body = "acá te dejo el acceso a su panel\n\n{{panel}}\n\n---\n\nya les dejé {{precargas}} listas: en un clic las prueban";
+    expect(fillMessage(body, { panel: "https://p", precargas: "2 de sus propiedades" })).toContain("ya les dejé 2 de sus propiedades listas");
+    const without = fillMessage(body, { panel: "https://p" });
+    expect(without).not.toContain("precargas");
+    expect(without).not.toContain("ya les dejé");
+    expect(missingVariables(without)).toEqual([]);
+    expect(fillMessage(" Hola {{sdr}}", { sdr: "Facu" })).toBe(" Hola Facu");
     expect(fillMessage("{{decisor}}, te dejo {{demo}}", { demo: "x" })).toBe("Te dejo x");
     expect(fillMessage("{{decisor}}, ¿pudiste verla?", { decisor: "Laura" })).toBe("Laura, ¿pudiste verla?");
   });

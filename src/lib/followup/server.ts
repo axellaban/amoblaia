@@ -48,6 +48,7 @@ import {
   type LastAction,
   type StageKey,
   type VersionStats,
+  PRECARGAS_TEXT,
 } from "./stages";
 import {
   isAction,
@@ -1277,7 +1278,9 @@ async function prepare(it: QueueItem, origin: string, actor: { id: string; name:
     knownDataset ? historyOf(it.agencyId, known?.id ?? null, vs) : null,
   ]);
   const account = known ?? loaded;
-  const message = fillMessage(v.body, { inmueble_candidato: it.candidateReference, inmobiliaria: it.shortName, decisor: it.person, sdr: account?.sdr || actor.name, demo, panel });
+  const withPreloads = /\{\{\s*precargas\s*\}\}/.test(v.body);
+  const preloadsOk = preloadsReady(it) >= 2;
+  const message = fillMessage(v.body, { inmueble_candidato: it.candidateReference, inmobiliaria: it.shortName, decisor: it.person, sdr: account?.sdr || actor.name, demo, panel, precargas: preloadsOk ? PRECARGAS_TEXT : null });
   const holes = missingVariables(message);
   const warnings: string[] = [...it.checks];
   if (holes.includes("demo")) warnings.push("Todavía no tiene una demo publicada: publicala antes de mandar este mensaje.");
@@ -1299,6 +1302,9 @@ async function prepare(it: QueueItem, origin: string, actor: { id: string; name:
     { key: "enlaces", label: "Enlaces listos", ok: linkOk, note: need.demo || need.panel ? (linkOk ? "Demo y panel armados" : "No se pudo armar un enlace") : "Este mensaje no lleva enlaces" },
     { key: "mensaje", label: "Mensaje listo", ok: ready, note: `${messages.length} ${messages.length === 1 ? "mensaje" : "mensajes"} · V${v.version}` },
   ];
+  // A message that mentions the 2 preloads: only with both already in the panel; otherwise that line is left out.
+  if (withPreloads)
+    checklist.push({ key: "precargas_mensaje", label: "2 propiedades listas para importar", ok: true, note: preloadsOk ? "Ya están en su panel: va la línea de las precargas" : "No están las dos en su panel: la línea de las precargas no se manda" });
   // A demo to make: what the panel can check by itself, and the promise (priority only).
   if (it.action === "principal" && (it.stage === "sin-demo" || it.stage === "sin-enviar")) {
     const late = it.promisedAt ? Math.round((Date.now() - Date.parse(it.promisedAt)) / 60000) : null;
