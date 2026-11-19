@@ -4,7 +4,7 @@ import { demoUrl, isUuid } from "@/lib/demos/shared";
 import { activity, contactFor, HEADER, stableUuid, toRow } from "@/lib/prospecting/external";
 import { poolView, runPoolOp } from "@/lib/prospecting/pool-server";
 import { readAutofill, runAutofill, updateAutofill } from "@/lib/prospecting/autofill";
-import { checkListings, prepareDemo, sweepDemoPrep } from "@/lib/prospecting/demo-prep";
+import { assertCreateDemo, checkListings, prepareDemo, sweepDemoPrep } from "@/lib/prospecting/demo-prep";
 import { after } from "next/server";
 import { recordSend } from "@/lib/prospecting/record-send";
 import { NO_STORE, prospectDataset, prospectFailure, prospectRpc } from "@/lib/prospecting/server";
@@ -281,6 +281,7 @@ export async function POST(request: Request) {
         if (p.op === "comprobar") return Response.json({ ok: true, ...(await checkListings(p.cuenta, { force: true })) }, { headers: NO_STORE });
         const { data: acc } = await adminClient().from("prospect_accounts").select("agency_id").eq("id", p.cuenta).maybeSingle();
         if (!acc?.agency_id) throw new HttpError(404, "No encontramos esa inmobiliaria en Prospectos.");
+        await assertCreateDemo(acc.agency_id as string);
         const actor = operatorFor(str(b.by, 80), await team(), await actorId());
         const prep = await prepareDemo(p.cuenta, acc.agency_id as string, actor.id, actor.name);
         invalidateFollowupSnapshot();

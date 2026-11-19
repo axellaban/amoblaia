@@ -281,11 +281,21 @@ export const LISTING_KEYS = ["demo_listing_url", "demo_preload_url_2", "demo_pre
 export type ListingKey = (typeof LISTING_KEYS)[number];
 export const LISTING_LABEL: Record<ListingKey, string> = { demo_listing_url: "Aviso para la demo", demo_preload_url_2: "Precarga 2", demo_preload_url_3: "Precarga 3" };
 /** La lectura de prueba de un aviso: si se importa, con cuántas fotos, o por qué no. */
-export type ListingCheck = { ok: boolean; photos: number; title: string | null; error: string | null; at: string };
+export type ListingCheck = {
+  ok: boolean; photos: number; title: string | null; error: string | null; at: string;
+  /** Aviso principal: cuándo se buscaron precargas en su página (una vez; «Comprobar avisos» lo reinicia). */
+  searched?: string;
+};
 export type ListingChecks = Record<string, ListingCheck>;
 /** Cada aviso importado a su panel al pasar a Interesado: la propiedad queda «Lista para importar». */
 export type DemoPrepItem = { key: ListingKey; url: string; ok: boolean; demoId: string | null; photos: number; error: string | null };
-export type DemoPrep = { at: string; attempts: number; by: string; items: DemoPrepItem[] };
+export type DemoPrep = {
+  at: string; attempts: number; by: string; items: DemoPrepItem[];
+  /** Las precargas que habita. encontró sola en la web de la inmobiliaria (no estaban en Prospectos). */
+  found?: string[];
+  /** Propiedades que quedaron de un aviso que se cambió en Prospectos y se sacaron de su panel (sin fotos, sin publicar). */
+  removed?: string[];
+};
 
 /** Si hay que (volver a) preparar: nunca preparada, un aviso nuevo, o un intento fallido viejo (hasta 3). */
 export function prepDue(v: Profile, prep: DemoPrep | null | undefined, now = Date.now()) {
@@ -322,6 +332,21 @@ export function listingsOf(v: Profile) {
     if (typeof url === "string" && url.trim() && !out.some((o) => sameListing(o.url, url))) out.push({ key, url: url.trim() });
   }
   return out;
+}
+
+/** Las precargas que faltan cargar en Prospectos (las claves libres, en orden). */
+export function missingPreloads(v: Profile) {
+  return LISTING_KEYS.filter((k) => k !== "demo_listing_url" && !(typeof v[k] === "string" && String(v[k]).trim()));
+}
+
+/**
+ * Si conviene buscar precargas en la página del aviso principal: faltan, el principal se lee bien,
+ * es de su web propia (en un portal saldrían avisos de otras inmobiliarias) y no se buscó todavía.
+ */
+export function preloadSearchDue(v: Profile, checks: ListingChecks | null | undefined) {
+  if (!missingPreloads(v).length || typeof v.demo_listing_url !== "string" || portalOfListing(v.demo_listing_url)) return false;
+  const main = checkOf(checks, v.demo_listing_url);
+  return Boolean(main?.ok && !main.searched);
 }
 
 /** Dos avisos iguales entre el principal y las precargas: se avisa al guardar, no se guarda. */

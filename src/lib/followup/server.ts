@@ -773,10 +773,31 @@ function sharedBoard(): Promise<Board> {
   return request;
 }
 
-/** «Crear demo»: the main listing, as Prospectos left it (already in the panel, or only chosen). */
-function mainPrepNote(it: QueueItem) {
+/** «Crear demo»: the main property Prospectos left in its panel, as it is now (its photos brought or not). */
+type PreparedMain = { demoId: string; photos: number; listingPhotos: number; url: string };
+async function preparedMain(it: QueueItem): Promise<PreparedMain | null> {
+  const main = it.demoKit?.prep?.items.find((i) => i.key === "demo_listing_url" && i.ok && i.demoId);
+  if (!main?.demoId) return null;
+  const db = adminClient();
+  const { data } = await db.from("demos").select("id,property_id,agency_id").eq("id", main.demoId).maybeSingle();
+  const demo = data as { id: string; property_id: string; agency_id: string } | null;
+  // Deleted from its panel, or moved: «Crear demo» starts from scratch.
+  if (!demo || demo.agency_id !== it.agencyId) return null;
+  const { count } = await db.from("demo_photos").select("id", { count: "exact", head: true }).eq("property_id", demo.property_id);
+  return { demoId: demo.id, photos: count ?? 0, listingPhotos: main.photos, url: main.url };
+}
+/** Where «Crear demo» opens: the prepared property (its photos one click away), or a new one. */
+function createDemoLink(it: QueueItem, main: PreparedMain | null) {
+  return main
+    ? `/admin/inmobiliarias/${it.agencyId}/propiedades/${main.demoId}?${new URLSearchParams({ seccion: "fotos" })}`
+    : `/admin/inmobiliarias/${it.agencyId}/propiedades/nueva`;
+}
+/** «Crear demo»: the main listing, as Prospectos left it (in the panel with or without its photos, or only chosen). */
+function mainPrepNote(it: QueueItem, prepared: PreparedMain | null) {
+  if (prepared?.photos) return `Ya está en su panel con sus ${prepared.photos} fotos: abrila con «Crear demo» y generá las versiones. ${it.candidateReference ?? ""}: ${prepared.url}`.trim();
+  if (prepared)
+    return `Ya está en su panel, pero faltan sus fotos${prepared.listingPhotos ? ` (${prepared.listingPhotos} en la publicación)` : ""}: tocá «Crear demo» y después «Importar fotos de la publicación». ${it.candidateReference ?? ""}: ${prepared.url}`.trim();
   const main = it.demoKit?.prep?.items.find((i) => i.key === "demo_listing_url");
-  if (main?.ok) return `Ya está en su panel, lista para importar${main.photos ? ` (${main.photos} fotos)` : ""}: abrila en «Mis propiedades», importá las fotos y seguí con la demo. ${it.candidateReference ?? ""}: ${main.url}`.trim();
   if (main && !main.ok) return `No se pudo dejar en su panel (${main.error}). Importala a mano: ${it.candidateUrl ?? main.url}`;
   return it.candidateUrl ? `${it.candidateReference}: ${it.candidateUrl}` : it.properties ? `${it.properties} en su panel` : "Buscá una en su web e importala";
 }
@@ -1270,11 +1291,12 @@ async function prepare(it: QueueItem, origin: string, actor: { id: string; name:
   // writes that need it (confirm, situations, imports) still run that sync.
   // The links and the history now load at the same time.
   const known = knownDataset ? accountsByAgency(knownDataset).get(it.agencyId) : undefined;
-  const [demo, panel, loaded, history] = await Promise.all([
+  const [demo, panel, loaded, history, prepared] = await Promise.all([
     need.demo ? agencyDemoLink(it.agencyId, actor.id, origin).then((l) => l.url).catch(() => null) : null,
     need.panel ? agencyPanelLink(it.agencyId, actor.id, origin).then((l) => l.url).catch(() => null) : null,
     knownDataset ? undefined : prospectDataset().then((ds) => accountsByAgency(ds).get(it.agencyId)).catch(() => undefined),
     knownDataset ? historyOf(it.agencyId, known?.id ?? null, vs) : null,
+    it.stage === "sin-demo" ? preparedMain(it).catch(() => null) : null,
   ]);
   const account = known ?? loaded;
   const message = fillMessage(v.body, { inmueble_candidato: it.candidateReference, inmobiliaria: it.shortName, decisor: it.person, sdr: account?.sdr || actor.name, demo, panel });
@@ -1306,7 +1328,8 @@ async function prepare(it: QueueItem, origin: string, actor: { id: string; name:
     if (late !== null) checklist.unshift({ key: "promesa", label: "Demo prometida", ok: true, note: `Mostró interés hace ${late} min · va primera en la cola` });
     if (it.stage === "sin-demo")
       checklist.push(
-        { key: "propiedad", label: "Propiedad elegida e importada", ok: it.properties > 0, note: mainPrepNote(it) },
+        // Prepared by Prospectos, it counts once its photos are in; otherwise, any property in its panel.
+        { key: "propiedad", label: "Propiedad elegida e importada", ok: prepared ? prepared.photos > 0 : it.properties > 0, note: mainPrepNote(it, prepared) },
         { key: "precargas", label: "2 propiedades precargadas", ok: preloadsReady(it) >= 2, note: preloadNote(it) },
         { key: "publicada", label: "Demo generada, revisada y publicada", ok: it.hasDemo, note: it.hasDemo ? "Publicada" : "Al publicarla pasa sola a «Demo creada, sin enviar»" },
       );
@@ -1332,7 +1355,7 @@ async function prepare(it: QueueItem, origin: string, actor: { id: string; name:
     warnings,
     // web.whatsapp.com reuses the same tab (the page opens it in a named window); the first message goes prefilled.
     whatsappUrl: v.channel === "whatsapp" && it.wa && ready ? `https://web.whatsapp.com/send?phone=${it.wa}&text=${encodeURIComponent(messages[0] ?? message)}` : null,
-    links: { demo, panel, createDemo: `/admin/inmobiliarias/${it.agencyId}/propiedades/nueva` },
+    links: { demo, panel, createDemo: createDemoLink(it, prepared) },
     execution: it.execution,
     /** La inmobiliaria como la ve la cola ahora (la pantalla la muestra aunque su lista esté desactualizada). */
     item: it,

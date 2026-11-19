@@ -285,6 +285,11 @@ export type DemoDetail = {
   staging?: { payer: "team" | "agency"; blocked: string | null };
   /** A user of the agency with a view-only access: nothing can be changed here. */
   readOnly?: boolean;
+  /**
+   * Saved from its listing with its photos still to bring in («Lista para importar»): the import
+   * that holds them. Only while the property has no photos.
+   */
+  pendingImport?: { importId: string; images: string[] } | null;
 };
 
 export function roomName(id: string) {
