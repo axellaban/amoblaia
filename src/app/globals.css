@@ -27250,6 +27250,66 @@ dialog.pt-layer::backdrop {
 .np-preload-form .button {
   justify-self: start;
 }
+.np-preload-auto {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 4px 0 14px;
+}
+/* «Preparar demo completa» (editor del equipo). */
+.ap-auto {
+  margin-bottom: 16px;
+}
+.ap-auto-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px 20px;
+}
+.ap-auto-head h2 {
+  margin: 0 0 4px;
+}
+.ap-auto-head p {
+  max-width: 640px;
+  margin: 0;
+}
+.ap-auto-steps,
+.ap-auto-run {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 14px;
+}
+.ap-auto-steps {
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+.ap-auto-steps li,
+.ap-auto-run li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+.ap-auto-steps li.is-ok,
+.ap-auto-run li.is-ok,
+.ap-auto-run li.is-now {
+  color: inherit;
+}
+.ap-auto-run small {
+  color: var(--muted);
+}
+.ap-auto-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin: 0 2px;
+  border: 2px solid var(--line);
+  border-radius: 50%;
+}
 @media (max-width: 1100px) {
   .ap-page .ap-prop-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));

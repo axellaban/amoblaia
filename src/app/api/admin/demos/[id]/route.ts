@@ -1,3 +1,4 @@
+import { after } from "next/server";
 import { failure, HttpError, rpc } from "@/lib/commerce/http";
 import { assertManager, requireDemoAccess, requireDemoRead, stagingRule } from "@/lib/agency/server";
 import { auditAgencyEdit } from "@/lib/agency/edit-context";
@@ -10,6 +11,7 @@ import {
   saveAgencyWhatsapp,
   saveJson,
   settingsOf,
+  warmLinkPreview,
 } from "@/lib/demos/server";
 import {
   agencyInput,
@@ -250,6 +252,9 @@ export async function PATCH(request: Request, { params }: Params) {
       default:
         throw new HttpError(400, "Acción inválida.");
     }
+    // What the link preview shows may have changed: drawn now, so the first WhatsApp already finds it.
+    if (["publish", "cover", "main-style", "hide-style", "order", "token"].includes(String(body.action)))
+      after(() => warmLinkPreview(demo.id).then(() => undefined, (e) => console.error("DEMO_PREVIEW_WARM_FAILED", e instanceof Error ? e.message : e)));
     await auditAgencyEdit(access, String(body.action), body.action === "settings" && body.settings && typeof body.settings === "object" ? { fields: Object.keys(body.settings) } : {});
     if (["publish", "unpublish", "token"].includes(String(body.action))) {
       await rpc("amobla_account", { p_user: actor.id, p_trial: false });

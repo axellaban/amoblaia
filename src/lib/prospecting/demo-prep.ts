@@ -9,13 +9,15 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import { importListing } from "@/lib/agency/import-flow";
+import { findPreloads } from "@/lib/agency/preload-discovery";
+import { importListingPhotos } from "@/lib/demos/auto-prep";
 import { HttpError, isAdmin } from "@/lib/commerce/http";
 import { readListing } from "@/lib/demos/listing";
 import { demoPrepTargets } from "@/lib/followup/server";
 import { adminClient } from "@/lib/supabase/server";
 import {
-  checkOf, listingsOf, prepDue, sameListing, uncheckedListings,
-  type DemoPrep, type DemoPrepItem, type ListingCheck, type ListingChecks, type Profile,
+  checkOf, LISTING_KEYS, listingsOf, prepDue, sameListing, uncheckedListings,
+  type DemoPrep, type DemoPrepItem, type ListingCheck, type ListingChecks, type ListingKey, type Profile,
 } from "./pool";
 
 const MIGRATION = "Falta aplicar en Supabase 202612280001_prospect_demo_prep.sql (avisos de la demo).";
@@ -84,8 +86,37 @@ function requestKey(agencyId: string, url: string, attempt: number) {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-8${h.slice(17, 20)}-${h.slice(20, 32)}`;
 }
 
+/** Importa un aviso a su panel («Lista para importar»): qué pasó, como un ítem de la preparación. */
+async function importOne(agencyId: string, actorId: string, key: ListingKey, url: string, attempt: number): Promise<DemoPrepItem> {
+  const request = new Request("https://habita.internal/prospectos/preparar", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ url, key: requestKey(agencyId, url, attempt) }),
+  });
+  const res = await importListing(request, { agencyId, userId: actorId, origin: "admin" });
+  const body = (await res.json().catch(() => ({}))) as { id?: string; photosTotal?: number; duplicateOf?: string; error?: string };
+  if (res.ok && body.id) return { key, url, ok: true, demoId: body.id, photos: body.photosTotal ?? 0, error: null };
+  if (res.status === 409 && body.duplicateOf) return { key, url, ok: true, demoId: body.duplicateOf, photos: 0, error: null };
+  return { key, url, ok: false, demoId: null, photos: 0, error: (body.error ?? `Error ${res.status}`).slice(0, 240) };
+}
+
+/**
+ * Las fotos de la propiedad de la demo, en el momento: el mismo lector de «Completar desde la
+ * publicación» (una lectura nueva) con reintentos. Antes quedaban pendientes para la extensión y a
+ * veces no llegaba ninguna («0 de 8 fotos»).
+ */
+async function withPhotos(item: DemoPrepItem, actorId: string, deadline: number): Promise<DemoPrepItem> {
+  if (!item.ok || !item.demoId) return item;
+  try {
+    const r = await importListingPhotos(item.demoId, actorId, { deadline });
+    return { ...item, photos: r.total || item.photos, imported: r.added + r.already, ...(r.failed && !(r.added + r.already) ? { photoError: r.reasons[0] ?? "No se pudo descargar ninguna foto." } : {}) };
+  } catch (e) {
+    return { ...item, imported: 0, photoError: (e instanceof Error ? e.message : "No se pudieron importar las fotos.").slice(0, 240) };
+  }
+}
+
 /** Importa a su panel los avisos que faltan («Lista para importar») y guarda qué pasó con cada uno. */
-export async function prepareDemo(accountId: string, agencyId: string, actorId: string, by: string): Promise<DemoPrep> {
+export async function prepareDemo(accountId: string, agencyId: string, actorId: string, by: string, deadline = Date.now() + 240_000): Promise<DemoPrep> {
   const row = await rowOf(accountId);
   if (!row) throw new HttpError(404, "Esa inmobiliaria todavía no tiene datos en Prospectos.");
   const profile = row.profile ?? {};
@@ -96,21 +127,37 @@ export async function prepareDemo(accountId: string, agencyId: string, actorId: 
   const items: DemoPrepItem[] = [];
   for (const l of listings) {
     const done = prev?.items.find((i) => i.ok && sameListing(i.url, l.url));
-    if (done) { items.push({ ...done, key: l.key }); continue; }
+    const main = l.key === "demo_listing_url";
+    // The demo's own property keeps trying to bring its photos until they are in.
+    if (done && !(main && done.imported === 0)) { items.push({ ...done, key: l.key }); continue; }
+    if (done) { items.push(await withPhotos({ ...done, key: l.key }, actorId, deadline)); continue; }
     const check = checkOf(row.listing_checks, l.url);
     if (check && !check.ok) { items.push({ key: l.key, url: l.url, ok: false, demoId: null, photos: 0, error: `No se puede importar: ${check.error ?? "no se pudo leer"}` }); continue; }
-    const request = new Request("https://habita.internal/prospectos/preparar", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ url: l.url, key: requestKey(agencyId, l.url, attempt) }),
+    const item = await importOne(agencyId, actorId, l.key, l.url, attempt);
+    items.push(main ? await withPhotos(item, actorId, deadline) : item);
+  }
+  // A preload not chosen in Prospectos: one from the agency's own site, with interior photos.
+  // One chosen by hand is never replaced, even if it could not be imported.
+  const free = LISTING_KEYS.filter((k) => k !== "demo_listing_url" && !listings.some((l) => l.key === k));
+  let found: Profile = {};
+  if (free.length && Date.now() < deadline) {
+    const exclude = [...listings.map((l) => l.url), ...items.map((i) => i.url)];
+    const picked = await findPreloads(agencyId, { want: free.length, exclude, deadline }).catch((e) => {
+      console.error("prospect_preload_discovery_failed", e instanceof Error ? e.message : e);
+      return [];
     });
-    const res = await importListing(request, { agencyId, userId: actorId, origin: "admin" });
-    const body = (await res.json().catch(() => ({}))) as { id?: string; photosTotal?: number; duplicateOf?: string; error?: string };
-    if (res.ok && body.id) items.push({ key: l.key, url: l.url, ok: true, demoId: body.id, photos: body.photosTotal ?? 0, error: null });
-    else if (res.status === 409 && body.duplicateOf) items.push({ key: l.key, url: l.url, ok: true, demoId: body.duplicateOf, photos: 0, error: null });
-    else items.push({ key: l.key, url: l.url, ok: false, demoId: null, photos: 0, error: (body.error ?? `Error ${res.status}`).slice(0, 240) });
+    for (const [i, c] of picked.entries()) {
+      const key = free[i];
+      items.push({ ...(await importOne(agencyId, actorId, key, c.url, attempt)), found: true });
+      found = { ...found, [key]: c.url };
+    }
   }
   const prep: DemoPrep = { at: new Date().toISOString(), attempts: attempt, by, items };
+  // The preloads found on the site are written in Prospectos, where they are seen and can be changed.
+  if (Object.keys(found).length) {
+    const { error } = await adminClient().from("prospect_profiles").update({ profile: { ...profile, ...found } }).eq("account_id", accountId);
+    if (error) console.error("prospect_preload_profile_failed", error.message);
+  }
   const { error } = await adminClient().from("prospect_profiles").update({ demo_prep: prep }).eq("account_id", accountId);
   if (error) throw new HttpError(503, MIGRATION);
   return prep;
@@ -136,7 +183,7 @@ export async function prepareInterested({ actorId: given, by = "Preparación aut
     if (!prepDue(r.profile ?? {}, r.demo_prep)) continue;
     const agencyId = ids.find((a) => a.id === r.account_id)?.agency_id;
     if (!agencyId) continue;
-    await prepareDemo(r.account_id, agencyId, actorId, by).catch((e) => console.error("prospect_demo_prep_failed", e instanceof Error ? e.message : e));
+    await prepareDemo(r.account_id, agencyId, actorId, by, deadline).catch((e) => console.error("prospect_demo_prep_failed", e instanceof Error ? e.message : e));
     prepared++;
   }
   return { prepared };

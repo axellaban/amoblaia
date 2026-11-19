@@ -340,7 +340,8 @@ En **Estados y reglas** el funnel comercial filtra las reglas; la columna izquie
 - «Nueva regla» crea una regla del subestado seleccionado en el editor. Las claves técnicas de acción y etapa siguen siendo las que conoce el motor: no implica crear nuevos tipos arbitrarios de acción.
 - Las reglas que envían WhatsApp mantienen sus días, horarios, esperas, prioridades, versiones A/B, mensajes y observaciones.
 - Para **Interesado → Demo pendiente de crear → Crear demo** (acción técnica `sin-demo:principal`), el editor solo muestra el campo **Observaciones para la extensión**, persistido en `followup_versions.notes`. El canal de esa versión debe ser `task`.
-- En la **Cola de ejecución** la tarea ofrece el botón **Crear demo** hacia `/admin/inmobiliarias/{agencyId}/propiedades/nueva` incluso si una versión heredada no tiene el CTA `create_demo`.
+- En la **Cola de ejecución** la tarea ofrece el botón **Crear demo** incluso si una versión heredada no tiene el CTA `create_demo`. Si la propiedad de la demo ya existe (la que importó Prospectos o, si no, el último borrador de la inmobiliaria), el botón dice **Abrir el editor de la demo** y lleva directo a `/admin/inmobiliarias/{agencyId}/propiedades/{demoId}?seccion=fotos`, donde está **Preparar demo completa**; si no, a `/admin/inmobiliarias/{agencyId}/propiedades/nueva`. Para Chapa: `links.createDemo` (ese enlace), `links.demoId` y `demoSteps`.
+- El checklist de «Crear demo» marca el avance leído de la propiedad, en orden: **Fotos importadas** («6 de 8 fotos») → **Versiones generadas** (3 fotos × Nórdico y Minimalista) → **Demo publicada** → **2 propiedades precargadas**.
 - **No se puede marcar manualmente «Crear demo» como completada**. Al publicarse una demo real, la inmobiliaria cambia por el propio funnel a «Demo creada, sin enviar». No se envía WhatsApp desde «Crear demo»; ese envío corresponde a la etapa posterior.
 
 

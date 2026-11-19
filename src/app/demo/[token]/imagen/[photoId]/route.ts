@@ -1,4 +1,4 @@
-import { publicImagePaths, publicRetouchPaths, renderImage, renderPreview } from "@/lib/demos/server";
+import { cachedPreview, publicImagePaths, publicRetouchPaths, renderImage } from "@/lib/demos/server";
 import { imageWidth } from "@/lib/demos/shared";
 import { validStyle } from "@/lib/demos/input";
 import { cloudConfigured } from "@/lib/supabase/config";
@@ -36,7 +36,7 @@ export async function GET(
     if (!paths) return notFound();
     const image =
       q.get("og") === "1"
-        ? await renderPreview(paths)
+        ? await cachedPreview(paths)
         : await renderImage(paths.staged ?? paths.original, imageWidth(q.get("w")));
     if (!image) return notFound();
     return new Response(new Uint8Array(image), {

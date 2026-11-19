@@ -9,6 +9,8 @@ import { agencyDemoLink, setDemosSent } from "@/lib/agency/external";
 import { agencyPanelLink } from "@/lib/agency/panel-link";
 import { normalizeArNumber } from "@/lib/demos/send";
 import { isUuid } from "@/lib/demos/shared";
+import { demoDetail } from "@/lib/demos/server";
+import { prepSteps } from "@/lib/demos/auto-prep-logic";
 import { contactFor, stableUuid } from "@/lib/prospecting/external";
 import { recordSend } from "@/lib/prospecting/record-send";
 import { prospectDataset, prospectRpc } from "@/lib/prospecting/server";
@@ -776,7 +778,8 @@ function sharedBoard(): Promise<Board> {
 /** «Crear demo»: the main listing, as Prospectos left it (already in the panel, or only chosen). */
 function mainPrepNote(it: QueueItem) {
   const main = it.demoKit?.prep?.items.find((i) => i.key === "demo_listing_url");
-  if (main?.ok) return `Ya está en su panel, lista para importar${main.photos ? ` (${main.photos} fotos)` : ""}: abrila en «Mis propiedades», importá las fotos y seguí con la demo. ${it.candidateReference ?? ""}: ${main.url}`.trim();
+  if (main?.ok && main.imported) return `Ya está en su panel con ${main.imported}${main.photos ? ` de ${main.photos}` : ""} fotos: abrí el editor y tocá «Preparar demo completa». ${it.candidateReference ?? ""}: ${main.url}`.trim();
+  if (main?.ok) return `Ya está en su panel${main.photos ? ` (${main.photos} fotos en la publicación)` : ""}: abrí el editor y tocá «Preparar demo completa», que trae las fotos. ${it.candidateReference ?? ""}: ${main.url}`.trim();
   if (main && !main.ok) return `No se pudo dejar en su panel (${main.error}). Importala a mano: ${it.candidateUrl ?? main.url}`;
   return it.candidateUrl ? `${it.candidateReference}: ${it.candidateUrl}` : it.properties ? `${it.properties} en su panel` : "Buscá una en su web e importala";
 }
@@ -793,6 +796,33 @@ function preloadNote(it: QueueItem) {
   if (toPaste.length) parts.push(`Elegidas en Prospectos, para pegar en «Dejar 2 propiedades precargadas»: ${toPaste.join(" · ")}.`);
   if (ready + toPaste.length < 2) parts.push(`Buscá ${2 - ready - toPaste.length} más en su web.`);
   return parts.filter(Boolean).join(" ");
+}
+
+/**
+ * «Crear demo»: the property to finish (the one Prospectos imported for the demo, else the agency's
+ * latest draft) and where it stands: photos imported → versions generated → published → preloads.
+ */
+async function demoProgress(it: QueueItem) {
+  const main = it.demoKit?.prep?.items.find((i) => i.key === "demo_listing_url" && i.ok && i.demoId);
+  let demoId = main?.demoId ?? null;
+  if (!demoId) {
+    const { data } = await adminClient().from("demos").select("id,status").eq("agency_id", it.agencyId).order("created_at", { ascending: false }).limit(10);
+    const rows = (data ?? []) as { id: string; status: string }[];
+    demoId = (rows.find((r) => r.status !== "published") ?? rows[0])?.id ?? null;
+  }
+  if (!demoId) return null;
+  const d = await demoDetail(demoId).catch(() => null);
+  if (!d) return null;
+  const versions = d.photos.reduce((n, p) => n + Object.keys(p.shown).length, 0);
+  const steps = prepSteps({
+    photos: d.photos.length,
+    photosTotal: main?.photos || null,
+    stagedPhotos: d.photos.filter((p) => Object.keys(p.shown).length).length,
+    versions,
+    published: d.demo.status === "published",
+    preloads: preloadsReady(it),
+  });
+  return { demoId, editor: `/admin/inmobiliarias/${it.agencyId}/propiedades/${demoId}?seccion=fotos`, steps };
 }
 
 /** Why it cannot be executed now (in order of what to fix first), or null. */
@@ -1299,17 +1329,30 @@ async function prepare(it: QueueItem, origin: string, actor: { id: string; name:
     { key: "enlaces", label: "Enlaces listos", ok: linkOk, note: need.demo || need.panel ? (linkOk ? "Demo y panel armados" : "No se pudo armar un enlace") : "Este mensaje no lleva enlaces" },
     { key: "mensaje", label: "Mensaje listo", ok: ready, note: `${messages.length} ${messages.length === 1 ? "mensaje" : "mensajes"} · V${v.version}` },
   ];
+  let progress: Awaited<ReturnType<typeof demoProgress>> = null;
   // A demo to make: what the panel can check by itself, and the promise (priority only).
   if (it.action === "principal" && (it.stage === "sin-demo" || it.stage === "sin-enviar")) {
     const late = it.promisedAt ? Math.round((Date.now() - Date.parse(it.promisedAt)) / 60000) : null;
     // Only a priority signal: the queue puts it first; it never blocks, expires or leaves the queue.
     if (late !== null) checklist.unshift({ key: "promesa", label: "Demo prometida", ok: true, note: `Mostró interés hace ${late} min · va primera en la cola` });
-    if (it.stage === "sin-demo")
-      checklist.push(
-        { key: "propiedad", label: "Propiedad elegida e importada", ok: it.properties > 0, note: mainPrepNote(it) },
-        { key: "precargas", label: "2 propiedades precargadas", ok: preloadsReady(it) >= 2, note: preloadNote(it) },
-        { key: "publicada", label: "Demo generada, revisada y publicada", ok: it.hasDemo, note: it.hasDemo ? "Publicada" : "Al publicarla pasa sola a «Demo creada, sin enviar»" },
-      );
+    if (it.stage === "sin-demo") {
+      // The steps in order, read from the property itself: photos imported → versions → published → preloads.
+      progress = await demoProgress(it).catch(() => null);
+      if (!progress) checklist.push({ key: "propiedad", label: "Propiedad elegida e importada", ok: it.properties > 0, note: mainPrepNote(it) });
+      for (const step of progress?.steps ?? []) {
+        const note =
+          step.key === "precargas" ? `${step.note}. ${preloadNote(it)}`
+          : step.key === "publicada" && !step.ok ? "Al publicarla pasa sola a «Demo creada, sin enviar»"
+          : step.key === "fotos" && !step.ok ? `${step.note}. En el editor, «Preparar demo completa» las trae de la publicación.`
+          : step.note;
+        checklist.push({ key: step.key, label: step.label, ok: step.key === "publicada" ? step.ok || it.hasDemo : step.ok, note });
+      }
+      if (!progress)
+        checklist.push(
+          { key: "precargas", label: "2 propiedades precargadas", ok: preloadsReady(it) >= 2, note: preloadNote(it) },
+          { key: "publicada", label: "Demo generada, revisada y publicada", ok: it.hasDemo, note: it.hasDemo ? "Publicada" : "Al publicarla pasa sola a «Demo creada, sin enviar»" },
+        );
+    }
   }
   return {
     agencyId: it.agencyId,
@@ -1332,7 +1375,10 @@ async function prepare(it: QueueItem, origin: string, actor: { id: string; name:
     warnings,
     // web.whatsapp.com reuses the same tab (the page opens it in a named window); the first message goes prefilled.
     whatsappUrl: v.channel === "whatsapp" && it.wa && ready ? `https://web.whatsapp.com/send?phone=${it.wa}&text=${encodeURIComponent(messages[0] ?? message)}` : null,
-    links: { demo, panel, createDemo: `/admin/inmobiliarias/${it.agencyId}/propiedades/nueva` },
+    // Straight to the demo's editor when its property exists; otherwise, to start one.
+    links: { demo, panel, createDemo: progress?.editor ?? `/admin/inmobiliarias/${it.agencyId}/propiedades/nueva`, demoId: progress?.demoId ?? null },
+    /** «Crear demo»: fotos importadas → versiones generadas → publicada → precargas, en orden. */
+    demoSteps: progress?.steps ?? null,
     execution: it.execution,
     /** La inmobiliaria como la ve la cola ahora (la pantalla la muestra aunque su lista esté desactualizada). */
     item: it,

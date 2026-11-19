@@ -4,6 +4,16 @@ Se detiene el trabajo a pedido del usuario para conservar créditos. Los cambios
 
 Producción: https://amoblaia.vercel.app/
 
+## Demos más simples de crear — 18 de noviembre de 2026 (rama `claude/funny-goodall-lla6ty`)
+
+- Sin migración. Detalle en [DEMOS_COMERCIALES.md](DEMOS_COMERCIALES.md) («Preparar demo completa»), [PROSPECCION.md](PROSPECCION.md) §12 y [FOLLOWUP.md](FOLLOWUP.md) («Crear demo»).
+- La preparación automática ya trae las fotos de la propiedad de la demo (mismo lector que «Completar desde la publicación», con reintentos); antes las dejaba pendientes y a veces llegaban 0.
+- **Preparar demo completa** en el editor del equipo: fotos → elige living, comedor y dormitorio mirando la imagen → portada → Nórdico y Minimalista → publica. Opcional: `OPENAI_VISION_MODEL` en Vercel (por defecto `gpt-4.1-mini`); sin `OPENAI_API_KEY` elige por el orden de las fotos.
+- Precargas: sin precargas elegidas en Prospectos, se buscan 2 en el sitio de la inmobiliaria (`agencies.website`); en el editor, «Elegir 2 en su sitio».
+- La vista previa del enlace se genera al publicar y queda guardada (`og-cache/` en el bucket).
+- **Pendiente:** actualizar las «Observaciones para la extensión» de «Crear demo» para que la extensión abra el enlace de la tarea (ahora va directo al editor), toque «Preparar demo completa», revise el antes y el después y siga. Lo decide Facu.
+- Turnia: no aplica (su demo `/p/<código>` no lleva propiedades ni fotos que importar o ambientar).
+
 ## Avisos para «Crear demo» — 18 de noviembre de 2026
 
 - Migración `202612280001_prospect_demo_prep.sql`: aplicada en producción el 18/11.

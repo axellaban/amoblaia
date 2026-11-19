@@ -26,6 +26,8 @@ import { Comparison } from "./comparison";
 import { ActivityStatus, AgencyFields, AgencyWhatsappEditor, LinkPreview, PropertyFields, SendLog, SendWhatsapp, SentToggle, ShareCards, StatusChip, api, publicLink } from "./admin-demos";
 import { PhotoWorkspace, type WorkspaceActions } from "./editor-photos";
 import { useStagingQueue, type QueueReport } from "./use-staging-queue";
+import { AutoPrepPanel } from "./auto-prep-panel";
+import { PreloadListings } from "./preload-listings";
 import { openCreditsPurchase } from "./credits-purchase";
 import { optimizePhoto } from "@/lib/images";
 import { PROPERTY_TYPE_NAMES, styleFits, type PropertyType } from "@/lib/demos/styles";
@@ -1414,6 +1416,25 @@ export function DemoEditor({
                 </li>
               ))}
             </ul>
+          )}
+          {team && agencyContext && demo.kind !== "fotos" && canWork && (
+            <AutoPrepPanel
+              base={base}
+              detail={detail}
+              staging={staging}
+              apply={apply}
+              addStyles={(list) => {
+                const fresh = list.filter((st) => !demoStyles.includes(st) && styleFits(st, type));
+                if (!fresh.length) return;
+                const next = [...picked.filter((st) => !fresh.includes(st)), ...fresh];
+                setPicked(next);
+                savePicked(demo.id, next);
+              }}
+              disabled={busy || Boolean(blocked)}
+            />
+          )}
+          {team && agencyContext && demo.kind !== "fotos" && canWork && (
+            <PreloadListings agencyId={agencyContext} exclude={detail.property.listing_url ? [detail.property.listing_url] : []} />
           )}
           <PhotoWorkspace
             variant="demo"
