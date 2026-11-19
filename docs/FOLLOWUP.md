@@ -228,6 +228,7 @@ La next best action sale de reglas guardadas en la base, editables en **Mensajes
 ### Demos en la cola
 
 - **Demo prometida**: una inmobiliaria que mostró interés con la demo por crear o por enviar va primera en la cola, con prioridad alta. El checklist muestra hace cuánto mostró interés, pero es solo prioridad: no vence, no bloquea ni la saca de la cola.
+- **Crear demo a mano**: en la tarea «Crear demo», el botón «Crear demo» abre la propiedad que Prospectos dejó en su panel (con «Importar fotos de la publicación» a un clic) o, si no hay, una demo nueva. El ítem «Propiedad elegida e importada» se tilda cuando esa propiedad ya tiene sus fotos.
 - **Demo en borrador**: una demo cuenta como creada recién cuando está publicada. Si hay una propiedad importada o una demo sin publicar, la inmobiliaria sigue en «Crear demo» (no pasa a «Enviar demo», que quedaría bloqueada sin enlace).
 - «Interesado, sin demo»: el checklist suma «Propiedad elegida e importada» y «Demo generada, revisada y publicada», que el panel verifica solo; al publicarla pasa sola a «Demo creada, sin enviar», cuyo paso (enviar la demo) sale enseguida.
 

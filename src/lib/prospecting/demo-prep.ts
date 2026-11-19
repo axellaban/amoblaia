@@ -10,11 +10,11 @@ import "server-only";
 import { createHash } from "node:crypto";
 import { importListing } from "@/lib/agency/import-flow";
 import { HttpError, isAdmin } from "@/lib/commerce/http";
-import { readListing } from "@/lib/demos/listing";
+import { readListing, readSiblingListings } from "@/lib/demos/listing";
 import { demoPrepTargets } from "@/lib/followup/server";
 import { adminClient } from "@/lib/supabase/server";
 import {
-  checkOf, listingsOf, prepDue, sameListing, uncheckedListings,
+  checkOf, listingsOf, missingPreloads, preloadSearchDue, prepDue, sameListing, uncheckedListings,
   type DemoPrep, type DemoPrepItem, type ListingCheck, type ListingChecks, type Profile,
 } from "./pool";
 
@@ -78,6 +78,94 @@ export async function checkPendingListings({ limit = 20, deadline = Date.now() +
   return { checked, accounts };
 }
 
+/** Una precarga encontrada sola: con fotos suficientes para mostrar algo. */
+const MIN_PRELOAD_PHOTOS = 3;
+
+/**
+ * Las precargas que faltan, buscadas en la página del aviso principal (su web propia): los enlaces
+ * con forma de aviso del mismo sitio se leen de prueba y se guardan los primeros que se importan,
+ * con fotos y distintos de los otros. Se busca una vez por aviso principal; «Comprobar avisos»
+ * lo vuelve a habilitar. Lo que se guarda queda en Prospectos como si se hubiera cargado a mano.
+ */
+export async function findPreloads(accountId: string, { deadline = Date.now() + 90_000 } = {}): Promise<string[]> {
+  const row = await rowOf(accountId);
+  if (!row || !preloadSearchDue(row.profile ?? {}, row.listing_checks)) return [];
+  const profile = row.profile ?? {};
+  const main = String(profile.demo_listing_url);
+  const taken = listingsOf(profile);
+  const titles = new Set(taken.map((l) => checkOf(row.listing_checks, l.url)?.title?.trim().toLowerCase()).filter(Boolean));
+  const free = missingPreloads(profile);
+  const found: { url: string; check: ListingCheck }[] = [];
+  const candidates = await readSiblingListings(main).catch(() => [] as string[]);
+  for (const url of candidates) {
+    if (found.length >= free.length || Date.now() > deadline) break;
+    if (taken.some((l) => sameListing(l.url, url)) || found.some((f) => sameListing(f.url, url))) continue;
+    const check = await probeListing(url);
+    const title = check.title?.trim().toLowerCase();
+    if (!check.ok || check.photos < MIN_PRELOAD_PHOTOS || (title && titles.has(title))) continue;
+    if (title) titles.add(title);
+    found.push({ url, check });
+  }
+  // Read again before writing: a precarga typed in Prospectos meanwhile wins.
+  const now = await rowOf(accountId);
+  if (!now || !sameListing(now.profile?.demo_listing_url, main)) return [];
+  const nextProfile: Profile = { ...(now.profile ?? {}) };
+  const checks: ListingChecks = { ...(now.listing_checks ?? {}) };
+  const saved: string[] = [];
+  for (const key of missingPreloads(nextProfile)) {
+    const f = found.shift();
+    if (!f) break;
+    nextProfile[key] = f.url;
+    checks[f.url] = f.check;
+    saved.push(f.url);
+  }
+  const mainKey = Object.keys(checks).find((u) => sameListing(u, main));
+  if (mainKey) checks[mainKey] = { ...checks[mainKey], searched: new Date().toISOString() };
+  const { error } = await adminClient().from("prospect_profiles").update({ profile: nextProfile, listing_checks: checks }).eq("account_id", accountId);
+  if (error) throw new HttpError(503, MIGRATION);
+  return saved;
+}
+
+/** Las de la cola a las que les faltan precargas: se buscan en su web (primero las que ya entraron). */
+export async function findPendingPreloads({ limit = 10, deadline = Date.now() + 60_000 } = {}) {
+  const { data, error } = await adminClient().from("prospect_profiles").select(COLUMNS).in("status", ["en_cola", "calificado"]).limit(5000);
+  if (error) return { found: 0, accounts: 0 };
+  const due = ((data ?? []) as Row[])
+    .filter((r) => preloadSearchDue(r.profile ?? {}, r.listing_checks))
+    .sort((a, b) => (a.status === "en_cola" ? 0 : 1) - (b.status === "en_cola" ? 0 : 1));
+  let found = 0, accounts = 0;
+  for (const r of due) {
+    if (accounts >= limit || Date.now() > deadline) break;
+    found += (await findPreloads(r.account_id, { deadline: Math.min(deadline, Date.now() + 60_000) }).catch(() => [])).length;
+    accounts++;
+  }
+  return { found, accounts };
+}
+
+/**
+ * Una propiedad que se dejó en su panel por un aviso que después se cambió en Prospectos: se saca
+ * si sigue intacta (sin fotos y sin publicar). Si alguien ya trabajó en ella, se deja.
+ */
+async function removeUntouched(agencyId: string, demoId: string, actorId: string) {
+  const db = adminClient();
+  const { data } = await db.from("demos").select("id,property_id,agency_id,status").eq("id", demoId).maybeSingle();
+  const demo = data as { id: string; property_id: string; agency_id: string; status: string } | null;
+  if (!demo || demo.agency_id !== agencyId || demo.status !== "draft") return false;
+  const { count, error } = await db.from("demo_photos").select("id", { count: "exact", head: true }).eq("property_id", demo.property_id);
+  if (error || (count ?? 0) > 0) return false;
+  await db.from("property_imports").update({ status: "failed", pending_images: [], error: "Se cambió el aviso en Prospectos." }).eq("demo_id", demoId);
+  const removed = await db.from("demo_properties").delete().eq("id", demo.property_id);
+  if (removed.error) return false;
+  await db.from("admin_audit").insert({ actor_id: actorId, action: "prospect_prep_removed", subject_id: demoId, details: { agencyId } });
+  return true;
+}
+
+/** «Dejar en su panel» a mano: solo con la tarea «Crear demo» pendiente (mostró interés y no tiene demo). */
+export async function assertCreateDemo(agencyId: string) {
+  if ((await demoPrepTargets()).some((t) => t.agencyId === agencyId)) return;
+  throw new HttpError(409, "Todavía no está en «Crear demo». Sus avisos quedan en su panel cuando muestre interés: antes, la inmobiliaria vería propiedades que no pidió.");
+}
+
 /** Una clave por inmobiliaria, aviso e intento: el mismo intento repetido no importa dos veces. */
 function requestKey(agencyId: string, url: string, attempt: number) {
   const h = createHash("sha256").update(`${agencyId}|${url}|${attempt}`).digest("hex");
@@ -86,8 +174,11 @@ function requestKey(agencyId: string, url: string, attempt: number) {
 
 /** Importa a su panel los avisos que faltan («Lista para importar») y guarda qué pasó con cada uno. */
 export async function prepareDemo(accountId: string, agencyId: string, actorId: string, by: string): Promise<DemoPrep> {
-  const row = await rowOf(accountId);
+  let row = await rowOf(accountId);
   if (!row) throw new HttpError(404, "Esa inmobiliaria todavía no tiene datos en Prospectos.");
+  // Missing precargas: looked for on its own site first, so the three go to its panel together.
+  const found = preloadSearchDue(row.profile ?? {}, row.listing_checks) ? await findPreloads(accountId).catch(() => [] as string[]) : [];
+  if (found.length) row = (await rowOf(accountId)) ?? row;
   const profile = row.profile ?? {};
   const listings = listingsOf(profile);
   if (!listings.length) throw new HttpError(409, "Falta el aviso para la demo en Prospectos.");
@@ -110,7 +201,17 @@ export async function prepareDemo(accountId: string, agencyId: string, actorId: 
     else if (res.status === 409 && body.duplicateOf) items.push({ key: l.key, url: l.url, ok: true, demoId: body.duplicateOf, photos: 0, error: null });
     else items.push({ key: l.key, url: l.url, ok: false, demoId: null, photos: 0, error: (body.error ?? `Error ${res.status}`).slice(0, 240) });
   }
-  const prep: DemoPrep = { at: new Date().toISOString(), attempts: attempt, by, items };
+  // A property left by a listing changed since in Prospectos: out of its panel, if nobody worked on it.
+  const removed: string[] = [...(prev?.removed ?? [])];
+  for (const old of prev?.items ?? []) {
+    if (!old.ok || !old.demoId || listings.some((l) => sameListing(l.url, old.url))) continue;
+    if (await removeUntouched(agencyId, old.demoId, actorId).catch(() => false)) removed.push(old.url);
+  }
+  const prep: DemoPrep = {
+    at: new Date().toISOString(), attempts: attempt, by, items,
+    ...(found.length || prev?.found?.length ? { found: [...(prev?.found ?? []), ...found] } : {}),
+    ...(removed.length ? { removed } : {}),
+  };
   const { error } = await adminClient().from("prospect_profiles").update({ demo_prep: prep }).eq("account_id", accountId);
   if (error) throw new HttpError(503, MIGRATION);
   return prep;

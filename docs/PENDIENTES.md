@@ -8,7 +8,8 @@ Producción: https://amoblaia.vercel.app/
 
 - Migración `202612280001_prospect_demo_prep.sql`: aplicada en producción el 18/11.
 - Prospectos guarda las dos precargas, lee de prueba cada aviso y, al pasar a Interesado, deja los tres en su panel como «Lista para importar». Detalle en [PROSPECCION.md](PROSPECCION.md) §12.
-- **Pendiente:** cargar las precargas en las que ya están en la cola, y actualizar las «Observaciones para la extensión» de «Crear demo» (V2) para que use lo preparado antes de buscar. Lo decide Facu.
+- 19/11: las precargas que faltan las busca habita. en la web de cada inmobiliaria (al preparar y en el cron, 10 por día de la cola). Las observaciones de «Crear demo» V2 ya dicen que use lo preparado; se ajustó el paso 3 para no volver a importar la URL. «Crear demo» abre la propiedad preparada con «Importar fotos de la publicación» para hacerla a mano. Detalle en [PROSPECCION.md](PROSPECCION.md) §12.
+- **Pendiente:** 40 de la cola tienen el aviso principal en Argenprop (de antes de la regla de web propia). Argenprop no se lee: no se pueden preparar ni buscarles precargas. Hay que cambiarles el aviso por uno de su web.
 
 ## Llenado automático de la cola — 18 de noviembre de 2026 (rama `claude/practical-hawking-4xayl8`)
 

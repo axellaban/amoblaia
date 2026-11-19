@@ -639,7 +639,33 @@ export function DemoEditor({
     }
   }
 
+  /**
+   * «Lista para importar»: its listing's photos, brought now (no credits). The import is reported
+   * where it was made (the agency's panel, or the team's edit of that agency), so it stops waiting.
+   */
+  const importPending = () => {
+    const pending = detail?.pendingImport;
+    if (!pending?.images.length) return;
+    void run(async () => {
+      const sync = await syncPhotos(base, pending.images, (text) => say({ tone: "notice", text, section: "fotos" }));
+      const report = agencyMode ? "/api/panel/importar" : `/api/admin/inmobiliarias/${agencyContext ?? detail.demo.agencyId}/importar`;
+      // The photos are already saved: a report that fails only leaves the import listed as waiting.
+      await api(report, {
+        method: "PATCH",
+        body: JSON.stringify({ importId: pending.importId, done: sync.done, failed: sync.failedUrls, reasons: sync.reasons }),
+      }).catch(() => undefined);
+      if (agencyMode) track("preloaded_property_import_completed", { property_id: id, photos_done: sync.done.length, photos_total: pending.images.length });
+      await load();
+      if (!sync.done.length) throw new Error("No se pudo traer ninguna foto de la publicación. Probá de nuevo más tarde o subilas a mano.");
+      say({
+        tone: "notice",
+        text: `${sync.done.length} ${sync.done.length === 1 ? "foto importada" : "fotos importadas"}${sync.failed ? `, ${sync.failed} no se pudieron traer` : ""}. Elegí las mejores y generá las versiones.`,
+        section: "fotos",
+      });
+    }, undefined, "fotos");
+  };
   const workspaceActions: WorkspaceActions = {
+    importPending,
     patchPhoto,
     move: (photoId, step) => void move(photoId, step),
     order,

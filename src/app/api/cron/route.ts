@@ -8,7 +8,7 @@ import { reconcileCheckout } from "@/lib/commerce/reconcile";
 import { advanceAiVideos } from "@/lib/video/ai";
 import { snapshotQueueDay } from "@/lib/followup/server";
 import { runAutofill } from "@/lib/prospecting/autofill";
-import { checkPendingListings, prepareInterested } from "@/lib/prospecting/demo-prep";
+import { checkPendingListings, findPendingPreloads, prepareInterested } from "@/lib/prospecting/demo-prep";
 import { isUuid } from "@/lib/demos/shared";
 import {
   endLaunchPrices,
@@ -114,6 +114,8 @@ export async function GET(request: Request) {
     // read of the listings saved without one, so a listing that cannot be imported shows up today.
     await prepareInterested({ actorId: actor, by: "Preparación diaria", limit: 10, deadline: deadline - 200000 }).catch(() => console.error("cron_prospect_demo_prep_failed"));
     await checkPendingListings({ limit: 30, deadline: deadline - 170000 }).catch(() => console.error("cron_prospect_listing_check_failed"));
+    // The queue's missing precargas, looked for on each agency's own site (once per main listing).
+    await findPendingPreloads({ limit: 10, deadline: deadline - 140000 }).catch(() => console.error("cron_prospect_preload_search_failed"));
     // Follow-up: the photo of the day's queue (06:00 in Buenos Aires), for Resultados.
     await snapshotQueueDay().catch(() => console.error("cron_followup_queue_day_failed"));
     // AI videos nobody came back to: finished clips are stored, stuck ones failed and refunded.
