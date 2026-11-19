@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { leadStateOf, leadsView, type LeadInput } from "../src/lib/followup/leads";
+import { createDemoPath, leadStateOf, leadsView, type LeadInput } from "../src/lib/followup/leads";
 
 // La pestaña «Leads»: el estado de cada lead en la cola y las reglas activas que dejaron de salir.
 // Datos sintéticos.
@@ -70,5 +70,16 @@ describe("la vista de Leads", () => {
   it("una regla apagada o sin leads no se avisa", () => {
     const off = leadsView({ items: items.slice(0, 3), executions, rules: [{ ...rules[0], enabled: false }, rules[1]], queueDays: null, stages, now: NOW });
     expect(off.alerts).toEqual([]);
+  });
+});
+
+describe("«Crear demo» a mano desde Leads", () => {
+  it("abre la propiedad preparada o una demo nueva, solo en «Interesado, sin demo»", () => {
+    const prep = { prep: { items: [{ key: "demo_listing_url", ok: true, demoId: "d1" }] } };
+    expect(createDemoPath({ agencyId: "a1", stage: "sin-demo", demoKit: prep })).toBe("/admin/inmobiliarias/a1/propiedades/d1?seccion=fotos");
+    expect(createDemoPath({ agencyId: "a1", stage: "sin-demo", demoKit: null })).toBe("/admin/inmobiliarias/a1/propiedades/nueva");
+    expect(createDemoPath({ agencyId: "a1", stage: "sin-cuenta", demoKit: prep })).toBeNull();
+    const view = leadsView({ items: [base({ stage: "sin-demo", blocked: "Completar inmueble candidato en Prospectos.", demoKit: prep })], executions: [], rules, queueDays: null, stages, now: NOW });
+    expect(view.rows[0]).toMatchObject({ state: "bloqueada", createDemo: "/admin/inmobiliarias/a1/propiedades/d1?seccion=fotos" });
   });
 });

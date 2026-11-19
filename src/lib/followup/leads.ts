@@ -47,6 +47,8 @@ export type LeadInput = {
   claim: { by: string; until: string } | null;
   owner: string | null;
   execution: { status: string; at: string } | null;
+  /** «Crear demo»: lo que Prospectos dejó en su panel (la propiedad principal, si quedó). */
+  demoKit?: { prep: { items: { key: string; ok: boolean; demoId: string | null }[] } | null } | null;
 };
 export type LeadExecution = { agency_id: string; stage: string; action?: string | null; status: string; sent_at: string | null };
 export type LeadStage = { key: string; title: string; goal: string };
@@ -68,6 +70,8 @@ export type LeadRow = {
   ruleKey: string | null;
   /** El último mensaje que le salió: la regla (o su acción), la etapa y cuándo. */
   lastRule: { label: string; stage: string; at: string } | null;
+  /** En «Crear demo» (Interesado, sin demo): dónde se crea a mano, aunque la tarea esté bloqueada. */
+  createDemo: string | null;
 };
 export type RuleHealth = {
   key: string;
@@ -146,6 +150,16 @@ function daysIn(history: Map<string, QueueDayRow[]>, agencyId: string, stage: st
   return Math.max(1, n);
 }
 
+/**
+ * «Crear demo» a mano: la propiedad que Prospectos dejó en su panel (sus fotos a un clic) o una
+ * demo nueva. Solo en «Interesado, sin demo»; la ruta es del panel del equipo de habita.
+ */
+export function createDemoPath(q: Pick<LeadInput, "agencyId" | "stage" | "demoKit">) {
+  if (q.stage !== "sin-demo") return null;
+  const main = q.demoKit?.prep?.items.find((i) => i.key === "demo_listing_url" && i.ok && i.demoId);
+  return main ? `/admin/inmobiliarias/${q.agencyId}/propiedades/${main.demoId}?seccion=fotos` : `/admin/inmobiliarias/${q.agencyId}/propiedades/nueva`;
+}
+
 const ruleName = (r: Pick<Rule, "name" | "action" | "stage">, label: (stage: string, action: string) => string) => r.name?.trim() || label(r.stage, r.action);
 
 export function leadsView(input: {
@@ -187,6 +201,7 @@ export function leadsView(input: {
       days: daysIn(history, q.agencyId, q.stage, state, today),
       next: q.action ? q.actionLabel ?? q.action : null,
       ruleKey: q.ruleKey,
+      createDemo: createDemoPath(q),
       lastRule: last ? { label: rule ? ruleName(rule, label) : last.action ? label(last.stage, last.action) : "Mensaje", stage: last.stage, at: last.sent_at! } : null,
     };
   });
