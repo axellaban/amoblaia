@@ -79,10 +79,10 @@ export const VARIABLES = {
   sdr: "Quien envía",
   demo: "Link a su demo",
   panel: "Link a su panel",
-  precargas: "Las 2 propiedades precargadas en su panel («2 de sus propiedades»): sin las dos listas, esa línea no se manda",
+  precargas: "Las propiedades precargadas en su panel («2 de sus propiedades listas» o «una de sus propiedades lista»): sin ninguna, esa línea no se manda",
 } as const;
-/** Lo que dice {{precargas}} cuando las 2 propiedades ya están en su panel, listas para importar. */
-export const PRECARGAS_TEXT = "2 de sus propiedades";
+/** Lo que dice {{precargas}} según cuántas propiedades ya están en su panel, listas para importar (ninguna: null, la línea no va). */
+export const precargasText = (ready: number) => (ready >= 2 ? "2 de sus propiedades listas" : ready === 1 ? "una de sus propiedades lista" : null);
 export type MessageContext = Partial<Record<keyof typeof VARIABLES, string | null>>;
 
 export type VersionStatus = "active" | "test" | "archived";
@@ -224,13 +224,13 @@ export function versionFor(agencyId: string, versions: FollowupVersion[], previo
  * Fills the {{variables}}; an unknown or empty one stays visible so the
  * message is never sent with a hole. {{decisor}} is the exception: without a
  * name it goes away with its comma («Hola {{decisor}}, soy…» → «Hola, soy…»;
- * «{{decisor}}, te dejo…» → «Te dejo…»). {{precargas}} también: sin las 2
- * propiedades precargadas en su panel, su línea entera no se manda.
+ * «{{decisor}}, te dejo…» → «Te dejo…»). {{precargas}} también: sin ninguna
+ * propiedad precargada en su panel, su línea entera no se manda.
  */
 export function fillMessage(text: string, ctx: MessageContext) {
   let out = text;
-  // {{precargas}}: la línea que la nombra solo va si las 2 propiedades ya están en su panel (19/11/2026).
-  // Sin ellas se borra la línea entera y el resto del mensaje sale igual (el envío del panel de siempre).
+  // {{precargas}}: la línea que la nombra solo va si hay propiedades precargadas en su panel (19/11/2026).
+  // Sin ninguna se borra la línea entera y el resto del mensaje sale igual (el envío del panel de siempre).
   if (!ctx.precargas?.trim() && /\{\{\s*precargas\s*\}\}/.test(out))
     out = out
       .split("\n")
