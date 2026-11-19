@@ -132,6 +132,8 @@ export async function followupSnapshot(team: TeamUser[] = [], period?: Period) {
     chartRows: o.chartRows,
     // La fecha de llegada a cada paso, para comparar el embudo con el período anterior.
     funnelDates: o.funnelDates ?? [],
+    // «Leads»: cada inmobiliaria con su estado en la cola, y las reglas activas que dejaron de salir.
+    leads: o.leads,
     chartPeriod: period ?? { key: 'todo', from: null, to: null },
     stages: o.stages.map((s) => ({ key: s.key, title: s.title, goal: s.goal, waiting: s.queue.length, versions: s.versions })),
     rules: o.rules,

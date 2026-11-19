@@ -269,6 +269,17 @@ Migración `202612110001_followup_queue_days.sql` (se puede re-ejecutar). Lógic
 - **Tendencia por acción**: `windows[período].weeklyByType` (igual en todos los períodos), ejecutadas y conversiones por semana para cada tipo de acción.
 - **Cohortes con el embudo del panel** (`results.cohortFunnel`): las mismas cohortes, contadas con las seis etapas de `/admin/inmobiliarias` (Prospecto, Contactada, Demo enviada, Interactuó, Con panel, Cliente). Entre «Demo enviada» y «Cuenta creada» suma «Demo visitada» (`demo-visitada`: llegó a «Visitó, sin interactuar» o más) y «Demo con interacción» (`demo-interaccion`: llegó a «Interactuó, sin cuenta» o más). Se conservan las cohortes anteriores (`results.cohorts`) por compatibilidad.
 
+## Leads: dónde está cada lead y qué reglas no salen (19/11/2026)
+
+`src/lib/followup/leads.ts` (`leadsView`) ordena el tablero de la cola para la pestaña «Leads» de Chapa. No cambia reglas ni bloqueos: los lee.
+
+- **Estado de cada lead** (`leadStateOf`), con el motivo en palabras de la cola: lista, tomada, programada, reprogramada, **esperando al equipo** (pasada a Facu o Axel, o con una respuesta asignada a Facu), respuesta sin clasificar, bloqueada, mensaje enviado o sin acción. «Esperando al equipo» va aparte de «bloqueada»: un lead pasado a Facu no recibe nada hasta que alguien lo retoma.
+- **Días en el estado:** días seguidos en la misma etapa y el mismo estado según la foto diaria (`followup_queue_days`).
+- **Última regla ejecutada:** el último envío confirmado del lead, con el nombre de la regla y su etapa.
+- **Salud de cada regla:** último envío confirmado, envíos de 21 días y leads a los que hoy les toca, por estado.
+- **Alertas:** una regla activa con leads que no sale hace más de 3 días (`STALE_DAYS`, en días de Buenos Aires), y las tareas listas que nadie mandó durante 2 días seguidos o más (`READY_DAYS`).
+- Va en el snapshot de Chapa como `leads` (`followupOverview` → `chapa.ts`).
+
 ## Desde Chapa Labs (servidor a servidor)
 
 El panel comercial de Chapa Labs (`/prospecting`, «Hoy» con Avita y Turnia juntas) opera este mismo Follow-up por `/api/prospeccion`, con `Authorization: Bearer $PROSPECTING_API_SECRET` (o `$METRICS_SECRET`). Lógica en `src/lib/followup/chapa.ts`: llama a las mismas funciones que `/api/admin/followup/*`, con los mismos campos, así las reglas, los claims, la auditoría y los resultados son los mismos.
