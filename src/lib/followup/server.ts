@@ -383,6 +383,12 @@ export type QueueItem = {
   /** Por qué no se puede ejecutar ahora; null: está en la cola. */
   blocked: string | null;
   handoffTo: "Facu" | "Axel" | null;
+  /**
+   * Para quién queda la tarea cuando lo único que la frena es que es de una persona (pasada a Facu o
+   * Axel, o con una respuesta para Facu). Sigue fuera de la cola de la extensión (`blocked`), pero esa
+   * persona la puede tomar con «Ejecutar» como cualquier otra. null: no es eso (o hay otro bloqueo).
+   */
+  heldFor: "Facu" | "Axel" | null;
   /** Lo que el agente revisa antes de mandar (número sin validar, un WhatsApp abierto sin confirmar). */
   checks: string[];
   /** Otra sesión la tiene tomada (o esta misma). */
@@ -657,7 +663,12 @@ async function board(now = new Date()) {
       it.blocked = `El aviso para la demo es de ${portal}: elegí uno de su web propia en Prospectos.`;
     // Still in Prospectos: it waits there until it is passed to the queue.
     it.blocked = poolBlock(account ? pool.get(account.id) : undefined, it.stage, it.execution?.status === "sent") ?? it.blocked;
+    // «Para Facu» (o Axel) no es un bloqueo para esa persona: solo saca la tarea de la extensión.
+    // Si debajo hay otro motivo real (cupo, inmueble candidato, Prospectos), sigue sin poder ejecutarse.
+    const forFacuReply = it.blocked?.startsWith("Asignada a Facu") ? "Facu" as const : null;
+    const underneath = forFacuReply ? null : it.blocked;
     if(own?.handoff_to)it.blocked=`Pasada a ${own.handoff_to}. Retomar para volver a ejecutar.`;
+    it.heldFor = it.stage !== "no-contactado" && !underneath && !it.dueAt && !snoozed ? (own?.handoff_to ?? forFacuReply) : null;
     items.set(r.id, it);
   }
   // Respect remaining first-contact capacity rather than calling every
@@ -906,6 +917,7 @@ function item(
     situationManual: sit.manual,
     situationNote: sit.manual ? (own?.situation_note ?? null) : null,
     handoffTo: own?.handoff_to ?? null,
+    heldFor: null,
     action,
     actionLabel: action ? actionLabel(anchor, action) : null,
     messageStage: anchor,
@@ -1209,7 +1221,8 @@ export async function claimNext(input: { agencyId?: unknown; filter?: unknown; s
     // confirmed meanwhile (from another instance) is read before answering.
     const { it, b } = await itemOf(input.agencyId, { shared: true });
     if (it.execution?.status === "sent") throw new HttpError(409, `Ya se confirmó «${it.actionLabel}» con ${it.name}.`);
-    if (it.blocked) throw new HttpError(409, it.blocked);
+    // Lo que es de una persona (Facu, Axel) lo toma esa persona desde su vista: solo se pide por id.
+    if (it.blocked && !it.heldFor) throw new HttpError(409, it.blocked);
     const [, sent] = await Promise.all([lock(it, actor), sentAlready(it)]);
     if (sent) {
       await release(it.agencyId, actor.id).catch(() => undefined);
@@ -1550,7 +1563,9 @@ export async function confirmExecution(input: { agencyId: unknown; stage?: unkno
   // Revalidate availability at confirmation: a claim or an open WhatsApp tab
   // never reserves permission to exceed the first-contact cap or send to a
   // newly closed contact.
-  if (v.channel === "whatsapp" && it.blocked) throw new HttpError(409, `No confirmes el envío: ${it.blocked} Actualizá la cola.`);
+  if (v.channel === "whatsapp" && it.blocked && !it.heldFor) throw new HttpError(409, `No confirmes el envío: ${it.blocked} Actualizá la cola.`);
+  // La extensión nunca ejecuta lo que es de una persona.
+  if (options.executedBy === "bot" && it.heldFor) throw new HttpError(409, `No confirmes el envío: es para ${it.heldFor}.`);
   // Crear demo is confirmed by publication in the product, never by a manual task-send click.
   if (it.stage === "sin-demo" && it.action === "principal" && v.channel === "task") throw new HttpError(409, "La demo todavía no está publicada. Creala desde el panel: al publicarla, Habita avanzará automáticamente a «Demo creada, sin enviar».");
   const text = typeof input.text === "string" ? input.text.trim().slice(0, 8000) : "";
