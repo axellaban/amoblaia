@@ -228,7 +228,7 @@ La next best action sale de reglas guardadas en la base, editables en **Mensajes
 ### Demos en la cola
 
 - **Demo prometida**: una inmobiliaria que mostró interés con la demo por crear o por enviar va primera en la cola, con prioridad alta. El checklist muestra hace cuánto mostró interés, pero es solo prioridad: no vence, no bloquea ni la saca de la cola.
-- **Crear demo a mano**: en la tarea «Crear demo», el botón «Crear demo» abre la propiedad que Prospectos dejó en su panel (con «Importar fotos de la publicación» a un clic) o, si no hay, una demo nueva. El ítem «Propiedad elegida e importada» se tilda cuando esa propiedad ya tiene sus fotos.
+- **Crear demo a mano**: el botón «Crear demo» (en Chapa: tarjeta de la cola, tarea abierta y pestaña Leads, aunque la tarea esté bloqueada; `createDemo` en cada fila de `leads`) abre la propiedad que Prospectos dejó en su panel (con «Importar fotos de la publicación» a un clic) o, si no hay, una demo nueva. El ítem «Propiedad elegida e importada» se tilda cuando esa propiedad ya tiene sus fotos.
 - **Demo en borrador**: una demo cuenta como creada recién cuando está publicada. Si hay una propiedad importada o una demo sin publicar, la inmobiliaria sigue en «Crear demo» (no pasa a «Enviar demo», que quedaría bloqueada sin enlace).
 - «Interesado, sin demo»: el checklist suma «Propiedad elegida e importada» y «Demo generada, revisada y publicada», que el panel verifica solo; al publicarla pasa sola a «Demo creada, sin enviar», cuyo paso (enviar la demo) sale enseguida.
 
@@ -271,6 +271,17 @@ Migración `202612110001_followup_queue_days.sql` (se puede re-ejecutar). Lógic
 - **Qué es conversión en cada etapa** (`results.conversionLabels`, desde el 13/11): no se configura; sale de la atribución. El saludo convierte con una respuesta («Respondió el saludo»); el resto, cuando la inmobiliaria pasa al objetivo de su etapa (`goal` en `FOLLOWUP_STAGES`, «Pasó a «Interesado»»). Chapa lo muestra debajo de cada acción.
 - **Tendencia por acción**: `windows[período].weeklyByType` (igual en todos los períodos), ejecutadas y conversiones por semana para cada tipo de acción.
 - **Cohortes con el embudo del panel** (`results.cohortFunnel`): las mismas cohortes, contadas con las seis etapas de `/admin/inmobiliarias` (Prospecto, Contactada, Demo enviada, Interactuó, Con panel, Cliente). Entre «Demo enviada» y «Cuenta creada» suma «Demo visitada» (`demo-visitada`: llegó a «Visitó, sin interactuar» o más) y «Demo con interacción» (`demo-interaccion`: llegó a «Interactuó, sin cuenta» o más). Se conservan las cohortes anteriores (`results.cohorts`) por compatibilidad.
+
+## Leads: dónde está cada lead y qué reglas no salen (19/11/2026)
+
+`src/lib/followup/leads.ts` (`leadsView`) ordena el tablero de la cola para la pestaña «Leads» de Chapa. No cambia reglas ni bloqueos: los lee.
+
+- **Estado de cada lead** (`leadStateOf`), con el motivo en palabras de la cola: lista, tomada, programada, reprogramada, **esperando al equipo** (pasada a Facu o Axel, o con una respuesta asignada a Facu), respuesta sin clasificar, bloqueada, mensaje enviado o sin acción. «Esperando al equipo» va aparte de «bloqueada»: un lead pasado a Facu no recibe nada hasta que alguien lo retoma.
+- **Días en el estado:** días seguidos en la misma etapa y el mismo estado según la foto diaria (`followup_queue_days`).
+- **Última regla ejecutada:** el último envío confirmado del lead, con el nombre de la regla y su etapa.
+- **Salud de cada regla:** último envío confirmado, envíos de 21 días y leads a los que hoy les toca, por estado.
+- **Alertas:** una regla activa con leads que no sale hace más de 3 días (`STALE_DAYS`, en días de Buenos Aires), y las tareas listas que nadie mandó durante 2 días seguidos o más (`READY_DAYS`).
+- Va en el snapshot de Chapa como `leads` (`followupOverview` → `chapa.ts`).
 
 ## Desde Chapa Labs (servidor a servidor)
 

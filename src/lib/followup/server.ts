@@ -84,6 +84,7 @@ import {
 import { DEFAULT_RULES, cleanRule, compatible, outsideWindow, type Rule } from "./rules";
 import { PERIODS, blockReasons, bySegment, cohorts, executionDays, attribute, firstContactState, funnelCohorts, periodStart, queueDayState, versionResults, weekly, weeklyByType, type QueueDayRow, type VersionResult, type WindowKey } from "./results";
 import { cleanFilter, pickNext } from "./queue-filter";
+import { leadsView, type LeadsView } from "./leads";
 import { customStages } from "./commercial-catalog";
 import { readSituationOverrides, readStateCatalog, resolveCustomClassification } from "./state-catalog";
 
@@ -1038,7 +1039,7 @@ function resultsOf(b: Awaited<ReturnType<typeof board>>, all: QueueItem[], queue
     blocks: blockReasons(all.filter((q) => q.action && q.execution?.status !== "sent" && q.blocked).map((q) => q.blocked!)),
   };
 }
-export async function followupOverview(period: Period = parsePeriod({})): Promise<{ chart: ReturnType<typeof chartCounts>; lostAt: number[]; chartRows: { agencyId: string; name: string; step: number | null; lost: boolean; score: number | null; whatsapp: string | null }[]; catalog: { stages: Awaited<ReturnType<typeof customStages>>; states: Awaited<ReturnType<typeof readStateCatalog>>; overrides: Awaited<ReturnType<typeof readSituationOverrides>> }; stages: StageView[]; queue: QueueItem[]; blocked: QueueItem[]; noInteresados: QueueItem[]; summary: QueueSummary; agencies: AgencyChoice[]; inbox: InboxItem[]; funnel: FunnelStep[]; rules: Rule[]; changes: Change[]; results: Results & { experiments: Board["experiments"] }; executed: ExecutedItem[]; funnelDates: FunnelDates[]; generatedAt: string }> {
+export async function followupOverview(period: Period = parsePeriod({})): Promise<{ chart: ReturnType<typeof chartCounts>; lostAt: number[]; chartRows: { agencyId: string; name: string; step: number | null; lost: boolean; score: number | null; whatsapp: string | null }[]; catalog: { stages: Awaited<ReturnType<typeof customStages>>; states: Awaited<ReturnType<typeof readStateCatalog>>; overrides: Awaited<ReturnType<typeof readSituationOverrides>> }; stages: StageView[]; queue: QueueItem[]; blocked: QueueItem[]; noInteresados: QueueItem[]; summary: QueueSummary; agencies: AgencyChoice[]; inbox: InboxItem[]; funnel: FunnelStep[]; rules: Rule[]; changes: Change[]; results: Results & { experiments: Board["experiments"] }; executed: ExecutedItem[]; funnelDates: FunnelDates[]; leads: LeadsView; generatedAt: string }> {
   const [b, changes, queueDays] = await Promise.all([sharedBoard(), auditOf(null, 20), readQueueDays()]);
   const all = [...b.items.values()];
   // Today's photo of the queue, before reading it back: what is pending now was pending today.
@@ -1077,6 +1078,15 @@ export async function followupOverview(period: Period = parsePeriod({})): Promis
     results: { ...resultsOf(b, all, queueDays), experiments: b.experiments },
     executed: executedRecent(b),
     funnelDates: funnelDatesOf(b.rows, firsts),
+    // «Leads»: every agency of the board with its state in the queue, and the rules that stopped going out.
+    leads: leadsView({
+      items: all,
+      executions: b.ex,
+      rules: b.rules,
+      queueDays,
+      stages: FOLLOWUP_STAGES.map(({ key, title, goal }) => ({ key, title, goal })),
+      label: (stage, action) => (isAction(action) && isStageKey(stage) ? actionLabel(stage, action) : action),
+    }),
     generatedAt: new Date().toISOString(),
   };
 }
