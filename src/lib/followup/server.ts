@@ -18,6 +18,8 @@ import { poolBlock, portalOfListing } from "@/lib/prospecting/pool";
 import type { Dataset, OutreachAttempt, ProspectAccount } from "@/lib/prospecting/types";
 import { artDate } from "@/lib/prospecting/time";
 import { adminClient } from "@/lib/supabase/server";
+import { incrementalTable, ttlValue } from "@/lib/supabase/incremental";
+import { accountsTable, agenciesTable, touchCommercialTables } from "@/lib/agency/commercial-tables";
 import {
   FOLLOWUP_STAGES,
   commercialOf,
@@ -136,12 +138,26 @@ type AgencyExtra = {
   handoff_to: "Facu" | "Axel" | null;
   handoff_at: string | null;
 };
+const EXTRA_COLS = "agency_id,stage_override,override_step,address,zone,score,situation,situation_step,situation_note,situation_at,rejection_stage,catalog_situation,short_name,priority,assigned_to,snooze_until,snooze_reason,handoff_to,handoff_at";
+/** The whole followup_agencies, incremental once its updated_at trigger is in place (202612300001). */
+const extrasTable = incrementalTable<AgencyExtra & { updated_at: string }>({
+  table: "followup_agencies", columns: `${EXTRA_COLS},updated_at`, cursor: "updated_at", key: ["agency_id"],
+});
+const extrasIncremental = ttlValue(async () => {
+  const { data, error } = await adminClient().rpc("habita_followup_incremental_ready");
+  return !error && data === true;
+}, 10 * 60_000);
 const extras = async (agencyId?: string) => {
-  let q = adminClient().from("followup_agencies").select("agency_id,stage_override,override_step,address,zone,score,situation,situation_step,situation_note,situation_at,rejection_stage,catalog_situation,short_name,priority,assigned_to,snooze_until,snooze_reason,handoff_to,handoff_at");
-  if (agencyId) q = q.eq("agency_id", agencyId);
-  const { data, error } = await q.limit(20000);
-  if (error) throw missing(error) ? new HttpError(409, MISSING) : new Error("FOLLOWUP_READ_FAILED");
-  return new Map(((data ?? []) as AgencyExtra[]).map((x) => [x.agency_id, { ...x, score: x.score === null ? null : Number(x.score) }]));
+  let rows: AgencyExtra[] | null = null;
+  if (!agencyId && (await extrasIncremental.get().catch(() => false))) rows = await extrasTable.read().catch(() => null);
+  if (!rows) {
+    let q = adminClient().from("followup_agencies").select(EXTRA_COLS);
+    if (agencyId) q = q.eq("agency_id", agencyId);
+    const { data, error } = await q.limit(20000);
+    if (error) throw missing(error) ? new HttpError(409, MISSING) : new Error("FOLLOWUP_READ_FAILED");
+    rows = (data ?? []) as unknown as AgencyExtra[];
+  }
+  return new Map(rows.map((x) => [x.agency_id, { ...x, score: x.score === null ? null : Number(x.score) }]));
 };
 
 /** Las reglas activas e inactivas (Fase 3). Sin la tabla, la migración falta. */
@@ -195,21 +211,37 @@ function sheetFacts(row: Record<string, unknown>): SheetFacts {
   return { status: find(/^estado$/), sentDate: find(/^fecha (de )?envio$/) };
 }
 
+/**
+ * The «Estado» and «Fecha envío» of each account's sheet, without bringing the whole sheet
+ * (source_data) of every account on every reload: the database picks those two
+ * (habita_followup_sheet_facts, 202612300001). Before that migration, as before.
+ */
+async function sheetFactsByAgency(): Promise<Map<string, SheetFacts>> {
+  const { data, error } = await adminClient().rpc("habita_followup_sheet_facts").then((r) => r, (e) => ({ data: null, error: e }));
+  if (!error && Array.isArray(data))
+    return new Map((data as { agency_id: string; status: string | null; sent_date: string | null }[]).map((f) => [f.agency_id, { status: f.status ?? null, sentDate: f.sent_date ?? null }]));
+  const accounts = await readAll<{ agency_id: string; stage: string; source_data: Record<string, unknown> | null }>("prospect_accounts", "agency_id,stage,source_data");
+  return new Map(
+    accounts
+      .filter((a) => a.source_data && a.stage !== "lost" && a.stage !== "discarded")
+      .map((a) => [a.agency_id, sheetFacts(a.source_data!)] as const),
+  );
+}
+
 /** The agency's web and contact name, and its prospecting account's address (optional sources: missing reads as nothing). */
 async function details(agencyId?: string) {
-  const [agencies, accounts] = await Promise.all([
-    readAll<{ id: string; website: string | null; contact_name: string | null }>("agencies", "id,website,contact_name"),
-    readAll<{ agency_id: string; address: string | null; stage: string; source_data: Record<string, unknown> | null }>("prospect_accounts", "agency_id,address,stage,source_data"),
+  const [agencies, accounts, sheet] = await Promise.all([
+    // The same incremental reads as the rows (lib/agency/commercial-tables.ts).
+    agenciesTable.read().catch(() => readAll<{ id: string; website: string | null; contact_name: string | null }>("agencies", "id,website,contact_name")),
+    accountsTable.read().catch(() => readAll<{ agency_id: string; address: string | null }>("prospect_accounts", "agency_id,address")),
+    sheetFactsByAgency(),
   ]);
-  const only = <T extends { id?: string; agency_id?: string }>(list: T[]) => (agencyId ? list.filter((x) => (x.id ?? x.agency_id) === agencyId) : list);
+  const agencyRows: { id: string; website: string | null; contact_name: string | null }[] = agencies;
+  const accountRows: { agency_id: string; address: string | null }[] = accounts;
   return {
-    agency: new Map(only(agencies).map((a) => [a.id, a])),
-    address: new Map(only(accounts).filter((a) => a.address).map((a) => [a.agency_id, a.address])),
-    sheet: new Map(
-      only(accounts)
-        .filter((a) => a.source_data && a.stage !== "lost" && a.stage !== "discarded")
-        .map((a) => [a.agency_id, sheetFacts(a.source_data!)] as const),
-    ),
+    agency: new Map(agencyRows.filter((a) => !agencyId || a.id === agencyId).map((a) => [a.id, a])),
+    address: new Map(accountRows.filter((a) => a.address && (!agencyId || a.agency_id === agencyId)).map((a) => [a.agency_id, a.address])),
+    sheet: agencyId ? new Map([...sheet].filter(([id]) => id === agencyId)) : sheet,
   };
 }
 const executions = (agencyId?: string) =>
@@ -460,10 +492,15 @@ const claims = async () => {
 
 const DAY_MS = 86_400_000;
 export type QuotaSettings = { cap: number; outsideToday: number; externalUpdatedAt: string | null };
-export async function readQuotaSettings(now = new Date()): Promise<QuotaSettings> {
+type QuotaRow = { cap: number; external_count: number; external_updated_at: string | null };
+async function readQuotaRow(): Promise<QuotaRow> {
   const { data, error } = await adminClient().from("followup_quota_settings")
     .select("cap,external_count,external_updated_at").eq("id", true).single();
   if(error || !data) throw new HttpError(503, "No se pudo consultar el cupo. Verificá la migración de configuración.");
+  return data as QuotaRow;
+}
+export async function readQuotaSettings(now = new Date(), row?: QuotaRow): Promise<QuotaSettings> {
+  const data = row ?? await readQuotaRow();
   const stamped = data.external_updated_at ? Date.parse(data.external_updated_at) : NaN;
   return { cap: data.cap, outsideToday: Number.isFinite(stamped) && stamped > now.getTime()-DAY_MS ? data.external_count : 0,
     externalUpdatedAt: data.external_updated_at };
@@ -496,17 +533,21 @@ const whenText = (iso: string) => new Date(iso).toLocaleString("es-AR", { day: "
  * page, the agent's queue and each claim or confirmation read the same thing,
  * so the counters match the rows.
  */
-async function board(now = new Date()) {
+async function board(now = new Date(), { cached = false }: { cached?: boolean } = {}) {
+  // Reads for a view (sharedBoard) take the settings that almost never change from the
+  // instance's copy (10 minutes, cleared by every write here); writes read them fresh.
   const [rows, ds, vs, ex, extra, info, held, open, rules, overrides, catalog, extraStages, quota, pool, runs] = await Promise.all([
     commercialRows(),
     prospectDataset({ syncConversions: false }),
-    versions(),
+    cached ? settingsCache.versions.get() : versions(),
     executions(),
     extras(),
     details(),
     claims(),
     openReplies(),
-    readRules(), readSituationOverrides(), readStateCatalog(), customStages(), readQuotaSettings(now),
+    cached ? settingsCache.rules.get() : readRules(), readSituationOverrides(),
+    cached ? settingsCache.states.get() : readStateCatalog(), customStages(),
+    cached ? settingsCache.quota.get().then((row) => readQuotaSettings(now, row)) : readQuotaSettings(now),
     poolGates().catch(() => new Map() as Awaited<ReturnType<typeof poolGates>>),
     readAll<{ id: string; control_id: string; variant_id: string; started_at: string; ended_at: string | null }>("followup_ab_runs", "id,control_id,variant_id,started_at,ended_at"),
   ]);
@@ -769,16 +810,37 @@ type Board = Awaited<ReturnType<typeof board>>;
 let boardCache: { until: number; value: Board } | null = null;
 let boardPending: Promise<Board> | null = null;
 let boardRevision = 0;
+/**
+ * What almost never changes (the texts, the rules, the catalog of situations, the cap): one copy
+ * per instance for 10 minutes, for the views. Every write clears it (invalidateBoard), and the
+ * writes themselves (claim, confirm, rule-save…) read fresh. Each read gets its own copy.
+ */
+const SETTINGS_TTL_MS = 10 * 60_000;
+const cloned = <T>(load: () => Promise<T>) => {
+  const cache = ttlValue(load, SETTINGS_TTL_MS);
+  return { get: () => cache.get().then((v) => structuredClone(v)), clear: cache.clear };
+};
+const settingsCache = {
+  versions: cloned(() => versions()),
+  rules: cloned(() => readRules()),
+  states: cloned(() => readStateCatalog()),
+  quota: cloned(() => readQuotaRow()),
+};
 export function invalidateBoard() {
   boardRevision++;
   boardCache = null;
   boardPending = null;
+  for (const c of Object.values(settingsCache)) c.clear();
+  // The incremental tables keep their rows (the next read brings what changed), but no new
+  // read joins one that started before this write.
+  touchCommercialTables();
+  extrasTable.touch();
 }
 function sharedBoard(): Promise<Board> {
   if (boardCache && boardCache.until > Date.now()) return Promise.resolve(boardCache.value);
   if (boardPending) return boardPending;
   const generation = boardRevision;
-  const request = board().then((value) => {
+  const request = board(new Date(), { cached: true }).then((value) => {
     if (generation === boardRevision) boardCache = { until: Date.now() + BOARD_TTL_MS, value };
     return value;
   }).finally(() => { if (boardPending === request) boardPending = null; });

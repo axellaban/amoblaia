@@ -12,8 +12,9 @@ import { scoreDemoEvents, scoreRow, type LeadEvent } from "./score";
 
 const EVENT_FIELDS =
   "event_id,event_name,occurred_at,demo_id,agency_id,visitor_id,session_id,ph_device_id,view_id,style_id,photo_id,generation_id,property_id,value,source,visitor_type,is_internal,internal_reason,identity,quality,link_type";
-const SCORE_FIELDS =
-  "demo_id,agency_id,visitor_id,aliases,score,classification,commercial_score,activation_score,signals,explanation,last_event_at,attribution_confidence,visitor_type,is_internal,score_data_quality";
+/** A visitor's score as the lists show it: without its signals and explanation (see allScoreRows). */
+const LIST_SCORE_FIELDS =
+  "demo_id,agency_id,visitor_id,aliases,score,classification,commercial_score,activation_score,last_event_at,attribution_confidence,visitor_type,is_internal,score_data_quality";
 
 function check<T>(result: { data: T | null; error: unknown }, code: string): T {
   if (result.error) throw new Error(code);
@@ -167,14 +168,20 @@ async function demoInfos() {
   return rows.map((d) => ({ ...d, title: d.title || title.get(d.property_id) || "Demo" }));
 }
 
-export async function allScoreRows() {
+/**
+ * Every visitor's score. The lists only need the score and its class: by default the signals and
+ * the explanation stay out (they are most of each row) and arrive empty; the lead's own page reads
+ * them with its rows. `signals: true` adds the signals, for the «Leads» list's main signal.
+ */
+export async function allScoreRows({ signals = false }: { signals?: boolean } = {}) {
+  const fields = signals ? `${LIST_SCORE_FIELDS},signals` : LIST_SCORE_FIELDS;
   const out: ScoreRow[] = [];
   for (let from = 0; ; from += 1000) {
     const page = check(
-      await adminClient().from("lead_visitor_scores").select(SCORE_FIELDS).order("demo_id").order("visitor_id").range(from, from + 999),
+      await adminClient().from("lead_visitor_scores").select(fields).order("demo_id").order("visitor_id").range(from, from + 999),
       "LEAD_SCORES_FAILED",
-    ) as ScoreRow[];
-    out.push(...page);
+    ) as unknown as Partial<ScoreRow>[];
+    out.push(...page.map((r) => ({ ...r, signals: r.signals ?? [], explanation: r.explanation ?? "" }) as ScoreRow));
     if (page.length < 1000) return out;
   }
 }
@@ -190,7 +197,8 @@ export type LeadOverview = {
 export async function leadOverview(): Promise<LeadOverview> {
   const [demos, rows, agencies, internal] = await Promise.all([
     demoInfos(),
-    allScoreRows(),
+    // The list shows each agency's main signal; the explanation is only on the agency's page.
+    allScoreRows({ signals: true }),
     adminClient().from("agencies").select("id,name,owner_id").limit(2000),
     internalVisitorIds(),
   ]);
