@@ -7,7 +7,7 @@ Producción: https://amoblaia.vercel.app/
 ## Menos egreso de Supabase — 20 de noviembre de 2026
 
 - Lecturas incrementales, listados sin `source_data`/`signals`/`explanation` y caché de 10 minutos. Detalle en [FOLLOWUP.md](FOLLOWUP.md) → «Menos egreso de Supabase».
-- **Pendiente:** aplicar `supabase/migrations/202612300001_egress_light_reads.sql` en el SQL Editor. Sin ella todo funciona, pero la cola sigue bajando `source_data` entero y `followup_agencies` completa en cada recarga, y Prospectos la hoja entera de cada cuenta pendiente.
+- Migración `202612300001_egress_light_reads.sql`: aplicada en producción el 20/11. La cola recibe solo «Estado» y «Fecha envío» de la hoja (547 cuentas, ~56 KB) y `followup_agencies` se lee de forma incremental.
 - **Siguiente paso posible:** `habita_prospect_dataset` (~2,5 MB) sigue entero en cada tablero.
 
 ## Avisos para «Crear demo» — 18 de noviembre de 2026
