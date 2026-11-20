@@ -78,11 +78,42 @@ describe("prospect_profiles", () => {
     expect(r.extra.find((x) => x.account_id === a)).toMatchObject({ address: "Calle Falsa 123", source_data: { Instagram: "@prueba" } });
   });
 
+  it("de la planilla viajan solo las claves que usa el ranking (202612300001)", async () => {
+    const a = await prospect();
+    await db.query(`update prospect_accounts set source_data=$2::jsonb where id=$1`, [a, JSON.stringify({ Instagram: "@prueba", "Perfil Argenprop": "argenprop.com/x", Notas: "una fila larga de la planilla" })]);
+    const r = (await one<{ r: { extra: { account_id: string; source_data: Record<string, string> }[] } }>("select habita_prospect_pool() as r"))!.r;
+    expect(r.extra.find((x) => x.account_id === a)!.source_data).toEqual({ Instagram: "@prueba", "Perfil Argenprop": "argenprop.com/x" });
+  });
+
+  it("la cola lee de la planilla solo «Estado» y «Fecha envío», sin tildes ni mayúsculas, y no de las cerradas", async () => {
+    const [a, b, c, d] = [await prospect(), await prospect(), await prospect(), await prospect()];
+    await db.query(`update prospect_accounts set source_data=$2::jsonb where id=$1`, [a, JSON.stringify({ " ESTADO ": " Contactado ", "Fecha envío": "03/11/2026", Instagram: "@x" })]);
+    await db.query(`update prospect_accounts set source_data=$2::jsonb where id=$1`, [b, JSON.stringify({ "Fecha de envio": "04/11/2026", Estado: "" })]);
+    await db.query(`update prospect_accounts set source_data=$2::jsonb, stage='lost' where id=$1`, [c, JSON.stringify({ Estado: "Contactado" })]);
+    await db.query(`update prospect_accounts set source_data=$2::jsonb where id=$1`, [d, JSON.stringify({ Estado: 3, Instagram: "@y" })]);
+    const agency = async (acc: string) => (await one<{ agency_id: string }>("select agency_id from prospect_accounts where id=$1", [acc]))!.agency_id;
+    const facts = (await one<{ r: { agency_id: string; status: string | null; sent_date: string | null }[] }>("select habita_followup_sheet_facts() as r"))!.r;
+    expect(facts.find((f) => f.agency_id === (await agency(a)))).toEqual({ agency_id: await agency(a), status: "Contactado", sent_date: "03/11/2026" });
+    expect(facts.find((f) => f.agency_id === (await agency(b)))).toEqual({ agency_id: await agency(b), status: null, sent_date: "04/11/2026" });
+    expect(facts.find((f) => f.agency_id === (await agency(c)))).toBeUndefined();
+    expect(facts.find((f) => f.agency_id === (await agency(d)))).toBeUndefined();
+  });
+
+  it("followup_agencies marca updated_at en cada cambio, para leerla de forma incremental", async () => {
+    const agency = (await one<{ id: string }>("insert into agencies(name) values($1) returning id", [`Inmobiliaria Prueba ${++n}`]))!.id;
+    await db.query("insert into followup_agencies(agency_id, updated_at) values($1, '2020-01-01')", [agency]);
+    await db.query("update followup_agencies set zone='Centro' where agency_id=$1", [agency]);
+    const row = (await one<{ fresh: boolean }>("select updated_at > now() - interval '1 minute' as fresh from followup_agencies where agency_id=$1", [agency]))!;
+    expect(row.fresh).toBe(true);
+    expect((await one<{ ok: boolean }>("select habita_followup_incremental_ready() as ok"))!.ok).toBe(true);
+  });
+
   it("es privada: ni anon ni authenticated leen la tabla ni ejecutan las funciones", async () => {
     for (const role of ["anon", "authenticated"]) {
       await db.exec(`set role ${role}`);
       await expect(db.query("select * from prospect_profiles")).rejects.toThrow(/permission denied/);
       await expect(db.query("select habita_prospect_pool()")).rejects.toThrow(/permission denied/);
+      await expect(db.query("select habita_followup_sheet_facts()")).rejects.toThrow(/permission denied/);
       await db.exec("reset role");
     }
   });

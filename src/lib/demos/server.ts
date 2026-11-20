@@ -3,6 +3,7 @@ import { formatOf } from "@/lib/video/plan";
 import { createHash, randomBytes } from "node:crypto";
 import sharp from "sharp";
 import { adminClient } from "@/lib/supabase/server";
+import { instanceCaching } from "@/lib/supabase/incremental";
 import { BUCKET } from "@/lib/commerce/jobs";
 import { HttpError, rpc } from "@/lib/commerce/http";
 import { normalizePhoto, STAGING_JPEG } from "@/lib/commerce/images";
@@ -200,8 +201,41 @@ async function optionalJson(table: "agencies" | "demos", column: "branding" | "s
   if (error) return { ready: false, value: {} as unknown };
   return { ready: true, value: (data as Record<string, unknown> | null)?.[column] ?? {} };
 }
+/**
+ * An agency's branding and owner almost never change, but every demo (the public page, its logo,
+ * the team's lists) reads them: one copy per instance for 10 minutes. Saving the branding here
+ * clears it (saveJson); the owner (the claim) can take up to 10 minutes to show in the lists.
+ * A failed read is never kept: the next one asks again.
+ */
+const AGENCY_META_TTL_MS = 10 * 60_000;
+type AgencyField = "branding" | "owner_id";
+const agencyMeta: Record<AgencyField, Map<string, { until: number; value: unknown }>> = { branding: new Map(), owner_id: new Map() };
+async function agencyField(ids: string[], field: AgencyField): Promise<Map<string, unknown> | null> {
+  const now = Date.now();
+  const out = new Map<string, unknown>();
+  const missing: string[] = [];
+  for (const id of new Set(ids)) {
+    const hit = instanceCaching() ? agencyMeta[field].get(id) : undefined;
+    if (hit && hit.until > now) out.set(id, hit.value);
+    else missing.push(id);
+  }
+  if (missing.length) {
+    const { data, error } = await adminClient().from("agencies").select(`id,${field}`).in("id", missing);
+    if (error) return null;
+    for (const r of (data ?? []) as unknown as ({ id: string } & Record<AgencyField, unknown>)[]) {
+      agencyMeta[field].set(r.id, { until: now + AGENCY_META_TTL_MS, value: r[field] ?? null });
+      out.set(r.id, r[field] ?? null);
+    }
+  }
+  return out;
+}
+export function forgetAgencyMeta(agencyId: string) {
+  agencyMeta.branding.delete(agencyId);
+  agencyMeta.owner_id.delete(agencyId);
+}
+
 export async function brandingOf(agencyId: string) {
-  return readBranding((await optionalJson("agencies", "branding", agencyId)).value);
+  return readBranding((await agencyField([agencyId], "branding"))?.get(agencyId) ?? {});
 }
 export async function settingsOf(demoId: string) {
   const r = await optionalJson("demos", "settings", demoId);
@@ -220,6 +254,7 @@ export async function saveJson(
     .from(table)
     .update({ [column]: value })
     .eq("id", id);
+  if (table === "agencies") forgetAgencyMeta(id);
   if (error)
     throw new HttpError(
       409,
@@ -331,13 +366,12 @@ export async function whatsappOf(agencyIds: string[]) {
   }
   const missing = agencyIds.filter((id) => !out.has(id));
   if (missing.length) {
-    const rows = await db.from("agencies").select("id,branding").in("id", missing);
-    if (!rows.error)
-      for (const r of (rows.data ?? []) as { id: string; branding: unknown }[]) {
-        const b = readBranding(r.branding);
-        const n = b.contactKind === "whatsapp" && b.contactValue ? whatsappNumber(b.contactValue) : null;
-        if (n) out.set(r.id, n);
-      }
+    const brandings = await agencyField(missing, "branding");
+    for (const [id, branding] of brandings ?? []) {
+      const b = readBranding(branding);
+      const n = b.contactKind === "whatsapp" && b.contactValue ? whatsappNumber(b.contactValue) : null;
+      if (n) out.set(id, n);
+    }
   }
   return out;
 }
@@ -407,7 +441,7 @@ export async function listDemos(agencyId: string | null = null) {
       : Promise.resolve({ data: [], error: null }),
     // Whether each agency already has its account (unknown before 202610280001).
     agencyIds.length
-      ? db.from("agencies").select("id,owner_id").in("id", agencyIds)
+      ? agencyField(agencyIds, "owner_id").then((m) => (m ? { data: [...m].map(([id, owner_id]) => ({ id, owner_id })), error: null } : { data: null, error: true }))
       : Promise.resolve({ data: [], error: null }),
     propertyIds.length
       ? db.from("demo_properties").select("id,title,location").in("id", propertyIds)
@@ -597,7 +631,7 @@ export async function demoDetail(id: string): Promise<DemoDetail> {
       agencyId: demo.agency_id,
       agencyName: (check(agency, "DEMO_AGENCY_LOOKUP_FAILED") as AgencyRow).name,
       // Whether the agency already has its account: the team's invitation is only for agencies without one.
-      agencyClaimed: Boolean((await adminClient().from("agencies").select("owner_id").eq("id", demo.agency_id).maybeSingle()).data?.owner_id),
+      agencyClaimed: Boolean((await agencyField([demo.agency_id], "owner_id"))?.get(demo.agency_id)),
       activity: (await activityOf([demo.id])).get(demo.id) ?? NO_ACTIVITY,
       credits: (await creditsOf([demo.agency_id])).get(demo.agency_id) ?? NO_CREDITS,
       agencyWhatsapp: (await whatsappOf([demo.agency_id])).get(demo.agency_id) ?? null,

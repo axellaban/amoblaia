@@ -6,6 +6,7 @@ import { rollupAgency, rollupDemo, type ScoreRow } from "@/lib/leads/rollup";
 import type { Stage as ProspectStage } from "@/lib/prospecting/types";
 import { commercialStage, demoVisitFact, lastActivity, type ActivityFact, type CommercialRow } from "./commercial";
 import { contactedSend, funnelStep, isTestAgency, prospectStep } from "./demo-funnel";
+import { LIGHT_SCORE_FIELDS, accountsTable, agenciesTable, contactsTable, eventsTable, lightScore, scoresTable } from "./commercial-tables";
 
 /**
  * The facts behind the «Inmobiliarias» panel, read in a few light queries:
@@ -147,8 +148,9 @@ type ProspectContactRow = { account_id: string; channel: string; address: string
 const INTERESTED_STAGES: readonly ProspectStage[] = ["interested", "activated", "customer"];
 
 async function prospectStages(agencyId: string | null) {
-  const rows = await optional(() =>
-    all<ProspectRow>((from, to) => {
+  const rows = await optional<ProspectRow>(() =>
+    // The whole table: incremental (only what changed since the last read on this instance).
+    !agencyId ? accountsTable.read().catch(() => legacyAccounts()) : all<ProspectRow>((from, to) => {
       let q = adminClient().from("prospect_accounts").select("id,agency_id,stage,created_at").range(from, to);
       if (agencyId) q = q.eq("agency_id", agencyId);
       return q;
@@ -156,6 +158,8 @@ async function prospectStages(agencyId: string | null) {
   );
   return { stages: new Map(rows.map((r) => [r.agency_id, r.stage])), accounts: rows };
 }
+const legacyAccounts = () =>
+  all<ProspectRow>((from, to) => adminClient().from("prospect_accounts").select("id,agency_id,stage,created_at").order("id").range(from, to), "COMMERCIAL_PROSPECTS_FAILED");
 
 /**
  * Each agency's prospecting step for the funnel: contacted (a send, or a
@@ -172,8 +176,8 @@ async function prospectFunnel(accounts: ProspectRow[]) {
   if (!accounts.length) return { funnel: out, replies };
   const one = accounts.length === 1 ? accounts[0].id : null;
   const [events, contacts] = await Promise.all([
-    optional(() =>
-      all<ProspectEventRow>((from, to) => {
+    optional<ProspectEventRow>(() =>
+      !one ? eventsTable.read().catch(() => legacyEvents()) : all<ProspectEventRow>((from, to) => {
         let q = adminClient()
           .from("prospect_events")
           .select("id,account_id,type,occurred_at,human,channel,corrects_event_id")
@@ -183,8 +187,8 @@ async function prospectFunnel(accounts: ProspectRow[]) {
         return q;
       }, "COMMERCIAL_PROSPECT_EVENTS_FAILED"),
     ),
-    optional(() =>
-      all<ProspectContactRow>((from, to) => {
+    optional<ProspectContactRow>(() =>
+      !one ? contactsTable.read().catch(() => legacyContacts()) : all<ProspectContactRow>((from, to) => {
         let q = adminClient().from("prospect_contacts").select("account_id,channel,address,invalid_at").range(from, to);
         if (one) q = q.eq("account_id", one);
         return q;
@@ -226,6 +230,12 @@ async function prospectFunnel(accounts: ProspectRow[]) {
   return { funnel: out, replies };
 }
 
+const legacyEvents = () =>
+  all<ProspectEventRow>((from, to) => adminClient().from("prospect_events").select("id,account_id,type,occurred_at,human,channel,corrects_event_id")
+    .in("type", ["sent", "reply", "interest", "correction"]).order("id").range(from, to), "COMMERCIAL_PROSPECT_EVENTS_FAILED");
+const legacyContacts = () =>
+  all<ProspectContactRow>((from, to) => adminClient().from("prospect_contacts").select("account_id,channel,address,invalid_at").order("id").range(from, to), "COMMERCIAL_PROSPECT_CONTACTS_FAILED");
+
 /** Each agency's contact WhatsApp; optional (before its migration, nothing). */
 async function agencyWhatsapps(agencyId: string | null) {
   const rows = await optional(() =>
@@ -238,17 +248,22 @@ async function agencyWhatsapps(agencyId: string | null) {
   return new Map(rows.map((r) => [r.id, r.contact_whatsapp]));
 }
 
-async function scoreRows(demoIds: string[] | null) {
-  if (demoIds === null) return optional(() => allScoreRows());
+/** The visitors' scores for the rows: score and class only (signals and explanation are for the lead's own page). */
+async function scoreRows(demoIds: string[] | null): Promise<ScoreRow[]> {
+  if (demoIds === null)
+    return optional(async () => {
+      const list: Partial<ScoreRow>[] = await scoresTable.read().catch(() => allScoreRows());
+      return list.map(lightScore);
+    });
   if (!demoIds.length) return [];
   return optional(async () => {
     const { data, error } = await adminClient()
       .from("lead_visitor_scores")
-      .select("demo_id,agency_id,visitor_id,score,classification,commercial_score,activation_score,signals,explanation,last_event_at,attribution_confidence,visitor_type,is_internal,score_data_quality")
+      .select(LIGHT_SCORE_FIELDS)
       .in("demo_id", demoIds)
       .limit(5000);
     if (error) throw new Error("COMMERCIAL_SCORES_FAILED");
-    return (data ?? []) as ScoreRow[];
+    return ((data ?? []) as unknown as Partial<ScoreRow>[]).map(lightScore);
   });
 }
 
@@ -272,16 +287,20 @@ async function generatedDemoIds(ids: string[]) {
 
 export async function commercialRows(only: string | null = null): Promise<CommercialRow[]> {
   const db = adminClient();
+  // The whole list reads agencies incrementally (with their WhatsApp in the same rows); one agency, directly.
+  const cached = only ? null : await agenciesTable.read().catch(() => null);
   const [agenciesRaw, demos, prospects, team, whatsapps] = await Promise.all([
-    all<AgencyRow>((from, to) => {
-      let q = db.from("agencies").select("id,name,owner_id,claimed_at,created_at").order("created_at", { ascending: false }).range(from, to);
-      if (only) q = q.eq("id", only);
-      return q;
-    }, "COMMERCIAL_AGENCIES_FAILED"),
+    cached
+      ? (cached.sort((a, b) => b.created_at.localeCompare(a.created_at) || a.id.localeCompare(b.id)) as AgencyRow[])
+      : all<AgencyRow>((from, to) => {
+          let q = db.from("agencies").select("id,name,owner_id,claimed_at,created_at").order("created_at", { ascending: false }).order("id").range(from, to);
+          if (only) q = q.eq("id", only);
+          return q;
+        }, "COMMERCIAL_AGENCIES_FAILED"),
     demosOf(only),
     prospectStages(only),
     internalUserIds(),
-    agencyWhatsapps(only),
+    cached ? new Map(cached.map((a) => [a.id, a.contact_whatsapp])) : agencyWhatsapps(only),
   ]);
   // An agency taken by a team account (QA of the claim, a test) has no real account:
   // no «Cuenta creada», no activity, no subscription. Its demos' visits still count.
