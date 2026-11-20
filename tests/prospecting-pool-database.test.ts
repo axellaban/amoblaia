@@ -91,12 +91,13 @@ describe("prospect_profiles", () => {
     await db.query(`update prospect_accounts set source_data=$2::jsonb where id=$1`, [b, JSON.stringify({ "Fecha de envio": "04/11/2026", Estado: "" })]);
     await db.query(`update prospect_accounts set source_data=$2::jsonb, stage='lost' where id=$1`, [c, JSON.stringify({ Estado: "Contactado" })]);
     await db.query(`update prospect_accounts set source_data=$2::jsonb where id=$1`, [d, JSON.stringify({ Estado: 3, Instagram: "@y" })]);
-    const agency = async (acc: string) => (await one<{ agency_id: string }>("select agency_id from prospect_accounts where id=$1", [acc]))!.agency_id;
+    const agencyOf = async (acc: string) => (await one<{ agency_id: string }>("select agency_id from prospect_accounts where id=$1", [acc]))!.agency_id;
+    const [ga, gb, gc, gd] = [await agencyOf(a), await agencyOf(b), await agencyOf(c), await agencyOf(d)];
     const facts = (await one<{ r: { agency_id: string; status: string | null; sent_date: string | null }[] }>("select habita_followup_sheet_facts() as r"))!.r;
-    expect(facts.find((f) => f.agency_id === (await agency(a)))).toEqual({ agency_id: await agency(a), status: "Contactado", sent_date: "03/11/2026" });
-    expect(facts.find((f) => f.agency_id === (await agency(b)))).toEqual({ agency_id: await agency(b), status: null, sent_date: "04/11/2026" });
-    expect(facts.find((f) => f.agency_id === (await agency(c)))).toBeUndefined();
-    expect(facts.find((f) => f.agency_id === (await agency(d)))).toBeUndefined();
+    expect(facts.find((f) => f.agency_id === ga)).toEqual({ agency_id: ga, status: "Contactado", sent_date: "03/11/2026" });
+    expect(facts.find((f) => f.agency_id === gb)).toEqual({ agency_id: gb, status: null, sent_date: "04/11/2026" });
+    expect(facts.find((f) => f.agency_id === gc)).toBeUndefined();
+    expect(facts.find((f) => f.agency_id === gd)).toBeUndefined();
   });
 
   it("followup_agencies marca updated_at en cada cambio, para leerla de forma incremental", async () => {
