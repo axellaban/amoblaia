@@ -286,6 +286,8 @@ export async function runPoolOp(op: unknown, b: Op, actor: { id: string; name: s
     case "sacar":
     case "reabrir": {
       const { account, row, extra } = await load(b.cuenta);
+      if (op === "sacar" && row?.status !== "en_cola") throw new HttpError(409, "La inmobiliaria no está en la cola.");
+      if (op === "reabrir" && row?.status !== "descartado") throw new HttpError(409, "Solo se puede reabrir una inmobiliaria descartada.");
       // De vuelta a Prospectos: el estado sale de los datos.
       const { vars } = variables(account, row?.profile ?? {}, extra);
       const status = autoStatus("descubierto", missingForQueue(account, vars, scoreOf(account, vars)), completeness(vars));
