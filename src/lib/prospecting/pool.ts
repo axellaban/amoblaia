@@ -255,6 +255,7 @@ export function missingForQueue(a: Pick<ProspectAccount, "contacts" | "suppresse
   if (!wa) out.push("Falta un WhatsApp que se pueda usar.");
   else if (wa.needs_review) out.push("El WhatsApp requiere revisión antes de entrar a la cola.");
   if (!v.demo_listing_url) out.push("Falta elegir el aviso para su demo.");
+  else if (portalOfListing(v.demo_listing_url)) out.push("El aviso debe estar en la web propia, no en un portal inmobiliario.");
   if (!v.demo_listing_reference) out.push("Completar inmueble candidato: falta su referencia para WhatsApp.");
   if (v.demo_photos_importable !== "si") out.push("Falta verificar que las fotos del aviso sean importables desde la web propia.");
   if (!explore && s.fit < MIN_FIT) out.push(`Encaje ${s.fit}: el mínimo para entrar por ranking es ${MIN_FIT}.`);
