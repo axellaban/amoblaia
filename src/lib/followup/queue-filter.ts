@@ -3,7 +3,7 @@
  * y búsqueda. La pantalla y el servidor usan esta misma función, así «Tomar la
  * próxima» toma solo lo que se ve con los filtros elegidos.
  */
-import { GROUPS, SITUATIONS, byQueueOrder, isQueueOrder, type QueueOrder, type Group, type Situation } from "./plan";
+import { GROUPS, SITUATIONS, byQueueOrder, isQueueOrder, queueContext, type QueueOrder, type Group, type Situation } from "./plan";
 import { compatible, stagesOf, type Rule } from "./rules";
 import { FOLLOWUP_STAGES, commercialOf, isCommercialStage, type CommercialStageKey, type StageKey } from "./stages";
 
@@ -96,7 +96,9 @@ export async function pickNext<T extends Filterable & { agencyId: string; claim:
   const skip = new Set(f.skip ?? []);
   const sortKey = (q: T) => ({ ...q, since: ("since" in q && typeof q.since === "string" ? q.since : ""), score: ("score" in q && typeof q.score === "number" ? q.score : null) });
   // Legacy extension requests omit order: preserve the input queue order. The panel explicitly sends comercial.
-  const ordered = f.filter.order ? [...queue].sort((a, b) => byQueueOrder(sortKey(a), sortKey(b), f.filter.order!, f.now ? Date.parse(f.now) : Date.now())) : queue;
+  // The greeting backlog counts the whole queue, not just what the filter shows.
+  const ctx = queueContext(queue as unknown as Parameters<typeof queueContext>[0]);
+  const ordered = f.filter.order ? [...queue].sort((a, b) => byQueueOrder(sortKey(a), sortKey(b), f.filter.order!, f.now ? Date.parse(f.now) : Date.now(), ctx)) : queue;
   for (const it of ordered) {
     if (skip.has(it.agencyId) || !matchesFilter(it, f.filter, f.rules)) continue;
     if (it.claim && it.claim.until > (f.now ?? new Date().toISOString()) && it.claim.actorId !== f.actorId) continue;
