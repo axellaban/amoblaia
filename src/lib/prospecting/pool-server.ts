@@ -221,6 +221,13 @@ async function persist(actor: string, account: ProspectAccount, row: ProfileRow 
   const calculated = autoStatus(before, missing, completeness(vars));
   // Qualification is independent from admission: only the ranked selection or an explicit manual action may admit a prospect.
   const status = force.status ?? calculated;
+  // Never allow a forced queue transition to bypass current hard eligibility checks.
+  if (status === "en_cola" && before !== "en_cola") {
+    if (account.suppressed || account.stage !== "pending")
+      throw new HttpError(409, "La inmobiliaria no está habilitada para nuevos contactos.");
+    if (missing.length)
+      throw new HttpError(409, `La inmobiliaria ya no cumple los requisitos de cola. ${missing.join(" ")}`);
+  }
   const patch: Record<string, unknown> = {
     expected_updated_at: row?.updated_at ?? null,
     profile: force.manualHold === undefined ? changes : { ...changes, manual_queue_hold: force.manualHold ? true : null },
