@@ -31,6 +31,13 @@ begin
  end if;
  merged := a.profile;
  if p_patch ? 'profile' then merged := jsonb_strip_nulls(a.profile || (p_patch->'profile')); end if;
+ -- A manual removal must survive subsequent saves/recalculation. A generic profile patch
+ -- cannot silently clear the persisted exclusion; only a dedicated reactivation flow may do so.
+ if st is not null and a.status = 'en_cola' and st <> 'en_cola' then
+  merged := jsonb_set(merged, '{manual_queue_hold}', 'true'::jsonb, true);
+ elsif coalesce((a.profile->>'manual_queue_hold')::boolean, false) then
+  merged := jsonb_set(merged, '{manual_queue_hold}', 'true'::jsonb, true);
+ end if;
 
  update prospect_profiles set
   profile=merged,
