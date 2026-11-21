@@ -313,7 +313,7 @@ export async function runPoolOp(op: unknown, b: Op, actor: { id: string; name: s
       const pending = ds.accounts.filter((a) => {
         const profile = profiles.get(a.id);
         return a.stage === "pending" && !sent.has(a.id) && !a.suppressed &&
-          profile?.status !== "descartado" && !(profile?.profile as Record<string, unknown> | undefined)?.manual_queue_hold && !(profile?.queued_at && profile.status !== "en_cola");
+          profile?.status !== "en_cola" && profile?.status !== "descartado" && !(profile?.profile as Record<string, unknown> | undefined)?.manual_queue_hold && !(profile?.queued_at && profile.status !== "en_cola");
       });
       const described = new Map(pending.map((a) => [a.id, describe(a, profiles.get(a.id), extras.get(a.id))]));
       const pick = pickForQueue(
