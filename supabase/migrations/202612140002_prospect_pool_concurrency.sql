@@ -2,7 +2,7 @@
 -- Apply only after integration QA. No data backfill or production deployment here.
 create or replace function public.habita_prospect_pool_save(p_actor uuid, p_account uuid, p_patch jsonb)
  returns jsonb language plpgsql security definer set search_path=public as $$
-declare a prospect_profiles; b prospect_profiles; k text; merged jsonb; st text;
+declare a prospect_profiles; b prospect_profiles; k text; merged jsonb; st text; inserted_account uuid;
  allowed constant text[] := array['profile', 'status', 'discard_reason', 'score', 'score_components', 'scoring_version', 'explore', 'snapshot', 'expected_updated_at'];
 begin
  if jsonb_typeof(p_patch) is distinct from 'object' then raise exception 'INVALID_FIELD:patch'; end if;
@@ -10,6 +10,7 @@ begin
   if not k = any(allowed) then raise exception 'INVALID_FIELD:%', k; end if;
  end loop;
  if not exists (select 1 from prospect_accounts where id=p_account) then raise exception 'ACCOUNT_NOT_FOUND'; end if;
+ if not (p_patch ? 'expected_updated_at') then raise exception 'EXPECTED_VERSION_REQUIRED'; end if;
  if p_patch ? 'profile' and jsonb_typeof(p_patch->'profile') <> 'object' then raise exception 'INVALID_FIELD:profile'; end if;
  if p_patch ? 'score_components' and jsonb_typeof(p_patch->'score_components') <> 'object' then raise exception 'INVALID_FIELD:score_components'; end if;
  st := p_patch->>'status';
@@ -17,14 +18,14 @@ begin
  if st = 'descartado' and length(btrim(coalesce(p_patch->>'discard_reason', ''))) = 0 then raise exception 'REASON_REQUIRED'; end if;
 
  insert into prospect_profiles(account_id, status, updated_by) values (p_account, coalesce(st, 'descubierto'), p_actor)
-  on conflict (account_id) do nothing;
+  on conflict (account_id) do nothing returning account_id into inserted_account;
  select * into a from prospect_profiles where account_id=p_account for update;
- if p_patch ? 'expected_updated_at' then
-  if (p_patch->>'expected_updated_at') is null then
-   if a.created_at is distinct from a.updated_at then raise exception 'STALE_PROFILE'; end if;
-  elsif a.updated_at is distinct from (p_patch->>'expected_updated_at')::timestamptz then
-   raise exception 'STALE_PROFILE';
-  end if;
+ -- Every write must carry an expected version. NULL is valid only for a newly inserted row.
+ if inserted_account is not null then
+  if p_patch->>'expected_updated_at' is not null then raise exception 'STALE_PROFILE'; end if;
+ elsif p_patch->>'expected_updated_at' is null or
+       a.updated_at is distinct from (p_patch->>'expected_updated_at')::timestamptz then
+  raise exception 'STALE_PROFILE';
  end if;
  if st = 'en_cola' and a.status <> 'en_cola' and (a.status = 'descartado' or coalesce((a.profile->>'manual_queue_hold')::boolean,false)) then
   raise exception 'QUEUE_MANUAL_HOLD';
