@@ -98,7 +98,7 @@ Para que Astra las evalúe. Claude no las implementa sin aprobación.
 
 ### PRs de usabilidad abiertos
 
-- Ninguno con título `UX:` al 22/11/2026 am.
+- Ninguno con título `UX:` al 22/11/2026 am (2).
 
 ## Plantilla de cada corrida
 
@@ -119,6 +119,24 @@ Para que Astra las evalúe. Claude no las implementa sin aprobación.
 Sin nombres, teléfonos, emails, enlaces a grabaciones, IDs de sesión, tasas de conversión ni cantidades de usuarios o sesiones.
 
 ## Resultados
+
+### QA 2026-11-22 am (2)
+
+- Inicio: 2026-11-22T08:51:33-03:00 · Fin: 2026-11-22T08:57:00-03:00
+- Commit: f00f48e (#336) · Despliegue: dpl_GQKTeABABshXGcncvr6YP6XocRf7 (production, READY) · Estado: parcial (**producción sigue caída por OBS-026**, bloqueo real y reintentado: `qa-login.mjs` falló con el 402 de Supabase «exceed_cached_egress_quota, exceed_egress_quota». Quedaron sin hacer: paso 3 (el conector de PostHog no está en esta tarea), paso 4 (sesión de QA) y del paso 5 crear demostración, estudio de imágenes, video, los caminos de error con sesión (fotos HEIC, pesadas y no imagen, campos vacíos, doble clic, atrás y recarga, guardado sin red), `/panel` y `/admin` con sesión, y en la demo pública la galería, la comparación con clic y arrastre, la CTA y WhatsApp, porque la demo de QA da 404. Sin arreglos posibles del lado del código: pasos 7 y 8 sin cambios.)
+- Tipo: completa (mañana) · Pantallas: escritorio 1366×900, iPhone 13, Galaxy S8 e iPad (gen 7) en `/`, `/precios`, `/acceso`, `/panel` y `/admin` (los dos redirigen a `/acceso`), la demo de QA, su `/presentacion` y una demo inexistente; además la demo de QA y `/presentacion` con red lenta (Galaxy S8) y la demo con user agent de WhatsApp.
+- Paso 2 (Vercel 24 h y Supabase): **el corte sigue**. En Supabase, todo lo de las últimas 24 h en `edge_logs` es 402 (el último es el login de esta corrida); los únicos 200 son de la tarde del 21/11. En Vercel, los cuatro grupos son de OBS-026: `demo_page_lookup_failed` (el último a las 07:36, la corrida anterior), `prospect_error DATABASE_undefined` en `/api/admin/prospeccion/sincronizar` cada hora (el último a las 08:04), `FOLLOWUP_READ_FAILED` y `prospect_demo_prep_sweep_failed` (12:06 del 21/11). Ningún grupo nuevo ni de otra causa.
+- Sesión de QA: **no se pudo** (402 en Auth).
+  - **Páginas públicas, en las cuatro pantallas:** `/`, `/precios` y `/acceso` responden 200 en 1,2 a 2,3 s, sin errores de JavaScript propios, sin respuestas ≥ 400 del dominio, sin scroll horizontal ni placeholders, con `og:title` y `og:image`. Foco visible con Tab en `/acceso`.
+  - **Demo de QA, `/presentacion` y demo inexistente:** 404 «Esta puerta no lleva a ningún ambiente.» con título «Propiedad no disponible» en las cuatro pantallas, con red lenta (5,6 s) y con el navegador de WhatsApp (UX-022). Con `og:title`, `og:description` y `og:image`. La de QA sigue publicada en la base.
+  - **Axe:** solo `color-contrast` (serious) en `/` (UX-001). Ningún `critical`.
+  - **Capturas miradas:** la demo de QA 404 en iPhone 13, `/acceso` en Galaxy S8, `/precios` en iPad y la home en escritorio. Sin texto cortado ni superpuesto.
+- Bugs encontrados: **el corte de OBS-026 sigue**; se avisó por notificación. No lo corrige el QA: hace falta subir el plan o quitar el tope de gasto en Supabase. · Corregidos: ninguno
+- Observaciones nuevas: ninguna · Propuestas nuevas: ninguna · Se repiten: OBS-026, OBS-027, UX-001 y UX-022.
+- PRs de usabilidad abiertos: ninguno con título `UX:`
+- PostHog revisado hasta: 2026-11-22T07:35:00-03:00 (sin cambios) · cobertura: sin acceso · el conector de PostHog no está en esta tarea; la próxima corrida retoma desde esa fecha de corte.
+- Borrado: esta corrida no creó demos ni propiedades.
+- Esperado, no es bug: `/precios` sin `og:description` (a propósito); el `ERR_FAILED` de `accounts.google.com` en `/acceso` y los 404 de recursos de terceros en la consola de iPhone e iPad son de la red del sandbox.
 
 ### QA 2026-11-22 am
 
