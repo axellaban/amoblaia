@@ -283,7 +283,8 @@ export function pickForQueue(list: Candidate[], count: number, rand: () => numbe
     const prev = byId.get(c.id);
     // A duplicate join must never erase a manual exclusion or an already queued state.
     // For otherwise eligible rows, prefer a qualified and ready snapshot over a stale one.
-    if (!prev || c.status === "descartado" || c.status === "en_cola" ||
+    if (!prev || (c.status === "descartado" && prev.status !== "descartado") ||
+      (c.status === "en_cola" && prev.status !== "descartado" && prev.status !== "en_cola") ||
       (prev.status !== "descartado" && prev.status !== "en_cola" &&
         ((c.hardReady && !prev.hardReady) ||
           (c.hardReady === prev.hardReady && c.status === "calificado" && prev.status !== "calificado") ||
