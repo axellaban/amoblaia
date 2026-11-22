@@ -237,6 +237,8 @@ async function persist(actor: string, account: ProspectAccount, row: ProfileRow 
     scoring_version: SCORING_VERSION,
     explore,
   };
+  if (force.manualHold === true) patch.manual_queue_action = "remove";
+  if (force.manualHold === false && status === "en_cola" && row?.profile?.manual_queue_hold === true) patch.manual_queue_action = "reactivate";
   if (status === "descartado") patch.discard_reason = force.discard_reason ?? row?.discard_reason ?? "";
   // La foto de lo que se sabía al entrar a la cola: contra eso se mide después.
   if (status === "en_cola" && before !== "en_cola")
