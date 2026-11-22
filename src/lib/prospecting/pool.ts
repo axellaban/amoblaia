@@ -283,6 +283,13 @@ export function pickForQueue(list: Candidate[], count: number, rand: () => numbe
   const explore: string[] = [];
   while (explore.length < exploreWanted && pool.length) explore.push(pool.splice(Math.floor(rand() * pool.length), 1)[0].id);
   const top = ranked.slice(0, n - explore.length).map((c) => c.id);
+  // Fill unused capacity from eligible exploration candidates when there are too
+  // few ranked candidates. Otherwise a 20-place batch with 2 ranked prospects
+  // and 30 exploration candidates would incorrectly return only 5 prospects.
+  // This exceeds the target exploration share only when ranking cannot fill it.
+  while (top.length + explore.length < n && pool.length) {
+    explore.push(pool.splice(Math.floor(rand() * pool.length), 1)[0].id);
+  }
   return { top, explore };
 }
 
