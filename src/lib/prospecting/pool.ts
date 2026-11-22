@@ -278,7 +278,20 @@ export function pickForQueue(list: Candidate[], count: number, rand: () => numbe
   const n = Math.max(0, Math.floor(count));
   // The input may contain duplicate account IDs after joins or concurrent reads.
   // Deduplicate before splitting into ranking/exploration so one account is never queued twice.
-  const unique = [...new Map(list.map((c) => [c.id, c])).values()];
+  const byId = new Map<string, Candidate>();
+  for (const c of list) {
+    const prev = byId.get(c.id);
+    // A duplicate join must never erase a manual exclusion or an already queued state.
+    // For otherwise eligible rows, prefer a qualified and ready snapshot over a stale one.
+    if (!prev || c.status === "descartado" || c.status === "en_cola" ||
+      (prev.status !== "descartado" && prev.status !== "en_cola" &&
+        ((c.hardReady && !prev.hardReady) ||
+          (c.hardReady === prev.hardReady && c.status === "calificado" && prev.status !== "calificado") ||
+          (c.hardReady === prev.hardReady && c.status === prev.status && c.score > prev.score)))) {
+      byId.set(c.id, c);
+    }
+  }
+  const unique = [...byId.values()];
   const ranked = unique.filter((c) => c.status === "calificado" && c.hardReady).sort((x, y) => y.score - x.score || x.id.localeCompare(y.id));
   const others = unique.filter((c) => c.status !== "calificado" && c.status !== "en_cola" && c.status !== "descartado" && c.hardReady);
   const exploreWanted = n >= 5 ? Math.max(1, Math.round(n * share)) : 0;
