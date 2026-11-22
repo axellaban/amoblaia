@@ -64,4 +64,25 @@ describe("HABITA prospect queue selection regressions", () => {
   });
 
 
+  it("keeps manual exclusions and queued states when duplicated by a join", () => {
+    const selected = pickForQueue([
+      candidate("excluded", "descartado", 1),
+      candidate("excluded", "calificado", 100),
+      candidate("queued", "calificado", 100),
+      candidate("queued", "en_cola", 1),
+      candidate("safe", "calificado", 80),
+    ], 5, () => 0);
+    expect([...selected.top, ...selected.explore]).toEqual(["safe"]);
+  });
+
+  it("prefers eligible and qualified snapshots over stale duplicate rows", () => {
+    const selected = pickForQueue([
+      candidate("a", "calificado", 100, false),
+      candidate("a", "calificado", 80, true),
+      candidate("b", "descubierto", 10, true),
+      candidate("b", "calificado", 70, true),
+    ], 5, () => 0);
+    expect(selected.top).toEqual(["a", "b"]);
+  });
+
 });
