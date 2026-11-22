@@ -276,8 +276,11 @@ export type Candidate = { id: string; score: number; status: PoolStatus; hardRea
  */
 export function pickForQueue(list: Candidate[], count: number, rand: () => number = Math.random, share = EXPLORE_SHARE) {
   const n = Math.max(0, Math.floor(count));
-  const ranked = list.filter((c) => c.status === "calificado" && c.hardReady).sort((x, y) => y.score - x.score || x.id.localeCompare(y.id));
-  const others = list.filter((c) => c.status !== "calificado" && c.status !== "en_cola" && c.status !== "descartado" && c.hardReady);
+  // The input may contain duplicate account IDs after joins or concurrent reads.
+  // Deduplicate before splitting into ranking/exploration so one account is never queued twice.
+  const unique = [...new Map(list.map((c) => [c.id, c])).values()];
+  const ranked = unique.filter((c) => c.status === "calificado" && c.hardReady).sort((x, y) => y.score - x.score || x.id.localeCompare(y.id));
+  const others = unique.filter((c) => c.status !== "calificado" && c.status !== "en_cola" && c.status !== "descartado" && c.hardReady);
   const exploreWanted = n >= 5 ? Math.max(1, Math.round(n * share)) : 0;
   const pool = [...others];
   const explore: string[] = [];
