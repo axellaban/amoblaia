@@ -31,6 +31,15 @@ begin
  end if;
  if p_patch->>'manual_queue_action' = 'remove' and (a.status <> 'en_cola' or st is null or st = 'en_cola') then raise exception 'INVALID_QUEUE_ACTION'; end if;
  if p_patch->>'manual_queue_action' = 'reactivate' and (st <> 'en_cola' or a.status = 'en_cola' or not (p_patch ? 'snapshot')) then raise exception 'INVALID_QUEUE_ACTION'; end if;
+ -- Reactivation is reserved for a previously manually held prospect; a regular queue add must not masquerade as reactivation.
+ if p_patch->>'manual_queue_action' = 'reactivate' and not coalesce((a.profile->>'manual_queue_hold')::boolean,false) then raise exception 'INVALID_QUEUE_ACTION'; end if;
+ -- A queue transition must persist a complete immutable snapshot, never a null or arbitrary scalar.
+ if st = 'en_cola' and a.status <> 'en_cola' and
+    (jsonb_typeof(p_patch->'snapshot') is distinct from 'object' or
+     jsonb_typeof(p_patch->'snapshot'->'profile') is distinct from 'object' or
+     jsonb_typeof(p_patch->'snapshot'->'score') <> 'number') then
+  raise exception 'QUEUE_SNAPSHOT_REQUIRED';
+ end if;
  if st = 'en_cola' and a.status <> 'en_cola' and (a.status = 'descartado' or (coalesce((a.profile->>'manual_queue_hold')::boolean,false) and p_patch->>'manual_queue_action' is distinct from 'reactivate')) then
   raise exception 'QUEUE_MANUAL_HOLD';
  end if;
