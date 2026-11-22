@@ -33,4 +33,22 @@ describe("HABITA prospect queue selection regressions", () => {
     ], 5, () => 0);
     expect(new Set([...selected.top, ...selected.explore]).size).toBe(3);
   });
+  it("fills the requested batch from exploration when ranked supply is scarce", () => {
+    const ranked = [candidate("rank-1", "calificado", 99), candidate("rank-2", "calificado", 98)];
+    const exploratory = Array.from({ length: 30 }, (_, i) => candidate(`explore-${i}`, "enriquecido", 20));
+    const selected = pickForQueue([...ranked, ...exploratory], 20, () => 0);
+    expect(selected.top).toEqual(["rank-1", "rank-2"]);
+    expect(selected.explore).toHaveLength(18);
+    expect(new Set([...selected.top, ...selected.explore]).size).toBe(20);
+  });
+
+  it("does not exceed the number of eligible candidates or duplicate them", () => {
+    const selected = pickForQueue([
+      candidate("eligible", "calificado", 90),
+      candidate("explorable", "descubierto", 10),
+      candidate("discarded", "descartado", 100),
+    ], 48, () => 0);
+    expect([...selected.top, ...selected.explore]).toEqual(["eligible", "explorable"]);
+  });
+
 });
