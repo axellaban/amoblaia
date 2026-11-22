@@ -37,7 +37,7 @@ begin
  if st = 'en_cola' and a.status <> 'en_cola' and
     (jsonb_typeof(p_patch->'snapshot') is distinct from 'object' or
      jsonb_typeof(p_patch->'snapshot'->'profile') is distinct from 'object' or
-     jsonb_typeof(p_patch->'snapshot'->'score') <> 'number') then
+     jsonb_typeof(p_patch->'snapshot'->'score') is distinct from 'number') then
   raise exception 'QUEUE_SNAPSHOT_REQUIRED';
  end if;
  if st = 'en_cola' and a.status <> 'en_cola' and (a.status = 'descartado' or (coalesce((a.profile->>'manual_queue_hold')::boolean,false) and p_patch->>'manual_queue_action' is distinct from 'reactivate')) then
