@@ -51,4 +51,17 @@ describe("HABITA prospect queue selection regressions", () => {
     expect([...selected.top, ...selected.explore]).toEqual(["eligible", "explorable"]);
   });
 
+  it("deduplicates repeated account IDs across queue candidates", () => {
+    const selected = pickForQueue([
+      candidate("rank-1", "calificado", 90),
+      candidate("rank-1", "calificado", 90),
+      candidate("explore-1", "enriquecido", 30),
+      candidate("explore-1", "enriquecido", 30),
+    ], 5, () => 0);
+    expect(selected.top).toEqual(["rank-1"]);
+    expect(selected.explore).toEqual(["explore-1"]);
+    expect(new Set([...selected.top, ...selected.explore]).size).toBe(2);
+  });
+
+
 });
