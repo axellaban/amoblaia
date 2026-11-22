@@ -3,7 +3,7 @@
 create or replace function public.habita_prospect_pool_save(p_actor uuid, p_account uuid, p_patch jsonb)
  returns jsonb language plpgsql security definer set search_path=public as $$
 declare a prospect_profiles; b prospect_profiles; k text; merged jsonb; st text; inserted_account uuid;
- allowed constant text[] := array['profile', 'status', 'discard_reason', 'score', 'score_components', 'scoring_version', 'explore', 'snapshot', 'expected_updated_at'];
+ allowed constant text[] := array['profile', 'status', 'discard_reason', 'score', 'score_components', 'scoring_version', 'explore', 'snapshot', 'expected_updated_at', 'manual_queue_action'];
 begin
  if jsonb_typeof(p_patch) is distinct from 'object' then raise exception 'INVALID_FIELD:patch'; end if;
  for k in select jsonb_object_keys(p_patch) loop
@@ -13,7 +13,9 @@ begin
  if not (p_patch ? 'expected_updated_at') then raise exception 'EXPECTED_VERSION_REQUIRED'; end if;
  if p_patch ? 'profile' and jsonb_typeof(p_patch->'profile') <> 'object' then raise exception 'INVALID_FIELD:profile'; end if;
  if p_patch ? 'score_components' and jsonb_typeof(p_patch->'score_components') <> 'object' then raise exception 'INVALID_FIELD:score_components'; end if;
+ if p_patch ? 'manual_queue_action' and p_patch->>'manual_queue_action' not in ('remove', 'reactivate') then raise exception 'INVALID_FIELD:manual_queue_action'; end if;
  st := p_patch->>'status';
+
  if st is not null and st not in ('descubierto', 'enriquecido', 'calificado', 'en_cola', 'descartado') then raise exception 'INVALID_FIELD:status'; end if;
  if st = 'descartado' and length(btrim(coalesce(p_patch->>'discard_reason', ''))) = 0 then raise exception 'REASON_REQUIRED'; end if;
 
@@ -27,15 +29,19 @@ begin
        a.updated_at is distinct from (p_patch->>'expected_updated_at')::timestamptz then
   raise exception 'STALE_PROFILE';
  end if;
- if st = 'en_cola' and a.status <> 'en_cola' and (a.status = 'descartado' or coalesce((a.profile->>'manual_queue_hold')::boolean,false)) then
+ if p_patch->>'manual_queue_action' = 'remove' and (a.status <> 'en_cola' or st is null or st = 'en_cola') then raise exception 'INVALID_QUEUE_ACTION'; end if;
+ if p_patch->>'manual_queue_action' = 'reactivate' and (st <> 'en_cola' or a.status = 'en_cola' or not (p_patch ? 'snapshot')) then raise exception 'INVALID_QUEUE_ACTION'; end if;
+ if st = 'en_cola' and a.status <> 'en_cola' and (a.status = 'descartado' or (coalesce((a.profile->>'manual_queue_hold')::boolean,false) and p_patch->>'manual_queue_action' is distinct from 'reactivate')) then
   raise exception 'QUEUE_MANUAL_HOLD';
  end if;
  merged := a.profile;
  if p_patch ? 'profile' then merged := jsonb_strip_nulls(a.profile || (p_patch->'profile')); end if;
  -- A manual removal must survive subsequent saves/recalculation. A generic profile patch
  -- cannot silently clear the persisted exclusion; only a dedicated reactivation flow may do so.
- if st is not null and a.status = 'en_cola' and st <> 'en_cola' then
+ if p_patch->>'manual_queue_action' = 'remove' then
   merged := jsonb_set(merged, '{manual_queue_hold}', 'true'::jsonb, true);
+ elsif p_patch->>'manual_queue_action' = 'reactivate' then
+  merged := merged - 'manual_queue_hold';
  elsif coalesce((a.profile->>'manual_queue_hold')::boolean, false) then
   merged := jsonb_set(merged, '{manual_queue_hold}', 'true'::jsonb, true);
  end if;
