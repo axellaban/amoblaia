@@ -51,6 +51,9 @@ begin
  end if;
  merged := a.profile;
  if p_patch ? 'profile' then merged := jsonb_strip_nulls(a.profile || (p_patch->'profile')); end if;
+ -- The manual hold is server-owned metadata: ordinary profile edits cannot forge or clear it.
+ -- This also prevents a profile payload on explicit reactivation from reintroducing a hold.
+ merged := merged - 'manual_queue_hold';
  -- A manual removal must survive subsequent saves/recalculation. A generic profile patch
  -- cannot silently clear the persisted exclusion; only a dedicated reactivation flow may do so.
  if p_patch->>'manual_queue_action' = 'remove' then
