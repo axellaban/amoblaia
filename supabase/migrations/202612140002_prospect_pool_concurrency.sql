@@ -82,7 +82,7 @@ begin
   explore=case when p_patch ? 'explore' then coalesce((p_patch->>'explore')::boolean, false) when st is not null and st <> 'en_cola' then false else explore end,
   queued_at=case when st = 'en_cola' and a.status <> 'en_cola' and p_patch ? 'snapshot' then now() when st is not null and st <> 'en_cola' then null else queued_at end,
   queue_snapshot=case when st = 'en_cola' and a.status <> 'en_cola' and p_patch ? 'snapshot' then p_patch->'snapshot' when st is not null and st <> 'en_cola' then null else queue_snapshot end,
-  updated_by=p_actor, updated_at=now()
+  -- A transaction-stable now() can reuse the same version across consecutive writes.\n  -- Force a strictly increasing timestamp so optimistic concurrency detects every save.\n  updated_by=p_actor, updated_at=greatest(clock_timestamp(), a.updated_at + interval '1 microsecond')
  where account_id=p_account returning * into b;
 
  if st is not null and st is distinct from a.status then
