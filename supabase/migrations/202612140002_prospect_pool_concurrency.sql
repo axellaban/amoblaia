@@ -11,8 +11,8 @@ begin
  end loop;
  if not exists (select 1 from prospect_accounts where id=p_account) then raise exception 'ACCOUNT_NOT_FOUND'; end if;
  if not (p_patch ? 'expected_updated_at') then raise exception 'EXPECTED_VERSION_REQUIRED'; end if;
- if p_patch ? 'profile' and jsonb_typeof(p_patch->'profile') <> 'object' then raise exception 'INVALID_FIELD:profile'; end if;
- if p_patch ? 'score_components' and jsonb_typeof(p_patch->'score_components') <> 'object' then raise exception 'INVALID_FIELD:score_components'; end if;
+ if p_patch ? 'profile' and jsonb_typeof(p_patch->'profile') is distinct from 'object' then raise exception 'INVALID_FIELD:profile'; end if;
+ if p_patch ? 'score_components' and jsonb_typeof(p_patch->'score_components') is distinct from 'object' then raise exception 'INVALID_FIELD:score_components'; end if;
  -- JSON null must not bypass the action whitelist (SQL NOT IN yields NULL).
  if p_patch ? 'manual_queue_action' and
     (jsonb_typeof(p_patch->'manual_queue_action') is distinct from 'string' or
