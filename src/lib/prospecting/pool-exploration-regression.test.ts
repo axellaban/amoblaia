@@ -85,4 +85,34 @@ describe("HABITA prospect queue selection regressions", () => {
     expect(selected.top).toEqual(["a", "b"]);
   });
 
+  it("uses deterministic score and ID tie-breaks independent of input order", () => {
+    const rows = [
+      candidate("z", "calificado", 80),
+      candidate("a", "calificado", 80),
+      candidate("m", "calificado", 95),
+      candidate("q", "calificado", 80),
+    ];
+    expect(pickForQueue(rows, 3, () => 0).top).toEqual(["m", "a", "q"]);
+    expect(pickForQueue([...rows].reverse(), 3, () => 0).top).toEqual(["m", "a", "q"]);
+  });
+
+  it("returns no entries for zero or negative capacity", () => {
+    const rows = [candidate("ready", "calificado", 100), candidate("explore", "enriquecido", 10)];
+    for (const capacity of [0, -1, -100]) {
+      expect(pickForQueue(rows, capacity, () => 0)).toEqual({ top: [], explore: [] });
+    }
+  });
+
+  it("respects exploration share at 5 and 48 slots when supply is ample", () => {
+    const rows = [
+      ...Array.from({ length: 70 }, (_, i) => candidate(`rank-${i}`, "calificado", 100 - i)),
+      ...Array.from({ length: 30 }, (_, i) => candidate(`explore-${i}`, "enriquecido", 10)),
+    ];
+    const five = pickForQueue(rows, 5, () => 0);
+    const fortyEight = pickForQueue(rows, 48, () => 0);
+    expect([five.top.length, five.explore.length]).toEqual([4, 1]);
+    expect([fortyEight.top.length, fortyEight.explore.length]).toEqual([41, 7]);
+    expect(new Set([...fortyEight.top, ...fortyEight.explore]).size).toBe(48);
+  });
 });
+
