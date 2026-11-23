@@ -35,6 +35,10 @@ begin
  if p_patch->>'manual_queue_action' = 'reactivate' and (st <> 'en_cola' or a.status = 'en_cola' or not (p_patch ? 'snapshot')) then raise exception 'INVALID_QUEUE_ACTION'; end if;
  -- Reactivation is reserved for a previously manually held prospect; a regular queue add must not masquerade as reactivation.
  if p_patch->>'manual_queue_action' = 'reactivate' and not coalesce((a.profile->>'manual_queue_hold')::boolean,false) then raise exception 'INVALID_QUEUE_ACTION'; end if;
+ -- A snapshot is written only on admission; repeat saves must not rewrite queue provenance.
+ if p_patch ? 'snapshot' and (st is distinct from 'en_cola' or a.status = 'en_cola') then
+  raise exception 'INVALID_QUEUE_SNAPSHOT_TRANSITION';
+ end if;
  -- A queue transition must persist a complete immutable snapshot, never a null or arbitrary scalar.
  if st = 'en_cola' and a.status <> 'en_cola' and
     (jsonb_typeof(p_patch->'snapshot') is distinct from 'object' or
@@ -65,8 +69,8 @@ begin
   score_components=case when p_patch ? 'score_components' then p_patch->'score_components' else score_components end,
   scoring_version=case when p_patch ? 'scoring_version' then nullif(btrim(p_patch->>'scoring_version'), '') else scoring_version end,
   explore=case when p_patch ? 'explore' then coalesce((p_patch->>'explore')::boolean, false) when st is not null and st <> 'en_cola' then false else explore end,
-  queued_at=case when st = 'en_cola' and p_patch ? 'snapshot' then now() when st is not null and st <> 'en_cola' then null else queued_at end,
-  queue_snapshot=case when st = 'en_cola' and p_patch ? 'snapshot' then p_patch->'snapshot' when st is not null and st <> 'en_cola' then null else queue_snapshot end,
+  queued_at=case when st = 'en_cola' and a.status <> 'en_cola' and p_patch ? 'snapshot' then now() when st is not null and st <> 'en_cola' then null else queued_at end,
+  queue_snapshot=case when st = 'en_cola' and a.status <> 'en_cola' and p_patch ? 'snapshot' then p_patch->'snapshot' when st is not null and st <> 'en_cola' then null else queue_snapshot end,
   updated_by=p_actor, updated_at=now()
  where account_id=p_account returning * into b;
 
