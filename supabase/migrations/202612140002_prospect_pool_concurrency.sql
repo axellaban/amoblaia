@@ -56,7 +56,10 @@ begin
  merged := merged - 'manual_queue_hold';
  -- A manual removal must survive subsequent saves/recalculation. A generic profile patch
  -- cannot silently clear the persisted exclusion; only a dedicated reactivation flow may do so.
- if p_patch->>'manual_queue_action' = 'remove' then
+ if p_patch->>'manual_queue_action' = 'remove' or
+    (a.status = 'en_cola' and st is not null and st <> 'en_cola' and st <> 'descartado') then
+  -- Legacy/manual status-only removal must also persist suppression; otherwise
+  -- a later recalculation could immediately put the account back into the queue.
   merged := jsonb_set(merged, '{manual_queue_hold}', 'true'::jsonb, true);
  elsif p_patch->>'manual_queue_action' = 'reactivate' then
   merged := merged - 'manual_queue_hold';
