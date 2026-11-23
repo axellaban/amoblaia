@@ -19,7 +19,9 @@ begin
  if st is not null and st not in ('descubierto', 'enriquecido', 'calificado', 'en_cola', 'descartado') then raise exception 'INVALID_FIELD:status'; end if;
  if st = 'descartado' and length(btrim(coalesce(p_patch->>'discard_reason', ''))) = 0 then raise exception 'REASON_REQUIRED'; end if;
 
- -- Insert in discovered state first so a first-write queue admission is a real transition\n -- and cannot bypass QUEUE_SNAPSHOT_REQUIRED.\n insert into prospect_profiles(account_id, status, updated_by) values (p_account, 'descubierto', p_actor)
+ -- Insert in discovered state first so a first-write queue admission is a real transition
+ -- and cannot bypass QUEUE_SNAPSHOT_REQUIRED.
+ insert into prospect_profiles(account_id, status, updated_by) values (p_account, 'descubierto', p_actor)
   on conflict (account_id) do nothing returning account_id into inserted_account;
  select * into a from prospect_profiles where account_id=p_account for update;
  -- Every write must carry an expected version. NULL is valid only for a newly inserted row.
