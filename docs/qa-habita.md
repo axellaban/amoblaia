@@ -120,6 +120,25 @@ Sin nombres, teléfonos, emails, enlaces a grabaciones, IDs de sesión, tasas de
 
 ## Resultados
 
+### QA 2026-11-25 am (2)
+
+- Inicio: 2026-11-25T08:51:46-03:00 · Fin: 2026-11-25T08:55:27-03:00
+- Commit: 9072868 (#345) · Despliegue: dpl_GwVgHRM16o5KMQzjuXzGyvYFssJL (production, READY) · Estado: parcial (**producción sigue caída por OBS-026**, bloqueo real y reintentado: `qa-login.mjs` falló dos veces seguidas a las 08:52 con el 402 de Supabase «exceed_cached_egress_quota, exceed_egress_quota». Quedaron sin hacer: paso 4 (sesión de QA); del paso 5, los flujos con sesión (crear demostración, estudio de imágenes, video Clásico, `/panel` con lista, filtros y búsqueda, `/admin` con sus pestañas, el panel en celular) y todos los caminos de error salvo la demo inexistente (HEIC, más de 15 MB, archivo que no es imagen, campos vacíos, doble clic, volver atrás, sin red); en la demo pública, la galería, la comparación de fotos, la CTA y WhatsApp, porque la demo de QA da 404. **Paso 3 sin hacer**: esta tarea no tiene el conector de PostHog (se buscó con ToolSearch dos veces y no aparece). Sin arreglos posibles del lado del código: pasos 7 y 8 sin cambios. No se crearon demos ni propiedades.)
+- Tipo: completa (mañana) · Pantallas: escritorio 1366×900, iPhone 13, Galaxy S8 e iPad (gen 7) para `/`, `/precios`, `/acceso`, `/panel`, `/admin`, la demo de QA, su `/presentacion` y una demo inexistente; además las tres demos con red lenta (Galaxy S8 e iPhone 13) y con el navegador de WhatsApp (Galaxy S8).
+- Paso 2 (Vercel 24 h y Supabase): **el corte sigue**. Supabase: todo `edge_logs` de las últimas 24 h es 402 salvo el 401 aislado del 24/11 (pico entre las 07 y las 08 de Argentina). Vercel: los mismos cuatro grupos de OBS-026: `demo_page_lookup_failed` (hasta las 07:36), `short_link_lookup_failed` (hasta las 03:33), `prospect_error DATABASE_undefined` en `/api/admin/prospeccion/sincronizar` (hasta las 08:04) y `metrics_error DATABASE_undefined` en `/api/metricas` (15:47 del 24/11). Ningún grupo de otra causa.
+- Sesión de QA: **no se pudo** (402 en Auth).
+  - **Demo de QA, `/presentacion` y demo inexistente:** 404 «Esta puerta no lleva a ningún ambiente.» con título «Propiedad no disponible» en las cuatro pantallas (1,0 a 1,2 s), con red lenta (5,7 s la primera carga) y con el navegador de WhatsApp (0,9 a 1,9 s) (UX-022). Sin scroll horizontal ni placeholders; con `og:title`, `og:description` y `og:image`. «Volver al inicio» (161×48 px) lleva a `/` con toque en iPhone 13.
+  - **Páginas públicas:** `/`, `/precios` y `/acceso` responden 200 en 1,0 a 2,2 s, sin errores de JavaScript propios, sin respuestas ≥ 400 del dominio, sin scroll horizontal, placeholders ni imágenes rotas. `/panel` y `/admin` redirigen a `/acceso`.
+  - **Interacciones en la home:** la comparación antes/después responde al arrastre táctil (iPhone 13), al clic, al arrastre con mouse y a las flechas del teclado (escritorio). En `/acceso`, Tab recorre «Saltar al contenido», el logo y el menú con foco visible (contorno de 3 px).
+  - **Axe:** solo `color-contrast` (serious) en `/` (UX-001), en las cuatro pantallas. Ningún `critical`.
+  - **Capturas miradas:** la demo de QA 404 en iPhone 13 y en escritorio, `/acceso` en Galaxy S8, la home con la comparación en escritorio y `/precios` en iPad (UX-019: «Qué podés crear» y «Cómo funciona» en dos líneas). Sin texto cortado ni superpuesto; las imágenes cargan.
+- Bugs encontrados: **el corte de OBS-026 sigue**; se avisó por notificación. No lo corrige el QA: hace falta subir el plan o quitar el tope de gasto en Supabase. · Corregidos: ninguno
+- Observaciones nuevas: ninguna · Propuestas nuevas: ninguna · Se repiten: OBS-026, OBS-027, UX-001, UX-019 y UX-022.
+- PRs de usabilidad abiertos: ninguno con título `UX:`
+- PostHog revisado hasta: 2026-11-25T07:33:00-03:00 (sin cambios) · cobertura: sin acceso (el conector de PostHog no está en esta tarea; la próxima corrida con conector tiene que tomar la ventana desde ese valor).
+- Borrado: esta corrida no creó demos ni propiedades.
+- Esperado, no es bug: `/precios` sin `og:description` (a propósito); el `ERR_FAILED` de `accounts.google.com` en `/acceso` y los 404 de recursos de terceros en la consola de iPhone e iPad son de la red del sandbox.
+
 ### QA 2026-11-25 am
 
 - Inicio: 2026-11-25T07:32:32-03:00 · Fin: 2026-11-25T07:40:01-03:00
