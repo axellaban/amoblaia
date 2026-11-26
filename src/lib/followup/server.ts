@@ -295,10 +295,22 @@ export async function recordQueueDay(all: QueueItem[], { force = false, now = ne
     if (error) { if (!missing(error)) console.error("followup_queue_day_failed"); return; }
   }
 }
-/** The daily cron: the photo of the queue at the start of the day, even if nobody opens the panel. */
-export async function snapshotQueueDay() {
-  const b = await board();
-  await recordQueueDay([...b.items.values()], { force: true });
+/**
+ * The daily cron: the photo of the queue at the start of the day, even if nobody opens the panel.
+ * The full read can hit Postgres' statement timeout (57014) when it coincides with other reads
+ * (QA 26/11: the 06:00 photo was lost to one): it is tried again once after a short pause.
+ */
+export async function snapshotQueueDay({ attempts = 2, pauseMs = 15_000 } = {}) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const b = await board();
+      await recordQueueDay([...b.items.values()], { force: true });
+      return;
+    } catch (error) {
+      if (attempt >= attempts) throw error;
+      await new Promise((resolve) => setTimeout(resolve, pauseMs));
+    }
+  }
 }
 
 /** Waiting only for capacity (the daily first-contact cap or the conversation limit), not for a fix. */
